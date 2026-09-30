@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amuwa AI CRM & WabaStore Sales OS - Executive Presentation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    * { font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(59, 130, 246, 0.4); border-radius: 9999px; }
+    .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+    .glass-card:hover { border-color: rgba(99, 102, 241, 0.4); transform: translateY(-2px); box-shadow: 0 12px 30px -10px rgba(99, 102, 241, 0.2); }
+    .glow-cyan { box-shadow: 0 0 35px -5px rgba(6, 182, 212, 0.25); }
+    .glow-indigo { box-shadow: 0 0 35px -5px rgba(99, 102, 241, 0.25); }
+    .glow-emerald { box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.25); }
+    .slide-transition { transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+    .gradient-text { background: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  </style>
+</head>
+<body class="bg-[#090d16] text-slate-100 min-h-screen flex flex-col justify-between overflow-x-hidden select-none">
+
+  <!-- Background glows -->
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div class="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl"></div>
+    <div class="absolute top-1/2 -right-40 w-96 h-96 bg-cyan-600/15 rounded-full blur-3xl"></div>
+    <div class="absolute -bottom-40 left-1/3 w-[30rem] h-[30rem] bg-emerald-600/10 rounded-full blur-3xl"></div>
+  </div>
+
+  <!-- Header -->
+  <header class="relative z-20 border-b border-slate-800/80 glass-panel px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-indigo-600 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-indigo-500/25">W</div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-white text-sm tracking-tight">WabaStore Sales OS</span>
+          <span class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">AI CRM 2.0</span>
+        </div>
+        <p class="text-xs text-slate-400">Amuwa Commercial Operating System</p>
+      </div>
+    </div>
+
+    <!-- Slide Selectors -->
+    <div class="flex items-center gap-1.5 bg-slate-900/80 p-1 rounded-xl border border-slate-800">
+      <button onclick="goToSlide(0)" id="pill-0" class="pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 bg-indigo-600 text-white shadow-md">1. Vision</button>
+      <button onclick="goToSlide(1)" id="pill-1" class="pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 text-slate-400 hover:text-white hover:bg-slate-800/60">2. RBAC Workspaces</button>
+      <button onclick="goToSlide(2)" id="pill-2" class="pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 text-slate-400 hover:text-white hover:bg-slate-800/60">3. WhatsApp Commerce</button>
+      <button onclick="goToSlide(3)" id="pill-3" class="pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 text-slate-400 hover:text-white hover:bg-slate-800/60">4. Dual Command Centers</button>
+      <button onclick="goToSlide(4)" id="pill-4" class="pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 text-slate-400 hover:text-white hover:bg-slate-800/60">5. Impact & ROI</button>
+    </div>
+
+    <div class="flex items-center gap-2.5">
+      <button onclick="toggleSpeakerNotes()" id="speakerNotesToggleBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-xs text-slate-300 transition">
+        <span class="text-amber-400">📝</span>
+        <span>Speaker Notes</span>
+      </button>
+      <button onclick="toggleFullscreen()" class="p-2 rounded-lg border border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-300 hover:text-white transition" title="Fullscreen">⛶</button>
+    </div>
+  </header>
+
+  <!-- Slide Content -->
+  <main class="relative z-10 flex-1 max-w-7xl mx-auto w-full px-6 py-6 flex flex-col justify-center">
+
+    <!-- SLIDE 1 -->
+    <section id="slide-0" class="slide-content slide-transition flex flex-col justify-center">
+      <div class="mb-5 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-md bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 text-xs font-bold uppercase tracking-wider">Slide 01 • Executive Vision</span>
+          <span class="text-xs text-slate-400">The Problem & Unified Operating Solution</span>
+        </div>
+        <div class="text-xs text-slate-500 font-mono">http://localhost:3000</div>
+      </div>
+
+      <div class="grid grid-cols-12 gap-6 items-stretch">
+        <div class="col-span-12 lg:col-span-7 flex flex-col justify-between glass-panel p-8 rounded-2xl border border-slate-800 glow-indigo">
+          <div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs font-medium mb-4">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              Modern Sales & Support Operating System
+            </div>
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight mb-3">
+              Eliminate Fragmentation.<br>
+              <span class="gradient-text">Unify Every Customer Interaction.</span>
+            </h1>
+            <p class="text-slate-300 text-sm sm:text-base leading-relaxed mb-6">
+              Transitioning from chaotic spreadsheets and siloed WhatsApp Web tabs into a single, high-velocity operating system built specifically for daily office sales and support execution.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-800/80">
+            <div class="p-3.5 rounded-xl bg-red-950/30 border border-red-900/30">
+              <div class="text-red-400 font-semibold text-xs mb-1.5 flex items-center gap-1.5">✕ The Old Way (Pain Points)</div>
+              <ul class="text-[12px] text-slate-400 space-y-1">
+                <li>• 4+ Disconnected tools & Excel files</li>
+                <li>• Slow follow-ups (>4h avg lead touch)</li>
+                <li>• Leads slipping through the cracks</li>
+                <li>• Zero real-time management visibility</li>
+              </ul>
+            </div>
+
+            <div class="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-900/30">
+              <div class="text-emerald-400 font-semibold text-xs mb-1.5 flex items-center gap-1.5">✓ The New AI CRM (Impact)</div>
+              <ul class="text-[12px] text-slate-300 space-y-1">
+                <li>• 1 Unified operating screen for all teams</li>
+                <li>• Sub-150ms instant lead capture</li>
+                <li>• 1-Click WhatsApp, Direct Dial & Email</li>
+                <li>• Multi-tab native department switching</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-span-12 lg:col-span-5 flex flex-col gap-3.5">
+          <div class="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">4 Connected Business Units</div>
+
+          <div class="glass-card p-4 rounded-xl flex items-start gap-3.5 border-l-4 border-l-emerald-500">
+            <div class="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0 text-xl font-bold">W</div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold text-sm text-white">WabaStore Commerce OS</h3>
+                <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-medium">Meta Partner</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-1">Direct WhatsApp catalog sync, interactive carousels, and automated cart recovery.</p>
+            </div>
+          </div>
+
+          <div class="glass-card p-4 rounded-xl flex items-start gap-3.5 border-l-4 border-l-cyan-500">
+            <div class="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 shrink-0 text-xl font-bold">💬</div>
+            <div>
+              <h3 class="font-bold text-sm text-white">Whatsbox Marketing & Chatbots</h3>
+              <p class="text-xs text-slate-400 mt-1">High-throughput broadcast campaigns, automated intake bots, and shared team inbox.</p>
+            </div>
+          </div>
+
+          <div class="glass-card p-4 rounded-xl flex items-start gap-3.5 border-l-4 border-l-indigo-500">
+            <div class="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0 text-xl font-bold">📞</div>
+            <div>
+              <h3 class="font-bold text-sm text-white">D Talk Cloud Telephony</h3>
+              <p class="text-xs text-slate-400 mt-1">Virtual agent call tracking, automated call logging, duration analytics, and instant click-to-call.</p>
+            </div>
+          </div>
+
+          <div class="glass-card p-4 rounded-xl flex items-start gap-3.5 border-l-4 border-l-purple-500">
+            <div class="w-10 h-10 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 shrink-0 text-xl font-bold">🏛️</div>
+            <div>
+              <h3 class="font-bold text-sm text-white">Amuwa HQ & HR System</h3>
+              <p class="text-xs text-slate-400 mt-1">Staffing, accounts ledger, payroll, daily sales scorecards, and multi-department governance.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2 -->
+    <section id="slide-1" class="slide-content slide-transition hidden flex flex-col justify-center">
+      <div class="mb-4 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-bold uppercase tracking-wider">Slide 02 • Role-Based Workspaces</span>
+          <span class="text-xs text-slate-400">Zero Clutter for Reps • Total Supervision for Leads</span>
+        </div>
+        <div class="text-xs text-slate-500">RBAC Architecture Matrix</div>
+      </div>
+
+      <div class="mb-5">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Workspaces Built for Exact Daily Roles</h2>
+        <p class="text-xs sm:text-sm text-slate-300 mt-1">Frontline reps get a distilled action board; managers get automated distribution and instant authorization controls.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-cyan-400 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="px-2.5 py-1 rounded-full bg-cyan-500/10 text-cyan-300 text-xs font-bold">Tier 1: Frontline Rep</span>
+              <span class="text-[11px] text-slate-400 font-mono">Priya Nair</span>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-1">"MY DAY" Action Hub</h3>
+            <p class="text-xs text-slate-300 mb-4">Zero confusing admin menus. Only assigned leads prioritized into 5 actionable buckets.</p>
+
+            <div class="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-xs mb-4">
+              <div class="flex items-center justify-between"><span class="text-red-400 font-medium">🔴 Overdue Leads</span><span class="font-bold text-slate-200">3 Priority</span></div>
+              <div class="flex items-center justify-between"><span class="text-amber-400 font-medium">🟡 Due Today</span><span class="font-bold text-slate-200">8 Follow-ups</span></div>
+              <div class="flex items-center justify-between"><span class="text-blue-400 font-medium">🔵 New Leads</span><span class="font-bold text-slate-200">5 Fresh</span></div>
+              <div class="flex items-center justify-between"><span class="text-emerald-400 font-medium">🟢 Demos & Won</span><span class="font-bold text-slate-200">2 Scheduled</span></div>
+            </div>
+          </div>
+          <div class="p-3 bg-cyan-950/30 rounded-xl border border-cyan-800/40 text-[11px] text-cyan-200">
+            ⚡ <strong>One-Tap Lead Update:</strong> Log outcome (Interested, Demo, Won) + schedule next touch in under 5 seconds.
+          </div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-indigo-400 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-300 text-xs font-bold">Tier 2: Pod Alpha Lead</span>
+              <span class="text-[11px] text-slate-400 font-mono">Vikram Deshmukh</span>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-1">Supervisory Control</h3>
+            <p class="text-xs text-slate-300 mb-4">Eliminates manual delegation bottlenecks and enforces fair team quota allocation.</p>
+
+            <div class="space-y-2.5 mb-4 text-xs">
+              <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div class="font-semibold text-slate-200">🔄 1-Click Auto Round-Robin</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Rotates inbound leads fairly across active reps instantly.</div>
+              </div>
+              <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div class="font-semibold text-slate-200">🏷️ Discount Authorization Hub</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Approve 15% - 20% deal discounts in 1 click without email lag.</div>
+              </div>
+              <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">
+                <div class="font-semibold text-slate-200">⚠️ SLA & Leakage Radar</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Alarms trigger when leads remain uncontacted past 24 hours.</div>
+              </div>
+            </div>
+          </div>
+          <div class="p-3 bg-indigo-950/30 rounded-xl border border-indigo-800/40 text-[11px] text-indigo-200">
+            🎯 <strong>Pod Velocity:</strong> Keeps reps focused while preventing cherry-picking and neglected opportunities.
+          </div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl border-t-4 border-t-purple-400 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <span class="px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-300 text-xs font-bold">Tier 3: Department Head</span>
+              <span class="text-[11px] text-slate-400 font-mono">Executive Hub</span>
+            </div>
+            <h3 class="text-lg font-bold text-white mb-1">Strategic Command Center</h3>
+            <p class="text-xs text-slate-300 mb-4">Complete macro visibility across both Sales and Support departments without asking for reports.</p>
+
+            <div class="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-xs mb-4">
+              <div class="flex justify-between items-center"><span class="text-slate-400">Total Active Pipeline:</span><span class="font-bold text-emerald-400 text-sm">₹1.42 Cr</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">Revenue Month-to-Date:</span><span class="font-bold text-cyan-400 text-sm">₹84.5 Lakh</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">Pod Alpha vs Beta:</span><span class="font-semibold text-slate-200">Alpha +18% ahead</span></div>
+              <div class="flex justify-between items-center"><span class="text-slate-400">Export Ready:</span><span class="text-slate-300 font-mono text-[11px]">1-Click Excel/CSV/PDF</span></div>
+            </div>
+          </div>
+          <div class="p-3 bg-purple-950/30 rounded-xl border border-purple-800/40 text-[11px] text-purple-200">
+            📊 <strong>Multi-Tab Architecture:</strong> SuperAdmins maintain live operational tabs open across all business departments.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3 -->
+    <section id="slide-2" class="slide-content slide-transition hidden flex flex-col justify-center">
+      <div class="mb-4 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">Slide 03 • Ingestion & Commerce</span>
+          <span class="text-xs text-slate-400">Sub-150ms Speed • Official Meta Partner Integration</span>
+        </div>
+        <div class="text-xs text-emerald-400 font-mono">HMAC-SHA256 Encrypted</div>
+      </div>
+
+      <div class="grid grid-cols-12 gap-6">
+        <div class="col-span-12 lg:col-span-6 glass-panel p-6 rounded-2xl border border-slate-800">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 font-bold">⚡</div>
+            <div>
+              <h3 class="text-lg font-bold text-white">10-Source Instant Ingestion</h3>
+              <p class="text-xs text-slate-400">Zero manual entry. Ingestion & normalisation in &lt; 150ms</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 my-4">
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Meta Lead Ads</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> WhatsApp API</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> D Talk Calls</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span> Website Forms</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span> AI Voice Bots</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span> RCS Messaging</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Partner Referral</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-pink-400"></span> Direct BDMs</div>
+            <div class="px-2.5 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] font-medium text-slate-200 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> REST Webhooks</div>
+          </div>
+
+          <div class="p-3 bg-slate-900/90 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+            <span class="text-slate-400">Live Webhook Simulator:</span>
+            <span class="text-cyan-400 font-semibold">Real-time Signature Verifier (200 OK)</span>
+          </div>
+        </div>
+
+        <div class="col-span-12 lg:col-span-6 glass-panel p-6 rounded-2xl border border-slate-800 glow-emerald">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 font-bold">🛒</div>
+            <div>
+              <h3 class="text-lg font-bold text-white">WabaStore WhatsApp Commerce</h3>
+              <p class="text-xs text-emerald-400 font-medium">Official Meta Business Solution Partner</p>
+            </div>
+          </div>
+
+          <div class="space-y-3 mt-4 text-xs">
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <div class="font-semibold text-slate-200">📦 Live Product Catalog Sync</div>
+              <p class="text-slate-400 mt-1 text-[11.5px]">SKUs, product images, and live pricing automatically synced into customer WhatsApp chat windows.</p>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <div class="font-semibold text-slate-200">💳 Interactive Messages & 1-Click Pay</div>
+              <p class="text-slate-400 mt-1 text-[11.5px]">Direct product carousels with Razorpay / Cashfree links embedded natively inside WhatsApp.</p>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <div class="font-semibold text-slate-200">⏰ Automated 15-Minute Cart Recovery</div>
+              <p class="text-slate-400 mt-1 text-[11.5px]">Recovers abandoned carts automatically with personalized discounts, boosting conversions by 24%.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4 -->
+    <section id="slide-3" class="slide-content slide-transition hidden flex flex-col justify-center">
+      <div class="mb-4 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-md bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-bold uppercase tracking-wider">Slide 04 • Dual Command Centers</span>
+          <span class="text-xs text-slate-400">18 Specialized Operational Modules</span>
+        </div>
+        <div class="text-xs text-slate-400">Sales Head OS & Support Head OS</div>
+      </div>
+
+      <div class="mb-4">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">High-Velocity Sales Pipeline vs Strict Support SLA</h2>
+        <p class="text-xs sm:text-sm text-slate-300 mt-0.5">Two dedicated command consoles tailored to the separate objectives of revenue generation and client retention.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="glass-panel p-5 rounded-2xl border border-indigo-500/30">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <span class="font-bold text-white text-sm">WabaStore Sales Head OS</span>
+            <span class="text-xs text-indigo-400 font-semibold px-2 py-0.5 bg-indigo-500/10 rounded">9 Modules</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 mt-4 text-[11px]">
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">1. Dashboard</div><span class="text-slate-400 text-[10px]">KPIs & Pipeline</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">2. Leads</div><span class="text-slate-400 text-[10px]">CSV & Stage Filter</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">3. Deals</div><span class="text-slate-400 text-[10px]">Kanban Pipeline</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">4. Customers</div><span class="text-slate-400 text-[10px]">Spend Dossiers</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">5. Follow-ups</div><span class="text-slate-400 text-[10px]">SLA Overdue Radar</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">6. Revenue</div><span class="text-slate-400 text-[10px]">Alpha vs Beta</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">7. Conversion</div><span class="text-slate-400 text-[10px]">4-Stage Funnel</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">8. Performance</div><span class="text-slate-400 text-[10px]">Rep Quotas</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-indigo-400 font-bold mb-0.5">9. Reports</div><span class="text-slate-400 text-[10px]">Excel/PDF Export</span></div>
+          </div>
+
+          <div class="mt-4 p-3 bg-indigo-950/20 rounded-xl border border-indigo-800/30 text-xs text-indigo-200">
+            💡 <strong>Key Highlight:</strong> Visual 4-Stage Conversion Funnel tracks leads through Qualification → Proposal → Closed-Won with zero manual math.
+          </div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl border border-cyan-500/30">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <span class="font-bold text-white text-sm">WabaStore Support Head OS</span>
+            <span class="text-xs text-cyan-400 font-semibold px-2 py-0.5 bg-cyan-500/10 rounded">9 Modules</span>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2 mt-4 text-[11px]">
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">1. Dashboard</div><span class="text-slate-400 text-[10px]">SLA Gauges</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">2. Tickets</div><span class="text-slate-400 text-[10px]">Kanban & Table</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">3. Customers</div><span class="text-slate-400 text-[10px]">Sentiment Radar</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">4. Issues</div><span class="text-slate-400 text-[10px]">Root Causes</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">5. Follow-ups</div><span class="text-slate-400 text-[10px]">SLA Callbacks</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">6. Resolution</div><span class="text-slate-400 text-[10px]">FCR & Reopens</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">7. Performance</div><span class="text-slate-400 text-[10px]">Staff Scorecards</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">8. Reports</div><span class="text-slate-400 text-[10px]">Deep Analytics</span></div>
+            <div class="p-2 rounded-lg bg-slate-900/80 border border-slate-800 text-center"><div class="text-cyan-400 font-bold mb-0.5">9. Support Flow</div><span class="text-slate-400 text-[10px]">6-Stage Lifecycle</span></div>
+          </div>
+
+          <div class="mt-4 p-3 bg-cyan-950/20 rounded-xl border border-cyan-800/30 text-xs text-cyan-200">
+            🔍 <strong>Key Highlight:</strong> Interactive Support Flow visualizes tickets across 6 stages with real-time countdown alerts before SLA violation.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5 -->
+    <section id="slide-4" class="slide-content slide-transition hidden flex flex-col justify-center">
+      <div class="mb-4 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="px-3 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider">Slide 05 • Business Impact</span>
+          <span class="text-xs text-slate-400">Office Operational Benchmarks & ROI</span>
+        </div>
+        <div class="text-xs text-slate-500">Live Targets</div>
+      </div>
+
+      <div class="mb-5">
+        <h2 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Measurable Results: Speed, Conversion & Retention</h2>
+        <p class="text-xs sm:text-sm text-slate-300 mt-1">Our core service level commitments and productivity benchmarks proven across live office operations.</p>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3.5 mb-5">
+        <div class="glass-card p-4 rounded-xl text-center border-t-2 border-t-cyan-400">
+          <div class="text-2xl sm:text-3xl font-extrabold text-cyan-400 font-mono">14m</div>
+          <div class="text-xs font-semibold text-white mt-1">1st Response SLA</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Target: &lt; 30 mins</div>
+          <div class="mt-2 text-[10px] text-cyan-300 font-medium bg-cyan-500/10 py-0.5 rounded">53% Faster</div>
+        </div>
+
+        <div class="glass-card p-4 rounded-xl text-center border-t-2 border-t-emerald-400">
+          <div class="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono">28.4%</div>
+          <div class="text-xs font-semibold text-white mt-1">Sales Win Rate</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Qualified Inbound</div>
+          <div class="mt-2 text-[10px] text-emerald-300 font-medium bg-emerald-500/10 py-0.5 rounded">Top Quartile</div>
+        </div>
+
+        <div class="glass-card p-4 rounded-xl text-center border-t-2 border-t-indigo-400">
+          <div class="text-2xl sm:text-3xl font-extrabold text-indigo-400 font-mono">72.4%</div>
+          <div class="text-xs font-semibold text-white mt-1">First Contact Res.</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">7 of 10 closed on 1st touch</div>
+          <div class="mt-2 text-[10px] text-indigo-300 font-medium bg-indigo-500/10 py-0.5 rounded">High Efficiency</div>
+        </div>
+
+        <div class="glass-card p-4 rounded-xl text-center border-t-2 border-t-purple-400">
+          <div class="text-2xl sm:text-3xl font-extrabold text-purple-400 font-mono">3.2%</div>
+          <div class="text-xs font-semibold text-white mt-1">Reopen Rate</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Ticket re-inquiries</div>
+          <div class="mt-2 text-[10px] text-purple-300 font-medium bg-purple-500/10 py-0.5 rounded">High Quality</div>
+        </div>
+
+        <div class="col-span-2 sm:col-span-1 glass-card p-4 rounded-xl text-center border-t-2 border-t-amber-400">
+          <div class="text-2xl sm:text-3xl font-extrabold text-amber-400 font-mono">4.8★</div>
+          <div class="text-xs font-semibold text-white mt-1">Client CSAT</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Out of 5.0 rating</div>
+          <div class="mt-2 text-[10px] text-amber-300 font-medium bg-amber-500/10 py-0.5 rounded">Satisfied Clients</div>
+        </div>
+      </div>
+
+      <div class="glass-panel p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400 shrink-0 text-lg">🛡️</div>
+          <div>
+            <h4 class="font-bold text-white text-sm">Strict Zero Lead Leakage Guarantee</h4>
+            <p class="text-xs text-slate-400 mt-0.5">Leads untouched after 24h are auto-flagged and re-allocated via pod round-robin immediately.</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 shrink-0">
+          <a href="http://localhost:3000" target="_blank" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 transition">
+            <span>Launch Live CRM System</span>
+            <span>→</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Speaker Notes Drawer -->
+  <div id="speakerNotesDrawer" class="relative z-20 max-w-7xl mx-auto w-full px-6 mb-3 hidden">
+    <div class="glass-panel p-4 rounded-xl border border-amber-500/30 bg-amber-950/20">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-amber-300 text-xs font-bold uppercase tracking-wider">
+          📝 Speaker Talking Points (<span id="speakerSlideTitle">Slide 1</span>)
+        </div>
+        <button onclick="toggleSpeakerNotes()" class="text-slate-400 hover:text-white text-xs">Close [Esc]</button>
+      </div>
+      <p id="speakerNotesText" class="text-xs text-slate-200 italic leading-relaxed"></p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="relative z-20 border-t border-slate-800/80 glass-panel px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <button onclick="prevSlide()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-xs text-slate-200 font-medium transition">
+        ← Previous
+      </button>
+
+      <span class="text-xs text-slate-400 font-medium">
+        Slide <span id="currentSlideNum" class="text-white font-bold">1</span> of 5
+      </span>
+
+      <button onclick="nextSlide()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs text-white font-medium shadow-md transition">
+        Next →
+      </button>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <div onclick="goToSlide(0)" class="dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-indigo-500 ring-4 ring-indigo-500/20" id="dot-0"></div>
+      <div onclick="goToSlide(1)" class="dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-slate-700" id="dot-1"></div>
+      <div onclick="goToSlide(2)" class="dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-slate-700" id="dot-2"></div>
+      <div onclick="goToSlide(3)" class="dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-slate-700" id="dot-3"></div>
+      <div onclick="goToSlide(4)" class="dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-slate-700" id="dot-4"></div>
+    </div>
+
+    <div class="text-[11px] text-slate-500 hidden sm:flex items-center gap-3">
+      <span>Use <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-mono">←</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-mono">→</kbd></span>
+      <span>Press <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700 text-slate-300 font-mono">N</kbd> for notes</span>
+    </div>
+  </footer>
+
+  <script>
+    let currentSlide = 0;
+    const totalSlides = 5;
+
+    const speakerNotes = [
+      "\"Good morning everyone. We all know the daily pain of juggling multiple disconnected tools—checking WhatsApp chats on our phones, updating Excel sheets, logging calls in telephony, and following up on support tickets in emails. Leads were slipping through the cracks. That is why we built this unified Operating System. It brings our entire sales pipeline, our Meta WhatsApp commerce engine, and our customer support operations under one roof, specifically tailored to how our office works.\"",
+      "\"The biggest complaint sales reps usually have about CRMs is that they are too complicated and cluttered with manager settings. We solved that with strict role isolation. When our rep Priya logs in, she is redirected straight to her 'My Day' workbench with 5 prioritized buckets and one-tap updates. Meanwhile, Pod Lead Vikram has 1-click round-robin lead rotation and discount approvals on the fly, eliminating management bottlenecks.\"",
+      "\"In modern sales, leads lose 80% of their conversion value if they aren't contacted within 15 minutes. Previously, leads coming from Meta ads had to be manually copied and pasted. Now, our 10-source engine normalizes leads in under 150 milliseconds. Plus, as an official Meta Commerce partner, our product catalog syncs directly into WhatsApp with interactive carousels, 1-click payment links, and automated 15-minute cart recovery.\"",
+      "\"For our department heads, we moved away from generic lists and built 9 dedicated operational modules for Sales and 9 for Support. In Sales, we track our ₹1.42 Cr pipeline, compare Pod Alpha against Beta, and see the exact 4-stage conversion funnel. In Support, our interactive 6-stage lifecycle gives us real-time countdowns before any SLA breach, and pinpoints root-cause technical issues.\"",
+      "\"These are our daily operational standards: responding to every inquiry within 14 minutes, maintaining our 28.4% sales win rate, and resolving over 72% of issues on the very first touchpoint. With our automated 24-hour SLA radar, zero leads can ever leak or get forgotten. Now, let's switch directly to http://localhost:3000 for our live system demonstration!\""
+    ];
+
+    const slideTitles = [
+      "Slide 1: Vision & The Disconnected Tools Problem",
+      "Slide 2: Role-Based Workspaces (Rep, Pod Lead, Head)",
+      "Slide 3: Instant Ingestion & Official Meta WhatsApp Store",
+      "Slide 4: Dual Command Centers (18 Specialized Modules)",
+      "Slide 5: Operational Benchmarks & Zero Leakage Guarantee"
+    ];
+
+    function showSlide(index) {
+      if (index < 0) index = 0;
+      if (index >= totalSlides) index = totalSlides - 1;
+      currentSlide = index;
+
+      for (let i = 0; i < totalSlides; i++) {
+        const slide = document.getElementById(`slide-${i}`);
+        const pill = document.getElementById(`pill-${i}`);
+        const dot = document.getElementById(`dot-${i}`);
+
+        if (i === currentSlide) {
+          slide.classList.remove('hidden');
+          slide.style.opacity = '1';
+          slide.style.transform = 'translateY(0)';
+          pill.className = 'pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 bg-indigo-600 text-white shadow-md';
+          dot.className = 'dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-indigo-500 ring-4 ring-indigo-500/20';
+        } else {
+          slide.classList.add('hidden');
+          pill.className = 'pill-btn px-3 py-1 text-xs font-semibold rounded-lg transition-all duration-200 text-slate-400 hover:text-white hover:bg-slate-800/60';
+          dot.className = 'dot-indicator w-2.5 h-2.5 rounded-full cursor-pointer transition-all bg-slate-700';
+        }
+      }
+      document.getElementById('currentSlideNum').innerText = currentSlide + 1;
+      updateSpeakerNotes();
+    }
+
+    function nextSlide() { if (currentSlide < totalSlides - 1) showSlide(currentSlide + 1); }
+    function prevSlide() { if (currentSlide > 0) showSlide(currentSlide - 1); }
+    function goToSlide(index) { showSlide(index); }
+
+    function toggleSpeakerNotes() {
+      const drawer = document.getElementById('speakerNotesDrawer');
+      const btn = document.getElementById('speakerNotesToggleBtn');
+      drawer.classList.toggle('hidden');
+      if (!drawer.classList.contains('hidden')) {
+        btn.classList.add('bg-amber-500/20', 'border-amber-500/40', 'text-amber-300');
+      } else {
+        btn.classList.remove('bg-amber-500/20', 'border-amber-500/40', 'text-amber-300');
+      }
+      updateSpeakerNotes();
+    }
+
+    function updateSpeakerNotes() {
+      document.getElementById('speakerSlideTitle').innerText = slideTitles[currentSlide];
+      document.getElementById('speakerNotesText').innerText = speakerNotes[currentSlide];
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => console.log(err));
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') nextSlide();
+      else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+      else if (e.key === 'n' || e.key === 'N') toggleSpeakerNotes();
+      else if (e.key === 'Escape') {
+        const drawer = document.getElementById('speakerNotesDrawer');
+        if (!drawer.classList.contains('hidden')) toggleSpeakerNotes();
+      } else if (e.key >= '1' && e.key <= '5') {
+        goToSlide(parseInt(e.key) - 1);
+      }
+    });
+
+    showSlide(0);
+  </script>
+</body>
+</html>

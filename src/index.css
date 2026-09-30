@@ -1,0 +1,198 @@
+/* Modern Pure Sans-Serif SaaS Theme Styles */
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+*, ::before, ::after {
+  font-family: var(--font-body);
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: #F8FAFC;
+  color: #0F172A;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: var(--font-heading) !important;
+}
+
+.font-sans, .font-serif {
+  font-family: var(--font-body) !important;
+}
+
+.font-mono, code, pre, kbd {
+  font-family: var(--font-mono) !important;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2563EB;
+}
+
+/* Glassmorphism Premium Light Panel */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.04), 0 4px 6px -2px rgba(15, 23, 42, 0.02);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-panel-hover:hover {
+  background: #FFFFFF;
+  border-color: #3B82F6;
+  transform: translateY(-3px);
+  box-shadow: 0 20px 40px -15px rgba(37, 99, 235, 0.15), 0 8px 16px -6px rgba(37, 99, 235, 0.1);
+}
+
+/* Floating Ambient Orbs Keyframes */
+@keyframes floatOrb1 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  50% { transform: translate(45px, -65px) scale(1.12); }
+  100% { transform: translate(-35px, 35px) scale(0.94); }
+}
+
+@keyframes floatOrb2 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  50% { transform: translate(-55px, 55px) scale(1.18); }
+  100% { transform: translate(45px, -45px) scale(0.88); }
+}
+
+@keyframes floatOrb3 {
+  0% { transform: translate(0px, 0px) scale(1); }
+  50% { transform: translate(65px, 45px) scale(1.08); }
+  100% { transform: translate(-45px, -55px) scale(0.96); }
+}
+
+.animate-orb-1 {
+  animation: floatOrb1 16s ease-in-out infinite alternate;
+}
+
+.animate-orb-2 {
+  animation: floatOrb2 20s ease-in-out infinite alternate;
+}
+
+.animate-orb-3 {
+  animation: floatOrb3 18s ease-in-out infinite alternate;
+}
+
+/* Stream Pulse Animation for Convergence Streams */
+@keyframes streamPulse {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.35;
+  }
+}
+
+.animate-stream {
+  stroke-dasharray: 8 12;
+  animation: streamPulse 1.8s linear infinite;
+}
+
+@keyframes dashFlow {
+  from {
+    stroke-dashoffset: 40;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-dash-flow {
+  animation: dashFlow 1.2s linear infinite;
+}
+
+/* Button Shimmer Effect */
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    60deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.25) 50%,
+    transparent 70%
+  );
+  transform: rotate(30deg);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+}
+
+.btn-shimmer:hover::after {
+  transform: rotate(30deg) translate(50%, 50%);
+}
+
+/* Scale Up Animation for Modals */
+@keyframes scaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-up {
+  animation: scaleUp 0.18s ease-out forwards;
+}
+
+/* Fade In */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-in forwards;
+}
+
+/* Source Glow Classes */
+.glow-whatsapp { box-shadow: 0 0 14px rgba(16, 185, 129, 0.25); }
+.glow-meta { box-shadow: 0 0 14px rgba(59, 130, 246, 0.25); }
+.glow-telecaller { box-shadow: 0 0 14px rgba(245, 158, 11, 0.25); }
+.glow-bizdev { box-shadow: 0 0 14px rgba(139, 92, 246, 0.25); }
+.glow-aicalling { box-shadow: 0 0 14px rgba(6, 182, 212, 0.25); }
+.glow-rcs { box-shadow: 0 0 14px rgba(236, 72, 153, 0.25); }
+.glow-website { box-shadow: 0 0 14px rgba(99, 102, 241, 0.25); }
+.glow-references { box-shadow: 0 0 14px rgba(20, 184, 166, 0.25); }
+.glow-coldcalling { box-shadow: 0 0 14px rgba(249, 115, 22, 0.25); }
+.glow-thirdparty { box-shadow: 0 0 14px rgba(244, 63, 94, 0.25); }
