@@ -1,0 +1,17 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+CREDENTIALS.md
+
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.zip
+*.lnk
