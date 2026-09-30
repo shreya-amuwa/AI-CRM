@@ -1,5 +1,9 @@
 {
   "rewrites": [
+    { "source": "/api/webhooks/:department/:source", "destination": "/api/webhook?department=:department&source=:source" },
+    { "source": "/api/webhooks/:department", "destination": "/api/webhook?department=:department" },
+    { "source": "/api/webhooks", "destination": "/api/webhook" },
+    { "source": "/api/webhook", "destination": "/api/webhook" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

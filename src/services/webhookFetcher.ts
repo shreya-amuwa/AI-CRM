@@ -138,7 +138,7 @@ function mapRowToLead(item: any, defaultSourceId: LeadSourceId = 'whatsapp'): In
 
   const name = extracted.name ||
     getField(item, ['customername', 'name', 'fullname', 'clientname', 'client', 'callername', 'contactperson', 'prospectname']) ||
-    'Customer Inbound';
+    '';
 
   const phone = extracted.phone ||
     getField(item, ['phone', 'phonenumber', 'mobile', 'mobilenumber', 'contact', 'whatsapp', 'wa_id', 'callerphone', 'tel', 'cell']) ||
