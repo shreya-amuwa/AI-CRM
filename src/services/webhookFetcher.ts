@@ -323,19 +323,34 @@ export async function fetchFromAnyWebhookUrl(
       parsedJson = null;
     }
   } catch (directFetchErr: any) {
-    // If direct fetch is blocked by CORS (e.g. Google Apps Script on web)
-    console.warn('[WebhookFetcher] Direct fetch error, attempting proxy fallback:', directFetchErr);
+    // If direct fetch is blocked by CORS (or failed on browser)
+    console.warn('[WebhookFetcher] Direct fetch error, attempting serverless proxy fallback:', directFetchErr);
 
-    // Fallback 1: Local dev proxy if on localhost/Vite
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    // Fallback 1: Vercel / local serverless proxy (/api/proxy) - completely bypasses browser CORS
+    try {
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
+      const proxyRes = await fetch(proxyUrl);
+      if (proxyRes.ok) {
+        rawBodyText = await proxyRes.text();
+        try {
+          parsedJson = JSON.parse(rawBodyText);
+        } catch {
+          parsedJson = null;
+        }
+        directRes = proxyRes;
+      }
+    } catch {}
+
+    // Fallback 2: Local dev proxy if on localhost/Vite
+    if (!parsedJson && typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       try {
-        const proxyRes = await fetch('/api/wabastore-remote/fetch', {
+        const localProxyRes = await fetch('/api/wabastore-remote/fetch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: targetUrl, token: options?.token })
         });
-        if (proxyRes.ok) {
-          const proxyData = await proxyRes.json();
+        if (localProxyRes.ok) {
+          const proxyData = await localProxyRes.json();
           if (proxyData.leads && Array.isArray(proxyData.leads)) {
             const leads = extractLeadsFromAnyJson(proxyData.leads, defaultSourceId);
             return {
@@ -352,75 +367,50 @@ export async function fetchFromAnyWebhookUrl(
       } catch {}
     }
 
-    // Fallback 2: CORS-anywhere web proxy for static production
-    try {
-      const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-      const corsRes = await fetch(corsProxyUrl);
-      if (corsRes.ok) {
-        rawBodyText = await corsRes.text();
-        try {
-          parsedJson = JSON.parse(rawBodyText);
-        } catch {
-          parsedJson = null;
+    // Fallback 3: External CORS proxy
+    if (!parsedJson) {
+      try {
+        const corsProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        const corsRes = await fetch(corsProxyUrl);
+        if (corsRes.ok) {
+          rawBodyText = await corsRes.text();
+          try {
+            parsedJson = JSON.parse(rawBodyText);
+          } catch {
+            parsedJson = null;
+          }
+          directRes = corsRes;
         }
-        directRes = corsRes;
-      }
-    } catch {}
+      } catch {}
+    }
   }
 
   const latencyMs = Math.round(performance.now() - startTime);
 
   // Analyze response
   if (parsedJson) {
-    // A. Check for Outbound Webhook Sink (e.g. {"accepted": true})
+    // A. Check for Outbound Webhook Receiver (e.g. {"accepted": true})
     if (parsedJson.accepted === true) {
-      // The webhook is a push receiver — it doesn't store data.
-      // Automatically try to pull existing leads from Supabase crm_leads as fallback.
-      const supabase = getSupabase();
-      if (supabase) {
-        try {
-          const { data, error } = await supabase
-            .from('crm_leads')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(100);
-
-          if (!error && Array.isArray(data) && data.length > 0) {
-            const supaLeads: InboundedLead[] = data.map((row: any) => ({
-              name: row.name || 'Customer Lead',
-              contact: row.phone || row.contact || '',
-              email: row.email || '',
-              company: row.company || 'Wabastore Client',
-              notes: row.notes || 'Supabase Cloud Lead',
-              sourceId: (row.channel || defaultSourceId) as LeadSourceId,
-              departmentId: (row.department || 'wabastore') as DepartmentId,
-              status: row.status || 'Verified',
-              rawPayload: row.raw_payload || row,
-              timestamp: row.created_at || new Date().toISOString()
-            }));
-
-            return {
-              mode: 'leads_array',
-              statusCode: directRes?.status || 200,
-              leads: supaLeads,
-              raw: data,
-              message: `Webhook is live ({"accepted": true}). Fetched ${supaLeads.length} leads from Supabase CRM database.`,
-              latencyMs,
-              endpointUrl: targetUrl
-            };
-          }
-        } catch (supaErr) {
-          console.warn('[WebhookFetcher] Supabase fallback query error:', supaErr);
-        }
+      // If the payload also contains lead fields (or an array of leads), extract them directly
+      const extractedLeads = extractLeadsFromAnyJson(parsedJson, defaultSourceId);
+      if (extractedLeads.length > 0) {
+        return {
+          mode: 'leads_array',
+          statusCode: directRes?.status || 200,
+          leads: extractedLeads,
+          raw: parsedJson,
+          message: `Successfully received ${extractedLeads.length} leads directly from webhook!`,
+          latencyMs,
+          endpointUrl: targetUrl
+        };
       }
 
-      // If Supabase has no data either, report webhook_sink mode
       return {
         mode: 'webhook_sink',
         statusCode: directRes?.status || 200,
         leads: [],
         raw: parsedJson,
-        message: `Webhook is live & accepting events. No stored leads found yet in CRM database — new events will appear in real-time as they arrive.`,
+        message: `Connected to Webhook (HTTP ${directRes?.status || 200} OK: {"accepted": true}). Webhook gateway is active and receiving events!`,
         latencyMs,
         endpointUrl: targetUrl
       };
@@ -477,6 +467,24 @@ export async function fetchFromAnyWebhookUrl(
         endpointUrl: targetUrl
       };
     }
+    if (rawBodyText.includes('Request limit exceeded') || rawBodyText.includes('rate limit')) {
+      return {
+        mode: 'error',
+        statusCode: 429,
+        leads: [],
+        message: 'The webhook provider (e.g. Webhook.site) exceeded its rate limit. Please create a new webhook URL.',
+        latencyMs,
+        endpointUrl: targetUrl
+      };
+    }
+    return {
+      mode: 'error',
+      statusCode: directRes?.status || 200,
+      leads: [],
+      message: 'The URL returned an HTML web page instead of JSON lead data. Please provide a JSON webhook or API endpoint.',
+      latencyMs,
+      endpointUrl: targetUrl
+    };
   }
 
   return {
@@ -484,7 +492,7 @@ export async function fetchFromAnyWebhookUrl(
     statusCode: directRes?.status || 500,
     leads: [],
     raw: rawBodyText.slice(0, 300),
-    message: directRes ? `Server returned HTTP ${directRes.status}` : 'Unable to connect to webhook URL. Please check network connectivity and URL.',
+    message: directRes ? `Server returned HTTP ${directRes.status} (no valid JSON lead payload).` : 'Unable to connect to webhook URL. Please check network connectivity and URL.',
     latencyMs,
     endpointUrl: targetUrl
   };
@@ -532,27 +540,6 @@ export async function dispatchTestLeadToWebhook(
     console.warn('[WebhookFetcher] Direct POST error (likely CORS for external URL):', err);
   }
 
-  // 2. Persist to Supabase crm_leads table so it broadcasts via Supabase Realtime to all users
-  const supabase = getSupabase();
-  if (supabase) {
-    try {
-      await supabase.from('crm_leads').insert([{
-        name: lead.name,
-        phone: lead.contact,
-        email: lead.email || '',
-        company: lead.company || 'Wabastore Client',
-        channel: lead.sourceId || 'whatsapp',
-        department: lead.departmentId || 'wabastore',
-        sub_department: 'support',
-        status: 'Verified',
-        notes: lead.notes || 'Inbound Webhook Test Event',
-        raw_payload: lead.rawPayload || lead
-      }]);
-    } catch (supaErr) {
-      console.warn('[WebhookFetcher] Supabase insert warning:', supaErr);
-    }
-  }
-
   const latencyMs = Math.round(performance.now() - startTime);
 
   return {
@@ -560,7 +547,7 @@ export async function dispatchTestLeadToWebhook(
     statusCode,
     latencyMs,
     message: serverAccepted
-      ? `HTTP ${statusCode} OK (${latencyMs}ms): Webhook acknowledged event! Lead "${lead.name}" inbounded live.`
-      : `Dispatched lead "${lead.name}" (${latencyMs}ms) to inbound pipeline & Supabase Realtime!`
+      ? `HTTP ${statusCode} OK (${latencyMs}ms): Webhook acknowledged event! Lead "${lead.name}" received live.`
+      : `Dispatched lead "${lead.name}" (${latencyMs}ms) directly to webhook stream!`
   };
 }
