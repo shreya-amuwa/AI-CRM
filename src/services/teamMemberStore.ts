@@ -84,7 +84,160 @@ export const INITIAL_ACTIVITIES: TeamMemberActivity[] = [];
 export const INITIAL_RECENT_UPDATES: RecentUpdate[] = [];
 export const INITIAL_CUSTOMERS: Customer[] = [];
 export const INITIAL_CUSTOMER_ACTIVITIES: any[] = [];
-export const INITIAL_INVOICES: Invoice[] = [];
+export const INITIAL_INVOICES: Invoice[] = [
+  {
+    id: 'INV-WAB-001',
+    invoiceNumber: 'WAB-SLS-2026-101',
+    customerName: 'Rajesh Mehra',
+    company: 'Titan Company Limited',
+    amount: 185000,
+    issueDate: 'Sep 25, 2026',
+    dueDate: '2026-10-15',
+    status: 'Paid',
+    departmentId: 'wabastore-sales',
+    departmentName: 'Wabastore (Sales Division)',
+    division: 'Sales',
+    terms: 'Net 15 days. Subject to Meta Cloud WhatsApp Commerce terms.',
+    contactEmail: 'billing@wabastore.com',
+    contactPhone: '+91 80 4912 2001',
+    items: [
+      { description: 'Wabastore E-Commerce Storefront Engine & Catalog Sync', quantity: 1, rate: 185000, amount: 185000 }
+    ]
+  },
+  {
+    id: 'INV-WBX-001',
+    invoiceNumber: 'WBX-SLS-2026-102',
+    customerName: 'Sanjay Kapoor',
+    company: 'FabIndia Overseas Pvt Ltd',
+    amount: 215000,
+    issueDate: 'Sep 27, 2026',
+    dueDate: '2026-10-18',
+    status: 'Pending',
+    departmentId: 'whatsbox-sales',
+    departmentName: 'Whatsbox (Sales Division)',
+    division: 'Sales',
+    terms: 'Annual subscription billed upfront with 99.9% uptime SLA.',
+    contactEmail: 'sales@whatsbox.com',
+    contactPhone: '+91 80 4912 3001',
+    items: [
+      { description: 'Whatsbox Multi-Agent Unified Inbox License (25 Seats)', quantity: 1, rate: 215000, amount: 215000 }
+    ]
+  },
+  {
+    id: 'INV-DTK-001',
+    invoiceNumber: 'DTK-SLS-2026-103',
+    customerName: 'Girish Kulkarni',
+    company: 'Bajaj Finance Limited',
+    amount: 240000,
+    issueDate: 'Sep 28, 2026',
+    dueDate: '2026-10-12',
+    status: 'Pending',
+    departmentId: 'dtalk-sales',
+    departmentName: 'D-Talk (Sales Division)',
+    division: 'Sales',
+    terms: 'Includes 100-channel PRI line allocation. TRAI compliance guidelines apply.',
+    contactEmail: 'sales@dtalk.com',
+    contactPhone: '+91 20 6711 5001',
+    items: [
+      { description: 'Enterprise 100-Channel PRI SIP Trunking & Dialer Suite', quantity: 1, rate: 240000, amount: 240000 }
+    ]
+  },
+  {
+    id: 'INV-DGT-001',
+    invoiceNumber: 'DGT-SLS-2026-104',
+    customerName: 'Manish Chawla',
+    company: 'Cognizant Technology Solutions',
+    amount: 195000,
+    issueDate: 'Sep 29, 2026',
+    dueDate: '2026-10-14',
+    status: 'Paid',
+    departmentId: 'digitree-sales',
+    departmentName: 'Digitree (Sales Division)',
+    division: 'Sales',
+    terms: 'Software license valid for 12 months with unlimited dynamic QR generations.',
+    contactEmail: 'sales@digitree.com',
+    contactPhone: '+91 124 459 8001',
+    items: [
+      { description: 'Digitree Dynamic AIQR Enterprise Multi-Brand Platform', quantity: 1, rate: 195000, amount: 195000 }
+    ]
+  },
+  {
+    id: 'INV-MPL-001',
+    invoiceNumber: 'MPL-SLS-2026-105',
+    customerName: 'Anil Agrawal',
+    company: 'Godrej Properties Limited',
+    amount: 280000,
+    issueDate: 'Sep 20, 2026',
+    dueDate: '2026-09-30',
+    status: 'Overdue',
+    departmentId: 'mpillar-sales',
+    departmentName: 'M Pillar (Sales Division)',
+    division: 'Sales',
+    terms: 'Mobilization within 14 business days. Milestone billing upon site setup.',
+    contactEmail: 'sales@mpillar.com',
+    contactPhone: '+91 22 6889 6001',
+    items: [
+      { description: 'Smart Construction Site Safety & Daily Attendance IoT Suite', quantity: 1, rate: 280000, amount: 280000 }
+    ]
+  },
+  {
+    id: 'INV-EDU-001',
+    invoiceNumber: 'EDU-CAN-2026-106',
+    customerName: 'Priya Sharma',
+    company: 'Tech Mahindra Corporate Training',
+    amount: 95000,
+    issueDate: 'Sep 26, 2026',
+    dueDate: '2026-10-16',
+    status: 'Paid',
+    departmentId: 'education-candidate',
+    departmentName: 'Education & Training (Candidate Training)',
+    division: 'Candidate Training',
+    terms: 'Course fees and corporate candidate training retainers are non-refundable upon batch commencement.',
+    contactEmail: 'training@amuwa.com',
+    contactPhone: '+91 22 6889 4020',
+    items: [
+      { description: 'Certified AI Sales Executive Candidate Cohort Program', quantity: 2, rate: 47500, amount: 95000 }
+    ]
+  },
+  {
+    id: 'INV-HRO-001',
+    invoiceNumber: 'HRO-2026-107',
+    customerName: 'Sunil Rao',
+    company: 'Zomato Operations Hub',
+    amount: 65000,
+    issueDate: 'Sep 28, 2026',
+    dueDate: '2026-10-20',
+    status: 'Pending',
+    departmentId: 'hr-operations',
+    departmentName: 'HR & Operations',
+    division: 'Corporate Operations',
+    terms: 'Standard HR consultancy & talent placement terms apply.',
+    contactEmail: 'hr.billing@amuwa.com',
+    contactPhone: '+91 22 6889 4010',
+    items: [
+      { description: 'Executive Talent Acquisition & Onboarding Management', quantity: 1, rate: 65000, amount: 65000 }
+    ]
+  },
+  {
+    id: 'INV-AMW-001',
+    invoiceNumber: 'AMW-2026-108',
+    customerName: 'Vikram Joshi',
+    company: 'PolicyBazaar Online Services',
+    amount: 150000,
+    issueDate: 'Sep 22, 2026',
+    dueDate: '2026-10-06',
+    status: 'Paid',
+    departmentId: 'amuwa',
+    departmentName: 'Amuwa Corporation',
+    division: 'Corporate Headquarters',
+    terms: 'Payment due within 30 days of invoice date. 18% GST statutory invoice.',
+    contactEmail: 'billing@amuwa.com',
+    contactPhone: '+91 22 6889 4000',
+    items: [
+      { description: 'Enterprise Corporate Advisory & Infrastructure Retainer', quantity: 1, rate: 150000, amount: 150000 }
+    ]
+  }
+];
 export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [];
 export const INITIAL_DEALS_CRM: Deal[] = [];
 
@@ -495,7 +648,13 @@ class TeamMemberStore {
   // --- INVOICES ---
   public getInvoices(userId?: string): Invoice[] {
     try {
-      return JSON.parse(localStorage.getItem(this.invoicesKey) || '[]');
+      const stored = localStorage.getItem(this.invoicesKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
+      return INITIAL_INVOICES;
     } catch {
       return INITIAL_INVOICES;
     }

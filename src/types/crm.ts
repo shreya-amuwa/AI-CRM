@@ -184,6 +184,13 @@ export interface Customer {
   assignedTo: string;
 }
 
+export interface InvoiceItemDetail {
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -193,6 +200,15 @@ export interface Invoice {
   issueDate: string;
   dueDate: string;
   status: 'Paid' | 'Pending' | 'Overdue';
+  departmentId?: string;
+  departmentName?: string;
+  division?: string;
+  items?: InvoiceItemDetail[];
+  terms?: string;
+  billingAddress?: string;
+  taxAmount?: number;
+  contactEmail?: string;
+  contactPhone?: string;
 }
 
 export interface CalendarEvent {
