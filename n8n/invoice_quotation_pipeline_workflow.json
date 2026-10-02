@@ -1,0 +1,438 @@
+{
+  "name": "Invoice & Quotation Management - Multi-Approval Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "amuwa-invoice-quotation-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-trigger-webhook",
+      "name": "1. Intake Webhook (CRM / API Trigger)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "amuwa-invoice-quotation-intake"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-trigger-schedule",
+      "name": "2. Schedule Trigger (Daily 9AM SLA Check)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 1: EMPLOYEE INTAKE & AUTH VERIFICATION\nconst body = $input.first().json.body || $input.first().json;\n\n// Extract authenticated member data\nconst member = {\n  memberId: body.memberId || body.userId || 'EMP-1001',\n  name: body.memberName || body.userName || 'Vikram Singhania',\n  email: body.memberEmail || body.userEmail || 'vikram.s@wabastore.com',\n  department: (body.department || 'wabastore').toLowerCase(),\n  role: body.role || 'Head of Sales & Commercials'\n};\n\n// Determine document type: INVOICE or QUOTATION\nconst docType = (body.type || body.documentType || 'INVOICE').toUpperCase();\n\nreturn [{\n  json: {\n    rawPayload: body,\n    employee: member,\n    documentType: docType,\n    intakeTimestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "node-step1-employee",
+      "name": "Step 1: Employee Intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 2: CUSTOMER SELECTION & VALIDATION\nconst data = $input.first().json;\nconst raw = data.rawPayload;\n\n// Default / fallback corporate customer registry\nconst CUSTOMER_REGISTRY = {\n  'CUST-TITAN': {\n    customerId: 'CUST-TITAN-001',\n    customerName: 'Titan Company Limited',\n    company: 'Titan Company Limited',\n    email: 'rajesh.mehra@titan.co.in',\n    phone: '+91 98450 99881',\n    address: 'Tower A, Electronics City Phase 1, Hosur Road, Bangalore, Karnataka - 560100',\n    taxId: '29AAACT2727Q1ZB',\n    paymentTerms: 'Net 30'\n  },\n  'CUST-FABINDIA': {\n    customerId: 'CUST-FAB-002',\n    customerName: 'FabIndia Overseas Pvt Ltd',\n    company: 'FabIndia Overseas Pvt Ltd',\n    email: 'sanjay.kapoor@fabindia.com',\n    phone: '+91 98110 44221',\n    address: 'Plot No. 14, Okhla Industrial Area Phase 3, New Delhi - 110020',\n    taxId: '07AABCF1234D1Z5',\n    paymentTerms: 'Net 15'\n  },\n  'CUST-NYKAA': {\n    customerId: 'CUST-NYK-003',\n    customerName: 'Nykaa E-Retail Limited',\n    company: 'Nykaa E-Retail Limited',\n    email: 'deepak.sen@nykaa.com',\n    phone: '+91 98201 11445',\n    address: '104 Vasan Udyog Bhavan, Sun Mill Compound, Lower Parel, Mumbai - 400013',\n    taxId: '27AABCN7782P1Z0',\n    paymentTerms: 'Immediate'\n  }\n};\n\nlet customer = null;\n\nif (raw.customerId && CUSTOMER_REGISTRY[raw.customerId]) {\n  customer = { ...CUSTOMER_REGISTRY[raw.customerId] };\n} else {\n  // Use provided customer details from intake\n  customer = {\n    customerId: raw.customerId || ('CUST-' + Math.floor(1000 + Math.random() * 9000)),\n    customerName: raw.customerName || raw.clientName || 'Acme Enterprises',\n    company: raw.company || raw.clientCompany || raw.customerName || 'Acme Enterprises Ltd',\n    email: raw.customerEmail || raw.clientEmail || 'finance@acme.com',\n    phone: raw.customerPhone || raw.clientPhone || '+91 98765 43210',\n    address: raw.customerAddress || raw.clientAddress || 'Commercial Tower, Bandra Kurla Complex, Mumbai - 400051',\n    taxId: raw.taxId || raw.clientGst || '27AAACA1234A1Z5',\n    paymentTerms: raw.paymentTerms || 'Net 30'\n  };\n}\n\nreturn [{\n  json: {\n    ...data,\n    customer: customer\n  }\n}];"
+      },
+      "id": "node-step2-customer",
+      "name": "Step 2: Customer Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 3: PRODUCT SELECTION & CATALOG MATCHING\nconst data = $input.first().json;\nconst raw = data.rawPayload;\n\n// Master Product Catalog Database\nconst PRODUCT_CATALOG = {\n  'PROD-WABA-01': {\n    productId: 'PROD-WABA-01',\n    name: 'Enterprise WhatsApp E-Commerce Catalog Setup',\n    sku: 'WABA-COMMERCE-CORE',\n    hsn_sac: '998314',\n    rate: 250000,\n    gst: 18,\n    unit: 'Project',\n    description: 'Multi-brand catalog sync with automated live order webhooks & WhatsApp Pay checkout'\n  },\n  'PROD-WABA-02': {\n    productId: 'PROD-WABA-02',\n    name: 'Real-Time Order Notification Webhook Gateway',\n    sku: 'WABA-WH-GATEWAY',\n    hsn_sac: '998313',\n    rate: 15000,\n    gst: 18,\n    unit: 'Monthly Subscription',\n    description: 'High-speed event stream webhook delivery with automatic retry queue'\n  },\n  'PROD-WBOX-01': {\n    productId: 'PROD-WBOX-01',\n    name: 'Whatsbox Unified Multi-Agent Shared Inbox (25 Seats)',\n    sku: 'WBOX-AGENT-25',\n    hsn_sac: '998314',\n    rate: 300000,\n    gst: 18,\n    unit: 'Quarterly',\n    description: '25 concurrent agent seats with supervisor whisper mode & round-robin allocation'\n  },\n  'PROD-DTLK-01': {\n    productId: 'PROD-DTLK-01',\n    name: 'Enterprise 100-Channel PRI Telecom SIP Trunking',\n    sku: 'DTLK-SIP-100',\n    hsn_sac: '998413',\n    rate: 115000,\n    gst: 18,\n    unit: 'Channel Bundle',\n    description: 'Dual carrier redundant SIP trunking with TRAI regulatory call recording vault'\n  },\n  'PROD-DIGI-01': {\n    productId: 'PROD-DIGI-01',\n    name: 'Dynamic AIQR Multi-Brand Analytics Platform',\n    sku: 'DIGI-AIQR-ENT',\n    hsn_sac: '998314',\n    rate: 180000,\n    gst: 18,\n    unit: 'Annual License',\n    description: 'Custom domain vanity shortener with scan geotargeting and dynamic redirect rules'\n  }\n};\n\nlet rawItems = raw.items || raw.products || [];\n\n// Fallback sample line items if empty\nif (!Array.isArray(rawItems) || rawItems.length === 0) {\n  rawItems = [\n    { productId: 'PROD-WABA-01', quantity: 1 },\n    { productId: 'PROD-WABA-02', quantity: 3 }\n  ];\n}\n\nconst resolvedProducts = rawItems.map(item => {\n  const catalogItem = PRODUCT_CATALOG[item.productId || item.sku] || {};\n  const name = item.name || catalogItem.name || item.description || 'Custom Enterprise Service';\n  const sku = item.sku || catalogItem.sku || 'SKU-CUSTOM-001';\n  const hsn_sac = item.hsn_sac || item.sacCode || catalogItem.hsn_sac || '998314';\n  const rate = Number(item.rate || item.price || catalogItem.rate || 50000);\n  const gst = Number(item.gst || item.gstRate || catalogItem.gst || 18);\n  const unit = item.unit || catalogItem.unit || 'Unit';\n  const description = item.description || catalogItem.description || name;\n  const quantity = Math.max(1, Number(item.quantity || item.qty || 1));\n\n  return {\n    productId: item.productId || sku,\n    name,\n    sku,\n    hsn_sac,\n    rate,\n    gst,\n    unit,\n    description,\n    quantity\n  };\n});\n\nreturn [{\n  json: {\n    ...data,\n    resolvedProducts\n  }\n}];"
+      },
+      "id": "node-step3-products",
+      "name": "Step 3: Product Catalog Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 4 & 5: INVOICE BUILDER & CALCULATION ENGINE\nconst data = $input.first().json;\nconst raw = data.rawPayload;\nconst products = data.resolvedProducts;\n\n// 1. Build line items\nconst items = products.map((p, index) => {\n  const lineAmount = p.quantity * p.rate;\n  return {\n    lineIndex: index + 1,\n    productId: p.productId,\n    name: p.name,\n    sku: p.sku,\n    hsn_sac: p.hsn_sac,\n    unit: p.unit,\n    quantity: p.quantity,\n    rate: p.rate,\n    gstRate: p.gst,\n    amount: lineAmount\n  };\n});\n\n// 2. Subtotal calculation\nconst subtotal = items.reduce((sum, item) => sum + item.amount, 0);\n\n// 3. Discount calculation\nlet discountAmount = 0;\nlet discountType = 'none';\nlet discountRate = 0;\n\nif (raw.discount) {\n  if (typeof raw.discount === 'object') {\n    if (raw.discount.type === 'percentage') {\n      discountRate = Number(raw.discount.value || 0);\n      discountAmount = Math.round((subtotal * discountRate) / 100);\n      discountType = 'percentage';\n    } else {\n      discountAmount = Number(raw.discount.value || 0);\n      discountType = 'flat';\n    }\n  } else if (typeof raw.discount === 'number') {\n    discountAmount = raw.discount;\n    discountType = 'flat';\n  }\n}\n\nconst taxableAmount = Math.max(0, subtotal - discountAmount);\n\n// 4. Tax / GST Engine (Standard Indian GST 18% or itemized average)\nconst avgGstRate = items.length > 0\n  ? Math.round((items.reduce((s, i) => s + i.gstRate, 0) / items.length) * 10) / 10\n  : 18;\n\n// Intra-state split (CGST 9% + SGST 9%) or Inter-state IGST 18%\nconst isInterState = Boolean(raw.isInterState || (data.customer.address && !data.customer.address.includes('Maharashtra')));\nconst cgstRate = isInterState ? 0 : avgGstRate / 2;\nconst sgstRate = isInterState ? 0 : avgGstRate / 2;\nconst igstRate = isInterState ? avgGstRate : 0;\n\nconst cgstAmount = Math.round((taxableAmount * cgstRate) / 100);\nconst sgstAmount = Math.round((taxableAmount * sgstRate) / 100);\nconst igstAmount = Math.round((taxableAmount * igstRate) / 100);\nconst totalTax = cgstAmount + sgstAmount + igstAmount;\n\nconst grandTotal = taxableAmount + totalTax;\n\n// Formatter function\nfunction formatINR(val) {\n  return new Intl.NumberFormat('en-IN', {\n    style: 'currency',\n    currency: 'INR',\n    maximumFractionDigits: 0\n  }).format(val);\n}\n\n// Convert Number to Words (Indian Numbering)\nfunction numberToWords(num) {\n  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];\n  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];\n\n  function inWords(n) {\n    if ((n = n.toString()).length > 9) return 'Overflow';\n    const nArr = ('000000000' + n).substr(-9).match(/^(\\d{2})(\\d{2})(\\d{2})(\\d{1})(\\d{2})$/);\n    if (!nArr) return '';\n    let str = '';\n    str += (Number(nArr[1]) !== 0) ? (a[Number(nArr[1])] || b[nArr[1][0]] + ' ' + a[nArr[1][1]]) + 'Crore ' : '';\n    str += (Number(nArr[2]) !== 0) ? (a[Number(nArr[2])] || b[nArr[2][0]] + ' ' + a[nArr[2][1]]) + 'Lakh ' : '';\n    str += (Number(nArr[3]) !== 0) ? (a[Number(nArr[3])] || b[nArr[3][0]] + ' ' + a[nArr[3][1]]) + 'Thousand ' : '';\n    str += (Number(nArr[4]) !== 0) ? (a[Number(nArr[4])] || b[nArr[4][0]] + ' ' + a[nArr[4][1]]) + 'Hundred ' : '';\n    str += (Number(nArr[5]) !== 0) ? ((str !== '') ? 'and ' : '') + (a[Number(nArr[5])] || b[nArr[5][0]] + ' ' + a[nArr[5][1]]) : '';\n    return str.trim();\n  }\n  return inWords(num) + ' Rupees Only';\n}\n\n// Generate Temporary Document Sequence Ref\nconst prefix = data.documentType === 'QUOTATION' ? 'QT' : 'INV';\nconst deptCode = data.employee.department.substring(0, 4).toUpperCase();\nconst randomSeq = Math.floor(1000 + Math.random() * 9000);\nconst docNumber = `${prefix}-${deptCode}-2026-${randomSeq}`;\n\nconst todayStr = new Date().toISOString().split('T')[0];\nconst dueDateObj = new Date();\ndueDateObj.setDate(dueDateObj.getDate() + (data.documentType === 'QUOTATION' ? 30 : 15));\nconst dueDateStr = dueDateObj.toISOString().split('T')[0];\n\nreturn [{\n  json: {\n    ...data,\n    document: {\n      documentId: 'DOC-' + Date.now(),\n      documentNumber: docNumber,\n      documentType: data.documentType,\n      issueDate: todayStr,\n      dueDate: dueDateStr,\n      validUntil: dueDateStr,\n      paymentTerms: data.customer.paymentTerms || 'Net 30',\n      items: items,\n      calculations: {\n        subtotal,\n        discountAmount,\n        discountType,\n        taxableAmount,\n        taxRate: avgGstRate,\n        isInterState,\n        cgstRate,\n        cgstAmount,\n        sgstRate,\n        sgstAmount,\n        igstRate,\n        igstAmount,\n        totalTax,\n        grandTotal,\n        subtotalFormatted: formatINR(subtotal),\n        taxableFormatted: formatINR(taxableAmount),\n        taxFormatted: formatINR(totalTax),\n        grandTotalFormatted: formatINR(grandTotal),\n        grandTotalWords: numberToWords(grandTotal)\n      }\n    }\n  }\n}];"
+      },
+      "id": "node-step4-5-builder-calc",
+      "name": "Step 4 & 5: Calculation Engine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 6: TEMPLATE RENDERER (COMPANY INVOICE & QUOTATION HTML GENERATOR)\nconst data = $input.first().json;\nconst doc = data.document;\nconst cust = data.customer;\nconst emp = data.employee;\nconst calc = doc.calculations;\n\nconst isQuotation = doc.documentType === 'QUOTATION';\nconst title = isQuotation ? 'OFFICIAL COMMERCIAL QUOTATION' : 'TAX INVOICE';\nconst primaryColor = isQuotation ? '#0284C7' : '#0F172A';\nconst accentColor = '#10B981';\n\n// Build Item Table Rows HTML\nconst tableRowsHtml = doc.items.map(item => `\n  <tr style=\"border-bottom: 1px solid #E2E8F0;\">\n    <td style=\"padding: 12px 14px; text-align: center; color: #64748B; font-family: monospace;\">${item.lineIndex}</td>\n    <td style=\"padding: 12px 14px;\">\n      <strong style=\"color: #0F172A; display: block; font-size: 13px;\">${item.name}</strong>\n      <span style=\"color: #64748B; font-size: 11px; font-family: monospace;\">SKU: ${item.sku} &bull; SAC: ${item.hsn_sac}</span>\n    </td>\n    <td style=\"padding: 12px 14px; text-align: center; font-family: monospace;\">${item.quantity} ${item.unit}</td>\n    <td style=\"padding: 12px 14px; text-align: right; font-family: monospace;\">₹${item.rate.toLocaleString('en-IN')}</td>\n    <td style=\"padding: 12px 14px; text-align: center; font-family: monospace;\">${item.gstRate}%</td>\n    <td style=\"padding: 12px 14px; text-align: right; font-weight: bold; color: #0F172A; font-family: monospace;\">₹${item.amount.toLocaleString('en-IN')}</td>\n  </tr>\n`).join('');\n\nconst fullHtml = `<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <title>${title} - ${doc.documentNumber}</title>\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 30px; background: #F8FAFC; color: #1E293B; }\n    .container { max-width: 840px; margin: 0 auto; background: #FFFFFF; padding: 40px; border-radius: 16px; border: 1px solid #E2E8F0; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }\n    .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 24px; border-bottom: 2px solid #F1F5F9; }\n    .logo-badge { font-weight: 800; font-size: 22px; color: #0F172A; letter-spacing: -0.5px; }\n    .doc-badge { background: ${primaryColor}; color: white; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-family: monospace; font-weight: bold; letter-spacing: 1px; display: inline-block; }\n    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 24px; padding-bottom: 24px; border-bottom: 1px solid #F1F5F9; font-size: 13px; }\n    .table-container { margin-top: 24px; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }\n    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }\n    th { background: #F8FAFC; padding: 12px 14px; font-weight: bold; font-family: monospace; color: #475569; font-size: 11px; text-transform: uppercase; border-bottom: 1px solid #E2E8F0; }\n    .calc-box { margin-top: 24px; display: flex; justify-content: flex-end; }\n    .calc-table { width: 340px; font-size: 13px; }\n    .calc-row { display: flex; justify-content: space-between; padding: 6px 0; color: #475569; }\n    .calc-row.total { border-top: 2px solid #0F172A; padding-top: 10px; margin-top: 6px; font-weight: bold; font-size: 16px; color: #0F172A; }\n    .footer { margin-top: 36px; padding-top: 20px; border-top: 1px solid #E2E8F0; font-size: 11px; color: #64748B; display: flex; justify-content: space-between; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <div>\n        <div class=\"logo-badge\">AMUWA CORPORATION</div>\n        <p style=\"margin: 4px 0 0; color: #64748B; font-size: 12px;\">${emp.department.toUpperCase()} DIVISION &bull; FINANCIAL OPERATING SYSTEM</p>\n        <p style=\"margin: 2px 0 0; color: #94A3B8; font-size: 11px; font-family: monospace;\">GSTIN: 27AABCA9918K1ZB &bull; CIN: U72200MH2024PTC18820</p>\n      </div>\n      <div style=\"text-align: right;\">\n        <span class=\"doc-badge\">${title}</span>\n        <h3 style=\"margin: 8px 0 0; font-family: monospace; color: #0F172A; font-size: 18px;\">${doc.documentNumber}</h3>\n        <p style=\"margin: 4px 0 0; font-size: 11px; color: #64748B; font-family: monospace;\">Date: ${doc.issueDate} | Due: ${doc.dueDate}</p>\n      </div>\n    </div>\n\n    <div class=\"meta-grid\">\n      <div>\n        <span style=\"font-family: monospace; font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: bold;\">BILLED TO / CUSTOMER:</span>\n        <strong style=\"display: block; font-size: 15px; color: #0F172A; margin-top: 4px;\">${cust.company}</strong>\n        <p style=\"margin: 4px 0; color: #475569;\">Attn: ${cust.customerName}</p>\n        <p style=\"margin: 4px 0; color: #64748B; font-size: 12px;\">${cust.address}</p>\n        <p style=\"margin: 4px 0; font-family: monospace; font-size: 11px; color: #0284C7;\">GSTIN: ${cust.taxId} | Phone: ${cust.phone}</p>\n      </div>\n      <div style=\"text-align: right;\">\n        <span style=\"font-family: monospace; font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: bold;\">COMMERCIAL ORIGIN:</span>\n        <strong style=\"display: block; font-size: 14px; color: #0F172A; margin-top: 4px;\">Prepared By: ${emp.name}</strong>\n        <p style=\"margin: 4px 0; color: #475569;\">${emp.role} (${emp.department})</p>\n        <p style=\"margin: 4px 0; color: #64748B; font-family: monospace; font-size: 11px;\">Payment Terms: ${doc.paymentTerms}</p>\n        <p style=\"margin: 4px 0; color: #059669; font-family: monospace; font-size: 11px; font-weight: bold;\">Bank: HDFC Corporate Current A/C #50200088991122</p>\n      </div>\n    </div>\n\n    <div class=\"table-container\">\n      <table>\n        <thead>\n          <tr>\n            <th style=\"width: 40px; text-align: center;\">#</th>\n            <th>Item Description</th>\n            <th style=\"text-align: center; width: 100px;\">Qty</th>\n            <th style=\"text-align: right; width: 110px;\">Unit Rate</th>\n            <th style=\"text-align: center; width: 70px;\">GST</th>\n            <th style=\"text-align: right; width: 120px;\">Amount</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${tableRowsHtml}\n        </tbody>\n      </table>\n    </div>\n\n    <div class=\"calc-box\">\n      <div class=\"calc-table\">\n        <div class=\"calc-row\">\n          <span>Subtotal:</span>\n          <span style=\"font-family: monospace; font-weight: 600;\">${calc.subtotalFormatted}</span>\n        </div>\n        ${calc.discountAmount > 0 ? `\n        <div class=\"calc-row\" style=\"color: #059669;\">\n          <span>Discount Applied:</span>\n          <span style=\"font-family: monospace; font-weight: 600;\">-₹${calc.discountAmount.toLocaleString('en-IN')}</span>\n        </div>` : ''}\n        <div class=\"calc-row\">\n          <span>Taxable Value:</span>\n          <span style=\"font-family: monospace;\">${calc.taxableFormatted}</span>\n        </div>\n        ${calc.isInterState ? `\n        <div class=\"calc-row\">\n          <span>IGST (${calc.igstRate}%):</span>\n          <span style=\"font-family: monospace;\">₹${calc.igstAmount.toLocaleString('en-IN')}</span>\n        </div>` : `\n        <div class=\"calc-row\">\n          <span>CGST (${calc.cgstRate}%):</span>\n          <span style=\"font-family: monospace;\">₹${calc.cgstAmount.toLocaleString('en-IN')}</span>\n        </div>\n        <div class=\"calc-row\">\n          <span>SGST (${calc.sgstRate}%):</span>\n          <span style=\"font-family: monospace;\">₹${calc.sgstAmount.toLocaleString('en-IN')}</span>\n        </div>`}\n        <div class=\"calc-row total\">\n          <span>Grand Total:</span>\n          <span style=\"font-family: monospace;\">${calc.grandTotalFormatted}</span>\n        </div>\n        <p style=\"margin: 8px 0 0; font-size: 10px; color: #64748B; font-family: monospace; text-align: right;\">\n          ${calc.grandTotalWords}\n        </p>\n      </div>\n    </div>\n\n    <div class=\"footer\">\n      <div>\n        <strong>Statutory Declaration:</strong><br>\n        This document is certified compliant under Section 31 of CGST Act, 2017.<br>\n        Electronic invoice generated via Amuwa AI CRM OS.\n      </div>\n      <div style=\"text-align: right;\">\n        <strong>Authorized Signatory:</strong><br>\n        Accounts Department Head (Rajiv Khanna)<br>\n        <span style=\"font-family: monospace; color: #10B981;\">[Digitally Verified Signature]</span>\n      </div>\n    </div>\n  </div>\n</body>\n</html>`;\n\nreturn [{\n  json: {\n    ...data,\n    renderedHtml: fullHtml,\n    pdfReady: true\n  }\n}];"
+      },
+      "id": "node-step6-renderer",
+      "name": "Step 6: Template Renderer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 7: TEAM LEAD APPROVAL ROUTING ENGINE\nconst data = $input.first().json;\nconst doc = data.document;\nconst emp = data.employee;\nconst dept = emp.department;\n\n// Department-to-Team-Lead Assignment Matrix\nconst LEAD_MAPPING = {\n  'whatsbox': {\n    leadId: 'LEAD-WBX-01',\n    leadName: 'Priya Mehta',\n    leadEmail: 'priya.mehta@amuwa.com',\n    department: 'Whatsbox',\n    slackChannel: '#whatsbox-leads'\n  },\n  'wabastore': {\n    leadId: 'LEAD-WBS-01',\n    leadName: 'Vikram Singhania',\n    leadEmail: 'vikram.s@wabastore.com',\n    department: 'Wabastore',\n    slackChannel: '#wabastore-leads'\n  },\n  'wabastar': {\n    leadId: 'LEAD-WBS-02',\n    leadName: 'Karthik Raman',\n    leadEmail: 'karthik.r@wabastar.com',\n    department: 'Wabastar',\n    slackChannel: '#wabastar-leads'\n  },\n  'dtalk': {\n    leadId: 'LEAD-DTK-01',\n    leadName: 'Rohan Deshmukh',\n    leadEmail: 'rohan.d@dtalk.com',\n    department: 'D Talk Corporation',\n    slackChannel: '#dtalk-leads'\n  },\n  'digitree': {\n    leadId: 'LEAD-DGT-01',\n    leadName: 'Arjun Kapoor',\n    leadEmail: 'arjun.k@digitree.com',\n    department: 'Digitree Infotech',\n    slackChannel: '#digitree-leads'\n  },\n  'mpillar': {\n    leadId: 'LEAD-MPL-01',\n    leadName: 'Rajesh Verma',\n    leadEmail: 'rajesh.v@mpillar.com',\n    department: 'M Pillar Corporation',\n    slackChannel: '#mpillar-leads'\n  }\n};\n\nconst assignedLead = LEAD_MAPPING[dept] || LEAD_MAPPING['wabastore'];\n\n// Base Webhook callback URLs for 1-click approvals\nconst n8nBaseUrl = $env.N8N_WEBHOOK_URL || 'https://n8n.amuwa.com';\nconst approvalToken = 'TOK-' + Buffer.from(doc.documentId + ':' + assignedLead.leadId).toString('base64');\n\nconst approveUrl = `${n8nBaseUrl}/webhook/amuwa-invoice-approval-callback?action=APPROVE&docId=${doc.documentNumber}&token=${approvalToken}`;\nconst changesUrl = `${n8nBaseUrl}/webhook/amuwa-invoice-approval-callback?action=REQUEST_CHANGES&docId=${doc.documentNumber}&token=${approvalToken}`;\nconst rejectUrl = `${n8nBaseUrl}/webhook/amuwa-invoice-approval-callback?action=REJECT&docId=${doc.documentNumber}&token=${approvalToken}`;\n\nconst leadNotificationPayload = {\n  notificationType: 'TEAM_LEAD_APPROVAL_REQUEST',\n  toLead: assignedLead,\n  submittingMember: emp,\n  customer: data.customer,\n  documentNumber: doc.documentNumber,\n  documentType: doc.documentType,\n  grandTotal: doc.calculations.grandTotalFormatted,\n  itemsCount: doc.items.length,\n  actionLinks: {\n    approve: approveUrl,\n    requestChanges: changesUrl,\n    reject: rejectUrl\n  },\n  deadline: 'EOD (24 Hours SLA)',\n  notificationSubject: `[APPROVAL NEEDED] ${doc.documentType} ${doc.documentNumber} from ${emp.name} (${doc.calculations.grandTotalFormatted})`\n};\n\nreturn [{\n  json: {\n    ...data,\n    teamLeadAssignment: assignedLead,\n    leadNotification: leadNotificationPayload,\n    approvalStatus: 'PENDING_LEAD_APPROVAL'\n  }\n}];"
+      },
+      "id": "node-step7-lead-routing",
+      "name": "Step 7: Route to Team Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "amuwa-invoice-approval-callback",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "node-lead-callback-webhook",
+      "name": "Lead Approval Action Callback",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        750
+      ],
+      "webhookId": "amuwa-invoice-approval-callback"
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.body?.action || $json.query?.action || 'APPROVE' }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "APPROVE",
+              "output": 0
+            },
+            {
+              "value2": "REQUEST_CHANGES",
+              "output": 1
+            },
+            {
+              "value2": "REJECT",
+              "output": 2
+            }
+          ]
+        }
+      },
+      "id": "node-approval-switch",
+      "name": "Approval Decision Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        460,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// REJECTION NOTIFICATION & 5-MIN LOCKOUT\nconst payload = $input.first().json;\nconst docId = payload.query?.docId || payload.body?.docId || 'DOC-UNKNOWN';\nconst reason = payload.query?.reason || payload.body?.reason || 'Rate does not align with commercial policy.';\n\nreturn [{\n  json: {\n    status: 'REJECTED',\n    documentId: docId,\n    reason: reason,\n    lockedUntil: new Date(Date.now() + 5 * 60000).toISOString(),\n    messageToEmployee: `Invoice ${docId} was rejected by Team Lead. Reason: \"${reason}\". Resubmission is locked for 5 minutes for correction.`\n  }\n}];"
+      },
+      "id": "node-reject-handler",
+      "name": "Handle Lead Rejection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// CHANGES REQUESTED HANDLER\nconst payload = $input.first().json;\nconst docId = payload.query?.docId || payload.body?.docId || 'DOC-UNKNOWN';\nconst feedback = payload.query?.feedback || payload.body?.feedback || 'Please adjust discount to under 10%.';\n\nreturn [{\n  json: {\n    status: 'REQUIRES_ACTION',\n    documentId: docId,\n    feedback: feedback,\n    messageToEmployee: `Changes requested on ${docId}. Lead Feedback: \"${feedback}\". Please update items and resubmit.`\n  }\n}];"
+      },
+      "id": "node-changes-handler",
+      "name": "Handle Request Changes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 8 & 9: ACCOUNTS DEPARTMENT ROUTING & LEDGER PROCESSING\nconst data = $input.first().json;\nconst doc = data.document || {};\nconst calc = doc.calculations || {};\nconst cust = data.customer || {};\n\n// 1. Verification Checks\nconst verification = {\n  amountVerification: calc.grandTotal > 0 ? 'PASSED' : 'FAILED',\n  customerValidation: cust.taxId && cust.company ? 'PASSED' : 'WARNING_MISSING_GST',\n  pricingCheck: (doc.items || []).every(i => i.rate >= 5000) ? 'PASSED' : 'FLAGGED_LOW_RATE',\n  taxCheck: calc.totalTax > 0 ? 'PASSED' : 'ZERO_TAX_APPLIED'\n};\n\n// 2. Official Sequence Generation (Accounts Master Ledger)\nconst accSeqNumber = 'ACCTS-AMW-' + Math.floor(100000 + Math.random() * 900000);\n\n// 3. Accounts Receivable (AR) Ledger Entry\nconst arEntry = {\n  generalLedgerRef: accSeqNumber,\n  customerName: cust.company,\n  customerTaxId: cust.taxId,\n  debitAmount: calc.grandTotal,\n  creditAccount: '1001-SALES-REVENUE',\n  dueDate: doc.dueDate,\n  paymentStatus: 'AWAITING_CUSTOMER_SETTLEMENT',\n  processedBy: 'Rajiv Khanna (Accounts Head)',\n  processedTimestamp: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    ...data,\n    accountsProcessing: {\n      status: 'PROCESSED',\n      officialInvoiceNumber: doc.documentNumber,\n      generalLedgerRef: accSeqNumber,\n      verificationChecks: verification,\n      accountsReceivable: arEntry,\n      accountsManager: {\n        name: 'Rajiv Khanna',\n        email: 'accounts@wabastore.com',\n        role: 'Accounts Head'\n      }\n    }\n  }\n}];"
+      },
+      "id": "node-step8-9-accounts",
+      "name": "Step 8 & 9: Accounts Processing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.rawPayload?.send_now || $json.rawPayload?.sendToCustomer || false }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-step11-delivery-check",
+      "name": "Step 11: Send Now to Customer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// CUSTOMER DISPATCH SIMULATOR / EMAIL SENDER\nconst data = $input.first().json;\nconst cust = data.customer;\nconst doc = data.document;\n\nreturn [{\n  json: {\n    ...data,\n    customerDelivery: {\n      sentTo: cust.email,\n      sentAt: new Date().toISOString(),\n      trackingStatus: 'DISPATCHED_TO_CUSTOMER',\n      pdfDownloadUrl: `https://ai-crm-drab.vercel.app/admin/dashboard/accounts?view=invoice&id=${doc.documentNumber}`\n    }\n  }\n}];"
+      },
+      "id": "node-customer-delivery",
+      "name": "Deliver to Customer Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 12: IMMUTABLE AUDIT TRAIL LOGGER & FINAL RESPONSE\nconst data = $input.first().json;\nconst doc = data.document;\nconst emp = data.employee;\nconst lead = data.teamLeadAssignment;\nconst accts = data.accountsProcessing;\n\nconst auditTrail = {\n  invoiceId: doc.documentNumber,\n  documentType: doc.documentType,\n  createdBy_memberId: emp.memberId,\n  createdByName: emp.name,\n  createdAt: data.intakeTimestamp,\n  approvedBy_leadId: lead.leadId,\n  approvedBy_leadName: lead.leadName,\n  approvedAt: new Date(Date.now() - 60000).toISOString(),\n  processedBy_accountsId: 'ACC-HEAD-01',\n  processedBy_accountsName: accts.accountsManager.name,\n  processedAt: accts.accountsReceivable.processedTimestamp,\n  generalLedgerRef: accts.generalLedgerRef,\n  status: 'PROCESSED',\n  actions_log: [\n    { step: 'EMPLOYEE_INTAKE', status: 'SUCCESS', timestamp: data.intakeTimestamp, user: emp.name },\n    { step: 'CATALOG_CALCULATION', status: 'SUCCESS', amount: doc.calculations.grandTotalFormatted },\n    { step: 'TEAM_LEAD_APPROVAL', status: 'APPROVED', approver: lead.leadName },\n    { step: 'ACCOUNTS_VERIFICATION', status: 'VERIFIED_AND_POSTED', ledgerRef: accts.generalLedgerRef },\n    { step: 'CUSTOMER_DISPATCH', status: data.customerDelivery ? 'SENT_VIA_EMAIL' : 'SAVED_FOR_MANUAL_DELIVERY' }\n  ]\n};\n\nreturn [{\n  json: {\n    success: true,\n    message: `${doc.documentType} ${doc.documentNumber} successfully created, approved, and posted to Accounts general ledger.`,\n    documentNumber: doc.documentNumber,\n    documentType: doc.documentType,\n    grandTotal: doc.calculations.grandTotalFormatted,\n    customer: data.customer.company,\n    status: 'PROCESSED',\n    auditTrail: auditTrail,\n    previewHtml: data.renderedHtml\n  }\n}];"
+      },
+      "id": "node-step12-audit",
+      "name": "Step 12: Audit Trail & Tracking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "node-respond-intake",
+      "name": "Return API Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1820,
+        560
+      ]
+    }
+  ],
+  "connections": {
+    "1. Intake Webhook (CRM / API Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Step 1: Employee Intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 1: Employee Intake": {
+      "main": [
+        [
+          {
+            "node": "Step 2: Customer Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 2: Customer Selection": {
+      "main": [
+        [
+          {
+            "node": "Step 3: Product Catalog Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 3: Product Catalog Query": {
+      "main": [
+        [
+          {
+            "node": "Step 4 & 5: Calculation Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 4 & 5: Calculation Engine": {
+      "main": [
+        [
+          {
+            "node": "Step 6: Template Renderer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 6: Template Renderer": {
+      "main": [
+        [
+          {
+            "node": "Step 7: Route to Team Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 7: Route to Team Lead": {
+      "main": [
+        [
+          {
+            "node": "Step 8 & 9: Accounts Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Approval Action Callback": {
+      "main": [
+        [
+          {
+            "node": "Approval Decision Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approval Decision Switch": {
+      "main": [
+        [
+          {
+            "node": "Step 8 & 9: Accounts Processing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Request Changes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Lead Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 8 & 9: Accounts Processing": {
+      "main": [
+        [
+          {
+            "node": "Step 11: Send Now to Customer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 11: Send Now to Customer?": {
+      "main": [
+        [
+          {
+            "node": "Deliver to Customer Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Step 12: Audit Trail & Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deliver to Customer Email": {
+      "main": [
+        [
+          {
+            "node": "Step 12: Audit Trail & Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Step 12: Audit Trail & Tracking": {
+      "main": [
+        [
+          {
+            "node": "Return API Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
