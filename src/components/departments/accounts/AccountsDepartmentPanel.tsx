@@ -3,7 +3,8 @@ import {
   TrendingUp, TrendingDown, DollarSign, Receipt, FileText,
   Building2, ShieldCheck, PieChart, Users, ArrowRight,
   LayoutDashboard, FileCheck2, Sparkles, CheckCircle2, Lock,
-  ChevronRight, ArrowUpRight, BarChart3, Clock, Eye
+  ChevronRight, ArrowUpRight, BarChart3, Clock, Eye, Search,
+  CreditCard, Coins
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { ActiveTab } from '../../layout/Sidebar';
@@ -26,6 +27,10 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
   const [internalTab, setInternalTab] = useState<'overview' | 'income' | 'expense' | 'invoice'>('overview');
   const [selectedDeptForInvoice, setSelectedDeptForInvoice] = useState<string | undefined>(undefined);
   const [activeInvoiceForPdf, setActiveInvoiceForPdf] = useState<DepartmentInvoice | null>(null);
+
+  // Search & Sorting filter state for overview department list
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'income' | 'profit'>('income');
 
   // Real-time synchronization listener for newly created invoices
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -59,6 +64,24 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
   const departmentMetrics = accountsStore.getDepartmentMetrics();
   const allInvoices = accountsStore.getInvoices();
   const recentInvoices = allInvoices.slice(0, 5);
+
+  const filteredAndSortedDepts = departmentMetrics
+    .filter(dept => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        dept.departmentName.toLowerCase().includes(q) ||
+        dept.topPerformerName.toLowerCase().includes(q) ||
+        dept.departmentId.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      if (sortBy === 'income') {
+        return b.grossIncome - a.grossIncome;
+      } else {
+        return b.netEarnings - a.netEarnings;
+      }
+    });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -178,282 +201,299 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
         </div>
       </div>
 
-      {/* 3. EXECUTIVE OVERVIEW DASHBOARD */}
+      {/* 3. ACCOUNTS OVERVIEW: 2-TIER REVENUE INTELLIGENCE & RECENT ACTIVITY */}
       {internalTab === 'overview' && (
         <div className="space-y-6 animate-fade-in">
           
-          {/* Top 4 Key Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* TIER 1: CORPORATE REVENUE INTELLIGENCE BANNER */}
+          <div className="bg-gradient-to-r from-white via-cyan-50/25 to-emerald-50/35 rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-2xs relative overflow-hidden">
             
-            {/* Card 1: Gross Revenue */}
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>CONSOLIDATED REVENUE</span>
-                <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
-                  <TrendingUp className="w-4 h-4" />
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold font-mono text-emerald-700">
-                {formatCurrency(totals.totalGrossIncome)}
-              </h3>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between text-[11px] text-slate-500 font-mono">
-                  <span>Target: {formatCurrency(totals.totalMonthlyTarget)}</span>
-                  <span className="font-bold text-emerald-700">{totals.targetAchievedPct}%</span>
+            {/* 3D Glass Analytics Graphic (as shown in Screenshot 1) */}
+            <div className="hidden lg:block absolute right-8 -bottom-1 pointer-events-none opacity-85 select-none">
+              <svg width="220" height="135" viewBox="0 0 220 135" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Bar 1 */}
+                <rect x="20" y="70" width="30" height="65" rx="8" fill="url(#bar-g1)" />
+                <ellipse cx="35" cy="70" rx="15" ry="6" fill="#A7F3D0" />
+                {/* Bar 2 */}
+                <rect x="70" y="45" width="30" height="90" rx="8" fill="url(#bar-g2)" />
+                <ellipse cx="85" cy="45" rx="15" ry="6" fill="#6EE7B7" />
+                {/* Bar 3 */}
+                <rect x="120" y="20" width="30" height="115" rx="8" fill="url(#bar-g3)" />
+                <ellipse cx="135" cy="20" rx="15" ry="6" fill="#34D399" />
+                {/* Bar 4 */}
+                <rect x="170" y="55" width="30" height="80" rx="8" fill="url(#bar-g4)" />
+                <ellipse cx="185" cy="55" rx="15" ry="6" fill="#93C5FD" />
+                <defs>
+                  <linearGradient id="bar-g1" x1="20" y1="70" x2="50" y2="135" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#93C5FD" stopOpacity="0.75" />
+                    <stop stopColor="#60A5FA" stopOpacity="0.4" />
+                  </linearGradient>
+                  <linearGradient id="bar-g2" x1="70" y1="45" x2="100" y2="135" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#6EE7B7" stopOpacity="0.85" />
+                    <stop stopColor="#10B981" stopOpacity="0.5" />
+                  </linearGradient>
+                  <linearGradient id="bar-g3" x1="120" y1="20" x2="150" y2="135" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#34D399" stopOpacity="0.9" />
+                    <stop stopColor="#059669" stopOpacity="0.65" />
+                  </linearGradient>
+                  <linearGradient id="bar-g4" x1="170" y1="55" x2="200" y2="135" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#93C5FD" stopOpacity="0.8" />
+                    <stop stopColor="#3B82F6" stopOpacity="0.45" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-start justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold font-mono bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>CORPORATE REVENUE INTELLIGENCE</span>
                 </div>
-                <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                  <div
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${Math.min(totals.targetAchievedPct, 100)}%` }}
-                  />
-                </div>
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-extrabold font-heading text-slate-900 tracking-tight">
+                  Department-Wise Income &amp; Earnings Overview
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                  Consolidated financial statement displaying gross income, corporate operating expenses, and net profit margins across all active operating business units.
+                </p>
               </div>
-            </div>
 
-            {/* Card 2: Corporate Expenses */}
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>CORPORATE EXPENSES</span>
-                <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
-                  <Receipt className="w-4 h-4" />
+              {/* Fiscal Year & Audit Badge */}
+              <div className="flex flex-col md:items-end gap-1.5 shrink-0">
+                <span className="text-[10px] font-mono font-semibold uppercase tracking-wider text-slate-400">
+                  FINANCIAL YEAR 2026-27
                 </span>
-              </div>
-              <h3 className="text-2xl font-bold font-mono text-rose-700">
-                {formatCurrency(totals.totalExpenses)}
-              </h3>
-              <p className="text-xs text-slate-500 flex items-center justify-between">
-                <span>Cloud, telecom &amp; ops</span>
-                <span className="text-[11px] font-mono text-rose-600 font-bold">
-                  {Math.round((totals.totalExpenses / (totals.totalGrossIncome || 1)) * 100)}% of revenue
-                </span>
-              </p>
-            </div>
-
-            {/* Card 3: Net Retained Earnings */}
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>NET COMPANY EARNINGS</span>
-                <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-                  <DollarSign className="w-4 h-4" />
-                </span>
-              </div>
-              <h3 className="text-2xl font-bold font-mono text-blue-700">
-                {formatCurrency(totals.totalNetEarnings)}
-              </h3>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Net Profit Margin</span>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                  {totals.overallMarginPct}%
+                <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                  Quarter 3 Real-time Audit
                 </span>
               </div>
             </div>
+          </div>
 
-            {/* Card 4: Total Invoices */}
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>TAX INVOICES CLOSED</span>
-                <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
-                  <FileText className="w-4 h-4" />
-                </span>
+          {/* 3 CLEAN PASTEL METRIC CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            
+            {/* Card 1: Total Gross Income */}
+            <div className="p-6 rounded-3xl bg-emerald-50/40 border border-emerald-100 shadow-2xs hover:shadow-xs transition-all space-y-4">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-100/80 text-emerald-600 flex items-center justify-center">
+                <TrendingUp className="w-5 h-5 stroke-[2.5]" />
               </div>
-              <h3 className="text-2xl font-bold font-mono text-slate-900">
-                {allInvoices.length} <span className="text-sm font-normal text-slate-400">Bills</span>
-              </h3>
-              <p className="text-xs text-slate-500 flex items-center justify-between">
-                <span>Commercial business</span>
-                <span className="text-[11px] font-mono text-emerald-600 font-bold">
-                  {allInvoices.filter(i => i.status === 'Paid').length} Paid
+              <div>
+                <span className="text-[11px] font-bold font-mono tracking-wider text-slate-500 uppercase block mb-1">
+                  TOTAL GROSS INCOME
                 </span>
-              </p>
+                <h3 className="text-3xl font-extrabold font-heading text-emerald-600 tracking-tight">
+                  {formatCurrency(totals.totalGrossIncome)}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Across 6 business departments
+                </p>
+              </div>
+            </div>
+
+            {/* Card 2: Total Expenses */}
+            <div className="p-6 rounded-3xl bg-rose-50/40 border border-rose-100 shadow-2xs hover:shadow-xs transition-all space-y-4">
+              <div className="w-11 h-11 rounded-2xl bg-rose-100/80 text-rose-600 flex items-center justify-center">
+                <CreditCard className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold font-mono tracking-wider text-slate-500 uppercase block mb-1">
+                  TOTAL EXPENSES
+                </span>
+                <h3 className="text-3xl font-extrabold font-heading text-rose-600 tracking-tight">
+                  {formatCurrency(totals.totalExpenses)}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Corporate operations &amp; infrastructure
+                </p>
+              </div>
+            </div>
+
+            {/* Card 3: Total Net Earnings */}
+            <div className="p-6 rounded-3xl bg-blue-50/40 border border-blue-100 shadow-2xs hover:shadow-xs transition-all space-y-4">
+              <div className="w-11 h-11 rounded-2xl bg-blue-100/80 text-blue-600 flex items-center justify-center">
+                <Coins className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold font-mono tracking-wider text-slate-500 uppercase block mb-1">
+                  TOTAL NET EARNINGS
+                </span>
+                <h3 className="text-3xl font-extrabold font-heading text-blue-600 tracking-tight">
+                  {formatCurrency(totals.totalNetEarnings)}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Net retained corporate profit
+                </p>
+              </div>
             </div>
 
           </div>
 
-          {/* Analytics Row: Department Revenue Breakdown & Performance Gauge */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* SEARCH & SORT FILTER BAR */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+            <div className="relative flex-1 max-w-xl">
+              <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search department income ..."
+                className="w-full pl-10 pr-4 py-2.5 text-xs bg-slate-50/80 border border-slate-200 rounded-full text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-sans"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-xs self-end sm:self-center font-mono">
+              <span className="text-slate-500 font-semibold text-xs">Sort by :</span>
+              <button
+                type="button"
+                onClick={() => setSortBy('income')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  sortBy === 'income'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Income
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy('profit')}
+                className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  sortBy === 'profit'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Net Profit
+              </button>
+            </div>
+          </div>
+
+          {/* DEPARTMENT BREAKDOWN (LEFT) & QUICK NAVIGATION (RIGHT) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
             
-            {/* Visual Analytics 1: Department Revenue Contribution (2 Cols) */}
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-emerald-600" />
-                    <span>Commercial Revenue Distribution by Department</span>
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Gross contribution &amp; profit margins across all 6 commercial business units
-                  </p>
+            {/* Department List (7 cols) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/90 p-3 sm:p-4 shadow-2xs space-y-2">
+              {filteredAndSortedDepts.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs font-mono">
+                  No departments found matching "{searchQuery}"
                 </div>
-                <button
-                  onClick={() => setInternalTab('income')}
-                  className="text-xs font-mono text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 cursor-pointer"
-                >
-                  <span>Detailed Analysis</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Multi-segment stacked progress bar */}
-              <div className="space-y-1.5">
-                <div className="w-full h-3 rounded-full bg-slate-100 flex overflow-hidden gap-0.5">
-                  {departmentMetrics.map(dept => {
-                    const pct = totals.totalGrossIncome > 0
-                      ? (dept.grossIncome / totals.totalGrossIncome) * 100
-                      : 0;
-                    const style = deptColorMap[dept.departmentId] || { bg: 'bg-slate-400' };
-                    return (
-                      <div
-                        key={dept.departmentId}
-                        style={{ width: `${pct}%` }}
-                        className={`${style.bg} h-full transition-all duration-300 hover:opacity-90`}
-                        title={`${dept.departmentName}: ${pct.toFixed(1)}% (${formatCurrency(dept.grossIncome)})`}
-                      />
-                    );
-                  })}
-                </div>
-                <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                  <span>0%</span>
-                  <span>Consolidated Total: {formatCurrency(totals.totalGrossIncome)}</span>
-                  <span>100%</span>
-                </div>
-              </div>
-
-              {/* Compact Department Table Grid */}
-              <div className="divide-y divide-slate-100 text-xs">
-                {departmentMetrics.map(dept => {
+              ) : (
+                filteredAndSortedDepts.map(dept => {
                   const sharePct = totals.totalGrossIncome > 0
                     ? ((dept.grossIncome / totals.totalGrossIncome) * 100).toFixed(1)
                     : '0';
-                  const style = deptColorMap[dept.departmentId] || { bg: 'bg-slate-400', text: 'text-slate-700' };
+                  const colorStyle = deptColorMap[dept.departmentId] || { bg: 'bg-slate-400' };
+
                   return (
                     <div
                       key={dept.departmentId}
                       onClick={() => handleSelectDeptForInvoice(dept.departmentId)}
-                      className="py-2.5 flex items-center justify-between hover:bg-slate-50/80 px-2 rounded-xl transition-colors cursor-pointer group"
+                      className="p-3.5 rounded-xl border border-slate-100 hover:border-slate-200/80 bg-white hover:bg-slate-50/70 transition-all cursor-pointer flex items-center justify-between gap-3 group"
                     >
-                      <div className="flex items-center gap-3">
-                        <span className={`w-2.5 h-2.5 rounded-full ${style.bg} shrink-0`} />
-                        <div>
-                          <span className="font-bold text-slate-800 group-hover:text-emerald-700 transition-colors">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`w-2.5 h-2.5 rounded-full ${colorStyle.bg} shrink-0`} />
+                        <div className="truncate">
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-emerald-700 transition-colors truncate">
                             {dept.departmentName}
-                          </span>
-                          <span className="text-[11px] text-slate-400 block font-mono">
+                          </h4>
+                          <p className="text-[11px] text-slate-400 font-mono truncate">
                             {dept.totalInvoicesCount} Invoices &bull; Top: {dept.topPerformerName}
-                          </span>
+                          </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4 text-right font-mono">
+                      <div className="flex items-center gap-3 sm:gap-4 text-right shrink-0">
                         <div>
-                          <strong className="text-slate-900 block">{formatCurrency(dept.grossIncome)}</strong>
-                          <span className="text-[11px] text-slate-400">{sharePct}% share</span>
+                          <strong className="text-xs sm:text-sm font-bold font-mono text-slate-900 block">
+                            {formatCurrency(dept.grossIncome)}
+                          </strong>
+                          <span className="text-[10px] sm:text-[11px] font-mono text-slate-400">
+                            {sharePct}% share
+                          </span>
                         </div>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
                           {dept.profitMarginPct}% Margin
                         </span>
-                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+                        <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-700 group-hover:translate-x-0.5 transition-all" />
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                })
+              )}
             </div>
 
-            {/* Visual Analytics 2: Financial Health & Quick Actions (1 Col) */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 flex flex-col justify-between">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <PieChart className="w-4 h-4 text-blue-600" />
-                    <span>Quarterly Target Health</span>
-                  </h3>
-                  <span className="text-[11px] font-mono text-slate-400">Q3 Real-time</span>
-                </div>
+            {/* Quick Navigation Cards (5 cols) */}
+            <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs space-y-3">
+              <h3 className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
+                QUICK NAVIGATION
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Expense Ledger */}
+                <button
+                  type="button"
+                  onClick={() => setInternalTab('expense')}
+                  className="p-4 rounded-2xl bg-rose-50/50 hover:bg-rose-100/70 border border-rose-100/90 text-left transition-all group cursor-pointer flex flex-col justify-between h-24 shadow-2xs"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                    <Receipt className="w-4 h-4" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-rose-900 group-hover:text-rose-700">
+                      Expense Ledger
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-rose-400 group-hover:translate-x-0.5 transition-all" />
+                  </div>
+                </button>
 
-                {/* Target Progress Meter */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-3">
-                  <div className="flex justify-between items-baseline">
-                    <span className="text-xs text-slate-500">Target Achievement</span>
-                    <strong className="text-lg font-bold font-mono text-emerald-700">
-                      {totals.targetAchievedPct}%
-                    </strong>
+                {/* Invoices & Tax PDFs */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDeptForInvoice(undefined);
+                    setInternalTab('invoice');
+                  }}
+                  className="p-4 rounded-2xl bg-blue-50/50 hover:bg-blue-100/70 border border-blue-100/90 text-left transition-all group cursor-pointer flex flex-col justify-between h-24 shadow-2xs"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                    <FileText className="w-4 h-4" />
                   </div>
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div
-                      className="bg-emerald-500 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${Math.min(totals.targetAchievedPct, 100)}%` }}
-                    />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-900 group-hover:text-blue-700">
+                      Invoices &amp; Tax PDFs
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-blue-400 group-hover:translate-x-0.5 transition-all" />
                   </div>
-                  <div className="flex justify-between text-[11px] font-mono text-slate-500">
-                    <span>Closed: {formatCurrency(totals.totalGrossIncome)}</span>
-                    <span>Target: {formatCurrency(totals.totalMonthlyTarget)}</span>
-                  </div>
-                </div>
-
-                {/* Efficiency Stats */}
-                <div className="space-y-2 text-xs font-mono">
-                  <div className="flex justify-between p-2.5 rounded-lg bg-emerald-50/50 border border-emerald-100/60">
-                    <span className="text-slate-600">Company Operating Profit:</span>
-                    <strong className="text-emerald-800">{formatCurrency(totals.totalNetEarnings)}</strong>
-                  </div>
-                  <div className="flex justify-between p-2.5 rounded-lg bg-rose-50/50 border border-rose-100/60">
-                    <span className="text-slate-600">Expense-to-Revenue Ratio:</span>
-                    <strong className="text-rose-800">
-                      {Math.round((totals.totalExpenses / (totals.totalGrossIncome || 1)) * 100)}%
-                    </strong>
-                  </div>
-                </div>
+                </button>
               </div>
-
-              {/* Quick Jump Buttons */}
-              <div className="pt-3 border-t border-slate-100 space-y-2">
-                <span className="text-[11px] font-mono text-slate-400 font-bold uppercase block">
-                  Quick Navigation
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setInternalTab('expense')}
-                    className="p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-bold text-left transition-colors cursor-pointer"
-                  >
-                    <Receipt className="w-3.5 h-3.5 mb-1 text-rose-600" />
-                    <span>Expense Ledger</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setSelectedDeptForInvoice(undefined);
-                      setInternalTab('invoice');
-                    }}
-                    className="p-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 text-xs font-bold text-left transition-colors cursor-pointer"
-                  >
-                    <FileText className="w-3.5 h-3.5 mb-1 text-blue-600" />
-                    <span>Invoices &amp; Tax PDFs</span>
-                  </button>
-                </div>
-              </div>
-
             </div>
 
           </div>
 
-          {/* Recent Invoices Pipeline (Real-Time Synchronized Stream) */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+          {/* TIER 2: RECENT ACTIVITY (Live Department Invoices & Billing Inflow) */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <FileCheck2 className="w-4 h-4 text-blue-600" />
-                  <span>Recent Department Invoices &amp; Billing Inflow</span>
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Live commercial tax invoices created by sales executives across business divisions
-                </p>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Recent Department Invoices &amp; Billing Inflow
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Live commercial tax invoices created by sales executives across business divisions
+                  </p>
+                </div>
               </div>
 
               <button
+                type="button"
                 onClick={() => {
                   setSelectedDeptForInvoice(undefined);
                   setInternalTab('invoice');
                 }}
-                className="text-xs font-mono font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+                className="text-xs font-mono font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto hover:underline"
               >
                 <span>View All Invoices ({allInvoices.length})</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -464,55 +504,60 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] font-mono text-slate-400 uppercase">
-                    <th className="py-2.5 pl-2 pr-4">Invoice #</th>
-                    <th className="py-2.5 pr-4">Department</th>
-                    <th className="py-2.5 pr-4">Client / Organization</th>
-                    <th className="py-2.5 pr-4">Sales Executive</th>
-                    <th className="py-2.5 pr-4">Status</th>
-                    <th className="py-2.5 pr-4 text-right">Amount (₹)</th>
-                    <th className="py-2.5 pr-2 text-right">Action</th>
+                    <th className="py-3 pl-3 pr-4">INVOICE #</th>
+                    <th className="py-3 pr-4">DEPARTMENT</th>
+                    <th className="py-3 pr-4">CLIENT / ORGANIZATION</th>
+                    <th className="py-3 pr-4">SALES EXECUTIVE</th>
+                    <th className="py-3 pr-4">STATUS</th>
+                    <th className="py-3 pr-4 text-right">AMOUNT (₹)</th>
+                    <th className="py-3 pr-3 text-right">ACTION</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-sans">
                   {recentInvoices.map(inv => {
                     const normDept = normalizeDepartmentId(inv.departmentId);
-                    const colorStyle = deptColorMap[normDept] || { bg: 'bg-slate-500', text: 'text-slate-700' };
+                    const colorStyle = deptColorMap[normDept] || { bg: 'bg-slate-500' };
+
+                    let statusClass = 'bg-amber-50 text-amber-700 border-amber-200';
+                    if (inv.status === 'Paid') {
+                      statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                    } else if (inv.status === 'Overdue') {
+                      statusClass = 'bg-amber-50 text-amber-800 border-amber-300';
+                    }
+
                     return (
                       <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3 pl-2 pr-4 font-mono font-bold text-slate-900">
+                        <td className="py-3.5 pl-3 pr-4 font-mono font-bold text-slate-900">
                           {inv.invoiceNumber}
                         </td>
-                        <td className="py-3 pr-4">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-50 border border-slate-200 text-slate-700`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${colorStyle.bg}`} />
+                        <td className="py-3.5 pr-4">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-700">
+                            <span className={`w-2 h-2 rounded-full ${colorStyle.bg}`} />
                             <span>{inv.departmentName}</span>
                           </span>
                         </td>
-                        <td className="py-3 pr-4">
+                        <td className="py-3.5 pr-4">
                           <span className="font-semibold text-slate-800 block">{inv.clientCompany}</span>
-                          <span className="text-[11px] text-slate-400">{inv.clientName}</span>
+                          <span className="text-[11px] text-slate-400 block">{inv.clientName}</span>
                         </td>
-                        <td className="py-3 pr-4 font-mono text-slate-600">
+                        <td className="py-3.5 pr-4 font-mono text-slate-600">
                           {inv.teamMemberName}
                         </td>
-                        <td className="py-3 pr-4">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
-                            inv.status === 'Paid'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
+                        <td className="py-3.5 pr-4">
+                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${statusClass}`}>
                             {inv.status}
                           </span>
                         </td>
-                        <td className="py-3 pr-4 text-right font-mono font-bold text-slate-900">
+                        <td className="py-3.5 pr-4 text-right font-mono font-bold text-slate-900">
                           {formatCurrency(inv.totalAmount)}
                         </td>
-                        <td className="py-3 pr-2 text-right">
+                        <td className="py-3.5 pr-3 text-right">
                           <button
+                            type="button"
                             onClick={() => setActiveInvoiceForPdf(inv)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-mono text-[11px] font-bold transition-all active:scale-95 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-mono text-[11px] font-bold transition-all active:scale-95 cursor-pointer shadow-2xs"
                           >
-                            <Eye className="w-3 h-3 text-emerald-400" />
+                            <Eye className="w-3.5 h-3.5 text-emerald-400" />
                             <span>PDF</span>
                           </button>
                         </td>
@@ -522,7 +567,6 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
                 </tbody>
               </table>
             </div>
-
           </div>
 
         </div>
