@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign, BarChart3, PieChart,
   ArrowUpRight, ArrowDownRight, Building2, CheckCircle2, Target,
@@ -11,7 +11,21 @@ interface IncomeViewProps {
 }
 
 export const IncomeView: React.FC<IncomeViewProps> = ({ onSelectDepartmentForInvoice }) => {
-  const [metrics] = useState<DepartmentFinancialMetric[]>(() => accountsStore.getDepartmentMetrics());
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleInvoiceCreated = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+    window.addEventListener('storage', handleInvoiceCreated);
+    return () => {
+      window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+      window.removeEventListener('storage', handleInvoiceCreated);
+    };
+  }, []);
+
+  const metrics = accountsStore.getDepartmentMetrics();
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'income' | 'profit' | 'margin'>('income');
 

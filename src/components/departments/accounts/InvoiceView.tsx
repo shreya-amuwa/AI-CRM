@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   FileText, FileCheck2, Users, DollarSign, ArrowRight, ArrowLeft,
   Search, Filter, Eye, Printer, Download, Building2, CheckCircle2,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import {
   accountsStore,
+  normalizeDepartmentId,
   DepartmentInvoice,
   DepartmentQuotation,
   TeamMemberPerformance,
@@ -30,6 +31,21 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialDepartmentId })
   const [activeInvoiceForPdf, setActiveInvoiceForPdf] = useState<DepartmentInvoice | null>(null);
   const [activeQuotationForPdf, setActiveQuotationForPdf] = useState<DepartmentQuotation | null>(null);
 
+  // Reactive state listener to update view whenever an invoice is created across departments
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const handleInvoiceCreated = () => {
+      setRefreshKey(prev => prev + 1);
+    };
+    window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+    window.addEventListener('storage', handleInvoiceCreated);
+    return () => {
+      window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+      window.removeEventListener('storage', handleInvoiceCreated);
+    };
+  }, []);
+
   const metrics = accountsStore.getDepartmentMetrics();
   const invoices = accountsStore.getInvoices();
   const quotations = accountsStore.getQuotations();
@@ -42,8 +58,11 @@ export const InvoiceView: React.FC<InvoiceViewProps> = ({ initialDepartmentId })
     }).format(amount);
   };
 
-  // Currently selected department details
-  const selectedDeptMetric = metrics.find(m => m.departmentId === selectedDeptId);
+  // Currently selected department details with normalized ID matching
+  const selectedDeptMetric = metrics.find(m =>
+    m.departmentId === selectedDeptId ||
+    normalizeDepartmentId(m.departmentId) === normalizeDepartmentId(selectedDeptId || '')
+  );
   const deptTeamMembers = selectedDeptId ? accountsStore.getTeamMembersPerformance(selectedDeptId) : [];
   const deptInvoices = selectedDeptId ? accountsStore.getInvoicesForDepartment(selectedDeptId) : [];
   const deptQuotations = selectedDeptId ? accountsStore.getQuotationsForDepartment(selectedDeptId) : [];

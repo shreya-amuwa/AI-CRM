@@ -1,5 +1,17 @@
 import { DepartmentId } from '../types/crm';
 
+export function normalizeDepartmentId(deptId?: string): string {
+  if (!deptId) return 'wabastore';
+  const clean = deptId.toLowerCase().trim();
+  if (clean.includes('wabastore')) return 'wabastore';
+  if (clean.includes('wabastar')) return 'wabastar';
+  if (clean.includes('whatsbox')) return 'whatsbox';
+  if (clean.includes('dtalk') || clean.includes('d-talk')) return 'dtalk';
+  if (clean.includes('digitree')) return 'digitree';
+  if (clean.includes('mpillar') || clean.includes('m-pillar')) return 'mpillar';
+  return clean;
+}
+
 export interface DepartmentFinancialMetric {
   departmentId: string;
   departmentName: string;
@@ -1404,9 +1416,23 @@ class AccountsStore {
     return this.load(this.metricsKey, INITIAL_FINANCIAL_METRICS);
   }
 
+  getDepartmentDisplayName(deptId: string): string {
+    const norm = normalizeDepartmentId(deptId);
+    switch (norm) {
+      case 'wabastore': return 'Wabastore';
+      case 'wabastar': return 'Wabastar';
+      case 'whatsbox': return 'Whatsbox';
+      case 'dtalk': return 'D Talk Corporation';
+      case 'digitree': return 'Digitree Infotech';
+      case 'mpillar': return 'M Pillar Corporation';
+      default: return deptId;
+    }
+  }
+
   getMetricsForDepartment(deptId: string): DepartmentFinancialMetric | undefined {
     const list = this.getDepartmentMetrics();
-    return list.find(m => m.departmentId === deptId);
+    const targetNorm = normalizeDepartmentId(deptId);
+    return list.find(m => m.departmentId === deptId || normalizeDepartmentId(m.departmentId) === targetNorm);
   }
 
   // Calculate Company-Wide Financial Totals
@@ -1438,7 +1464,8 @@ class AccountsStore {
   getExpensesForDepartment(deptId: string): CorporateExpense[] {
     const expenses = this.getExpenses();
     if (deptId === 'all') return expenses;
-    return expenses.filter(e => e.departmentId === deptId);
+    const targetNorm = normalizeDepartmentId(deptId);
+    return expenses.filter(e => e.departmentId === deptId || normalizeDepartmentId(e.departmentId) === targetNorm);
   }
 
   addCorporateExpense(expense: Omit<CorporateExpense, 'id'>): CorporateExpense {
@@ -1452,7 +1479,8 @@ class AccountsStore {
 
     // Update the corresponding department's totalExpenses and netEarnings
     const metrics = this.getDepartmentMetrics();
-    const deptMetric = metrics.find(m => m.departmentId === expense.departmentId);
+    const targetNorm = normalizeDepartmentId(expense.departmentId);
+    const deptMetric = metrics.find(m => m.departmentId === expense.departmentId || normalizeDepartmentId(m.departmentId) === targetNorm);
     if (deptMetric) {
       deptMetric.totalExpenses += expense.amount;
       deptMetric.netEarnings = deptMetric.grossIncome - deptMetric.totalExpenses;
@@ -1465,13 +1493,85 @@ class AccountsStore {
 
   // --- Invoices ---
   getInvoices(): DepartmentInvoice[] {
-    return this.load(this.invoicesKey, INITIAL_INVOICES);
+    const storedInvoices = this.load(this.invoicesKey, INITIAL_INVOICES);
+
+    // Synchronize and merge invoices created via Team Member Dashboard
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const tmInvoicesRaw = localStorage.getItem('amuwa_crm_team_member_invoices_v3');
+        if (tmInvoicesRaw) {
+          const tmInvoices = JSON.parse(tmInvoicesRaw);
+          if (Array.isArray(tmInvoices)) {
+            let updated = false;
+            for (const tmInv of tmInvoices) {
+              if (!tmInv || !tmInv.invoiceNumber) continue;
+              const exists = storedInvoices.some(i =>
+                i.invoiceNumber === tmInv.invoiceNumber ||
+                (tmInv.id && i.id === tmInv.id)
+              );
+              if (!exists) {
+                const normDept = normalizeDepartmentId(tmInv.departmentId);
+                const converted: DepartmentInvoice = {
+                  id: tmInv.id || `INV-${Date.now().toString().slice(-6)}`,
+                  invoiceNumber: tmInv.invoiceNumber,
+                  departmentId: tmInv.departmentId || normDept,
+                  departmentName: tmInv.departmentName || this.getDepartmentDisplayName(normDept),
+                  clientName: tmInv.customerName || 'Corporate Client',
+                  clientCompany: tmInv.company || 'Enterprise Partner',
+                  clientAddress: tmInv.billingAddress || 'HQ Corporate Commercials, Tech Park, Bangalore',
+                  clientEmail: tmInv.contactEmail || `billing@${normDept}.com`,
+                  clientPhone: tmInv.contactPhone || '+91 80 4912 2000',
+                  teamMemberId: tmInv.userId || 'tm-priya',
+                  teamMemberName: tmInv.teamMemberName || 'Priya Mehta',
+                  teamMemberRole: tmInv.teamMemberRole || 'Account Sales Executive',
+                  issuedDate: tmInv.issueDate || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                  dueDate: tmInv.dueDate || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+                  status: (tmInv.status as 'Paid' | 'Pending' | 'Overdue') || 'Pending',
+                  items: Array.isArray(tmInv.items) && tmInv.items.length > 0 ? tmInv.items.map((it: any) => ({
+                    description: it.description || 'Enterprise Commercial Service',
+                    quantity: it.quantity || 1,
+                    rate: it.rate || tmInv.amount,
+                    amount: it.amount || tmInv.amount
+                  })) : [
+                    {
+                      description: 'Enterprise Commercial Service License',
+                      quantity: 1,
+                      rate: tmInv.amount,
+                      amount: tmInv.amount
+                    }
+                  ],
+                  subtotal: tmInv.amount || 0,
+                  taxRate: 18,
+                  taxAmount: tmInv.taxAmount || Math.round((tmInv.amount || 0) * 0.18),
+                  totalAmount: tmInv.amount || 0,
+                  notes: tmInv.terms || 'Standard corporate payment terms apply.'
+                };
+                storedInvoices.unshift(converted);
+                updated = true;
+              }
+            }
+            if (updated) {
+              this.save(this.invoicesKey, storedInvoices);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync team member invoices into accountsStore:', e);
+    }
+
+    return storedInvoices;
   }
 
   getInvoicesForDepartment(deptId: string): DepartmentInvoice[] {
     const invoices = this.getInvoices();
-    if (deptId === 'all') return invoices;
-    return invoices.filter(inv => inv.departmentId === deptId);
+    if (!deptId || deptId === 'all') return invoices;
+    const targetNorm = normalizeDepartmentId(deptId);
+    return invoices.filter(inv => {
+      if (inv.departmentId === deptId) return true;
+      const invNorm = normalizeDepartmentId(inv.departmentId);
+      return invNorm === targetNorm;
+    });
   }
 
   getInvoiceById(id: string): DepartmentInvoice | undefined {
@@ -1486,6 +1586,98 @@ class AccountsStore {
     };
     invoices.unshift(newInvoice);
     this.save(this.invoicesKey, invoices);
+
+    // Update department financial metrics (gross income, invoice count, net profit)
+    try {
+      const metrics = this.getDepartmentMetrics();
+      const normDeptId = normalizeDepartmentId(invoice.departmentId);
+      const deptMetric = metrics.find(m => m.departmentId === normDeptId || m.departmentId === invoice.departmentId);
+      if (deptMetric) {
+        deptMetric.grossIncome += invoice.totalAmount;
+        deptMetric.totalInvoicesCount = (deptMetric.totalInvoicesCount || 0) + 1;
+        deptMetric.netEarnings = deptMetric.grossIncome - deptMetric.totalExpenses;
+        deptMetric.profitMarginPct = deptMetric.grossIncome > 0
+          ? Math.round((deptMetric.netEarnings / deptMetric.grossIncome) * 1000) / 10
+          : 0;
+        if (deptMetric.monthlyTarget > 0) {
+          deptMetric.targetAchievedPct = Math.round((deptMetric.grossIncome / deptMetric.monthlyTarget) * 1000) / 10;
+        }
+        this.save(this.metricsKey, metrics);
+      }
+    } catch (e) {
+      console.error('Failed to update department metrics on addInvoice:', e);
+    }
+
+    // Update or create team member contribution
+    try {
+      const members = this.load(this.membersKey, INITIAL_TEAM_MEMBERS);
+      const normDeptId = normalizeDepartmentId(invoice.departmentId);
+      const member = members.find(m =>
+        (invoice.teamMemberId && m.teamMemberId === invoice.teamMemberId) ||
+        (invoice.teamMemberName && m.name.toLowerCase() === invoice.teamMemberName.toLowerCase())
+      );
+      if (member) {
+        member.totalBusinessClosed += invoice.totalAmount;
+        member.totalInvoicesCount = (member.totalInvoicesCount || 0) + 1;
+        this.save(this.membersKey, members);
+      } else if (invoice.teamMemberName) {
+        const newMember: TeamMemberPerformance = {
+          teamMemberId: invoice.teamMemberId || `tm-${Date.now().toString().slice(-4)}`,
+          name: invoice.teamMemberName,
+          role: invoice.teamMemberRole || 'Account Sales Executive',
+          departmentId: normDeptId,
+          totalBusinessClosed: invoice.totalAmount,
+          totalInvoicesCount: 1,
+          totalQuotationsCount: 1,
+          conversionRatePct: 100,
+          activeDealsCount: 2,
+          status: 'Target Achieved'
+        };
+        members.push(newMember);
+        this.save(this.membersKey, members);
+      }
+    } catch (e) {
+      console.error('Failed to update team member performance on addInvoice:', e);
+    }
+
+    // Also sync into team member local storage if not already present
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const tmKey = 'amuwa_crm_team_member_invoices_v3';
+        const raw = localStorage.getItem(tmKey);
+        const tmList = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(tmList) && !tmList.some((i: any) => i.invoiceNumber === newInvoice.invoiceNumber)) {
+          tmList.unshift({
+            id: newInvoice.id,
+            invoiceNumber: newInvoice.invoiceNumber,
+            customerName: newInvoice.clientName,
+            company: newInvoice.clientCompany,
+            amount: newInvoice.totalAmount,
+            issueDate: newInvoice.issuedDate,
+            dueDate: newInvoice.dueDate,
+            status: newInvoice.status,
+            departmentId: newInvoice.departmentId,
+            departmentName: newInvoice.departmentName,
+            division: 'Commercial',
+            terms: newInvoice.notes,
+            contactEmail: newInvoice.clientEmail,
+            contactPhone: newInvoice.clientPhone,
+            teamMemberName: newInvoice.teamMemberName,
+            teamMemberRole: newInvoice.teamMemberRole,
+            items: newInvoice.items
+          });
+          localStorage.setItem(tmKey, JSON.stringify(tmList));
+        }
+      }
+    } catch (e) {
+      console.error('Failed to mirror to team member store:', e);
+    }
+
+    // Dispatch real-time global event for reactive UI update across all active tabs
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('amuwa_crm_invoice_created', { detail: newInvoice }));
+    }
+
     return newInvoice;
   }
 
@@ -1496,8 +1688,13 @@ class AccountsStore {
 
   getQuotationsForDepartment(deptId: string): DepartmentQuotation[] {
     const quotes = this.getQuotations();
-    if (deptId === 'all') return quotes;
-    return quotes.filter(q => q.departmentId === deptId);
+    if (!deptId || deptId === 'all') return quotes;
+    const targetNorm = normalizeDepartmentId(deptId);
+    return quotes.filter(q => {
+      if (q.departmentId === deptId) return true;
+      const qNorm = normalizeDepartmentId(q.departmentId);
+      return qNorm === targetNorm;
+    });
   }
 
   getQuotationById(id: string): DepartmentQuotation | undefined {
@@ -1508,7 +1705,12 @@ class AccountsStore {
   getTeamMembersPerformance(deptId?: string): TeamMemberPerformance[] {
     const list = this.load(this.membersKey, INITIAL_TEAM_MEMBERS);
     if (!deptId || deptId === 'all') return list;
-    return list.filter(m => m.departmentId === deptId);
+    const targetNorm = normalizeDepartmentId(deptId);
+    return list.filter(m => {
+      if (m.departmentId === deptId) return true;
+      const mNorm = normalizeDepartmentId(m.departmentId);
+      return mNorm === targetNorm;
+    });
   }
 
   // --- Daily Expenses ---

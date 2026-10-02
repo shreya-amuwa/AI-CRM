@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   DollarSign, TrendingUp, TrendingDown, FileText, FileCheck2,
   Users, Building2, ShieldCheck, ArrowRight, ArrowUpRight, Receipt,
@@ -26,6 +26,21 @@ export const DepartmentAccountsBillingView: React.FC<DepartmentAccountsBillingVi
   // Modals
   const [activeInvoiceForPdf, setActiveInvoiceForPdf] = useState<any | null>(null);
   const [activeQuotationForPdf, setActiveQuotationForPdf] = useState<any | null>(null);
+
+  // Real-time listener for newly created invoices
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleInvoiceCreated = () => {
+      setRefreshTrigger(prev => prev + 1);
+    };
+    window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+    window.addEventListener('storage', handleInvoiceCreated);
+    return () => {
+      window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+      window.removeEventListener('storage', handleInvoiceCreated);
+    };
+  }, []);
 
   const metric = accountsStore.getMetricsForDepartment(departmentId);
   const invoices = accountsStore.getInvoicesForDepartment(departmentId);

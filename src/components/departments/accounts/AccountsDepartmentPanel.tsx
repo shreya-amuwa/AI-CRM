@@ -24,6 +24,21 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
   const [internalTab, setInternalTab] = useState<'overview' | 'income' | 'expense' | 'invoice'>('overview');
   const [selectedDeptForInvoice, setSelectedDeptForInvoice] = useState<string | undefined>(undefined);
 
+  // Real-time synchronization listener for newly created invoices
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleInvoiceCreated = () => {
+      setRefreshTrigger(prev => prev + 1);
+    };
+    window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+    window.addEventListener('storage', handleInvoiceCreated);
+    return () => {
+      window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+      window.removeEventListener('storage', handleInvoiceCreated);
+    };
+  }, []);
+
   // Sync with Sidebar activeTab
   useEffect(() => {
     if (activeTab === 'income') {

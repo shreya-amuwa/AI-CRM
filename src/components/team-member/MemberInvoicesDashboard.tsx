@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { Invoice } from '../../types/crm';
 import { teamMemberStore } from '../../services/teamMemberStore';
+import { useAuth } from '../../context/AuthContext';
+import { accountsStore, normalizeDepartmentId } from '../../services/accountsStore';
 
 interface MemberInvoicesDashboardProps {
   currentUserId: string;
@@ -254,12 +256,26 @@ export const SYSTEM_DEPARTMENTS: DepartmentConfig[] = [
 ];
 
 export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = ({ currentUserId }) => {
+  const { user } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>(() => teamMemberStore.getInvoices(currentUserId));
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+
+  // Real-time synchronization listener with Accounts Dashboard
+  useEffect(() => {
+    const handleInvoiceCreated = () => {
+      setInvoices(teamMemberStore.getInvoices(currentUserId));
+    };
+    window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+    window.addEventListener('storage', handleInvoiceCreated);
+    return () => {
+      window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
+      window.removeEventListener('storage', handleInvoiceCreated);
+    };
+  }, [currentUserId]);
 
   // Success Notification state
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -382,11 +398,21 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
     const generatedSeq = Math.floor(100 + Math.random() * 900);
     const invoiceNum = `${dept.prefix}${generatedSeq}`;
 
+    const amountVal = Number(form.amount);
+    const itemsDetail = [
+      {
+        description: form.itemDescription.trim() || dept.defaultService,
+        quantity: 1,
+        rate: amountVal,
+        amount: amountVal
+      }
+    ];
+
     const newInvoiceData = {
       invoiceNumber: invoiceNum,
       customerName: form.customerName.trim(),
       company: form.company.trim(),
-      amount: Number(form.amount),
+      amount: amountVal,
       issueDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       dueDate: form.dueDate,
       status: form.status,
@@ -396,17 +422,36 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       contactEmail: dept.billingEmail,
       contactPhone: dept.billingPhone,
       terms: dept.terms,
-      items: [
-        {
-          description: form.itemDescription.trim() || dept.defaultService,
-          quantity: 1,
-          rate: Number(form.amount),
-          amount: Number(form.amount)
-        }
-      ]
+      items: itemsDetail
     };
 
+    // 1. Add to Team Member Store
     teamMemberStore.addInvoice(newInvoiceData);
+
+    // 2. Add to Central Accounts Department Store (connected to accounts dashboard)
+    accountsStore.addInvoice({
+      invoiceNumber: invoiceNum,
+      departmentId: dept.id,
+      departmentName: dept.name,
+      clientName: form.customerName.trim(),
+      clientCompany: form.company.trim(),
+      clientAddress: 'HQ Corporate Commercials, Tech Park, Bangalore',
+      clientEmail: dept.billingEmail,
+      clientPhone: dept.billingPhone,
+      teamMemberId: user?.id || currentUserId || 'tm-priya',
+      teamMemberName: user?.name || 'Priya Mehta',
+      teamMemberRole: user?.role === 'team-lead' ? 'Senior Sales Lead' : 'Account Sales Executive',
+      issuedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      dueDate: form.dueDate,
+      status: form.status as 'Paid' | 'Pending' | 'Overdue',
+      items: itemsDetail,
+      subtotal: amountVal,
+      taxRate: 18,
+      taxAmount: Math.round(amountVal * 0.18),
+      totalAmount: amountVal,
+      notes: dept.terms
+    });
+
     const updated = teamMemberStore.getInvoices(currentUserId);
     setInvoices(updated);
 
@@ -416,7 +461,7 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
     } catch {}
 
     setIsCreateOpen(false);
-    setSuccessMessage(`Invoice successfully created for ${dept.name} (${invoiceNum})`);
+    setSuccessMessage(`Invoice successfully created for ${dept.name} (${invoiceNum}) and synced to Accounts Dashboard!`);
     setTimeout(() => setSuccessMessage(null), 6000);
 
     // Reset Form
