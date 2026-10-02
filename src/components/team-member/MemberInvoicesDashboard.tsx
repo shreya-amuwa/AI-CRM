@@ -47,73 +47,73 @@ export interface DepartmentConfig {
 }
 
 export const SYSTEM_DEPARTMENTS: DepartmentConfig[] = [
-  // 1. Amuwa Corporation
+  // 1. Wabastore - Sales
   {
-    id: 'amuwa',
-    name: 'Amuwa Corporation',
-    group: 'Corporate & Headquarters',
-    division: 'Corporate HQ',
-    prefix: 'AMW-2026-',
-    badgeBg: 'bg-slate-100',
-    badgeText: 'text-slate-800',
-    badgeBorder: 'border-slate-300',
-    accentColor: '#0F172A',
-    billingEmail: 'billing@amuwa.com',
-    billingPhone: '+91 22 6889 4000',
-    terms: 'Payment due within 30 days of invoice date. 18% GST statutory invoice.',
-    defaultService: 'Enterprise Corporate Advisory & Infrastructure Retainer',
-    defaultAmount: 150000
+    id: 'wabastore-sales',
+    name: 'Wabastore (Sales Division)',
+    group: 'Wabastore',
+    division: 'Sales',
+    prefix: 'WAB-SLS-2026-',
+    badgeBg: 'bg-emerald-50',
+    badgeText: 'text-emerald-800',
+    badgeBorder: 'border-emerald-200',
+    accentColor: '#059669',
+    billingEmail: 'billing@wabastore.com',
+    billingPhone: '+91 80 4912 2001',
+    terms: 'Net 15 days. Subject to Meta Cloud WhatsApp Commerce terms.',
+    defaultService: 'Wabastore E-Commerce Storefront Engine & Catalog Sync',
+    defaultAmount: 185000
   },
-  // 2. HR & Operations
+  // 2. Wabastore - Support
   {
-    id: 'hr-operations',
-    name: 'HR & Operations',
-    group: 'Corporate & Headquarters',
-    division: 'Operations',
-    prefix: 'HRO-2026-',
-    badgeBg: 'bg-indigo-50',
-    badgeText: 'text-indigo-700',
-    badgeBorder: 'border-indigo-200',
-    accentColor: '#4F46E5',
-    billingEmail: 'hr.billing@amuwa.com',
-    billingPhone: '+91 22 6889 4010',
-    terms: 'Standard HR consultancy & talent placement terms apply.',
-    defaultService: 'Executive Talent Acquisition & Onboarding Management',
-    defaultAmount: 65000
+    id: 'wabastore-support',
+    name: 'Wabastore (Support Division)',
+    group: 'Wabastore',
+    division: 'Support',
+    prefix: 'WAB-SUP-2026-',
+    badgeBg: 'bg-teal-50',
+    badgeText: 'text-teal-800',
+    badgeBorder: 'border-teal-200',
+    accentColor: '#0D9488',
+    billingEmail: 'support@wabastore.com',
+    billingPhone: '+91 80 4912 2002',
+    terms: 'Covers webhook integrations, SLA maintenance, and store bugfixes.',
+    defaultService: 'Catalog Webhook Maintenance & Dedicated Support AMC',
+    defaultAmount: 35000
   },
-  // 3. Education & Training - Candidate Training
+  // 3. Wabastar - Sales
   {
-    id: 'education-candidate',
-    name: 'Education & Training (Candidate Training)',
-    group: 'Education & Training',
-    division: 'Candidate Training',
-    prefix: 'EDU-CAN-2026-',
-    badgeBg: 'bg-amber-50',
-    badgeText: 'text-amber-800',
-    badgeBorder: 'border-amber-200',
-    accentColor: '#D97706',
-    billingEmail: 'training@amuwa.com',
-    billingPhone: '+91 22 6889 4020',
-    terms: 'Course fees and corporate candidate training retainers are non-refundable upon batch commencement.',
-    defaultService: 'Certified AI Sales Executive Candidate Cohort Program',
-    defaultAmount: 47500
+    id: 'wabastar-sales',
+    name: 'Wabastar (Sales Division)',
+    group: 'Wabastar',
+    division: 'Sales',
+    prefix: 'WBS-SLS-2026-',
+    badgeBg: 'bg-green-50',
+    badgeText: 'text-green-800',
+    badgeBorder: 'border-green-200',
+    accentColor: '#16A34A',
+    billingEmail: 'sales@wabastar.com',
+    billingPhone: '+91 80 4912 2005',
+    terms: 'Net 15 days. High-throughput marketing automation SLA applies.',
+    defaultService: 'Wabastar High-Throughput Marketing Automation License',
+    defaultAmount: 230000
   },
-  // 4. Education & Training - Product Training
+  // 4. Wabastar - Support
   {
-    id: 'education-product',
-    name: 'Education & Training (Product Training)',
-    group: 'Education & Training',
-    division: 'Product Training',
-    prefix: 'EDU-PRD-2026-',
-    badgeBg: 'bg-yellow-50',
-    badgeText: 'text-yellow-800',
-    badgeBorder: 'border-yellow-200',
-    accentColor: '#CA8A04',
-    billingEmail: 'training@amuwa.com',
-    billingPhone: '+91 22 6889 4021',
-    terms: 'Enterprise CRM onboarding & staff certification milestone billing.',
-    defaultService: 'Enterprise WhatsApp Sales OS Product Mastery Workshop',
-    defaultAmount: 55000
+    id: 'wabastar-support',
+    name: 'Wabastar (Support Division)',
+    group: 'Wabastar',
+    division: 'Support',
+    prefix: 'WBS-SUP-2026-',
+    badgeBg: 'bg-emerald-50',
+    badgeText: 'text-emerald-800',
+    badgeBorder: 'border-emerald-200',
+    accentColor: '#059669',
+    billingEmail: 'support@wabastar.com',
+    billingPhone: '+91 80 4912 2006',
+    terms: 'Broadcast channel bandwidth and 24/7 campaign queue support.',
+    defaultService: 'Dedicated Broadcast Infrastructure & Campaign AMC',
+    defaultAmount: 40000
   },
   // 5. Whatsbox - Sales
   {
@@ -639,21 +639,17 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
                   className="appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none cursor-pointer"
                 >
                   <option value="all">All Departments ({invoices.length})</option>
-                  <optgroup label="Corporate & Operations">
-                    <option value="amuwa">Amuwa Corporation</option>
-                    <option value="hr-operations">HR & Operations</option>
+                  <optgroup label="Wabastore">
+                    <option value="wabastore-sales">Wabastore (Sales)</option>
+                    <option value="wabastore-support">Wabastore (Support)</option>
                   </optgroup>
-                  <optgroup label="Education & Training">
-                    <option value="education-candidate">Candidate Training</option>
-                    <option value="education-product">Product Training</option>
+                  <optgroup label="Wabastar">
+                    <option value="wabastar-sales">Wabastar (Sales)</option>
+                    <option value="wabastar-support">Wabastar (Support)</option>
                   </optgroup>
                   <optgroup label="Whatsbox">
                     <option value="whatsbox-sales">Whatsbox (Sales)</option>
                     <option value="whatsbox-support">Whatsbox (Support)</option>
-                  </optgroup>
-                  <optgroup label="Wabastore">
-                    <option value="wabastore-sales">Wabastore (Sales)</option>
-                    <option value="wabastore-support">Wabastore (Support)</option>
                   </optgroup>
                   <optgroup label="D-Talk Corporation">
                     <option value="dtalk-sales">D-Talk (Sales)</option>
@@ -902,24 +898,19 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
                 >
                   <option value="" disabled>Choose a department...</option>
 
-                  <optgroup label="Corporate & Headquarters">
-                    <option value="amuwa">Amuwa Corporation</option>
-                    <option value="hr-operations">HR & Operations</option>
+                  <optgroup label="Wabastore">
+                    <option value="wabastore-sales">Wabastore (Sales Division)</option>
+                    <option value="wabastore-support">Wabastore (Support Division)</option>
                   </optgroup>
 
-                  <optgroup label="Education & Training">
-                    <option value="education-candidate">Education & Training (Candidate Training)</option>
-                    <option value="education-product">Education & Training (Product Training)</option>
+                  <optgroup label="Wabastar">
+                    <option value="wabastar-sales">Wabastar (Sales Division)</option>
+                    <option value="wabastar-support">Wabastar (Support Division)</option>
                   </optgroup>
 
                   <optgroup label="Whatsbox">
                     <option value="whatsbox-sales">Whatsbox (Sales Division)</option>
                     <option value="whatsbox-support">Whatsbox (Support Division)</option>
-                  </optgroup>
-
-                  <optgroup label="Wabastore">
-                    <option value="wabastore-sales">Wabastore (Sales Division)</option>
-                    <option value="wabastore-support">Wabastore (Support Division)</option>
                   </optgroup>
 
                   <optgroup label="D-Talk Corporation">

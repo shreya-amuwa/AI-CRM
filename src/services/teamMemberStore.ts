@@ -181,60 +181,22 @@ export const INITIAL_INVOICES: Invoice[] = [
     ]
   },
   {
-    id: 'INV-EDU-001',
-    invoiceNumber: 'EDU-CAN-2026-106',
-    customerName: 'Priya Sharma',
-    company: 'Tech Mahindra Corporate Training',
-    amount: 95000,
+    id: 'INV-WBS-001',
+    invoiceNumber: 'WBS-SLS-2026-106',
+    customerName: 'Karthik Raman',
+    company: 'Nykaa E-Retail Limited',
+    amount: 230000,
     issueDate: 'Sep 26, 2026',
     dueDate: '2026-10-16',
     status: 'Paid',
-    departmentId: 'education-candidate',
-    departmentName: 'Education & Training (Candidate Training)',
-    division: 'Candidate Training',
-    terms: 'Course fees and corporate candidate training retainers are non-refundable upon batch commencement.',
-    contactEmail: 'training@amuwa.com',
-    contactPhone: '+91 22 6889 4020',
+    departmentId: 'wabastar-sales',
+    departmentName: 'Wabastar (Sales Division)',
+    division: 'Sales',
+    terms: 'Net 15 days. Dedicated high-throughput messaging quotas apply.',
+    contactEmail: 'sales@wabastar.com',
+    contactPhone: '+91 80 4912 2005',
     items: [
-      { description: 'Certified AI Sales Executive Candidate Cohort Program', quantity: 2, rate: 47500, amount: 95000 }
-    ]
-  },
-  {
-    id: 'INV-HRO-001',
-    invoiceNumber: 'HRO-2026-107',
-    customerName: 'Sunil Rao',
-    company: 'Zomato Operations Hub',
-    amount: 65000,
-    issueDate: 'Sep 28, 2026',
-    dueDate: '2026-10-20',
-    status: 'Pending',
-    departmentId: 'hr-operations',
-    departmentName: 'HR & Operations',
-    division: 'Corporate Operations',
-    terms: 'Standard HR consultancy & talent placement terms apply.',
-    contactEmail: 'hr.billing@amuwa.com',
-    contactPhone: '+91 22 6889 4010',
-    items: [
-      { description: 'Executive Talent Acquisition & Onboarding Management', quantity: 1, rate: 65000, amount: 65000 }
-    ]
-  },
-  {
-    id: 'INV-AMW-001',
-    invoiceNumber: 'AMW-2026-108',
-    customerName: 'Vikram Joshi',
-    company: 'PolicyBazaar Online Services',
-    amount: 150000,
-    issueDate: 'Sep 22, 2026',
-    dueDate: '2026-10-06',
-    status: 'Paid',
-    departmentId: 'amuwa',
-    departmentName: 'Amuwa Corporation',
-    division: 'Corporate Headquarters',
-    terms: 'Payment due within 30 days of invoice date. 18% GST statutory invoice.',
-    contactEmail: 'billing@amuwa.com',
-    contactPhone: '+91 22 6889 4000',
-    items: [
-      { description: 'Enterprise Corporate Advisory & Infrastructure Retainer', quantity: 1, rate: 150000, amount: 150000 }
+      { description: 'Wabastar High-Throughput Marketing Automation License', quantity: 1, rate: 230000, amount: 230000 }
     ]
   }
 ];
@@ -651,7 +613,17 @@ class TeamMemberStore {
       const stored = localStorage.getItem(this.invoicesKey);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const cleaned = parsed.filter(inv =>
+            !inv.departmentId?.includes('education') &&
+            !inv.departmentId?.includes('hr') &&
+            !inv.departmentId?.includes('amuwa')
+          );
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem(this.invoicesKey, JSON.stringify(cleaned.length > 0 ? cleaned : INITIAL_INVOICES));
+          }
+          return cleaned.length > 0 ? cleaned : INITIAL_INVOICES;
+        }
       }
       localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
       return INITIAL_INVOICES;
