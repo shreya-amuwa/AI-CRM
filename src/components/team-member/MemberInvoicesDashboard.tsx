@@ -149,40 +149,6 @@ export const SYSTEM_DEPARTMENTS: DepartmentConfig[] = [
     defaultService: 'Whatsbox 24/7 Premium Tier Technical Support Retainer',
     defaultAmount: 45000
   },
-  // 7. Wabastore - Sales
-  {
-    id: 'wabastore-sales',
-    name: 'Wabastore (Sales Division)',
-    group: 'Wabastore',
-    division: 'Sales',
-    prefix: 'WAB-SLS-2026-',
-    badgeBg: 'bg-emerald-50',
-    badgeText: 'text-emerald-800',
-    badgeBorder: 'border-emerald-200',
-    accentColor: '#059669',
-    billingEmail: 'billing@wabastore.com',
-    billingPhone: '+91 80 4912 2001',
-    terms: 'Net 15 days. Subject to Meta Cloud WhatsApp Commerce terms.',
-    defaultService: 'Wabastore E-Commerce Storefront Engine & Catalog Sync',
-    defaultAmount: 185000
-  },
-  // 8. Wabastore - Support
-  {
-    id: 'wabastore-support',
-    name: 'Wabastore (Support Division)',
-    group: 'Wabastore',
-    division: 'Support',
-    prefix: 'WAB-SUP-2026-',
-    badgeBg: 'bg-teal-50',
-    badgeText: 'text-teal-800',
-    badgeBorder: 'border-teal-200',
-    accentColor: '#0D9488',
-    billingEmail: 'support@wabastore.com',
-    billingPhone: '+91 80 4912 2002',
-    terms: 'Covers webhook integrations, SLA maintenance, and store bugfixes.',
-    defaultService: 'Catalog Webhook Maintenance & Dedicated Support AMC',
-    defaultAmount: 35000
-  },
   // 9. D-Talk - Sales
   {
     id: 'dtalk-sales',
