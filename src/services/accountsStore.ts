@@ -39,6 +39,47 @@ export interface CorporateExpense {
   status: 'Settled' | 'Approved' | 'Pending Audit';
 }
 
+export interface DepartmentDailyExpense {
+  departmentId: string;
+  departmentName: string;
+  accentColor: string;
+  logoUrl?: string;
+  todaySpent: number;
+  dailyBudget: number;
+  dailyBurnRate: number;
+  budgetUtilizationPct: number;
+  yesterdaySpent: number;
+  changeVsYesterdayPct: number;
+  dailyTransactionsCount: number;
+  recentDailyReasons: {
+    time: string;
+    reason: string;
+    category: string;
+    amount: number;
+    approvedBy: string;
+  }[];
+}
+
+export interface DepartmentMonthlyExpense {
+  departmentId: string;
+  departmentName: string;
+  accentColor: string;
+  logoUrl?: string;
+  currentMonth: string;
+  monthlyBudget: number;
+  monthlySpent: number;
+  budgetUtilizationPct: number;
+  previousMonthSpent: number;
+  monthlyGrowthPct: number;
+  topCategory: string;
+  topCategoryAmount: number;
+  monthlyBreakdownByCategory: {
+    category: string;
+    amount: number;
+    pct: number;
+  }[];
+}
+
 export interface InvoiceItem {
   description: string;
   sacCode?: string;
@@ -1469,6 +1510,352 @@ class AccountsStore {
     if (!deptId || deptId === 'all') return list;
     return list.filter(m => m.departmentId === deptId);
   }
+
+  // --- Daily Expenses ---
+  getDailyExpenses(): DepartmentDailyExpense[] {
+    return this.load('amuwa_accounts_daily_expenses_v2', INITIAL_DAILY_EXPENSES);
+  }
+
+  getDailyCompanyTotal() {
+    const list = this.getDailyExpenses();
+    const todayTotal = list.reduce((sum, d) => sum + d.todaySpent, 0);
+    const dailyBudgetTotal = list.reduce((sum, d) => sum + d.dailyBudget, 0);
+    const dailyBurnRateTotal = list.reduce((sum, d) => sum + d.dailyBurnRate, 0);
+    const yesterdayTotal = list.reduce((sum, d) => sum + d.yesterdaySpent, 0);
+    const utilizationPct = dailyBudgetTotal > 0 ? (todayTotal / dailyBudgetTotal) * 100 : 0;
+    return {
+      todayTotal,
+      dailyBudgetTotal,
+      dailyBurnRateTotal,
+      yesterdayTotal,
+      utilizationPct: Math.round(utilizationPct * 10) / 10
+    };
+  }
+
+  // --- Monthly Expenses ---
+  getMonthlyExpenses(): DepartmentMonthlyExpense[] {
+    return this.load('amuwa_accounts_monthly_expenses_v2', INITIAL_MONTHLY_EXPENSES);
+  }
+
+  getMonthlyCompanyTotal() {
+    const list = this.getMonthlyExpenses();
+    const monthlyTotal = list.reduce((sum, m) => sum + m.monthlySpent, 0);
+    const monthlyBudgetTotal = list.reduce((sum, m) => sum + m.monthlyBudget, 0);
+    const previousMonthTotal = list.reduce((sum, m) => sum + m.previousMonthSpent, 0);
+    const utilizationPct = monthlyBudgetTotal > 0 ? (monthlyTotal / monthlyBudgetTotal) * 100 : 0;
+    return {
+      monthlyTotal,
+      monthlyBudgetTotal,
+      previousMonthTotal,
+      utilizationPct: Math.round(utilizationPct * 10) / 10
+    };
+  }
 }
+
+export const INITIAL_DAILY_EXPENSES: DepartmentDailyExpense[] = [
+  {
+    departmentId: 'wabastore',
+    departmentName: 'Wabastore',
+    accentColor: '#10B981',
+    logoUrl: '/logos/wabastore.png',
+    todaySpent: 22700,
+    dailyBudget: 24000,
+    dailyBurnRate: 18667,
+    budgetUtilizationPct: 94.6,
+    yesterdaySpent: 19800,
+    changeVsYesterdayPct: 14.6,
+    dailyTransactionsCount: 2,
+    recentDailyReasons: [
+      {
+        time: '11:30 AM',
+        reason: 'Meta WhatsApp Business Cloud API conversation daily batch credits (Tier-4 volume)',
+        category: 'API Subscriptions & Telecom',
+        amount: 18500,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      },
+      {
+        time: '02:15 PM',
+        reason: 'Daily automated e-commerce catalog webhook CDN burst caching & express checkout traffic',
+        category: 'Cloud & Server Infrastructure',
+        amount: 4200,
+        approvedBy: 'Super Admin'
+      }
+    ]
+  },
+  {
+    departmentId: 'wabastar',
+    departmentName: 'Wabastar',
+    accentColor: '#16A34A',
+    logoUrl: '/logos/wabastar.png',
+    todaySpent: 18300,
+    dailyBudget: 20000,
+    dailyBurnRate: 15667,
+    budgetUtilizationPct: 91.5,
+    yesterdaySpent: 17200,
+    changeVsYesterdayPct: 6.4,
+    dailyTransactionsCount: 2,
+    recentDailyReasons: [
+      {
+        time: '10:45 AM',
+        reason: 'Dedicated high-throughput WhatsApp marketing broadcast delivery cluster node & Redis burst',
+        category: 'Cloud & Server Infrastructure',
+        amount: 14800,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      },
+      {
+        time: '03:30 PM',
+        reason: 'Zapier enterprise high-frequency webhook trigger executions & Meta lead form sync pipeline',
+        category: 'Software & SaaS Licenses',
+        amount: 3500,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      }
+    ]
+  },
+  {
+    departmentId: 'whatsbox',
+    departmentName: 'Whatsbox',
+    accentColor: '#06B6D4',
+    logoUrl: '/logos/whatsbox.png',
+    todaySpent: 16400,
+    dailyBudget: 18000,
+    dailyBurnRate: 14233,
+    budgetUtilizationPct: 91.1,
+    yesterdaySpent: 15900,
+    changeVsYesterdayPct: 3.1,
+    dailyTransactionsCount: 2,
+    recentDailyReasons: [
+      {
+        time: '09:50 AM',
+        reason: 'Kubernetes pod autoscaling & multi-agent live chat server compute bandwidth for customer support floor',
+        category: 'Cloud & Server Infrastructure',
+        amount: 12600,
+        approvedBy: 'Super Admin'
+      },
+      {
+        time: '04:10 PM',
+        reason: 'Intercom live chat customer conversation seat top-up & active socket connection bandwidth',
+        category: 'Software & SaaS Licenses',
+        amount: 3800,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      }
+    ]
+  },
+  {
+    departmentId: 'dtalk',
+    departmentName: 'D Talk Corporation',
+    accentColor: '#8B5CF6',
+    logoUrl: '/logos/dtalk.png',
+    todaySpent: 18100,
+    dailyBudget: 19000,
+    dailyBurnRate: 13333,
+    budgetUtilizationPct: 95.3,
+    yesterdaySpent: 16800,
+    changeVsYesterdayPct: 7.7,
+    dailyTransactionsCount: 2,
+    recentDailyReasons: [
+      {
+        time: '11:00 AM',
+        reason: 'Tata Teleservices enterprise PRI line daily trunk usage & 5,000 outbound voice call minutes settlement',
+        category: 'API Subscriptions & Telecom',
+        amount: 15200,
+        approvedBy: 'Super Admin'
+      },
+      {
+        time: '01:40 PM',
+        reason: 'Cloud telephony PBX encrypted call recording daily regulatory backup vault (TRAI compliance)',
+        category: 'Cloud & Server Infrastructure',
+        amount: 2900,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      }
+    ]
+  },
+  {
+    departmentId: 'digitree',
+    departmentName: 'Digitree Infotech',
+    accentColor: '#EC4899',
+    logoUrl: '/logos/digitree.png',
+    todaySpent: 19600,
+    dailyBudget: 21000,
+    dailyBurnRate: 17333,
+    budgetUtilizationPct: 93.3,
+    yesterdaySpent: 18900,
+    changeVsYesterdayPct: 3.7,
+    dailyTransactionsCount: 2,
+    recentDailyReasons: [
+      {
+        time: '10:15 AM',
+        reason: 'Google Cloud Vertex AI processing & BigQuery daily batch queries for dynamic AIQR campaign analytics',
+        category: 'Cloud & Server Infrastructure',
+        amount: 16400,
+        approvedBy: 'Super Admin'
+      },
+      {
+        time: '02:50 PM',
+        reason: 'Datadog live application performance monitoring & APM tracing logs ingest bandwidth',
+        category: 'Software & SaaS Licenses',
+        amount: 3200,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      }
+    ]
+  },
+  {
+    departmentId: 'mpillar',
+    departmentName: 'M Pillar Corporation',
+    accentColor: '#F59E0B',
+    logoUrl: '/logos/mpillar.png',
+    todaySpent: 18400,
+    dailyBudget: 20000,
+    dailyBurnRate: 15333,
+    budgetUtilizationPct: 92.0,
+    yesterdaySpent: 17500,
+    changeVsYesterdayPct: 5.1,
+    dailyTransactionsCount: 2,
+    recentDailyReasons: [
+      {
+        time: '11:10 AM',
+        reason: 'CAD rendering server cluster compute & civil infrastructure project blueprint cloud processing vault',
+        category: 'Cloud & Server Infrastructure',
+        amount: 13900,
+        approvedBy: 'Super Admin'
+      },
+      {
+        time: '04:30 PM',
+        reason: 'Construction site regional inspection fleet fuel disbursement & field safety gear dispatch',
+        category: 'Corporate Office & Facilities',
+        amount: 4500,
+        approvedBy: 'Accounts Head (Rajiv Khanna)'
+      }
+    ]
+  }
+];
+
+export const INITIAL_MONTHLY_EXPENSES: DepartmentMonthlyExpense[] = [
+  {
+    departmentId: 'wabastore',
+    departmentName: 'Wabastore',
+    accentColor: '#10B981',
+    logoUrl: '/logos/wabastore.png',
+    currentMonth: 'October 2026',
+    monthlyBudget: 600000,
+    monthlySpent: 560000,
+    budgetUtilizationPct: 93.3,
+    previousMonthSpent: 545000,
+    monthlyGrowthPct: 2.8,
+    topCategory: 'Payroll & Executive Compensation',
+    topCategoryAmount: 210000,
+    monthlyBreakdownByCategory: [
+      { category: 'Payroll & Executive Compensation', amount: 210000, pct: 37.5 },
+      { category: 'API Subscriptions & Telecom', amount: 125000, pct: 22.3 },
+      { category: 'Client Acquisition & Ad Spend', amount: 95500, pct: 17.1 },
+      { category: 'Cloud & Server Infrastructure', amount: 84500, pct: 15.1 },
+      { category: 'Software & SaaS Licenses', amount: 45000, pct: 8.0 }
+    ]
+  },
+  {
+    departmentId: 'wabastar',
+    departmentName: 'Wabastar',
+    accentColor: '#16A34A',
+    logoUrl: '/logos/wabastar.png',
+    currentMonth: 'October 2026',
+    monthlyBudget: 500000,
+    monthlySpent: 470000,
+    budgetUtilizationPct: 94.0,
+    previousMonthSpent: 458000,
+    monthlyGrowthPct: 2.6,
+    topCategory: 'Payroll & Executive Compensation',
+    topCategoryAmount: 185000,
+    monthlyBreakdownByCategory: [
+      { category: 'Payroll & Executive Compensation', amount: 185000, pct: 39.4 },
+      { category: 'API Subscriptions & Telecom', amount: 110000, pct: 23.4 },
+      { category: 'Client Acquisition & Ad Spend', amount: 75000, pct: 16.0 },
+      { category: 'Cloud & Server Infrastructure', amount: 62000, pct: 13.2 },
+      { category: 'Software & SaaS Licenses', amount: 38000, pct: 8.0 }
+    ]
+  },
+  {
+    departmentId: 'whatsbox',
+    departmentName: 'Whatsbox',
+    accentColor: '#06B6D4',
+    logoUrl: '/logos/whatsbox.png',
+    currentMonth: 'October 2026',
+    monthlyBudget: 450000,
+    monthlySpent: 427000,
+    budgetUtilizationPct: 94.9,
+    previousMonthSpent: 415000,
+    monthlyGrowthPct: 2.9,
+    topCategory: 'Payroll & Executive Compensation',
+    topCategoryAmount: 165000,
+    monthlyBreakdownByCategory: [
+      { category: 'Payroll & Executive Compensation', amount: 165000, pct: 38.6 },
+      { category: 'API Subscriptions & Telecom', amount: 98000, pct: 23.0 },
+      { category: 'Client Acquisition & Ad Spend', amount: 68000, pct: 15.9 },
+      { category: 'Cloud & Server Infrastructure', amount: 54000, pct: 12.6 },
+      { category: 'Software & SaaS Licenses', amount: 42000, pct: 9.9 }
+    ]
+  },
+  {
+    departmentId: 'dtalk',
+    departmentName: 'D Talk Corporation',
+    accentColor: '#8B5CF6',
+    logoUrl: '/logos/dtalk.png',
+    currentMonth: 'October 2026',
+    monthlyBudget: 420000,
+    monthlySpent: 400000,
+    budgetUtilizationPct: 95.2,
+    previousMonthSpent: 390000,
+    monthlyGrowthPct: 2.6,
+    topCategory: 'Payroll & Executive Compensation',
+    topCategoryAmount: 170000,
+    monthlyBreakdownByCategory: [
+      { category: 'Payroll & Executive Compensation', amount: 170000, pct: 42.5 },
+      { category: 'API Subscriptions & Telecom', amount: 115000, pct: 28.8 },
+      { category: 'Cloud & Server Infrastructure', amount: 48000, pct: 12.0 },
+      { category: 'Software & SaaS Licenses', amount: 35000, pct: 8.8 },
+      { category: 'Hardware & Workstations', amount: 32000, pct: 8.0 }
+    ]
+  },
+  {
+    departmentId: 'digitree',
+    departmentName: 'Digitree Infotech',
+    accentColor: '#EC4899',
+    logoUrl: '/logos/digitree.png',
+    currentMonth: 'October 2026',
+    monthlyBudget: 550000,
+    monthlySpent: 520000,
+    budgetUtilizationPct: 94.5,
+    previousMonthSpent: 505000,
+    monthlyGrowthPct: 3.0,
+    topCategory: 'Payroll & Executive Compensation',
+    topCategoryAmount: 240000,
+    monthlyBreakdownByCategory: [
+      { category: 'Payroll & Executive Compensation', amount: 240000, pct: 46.2 },
+      { category: 'Cloud & Server Infrastructure', amount: 78000, pct: 15.0 },
+      { category: 'Legal, Compliance & Retainers', amount: 65000, pct: 12.5 },
+      { category: 'Software & SaaS Licenses', amount: 49000, pct: 9.4 },
+      { category: 'Corporate Office & Facilities', amount: 28000, pct: 5.4 }
+    ]
+  },
+  {
+    departmentId: 'mpillar',
+    departmentName: 'M Pillar Corporation',
+    accentColor: '#F59E0B',
+    logoUrl: '/logos/mpillar.png',
+    currentMonth: 'October 2026',
+    monthlyBudget: 500000,
+    monthlySpent: 460000,
+    budgetUtilizationPct: 92.0,
+    previousMonthSpent: 445000,
+    monthlyGrowthPct: 3.4,
+    topCategory: 'Payroll & Executive Compensation',
+    topCategoryAmount: 220000,
+    monthlyBreakdownByCategory: [
+      { category: 'Payroll & Executive Compensation', amount: 220000, pct: 47.8 },
+      { category: 'Legal, Compliance & Retainers', amount: 75000, pct: 16.3 },
+      { category: 'Software & SaaS Licenses', amount: 65000, pct: 14.1 },
+      { category: 'Corporate Office & Facilities', amount: 58000, pct: 12.6 },
+      { category: 'Cloud & Server Infrastructure', amount: 42000, pct: 9.1 }
+    ]
+  }
+];
 
 export const accountsStore = new AccountsStore();
