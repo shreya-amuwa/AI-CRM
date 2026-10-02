@@ -142,29 +142,25 @@ export const ExpenseView: React.FC = () => {
       {/* =========================================================================
           UPPER CATEGORY SELECTOR BAR (DAILY / MONTHLY / VOUCHERS)
           ========================================================================= */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-mono font-bold uppercase text-slate-400 tracking-wider mr-2 hidden sm:inline-block">
-              EXPENSE CATEGORY:
-            </span>
-
             {/* 1. Daily Tab */}
             <button
               onClick={() => setExpenseTimeframe('daily')}
-              className={`flex items-center gap-2.5 px-4 sm:px-5 py-2.5 rounded-2xl text-xs font-mono font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
                 expenseTimeframe === 'daily'
-                  ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-500/30'
+                  ? 'bg-rose-600 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
               }`}
             >
-              <Calendar className="w-4 h-4" />
-              <span>Daily Expenses (Department-Wise)</span>
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Daily Expenses</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 expenseTimeframe === 'daily'
-                  ? 'bg-rose-700/80 text-rose-100'
-                  : 'bg-slate-200 text-slate-700'
+                  ? 'bg-rose-700 text-white'
+                  : 'bg-slate-200 text-slate-600'
               }`}>
                 {formatCurrency(dailyCompanyTotals.todayTotal)} Today
               </span>
@@ -173,38 +169,38 @@ export const ExpenseView: React.FC = () => {
             {/* 2. Monthly Tab */}
             <button
               onClick={() => setExpenseTimeframe('monthly')}
-              className={`flex items-center gap-2.5 px-4 sm:px-5 py-2.5 rounded-2xl text-xs font-mono font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
                 expenseTimeframe === 'monthly'
-                  ? 'bg-blue-600 text-white shadow-md ring-2 ring-blue-500/30'
+                  ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
               }`}
             >
-              <Clock className="w-4 h-4" />
-              <span>Monthly Expenses (Department-Wise)</span>
+              <Clock className="w-3.5 h-3.5" />
+              <span>Monthly Budget</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 expenseTimeframe === 'monthly'
-                  ? 'bg-blue-700/80 text-blue-100'
-                  : 'bg-slate-200 text-slate-700'
+                  ? 'bg-blue-700 text-white'
+                  : 'bg-slate-200 text-slate-600'
               }`}>
-                {formatCurrency(monthlyCompanyTotals.monthlyTotal)} Oct 2026
+                {formatCurrency(monthlyCompanyTotals.monthlyTotal)}
               </span>
             </button>
 
             {/* 3. Vouchers & Audit Log Tab */}
             <button
               onClick={() => setExpenseTimeframe('vouchers')}
-              className={`flex items-center gap-2.5 px-4 sm:px-5 py-2.5 rounded-2xl text-xs font-mono font-bold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
                 expenseTimeframe === 'vouchers'
-                  ? 'bg-slate-900 text-white shadow-md ring-2 ring-slate-800/30'
+                  ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
               }`}
             >
-              <Receipt className="w-4 h-4 text-emerald-400" />
-              <span>All Vouchers &amp; Audit Log</span>
+              <Receipt className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Vouchers Ledger</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 expenseTimeframe === 'vouchers'
                   ? 'bg-slate-800 text-slate-200'
-                  : 'bg-slate-200 text-slate-700'
+                  : 'bg-slate-200 text-slate-600'
               }`}>
                 {expenses.length} Records
               </span>
@@ -215,10 +211,10 @@ export const ExpenseView: React.FC = () => {
           <div className="shrink-0">
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-xs shadow-md transition-all active:scale-95"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-emerald-400" />
-              <span>Record Corporate Expense</span>
+              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Record Expense</span>
             </button>
           </div>
 
@@ -232,24 +228,26 @@ export const ExpenseView: React.FC = () => {
         <div className="space-y-8 animate-fade-in">
           
           {/* Daily Header Banner */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-rose-500/10 via-amber-500/5 to-transparent rounded-full pointer-events-none blur-3xl" />
-            
-            <div className="space-y-2 relative z-10">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-xs font-mono font-semibold">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                <span>DAILY CORPORATE SPEND &bull; 02 OCTOBER 2026</span>
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold font-heading text-slate-900 tracking-tight">
-                Daily Department-Wise Corporate Expenses
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-base font-bold font-heading text-slate-900 flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-rose-600" />
+                <span>Daily Corporate Expenses &bull; Department Breakdown</span>
               </h2>
-              <p className="text-sm text-slate-500 max-w-3xl leading-relaxed">
-                Real-time tracking of daily burn rate, cloud compute consumption, WhatsApp Cloud API bandwidth quotas, and corporate operational spend across all 6 business units. All reasons are strictly corporate.
+              <p className="text-xs text-slate-500">
+                Track daily operational burn rate, cloud compute, and API bandwidth quotas across all 6 units.
               </p>
             </div>
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="text-slate-400">Total Today:</span>
+              <strong className="text-rose-700 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                {formatCurrency(dailyCompanyTotals.todayTotal)}
+              </strong>
+            </div>
+          </div>
 
-            {/* 4 Daily KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-100">
+          {/* 4 Daily KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-5 rounded-2xl bg-rose-50/70 border border-rose-200/80 shadow-2xs space-y-1">
                 <div className="flex items-center justify-between text-rose-800">
                   <span className="text-xs font-mono font-bold uppercase tracking-wider">Today's Total Spend</span>
@@ -296,7 +294,6 @@ export const ExpenseView: React.FC = () => {
                 <p className="text-xs text-blue-700 font-mono">+7.0% change vs yesterday</p>
               </div>
             </div>
-          </div>
 
           {/* Department Filter Bar */}
           <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
@@ -487,24 +484,26 @@ export const ExpenseView: React.FC = () => {
         <div className="space-y-8 animate-fade-in">
           
           {/* Monthly Header Banner */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-blue-500/10 via-teal-500/5 to-transparent rounded-full pointer-events-none blur-3xl" />
-            
-            <div className="space-y-2 relative z-10">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-mono font-semibold">
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                <span>MONTHLY CORPORATE BUDGET &bull; OCTOBER 2026</span>
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-bold font-heading text-slate-900 tracking-tight">
-                Monthly Department-Wise Corporate Expenses
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-base font-bold font-heading text-slate-900 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-600" />
+                <span>Monthly Department Expenses &bull; Budget Utilization</span>
               </h2>
-              <p className="text-sm text-slate-500 max-w-3xl leading-relaxed">
-                Detailed monthly expenditure review, category-wise cost distribution (Payroll, Cloud, Telecom, SaaS), and budget utilization across all 6 business departments.
+              <p className="text-xs text-slate-500">
+                Category-wise monthly cost distribution (Cloud, API quotas, SaaS, Facilities) across all 6 business units.
               </p>
             </div>
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="text-slate-400">Monthly Spend:</span>
+              <strong className="text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+                {formatCurrency(monthlyCompanyTotals.monthlyTotal)}
+              </strong>
+            </div>
+          </div>
 
-            {/* 4 Monthly KPI Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-100">
+          {/* 4 Monthly KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-5 rounded-2xl bg-blue-50/70 border border-blue-200/80 shadow-2xs space-y-1">
                 <div className="flex items-center justify-between text-blue-800">
                   <span className="text-xs font-mono font-bold uppercase tracking-wider">Month Total Spend</span>
@@ -551,7 +550,6 @@ export const ExpenseView: React.FC = () => {
                 <p className="text-xs text-purple-700 font-mono">Corporate cash reserve cushion</p>
               </div>
             </div>
-          </div>
 
           {/* Department Filter Bar */}
           <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
@@ -729,36 +727,29 @@ export const ExpenseView: React.FC = () => {
         <div className="space-y-8 animate-fade-in">
           
           {/* Top Banner */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-rose-500/10 via-amber-500/5 to-transparent rounded-full pointer-events-none blur-3xl" />
-            
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-              <div className="space-y-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-xs font-mono font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                  <span>AUDITED CORPORATE VOUCHERS LEDGER</span>
-                </div>
-                <h2 className="text-2xl sm:text-3xl font-bold font-heading text-slate-900 tracking-tight">
-                  All Department Expense Vouchers &amp; Audit
-                </h2>
-                <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
-                  Individual audited corporate expenditures across business departments. All listed expenses are strictly corporate operational investments required for company infrastructure, API quota licenses, and staff payroll.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0">
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-xs shadow-md transition-all active:scale-95"
-                >
-                  <Plus className="w-4 h-4 text-emerald-400" />
-                  <span>Record Corporate Expense</span>
-                </button>
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-base font-bold font-heading text-slate-900 flex items-center gap-2">
+                <Receipt className="w-4 h-4 text-emerald-600" />
+                <span>Audited Corporate Expense Vouchers &amp; Statutory Log</span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Individual audited corporate expenditures and payments strictly for company infrastructure and operations.
+              </p>
             </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Record Expense</span>
+              </button>
+            </div>
+          </div>
 
-            {/* 4 Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-100">
+          {/* 4 Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               
               <div className="p-5 rounded-2xl bg-rose-50/70 border border-rose-200/80 shadow-2xs space-y-1">
                 <div className="flex items-center justify-between text-rose-800">
@@ -813,7 +804,6 @@ export const ExpenseView: React.FC = () => {
               </div>
 
             </div>
-          </div>
 
           {/* Filter and Search Bar */}
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-4">
