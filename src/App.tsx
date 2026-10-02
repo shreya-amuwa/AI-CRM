@@ -24,6 +24,8 @@ import { DtalkPanel } from './components/departments/dtalk/DtalkPanel';
 import { DigitreePanel } from './components/departments/digitree/DigitreePanel';
 import { MpillarPanel } from './components/departments/mpillar/MpillarPanel';
 import { EduTrainingPanel } from './components/departments/edutraining/EduTrainingPanel';
+import { AccountsDepartmentPanel } from './components/departments/accounts/AccountsDepartmentPanel';
+import { DepartmentAccountsBillingView } from './components/departments/shared/DepartmentAccountsBillingView';
 
 import { Sparkles } from 'lucide-react';
 
@@ -284,6 +286,14 @@ const MainAppContent: React.FC = () => {
               <AmuwaHqPanel activeTab={currentActiveTab} />
             ) : currentDeptId === 'hr' ? (
               <HRDepartmentPanel activeTab={currentActiveTab} />
+            ) : currentDeptId === 'accounts' ? (
+              <AccountsDepartmentPanel activeTab={currentActiveTab} />
+            ) : currentActiveTab === 'accounts' && !['amuwastudio', 'designstudio', 'hr', 'edutraining', 'amuwa'].includes(currentDeptId) ? (
+              <DepartmentAccountsBillingView
+                departmentId={currentDeptId}
+                departmentName={currentDept?.name}
+                onNavigateToMasterAccounts={() => selectDepartment('accounts')}
+              />
             ) : currentDeptId === 'whatsbox' ? (
               <WhatsboxPanel
                 activeTab={currentActiveTab}

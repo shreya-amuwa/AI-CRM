@@ -24,7 +24,8 @@ export const DepartmentAccessForm: React.FC<DepartmentAccessFormProps> = ({ temp
     edutraining: { deptId: 'edutraining', deptName: 'Edu Training', adminId: 'edutraining_admin', adminPass: 'edutraining123' },
     whatsbox: { deptId: 'whatsbox', deptName: 'Whatsbox', adminId: 'whatsbox_admin', adminPass: 'whatsbox123' },
     digitree: { deptId: 'digitree', deptName: 'Digitree', adminId: 'digitree_admin', adminPass: 'digitree123' },
-    dtalk: { deptId: 'dtalk', deptName: 'D-Talk', adminId: 'dtalk_admin', adminPass: 'dtalk123' }
+    dtalk: { deptId: 'dtalk', deptName: 'D-Talk', adminId: 'dtalk_admin', adminPass: 'dtalk123' },
+    accounts: { deptId: 'accounts', deptName: 'Accounts Department', adminId: 'accounts_admin', adminPass: 'accounts123' }
   };
 
   // HR Department Access

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShoppingBag, MessageSquare, PhoneCall, Cpu, Layers, Sparkles, Star,
   ArrowRight, Plus, Lock, Unlock, X, AlertTriangle, GraduationCap, Users, FileText,
-  Trash2, RotateCcw
+  Trash2, RotateCcw, DollarSign
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -24,6 +24,7 @@ const getFallbackIcon = (iconName: string) => {
     case 'Layers': return Layers;
     case 'GraduationCap': return GraduationCap;
     case 'Users': return Users;
+    case 'DollarSign': return DollarSign;
     default: return Building2;
   }
 };
@@ -121,7 +122,7 @@ export const DepartmentSelector: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-all cursor-pointer active:scale-95"
             >
               <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-              <span>Restore 10 Official Departments</span>
+              <span>Restore 11 Official Departments</span>
             </button>
           </div>
         )}

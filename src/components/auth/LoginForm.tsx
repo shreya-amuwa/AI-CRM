@@ -22,7 +22,8 @@ export const LoginForm: React.FC = () => {
     superadmin: { email: 'superadmin@amuwa.com', password: 'superadmin123', name: 'Super Admin', role: 'superadmin' as const },
     admin: { email: 'admin@amuwa.com', password: 'admin123', name: 'Admin (Department Head)', role: 'admin' as const },
     hr: { email: 'hr@amuwa.com', password: 'hr123', name: 'HR Manager', role: 'hr' as const },
-    lead: { email: 'lead@amuwa.com', password: 'lead123', name: 'Vikram Deshmukh (Team Lead)', role: 'team-lead' as const }
+    lead: { email: 'lead@amuwa.com', password: 'lead123', name: 'Vikram Deshmukh (Team Lead)', role: 'team-lead' as const },
+    accounts: { email: 'accounts@amuwa.com', password: 'accounts123', name: 'Rajiv Khanna (Accounts Head)', role: 'admin' as const, departmentId: 'accounts' }
   };
 
   const handleQuickFill = (targetEmail: string, targetPass: string) => {
@@ -51,7 +52,7 @@ export const LoginForm: React.FC = () => {
       return;
     }
 
-    // 2. Validate main login credentials (SuperAdmin / Admin / HR)
+    // 2. Validate main login credentials (SuperAdmin / Admin / HR / Accounts)
     const validRole = Object.entries(mainLoginCredentials).find(
       ([_, creds]) => creds.email.toLowerCase() === cleanEmail && creds.password === password
     );
@@ -63,7 +64,7 @@ export const LoginForm: React.FC = () => {
 
     setLoginError('');
     const role = validRole[1].role;
-    loginWithEmail(email, password, role);
+    loginWithEmail(email, password, role, (validRole[1] as any).departmentId);
   };
 
   const handleGoogleSelect = (selectedEmail: string) => {
@@ -291,18 +292,25 @@ export const LoginForm: React.FC = () => {
                 <span className="text-[10px] bg-emerald-200/60 px-1.5 py-0.5 rounded">6 Leads</span>
               </button>
 
-              <div className="grid grid-cols-2 gap-1.5 pt-1">
+              <div className="grid grid-cols-3 gap-1.5 pt-1">
                 <button
                   type="button"
                   onClick={() => handleQuickFill('admin@amuwa.com', 'admin123')}
-                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] text-center border border-slate-200 transition-colors"
+                  className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] text-center border border-slate-200 transition-colors"
                 >
                   Admin (Wabastore)
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleQuickFill('accounts@amuwa.com', 'accounts123')}
+                  className="px-1.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-mono text-[10px] text-center border border-emerald-200 font-bold transition-colors"
+                >
+                  Accounts Head
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleQuickFill('superadmin@amuwa.com', 'superadmin123')}
-                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] text-center border border-slate-200 transition-colors"
+                  className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] text-center border border-slate-200 transition-colors"
                 >
                   Super Admin
                 </button>

@@ -179,6 +179,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (userRole === 'superadmin') {
       userName = 'Super Admin';
       avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
+    } else if (departmentId === 'accounts' || email.toLowerCase().includes('accounts')) {
+      userName = 'Rajiv Khanna (Accounts Head)';
+      avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
+      userRole = 'admin';
     } else if (userRole === 'admin') {
       userName = 'Admin (Department Head)';
       avatar = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80';
@@ -193,7 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email,
       avatar,
       role: userRole,
-      departmentId: departmentId || (userRole === 'admin' ? 'wabastore' : undefined)
+      departmentId: departmentId || (userRole === 'admin' ? (email.toLowerCase().includes('accounts') ? 'accounts' : 'wabastore') : undefined)
     };
     setUser(newUser);
     localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
@@ -203,8 +207,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       empId: newUser.id,
       name: userName,
       email,
-      role: userRole === 'hr' ? 'HR Manager' : (userRole === 'admin' ? 'Operations / Admin Lead' : 'Super Admin'),
-      department: userRole === 'hr' ? 'HR Department' : 'Amuwa Corporation',
+      role: departmentId === 'accounts' || email.toLowerCase().includes('accounts')
+        ? 'Accounts Head (Finance Director)'
+        : (userRole === 'hr' ? 'HR Manager' : (userRole === 'admin' ? 'Operations / Admin Lead' : 'Super Admin')),
+      department: departmentId === 'accounts' || email.toLowerCase().includes('accounts')
+        ? 'Accounts Department'
+        : (userRole === 'hr' ? 'HR Department' : 'Amuwa Corporation'),
       avatar: userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
       authMethod: 'ID & Password Auth (System Login)',
       device: 'CRM Web Client (ID & Password)'

@@ -20,7 +20,8 @@ const DEPARTMENT_CREDENTIALS = {
   digitree: { id: 'digitree_admin', pass: 'digitree123' },
   mpillar: { id: 'mpillar_admin', pass: 'mpillar123' },
   edutraining: { id: 'edutraining_admin', pass: 'edutraining123' },
-  hr: { id: 'hr_access', pass: 'hr_dept123' }
+  hr: { id: 'hr_access', pass: 'hr_dept123' },
+  accounts: { id: 'accounts_admin', pass: 'accounts123' }
 };
 
 export const DepartmentUnlockModal: React.FC<DepartmentUnlockModalProps> = ({
@@ -39,10 +40,16 @@ export const DepartmentUnlockModal: React.FC<DepartmentUnlockModalProps> = ({
     e.preventDefault();
     if (!department) return;
 
+    // Special allowance for accounts head alias
+    const isAccountsMatch =
+      department.id === 'accounts' &&
+      (deptId.trim() === 'accounts_admin' || deptId.trim() === 'accounts_head' || deptId.trim() === 'accounts_access') &&
+      deptPass.trim() === 'accounts123';
+
     const creds = DEPARTMENT_CREDENTIALS[department.id as keyof typeof DEPARTMENT_CREDENTIALS];
 
-    if (!creds || deptId !== creds.id || deptPass !== creds.pass) {
-      setError('Invalid department ID or password');
+    if (!isAccountsMatch && (!creds || deptId.trim() !== creds.id || deptPass.trim() !== creds.pass)) {
+      setError('Invalid department ID or password. Access restricted to SuperAdmin and Accounts Head.');
       return;
     }
 

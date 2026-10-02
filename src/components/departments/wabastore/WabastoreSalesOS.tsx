@@ -15,6 +15,8 @@ import { SalesHeadReportsView } from './sales/SalesHeadReportsView';
 import { DepartmentTeamMembersView } from './shared/DepartmentTeamMembersView';
 import { DepartmentTeamHierarchyView } from './shared/DepartmentTeamHierarchyView';
 import { FieldVisitTrackerView } from '../../common/FieldVisitTrackerView';
+import { DepartmentAccountsBillingView } from '../shared/DepartmentAccountsBillingView';
+import { useAuth } from '../../../context/AuthContext';
 
 interface WabastoreSalesOSProps {
   activeTab: ActiveTab;
@@ -30,6 +32,8 @@ export const WabastoreSalesOS: React.FC<WabastoreSalesOSProps> = ({
   subDept,
   onSelectSubDept
 }) => {
+  const { selectDepartment } = useAuth();
+
   // SUB-DEPARTMENT SELECTOR SCREEN
   if (!subDept) {
     return (
@@ -143,6 +147,14 @@ export const WabastoreSalesOS: React.FC<WabastoreSalesOSProps> = ({
         return <SalesHeadTeamPerformanceView />;
       case 'sales_reports':
         return <SalesHeadReportsView />;
+      case 'accounts':
+        return (
+          <DepartmentAccountsBillingView
+            departmentId="wabastore"
+            departmentName="Wabastore"
+            onNavigateToMasterAccounts={() => selectDepartment('accounts')}
+          />
+        );
       default:
         return <SalesHeadDashboardView onNavigateTab={onSelectTab} />;
     }

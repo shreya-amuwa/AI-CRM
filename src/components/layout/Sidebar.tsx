@@ -7,7 +7,7 @@ import {
   Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus,
   Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign,
   Handshake, Filter, Award, FileText,  LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork,
-  Navigation
+  Navigation, TrendingUp, Receipt
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -17,6 +17,9 @@ export type ActiveTab =
   | 'hr_ops'
   | 'hrStaff'
   | 'accounts'
+  | 'income'
+  | 'expense'
+  | 'invoice'
   | 'training'
   | 'product_training'
   | 'settings'
@@ -90,26 +93,38 @@ const SUPPORT_10_SOURCES = [
   NOTIFICATION_TAB // MUST BE LAST!
 ];
 
+const SUPPORT_10_SOURCES_WITH_ACCOUNTS = [
+  ...SUPPORT_10_SOURCES.slice(0, -1),
+  { id: 'accounts' as ActiveTab, label: 'Accounts & Invoices', icon: DollarSign },
+  NOTIFICATION_TAB
+];
+
 // Department Navigation Map - NOTIFICATION CENTER AT THE VERY LAST POSITION FOR ALL!
 const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: any }[]> = {
+  // Amuwa Corporation (Accounts excluded per requirement)
   amuwa: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'hr_ops', label: 'HR & Operations', icon: Users },
     { id: 'hrStaff' as ActiveTab, label: 'HR Staff', icon: ShieldCheck },
-    { id: 'accounts', label: 'Accounts', icon: DollarSign },
     { id: 'field_visits' as ActiveTab, label: 'Field Visit GPS Tracking', icon: Navigation },
     { id: 'settings', label: 'Settings', icon: Settings },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
+  // HR Department (Accounts excluded per requirement)
   hr: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'hr_ops', label: 'HR & Operations', icon: Users },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  // Education & Training — split into two sub-departments:
-  // "education_training" (candidate day-wise training progress, moved
-  // over exactly as-is from Amuwa Corporation) and "product_training"
-  // (client-facing product training, new).
+  // Master Accounts Department (Side panel with Income, Expense, Invoice)
+  accounts: [
+    { id: 'dashboard', label: 'Accounts Overview', icon: LayoutDashboard },
+    { id: 'income', label: 'Department Income', icon: TrendingUp },
+    { id: 'expense', label: 'Corporate Expenses', icon: Receipt },
+    { id: 'invoice', label: 'Invoices & Quotations', icon: FileText },
+    NOTIFICATION_TAB // MUST BE LAST!
+  ],
+  // Education & Training (Accounts excluded per requirement)
   edutraining_education_training: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'training', label: 'Candidate Training', icon: GraduationCap },
@@ -120,15 +135,32 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
     { id: 'product_training', label: 'Client Product Training', icon: BookOpen },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
+  // Wabastar (Accounts included)
+  wabastar: [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'leads', label: 'Leads Ingestion', icon: Database },
+    { id: 'accounts', label: 'Accounts & Invoices', icon: DollarSign },
+    NOTIFICATION_TAB // MUST BE LAST!
+  ],
+  wabastar_sales: [
+    { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
+    { id: 'leads', label: 'Leads Ingestion', icon: Database },
+    { id: 'accounts', label: 'Accounts & Invoices', icon: DollarSign },
+    NOTIFICATION_TAB // MUST BE LAST!
+  ],
+  wabastar_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS,
+
+  // Whatsbox (Accounts included)
   whatsbox_sales: [
     { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
     { id: 'live_inbox', label: 'Sales WhatsApp Inbox', icon: MessageCircle },
     { id: 'contacts', label: 'Prospect Contact Lists', icon: UserCheck },
+    { id: 'accounts', label: 'Accounts & Invoices', icon: DollarSign },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  whatsbox_support: SUPPORT_10_SOURCES,
+  whatsbox_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS,
   
-  // Wabastore Sales Sub-department (Sales Department Head Dashboard)
+  // Wabastore Sales Sub-department (Accounts included)
   wabastore_sales: [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'leads', label: 'Leads', icon: Database },
@@ -142,38 +174,42 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
     { id: 'team_members' as ActiveTab, label: 'Team Members', icon: UserCheck },
     { id: 'sales_team_performance' as ActiveTab, label: 'Team Performance', icon: Award },
     { id: 'sales_reports' as ActiveTab, label: 'Reports', icon: FileText },
+    { id: 'accounts' as ActiveTab, label: 'Accounts & Invoices', icon: DollarSign },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  wabastore_support: SUPPORT_10_SOURCES,
+  wabastore_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS,
 
-  // D Talk
+  // D Talk (Accounts included)
   dtalk_sales: [
     { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
     { id: 'call_logs', label: 'Sales Call Logs', icon: PhoneCall },
     { id: 'agents', label: 'Telephony Agents', icon: PhoneForwarded },
     { id: 'leads', label: 'Leads Ingestion', icon: Database },
+    { id: 'accounts', label: 'Accounts & Invoices', icon: DollarSign },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  dtalk_support: SUPPORT_10_SOURCES,
+  dtalk_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS,
 
-  // Digitree
+  // Digitree (Accounts included)
   digitree_sales: [
     { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
     { id: 'aiqr', label: 'AIQR Generator', icon: QrCode },
     { id: 'analytics', label: 'Campaign Analytics', icon: BarChart3 },
     { id: 'leads', label: 'Leads Ingestion', icon: Database },
+    { id: 'accounts', label: 'Accounts & Invoices', icon: DollarSign },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  digitree_support: SUPPORT_10_SOURCES,
+  digitree_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS,
 
-  // M Pillar
+  // M Pillar (Accounts included)
   mpillar_sales: [
     { id: 'dashboard', label: 'Sales Dashboard', icon: LayoutDashboard },
     { id: 'key_accounts', label: 'Key Accounts', icon: Briefcase },
     { id: 'leads', label: 'Leads Ingestion', icon: Database },
+    { id: 'accounts', label: 'Accounts & Invoices', icon: DollarSign },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  mpillar_support: SUPPORT_10_SOURCES
+  mpillar_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS
 };
 
 // Generic navigation used by any department that doesn't have a bespoke,

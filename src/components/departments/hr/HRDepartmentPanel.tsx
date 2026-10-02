@@ -42,7 +42,8 @@ export const CORPORATE_DEPARTMENTS = [
   { id: 'digitree', name: 'Digitree Infotech', lead: 'Arjun Kapoor', staff: 15, status: 'Active', icon: Cpu, color: 'text-pink-600 bg-pink-50 border-pink-200' },
   { id: 'mpillar', name: 'M Pillar Corporation', lead: 'Rajesh Verma', staff: 12, status: 'Active', icon: Layers, color: 'text-amber-600 bg-amber-50 border-amber-200' },
   { id: 'edutraining', name: 'Education & Training', lead: 'Pooja Hegde', staff: 6, status: 'Active', icon: GraduationCap, color: 'text-sky-600 bg-sky-50 border-sky-200' },
-  { id: 'hr', name: 'HR Department', lead: 'Priya Sharma', staff: 4, status: 'Active', icon: Users, color: 'text-blue-600 bg-blue-50 border-blue-200' }
+  { id: 'hr', name: 'HR Department', lead: 'Priya Sharma', staff: 4, status: 'Active', icon: Users, color: 'text-blue-600 bg-blue-50 border-blue-200' },
+  { id: 'accounts', name: 'Accounts Department', lead: 'Rajiv Khanna', staff: 5, status: 'Active', icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' }
 ];
 
 export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab = 'dashboard' }) => {

@@ -128,5 +128,18 @@ export const DEPARTMENTS: Department[] = [
     maxSessions: 2,
     locked: false,
     createdAt: '2024-01-01T00:00:00.000Z'
+  },
+  {
+    id: 'accounts',
+    name: 'Accounts Department',
+    description: 'Corporate Financial Intelligence, Income, Operating Expenses & Invoicing',
+    iconName: 'DollarSign',
+    accentColor: '#10B981', // Emerald
+    totalLeads: 0,
+    activeSessions: 0,
+    maxSessions: 2,
+    locked: false,
+    createdAt: '2024-01-01T00:00:00.000Z'
   }
 ];
+
