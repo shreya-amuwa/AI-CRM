@@ -257,7 +257,10 @@ export const SYSTEM_DEPARTMENTS: DepartmentConfig[] = [
 
 export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = ({ currentUserId }) => {
   const { user } = useAuth();
-  const [invoices, setInvoices] = useState<Invoice[]>(() => teamMemberStore.getInvoices(currentUserId));
+  const effectiveUserId = currentUserId || user?.id || 'tm-priya';
+  const effectiveUserName = user?.name || (effectiveUserId === 'tm-rahul' ? 'Rahul Kumar' : effectiveUserId === 'tm-amit' ? 'Amit Patel' : 'Priya Nair');
+
+  const [invoices, setInvoices] = useState<Invoice[]>(() => teamMemberStore.getInvoices(effectiveUserId));
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
@@ -267,7 +270,7 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
   // Real-time synchronization listener with Accounts Dashboard
   useEffect(() => {
     const handleInvoiceCreated = () => {
-      setInvoices(teamMemberStore.getInvoices(currentUserId));
+      setInvoices(teamMemberStore.getInvoices(effectiveUserId));
     };
     window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
     window.addEventListener('storage', handleInvoiceCreated);
@@ -275,7 +278,12 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
       window.removeEventListener('storage', handleInvoiceCreated);
     };
-  }, [currentUserId]);
+  }, [effectiveUserId]);
+
+  // Keep invoices refreshed whenever effective user changes
+  useEffect(() => {
+    setInvoices(teamMemberStore.getInvoices(effectiveUserId));
+  }, [effectiveUserId]);
 
   // Success Notification state
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -422,13 +430,17 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       contactEmail: dept.billingEmail,
       contactPhone: dept.billingPhone,
       terms: dept.terms,
-      items: itemsDetail
+      items: itemsDetail,
+      userId: effectiveUserId,
+      teamMemberId: effectiveUserId,
+      teamMemberName: effectiveUserName,
+      teamMemberRole: user?.role === 'team-lead' ? 'Senior Sales Lead' : 'Account Sales Executive'
     };
 
-    // 1. Add to Team Member Store
+    // 1. Add to Team Member Store (scoped to this team member)
     teamMemberStore.addInvoice(newInvoiceData);
 
-    // 2. Add to Central Accounts Department Store (connected to accounts dashboard)
+    // 2. Add to Central Accounts Department Store (consolidated across all departments & team members)
     accountsStore.addInvoice({
       invoiceNumber: invoiceNum,
       departmentId: dept.id,
@@ -438,8 +450,8 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       clientAddress: 'HQ Corporate Commercials, Tech Park, Bangalore',
       clientEmail: dept.billingEmail,
       clientPhone: dept.billingPhone,
-      teamMemberId: user?.id || currentUserId || 'tm-priya',
-      teamMemberName: user?.name || 'Priya Mehta',
+      teamMemberId: effectiveUserId,
+      teamMemberName: effectiveUserName,
       teamMemberRole: user?.role === 'team-lead' ? 'Senior Sales Lead' : 'Account Sales Executive',
       issuedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       dueDate: form.dueDate,
@@ -452,7 +464,7 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       notes: dept.terms
     });
 
-    const updated = teamMemberStore.getInvoices(currentUserId);
+    const updated = teamMemberStore.getInvoices(effectiveUserId);
     setInvoices(updated);
 
     // Save department persistence

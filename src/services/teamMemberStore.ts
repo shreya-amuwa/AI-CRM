@@ -100,6 +100,10 @@ export const INITIAL_INVOICES: Invoice[] = [
     terms: 'Net 15 days. Subject to Meta Cloud WhatsApp Commerce terms.',
     contactEmail: 'billing@wabastore.com',
     contactPhone: '+91 80 4912 2001',
+    userId: 'tm-priya',
+    teamMemberId: 'tm-priya',
+    teamMemberName: 'Priya Nair',
+    teamMemberRole: 'Sales Executive',
     items: [
       { description: 'Wabastore E-Commerce Storefront Engine & Catalog Sync', quantity: 1, rate: 185000, amount: 185000 }
     ]
@@ -119,6 +123,10 @@ export const INITIAL_INVOICES: Invoice[] = [
     terms: 'Annual subscription billed upfront with 99.9% uptime SLA.',
     contactEmail: 'sales@whatsbox.com',
     contactPhone: '+91 80 4912 3001',
+    userId: 'tm-rahul',
+    teamMemberId: 'tm-rahul',
+    teamMemberName: 'Rahul Kumar',
+    teamMemberRole: 'Sales Executive',
     items: [
       { description: 'Whatsbox Multi-Agent Unified Inbox License (25 Seats)', quantity: 1, rate: 215000, amount: 215000 }
     ]
@@ -138,6 +146,10 @@ export const INITIAL_INVOICES: Invoice[] = [
     terms: 'Includes 100-channel PRI line allocation. TRAI compliance guidelines apply.',
     contactEmail: 'sales@dtalk.com',
     contactPhone: '+91 20 6711 5001',
+    userId: 'tm-amit',
+    teamMemberId: 'tm-amit',
+    teamMemberName: 'Amit Patel',
+    teamMemberRole: 'Senior Sales Specialist',
     items: [
       { description: 'Enterprise 100-Channel PRI SIP Trunking & Dialer Suite', quantity: 1, rate: 240000, amount: 240000 }
     ]
@@ -157,6 +169,10 @@ export const INITIAL_INVOICES: Invoice[] = [
     terms: 'Software license valid for 12 months with unlimited dynamic QR generations.',
     contactEmail: 'sales@digitree.com',
     contactPhone: '+91 124 459 8001',
+    userId: 'tm-priya',
+    teamMemberId: 'tm-priya',
+    teamMemberName: 'Priya Nair',
+    teamMemberRole: 'Sales Executive',
     items: [
       { description: 'Digitree Dynamic AIQR Enterprise Multi-Brand Platform', quantity: 1, rate: 195000, amount: 195000 }
     ]
@@ -176,6 +192,10 @@ export const INITIAL_INVOICES: Invoice[] = [
     terms: 'Mobilization within 14 business days. Milestone billing upon site setup.',
     contactEmail: 'sales@mpillar.com',
     contactPhone: '+91 22 6889 6001',
+    userId: 'tm-rahul',
+    teamMemberId: 'tm-rahul',
+    teamMemberName: 'Rahul Kumar',
+    teamMemberRole: 'Sales Executive',
     items: [
       { description: 'Smart Construction Site Safety & Daily Attendance IoT Suite', quantity: 1, rate: 280000, amount: 280000 }
     ]
@@ -195,6 +215,10 @@ export const INITIAL_INVOICES: Invoice[] = [
     terms: 'Net 15 days. Dedicated high-throughput messaging quotas apply.',
     contactEmail: 'sales@wabastar.com',
     contactPhone: '+91 80 4912 2005',
+    userId: 'tm-amit',
+    teamMemberId: 'tm-amit',
+    teamMemberName: 'Amit Patel',
+    teamMemberRole: 'Senior Sales Specialist',
     items: [
       { description: 'Wabastar High-Throughput Marketing Automation License', quantity: 1, rate: 230000, amount: 230000 }
     ]
@@ -563,6 +587,9 @@ class TeamMemberStore {
   public getCustomers(userId?: string): Customer[] {
     try {
       const all: Customer[] = JSON.parse(localStorage.getItem(this.customersKey) || '[]');
+      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin') {
+        return all.filter(c => !c.assignedTo || c.assignedTo === userId);
+      }
       return all;
     } catch {
       return INITIAL_CUSTOMERS;
@@ -575,7 +602,8 @@ class TeamMemberStore {
       id: `CST-${Date.now()}`
     };
     try {
-      const all = this.getCustomers();
+      const raw = localStorage.getItem(this.customersKey);
+      const all: Customer[] = raw ? JSON.parse(raw) : [];
       localStorage.setItem(this.customersKey, JSON.stringify([newCust, ...all]));
     } catch {}
     return newCust;
@@ -611,23 +639,54 @@ class TeamMemberStore {
   public getInvoices(userId?: string): Invoice[] {
     try {
       const stored = localStorage.getItem(this.invoicesKey);
+      let list: Invoice[] = [];
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const cleaned = parsed.filter(inv =>
+          // Normalize legacy entries in storage to assign ownership
+          list = parsed.map((inv: any) => {
+            if (!inv.userId && !inv.teamMemberId) {
+              if (inv.invoiceNumber === 'WAB-SLS-2026-101' || inv.invoiceNumber === 'DGT-SLS-2026-104') {
+                return { ...inv, userId: 'tm-priya', teamMemberId: 'tm-priya', teamMemberName: 'Priya Nair', teamMemberRole: 'Sales Executive' };
+              }
+              if (inv.invoiceNumber === 'WBX-SLS-2026-102' || inv.invoiceNumber === 'MPL-SLS-2026-105') {
+                return { ...inv, userId: 'tm-rahul', teamMemberId: 'tm-rahul', teamMemberName: 'Rahul Kumar', teamMemberRole: 'Sales Executive' };
+              }
+              if (inv.invoiceNumber === 'DTK-SLS-2026-103' || inv.invoiceNumber === 'WBS-SLS-2026-106') {
+                return { ...inv, userId: 'tm-amit', teamMemberId: 'tm-amit', teamMemberName: 'Amit Patel', teamMemberRole: 'Senior Sales Specialist' };
+              }
+              if (inv.teamMemberName?.toLowerCase().includes('rahul')) {
+                return { ...inv, userId: 'tm-rahul', teamMemberId: 'tm-rahul' };
+              }
+              if (inv.teamMemberName?.toLowerCase().includes('amit')) {
+                return { ...inv, userId: 'tm-amit', teamMemberId: 'tm-amit' };
+              }
+              return { ...inv, userId: 'tm-priya', teamMemberId: 'tm-priya', teamMemberName: inv.teamMemberName || 'Priya Nair' };
+            }
+            return inv;
+          }).filter(inv =>
             !inv.departmentId?.includes('education') &&
             !inv.departmentId?.includes('hr') &&
             !inv.departmentId?.includes('amuwa')
           );
-          if (cleaned.length !== parsed.length) {
-            localStorage.setItem(this.invoicesKey, JSON.stringify(cleaned.length > 0 ? cleaned : INITIAL_INVOICES));
-          }
-          return cleaned.length > 0 ? cleaned : INITIAL_INVOICES;
         }
       }
-      localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
-      return INITIAL_INVOICES;
+      if (list.length === 0) {
+        list = INITIAL_INVOICES;
+        localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
+      }
+
+      // Isolate strictly by team member ID when querying for a team member
+      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin' && userId !== 'accounts-head') {
+        return list.filter(inv => inv.userId === userId || inv.teamMemberId === userId);
+      }
+
+      // Superadmin / Central Accounts Head / System View queries see all invoices
+      return list;
     } catch {
+      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin' && userId !== 'accounts-head') {
+        return INITIAL_INVOICES.filter(inv => inv.userId === userId || inv.teamMemberId === userId);
+      }
       return INITIAL_INVOICES;
     }
   }
@@ -638,16 +697,38 @@ class TeamMemberStore {
       id: `INV-${Date.now()}`
     };
     try {
-      const all = this.getInvoices();
-      localStorage.setItem(this.invoicesKey, JSON.stringify([newInv, ...all]));
-    } catch {}
+      // Read directly from storage without user filtering to preserve all team members' data
+      const stored = localStorage.getItem(this.invoicesKey);
+      let all: Invoice[] = [];
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed)) all = parsed;
+        } catch {}
+      }
+      if (all.length === 0) all = [...INITIAL_INVOICES];
+      
+      const updated = [newInv, ...all];
+      localStorage.setItem(this.invoicesKey, JSON.stringify(updated));
+
+      // Global notification event for reactive UI updates across open views
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('amuwa_crm_invoice_created', { detail: newInv }));
+      }
+    } catch (e) {
+      console.error('Failed to add invoice in teamMemberStore:', e);
+    }
     return newInv;
   }
 
   // --- CALENDAR EVENTS ---
   public getCalendarEvents(userId?: string): CalendarEvent[] {
     try {
-      return JSON.parse(localStorage.getItem(this.eventsKey) || '[]');
+      const all: CalendarEvent[] = JSON.parse(localStorage.getItem(this.eventsKey) || '[]');
+      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin') {
+        return all.filter(e => !e.userId || e.userId === userId);
+      }
+      return all;
     } catch {
       return INITIAL_CALENDAR_EVENTS;
     }
@@ -659,7 +740,8 @@ class TeamMemberStore {
       id: `EVT-${Date.now()}`
     };
     try {
-      const all = this.getCalendarEvents();
+      const raw = localStorage.getItem(this.eventsKey);
+      const all: CalendarEvent[] = raw ? JSON.parse(raw) : [];
       localStorage.setItem(this.eventsKey, JSON.stringify([...all, newEvt]));
     } catch {}
     return newEvt;
@@ -668,7 +750,11 @@ class TeamMemberStore {
   // --- DEALS ---
   public getDeals(userId?: string): Deal[] {
     try {
-      return JSON.parse(localStorage.getItem(this.dealsKey) || '[]');
+      const all: Deal[] = JSON.parse(localStorage.getItem(this.dealsKey) || '[]');
+      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin') {
+        return all.filter(d => !d.userId || d.userId === userId);
+      }
+      return all;
     } catch {
       return INITIAL_DEALS_CRM;
     }
@@ -681,7 +767,8 @@ class TeamMemberStore {
       createdAt: new Date().toISOString().split('T')[0]
     };
     try {
-      const all = this.getDeals();
+      const raw = localStorage.getItem(this.dealsKey);
+      const all: Deal[] = raw ? JSON.parse(raw) : [];
       localStorage.setItem(this.dealsKey, JSON.stringify([newDeal, ...all]));
     } catch {}
     return newDeal;

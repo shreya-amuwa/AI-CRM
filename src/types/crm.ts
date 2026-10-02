@@ -209,10 +209,15 @@ export interface Invoice {
   taxAmount?: number;
   contactEmail?: string;
   contactPhone?: string;
+  userId?: string;
+  teamMemberId?: string;
+  teamMemberName?: string;
+  teamMemberRole?: string;
 }
 
 export interface CalendarEvent {
   id: string;
+  userId?: string;
   title: string;
   customer: string;
   company?: string;

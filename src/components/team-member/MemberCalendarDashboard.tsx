@@ -40,6 +40,7 @@ export const MemberCalendarDashboard: React.FC<MemberCalendarDashboardProps> = (
     if (!form.title || !form.customer) return;
 
     teamMemberStore.addCalendarEvent({
+      userId: currentUserId,
       title: form.title,
       customer: form.customer,
       company: form.company,
