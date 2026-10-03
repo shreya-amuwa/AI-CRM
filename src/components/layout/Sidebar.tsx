@@ -73,6 +73,7 @@ interface SidebarProps {
   onSelectTab: (tab: ActiveTab) => void;
   onNavigateHome: () => void;
   subDept?: 'sales' | 'support' | 'education_training' | 'product_training' | null;
+  departmentId?: string;
 }
 
 const NOTIFICATION_TAB = { id: 'notifications' as ActiveTab, label: 'Notification Center', icon: Bell };
@@ -239,14 +240,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onSelectTab,
   onNavigateHome,
-  subDept
+  subDept,
+  departmentId
 }) => {
   const { activeDepartment, activeDepartmentId } = useAuth();
   const { getUnreadCountForUser } = useNotifications();
   
   // Sidebar only ever renders once a department is active, but guard
   // defensively without ever substituting another department's identity.
-  let key: string = activeDepartmentId || '__no_department__';
+  const effectiveDeptId = departmentId || activeDepartmentId;
+  let key: string = effectiveDeptId || '__no_department__';
   if (subDept) {
     key = `${key}_${subDept}`;
   }

@@ -212,6 +212,7 @@ const MainAppContent: React.FC = () => {
             onSelectTab={(tab) => handleTabUpdate(tab)}
             onNavigateHome={handleReturnToHub}
             subDept={currentSubDept}
+            departmentId={currentDeptId}
           />
         )}
 
