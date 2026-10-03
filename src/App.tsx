@@ -288,7 +288,7 @@ const MainAppContent: React.FC = () => {
               <HRDepartmentPanel activeTab={currentActiveTab} />
             ) : currentDeptId === 'accounts' ? (
               <AccountsDepartmentPanel activeTab={currentActiveTab} />
-            ) : currentActiveTab === 'accounts' && !['amuwastudio', 'designstudio', 'hr', 'edutraining', 'amuwa'].includes(currentDeptId) ? (
+            ) : currentActiveTab === 'accounts' && !['amuwastudio', 'designstudio', 'hr', 'edutraining', 'amuwa'].includes(currentDeptId) && !(currentDeptId === 'wabastore' && currentSubDept === 'support') ? (
               <DepartmentAccountsBillingView
                 departmentId={currentDeptId}
                 departmentName={currentDept?.name}

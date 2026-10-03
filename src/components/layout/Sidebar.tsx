@@ -77,6 +77,18 @@ interface SidebarProps {
 
 const NOTIFICATION_TAB = { id: 'notifications' as ActiveTab, label: 'Notification Center', icon: Bell };
 
+// Wabastore Support Sources (1 to 6 only, removing 7. Website to Accounts & Invoices)
+const WABASTORE_SUPPORT_SOURCES = [
+  { id: 'dashboard' as ActiveTab, label: 'Support Dashboard', icon: LayoutDashboard },
+  { id: 'lead_src_1' as ActiveTab, label: '1. WhatsApp API', icon: MessageSquare },
+  { id: 'lead_src_2' as ActiveTab, label: '2. Meta Ads', icon: Target },
+  { id: 'lead_src_3' as ActiveTab, label: '3. Telecaller', icon: PhoneCall },
+  { id: 'lead_src_4' as ActiveTab, label: '4. Business Developer', icon: UserPlus },
+  { id: 'lead_src_5' as ActiveTab, label: '5. AI Calling', icon: RobotIcon },
+  { id: 'lead_src_6' as ActiveTab, label: '6. RCS Messages', icon: Send },
+  NOTIFICATION_TAB // MUST BE LAST!
+];
+
 // 10 Support Lead Sources WITH NOTIFICATION CENTER AS THE VERY LAST ITEM!
 const SUPPORT_10_SOURCES = [
   { id: 'dashboard' as ActiveTab, label: 'Support Dashboard', icon: LayoutDashboard },
@@ -177,7 +189,7 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
     { id: 'accounts' as ActiveTab, label: 'Accounts & Invoices', icon: DollarSign },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
-  wabastore_support: SUPPORT_10_SOURCES_WITH_ACCOUNTS,
+  wabastore_support: WABASTORE_SUPPORT_SOURCES,
 
   // D Talk (Accounts included)
   dtalk_sales: [

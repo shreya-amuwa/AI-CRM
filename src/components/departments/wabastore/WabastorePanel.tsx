@@ -45,7 +45,7 @@ interface WebhookSourceConfig {
   sampleJson: string;
 }
 
-// 10 Dedicated Webhook Ingestion Sources for Wabastore E-Commerce & Retail Support
+// Dedicated Webhook Ingestion Sources for Wabastore E-Commerce & Retail Support
 const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
   lead_src_1: {
     title: '1. WhatsApp API',
@@ -200,102 +200,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
       product_category: 'Electronics & Audio',
       campaign: 'Festival Electronics Sale',
       converted: true
-    }, null, 2)
-  },
-  lead_src_7: {
-    title: '7. Website',
-    name: 'Website',
-    sourceId: 'website',
-    port: 'Webhook Port #1086',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_web_338291065',
-    desc: 'Direct merchant portal registrations & demo requests via wabastore.com.',
-    icon: Globe,
-    color: 'text-indigo-600',
-    bg: 'bg-indigo-50/70',
-    borderColor: 'border-l-4 border-l-indigo-500 border-slate-200',
-    dotColor: 'bg-indigo-500',
-    count: 0,
-    pct: '0.0%',
-    sampleJson: JSON.stringify({
-      portal_url: 'https://wabastore.com/merchant-signup',
-      merchant_name: 'Organic Spices Co',
-      contact_person: 'Website Inbound Contact',
-      contact_email: 'sales@organicspices.in',
-      phone: '+919988711223',
-      business_pan: 'ABCDE1234F'
-    }, null, 2)
-  },
-  lead_src_8: {
-    title: '8. References',
-    name: 'References',
-    sourceId: 'references',
-    port: 'Webhook Port #1087',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_ref_227180954',
-    desc: 'Brand ambassador & existing top seller merchant referral program entries.',
-    icon: Users,
-    color: 'text-teal-600',
-    bg: 'bg-teal-50/70',
-    borderColor: 'border-l-4 border-l-teal-500 border-slate-200',
-    dotColor: 'bg-teal-500',
-    count: 0,
-    pct: '0.0%',
-    sampleJson: JSON.stringify({
-      referring_merchant: 'Apex Footwear Ltd',
-      new_store_lead: 'Stride Luxe Shoes',
-      contact_person: 'Referred Lead Contact',
-      contact_phone: '+919765432109',
-      referral_tier: 'Gold Partner',
-      bonus_points_credited: 2500
-    }, null, 2)
-  },
-  lead_src_9: {
-    title: '9. Cold Calling',
-    name: 'Cold Calling',
-    sourceId: 'coldcalling',
-    port: 'Webhook Port #1088',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_cold_116079843',
-    desc: 'Targeted D2C retailer & wholesale market direct phone outreach logs.',
-    icon: Phone,
-    color: 'text-orange-600',
-    bg: 'bg-orange-50/70',
-    borderColor: 'border-l-4 border-l-orange-500 border-slate-200',
-    dotColor: 'bg-orange-500',
-    count: 0,
-    pct: '0.0%',
-    sampleJson: JSON.stringify({
-      campaign_id: 'D2C_SURAT_TEXTILE_HUB',
-      shop_name: 'Radhe Sarees Wholesale',
-      proprietor: 'Direct Phone Prospect',
-      phone: '+919822334455',
-      interest_level: 'High Intent - WhatsApp Store Needed',
-      follow_up_slot: 'Tomorrow 11:30 AM'
-    }, null, 2)
-  },
-  lead_src_10: {
-    title: '10. Third Party Sources',
-    name: 'Third Party Sources',
-    sourceId: 'thirdparty',
-    port: 'Webhook Port #1089',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_3rd_005968732',
-    desc: 'Shopify, WooCommerce, Amazon Seller & IndiaMART marketplace sync webhooks.',
-    icon: Building2,
-    color: 'text-rose-600',
-    bg: 'bg-rose-50/70',
-    borderColor: 'border-l-4 border-l-rose-500 border-slate-200',
-    dotColor: 'bg-rose-500',
-    count: 0,
-    pct: '0.0%',
-    sampleJson: JSON.stringify({
-      platform: 'Shopify Webhook Ingestion',
-      shop_domain: 'trendylifestyle.myshopify.com',
-      orders_sync_active: true,
-      monthly_volume: '3,200 orders',
-      webhook_event: 'orders/create',
-      merchant_country: 'IN'
     }, null, 2)
   }
 };
@@ -1132,7 +1036,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                   Wabastore Support Department
                 </h3>
                 <p className="text-slate-600 text-sm mt-2 leading-relaxed">
-                  10-Source Inbound Webhook System &bull; Dedicated ports, JSON schemas, live ingestion &amp; real-time store sync.
+                  Omnichannel Inbound Webhook System &bull; Dedicated ports, JSON schemas, live ingestion &amp; real-time store sync.
                 </p>
               </div>
             </div>
