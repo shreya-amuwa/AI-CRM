@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { ActiveTab } from '../../layout/Sidebar';
-import { accountsStore, DepartmentInvoice, normalizeDepartmentId } from '../../../services/accountsStore';
+import { accountsStore, DepartmentInvoice } from '../../../services/accountsStore';
 import { IncomeView } from './IncomeView';
 import { ExpenseView } from './ExpenseView';
 import { InvoiceView } from './InvoiceView';
@@ -59,8 +59,6 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
   const totals = accountsStore.getCompanyFinancialTotals();
   const departmentMetrics = accountsStore.getDepartmentMetrics();
   const allInvoices = accountsStore.getInvoices();
-  const recentInvoices = allInvoices.slice(0, 5);
-
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -73,16 +71,6 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
   const handleSelectDeptForInvoice = (deptId: string) => {
     setSelectedDeptForInvoice(deptId);
     setInternalTab('invoice');
-  };
-
-  // Color mapping for department distribution
-  const deptColorMap: Record<string, { bg: string; text: string; hex: string }> = {
-    wabastore: { bg: 'bg-emerald-500', text: 'text-emerald-700', hex: '#10B981' },
-    wabastar: { bg: 'bg-green-600', text: 'text-green-700', hex: '#16A34A' },
-    whatsbox: { bg: 'bg-cyan-500', text: 'text-cyan-700', hex: '#06B6D4' },
-    dtalk: { bg: 'bg-purple-600', text: 'text-purple-700', hex: '#8B5CF6' },
-    digitree: { bg: 'bg-pink-500', text: 'text-pink-700', hex: '#EC4899' },
-    mpillar: { bg: 'bg-amber-500', text: 'text-amber-700', hex: '#F59E0B' }
   };
 
   return (
@@ -306,105 +294,6 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
               </div>
             </div>
 
-          </div>
-
-          {/* TIER 2: RECENT ACTIVITY (Live Department Invoices & Billing Inflow) */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-2xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                  <FileText className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Recent Department Invoices &amp; Billing Inflow
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Live commercial tax invoices created by sales executives across business divisions
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedDeptForInvoice(undefined);
-                  setInternalTab('invoice');
-                }}
-                className="text-xs font-mono font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto hover:underline"
-              >
-                <span>View All Invoices ({allInvoices.length})</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-100 text-[11px] font-mono text-slate-400 uppercase">
-                    <th className="py-3 pl-3 pr-4">INVOICE #</th>
-                    <th className="py-3 pr-4">DEPARTMENT</th>
-                    <th className="py-3 pr-4">CLIENT / ORGANIZATION</th>
-                    <th className="py-3 pr-4">SALES EXECUTIVE</th>
-                    <th className="py-3 pr-4">STATUS</th>
-                    <th className="py-3 pr-4 text-right">AMOUNT (₹)</th>
-                    <th className="py-3 pr-3 text-right">ACTION</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-sans">
-                  {recentInvoices.map(inv => {
-                    const normDept = normalizeDepartmentId(inv.departmentId);
-                    const colorStyle = deptColorMap[normDept] || { bg: 'bg-slate-500' };
-
-                    let statusClass = 'bg-amber-50 text-amber-700 border-amber-200';
-                    if (inv.status === 'Paid') {
-                      statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-                    } else if (inv.status === 'Overdue') {
-                      statusClass = 'bg-amber-50 text-amber-800 border-amber-300';
-                    }
-
-                    return (
-                      <tr key={inv.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 pl-3 pr-4 font-mono font-bold text-slate-900">
-                          {inv.invoiceNumber}
-                        </td>
-                        <td className="py-3.5 pr-4">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-50 border border-slate-200 text-slate-700">
-                            <span className={`w-2 h-2 rounded-full ${colorStyle.bg}`} />
-                            <span>{inv.departmentName}</span>
-                          </span>
-                        </td>
-                        <td className="py-3.5 pr-4">
-                          <span className="font-semibold text-slate-800 block">{inv.clientCompany}</span>
-                          <span className="text-[11px] text-slate-400 block">{inv.clientName}</span>
-                        </td>
-                        <td className="py-3.5 pr-4 font-mono text-slate-600">
-                          {inv.teamMemberName}
-                        </td>
-                        <td className="py-3.5 pr-4">
-                          <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border ${statusClass}`}>
-                            {inv.status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 pr-4 text-right font-mono font-bold text-slate-900">
-                          {formatCurrency(inv.totalAmount)}
-                        </td>
-                        <td className="py-3.5 pr-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setActiveInvoiceForPdf(inv)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-mono text-[11px] font-bold transition-all active:scale-95 cursor-pointer shadow-2xs"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>PDF</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           </div>
 
         </div>
