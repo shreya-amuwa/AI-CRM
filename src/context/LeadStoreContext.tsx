@@ -96,10 +96,12 @@ export const extractCustomerDetailsFromWebhook = (payload: any) => {
     unwrapped.callerId ||
     unwrapped.mobile ||
     unwrapped.contact ||
+    unwrapped.number ||
+    unwrapped.recipient_phone ||
     unwrapped.from ||
     unwrapped.wa_id ||
     ''
-  ).trim();
+  ).toString().trim();
 
   const email = (
     unwrapped.email ||
@@ -107,7 +109,7 @@ export const extractCustomerDetailsFromWebhook = (payload: any) => {
     unwrapped.customerEmail ||
     unwrapped.mail ||
     ''
-  ).trim();
+  ).toString().trim();
 
   const store = (
     unwrapped.store ||
@@ -118,21 +120,26 @@ export const extractCustomerDetailsFromWebhook = (payload: any) => {
     unwrapped.shop_name ||
     unwrapped.client ||
     'Wabastore Client'
-  ).trim();
+  ).toString().trim();
 
   const notes = (
+    unwrapped.mssg ||
+    unwrapped.msg ||
+    unwrapped.message ||
+    unwrapped.text ||
+    unwrapped.body ||
+    unwrapped.rcs_message ||
     unwrapped.call_summary ||
     unwrapped.summary ||
     unwrapped.transcript ||
     unwrapped.disposition ||
     unwrapped.notes ||
-    unwrapped.message ||
     unwrapped.inquiry ||
     unwrapped.product ||
     unwrapped.event ||
     (unwrapped.cart_value ? `Cart: ${unwrapped.cart_value}` : '') ||
     'Inbound Webhook'
-  ).trim();
+  ).toString().trim();
 
   return { name, phone, email, store, notes };
 };
@@ -487,26 +494,32 @@ export const LeadStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const newToAdd: Lead[] = [];
 
             data.forEach((row: any) => {
-              if (!row || !row.name) return;
+              if (!row) return;
               if (seenIds.has(row.id)) return;
-              const p = normalizePhone(row.phone);
+              const rawPayload = row.raw_payload || row || {};
+              const phoneVal = (row.phone || rawPayload.number || rawPayload.phone || rawPayload.recipient_phone || '').toString().trim();
+              const p = normalizePhone(phoneVal);
               if (p && p.length >= 8 && seenPhones.has(p)) return;
 
               const channelId = (row.channel || 'whatsapp') as LeadSourceId;
               const deptId = (row.department || 'wabastore') as DepartmentId;
+              const nameVal = (row.name && row.name !== 'Inbound Lead' && row.name !== 'Lead')
+                ? row.name
+                : (rawPayload.name || rawPayload.sender || rawPayload.rcs_sender || row.name || 'Inbound Lead');
+              const msgVal = row.notes || rawPayload.mssg || rawPayload.msg || rawPayload.message || rawPayload.text || rawPayload.body || 'Inbound Webhook Lead';
 
               newToAdd.push({
                 id: row.id,
-                name: row.name,
-                contact: row.phone || '',
-                email: row.email || '',
+                name: nameVal,
+                contact: phoneVal || '',
+                email: row.email || rawPayload.email || '',
                 sourceId: channelId,
                 departmentId: deptId,
                 receivedAt: row.created_at || new Date().toISOString(),
                 status: row.status || 'Verified',
-                location: row.company || 'Supabase Cloud',
-                notes: row.notes || 'Inbound Webhook Lead',
-                rawPayload: row.raw_payload || row
+                location: row.company || rawPayload.company || rawPayload.store || 'Supabase Cloud',
+                notes: msgVal,
+                rawPayload: rawPayload
               });
               if (p && p.length >= 8) seenPhones.add(p);
             });
@@ -530,22 +543,29 @@ export const LeadStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         { event: 'INSERT', schema: 'public', table: 'crm_leads' },
         (payload) => {
           const row = payload.new;
-          if (row && row.name) {
+          if (row) {
             console.log('[Supabase Realtime] Inbound lead arrived live:', row);
             const channelId = (row.channel || 'whatsapp') as LeadSourceId;
             const deptId = (row.department || 'wabastore') as DepartmentId;
+            const rawPayload = row.raw_payload || row || {};
+            const phoneVal = (row.phone || rawPayload.number || rawPayload.phone || rawPayload.recipient_phone || '').toString().trim();
+            const nameVal = (row.name && row.name !== 'Inbound Lead' && row.name !== 'Lead')
+              ? row.name
+              : (rawPayload.name || rawPayload.sender || rawPayload.rcs_sender || row.name || 'Inbound Lead');
+            const msgVal = row.notes || rawPayload.mssg || rawPayload.msg || rawPayload.message || rawPayload.text || rawPayload.body || 'Real-time Inbound Event';
+
             const newLead: Lead = {
               id: row.id || `SUPA-${Date.now()}`,
-              name: row.name,
-              contact: row.phone || '',
-              email: row.email || '',
+              name: nameVal,
+              contact: phoneVal || '',
+              email: row.email || rawPayload.email || '',
               sourceId: channelId,
               departmentId: deptId,
               receivedAt: row.created_at || new Date().toISOString(),
               status: row.status || 'Verified',
-              location: row.company || 'Live Inbound Webhook',
-              notes: row.notes || 'Real-time Inbound Event',
-              rawPayload: row.raw_payload || row
+              location: row.company || rawPayload.company || rawPayload.store || 'Live Inbound Webhook',
+              notes: msgVal,
+              rawPayload: rawPayload
             };
 
             setLeads(prev => {

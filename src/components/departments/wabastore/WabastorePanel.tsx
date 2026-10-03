@@ -194,8 +194,12 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     count: 0,
     pct: '0.0%',
     sampleJson: JSON.stringify({
+      name: 'RCS Customer',
+      number: '+919136196407',
+      message: 'Hello, inquiring about Wabastore RCS merchant features.',
+      mssg: 'Hello, inquiring about Wabastore RCS merchant features.',
       rcs_sender: 'Wabastore Official',
-      recipient_phone: '+919123488990',
+      recipient_phone: '+919136196407',
       action_taken: 'VIEW_DEAL_OF_THE_DAY',
       product_category: 'Electronics & Audio',
       campaign: 'Festival Electronics Sale',
@@ -1693,16 +1697,25 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
             <div className="border border-slate-200 rounded-2xl overflow-hidden text-xs shadow-2xs">
               <table className="w-full text-left">
                 <thead className="bg-slate-50/90 border-b border-slate-200 font-mono text-slate-500 uppercase">
-                  <tr>
-                    <th className="p-3.5">Customer Name</th>
-                    <th className="p-3.5">Phone Number</th>
-                    <th className="p-3.5">Email</th>
-                    <th className="p-3.5">Store / Organization</th>
-                    <th className="p-3.5">Source Channel</th>
-                    <th className="p-3.5">Timestamp</th>
-                    <th className="p-3.5">Support Status</th>
-                    <th className="p-3.5 text-right">Actions</th>
-                  </tr>
+                  {activeSourceConfig.sourceId === 'rcs' ? (
+                    <tr>
+                      <th className="p-3.5">Name</th>
+                      <th className="p-3.5">Number</th>
+                      <th className="p-3.5">Message</th>
+                      <th className="p-3.5 text-right">Actions</th>
+                    </tr>
+                  ) : (
+                    <tr>
+                      <th className="p-3.5">Customer Name</th>
+                      <th className="p-3.5">Phone Number</th>
+                      <th className="p-3.5">Email</th>
+                      <th className="p-3.5">Store / Organization</th>
+                      <th className="p-3.5">Source Channel</th>
+                      <th className="p-3.5">Timestamp</th>
+                      <th className="p-3.5">Support Status</th>
+                      <th className="p-3.5 text-right">Actions</th>
+                    </tr>
+                  )}
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono">
                   {wabastoreLeads.filter(l => {
@@ -1710,8 +1723,12 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                     if (subDeptSearchQuery.trim()) {
                       const q = subDeptSearchQuery.toLowerCase();
                       const storeOrg = (l.rawPayload?.store || l.rawPayload?.organization || l.rawPayload?.company || l.location || '').toLowerCase();
+                      const rawMsg = (l.rawPayload?.mssg || l.rawPayload?.msg || l.rawPayload?.message || l.rawPayload?.text || l.notes || '').toLowerCase();
+                      const rawNum = (l.rawPayload?.number || l.contact || '').toString().toLowerCase();
                       return l.name.toLowerCase().includes(q) ||
                         (l.contact && l.contact.toLowerCase().includes(q)) ||
+                        rawNum.includes(q) ||
+                        rawMsg.includes(q) ||
                         (l.email && l.email.toLowerCase().includes(q)) ||
                         storeOrg.includes(q);
                     }
@@ -1722,16 +1739,111 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                       if (subDeptSearchQuery.trim()) {
                         const q = subDeptSearchQuery.toLowerCase();
                         const storeOrg = (l.rawPayload?.store || l.rawPayload?.organization || l.rawPayload?.company || l.location || '').toLowerCase();
+                        const rawMsg = (l.rawPayload?.mssg || l.rawPayload?.msg || l.rawPayload?.message || l.rawPayload?.text || l.notes || '').toLowerCase();
+                        const rawNum = (l.rawPayload?.number || l.contact || '').toString().toLowerCase();
                         return l.name.toLowerCase().includes(q) ||
                           (l.contact && l.contact.toLowerCase().includes(q)) ||
+                          rawNum.includes(q) ||
+                          rawMsg.includes(q) ||
                           (l.email && l.email.toLowerCase().includes(q)) ||
                           storeOrg.includes(q);
                       }
                       return true;
                     }).map((lead) => {
+                      const isRcs = activeSourceConfig.sourceId === 'rcs';
                       const storeOrg = lead.rawPayload?.store || lead.rawPayload?.organization || lead.rawPayload?.company || lead.location || 'Wabastore Client';
                       const subOrg = (lead.rawPayload?.organization && lead.rawPayload?.organization !== storeOrg) ? lead.rawPayload.organization : null;
-                      const cleanPhone = (lead.contact || '').replace(/[^0-9]/g, '');
+                      
+                      const rawPhone = (lead.contact && lead.contact !== 'No Phone' && lead.contact !== '—')
+                        ? lead.contact
+                        : (lead.rawPayload?.number || lead.rawPayload?.phone || lead.rawPayload?.recipient_phone || lead.rawPayload?.mobile || '');
+                      const displayPhone = rawPhone ? String(rawPhone) : '—';
+                      const cleanPhone = String(displayPhone).replace(/[^0-9]/g, '');
+
+                      const displayName = (lead.name && lead.name !== 'Inbound Lead' && lead.name !== 'Lead')
+                        ? lead.name
+                        : (lead.rawPayload?.name || lead.rawPayload?.sender || lead.rawPayload?.rcs_sender || lead.rawPayload?.customer_name || lead.name || 'Inbound Lead');
+
+                      const displayMessage = 
+                        lead.rawPayload?.mssg ||
+                        lead.rawPayload?.msg ||
+                        lead.rawPayload?.message ||
+                        lead.rawPayload?.text ||
+                        lead.rawPayload?.body ||
+                        lead.rawPayload?.content ||
+                        lead.rawPayload?.rcs_message ||
+                        lead.rawPayload?.action_taken ||
+                        (lead.notes && lead.notes !== 'Inbound Webhook Lead' && lead.notes !== 'Real-time Inbound Event' && lead.notes !== 'Inbound Webhook' ? lead.notes : null) ||
+                        '—';
+
+                      if (isRcs) {
+                        return (
+                          <tr key={lead.id} className="hover:bg-slate-50/80 transition-colors group">
+                            {/* 1. Name */}
+                            <td className="p-3.5 font-sans font-bold text-slate-900">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-700 flex items-center justify-center font-bold text-xs shrink-0">
+                                  {displayName.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <span className="block text-slate-900 font-semibold">{displayName}</span>
+                                  <span className="text-[10px] font-mono text-slate-400 font-normal">ID: {lead.id.slice(-8)}</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* 2. Number */}
+                            <td className="p-3.5 font-mono text-slate-800">
+                              {cleanPhone && displayPhone !== '—' ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                                  <span className="font-semibold">{displayPhone}</span>
+                                  <a
+                                    href={`https://wa.me/${cleanPhone}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 rounded text-emerald-600 hover:bg-emerald-50 transition-colors"
+                                    title="Chat on WhatsApp"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">—</span>
+                              )}
+                            </td>
+
+                            {/* 3. Message */}
+                            <td className="p-3.5 font-sans">
+                              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-slate-800 text-xs max-w-lg">
+                                <Send className="w-3.5 h-3.5 text-pink-600 shrink-0" />
+                                <span className="font-medium">{displayMessage}</span>
+                              </div>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="p-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setInspectingLead(lead)}
+                                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-pink-50 hover:text-pink-700 text-slate-600 font-mono text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                  title="Inspect Raw Webhook Payload JSON"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>JSON</span>
+                                </button>
+                                <button
+                                  onClick={() => deleteLead(lead.id)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                  title="Delete lead"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
 
                       return (
                         <tr key={lead.id} className="hover:bg-slate-50/80 transition-colors group">
@@ -1808,7 +1920,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                           {/* Timestamp */}
                           <td className="p-3.5 text-slate-600 font-mono">
                             <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-slate-400" />
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>{new Date(lead.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                             </div>
                             <span className="text-[10px] text-slate-400 block mt-0.5">
@@ -1859,7 +1971,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                     })
                   ) : (
                     <tr>
-                      <td colSpan={8} className="p-10 text-center text-slate-500 font-sans space-y-4">
+                      <td colSpan={activeSourceConfig.sourceId === 'rcs' ? 4 : 8} className="p-10 text-center text-slate-500 font-sans space-y-4">
                         <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 mx-auto flex items-center justify-center">
                           <Radio className="w-6 h-6 animate-pulse" />
                         </div>
