@@ -269,405 +269,147 @@ const INITIAL_FINANCIAL_METRICS: DepartmentFinancialMetric[] = [
 ];
 
 const INITIAL_EXPENSES: CorporateExpense[] = [
-  // Wabastore Corporate Expenses
   {
-    id: 'EXP-WABA-001',
-    departmentId: 'wabastore',
-    departmentName: 'Wabastore',
-    category: 'Cloud & Server Infrastructure',
-    corporateReason: 'AWS High-Availability Cloud Server Cluster hosting & Amazon S3 multi-zone automated backups for e-commerce catalog storage',
-    amount: 84500,
-    date: '2026-09-02',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'AWS-INV-9928172',
+    id: 'EXP-APR-001',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
+    category: 'Corporate Office & Facilities',
+    corporateReason: 'Rent',
+    amount: 31900,
+    date: '2026-04-01',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-001',
     status: 'Settled'
   },
   {
-    id: 'EXP-WABA-002',
-    departmentId: 'wabastore',
-    departmentName: 'Wabastore',
-    category: 'API Subscriptions & Telecom',
-    corporateReason: 'Meta Cloud WhatsApp Business API conversation credits renewal (Tier-4 high volume commerce messaging)',
-    amount: 125000,
-    date: '2026-09-05',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'META-API-882194',
+    id: 'EXP-APR-002',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
+    category: 'Corporate Office & Facilities',
+    corporateReason: 'Electricity Bill',
+    amount: 4000,
+    date: '2026-04-02',
+    paymentMode: 'RTGS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-002',
     status: 'Settled'
   },
   {
-    id: 'EXP-WABA-003',
-    departmentId: 'wabastore',
-    departmentName: 'Wabastore',
-    category: 'Software & SaaS Licenses',
-    corporateReason: 'Shopify Plus Enterprise & Headless E-Commerce storefront API connectors subscription',
-    amount: 45000,
-    date: '2026-09-10',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'SHOP-SUB-11204',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-WABA-004',
-    departmentId: 'wabastore',
-    departmentName: 'Wabastore',
+    id: 'EXP-APR-003',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
     category: 'Payroll & Executive Compensation',
-    corporateReason: 'Monthly corporate staff payroll allocation for Wabastore core commercial sales executives and technical leads',
-    amount: 210000,
-    date: '2026-09-01',
-    paymentMode: 'RazorpayX Corporate Payroll',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'PAYROLL-AMW-202609',
+    corporateReason: 'Professional Salary',
+    amount: 0,
+    date: '2026-04-03',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-003',
+    status: 'Pending Audit'
+  },
+  {
+    id: 'EXP-APR-004',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
+    category: 'Corporate Office & Facilities',
+    corporateReason: 'Tea, Snacks & Drinking Water',
+    amount: 2000,
+    date: '2026-04-04',
+    paymentMode: 'RTGS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-004',
     status: 'Settled'
   },
   {
-    id: 'EXP-WABA-005',
-    departmentId: 'wabastore',
-    departmentName: 'Wabastore',
-    category: 'Client Acquisition & Ad Spend',
-    corporateReason: 'Meta Click-to-WhatsApp performance marketing campaign for Q3 direct merchant lead acquisition',
-    amount: 95500,
-    date: '2026-09-18',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'FB-ADS-4491028',
-    status: 'Settled'
-  },
-
-  // Wabastar Corporate Expenses
-  {
-    id: 'EXP-WBST-001',
-    departmentId: 'wabastar',
-    departmentName: 'Wabastar',
-    category: 'Cloud & Server Infrastructure',
-    corporateReason: 'Enterprise WhatsApp Cloud multi-tenant orchestration node hosting & Redis queuing infrastructure',
-    amount: 62000,
-    date: '2026-09-03',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'DO-CLOUD-77182',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-WBST-002',
-    departmentId: 'wabastar',
-    departmentName: 'Wabastar',
+    id: 'EXP-APR-005',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
     category: 'API Subscriptions & Telecom',
-    corporateReason: 'Meta WhatsApp BSP high-throughput dedicated messaging bandwidth and official API quotas',
-    amount: 110000,
-    date: '2026-09-07',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'META-BSP-99182',
+    corporateReason: 'Mobile Recharges',
+    amount: 2000,
+    date: '2026-04-05',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-005',
     status: 'Settled'
   },
   {
-    id: 'EXP-WBST-003',
-    departmentId: 'wabastar',
-    departmentName: 'Wabastar',
-    category: 'Payroll & Executive Compensation',
-    corporateReason: 'Monthly corporate payroll allocation for Wabastar marketing automation engineering and account managers',
-    amount: 185000,
-    date: '2026-09-01',
-    paymentMode: 'RazorpayX Corporate Payroll',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'PAYROLL-AMW-202609',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-WBST-004',
-    departmentId: 'wabastar',
-    departmentName: 'Wabastar',
+    id: 'EXP-APR-006',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
     category: 'Software & SaaS Licenses',
-    corporateReason: 'HubSpot Marketing Enterprise automation seats and Zapier high-frequency webhook tiers',
-    amount: 38000,
-    date: '2026-09-14',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'HUBSP-INV-44109',
+    corporateReason: 'Software & Server Expenses',
+    amount: 15000,
+    date: '2026-04-06',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-006',
     status: 'Settled'
   },
   {
-    id: 'EXP-WBST-005',
-    departmentId: 'wabastar',
-    departmentName: 'Wabastar',
-    category: 'Client Acquisition & Ad Spend',
-    corporateReason: 'Google Search Ads & B2B intent targeting campaign for high-value enterprise marketing automation accounts',
-    amount: 75000,
-    date: '2026-09-20',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'GGL-ADS-88129',
-    status: 'Settled'
-  },
-
-  // Whatsbox Corporate Expenses
-  {
-    id: 'EXP-WBOX-001',
-    departmentId: 'whatsbox',
-    departmentName: 'Whatsbox',
-    category: 'Cloud & Server Infrastructure',
-    corporateReason: 'Kubernetes ingress controller & Elasticsearch cluster hosting for high-speed multi-agent live chat search',
-    amount: 54000,
-    date: '2026-09-04',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'AWS-K8S-33918',
+    id: 'EXP-APR-007',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
+    category: 'Software & SaaS Licenses',
+    corporateReason: 'Official Panel / Agency Cost',
+    amount: 14000,
+    date: '2026-04-07',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-007',
     status: 'Settled'
   },
   {
-    id: 'EXP-WBOX-002',
-    departmentId: 'whatsbox',
-    departmentName: 'Whatsbox',
+    id: 'EXP-APR-008',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
+    category: 'Legal, Compliance & Retainers',
+    corporateReason: 'EMI & Loan Repayment',
+    amount: 39500,
+    date: '2026-04-08',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-008',
+    status: 'Settled'
+  },
+  {
+    id: 'EXP-APR-009',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
     category: 'API Subscriptions & Telecom',
-    corporateReason: 'WhatsApp BSP session credits & official Meta Verified Green Badge processing fees for corporate clients',
-    amount: 98000,
-    date: '2026-09-08',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'META-GREEN-2901',
+    corporateReason: 'WABA Panel Recharge (118)',
+    amount: 11800,
+    date: '2026-04-09',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-009',
     status: 'Settled'
   },
   {
-    id: 'EXP-WBOX-003',
-    departmentId: 'whatsbox',
-    departmentName: 'Whatsbox',
-    category: 'Software & SaaS Licenses',
-    corporateReason: 'Intercom & Zendesk enterprise live multi-agent ticketing license renewals',
-    amount: 42000,
-    date: '2026-09-12',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'ZEN-SUB-77109',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-WBOX-004',
-    departmentId: 'whatsbox',
-    departmentName: 'Whatsbox',
+    id: 'EXP-APR-010',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
     category: 'Payroll & Executive Compensation',
-    corporateReason: 'Client success managers & outbound sales representatives monthly compensation disbursement',
-    amount: 165000,
-    date: '2026-09-01',
-    paymentMode: 'RazorpayX Corporate Payroll',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'PAYROLL-AMW-202609',
+    corporateReason: 'Management Office Expenses',
+    amount: 10000,
+    date: '2026-04-10',
+    paymentMode: 'NEFT',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-010',
     status: 'Settled'
   },
   {
-    id: 'EXP-WBOX-005',
-    departmentId: 'whatsbox',
-    departmentName: 'Whatsbox',
-    category: 'Client Acquisition & Ad Spend',
-    corporateReason: 'LinkedIn Sponsored Content & B2B Decision Maker targeted outbound outreach campaign',
-    amount: 68000,
-    date: '2026-09-19',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'LNKD-ADS-99120',
-    status: 'Settled'
-  },
-
-  // D Talk Corporate Expenses
-  {
-    id: 'EXP-DTLK-001',
-    departmentId: 'dtalk',
-    departmentName: 'D Talk Corporation',
-    category: 'API Subscriptions & Telecom',
-    corporateReason: 'Tata Teleservices & Bharti Airtel enterprise SIP trunk lines and 100-channel PRI voice telecom gateway',
-    amount: 115000,
-    date: '2026-09-03',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'TATA-TEL-99182',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DTLK-002',
-    departmentId: 'dtalk',
-    departmentName: 'D Talk Corporation',
-    category: 'Cloud & Server Infrastructure',
-    corporateReason: 'Cloud telephony encrypted call recording storage & AWS S3 regulatory compliance vault for TRAI audits',
-    amount: 48000,
-    date: '2026-09-06',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'AWS-REC-11928',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DTLK-003',
-    departmentId: 'dtalk',
-    departmentName: 'D Talk Corporation',
-    category: 'Payroll & Executive Compensation',
-    corporateReason: 'Telephony operations supervisors, quality analysts and outbound lead telecallers team payroll',
-    amount: 170000,
-    date: '2026-09-01',
-    paymentMode: 'RazorpayX Corporate Payroll',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'PAYROLL-AMW-202609',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DTLK-004',
-    departmentId: 'dtalk',
-    departmentName: 'D Talk Corporation',
-    category: 'Software & SaaS Licenses',
-    corporateReason: 'Asterisk PBX enterprise switch maintenance retainer and automated predictive dialer licenses',
-    amount: 35000,
-    date: '2026-09-15',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'AST-LIC-4491',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DTLK-005',
-    departmentId: 'dtalk',
-    departmentName: 'D Talk Corporation',
+    id: 'EXP-APR-011',
+    departmentId: 'accounts',
+    departmentName: 'Accounts / Management',
     category: 'Hardware & Workstations',
-    corporateReason: 'Enterprise noise-cancelling telephony headsets & IP desk phones procurement for expanding call floor',
-    amount: 32000,
-    date: '2026-09-22',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'JABRA-PO-8812',
-    status: 'Settled'
-  },
-
-  // Digitree Corporate Expenses
-  {
-    id: 'EXP-DIGI-001',
-    departmentId: 'digitree',
-    departmentName: 'Digitree Infotech',
-    category: 'Cloud & Server Infrastructure',
-    corporateReason: 'Google Cloud Platform BigQuery, Vertex AI infrastructure pipeline & Cloud Run serverless microservices',
-    amount: 78000,
-    date: '2026-09-04',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'GCP-INV-77281',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DIGI-002',
-    departmentId: 'digitree',
-    departmentName: 'Digitree Infotech',
-    category: 'Software & SaaS Licenses',
-    corporateReason: 'GitHub Enterprise multi-seat organization license & Datadog application performance monitoring (APM)',
-    amount: 49000,
-    date: '2026-09-09',
-    paymentMode: 'Corporate Credit Card',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'GHUB-ENT-9912',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DIGI-003',
-    departmentId: 'digitree',
-    departmentName: 'Digitree Infotech',
-    category: 'Payroll & Executive Compensation',
-    corporateReason: 'Full-stack software engineers, cloud architects, and QA engineers monthly salary compensation',
-    amount: 240000,
-    date: '2026-09-01',
-    paymentMode: 'RazorpayX Corporate Payroll',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'PAYROLL-AMW-202609',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DIGI-004',
-    departmentId: 'digitree',
-    departmentName: 'Digitree Infotech',
-    category: 'Corporate Office & Facilities',
-    corporateReason: 'High-speed dedicated leased line fiber internet (1 Gbps synchronous) with static IP allocation',
-    amount: 28000,
-    date: '2026-09-11',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'ACT-CORP-3319',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-DIGI-005',
-    departmentId: 'digitree',
-    departmentName: 'Digitree Infotech',
-    category: 'Legal, Compliance & Retainers',
-    corporateReason: 'ISO/IEC 27001 Information Security certification surveillance audit & SOC-2 compliance advisory retainer',
-    amount: 65000,
-    date: '2026-09-24',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'AUDIT-SOC-8821',
-    status: 'Approved'
-  },
-
-  // M Pillar Corporate Expenses
-  {
-    id: 'EXP-MPIL-001',
-    departmentId: 'mpillar',
-    departmentName: 'M Pillar Corporation',
-    category: 'Software & SaaS Licenses',
-    corporateReason: 'Autodesk BIM 360 & Enterprise Construction Project ERP cloud licensing suite',
-    amount: 65000,
-    date: '2026-09-05',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'AUTO-BIM-99182',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-MPIL-002',
-    departmentId: 'mpillar',
-    departmentName: 'M Pillar Corporation',
-    category: 'Cloud & Server Infrastructure',
-    corporateReason: 'CAD blueprint rendering servers & AWS GovCloud high-security architectural asset storage vault',
-    amount: 42000,
-    date: '2026-09-08',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'AWS-CAD-1129',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-MPIL-003',
-    departmentId: 'mpillar',
-    departmentName: 'M Pillar Corporation',
-    category: 'Payroll & Executive Compensation',
-    corporateReason: 'Project managers, civil infrastructure site engineers & procurement specialists monthly payroll',
-    amount: 220000,
-    date: '2026-09-01',
-    paymentMode: 'RazorpayX Corporate Payroll',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'PAYROLL-AMW-202609',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-MPIL-004',
-    departmentId: 'mpillar',
-    departmentName: 'M Pillar Corporation',
-    category: 'Corporate Office & Facilities',
-    corporateReason: 'Corporate logistics, regional site inspection fleet fuel retainers & safety compliance gear',
-    amount: 58000,
-    date: '2026-09-17',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Accounts Head (Rajiv Khanna)',
-    invoiceRef: 'SITE-EXP-7729',
-    status: 'Settled'
-  },
-  {
-    id: 'EXP-MPIL-005',
-    departmentId: 'mpillar',
-    departmentName: 'M Pillar Corporation',
-    category: 'Legal, Compliance & Retainers',
-    corporateReason: 'Commercial construction contract review, RERA regulatory filings & corporate legal counsel retainer',
-    amount: 75000,
-    date: '2026-09-21',
-    paymentMode: 'Corporate Wire (HDFC Current A/C)',
-    approvedBy: 'Super Admin',
-    invoiceRef: 'LEGAL-RERA-5512',
+    corporateReason: 'Laptop & Mobile Repairs',
+    amount: 25000,
+    date: '2026-04-11',
+    paymentMode: 'IMPS',
+    approvedBy: 'Accounts Department',
+    invoiceRef: 'PO-APR-011',
     status: 'Settled'
   }
 ];
@@ -1388,7 +1130,7 @@ const INITIAL_TEAM_MEMBERS: TeamMemberPerformance[] = [
 
 class AccountsStore {
   private metricsKey = 'amuwa_accounts_metrics_v2';
-  private expensesKey = 'amuwa_accounts_expenses_v2';
+  private expensesKey = 'amuwa_accounts_expenses_v3';
   private invoicesKey = 'amuwa_accounts_invoices_v2';
   private quotationsKey = 'amuwa_accounts_quotations_v2';
   private membersKey = 'amuwa_accounts_members_v2';
@@ -1489,6 +1231,69 @@ class AccountsStore {
     }
 
     return newExpense;
+  }
+
+  deleteExpense(id: string): boolean {
+    let expenses = this.getExpenses();
+    const target = expenses.find(e => e.id === id);
+    if (!target) return false;
+
+    expenses = expenses.filter(e => e.id !== id);
+    this.save(this.expensesKey, expenses);
+
+    // Recalculate department metrics
+    const metrics = this.getDepartmentMetrics();
+    const targetNorm = normalizeDepartmentId(target.departmentId);
+    const deptMetric = metrics.find(m => m.departmentId === target.departmentId || normalizeDepartmentId(m.departmentId) === targetNorm);
+    if (deptMetric) {
+      deptMetric.totalExpenses = Math.max(0, deptMetric.totalExpenses - target.amount);
+      deptMetric.netEarnings = deptMetric.grossIncome - deptMetric.totalExpenses;
+      deptMetric.profitMarginPct = deptMetric.grossIncome > 0 ? Math.round((deptMetric.netEarnings / deptMetric.grossIncome) * 1000) / 10 : 0;
+      this.save(this.metricsKey, metrics);
+    }
+    return true;
+  }
+
+  importExpenses(newList: Array<Omit<CorporateExpense, 'id'>>): number {
+    const expenses = this.getExpenses();
+    let count = 0;
+    for (const exp of newList) {
+      const newExpense: CorporateExpense = {
+        ...exp,
+        id: `EXP-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`
+      };
+      expenses.unshift(newExpense);
+      count++;
+
+      // Update metrics
+      const metrics = this.getDepartmentMetrics();
+      const targetNorm = normalizeDepartmentId(exp.departmentId);
+      const deptMetric = metrics.find(m => m.departmentId === exp.departmentId || normalizeDepartmentId(m.departmentId) === targetNorm);
+      if (deptMetric) {
+        deptMetric.totalExpenses += exp.amount;
+        deptMetric.netEarnings = deptMetric.grossIncome - deptMetric.totalExpenses;
+        deptMetric.profitMarginPct = deptMetric.grossIncome > 0 ? Math.round((deptMetric.netEarnings / deptMetric.grossIncome) * 1000) / 10 : 0;
+        this.save(this.metricsKey, metrics);
+      }
+    }
+    this.save(this.expensesKey, expenses);
+    return count;
+  }
+
+  clearAllExpenses(): void {
+    this.save(this.expensesKey, []);
+    // Recalculate all metrics
+    const metrics = this.getDepartmentMetrics();
+    for (const m of metrics) {
+      m.totalExpenses = 0;
+      m.netEarnings = m.grossIncome;
+      m.profitMarginPct = 100;
+    }
+    this.save(this.metricsKey, metrics);
+  }
+
+  resetExpensesToDefault(): void {
+    this.save(this.expensesKey, INITIAL_EXPENSES);
   }
 
   // --- Invoices ---

@@ -82,12 +82,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // 5. Extract fields with fallbacks
-  const name = String(item.name || item.customer_name || item.full_name || '').trim();
-  const phone = String(item.phone || item.contact || item.mobile || '').trim();
+  // 5. Extract fields with fallbacks (supports standard leads and RCS payloads)
+  const name = String(item.name || item.customer_name || item.full_name || item.sender || item.rcs_sender || '').trim();
+  const phone = String(item.number || item.phone || item.contact || item.mobile || item.recipient_phone || '').trim();
   const email = String(item.email || '').trim();
   const company = String(item.store || item.company || item.organization || '').trim();
-  const notes = String(item.notes || item.message || '').trim();
+  const notes = String(item.mssg || item.msg || item.message || item.notes || item.text || item.body || '').trim();
 
   // 6. Extract :department and :source from query params or URL path
   let department = (req.query.department as string) || 'wabastore';

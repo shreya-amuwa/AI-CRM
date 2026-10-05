@@ -133,7 +133,7 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
   accounts: [
     { id: 'dashboard', label: 'Accounts Overview', icon: LayoutDashboard },
     { id: 'income', label: 'Department Income', icon: TrendingUp },
-    { id: 'expense', label: 'Corporate Expenses', icon: Receipt },
+    { id: 'expense', label: 'Expenses', icon: Receipt },
     { id: 'invoice', label: 'Invoices & Quotations', icon: FileText },
     NOTIFICATION_TAB // MUST BE LAST!
   ],

@@ -145,7 +145,7 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
             }`}
           >
             <Receipt className="w-3.5 h-3.5" />
-            <span>Corporate Expenses</span>
+            <span>Expenses</span>
           </button>
 
           <button
@@ -221,7 +221,7 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
                   Department-Wise Income &amp; Earnings Overview
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
-                  Consolidated financial statement displaying gross income, corporate operating expenses, and net profit margins across all active operating business units.
+                  Consolidated financial statement displaying gross income, operating expenses, and net profit margins across all active operating business units.
                 </p>
               </div>
 
@@ -271,7 +271,7 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
                   {formatCurrency(totals.totalExpenses)}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1.5">
-                  Corporate operations &amp; infrastructure
+                  Departmental operations &amp; infrastructure
                 </p>
               </div>
             </div>
