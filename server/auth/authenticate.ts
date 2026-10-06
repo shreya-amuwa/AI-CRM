@@ -32,7 +32,20 @@ export function extractBearerToken(header: string | undefined): string {
 export async function authenticate(authorizationHeader: string | undefined): Promise<Authenticated> {
   const token = extractBearerToken(authorizationHeader);
   const { data, error } = await getAnonClient().auth.getUser(token);
-  if (error || !data.user) throw new AppError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
+  if (error || !data.user) {
+    const status = (error as { status?: number } | null)?.status;
+    // 401/403: the token itself is invalid or expired. Anything else (no
+    // status, 5xx, fetch failure) is a server configuration/network problem
+    // and must not be reported to the user as an expired session.
+    if (status === 401 || status === 403 || (!error && !data.user)) {
+      console.warn('[api] token rejected by Supabase Auth:', error?.message,
+        '— if this happens right after signing in, SUPABASE_URL / SUPABASE_ANON_KEY on the server',
+        'probably belong to a different project than VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.');
+      throw new AppError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
+    }
+    console.error('[api] could not verify the access token with Supabase Auth:', { status, message: error?.message });
+    throw new AppError('SERVICE_UNAVAILABLE', 'The server could not reach Supabase Auth. Check SUPABASE_URL and SUPABASE_ANON_KEY on the server.');
+  }
 
   const db = createUserClient(token);
   const { data: profile, error: profileError } = await db
