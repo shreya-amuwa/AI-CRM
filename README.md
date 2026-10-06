@@ -32,15 +32,30 @@ Opens at `http://localhost:5173`
 
 ---
 
-## 🔑 Login Credentials
+## 🔐 Authentication, Database & Backend
 
-**Step 1 - Main Login:**
-- ID: `hr`
-- Password: `hr123`
+The CRM now uses **Supabase Auth + PostgreSQL as the single source of truth**.
+There are no built-in demo accounts or shared passwords; persistent CRM data is
+not stored in the browser.
 
-**Step 2 - Department Unlock:**
-- ID: `hr`  
-- Password: `hr@secure`
+| Topic | Where |
+|---|---|
+| Architecture, schema, RBAC, RLS strategy, risks | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| Setup / deployment / testing | [`docs/SETUP_SUPABASE.md`](docs/SETUP_SUPABASE.md) |
+| Database migrations | `supabase/migrations/` |
+| Backend API (Controller → Service → Repository) | `server/`, served at `/api/v1` |
+
+Quick start:
+
+```bash
+cp .env.example .env.local        # fill in your Supabase project values
+npx supabase db push              # apply migrations (or run them in order in the SQL editor)
+npm run bootstrap:super-admin -- you@company.com "Your Name"
+npm run dev                       # http://localhost:3000 (frontend + /api/v1)
+```
+
+New staff sign up and wait for approval by their Team Head / Department Head,
+or are created by a manager from **Access & Approvals**.
 
 ---
 
@@ -87,7 +102,6 @@ crm-unified-system-folder/
 ├── vite.config.ts                    # Vite config
 ├── index.html                        # Entry point
 ├── README.md                         # This file
-├── CREDENTIALS.md                    # Login info
 ├── SETUP_INSTRUCTIONS.md             # Setup guide
 └── HR_REQUIREMENTS_FINAL.md          # HR details
 ```
@@ -150,7 +164,6 @@ npm run preview
 ## 📚 Documentation Files
 
 - **README.md** (this file) - Overview
-- **CREDENTIALS.md** - Login credentials
 - **SETUP_INSTRUCTIONS.md** - Detailed setup
 - **HR_REQUIREMENTS_FINAL.md** - HR feature details
 

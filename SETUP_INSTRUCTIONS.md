@@ -1,3 +1,7 @@
+> ⚠️ **Outdated.** The demo logins and department passwords described below were
+> removed. Authentication now uses Supabase Auth with database roles — see
+> [`docs/SETUP_SUPABASE.md`](docs/SETUP_SUPABASE.md).
+
 # CRM Unified System - Complete Setup & Usage Guide
 
 ## ✅ What's Included
