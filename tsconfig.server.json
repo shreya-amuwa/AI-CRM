@@ -5,5 +5,5 @@
     "types": ["node"],
     "noUnusedLocals": true
   },
-  "include": ["server", "shared", "api/v1"]
+  "include": ["server", "shared", "api/crm.ts"]
 }

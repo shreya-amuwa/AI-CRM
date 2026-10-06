@@ -18,6 +18,8 @@ const sign = (payload: Record<string, unknown>) => {
 process.env.SUPABASE_URL = process.env.GATEWAY_URL;
 process.env.SUPABASE_ANON_KEY = sign({ role: 'anon' });
 process.env.SUPABASE_SERVICE_ROLE_KEY = sign({ role: 'service_role' });
+process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
+process.env.API_ACCESS_LOG = 'off';
 
 const { handleApiRequest } = await import('../../server/app.js');
 const db = new pg.Pool();
@@ -125,6 +127,24 @@ check(r.status === 409, 'double approval → 409', r);
 r = await api('p', 'GET', '/notifications');
 check(r.status === 200 && r.json.data.items.some((n: any) => n.type === 'USER_APPROVED'), 'approved user can now read their approval notification', r);
 
+// --- registration WITHOUT department; super admin picks the team while approving ---
+const orphanSignup = await fetch(`${process.env.GATEWAY_URL}/auth/v1/signup`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'orphan@amuwa.com', password: 'Sup3rSecret!', data: { full_name: 'Orphan' } })
+});
+const orphanId = ((await orphanSignup.json()) as any).user.id;
+r = await api('sa', 'GET', '/approval-requests');
+const orphanReq = r.json.data.items.find((i: any) => i.subject?.id === orphanId);
+check(orphanReq && orphanReq.departmentId === null, 'department-less registration reaches super admin', r);
+r = await api('sa', 'POST', `/approval-requests/${orphanReq.id}/approve`, {});
+check(r.status === 422 && /team/i.test(r.json.error.message), 'approving without a team asks for one (422)', r);
+r = await api('sa', 'POST', `/approval-requests/${orphanReq.id}/approve`, { teamId: sales.id });
+check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.teamId === sales.id, 'super admin approves into chosen team', r);
+tokens.set('orphan', tokenFor(orphanId));
+r = await api('orphan', 'GET', '/me');
+check(r.json.data.status === 'ACTIVE' && r.json.data.department?.slug === 'wabastore' && r.json.data.team?.name === 'Sales', 'approved user placed in chosen department/team', r);
+
 // --- customers ---------------------------------------------------------------
 r = await api('a', 'POST', '/customers', { name: 'Acme Buyer', email: 'Buyer@Acme.com', phone: '+91 98765 43210', company: 'Acme', segment: 'CORPORATE' });
 check(r.status === 201 && r.json.data.ownerId === memberA && r.json.data.teamId === sales.id && r.json.data.email === 'buyer@acme.com',
@@ -193,7 +213,7 @@ check(r.json.data.updated > 0, 'mark all read');
 r = await api('th', 'GET', '/notifications/unread-count');
 check(r.json.data.count === 0, 'unread count resets');
 r = await api('th', 'POST', '/announcements', { title: 'Standup', body: '10am' });
-check(r.status === 201 && r.json.data.recipients === 2, 'team head announcement reaches team', r);
+check(r.status === 201 && r.json.data.recipients === 3, 'team head announcement reaches team', r);
 r = await api('a', 'POST', '/announcements', { title: 'Spam' });
 check(r.status === 403, 'team member cannot broadcast');
 
@@ -217,6 +237,31 @@ r = await api('sa', 'DELETE', `/users/${pendingId}`);
 check(r.status === 200, 'super admin deletes user', r);
 r = await api('sa', 'GET', '/nope');
 check(r.status === 404 && r.json.error.code === 'NOT_FOUND', 'unknown route → 404');
+// --- rate limiting (shared Postgres counters) + response headers -------------
+let limited: Response | null = null;
+for (let i = 0; i < 4 && !limited; i++) {
+  const res = await fetch(base + '/customers/import', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${tokens.get('dh')}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ customers: [{ name: 'RL', email: `rl${i}@x.com` }] })
+  });
+  if (res.status === 429) limited = res;
+}
+check(limited !== null, 'import quota (3/min) returns 429 once exhausted');
+const limitedBody = (await limited!.json()) as any;
+check(limitedBody.error.code === 'RATE_LIMITED' && Number(limited!.headers.get('retry-after')) > 0, '429 has RATE_LIMITED code and Retry-After', limitedBody);
+const { rows: [rl] } = await db.query(`select count(*)::int n from private.rate_limit_counters where bucket like 'user:%:import'`);
+check(rl.n >= 1, 'quota counters are stored in Postgres (shared across instances)');
+const normal = await fetch(base + '/departments', { headers: { authorization: `Bearer ${tokens.get('sa')}` } });
+check(normal.headers.get('ratelimit-limit') === '120' && normal.headers.get('x-request-id') && normal.headers.get('x-content-type-options') === 'nosniff',
+  'responses carry RateLimit-*, X-Request-Id and security headers');
+
+const health = await fetch(base + '/health').then(x => x.json()) as any;
+check(health.success && health.data.checks.database.startsWith('ok'), 'public health check reports database ok', health);
+const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=approval-requests/' + orphanReq.id + '/approve', {
+  method: 'POST', headers: { authorization: `Bearer ${tokens.get('sa')}`, 'content-type': 'application/json' }, body: '{}'
+});
+check(viaRewrite.status === 409, 'Vercel rewrite form (?__path=) routes multi-segment POSTs', viaRewrite.status);
 r = await api('sa', 'PUT', '/customers');
 check(r.status === 405, 'wrong method → 405');
 

@@ -381,6 +381,7 @@ select test.must_fail($$select * from customers$$, 'anon cannot read customers',
 select test.must_fail($$select * from crm_leads$$, 'anon cannot read legacy crm_leads', 'permission denied');
 select test.must_fail($$select * from hr_employees$$, 'anon cannot read HR data', 'permission denied');
 select test.must_fail($$select approve_registration(gen_random_uuid())$$, 'anon cannot call workflow functions', 'permission denied');
+select test.must_fail($$select * from rate_limit_consume('[{"key":"x","limit":1,"window":60}]')$$, 'anon cannot touch rate-limit counters', 'permission denied');
 reset role;
 insert into hr_employees (id, name, monthly_salary) values ('E1', 'Someone', '100000');
 set role authenticated;
@@ -388,6 +389,7 @@ select test.login('tm_a');
 select test.check((select count(*) = 0 from hr_employees), 'non-HR user cannot read HR employees');
 select test.must_fail($$insert into hr_employees (id, name) values ('E2', 'x')$$, 'non-HR user cannot write HR employees', 'row-level security');
 select test.check(test.rows($$select * from crm_leads$$) = 0, 'active user may query crm_leads');
+select test.must_fail($$select * from rate_limit_consume('[{"key":"user:x","limit":1,"window":60}]')$$, 'signed-in users cannot reset or inflate rate-limit counters', 'permission denied');
 select test.login('sa');
 select test.check((select count(*) = 1 from hr_employees), 'super admin reads HR employees');
 reset role;
