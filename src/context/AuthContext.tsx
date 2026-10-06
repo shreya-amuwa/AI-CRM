@@ -5,6 +5,7 @@ import { useDepartments } from './DepartmentContext';
 import { SAMPLE_TEAM_MEMBERS } from '../services/teamMemberStore';
 import { SAMPLE_TEAM_LEAD } from '../services/teamLeadStore';
 import { attendanceStore } from '../services/attendanceStore';
+import { userApprovalStore } from '../services/userApprovalStore';
 
 interface TempAuthUser {
   email: string;
@@ -104,17 +105,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const loginWithEmail = (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead' | 'technical-support', departmentId?: string) => {
-    // Check if Technical Support login (Wabastore Support sub-department)
-    if (email.toLowerCase() === 'techsupport@wabastore.com' || role === 'technical-support') {
+    // Check if Technical Support login (Wabastore Support sub-department or registered support user)
+    const regSupportUser = userApprovalStore.findUserByEmail(email);
+    if (email.toLowerCase() === 'techsupport@wabastore.com' || role === 'technical-support' || regSupportUser?.role === 'technical-support') {
       const newUser: AuthUser = {
-        id: 'EMP-TS-2034',
-        name: 'Rohan Mehta (Technical Support)',
-        email: 'techsupport@wabastore.com',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        id: regSupportUser?.id || 'EMP-TS-2034',
+        name: regSupportUser?.name || 'Rohan Mehta (Technical Support)',
+        email: email,
+        avatar: regSupportUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
         role: 'technical-support',
-        departmentId: 'wabastore',
+        departmentId: regSupportUser?.departmentId || (departmentId as any) || 'wabastore',
         subDepartment: 'support',
-        position: 'Technical Support'
+        position: regSupportUser?.position || 'Technical Support'
       };
       setUser(newUser);
       localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
@@ -125,8 +127,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name: newUser.name,
         email: newUser.email,
         role: 'Technical Support',
-        department: 'Wabastore Support',
-        avatar: 'RM',
+        department: regSupportUser?.departmentName ? `${regSupportUser.departmentName} Support` : 'Wabastore Support',
+        avatar: newUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
         authMethod: 'ID & Password Auth (System Login)',
         device: 'CRM Web Client (ID & Password)'
       });
@@ -161,10 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // Check if matching a registered team member
+    const regMemberUser = userApprovalStore.findUserByEmail(email);
     const teamMember = SAMPLE_TEAM_MEMBERS.find(tm => tm.email.toLowerCase() === email.toLowerCase());
 
-    if (teamMember || role === 'team-member') {
-      const tmUser = teamMember || {
+    if (regMemberUser || teamMember || role === 'team-member') {
+      const tmUser = regMemberUser || teamMember || {
         id: `tm-${email.split('@')[0].toLowerCase()}`,
         name: email.split('@')[0].replace(/([._-])/g, ' ').toUpperCase(),
         email,
@@ -178,9 +181,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: tmUser.id,
         name: tmUser.name,
         email: tmUser.email,
-        avatar: tmUser.avatar,
+        avatar: (tmUser as any).avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
         role: 'team-member',
-        departmentId: tmUser.departmentId
+        departmentId: (tmUser as any).departmentId || (departmentId as any) || 'wabastore'
       };
       setUser(newUser);
       localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
@@ -190,8 +193,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         empId: tmUser.id,
         name: tmUser.name,
         email: tmUser.email,
-        role: (tmUser as any).title || 'Sales Executive',
-        department: tmUser.department ? `${tmUser.department} Sales` : 'Wabastore Sales',
+        role: (tmUser as any).title || (tmUser as any).position || 'Sales Executive',
+        department: (tmUser as any).departmentName ? `${(tmUser as any).departmentName} Sales` : (tmUser as any).department ? `${(tmUser as any).department} Sales` : 'Wabastore Sales',
         avatar: tmUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
         authMethod: 'ID & Password Auth (System Login)',
         device: 'CRM Web Client (ID & Password)'

@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { userApprovalStore } from '../../services/userApprovalStore';
+import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 export type TeamLeadNav =
   | 'overview'
@@ -55,6 +57,16 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(() => userApprovalStore.getPendingUsers().length);
+
+  React.useEffect(() => {
+    const handleStorageChange = () => {
+      setPendingApprovalsCount(userApprovalStore.getPendingUsers().length);
+    };
+    window.addEventListener('amuwa_user_registrations_changed', handleStorageChange);
+    return () => window.removeEventListener('amuwa_user_registrations_changed', handleStorageChange);
+  }, []);
 
   const navItems = [
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
@@ -198,10 +210,41 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
                       <p className="text-[11px] text-amber-700 mt-0.5">Review and sign off on reps' daily closed sales.</p>
                     </div>
                   )}
+                  {pendingApprovalsCount > 0 && (
+                    <div
+                      onClick={() => {
+                        setIsAccessModalOpen(true);
+                        setIsNotificationsOpen(false);
+                      }}
+                      className="p-2.5 rounded-xl bg-indigo-50/90 hover:bg-indigo-100/90 cursor-pointer border border-indigo-200 text-xs transition-colors"
+                    >
+                      <p className="font-semibold text-indigo-900 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                        {pendingApprovalsCount} Registration{pendingApprovalsCount > 1 ? 's' : ''} Awaiting Approval
+                      </p>
+                      <p className="text-[11px] text-indigo-700 mt-0.5">Click to authorize new team members and activate their logins.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
+
+          {/* Staff Access & Approvals Button */}
+          <button
+            type="button"
+            onClick={() => setIsAccessModalOpen(true)}
+            className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs relative"
+            title="Authorize registered team members and manage access"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+            <span className="hidden sm:inline">Staff Approvals</span>
+            {pendingApprovalsCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                {pendingApprovalsCount}
+              </span>
+            )}
+          </button>
 
           {/* Team Lead Profile Pill */}
           <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-200">
@@ -366,6 +409,13 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
 
       </div>
 
+      {/* Staff Access & Approvals Modal */}
+      {isAccessModalOpen && (
+        <UserAccessManagementModal
+          isOpen={isAccessModalOpen}
+          onClose={() => setIsAccessModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

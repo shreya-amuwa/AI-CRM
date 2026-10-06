@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShoppingBag, MessageSquare, PhoneCall, Cpu, Layers, Sparkles, Star,
   ArrowRight, Plus, Lock, Unlock, X, AlertTriangle, GraduationCap, Users, FileText,
-  Trash2, RotateCcw, DollarSign
+  Trash2, RotateCcw, DollarSign, ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -11,6 +11,8 @@ import { AmuwaLogo } from '../common/AmuwaLogo';
 import { Department } from '../../types/crm';
 import { DepartmentUnlockModal } from '../auth/DepartmentUnlockModal';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
+import { userApprovalStore } from '../../services/userApprovalStore';
+import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 const getFallbackIcon = (iconName: string) => {
   switch (iconName) {
@@ -50,6 +52,16 @@ export const DepartmentSelector: React.FC = () => {
   const [lockTarget, setLockTarget] = useState<Department | null>(null);
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [unlockTarget, setUnlockTarget] = useState<Department | null>(null);
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState<number>(() => userApprovalStore.getPendingUsers().length);
+
+  React.useEffect(() => {
+    const handleStorageChange = () => {
+      setPendingCount(userApprovalStore.getPendingUsers().length);
+    };
+    window.addEventListener('amuwa_user_registrations_changed', handleStorageChange);
+    return () => window.removeEventListener('amuwa_user_registrations_changed', handleStorageChange);
+  }, []);
 
   const handleEnter = (dept: Department) => {
     if (isSuperAdmin) {
@@ -96,6 +108,24 @@ export const DepartmentSelector: React.FC = () => {
             </span>
             <span>{isSuperAdmin ? 'Super Admin' : 'Staff'}: <strong className="text-slate-900">{user?.name}</strong></span>
           </div>
+
+          {/* Access & Approvals Control for Super Admin & Admin */}
+          {(isSuperAdmin || isAdminOrHR) && (
+            <button
+              type="button"
+              onClick={() => setIsAccessModalOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs backdrop-blur-md"
+              title="Staff Access & Approvals Control"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Access & Approvals</span>
+              {pendingCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
+          )}
 
           <button
             onClick={logout}
@@ -315,6 +345,14 @@ export const DepartmentSelector: React.FC = () => {
         onUnlock={handleDepartmentUnlock}
         onClose={() => setUnlockTarget(null)}
       />
+
+      {/* Staff Access & Approvals Modal */}
+      {isAccessModalOpen && (
+        <UserAccessManagementModal
+          isOpen={isAccessModalOpen}
+          onClose={() => setIsAccessModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
