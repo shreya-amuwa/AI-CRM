@@ -484,7 +484,7 @@ function liveWebhookPlugin(): Plugin {
 
 /**
  * Serves the backend API (server/app.ts) under /api/v1 during `npm run dev`,
- * mirroring the Vercel function in api/v1/[...route].ts.
+ * mirroring the Vercel function in api/crm.ts.
  */
 function apiV1Plugin(): Plugin {
   return {
