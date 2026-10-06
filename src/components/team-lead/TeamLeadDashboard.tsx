@@ -14,6 +14,8 @@ import { LeadSettingsTab } from './LeadSettingsTab';
 import { teamLeadStore } from '../../services/teamLeadStore';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
+import { StaffManagementPanel } from '../common/StaffManagementPanel';
+import { useAuth } from '../../context/AuthContext';
 
 interface TeamLeadDashboardProps {
   currentUserId: string;
@@ -24,6 +26,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
   currentUserId,
   userName
 }) => {
+  const { profile } = useAuth();
   const [activeNav, setActiveNav] = useState<TeamLeadNav>('overview');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -164,6 +167,14 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
           unassignedLeads={unassignedLeads}
           onNavigateTab={setActiveNav}
           onAutoDistribute={handleAutoRoundRobin}
+        />
+      )}
+
+      {/* VIEW: TEAM MEMBERS & ACCESS (team leads add members to their own team) */}
+      {activeNav === 'team-members' && (
+        <StaffManagementPanel
+          departmentSlug={profile?.department?.slug || ''}
+          subDept={profile?.team?.division === 'SUPPORT' ? 'support' : profile?.team?.division === 'SALES' ? 'sales' : null}
         />
       )}
 

@@ -60,7 +60,7 @@ export const usersApi = {
   list: (q: { page?: number; pageSize?: number; status?: string; role?: Role; departmentId?: string; teamId?: string; search?: string } = {}) =>
     api.get<Paginated<Profile>>('/users', { ...q }),
   get: (id: string) => api.get<Profile>(`/users/${id}`),
-  create: (body: { email: string; fullName: string; password: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string }) =>
+  create: (body: { email: string; fullName: string; password: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string | null }) =>
     api.post<Profile>('/users', body),
   assign: (id: string, body: { role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string }) => api.patch<Profile>(`/users/${id}`, body),
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
@@ -101,6 +101,27 @@ export const auditApi = {
 /** Public sign-up options (departments + teams) via the anon-callable RPC. */
 export async function fetchRegistrationOptions(): Promise<RegistrationDepartment[]> {
   const { data, error } = await requireSupabase().rpc('list_registration_options');
-  if (error) throw new Error('Could not load departments. Please try again.');
+  if (error) {
+    console.error('[registration] list_registration_options failed', error);
+    throw new Error(describeRegistrationError(error));
+  }
   return (data || []) as RegistrationDepartment[];
+}
+
+/** Turn the PostgREST error into an actionable message for setup problems. */
+function describeRegistrationError(error: { code?: string; message?: string }): string {
+  const msg = error.message || '';
+  if (error.code === 'PGRST202' || error.code === '42883' || /could not find the function/i.test(msg)) {
+    return 'Could not load departments: the database is not set up yet. Apply the migrations in supabase/migrations (see docs/SETUP_SUPABASE.md).';
+  }
+  if (/invalid api key|jwt|apikey/i.test(msg) || error.code === 'PGRST301') {
+    return 'Could not load departments: the Supabase API key is invalid. Check VITE_SUPABASE_ANON_KEY and restart the app.';
+  }
+  if (error.code === '42501') {
+    return 'Could not load departments: permission denied. Re-run the migrations so anonymous users can read sign-up options.';
+  }
+  if (/fetch|network/i.test(msg)) {
+    return 'Could not load departments: cannot reach Supabase. Check VITE_SUPABASE_URL and your connection.';
+  }
+  return `Could not load departments (${error.code || 'error'}): ${msg || 'please try again.'}`;
 }

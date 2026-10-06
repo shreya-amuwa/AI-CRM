@@ -66,6 +66,7 @@ export type ActiveTab =
   | 'support_team_performance'
   | 'support_reports'
   | 'support_flow'
+  | 'staff_access'
   | 'notifications';
 
 interface SidebarProps {
@@ -243,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   subDept,
   departmentId
 }) => {
-  const { activeDepartment, activeDepartmentId } = useAuth();
+  const { activeDepartment, activeDepartmentId, user } = useAuth();
   const { getUnreadCountForUser } = useNotifications();
   
   // Sidebar only ever renders once a department is active, but guard
@@ -260,7 +261,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // gets the generic nav. It must never fall back to another department's
   // (e.g. amuwa's) nav items, since those route to that department's own
   // dedicated panels.
-  const navItems = DEPARTMENT_NAV_MAP[key] || GENERIC_DEPARTMENT_NAV;
+  const baseNavItems = DEPARTMENT_NAV_MAP[key] || GENERIC_DEPARTMENT_NAV;
+  // Managers get "Team Members & Access" directly under the dashboard entry.
+  const canManageStaff = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'hr' || user?.role === 'team-lead';
+  const navItems = canManageStaff
+    ? [baseNavItems[0], { id: 'staff_access' as ActiveTab, label: 'Team Members & Access', icon: UserCheck }, ...baseNavItems.slice(1)]
+    : baseNavItems;
   const deptTitle = activeDepartment?.name || 'Department';
 
   return (

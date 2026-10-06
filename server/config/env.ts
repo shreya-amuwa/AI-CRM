@@ -21,6 +21,15 @@ export function getEnv(): ServerEnv {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new ConfigurationError('SUPABASE_URL and SUPABASE_ANON_KEY must be configured on the server.');
   }
+  const browserUrl = (process.env.VITE_SUPABASE_URL || '').trim();
+  const browserKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  if (browserUrl && browserUrl.replace(/\/+$/, '') !== supabaseUrl.replace(/\/+$/, '')) {
+    console.warn(`[api] SUPABASE_URL (${supabaseUrl}) differs from VITE_SUPABASE_URL (${browserUrl}). ` +
+      'Tokens issued to the browser will be rejected by the API. Use the same project for both.');
+  }
+  if (browserKey && browserKey !== supabaseAnonKey) {
+    console.warn('[api] SUPABASE_ANON_KEY differs from VITE_SUPABASE_ANON_KEY. They should be the same project anon key.');
+  }
   cached = {
     supabaseUrl,
     supabaseAnonKey,
