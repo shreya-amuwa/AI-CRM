@@ -262,7 +262,9 @@ the database on sign-up, so there is no `POST /approval-requests`) ·
 api/crm.ts          Vercel entry (single function → router)
 server/
   config/env.ts               validated env (never exposes service key to the client)
-  http/                       router, request/response helpers, AppError → JSON envelope
+  app.ts                      Hono app: middleware (request id, logs, security headers, CORS,
+                              body limit, rate limits, auth) + error envelope
+  http/                       types, AppError → JSON envelope, rate limiting
   auth/authenticate.ts        JWT verification + profile load → Actor
   authz/policies.ts           centralized pre-checks (mirrors DB rules for early errors)
   db/supabase.ts              user-scoped client factory, service-role client (lazy)
@@ -272,7 +274,7 @@ server/
   services/                   UserService, CustomerService, ApprovalService,
                               NotificationService, OrganizationService, AuditService
   controllers/                one per resource; thin
-  routes.ts                   route table
+  routes.ts                   declarative route table (method, path, handler, rate class)
 shared/
   contracts.ts                DTO types shared by API and UI
   validation.ts               zod schemas shared by API and UI

@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Typecheck, build & secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (frontend + server)
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
+      - name: No secrets in the browser bundle
+        run: |
+          if grep -lE 'eyJhbGciOi[A-Za-z0-9_-]{20,}|service_role|SUPABASE_SERVICE_ROLE_KEY' dist/assets/*.js; then
+            echo "::error::A JWT or service-role reference was found in the frontend bundle"; exit 1
+          fi
+      - name: No committed env files or hard-coded keys
+        run: |
+          if git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$'; then
+            echo "::error::An .env file is committed"; exit 1
+          fi
+          if git grep -nE 'eyJhbGciOi[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}' -- ':!supabase/tests/**' ':!package-lock.json'; then
+            echo "::error::A hard-coded JWT/API key was found"; exit 1
+          fi
+
+  database:
+    name: RLS + API integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      POSTGREST_VERSION: v12.2.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Download PostgREST
+        run: |
+          curl -sSL -o /tmp/postgrest.tar.xz \
+            "https://github.com/PostgREST/postgrest/releases/download/${POSTGREST_VERSION}/postgrest-${POSTGREST_VERSION}-linux-static-x64.tar.xz"
+          tar -xf /tmp/postgrest.tar.xz -C /tmp
+          echo "POSTGREST_BIN=/tmp/postgrest" >> "$GITHUB_ENV"
+      - name: Authorization test-suite (every role × every table)
+        run: npm run test:db
+      - name: End-to-end API tests (HTTP → PostgREST → Postgres)
+        run: npm run test:api

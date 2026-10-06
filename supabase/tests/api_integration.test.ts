@@ -18,6 +18,8 @@ const sign = (payload: Record<string, unknown>) => {
 process.env.SUPABASE_URL = process.env.GATEWAY_URL;
 process.env.SUPABASE_ANON_KEY = sign({ role: 'anon' });
 process.env.SUPABASE_SERVICE_ROLE_KEY = sign({ role: 'service_role' });
+process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
+process.env.API_ACCESS_LOG = 'off';
 
 const { handleApiRequest } = await import('../../server/app.js');
 const db = new pg.Pool();
@@ -235,6 +237,25 @@ r = await api('sa', 'DELETE', `/users/${pendingId}`);
 check(r.status === 200, 'super admin deletes user', r);
 r = await api('sa', 'GET', '/nope');
 check(r.status === 404 && r.json.error.code === 'NOT_FOUND', 'unknown route → 404');
+// --- rate limiting (shared Postgres counters) + response headers -------------
+let limited: Response | null = null;
+for (let i = 0; i < 4 && !limited; i++) {
+  const res = await fetch(base + '/customers/import', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${tokens.get('dh')}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ customers: [{ name: 'RL', email: `rl${i}@x.com` }] })
+  });
+  if (res.status === 429) limited = res;
+}
+check(limited !== null, 'import quota (3/min) returns 429 once exhausted');
+const limitedBody = (await limited!.json()) as any;
+check(limitedBody.error.code === 'RATE_LIMITED' && Number(limited!.headers.get('retry-after')) > 0, '429 has RATE_LIMITED code and Retry-After', limitedBody);
+const { rows: [rl] } = await db.query(`select count(*)::int n from private.rate_limit_counters where bucket like 'user:%:import'`);
+check(rl.n >= 1, 'quota counters are stored in Postgres (shared across instances)');
+const normal = await fetch(base + '/departments', { headers: { authorization: `Bearer ${tokens.get('sa')}` } });
+check(normal.headers.get('ratelimit-limit') === '120' && normal.headers.get('x-request-id') && normal.headers.get('x-content-type-options') === 'nosniff',
+  'responses carry RateLimit-*, X-Request-Id and security headers');
+
 const health = await fetch(base + '/health').then(x => x.json()) as any;
 check(health.success && health.data.checks.database.startsWith('ok'), 'public health check reports database ok', health);
 const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=approval-requests/' + orphanReq.id + '/approve', {

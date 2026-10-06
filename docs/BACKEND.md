@@ -23,12 +23,23 @@ Supabase PostgREST  ──►  PostgreSQL
                           • triggers (audit log, notifications, ownership)
 ```
 
-**There is no Express/Nest server.** The backend is plain TypeScript on
-Node.js, deployed as a single Vercel serverless function. It uses
-`@supabase/supabase-js` to talk to the database and `zod` for validation. A ~60-line
-router (`server/http/router.ts`) maps paths to controllers. This keeps cold starts small
-and needs no server to operate; the same code could be mounted in Express later
-without changes below `server/app.ts`.
+**Framework: [Hono](https://hono.dev)** on Node.js, deployed as a single Vercel
+serverless function (`api/crm.ts`). Hono provides routing and the middleware chain;
+`@supabase/supabase-js` talks to the database and `zod` validates input. Controllers,
+services and repositories do not depend on Hono (`server/app.ts` adapts the
+request), so the same code could later run as a long-lived Node server.
+
+Middleware order for every request (`server/app.ts`):
+
+1. `requestId` — `X-Request-Id` on every response, included in every log line
+2. access log — one JSON line per request (`level, method, path, status, ms, userId`)
+3. `secureHeaders` + `Cache-Control: no-store`
+4. `cors` — only origins in `API_ALLOWED_ORIGINS` (same-origin needs none)
+5. `bodyLimit` — 1 MB
+6. **rate limit, layer 1** — per IP, in memory (flood guard before any auth work)
+7. **authenticate** — verify token, load profile, require ACTIVE
+8. **rate limit, layer 2** — per user, counters in Postgres (shared by all instances)
+9. controller → service → repository
 
 ## Life of a request — "Authorize & Activate"
 
@@ -37,7 +48,7 @@ without changes below `server/app.ts`.
    access token.
 2. **Vercel** receives `POST /api/v1/approval-requests/<id>/approve` and, via the
    rewrite in `vercel.json`, invokes `api/crm.ts` with `?__path=approval-requests/<id>/approve`.
-3. **`server/app.ts`** parses the request, `router.match()` finds
+3. **`server/app.ts`** (Hono) runs the middleware chain and dispatches to
    `approvalsController.approve`.
 4. **Authentication** (`server/auth/authenticate.ts`): the token is verified
    with Supabase Auth, then the caller's `role / status / department / team`
@@ -66,12 +77,44 @@ change data the user isn't allowed to. The **service-role key** (which bypasses
 RLS) is used only to create/ban Supabase Auth accounts, after the database has
 confirmed the caller may do it.
 
+## Rate limiting
+
+| Bucket | Default | Env override |
+|---|---|---|
+| Per IP (memory, per instance) | 300 req/min | `RATE_LIMIT_IP_PER_MIN` |
+| Per user, all endpoints (Postgres) | 120 req/min | `RATE_LIMIT_USER_PER_MIN` |
+| Per user, sensitive endpoints (create users, approvals, status/role changes, deletes, announcements, org changes) | 20 req/min | `RATE_LIMIT_SENSITIVE_PER_MIN` |
+| Per user, customer import | 5 req/min | `RATE_LIMIT_IMPORT_PER_MIN` |
+
+Exceeding a limit returns **429** `{ code: "RATE_LIMITED" }` with `Retry-After`;
+successful responses carry `RateLimit-Limit / -Remaining / -Reset`. Counters live
+in `private.rate_limit_counters` via `rate_limit_consume()` (service role only —
+clients can't read or reset them). If the counter store is unreachable the API
+fails open to the in-memory limiter and logs an error; authorization is still
+enforced by the database.
+
+Sign-in and sign-up go directly to Supabase Auth, which has its own limits:
+Dashboard → Authentication → Rate Limits (tune "sign-ups / sign-ins per hour").
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+* **build** — `npm run typecheck`, `npm run build`, and secret scans (no JWT or
+  service-role reference in the bundle, no committed `.env`, no hard-coded keys).
+* **database** — Postgres 16 service + PostgREST: `npm run test:db`
+  (RLS for every role) and `npm run test:api` (HTTP → PostgREST → Postgres,
+  including rate limits).
+
+Protect `main` in GitHub (Settings → Branches) and require both jobs to pass.
+
 ## Folder map
 
 | Path | Responsibility |
 |---|---|
 | `api/crm.ts` | Vercel entry point (one function for all of `/api/v1`) |
-| `server/app.ts` | Request/response adapter, error envelope |
+| `server/http/rateLimit.ts` | Rate-limit buckets and stores |
+| `server/app.ts` | Hono app: middleware, route registration, error envelope |
 | `server/routes.ts` | Every endpoint in one table |
 | `server/controllers/` | Thin HTTP handlers |
 | `server/services/` | Business logic per resource |
