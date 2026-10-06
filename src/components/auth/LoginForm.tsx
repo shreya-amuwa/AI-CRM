@@ -13,7 +13,9 @@ import {
   User,
   ShieldCheck,
   Clock,
-  ChevronDown
+  ChevronDown,
+  LogIn,
+  UserPlus
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -225,7 +227,7 @@ export const LoginForm: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col justify-between items-center px-4 py-6 relative overflow-hidden selection:bg-blue-500/20 font-sans">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col justify-between items-center px-4 py-4 sm:py-6 relative overflow-hidden selection:bg-blue-500/20 font-sans">
       
       {/* 1. Animated Ambient Floating Gradient Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[650px] h-[650px] bg-gradient-to-tr from-purple-300/40 via-fuchsia-200/30 to-pink-300/40 blur-[130px] rounded-full pointer-events-none animate-orb-1" />
@@ -253,16 +255,16 @@ export const LoginForm: React.FC = () => {
         </defs>
       </svg>
 
-      <div className="w-full flex-1 flex flex-col justify-center items-center z-10 my-auto py-4">
+      <div className="w-full flex-1 flex flex-col justify-center items-center z-10 my-auto py-2 sm:py-4">
         
         {/* Prominent Large Logo Component with Soft Glow */}
-        <div className="mb-4 text-center flex justify-center drop-shadow-[0_12px_24px_rgba(37,99,235,0.15)] transition-transform hover:scale-[1.02] duration-300">
+        <div className="mb-3 sm:mb-4 text-center flex justify-center drop-shadow-[0_12px_24px_rgba(37,99,235,0.15)] transition-transform hover:scale-[1.02] duration-300">
           <AmuwaLogo size="lg" />
         </div>
 
         {/* Eviction Notice Alert Banner if user was kicked from a session */}
         {evictedNotice && (
-          <div className="max-w-[480px] w-full mb-3 p-3.5 rounded-2xl bg-amber-50/95 border border-amber-200 text-amber-900 text-xs flex items-start gap-3 shadow-lg backdrop-blur-md animate-fade-in">
+          <div className="max-w-[480px] w-full mb-3 p-3 rounded-2xl bg-amber-50/95 border border-amber-200 text-amber-900 text-xs flex items-start gap-3 shadow-lg backdrop-blur-md animate-fade-in">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1">
               <p className="font-semibold text-amber-950">Security Session Notice</p>
@@ -278,14 +280,51 @@ export const LoginForm: React.FC = () => {
         )}
 
         {/* Main Card Container */}
-        <div className="w-full max-w-[480px] bg-white/95 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-2xl shadow-blue-900/10 border border-white/90 hover:border-blue-300/80 transition-all duration-300 relative z-10">
+        <div className="w-full max-w-[480px] bg-white/95 backdrop-blur-xl p-5 sm:p-7 rounded-3xl shadow-2xl shadow-blue-900/10 border border-white/90 hover:border-blue-300/80 transition-all duration-300 relative z-10">
           
+          {/* Top Side-by-Side Sign In & Sign Up Tab Bar (Prompt Requirement) */}
+          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl mb-4 border border-slate-200/80 shadow-inner">
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(false);
+                setLoginError('');
+                setRegError('');
+              }}
+              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                !isSignUp
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Sign In</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsSignUp(true);
+                setLoginError('');
+                setRegError('');
+              }}
+              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                isSignUp
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
+              }`}
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Sign Up</span>
+            </button>
+          </div>
+
           {/* Header Title & Subtitle */}
-          <div className="text-center mb-5">
-            <h2 className="text-2xl font-bold font-heading text-[#0F172A] tracking-tight">
+          <div className="text-center mb-4">
+            <h2 className="text-xl sm:text-2xl font-bold font-heading text-[#0F172A] tracking-tight">
               {isSignUp ? 'Create Account' : 'Sign In'}
             </h2>
-            <p className="text-xs text-slate-400 mt-1 font-sans">
+            <p className="text-xs text-slate-400 mt-0.5 font-sans">
               {isSignUp
                 ? 'Register to request system access from your Department Head'
                 : 'Welcome back! Please sign in to continue'}
@@ -299,21 +338,21 @@ export const LoginForm: React.FC = () => {
             <div>
               {/* Error Message Display */}
               {regError && (
-                <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+                <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{regError}</span>
                 </div>
               )}
 
-              <form onSubmit={handleSignUpSubmit} className="space-y-3.5">
+              <form onSubmit={handleSignUpSubmit} className="space-y-2.5">
                 
                 {/* 1. Name */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5 uppercase tracking-wider font-mono">
                     TEAM MEMBER'S NAME <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       required
@@ -323,18 +362,18 @@ export const LoginForm: React.FC = () => {
                         setRegName(e.target.value);
                         setRegError('');
                       }}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all"
+                      className="w-full pl-9 pr-3 py-1.5 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all"
                     />
                   </div>
                 </div>
 
                 {/* 2. Email */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5 uppercase tracking-wider font-mono">
                     EMAIL ADDRESS <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="email"
                       required
@@ -344,18 +383,18 @@ export const LoginForm: React.FC = () => {
                         setRegEmail(e.target.value);
                         setRegError('');
                       }}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all font-mono"
+                      className="w-full pl-9 pr-3 py-1.5 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all font-mono"
                     />
                   </div>
                 </div>
 
                 {/* 3. Select Department Dropdown */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5 uppercase tracking-wider font-mono">
                     SELECT DEPARTMENT <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <select
                       required
                       value={regDepartmentId}
@@ -363,7 +402,7 @@ export const LoginForm: React.FC = () => {
                         setRegDepartmentId(e.target.value);
                         setRegError('');
                       }}
-                      className="w-full pl-10 pr-10 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all appearance-none cursor-pointer"
+                      className="w-full pl-9 pr-8 py-1.5 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Choose department...</option>
                       {departments.map(d => (
@@ -372,103 +411,93 @@ export const LoginForm: React.FC = () => {
                         </option>
                       ))}
                     </select>
-                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
 
-                {/* 4. Role / Division Selection Cards (Reduced Box Size as explicitly requested) */}
+                {/* 4. Compact Role / Division Cards (Significantly Reduced Size as requested) */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
                     ROLE / DIVISION <span className="text-red-500">*</span>
                   </label>
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-2">
                     
-                    {/* Compact Sales Division Card */}
+                    {/* Ultra-compact Sales Card */}
                     <div
                       onClick={() => setRegSubDepartment('sales')}
-                      className={`p-2.5 rounded-2xl cursor-pointer transition-all border relative flex flex-col justify-between ${
+                      className={`px-2.5 py-1.5 rounded-xl cursor-pointer transition-all border flex items-center justify-between ${
                         regSubDepartment === 'sales'
-                          ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/30 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                          ? 'border-blue-600 bg-blue-50/80 ring-1 ring-blue-600 shadow-xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300'
                       }`}
                     >
-                      <div className="flex items-start justify-between mb-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
                         <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
                             regSubDepartment === 'sales'
                               ? 'bg-blue-600 text-white'
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          <TrendingUp className="w-3.5 h-3.5" />
+                          <TrendingUp className="w-3 h-3" />
                         </div>
-                        {regSubDepartment === 'sales' && (
-                          <div className="w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                        <div className="min-w-0 truncate">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-bold text-slate-900">Sales</span>
+                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-blue-100 text-blue-700">
+                              Rep
+                            </span>
                           </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-slate-900 font-heading">Sales</span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-700">
-                            Rep
-                          </span>
+                          <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">Leads, Deals & EOD</p>
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
-                          Sales rep dashboard &bull; Leads, Deals & EOD
-                        </p>
                       </div>
+                      {regSubDepartment === 'sales' && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1" />
+                      )}
                     </div>
 
-                    {/* Compact Support Division Card */}
+                    {/* Ultra-compact Support Card */}
                     <div
                       onClick={() => setRegSubDepartment('support')}
-                      className={`p-2.5 rounded-2xl cursor-pointer transition-all border relative flex flex-col justify-between ${
+                      className={`px-2.5 py-1.5 rounded-xl cursor-pointer transition-all border flex items-center justify-between ${
                         regSubDepartment === 'support'
-                          ? 'border-rose-500 bg-rose-50/50 ring-2 ring-rose-400/30 shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50'
+                          ? 'border-rose-500 bg-rose-50/80 ring-1 ring-rose-500 shadow-xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300'
                       }`}
                     >
-                      <div className="flex items-start justify-between mb-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
                         <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                          className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
                             regSubDepartment === 'support'
                               ? 'bg-rose-500 text-white'
                               : 'bg-slate-100 text-slate-600'
                           }`}
                         >
-                          <Headphones className="w-3.5 h-3.5" />
+                          <Headphones className="w-3 h-3" />
                         </div>
-                        {regSubDepartment === 'support' && (
-                          <div className="w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-xs">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
+                        <div className="min-w-0 truncate">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs font-bold text-slate-900">Support</span>
+                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-rose-100 text-rose-700">
+                              Tech
+                            </span>
                           </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-slate-900 font-heading">Support</span>
-                          <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-700">
-                            Tech
-                          </span>
+                          <p className="text-[9px] text-slate-400 truncate leading-none mt-0.5">3-tier pipeline</p>
                         </div>
-                        <p className="text-[10px] text-slate-500 leading-tight mt-0.5">
-                          Technical support &bull; 3-tier pipeline
-                        </p>
                       </div>
+                      {regSubDepartment === 'support' && (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-rose-500 shrink-0 ml-1" />
+                      )}
                     </div>
 
                   </div>
 
-                  {/* Informative Default Dashboard Indicator Pill */}
-                  <div className="mt-2 px-3 py-1.5 rounded-xl bg-blue-50/70 border border-blue-200/60 flex items-center gap-2 text-[11px] text-blue-900">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+                  {/* Single-line Target Dashboard Indicator */}
+                  <div className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-500 font-sans">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${regSubDepartment === 'support' ? 'bg-rose-500' : 'bg-blue-600'}`} />
                     <span>
-                      Default Dashboard:{' '}
-                      <strong className="font-semibold text-blue-950">
+                      Target Dashboard:{' '}
+                      <strong className="text-slate-700 font-semibold">
                         {regSubDepartment === 'support'
                           ? 'Technical Support Dashboard'
                           : 'Sales Team Member Dashboard'}
@@ -479,11 +508,11 @@ export const LoginForm: React.FC = () => {
 
                 {/* 5. Password with Visibility Eye */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5 uppercase tracking-wider font-mono">
                     PASSWORD <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type={showRegPassword ? 'text' : 'password'}
                       required
@@ -493,25 +522,25 @@ export const LoginForm: React.FC = () => {
                         setRegPassword(e.target.value);
                         setRegError('');
                       }}
-                      className="w-full pl-10 pr-10 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all"
+                      className="w-full pl-9 pr-9 py-1.5 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPassword(!showRegPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
-                      {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
 
                 {/* 6. Confirm Password with Visibility Eye */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-0.5 uppercase tracking-wider font-mono">
                     CONFIRM PASSWORD <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type={showRegConfirmPassword ? 'text' : 'password'}
                       required
@@ -521,14 +550,14 @@ export const LoginForm: React.FC = () => {
                         setRegConfirmPassword(e.target.value);
                         setRegError('');
                       }}
-                      className="w-full pl-10 pr-10 py-2 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all"
+                      className="w-full pl-9 pr-9 py-1.5 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
-                      {showRegConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -536,14 +565,14 @@ export const LoginForm: React.FC = () => {
                 {/* Sign Up Submit Button */}
                 <button
                   type="submit"
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 hover:shadow-xl hover:shadow-blue-600/40 transition-all active:scale-[0.99] mt-3 group"
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 hover:shadow-lg transition-all active:scale-[0.99] mt-2 group"
                 >
                   <span>Sign Up</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>
 
                 {/* Toggle to Sign In */}
-                <div className="text-center pt-2">
+                <div className="text-center pt-1.5">
                   <span className="text-xs text-slate-500">Already have an account? </span>
                   <button
                     type="button"
@@ -569,7 +598,7 @@ export const LoginForm: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowGoogleModal(true)}
-                className="w-full py-3 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 text-xs font-semibold flex items-center justify-center gap-3 transition-all shadow-xs hover:shadow-md active:scale-[0.99] group btn-shimmer"
+                className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 text-xs font-semibold flex items-center justify-center gap-2.5 transition-all shadow-xs hover:shadow-md active:scale-[0.99] group btn-shimmer"
               >
                 <svg className="w-4 h-4 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -581,7 +610,7 @@ export const LoginForm: React.FC = () => {
               </button>
 
               {/* Divider */}
-              <div className="relative my-4 text-center">
+              <div className="relative my-3.5 text-center">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-100" />
                 </div>
@@ -592,16 +621,16 @@ export const LoginForm: React.FC = () => {
 
               {/* Error Message Display */}
               {loginError && (
-                <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+                <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{loginError}</span>
                 </div>
               )}
 
               {/* Email + Password Form */}
-              <form onSubmit={handleSignInSubmit} className="space-y-3.5">
+              <form onSubmit={handleSignInSubmit} className="space-y-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
                     EMAIL ADDRESS
                   </label>
                   <div className="relative">
@@ -615,13 +644,13 @@ export const LoginForm: React.FC = () => {
                         setEmail(e.target.value);
                         setLoginError('');
                       }}
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50/60 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all font-sans"
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50/60 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all font-sans"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5 uppercase tracking-wider font-mono">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1 uppercase tracking-wider font-mono">
                     PASSWORD
                   </label>
                   <div className="relative">
@@ -635,7 +664,7 @@ export const LoginForm: React.FC = () => {
                         setPassword(e.target.value);
                         setLoginError('');
                       }}
-                      className="w-full pl-10 pr-10 py-2.5 bg-slate-50/60 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-500/15 transition-all font-sans"
+                      className="w-full pl-10 pr-10 py-2 bg-slate-50/60 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all font-sans"
                     />
                     <button
                       type="button"
@@ -648,7 +677,7 @@ export const LoginForm: React.FC = () => {
                 </div>
 
                 {/* Options line */}
-                <div className="flex items-center justify-between text-xs pt-1">
+                <div className="flex items-center justify-between text-xs pt-0.5">
                   <label className="flex items-center gap-2 cursor-pointer text-slate-600 select-none">
                     <input
                       type="checkbox"
@@ -670,14 +699,14 @@ export const LoginForm: React.FC = () => {
                 {/* Sign In Button */}
                 <button
                   type="submit"
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 hover:shadow-xl hover:shadow-blue-600/40 transition-all active:scale-[0.99] mt-2 btn-shimmer group"
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 hover:shadow-lg transition-all active:scale-[0.99] mt-1 btn-shimmer group"
                 >
                   <span>Sign In</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>
 
                 {/* Toggle to Sign Up */}
-                <div className="text-center pt-2">
+                <div className="text-center pt-1.5">
                   <span className="text-xs text-slate-500">Need an account? </span>
                   <button
                     type="button"
@@ -694,11 +723,11 @@ export const LoginForm: React.FC = () => {
               </form>
 
               {/* Quick Demo Test Accounts */}
-              <div className="mt-4 pt-4 border-t border-slate-100 space-y-2 text-left">
+              <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1.5 text-left">
                 <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
                   <span>TEST ACCOUNTS (1-CLICK FILL):</span>
                 </div>
-                <div className="grid grid-cols-1 gap-1.5 text-xs">
+                <div className="grid grid-cols-1 gap-1 text-xs">
 
                   <button
                     type="button"
@@ -778,7 +807,7 @@ export const LoginForm: React.FC = () => {
       </div>
 
       {/* Page Footer */}
-      <footer className="text-center text-xs font-semibold text-slate-500/80 font-sans z-10 mt-2">
+      <footer className="text-center text-xs font-semibold text-slate-500/80 font-sans z-10 mt-1">
         &copy; 2026 Amuwa Corporation. All rights reserved. &bull; Enterprise Access Protected
       </footer>
 
