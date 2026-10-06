@@ -259,7 +259,7 @@ the database on sign-up, so there is no `POST /approval-requests`) ·
 
 
 ```
-api/v1/[...route].ts          Vercel entry (single function → router)
+api/crm.ts          Vercel entry (single function → router)
 server/
   config/env.ts               validated env (never exposes service key to the client)
   http/                       router, request/response helpers, AppError → JSON envelope

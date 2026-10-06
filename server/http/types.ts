@@ -30,4 +30,6 @@ export type Handler = (ctx: RequestContext) => Promise<HandlerResult>;
 export interface RouteOptions {
   /** Allow callers whose account is not ACTIVE (e.g. GET /me shows the pending screen). */
   allowInactive?: boolean;
+  /** Unauthenticated route (health check only). Receives the raw request. */
+  public?: (req: ApiRequest) => Promise<unknown>;
 }

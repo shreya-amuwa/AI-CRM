@@ -1,9 +1,33 @@
 {
   "rewrites": [
-    { "source": "/api/webhooks/:department/:source", "destination": "/api/webhook?department=:department&source=:source" },
-    { "source": "/api/webhooks/:department", "destination": "/api/webhook?department=:department" },
-    { "source": "/api/webhooks", "destination": "/api/webhook" },
-    { "source": "/api/webhook", "destination": "/api/webhook" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/api/v1/:path*",
+      "destination": "/api/crm?__path=:path*"
+    },
+    {
+      "source": "/api/webhooks/:department/:source",
+      "destination": "/api/webhook?department=:department&source=:source"
+    },
+    {
+      "source": "/api/webhooks/:department",
+      "destination": "/api/webhook?department=:department"
+    },
+    {
+      "source": "/api/webhooks",
+      "destination": "/api/webhook"
+    },
+    {
+      "source": "/api/webhook",
+      "destination": "/api/webhook"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/crm.ts": {
+      "maxDuration": 30
+    }
+  }
 }

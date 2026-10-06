@@ -7,10 +7,12 @@ import {
   organizationController as org,
   usersController as users
 } from './controllers/index.js';
+import { healthCheck } from './health.js';
 import { Router } from './http/router.js';
 
 /** API v1 route table (mounted at /api/v1). Every route requires a valid session. */
 export const router = new Router()
+  .get('/health', async () => ({ data: null }), { public: healthCheck })
   .get('/me', me.get, { allowInactive: true })
   .patch('/me', me.update)
 

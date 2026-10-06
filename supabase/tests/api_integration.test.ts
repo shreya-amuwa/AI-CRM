@@ -125,6 +125,24 @@ check(r.status === 409, 'double approval → 409', r);
 r = await api('p', 'GET', '/notifications');
 check(r.status === 200 && r.json.data.items.some((n: any) => n.type === 'USER_APPROVED'), 'approved user can now read their approval notification', r);
 
+// --- registration WITHOUT department; super admin picks the team while approving ---
+const orphanSignup = await fetch(`${process.env.GATEWAY_URL}/auth/v1/signup`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'orphan@amuwa.com', password: 'Sup3rSecret!', data: { full_name: 'Orphan' } })
+});
+const orphanId = ((await orphanSignup.json()) as any).user.id;
+r = await api('sa', 'GET', '/approval-requests');
+const orphanReq = r.json.data.items.find((i: any) => i.subject?.id === orphanId);
+check(orphanReq && orphanReq.departmentId === null, 'department-less registration reaches super admin', r);
+r = await api('sa', 'POST', `/approval-requests/${orphanReq.id}/approve`, {});
+check(r.status === 422 && /team/i.test(r.json.error.message), 'approving without a team asks for one (422)', r);
+r = await api('sa', 'POST', `/approval-requests/${orphanReq.id}/approve`, { teamId: sales.id });
+check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.teamId === sales.id, 'super admin approves into chosen team', r);
+tokens.set('orphan', tokenFor(orphanId));
+r = await api('orphan', 'GET', '/me');
+check(r.json.data.status === 'ACTIVE' && r.json.data.department?.slug === 'wabastore' && r.json.data.team?.name === 'Sales', 'approved user placed in chosen department/team', r);
+
 // --- customers ---------------------------------------------------------------
 r = await api('a', 'POST', '/customers', { name: 'Acme Buyer', email: 'Buyer@Acme.com', phone: '+91 98765 43210', company: 'Acme', segment: 'CORPORATE' });
 check(r.status === 201 && r.json.data.ownerId === memberA && r.json.data.teamId === sales.id && r.json.data.email === 'buyer@acme.com',
@@ -193,7 +211,7 @@ check(r.json.data.updated > 0, 'mark all read');
 r = await api('th', 'GET', '/notifications/unread-count');
 check(r.json.data.count === 0, 'unread count resets');
 r = await api('th', 'POST', '/announcements', { title: 'Standup', body: '10am' });
-check(r.status === 201 && r.json.data.recipients === 2, 'team head announcement reaches team', r);
+check(r.status === 201 && r.json.data.recipients === 3, 'team head announcement reaches team', r);
 r = await api('a', 'POST', '/announcements', { title: 'Spam' });
 check(r.status === 403, 'team member cannot broadcast');
 
@@ -217,6 +235,12 @@ r = await api('sa', 'DELETE', `/users/${pendingId}`);
 check(r.status === 200, 'super admin deletes user', r);
 r = await api('sa', 'GET', '/nope');
 check(r.status === 404 && r.json.error.code === 'NOT_FOUND', 'unknown route → 404');
+const health = await fetch(base + '/health').then(x => x.json()) as any;
+check(health.success && health.data.checks.database.startsWith('ok'), 'public health check reports database ok', health);
+const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=approval-requests/' + orphanReq.id + '/approve', {
+  method: 'POST', headers: { authorization: `Bearer ${tokens.get('sa')}`, 'content-type': 'application/json' }, body: '{}'
+});
+check(viaRewrite.status === 409, 'Vercel rewrite form (?__path=) routes multi-segment POSTs', viaRewrite.status);
 r = await api('sa', 'PUT', '/customers');
 check(r.status === 405, 'wrong method → 405');
 

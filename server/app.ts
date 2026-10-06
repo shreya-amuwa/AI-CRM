@@ -14,7 +14,7 @@ type NodeRequest = IncomingMessage & { body?: unknown };
 
 /**
  * Framework-agnostic entry point: used by the Vercel function
- * (api/v1/[...route].ts) and by the Vite dev-server middleware.
+ * (api/crm.ts) and by the Vite dev-server middleware.
  */
 export async function handleApiRequest(req: NodeRequest, res: ServerResponse): Promise<void> {
   applyCors(req, res);
@@ -27,6 +27,11 @@ export async function handleApiRequest(req: NodeRequest, res: ServerResponse): P
   try {
     const request = await toApiRequest(req);
     const { handler, params, options } = router.match(request.method, request.path);
+    if (options.public) {
+      const result = await options.public(request);
+      send(res, 200, { success: true, data: result });
+      return;
+    }
     const { actor, db } = await authenticate(request.headers.authorization);
     if (!options.allowInactive) assertActive(actor);
     const result = await handler({ req: request, params, actor, db });
@@ -41,10 +46,18 @@ async function toApiRequest(req: NodeRequest): Promise<ApiRequest> {
   const method = (req.method || 'GET').toUpperCase() as HttpMethod;
   if (!METHODS.includes(method)) throw new AppError('METHOD_NOT_ALLOWED');
   const url = new URL(req.url || '/', 'http://localhost');
-  const path = url.pathname.startsWith(API_PREFIX) ? url.pathname.slice(API_PREFIX.length) || '/' : url.pathname;
+  // On Vercel the original path arrives as ?__path=… (see vercel.json rewrite);
+  // in the Vite dev server the request URL is still /api/v1/….
+  const rewritten = url.searchParams.get('__path');
+  const path =
+    rewritten !== null
+      ? `/${rewritten.replace(/^\/+/, '')}`
+      : url.pathname.startsWith(API_PREFIX)
+        ? url.pathname.slice(API_PREFIX.length) || '/'
+        : url.pathname;
   const query: Record<string, string> = {};
   url.searchParams.forEach((value, key) => {
-    if (key !== 'route' && key !== '...route') query[key] = value;
+    if (key !== '__path' && key !== 'route' && key !== '...route') query[key] = value;
   });
   const headers: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(req.headers)) headers[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;

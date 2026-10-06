@@ -43,13 +43,22 @@ export async function apiRequest<T>(method: string, path: string, options: { que
     throw new ApiError('NETWORK_ERROR', 'Cannot reach the server. Check your connection.', 0);
   }
 
+  const text = await res.text();
   let payload: ApiResponse<T> | null = null;
   try {
-    payload = (await res.json()) as ApiResponse<T>;
+    payload = JSON.parse(text) as ApiResponse<T>;
   } catch {
-    /* non-JSON response */
+    /* non-JSON: platform error page, timeout, or the route did not reach the API */
   }
-  if (!payload) throw new ApiError('INTERNAL', 'Unexpected server response.', res.status);
+  if (!payload || typeof payload !== 'object' || !('success' in payload)) {
+    const snippet = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    console.error(`[api] ${method} ${url} → HTTP ${res.status} (non-JSON)`, text.slice(0, 500));
+    throw new ApiError(
+      res.status >= 500 ? 'INTERNAL' : 'NOT_FOUND',
+      `Server error (HTTP ${res.status}) on ${method} ${path}${snippet ? `: ${snippet}` : ''}`,
+      res.status
+    );
+  }
   if (!payload.success) {
     if (res.status === 401) window.dispatchEvent(new CustomEvent('crm:unauthenticated'));
     if (payload.error.code === 'ACCOUNT_INACTIVE') window.dispatchEvent(new CustomEvent('crm:account-inactive'));
