@@ -1,36 +1,57 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import type { Profile } from '../../shared/contracts';
 import { AuthUser, DepartmentId, UserSession, Department } from '../types/crm';
 import { sessionManager } from '../services/sessionManager';
 import { useDepartments } from './DepartmentContext';
-import { SAMPLE_TEAM_MEMBERS } from '../services/teamMemberStore';
-import { SAMPLE_TEAM_LEAD } from '../services/teamLeadStore';
 import { attendanceStore } from '../services/attendanceStore';
-import { userApprovalStore } from '../services/userApprovalStore';
+import { getSupabase } from '../services/supabaseClient';
+import { meApi } from '../lib/api/endpoints';
+import { errorMessage } from '../lib/api/client';
+import { toAuthUser } from '../lib/auth/roleMapping';
+import { purgeInsecureLegacyKeys } from '../lib/legacyStorage';
 
-interface TempAuthUser {
+/**
+ * Authentication is Supabase Auth; identity, role and account status come
+ * from the `profiles` table via GET /api/v1/me. Nothing about the user is
+ * stored in or trusted from localStorage (Supabase persists only its own
+ * session token).
+ */
+
+export interface AuthResult {
+  ok: boolean;
+  message?: string;
+}
+
+export interface SignUpInput {
+  fullName: string;
   email: string;
-  role: 'admin' | 'hr';
-  name: string;
+  password: string;
+  departmentId: string;
+  teamId?: string;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
-  tempAuthUser: TempAuthUser | null;
+  profile: Profile | null;
+  authLoading: boolean;
+  /** Shown on the login screen, e.g. "Your account is awaiting approval." */
+  accountNotice: string | null;
   activeDepartmentId: DepartmentId | null;
   currentSession: UserSession | null;
   activeDepartment: Department | null;
 
-  // Eviction modal states
+  // Eviction modal states (multi-tab session limiter, UI only)
   isEvictionModalOpen: boolean;
   pendingDepartment: Department | null;
   conflictingSessions: UserSession[];
   evictedNotice: string | null;
 
-  // Actions
-  loginWithGoogle: (customEmail?: string) => void;
-  loginWithEmail: (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead' | 'technical-support', departmentId?: string) => void;
-  setTempAuthUser: (user: TempAuthUser | null) => void;
-  logout: () => void;
+  signIn: (email: string, password: string) => Promise<AuthResult>;
+  signUp: (input: SignUpInput) => Promise<AuthResult & { needsEmailConfirmation?: boolean }>;
+  loginWithGoogle: () => Promise<AuthResult>;
+  refreshProfile: () => Promise<void>;
+  logout: () => Promise<void>;
+  clearAccountNotice: () => void;
   selectDepartment: (departmentId: DepartmentId) => boolean;
   resetDepartmentSelection: () => void;
   confirmEviction: (evictSessionId: string) => void;
@@ -40,21 +61,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const STATUS_NOTICES: Record<string, string> = {
+  PENDING: '⏳ Your account is awaiting approval from your Team Head or Department Head. You will be able to sign in once it is approved.',
+  SUSPENDED: '⏸️ Your account has been suspended. Contact your manager.',
+  REVOKED: '🚫 Your access has been revoked by management.',
+  REJECTED: '❌ Your registration request was declined.'
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { departments, getDepartment } = useDepartments();
+  const { getDepartment } = useDepartments();
 
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    const saved = localStorage.getItem('unified_crm_user');
-    if (saved) return JSON.parse(saved);
-    // Default user (logged out state)
-    return null;
-  });
-
-  const [tempAuthUser, setTempAuthUser] = useState<TempAuthUser | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [activeDepartmentId, setActiveDepartmentId] = useState<DepartmentId | null>(null);
   const [currentSession, setCurrentSession] = useState<UserSession | null>(null);
+  const loadedUserId = useRef<string | null>(null);
 
-  // Eviction Modal State
   const [isEvictionModalOpen, setIsEvictionModalOpen] = useState(false);
   const [pendingDepartment, setPendingDepartment] = useState<Department | null>(null);
   const [conflictingSessions, setConflictingSessions] = useState<UserSession[]>([]);
@@ -62,206 +86,148 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const activeDepartment = (activeDepartmentId && getDepartment(activeDepartmentId)) || null;
 
-  // Auto-Sanitize localStorage on app mount to eliminate stale or corrupted data
-  useEffect(() => {
-    try {
-      // Remove any stale keys that could cause re-render crashes
-      localStorage.removeItem('aiqr_clients_data');
-      localStorage.removeItem('aiqr_real_scans');
-      
-      const userStr = localStorage.getItem('unified_crm_user');
-      if (userStr === 'undefined' || userStr === 'null') {
-        localStorage.removeItem('unified_crm_user');
-      }
-    } catch (e) {}
-  }, []);
-
-  // Listen for BroadcastChannel eviction events across tabs!
-  useEffect(() => {
-    const unsubscribe = sessionManager.onSessionEvent((msg) => {
-      if (msg.type === 'EVICT_SESSION' && currentSession) {
-        if (msg.evictedSessionId === currentSession.sessionId) {
-          // THIS session was evicted by a 3rd user on another tab!
-          setCurrentSession(null);
-          setActiveDepartmentId(null);
-          setEvictedNotice(`Your active session in ${msg.departmentId.toUpperCase()} was forcibly terminated by ${msg.newUserName} (Security Limit: Max 2 Users).`);
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [currentSession]);
-
-  const loginWithGoogle = (customEmail?: string) => {
-    const newUser: AuthUser = {
-      id: `USR-${Math.floor(Math.random() * 899 + 100)}`,
-      name: customEmail ? customEmail.split('@')[0].replace('.', ' ') : 'Alexander Wright',
-      email: customEmail || 'alexander.w@amuwa.com',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      role: 'admin'
-    };
-    setUser(newUser);
-    localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
-  };
-
-  const loginWithEmail = (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead' | 'technical-support', departmentId?: string) => {
-    // Check if Technical Support login (Wabastore Support sub-department or registered support user)
-    const regSupportUser = userApprovalStore.findUserByEmail(email);
-    if (email.toLowerCase() === 'techsupport@wabastore.com' || role === 'technical-support' || regSupportUser?.role === 'technical-support') {
-      const newUser: AuthUser = {
-        id: regSupportUser?.id || 'EMP-TS-2034',
-        name: regSupportUser?.name || 'Rohan Mehta (Technical Support)',
-        email: email,
-        avatar: regSupportUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        role: 'technical-support',
-        departmentId: regSupportUser?.departmentId || (departmentId as any) || 'wabastore',
-        subDepartment: 'support',
-        position: regSupportUser?.position || 'Technical Support'
-      };
-      setUser(newUser);
-      localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
-
-      // Record exact login time into HR Attendance Register
-      attendanceStore.recordMemberLogin({
-        empId: newUser.id,
-        name: newUser.name,
-        email: newUser.email,
-        role: 'Technical Support',
-        department: regSupportUser?.departmentName ? `${regSupportUser.departmentName} Support` : 'Wabastore Support',
-        avatar: newUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-        authMethod: 'ID & Password Auth (System Login)',
-        device: 'CRM Web Client (ID & Password)'
-      });
-      return;
-    }
-
-    // Check if matching Team Lead
-    if (email.toLowerCase() === SAMPLE_TEAM_LEAD.email.toLowerCase() || role === 'team-lead') {
-      const newUser: AuthUser = {
-        id: SAMPLE_TEAM_LEAD.id,
-        name: SAMPLE_TEAM_LEAD.name,
-        email: SAMPLE_TEAM_LEAD.email,
-        avatar: SAMPLE_TEAM_LEAD.avatar,
-        role: 'team-lead',
-        departmentId: SAMPLE_TEAM_LEAD.departmentId
-      };
-      setUser(newUser);
-      localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
-
-      // Record exact ID & Password login time into HR Attendance Register
-      attendanceStore.recordMemberLogin({
-        empId: SAMPLE_TEAM_LEAD.id,
-        name: SAMPLE_TEAM_LEAD.name,
-        email: SAMPLE_TEAM_LEAD.email,
-        role: 'Team Lead (Pod Alpha)',
-        department: 'Wabastore Sales',
-        avatar: 'VD',
-        authMethod: 'ID & Password Auth (System Login)',
-        device: 'CRM Web Client (ID & Password)'
-      });
-      return;
-    }
-
-    // Check if matching a registered team member
-    const regMemberUser = userApprovalStore.findUserByEmail(email);
-    const teamMember = SAMPLE_TEAM_MEMBERS.find(tm => tm.email.toLowerCase() === email.toLowerCase());
-
-    if (regMemberUser || teamMember || role === 'team-member') {
-      const tmUser = regMemberUser || teamMember || {
-        id: `tm-${email.split('@')[0].toLowerCase()}`,
-        name: email.split('@')[0].replace(/([._-])/g, ' ').toUpperCase(),
-        email,
-        role: 'team-member' as const,
-        department: 'Wabastore',
-        departmentId: 'wabastore',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-      };
-
-      const newUser: AuthUser = {
-        id: tmUser.id,
-        name: tmUser.name,
-        email: tmUser.email,
-        avatar: (tmUser as any).avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-        role: 'team-member',
-        departmentId: (tmUser as any).departmentId || (departmentId as any) || 'wabastore'
-      };
-      setUser(newUser);
-      localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
-
-      // Record exact ID & Password login time into HR Attendance Register
-      attendanceStore.recordMemberLogin({
-        empId: tmUser.id,
-        name: tmUser.name,
-        email: tmUser.email,
-        role: (tmUser as any).title || (tmUser as any).position || 'Sales Executive',
-        department: (tmUser as any).departmentName ? `${(tmUser as any).departmentName} Sales` : (tmUser as any).department ? `${(tmUser as any).department} Sales` : 'Wabastore Sales',
-        avatar: tmUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-        authMethod: 'ID & Password Auth (System Login)',
-        device: 'CRM Web Client (ID & Password)'
-      });
-      return;
-    }
-
-    // Determine role and name based on credentials
-    let userRole: 'superadmin' | 'admin' | 'hr' = (role as any) || 'admin';
-    let userName = email.split('@')[0].replace(/([._-])/g, ' ').toUpperCase();
-    let avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
-
-    // Set user name and avatar based on role
-    if (userRole === 'superadmin') {
-      userName = 'Super Admin';
-      avatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80';
-    } else if (departmentId === 'accounts' || email.toLowerCase().includes('accounts')) {
-      userName = 'Rajiv Khanna (Accounts Head)';
-      avatar = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80';
-      userRole = 'admin';
-    } else if (userRole === 'admin') {
-      userName = 'Admin (Department Head)';
-      avatar = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80';
-    } else if (userRole === 'hr') {
-      userName = 'HR Manager';
-      avatar = 'https://images.unsplash.com/photo-1507842217343-583f20270319?w=150&auto=format&fit=crop&q=80';
-    }
-
-    const newUser: AuthUser = {
-      id: `USR-${Math.floor(Math.random() * 899 + 100)}`,
-      name: userName,
-      email,
-      avatar,
-      role: userRole,
-      departmentId: departmentId || (userRole === 'admin' ? (email.toLowerCase().includes('accounts') ? 'accounts' : 'wabastore') : undefined)
-    };
-    setUser(newUser);
-    localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
-
-    // Record login into HR Attendance Register
-    attendanceStore.recordMemberLogin({
-      empId: newUser.id,
-      name: userName,
-      email,
-      role: departmentId === 'accounts' || email.toLowerCase().includes('accounts')
-        ? 'Accounts Head (Finance Director)'
-        : (userRole === 'hr' ? 'HR Manager' : (userRole === 'admin' ? 'Operations / Admin Lead' : 'Super Admin')),
-      department: departmentId === 'accounts' || email.toLowerCase().includes('accounts')
-        ? 'Accounts Department'
-        : (userRole === 'hr' ? 'HR Department' : 'Amuwa Corporation'),
-      avatar: userName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-      authMethod: 'ID & Password Auth (System Login)',
-      device: 'CRM Web Client (ID & Password)'
-    });
-  };
-
-  const logout = () => {
-    if (currentSession && activeDepartmentId) {
-      sessionManager.leaveSession(currentSession.sessionId, activeDepartmentId);
-    }
+  const clearState = useCallback(() => {
+    loadedUserId.current = null;
+    setProfile(null);
     setUser(null);
     setActiveDepartmentId(null);
     setCurrentSession(null);
-    localStorage.removeItem('unified_crm_user');
+  }, []);
+
+  /** Load the trusted profile. Non-active accounts are signed out with a notice. */
+  const loadProfile = useCallback(async (): Promise<AuthResult & { profile?: Profile }> => {
+    try {
+      const me = await meApi.get();
+      if (me.status !== 'ACTIVE') {
+        await getSupabase()?.auth.signOut();
+        clearState();
+        const message = STATUS_NOTICES[me.status] || 'Your account is not active.';
+        setAccountNotice(message);
+        return { ok: false, message };
+      }
+      loadedUserId.current = me.id;
+      setProfile(me);
+      setUser(toAuthUser(me));
+      setAccountNotice(null);
+      return { ok: true, profile: me };
+    } catch (err) {
+      clearState();
+      return { ok: false, message: errorMessage(err) };
+    }
+  }, [clearState]);
+
+  // Session bootstrap + auth state changes (sign-in in another tab, token refresh, sign-out)
+  useEffect(() => {
+    purgeInsecureLegacyKeys();
+    const supabase = getSupabase();
+    if (!supabase) {
+      setAuthLoading(false);
+      setAccountNotice('The CRM is not connected to its database. Ask an administrator to configure Supabase.');
+      return;
+    }
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session) await loadProfile();
+      setAuthLoading(false);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // Defer: calling Supabase from inside this callback can deadlock the auth client.
+      setTimeout(() => {
+        if (event === 'SIGNED_OUT' || !session) {
+          clearState();
+        } else if (session.user.id !== loadedUserId.current && event !== 'INITIAL_SESSION') {
+          void loadProfile();
+        }
+      }, 0);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [loadProfile, clearState]);
+
+  // API signals: session expired / account deactivated while using the app
+  useEffect(() => {
+    const onUnauthenticated = () => void getSupabase()?.auth.signOut();
+    const onInactive = () => void loadProfile();
+    window.addEventListener('crm:unauthenticated', onUnauthenticated);
+    window.addEventListener('crm:account-inactive', onInactive);
+    return () => {
+      window.removeEventListener('crm:unauthenticated', onUnauthenticated);
+      window.removeEventListener('crm:account-inactive', onInactive);
+    };
+  }, [loadProfile]);
+
+  // Cross-tab session eviction (UI session limiter)
+  useEffect(() => {
+    const unsubscribe = sessionManager.onSessionEvent(msg => {
+      if (msg.type === 'EVICT_SESSION' && currentSession && msg.evictedSessionId === currentSession.sessionId) {
+        setCurrentSession(null);
+        setActiveDepartmentId(null);
+        setEvictedNotice(`Your active session in ${msg.departmentId.toUpperCase()} was terminated by ${msg.newUserName} (Security Limit: Max 2 Users).`);
+      }
+    });
+    return () => unsubscribe();
+  }, [currentSession]);
+
+  const signIn = async (email: string, password: string): Promise<AuthResult> => {
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, message: 'The CRM is not connected to its database.' };
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    if (error) {
+      return { ok: false, message: /confirm/i.test(error.message) ? 'Please confirm your e-mail address first.' : 'Invalid email or password.' };
+    }
+    const { profile: me, ...result } = await loadProfile();
+    if (me) {
+      // TODO(db-migration): HR attendance is still a browser-local register.
+      attendanceStore.recordMemberLogin({
+        empId: me.id,
+        name: me.fullName,
+        email: me.email,
+        role: me.position || me.role.replace('_', ' '),
+        department: me.department?.name || 'Amuwa Corporation',
+        avatar: me.fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+        authMethod: 'Supabase Auth (Email & Password)',
+        device: 'CRM Web Client'
+      });
+    }
+    return result;
   };
 
-  // Reset department selection back to Department Selector Hub
+  const signUp = async (input: SignUpInput) => {
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, message: 'The CRM is not connected to its database.' };
+    const { data, error } = await supabase.auth.signUp({
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+      options: {
+        emailRedirectTo: window.location.origin,
+        // Only descriptive data: the database ignores any role and always
+        // creates a PENDING team member awaiting approval.
+        data: { full_name: input.fullName.trim(), department_id: input.departmentId, team_id: input.teamId }
+      }
+    });
+    if (error) {
+      return { ok: false, message: /registered|exists/i.test(error.message) ? 'An account with this e-mail already exists.' : 'Registration failed. Please try again.' };
+    }
+    // A pending account must not stay signed in.
+    if (data.session) await supabase.auth.signOut();
+    return { ok: true, needsEmailConfirmation: !data.session };
+  };
+
+  const loginWithGoogle = async (): Promise<AuthResult> => {
+    const supabase = getSupabase();
+    if (!supabase) return { ok: false, message: 'The CRM is not connected to its database.' };
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } });
+    return error ? { ok: false, message: 'Google sign-in is not available.' } : { ok: true };
+  };
+
+  const logout = async () => {
+    if (currentSession && activeDepartmentId) {
+      sessionManager.leaveSession(currentSession.sessionId, activeDepartmentId);
+    }
+    clearState();
+    await getSupabase()?.auth.signOut();
+  };
+
   const resetDepartmentSelection = () => {
     if (currentSession && activeDepartmentId) {
       sessionManager.leaveSession(currentSession.sessionId, activeDepartmentId);
@@ -270,35 +236,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentSession(null);
   };
 
-  // Attempt to select and enter a department (Guaranteed instant entry)
+  /**
+   * Navigation into a department workspace. Super Admins may open any
+   * unlocked department; department heads only their own. (The data inside
+   * is independently scoped by RLS.)
+   */
   const selectDepartment = (departmentId: DepartmentId): boolean => {
     if (!user) return false;
-
     const dept = getDepartment(departmentId);
-    if (!dept) return false;
-    // Locked departments cannot be entered — data/users remain intact, but
-    // access is blocked until a Super Admin unlocks the department again.
-    if (dept.locked) return false;
+    if (!dept || dept.locked) return false;
+    if (user.role !== 'superadmin' && user.departmentId !== departmentId) return false;
 
     setActiveDepartmentId(departmentId);
-
     try {
       const res = sessionManager.registerSession(user, departmentId);
       if (res.session) setCurrentSession(res.session);
-    } catch (e) {}
-
+    } catch {
+      /* session limiter is best-effort UI state */
+    }
     return true;
   };
 
   const confirmEviction = (evictSessionId: string) => {
     if (!user || !pendingDepartment) return;
-
-    const newSession = sessionManager.evictAndClaimSession(
-      evictSessionId,
-      user,
-      pendingDepartment.id
-    );
-
+    const newSession = sessionManager.evictAndClaimSession(evictSessionId, user, pendingDepartment.id);
     setActiveDepartmentId(pendingDepartment.id);
     setCurrentSession(newSession);
     setIsEvictionModalOpen(false);
@@ -312,13 +273,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setConflictingSessions([]);
   };
 
-  const clearEvictedNotice = () => setEvictedNotice(null);
-
   return (
     <AuthContext.Provider
       value={{
         user,
-        tempAuthUser,
+        profile,
+        authLoading,
+        accountNotice,
         activeDepartmentId,
         currentSession,
         activeDepartment,
@@ -326,15 +287,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         pendingDepartment,
         conflictingSessions,
         evictedNotice,
+        signIn,
+        signUp,
         loginWithGoogle,
-        loginWithEmail,
-        setTempAuthUser,
+        refreshProfile: async () => {
+          await loadProfile();
+        },
         logout,
+        clearAccountNotice: () => setAccountNotice(null),
         selectDepartment,
         resetDepartmentSelection,
         confirmEviction,
         closeEvictionModal,
-        clearEvictedNotice
+        clearEvictedNotice: () => setEvictedNotice(null)
       }}
     >
       {children}

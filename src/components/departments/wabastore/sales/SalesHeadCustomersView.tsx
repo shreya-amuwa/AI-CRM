@@ -16,14 +16,24 @@ import {
   TrendingUp,
   Tag
 } from 'lucide-react';
-import { teamMemberStore } from '../../../../services/teamMemberStore';
+import { useCustomers } from '../../../../hooks/useCustomers';
+import { segmentFromLabel, statusFromLabel } from '../../../../lib/customers';
 import { Customer } from '../../../../types/crm';
 
 export const SalesHeadCustomersView: React.FC = () => {
-  const [customers] = useState<Customer[]>(() => teamMemberStore.getCustomers());
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSegment, setSelectedSegment] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  // Department-wide list from the database; RLS limits it to the head's department.
+  const { items: customers, total } = useCustomers({
+    search: searchQuery,
+    segment: selectedSegment === 'All' ? undefined : segmentFromLabel(selectedSegment),
+    status: selectedStatus === 'All' ? undefined : statusFromLabel(selectedStatus),
+    sort: 'createdAt',
+    order: 'desc',
+    page: 1,
+    pageSize: 100
+  });
   const [selectedCustomerForView, setSelectedCustomerForView] = useState<Customer | null>(null);
 
   const formatINR = (val: number) => {
@@ -34,30 +44,7 @@ export const SalesHeadCustomersView: React.FC = () => {
     }).format(val);
   };
 
-  const assignedMap: Record<string, { rep: string; pod: string }> = {
-    'CUST-001': { rep: 'Priya Nair', pod: 'Pod Alpha' },
-    'CUST-002': { rep: 'Amit Patel', pod: 'Pod Alpha' },
-    'CUST-003': { rep: 'Sameer Kulkarni', pod: 'Pod Beta' },
-    'CUST-004': { rep: 'Priya Nair', pod: 'Pod Alpha' },
-    'CUST-005': { rep: 'Rahul Kumar', pod: 'Pod Alpha' },
-    'CUST-006': { rep: 'Sneha Deshmukh', pod: 'Pod Alpha' },
-    'CUST-007': { rep: 'Ananya Verma', pod: 'Pod Beta' },
-    'CUST-008': { rep: 'Rohan Varma', pod: 'Pod Alpha' }
-  };
-
-  const filteredCustomers = customers.filter(c => {
-    if (selectedSegment !== 'All' && c.segment !== selectedSegment) return false;
-    if (selectedStatus !== 'All' && c.status !== selectedStatus) return false;
-    if (
-      searchQuery &&
-      !c.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !c.company.toLowerCase().includes(searchQuery.toLowerCase()) &&
-      !c.email.toLowerCase().includes(searchQuery.toLowerCase())
-    ) {
-      return false;
-    }
-    return true;
-  });
+  const filteredCustomers = customers;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -70,7 +57,7 @@ export const SalesHeadCustomersView: React.FC = () => {
               Department Customer Accounts
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800">
-              248 Total Accounts
+              {total} Total Accounts
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
@@ -169,7 +156,7 @@ export const SalesHeadCustomersView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredCustomers.map(cust => {
-                const assigned = assignedMap[cust.id] || { rep: 'Sales Team', pod: 'Pod Alpha' };
+                const assigned = { rep: cust.ownerName || 'Unassigned', pod: 'Team' };
                 const segmentColors: Record<string, string> = {
                   Retail: 'bg-blue-50 text-blue-700 border-blue-200',
                   Wholesale: 'bg-purple-50 text-purple-700 border-purple-200',
@@ -272,7 +259,7 @@ export const SalesHeadCustomersView: React.FC = () => {
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Assigned Sales Executive</span>
                 <span className="font-semibold text-slate-800">
-                  {assignedMap[selectedCustomerForView.id]?.rep || 'Sales Rep'} ({assignedMap[selectedCustomerForView.id]?.pod || 'Pod Alpha'})
+                  {selectedCustomerForView.ownerName || 'Unassigned'}
                 </span>
               </div>
               <div>
@@ -294,7 +281,7 @@ export const SalesHeadCustomersView: React.FC = () => {
                 <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div>
                     <p className="font-medium text-slate-800">Account Health Checkup Call</p>
-                    <span className="text-[10px] text-slate-400">Logged by {assignedMap[selectedCustomerForView.id]?.rep || 'Rep'} &bull; Satisfied NPS</span>
+                    <span className="text-[10px] text-slate-400">Logged by {selectedCustomerForView.ownerName || 'Rep'} &bull; Satisfied NPS</span>
                   </div>
                   <span className="text-[10px] font-bold text-indigo-600">Completed</span>
                 </div>

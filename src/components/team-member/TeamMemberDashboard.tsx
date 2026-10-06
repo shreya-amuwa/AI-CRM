@@ -22,7 +22,8 @@ import {
   Activity
 } from 'lucide-react';
 import { Lead, TeamMemberActivity, EndOfDayReport, FollowUpTask, Deal } from '../../types/crm';
-import { teamMemberStore, SAMPLE_TEAM_MEMBERS } from '../../services/teamMemberStore';
+import { teamMemberStore } from '../../services/teamMemberStore';
+import { useAuth } from '../../context/AuthContext';
 import { TeamMemberLayout, TeamMemberNav } from './TeamMemberLayout';
 import { MemberPipelineRows } from './MemberPipelineRows';
 import { MemberAnalyticsWidgets } from './MemberAnalyticsWidgets';
@@ -45,6 +46,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   currentUserId,
   userName
 }) => {
+  const { profile } = useAuth();
   // Navigation State: 'home' is default, or 'leads'
   const [activeNav, setActiveNav] = useState<TeamMemberNav>('home');
   const [globalSearch, setGlobalSearch] = useState('');
@@ -148,9 +150,8 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   };
 
   // Profile avatar
-  const userObj = SAMPLE_TEAM_MEMBERS.find(u => u.id === currentUserId);
   const avatarUrl =
-    userObj?.avatar ||
+    profile?.avatarUrl ||
     'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80';
 
   // --- ACTIONS ---

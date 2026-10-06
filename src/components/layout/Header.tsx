@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Users, LogOut, Cloud, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { sessionManager } from '../../services/sessionManager';
 import { AmuwaLogo } from '../common/AmuwaLogo';
-import { subscribeToSupabaseConfig, SupabaseConfig, getSupabaseConfig } from '../../services/supabaseClient';
-import { userApprovalStore } from '../../services/userApprovalStore';
+import { getSupabaseConfig } from '../../services/supabaseClient';
+import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 interface HeaderProps {
@@ -13,23 +13,9 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
   const { activeDepartment, user, logout } = useAuth();
-  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(getSupabaseConfig());
+  const supabaseConfig = getSupabaseConfig();
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-  const [pendingCount, setPendingCount] = useState<number>(() => userApprovalStore.getPendingUsers().length);
-
-  useEffect(() => {
-    return subscribeToSupabaseConfig((cfg) => {
-      setSupabaseConfig(cfg);
-    });
-  }, []);
-
-  useEffect(() => {
-    const handleStorageChange = () => {
-      setPendingCount(userApprovalStore.getPendingUsers().length);
-    };
-    window.addEventListener('amuwa_user_registrations_changed', handleStorageChange);
-    return () => window.removeEventListener('amuwa_user_registrations_changed', handleStorageChange);
-  }, []);
+  const pendingCount = usePendingApprovalsCount();
 
   if (!activeDepartment) return null;
 
