@@ -22,7 +22,22 @@ import {
   X
 } from 'lucide-react';
 import { Customer } from '../../types/crm';
-import { teamMemberStore } from '../../services/teamMemberStore';
+import { useCustomers } from '../../hooks/useCustomers';
+import { customerCreateSchema } from '../../../shared/validation';
+import { segmentFromLabel, statusFromLabel } from '../../lib/customers';
+import { customersApi } from '../../lib/api/endpoints';
+import { errorMessage } from '../../lib/api/client';
+import { countLegacyCustomers, legacyCustomersAsImport, retainLegacyCustomers } from '../../lib/legacyStorage';
+
+const PAGE_SIZE = 8;
+const SEGMENT_COLORS: Record<string, string> = { Retail: '#2563EB', Wholesale: '#8B5CF6', Corporate: '#10B981', Others: '#F97316' };
+const SORTS = {
+  latest: { sort: 'createdAt', order: 'desc' },
+  name: { sort: 'name', order: 'asc' },
+  amount: { sort: 'lastOrderAmount', order: 'desc' }
+} as const;
+// Cross-customer activity feed will come from customer_activities; none yet.
+const recentActivities: { id: string; type: string; title: string; subtitle: string; timeAgo: string }[] = [];
 
 interface MemberCustomersDashboardProps {
   currentUserId: string;
@@ -35,15 +50,16 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
   onSendWhatsApp,
   onCreateInvoice
 }) => {
-  const [customers, setCustomers] = useState<Customer[]>(() =>
-    teamMemberStore.getCustomers(currentUserId)
-  );
   const [searchQuery, setSearchQuery] = useState('');
   const [segmentFilter, setSegmentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState<'latest' | 'name' | 'amount'>('latest');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [legacyCount, setLegacyCount] = useState(() => countLegacyCustomers());
+  const [importNotice, setImportNotice] = useState<string | null>(null);
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -61,22 +77,36 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
     lastOrderAmount: 50000
   });
 
-  const kpis = teamMemberStore.getCustomerKpis(currentUserId);
-  const segments = teamMemberStore.getCustomerSegments(currentUserId);
-  const recentActivities = teamMemberStore.getCustomerActivities();
+  // Filtering, sorting and pagination run in the database; RLS scopes rows to the user.
+  const { items: customers, total, summary, loading, error: listError, reload, createCustomer } = useCustomers({
+    search: searchQuery,
+    segment: segmentFilter === 'all' ? undefined : segmentFromLabel(segmentFilter),
+    status: statusFilter === 'all' ? undefined : statusFromLabel(statusFilter),
+    ...SORTS[sortBy],
+    page: currentPage,
+    pageSize: PAGE_SIZE
+  });
+  const filteredCustomers = customers;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  // Filter & Sort
-  const filteredCustomers = customers.filter(c => {
-    const matchSegment = segmentFilter === 'all' || c.segment === segmentFilter;
-    const matchStatus = statusFilter === 'all' || c.status === statusFilter;
-    const q = searchQuery.toLowerCase().trim();
-    const matchSearch =
-      !q ||
-      c.name.toLowerCase().includes(q) ||
-      c.company.toLowerCase().includes(q) ||
-      c.phone.includes(q) ||
-      c.email.toLowerCase().includes(q);
-    return matchSegment && matchStatus && matchSearch;
+  // Reset to the first page whenever the filters change.
+  React.useEffect(() => setCurrentPage(1), [searchQuery, segmentFilter, statusFilter, sortBy]);
+
+  const pct = (n: number) => (summary.total ? `${Math.round((n / summary.total) * 100)}%` : '0%');
+  const newDelta = summary.newThisMonth - summary.newLastMonth;
+  const kpis = {
+    totalCustomers: summary.total,
+    totalGrowth: `+${summary.newThisMonth} this month`,
+    activeCustomers: summary.active,
+    activeGrowth: `${pct(summary.active)} of total`,
+    inactiveCustomers: summary.inactive,
+    inactiveGrowth: `${pct(summary.inactive)} of total`,
+    newThisMonth: summary.newThisMonth,
+    newGrowth: `${newDelta >= 0 ? '+' : ''}${newDelta} vs. last month`
+  };
+  const segments = (['Retail', 'Wholesale', 'Corporate', 'Others'] as const).map(name => {
+    const count = summary.bySegment[segmentFromLabel(name)!] || 0;
+    return { name, count, percentage: summary.total ? Math.round((count / summary.total) * 100) : 0, color: SEGMENT_COLORS[name] };
   });
 
   const getInitials = (name: string) => {
@@ -131,33 +161,59 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
     );
   };
 
-  const handleAddCustomerSubmit = (e: React.FormEvent) => {
+  const resetNewCustomer = () =>
+    setNewCust({ name: '', company: '', phone: '', email: '', segment: 'Retail', status: 'Active', lastOrderAmount: 50000 });
+
+  /** Persist to Supabase via the API; the list is refreshed from the database. */
+  const handleAddCustomerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCust.name || !newCust.phone) return;
-
-    const added = teamMemberStore.addCustomer({
+    setAddError(null);
+    const parsed = customerCreateSchema.safeParse({
       name: newCust.name,
-      company: newCust.company || 'Private Store',
+      company: newCust.company,
       phone: newCust.phone,
-      email: newCust.email || `${newCust.name.toLowerCase().replace(/\s+/g, '')}@store.in`,
-      segment: newCust.segment,
-      status: newCust.status,
-      lastOrderDate: 'Sep 28, 2026',
-      lastOrderAmount: Number(newCust.lastOrderAmount) || 45000,
-      assignedTo: currentUserId
+      email: newCust.email,
+      segment: segmentFromLabel(newCust.segment),
+      status: statusFromLabel(newCust.status),
+      lastOrderAmount: Number(newCust.lastOrderAmount) || null
     });
+    if (!parsed.success) {
+      setAddError(parsed.error.issues[0]?.message || 'Please check the form.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await createCustomer(parsed.data);
+      setCurrentPage(1);
+      setIsAddModalOpen(false);
+      resetNewCustomer();
+    } catch (err) {
+      setAddError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    setCustomers(teamMemberStore.getCustomers(currentUserId));
-    setIsAddModalOpen(false);
-    setNewCust({
-      name: '',
-      company: '',
-      phone: '',
-      email: '',
-      segment: 'Retail',
-      status: 'Active',
-      lastOrderAmount: 50000
-    });
+  /** One-time import of customers the previous version kept in this browser. */
+  const handleLegacyImport = async () => {
+    const rows = legacyCustomersAsImport();
+    if (!rows.length) return;
+    setSaving(true);
+    try {
+      const result = await customersApi.import(rows);
+      retainLegacyCustomers(result.skipped.map(s => s.index));
+      setLegacyCount(countLegacyCustomers());
+      setImportNotice(
+        `Imported ${result.imported} customer(s) into the CRM database.` +
+          (result.skipped.length ? ` ${result.skipped.length} skipped (e.g. "${result.skipped[0].reason}") and kept in this browser.` : '')
+      );
+      await reload();
+    } catch (err) {
+      setImportNotice(errorMessage(err));
+    } finally {
+      setSaving(false);
+      setIsImportModalOpen(false);
+    }
   };
 
   // SVG Donut Setup
@@ -180,6 +236,24 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {(legacyCount > 0 || importNotice) && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+          <span>
+            {importNotice ||
+              `${legacyCount} customer(s) from the previous version exist only in this browser and are not saved in the CRM yet.`}
+          </span>
+          {legacyCount > 0 && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleLegacyImport()}
+              className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold disabled:opacity-60"
+            >
+              Import to CRM database
+            </button>
+          )}
+        </div>
+      )}
       {/* 1. TOP HEADER & DATE RANGE */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -216,7 +290,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             </div>
             <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
               <TrendingUp className="w-3 h-3" />
-              <span>{kpis.totalGrowth} vs. last month</span>
+              <span>{kpis.totalGrowth}</span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
@@ -233,7 +307,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             </div>
             <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
               <TrendingUp className="w-3 h-3" />
-              <span>{kpis.activeGrowth} vs. last month</span>
+              <span>{kpis.activeGrowth}</span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -250,7 +324,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             </div>
             <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 pt-1">
               <TrendingDown className="w-3 h-3 text-rose-500" />
-              <span>{kpis.inactiveGrowth} vs. last month</span>
+              <span>{kpis.inactiveGrowth}</span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
@@ -267,7 +341,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             </div>
             <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
               <TrendingUp className="w-3 h-3" />
-              <span>{kpis.newGrowth} vs. last month</span>
+              <span>{kpis.newGrowth}</span>
             </div>
           </div>
           <div className="w-11 h-11 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
@@ -316,6 +390,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
                 <option value="all">All Status</option>
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
+                <option value="Prospect">Prospect</option>
               </select>
 
               <select
@@ -465,55 +540,34 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
           {/* PAGINATION FOOTER */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
             <span className="text-slate-500">
-              Showing 1-8 of 248 customers
+              {loading
+                ? 'Loading…'
+                : listError
+                  ? <span className="text-rose-600">{listError}</span>
+                  : total === 0
+                    ? 'No customers found'
+                    : `Showing ${(currentPage - 1) * PAGE_SIZE + 1}-${Math.min(currentPage * PAGE_SIZE, total)} of ${total} customers`}
             </span>
 
             <div className="flex items-center gap-1">
               <button
                 type="button"
-                className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                aria-label="Previous page"
+                className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-40"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-
+              <span className="px-2 text-slate-600 font-semibold">
+                {currentPage} / {totalPages}
+              </span>
               <button
                 type="button"
-                className="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center text-xs shadow-xs"
-              >
-                1
-              </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 font-semibold flex items-center justify-center hover:bg-slate-50 text-xs"
-              >
-                2
-              </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 font-semibold flex items-center justify-center hover:bg-slate-50 text-xs"
-              >
-                3
-              </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 font-semibold flex items-center justify-center hover:bg-slate-50 text-xs"
-              >
-                4
-              </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg border border-slate-200 text-slate-600 font-semibold flex items-center justify-center hover:bg-slate-50 text-xs"
-              >
-                5
-              </button>
-
-              <button
-                type="button"
-                className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                aria-label="Next page"
+                className="w-7 h-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-50 disabled:opacity-40"
               >
                 <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -724,6 +778,9 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             </div>
 
             <form onSubmit={handleAddCustomerSubmit} className="space-y-3.5 mt-4 text-xs">
+              {addError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700">{addError}</div>
+              )}
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">Customer Name *</label>
                 <input
@@ -749,10 +806,9 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Phone *</label>
+                  <label className="block text-slate-700 font-semibold mb-1">Phone</label>
                   <input
                     type="tel"
-                    required
                     placeholder="+91 98765 00000"
                     value={newCust.phone}
                     onChange={(e) => setNewCust({ ...newCust, phone: e.target.value })}
@@ -794,9 +850,11 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
+                    <option value="Prospect">Prospect</option>
                   </select>
                 </div>
               </div>
+              <p className="text-[11px] text-slate-400">Provide at least an e-mail address or a phone number.</p>
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">Last Order Amount (₹)</label>
@@ -818,7 +876,8 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-xs hover:bg-blue-700 cursor-pointer"
+                  disabled={saving}
+                  className="px-5 py-2 disabled:opacity-60 bg-blue-600 text-white rounded-xl font-bold shadow-xs hover:bg-blue-700 cursor-pointer"
                 >
                   Save Customer
                 </button>
@@ -837,7 +896,9 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             </div>
             <h3 className="font-bold text-base text-slate-900">Import Customers</h3>
             <p className="text-xs text-slate-500 mt-1">
-              Upload your customer list via CSV or Excel spreadsheet to bulk import.
+              {legacyCount
+                ? `${legacyCount} customer(s) from the previous version are stored only in this browser. Import them into the CRM database so they are available on every device.`
+                : 'No locally stored customers were found in this browser. Spreadsheet import is not available yet.'}
             </p>
             <div className="mt-4 p-6 border-2 border-dashed border-slate-200 rounded-2xl hover:border-purple-400 transition-colors cursor-pointer bg-slate-50/50">
               <FileText className="w-8 h-8 text-slate-400 mx-auto mb-2" />
@@ -854,10 +915,8 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  alert('Sample CSV imported with 12 new customers.');
-                  setIsImportModalOpen(false);
-                }}
+                disabled={!legacyCount || saving}
+                onClick={() => void handleLegacyImport()}
                 className="px-5 py-2 bg-purple-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-purple-700 cursor-pointer"
               >
                 Start Import

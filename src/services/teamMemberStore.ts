@@ -16,7 +16,6 @@ export interface TeamMemberUser {
   id: string;
   name: string;
   email: string;
-  password: string;
   role: 'team-member';
   title: string;
   department: string;
@@ -33,7 +32,6 @@ export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
     id: 'tm-priya',
     name: 'Priya Nair',
     email: 'priya@amuwa.com',
-    password: 'TM@Pass2',
     role: 'team-member',
     title: 'Sales Executive',
     department: 'Wabastore',
@@ -48,7 +46,6 @@ export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
     id: 'tm-rahul',
     name: 'Rahul Kumar',
     email: 'rahul@amuwa.com',
-    password: 'TM@Pass1',
     role: 'team-member',
     title: 'Sales Executive',
     department: 'Wabastore',
@@ -63,7 +60,6 @@ export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
     id: 'tm-amit',
     name: 'Amit Patel',
     email: 'amit@amuwa.com',
-    password: 'TM@Pass3',
     role: 'team-member',
     title: 'Senior Sales Specialist',
     department: 'Wabastore',
@@ -233,7 +229,6 @@ class TeamMemberStore {
   private followUpsKey = 'amuwa_crm_team_member_followups_v3';
   private reportsKey = 'amuwa_crm_team_member_reports_v3';
   private updatesKey = 'amuwa_crm_team_member_recent_updates_v3';
-  private customersKey = 'amuwa_crm_team_member_customers_v3';
   private invoicesKey = 'amuwa_crm_team_member_invoices_v3';
   private eventsKey = 'amuwa_crm_team_member_events_v3';
   private dealsKey = 'amuwa_crm_team_member_deals_v3';
@@ -256,9 +251,6 @@ class TeamMemberStore {
       }
       if (!localStorage.getItem(this.updatesKey)) {
         localStorage.setItem(this.updatesKey, JSON.stringify(INITIAL_RECENT_UPDATES));
-      }
-      if (!localStorage.getItem(this.customersKey)) {
-        localStorage.setItem(this.customersKey, JSON.stringify(INITIAL_CUSTOMERS));
       }
       if (!localStorage.getItem(this.invoicesKey)) {
         localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
@@ -584,57 +576,11 @@ class TeamMemberStore {
   }
 
   // --- CUSTOMERS ---
-  public getCustomers(userId?: string): Customer[] {
-    try {
-      const all: Customer[] = JSON.parse(localStorage.getItem(this.customersKey) || '[]');
-      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin') {
-        return all.filter(c => !c.assignedTo || c.assignedTo === userId);
-      }
-      return all;
-    } catch {
-      return INITIAL_CUSTOMERS;
-    }
-  }
+  // Customers live in Supabase (see src/hooks/useCustomers.ts). The legacy
+  // browser copy is only read once for import (src/lib/legacyStorage.ts).
 
-  public addCustomer(customer: Omit<Customer, 'id'>): Customer {
-    const newCust: Customer = {
-      ...customer,
-      id: `CST-${Date.now()}`
-    };
-    try {
-      const raw = localStorage.getItem(this.customersKey);
-      const all: Customer[] = raw ? JSON.parse(raw) : [];
-      localStorage.setItem(this.customersKey, JSON.stringify([newCust, ...all]));
-    } catch {}
-    return newCust;
-  }
-
-  public getCustomerKpis(userId?: string) {
-    return {
-      totalCustomers: 248,
-      totalGrowth: '+12%',
-      activeCustomers: 213,
-      activeGrowth: '+10%',
-      inactiveCustomers: 35,
-      inactiveGrowth: '-6%',
-      newThisMonth: 18,
-      newGrowth: '+38%'
-    };
-  }
-
-  public getCustomerSegments(userId?: string) {
-    return [
-      { name: 'Retail', count: 102, percentage: 41, color: '#2563EB' },
-      { name: 'Wholesale', count: 68, percentage: 27, color: '#8B5CF6' },
-      { name: 'Corporate', count: 42, percentage: 17, color: '#10B981' },
-      { name: 'Others', count: 36, percentage: 15, color: '#F97316' }
-    ];
-  }
-
-  public getCustomerActivities() {
-    return INITIAL_CUSTOMER_ACTIVITIES;
-  }
-
+  // TODO(db-migration): invoices, leads, deals, follow-ups, events and reports
+  // below are still browser-local and move to Supabase in the next phase.
   // --- INVOICES ---
   public getInvoices(userId?: string): Invoice[] {
     try {

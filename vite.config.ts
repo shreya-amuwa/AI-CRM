@@ -1,4 +1,4 @@
-import { defineConfig, Plugin } from 'vite';
+import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import http from 'http';
 import https from 'https';
@@ -481,9 +481,35 @@ function liveWebhookPlugin(): Plugin {
   };
 }
 
+
+/**
+ * Serves the backend API (server/app.ts) under /api/v1 during `npm run dev`,
+ * mirroring the Vercel function in api/v1/[...route].ts.
+ */
+function apiV1Plugin(): Plugin {
+  return {
+    name: 'api-v1',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url?.startsWith('/api/v1/') && req.url !== '/api/v1') return next();
+        const { handleApiRequest } = await server.ssrLoadModule('/server/app.ts');
+        await handleApiRequest(req, res);
+      });
+    }
+  };
+}
+
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Expose server-only variables (SUPABASE_SERVICE_ROLE_KEY, …) to the dev API
+  // middleware. Only VITE_-prefixed variables ever reach the browser bundle.
+  const env = loadEnv(mode, process.cwd(), '');
+  for (const key of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'API_ALLOWED_ORIGINS']) {
+    if (env[key] && !process.env[key]) process.env[key] = env[key];
+  }
+  return {
   plugins: [
+    apiV1Plugin(),
     liveWebhookPlugin(),
     react({
       fastRefresh: false
@@ -493,4 +519,5 @@ export default defineConfig({
     port: 3000,
     host: true
   }
+};
 });

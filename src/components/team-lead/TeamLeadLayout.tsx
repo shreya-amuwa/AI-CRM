@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
-import { userApprovalStore } from '../../services/userApprovalStore';
+import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 export type TeamLeadNav =
@@ -58,15 +58,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState<number>(() => userApprovalStore.getPendingUsers().length);
-
-  React.useEffect(() => {
-    const handleStorageChange = () => {
-      setPendingApprovalsCount(userApprovalStore.getPendingUsers().length);
-    };
-    window.addEventListener('amuwa_user_registrations_changed', handleStorageChange);
-    return () => window.removeEventListener('amuwa_user_registrations_changed', handleStorageChange);
-  }, []);
+  const pendingApprovalsCount = usePendingApprovalsCount();
 
   const navItems = [
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },

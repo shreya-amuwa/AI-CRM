@@ -15,3 +15,6 @@ dist/
 Thumbs.db
 *.zip
 *.lnk
+
+# Local test artefacts
+.api_test.tmp.mjs

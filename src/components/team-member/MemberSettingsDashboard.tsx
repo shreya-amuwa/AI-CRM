@@ -10,7 +10,9 @@ import {
   Mail,
   Phone
 } from 'lucide-react';
-import { SAMPLE_TEAM_MEMBERS } from '../../services/teamMemberStore';
+import { useAuth } from '../../context/AuthContext';
+import { meApi } from '../../lib/api/endpoints';
+import { errorMessage } from '../../lib/api/client';
 
 interface MemberSettingsDashboardProps {
   currentUserId: string;
@@ -21,11 +23,13 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
   currentUserId,
   userName
 }) => {
-  const user = SAMPLE_TEAM_MEMBERS.find(u => u.id === currentUserId);
-  const [name, setName] = useState(userName);
-  const [email, setEmail] = useState(user?.email || 'priya@amuwa.com');
-  const [phone, setPhone] = useState('+91 98765 00123');
+  // Profile data comes from the database; e-mail is managed by Supabase Auth.
+  const { profile, refreshProfile } = useAuth();
+  const [name, setName] = useState(profile?.fullName || userName);
+  const email = profile?.email || '';
+  const [phone, setPhone] = useState(profile?.phone || '');
   const [savedToast, setSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Notification Toggles
   const [notifications, setNotifications] = useState({
@@ -35,14 +39,24 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
     dailySummary: true
   });
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavedToast(true);
-    setTimeout(() => setSavedToast(false), 3000);
+    setSaveError(null);
+    try {
+      await meApi.update({ fullName: name, phone: phone || null });
+      await refreshProfile();
+      setSavedToast(true);
+      setTimeout(() => setSavedToast(false), 3000);
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    }
   };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
+      {saveError && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">{saveError}</div>
+      )}
       {savedToast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-semibold animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -70,7 +84,7 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
           <div className="flex items-center gap-4">
             <img
               src={
-                user?.avatar ||
+                profile?.avatarUrl ||
                 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
               }
               alt={name}
@@ -102,7 +116,7 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
               <input
                 type="text"
                 disabled
-                value={user?.title || 'Sales Executive'}
+                value={profile?.position || profile?.team?.name || 'Team Member'}
                 className="w-full px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed"
               />
             </div>
@@ -111,8 +125,9 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none"
+                disabled
+                title="E-mail is your sign-in identity and cannot be changed here."
+                className="w-full px-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500 cursor-not-allowed"
               />
             </div>
             <div>

@@ -106,8 +106,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // 7. Supabase client with server-side environment variables
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://sawufdziibpsmpxyerqe.supabase.co';
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  // Server-side only. crm_leads is RLS-protected, so the anon key cannot (and must not) be used here.
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
     return res.status(500).json({

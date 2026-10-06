@@ -37,7 +37,7 @@ import { TechnicalSupportDashboard } from './components/support/TechnicalSupport
 import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole } from './utils/router';
 
 const MainAppContent: React.FC = () => {
-  const { user, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout } = useAuth();
+  const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout } = useAuth();
   const { departments } = useDepartments();
   const { tabs, activeTabId, updateTabState, closeAllTabs } = useTabs();
 
@@ -98,7 +98,8 @@ const MainAppContent: React.FC = () => {
         selectDepartment(route.paramId as any);
       }
     }
-  }, [user, route.path, activeDepartmentId]);
+    // departments.length: department list arrives asynchronously from the API.
+  }, [user, route.path, activeDepartmentId, departments.length]);
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
@@ -123,6 +124,15 @@ const MainAppContent: React.FC = () => {
       setSubDept(null);
     }
   }, [activeDepartmentId, user?.id]);
+
+  // Step 0: Restoring the Supabase session / loading the profile
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-sm text-slate-500 font-mono">
+        Loading secure session…
+      </div>
+    );
+  }
 
   // Step 1: Sign-In Screen if not authenticated
   if (!user) {

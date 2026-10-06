@@ -16,7 +16,10 @@ export type LeadSourceId =
   | 'thirdparty';
 
 export interface Department {
+  /** Legacy string id (database `slug`), used in URLs and panels. */
   id: DepartmentId;
+  /** Database primary key (uuid). */
+  dbId?: string;
   name: string;
   description: string;
   category?: string;
@@ -97,6 +100,8 @@ export interface AuthUser {
   departmentId?: string;
   subDepartment?: string;
   position?: string;
+  /** Database profile (role/status/team) this navigation identity was derived from. */
+  profile?: import('../../shared/contracts').Profile;
 }
 
 export interface TeamMemberActivity {
@@ -178,12 +183,13 @@ export interface Customer {
   phone: string;
   email: string;
   segment: 'Retail' | 'Wholesale' | 'Corporate' | 'Others';
-  status: 'Active' | 'Inactive';
+  status: 'Active' | 'Inactive' | 'Prospect';
   lastOrderDate: string;
   lastOrderAmount: number;
   totalSpent?: number;
   orderCount?: number;
   assignedTo: string;
+  ownerName?: string;
 }
 
 export interface InvoiceItemDetail {

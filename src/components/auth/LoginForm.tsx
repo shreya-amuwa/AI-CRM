@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Mail,
   Lock,
@@ -18,19 +18,16 @@ import {
   UserPlus
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useDepartments } from '../../context/DepartmentContext';
-import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
-import { SAMPLE_TEAM_MEMBERS } from '../../services/teamMemberStore';
-import { userApprovalStore } from '../../services/userApprovalStore';
+import type { RegistrationDepartment } from '../../../shared/contracts';
+import { fetchRegistrationOptions } from '../../lib/api/endpoints';
 
 export const LoginForm: React.FC = () => {
-  const { loginWithGoogle, loginWithEmail, evictedNotice, clearEvictedNotice } = useAuth();
-  const { departments } = useDepartments();
-  const { sendNotification } = useNotifications();
+  const { signIn, signUp, loginWithGoogle, accountNotice, clearAccountNotice, evictedNotice, clearEvictedNotice } = useAuth();
 
   // Mode: Sign In vs Sign Up
   const [isSignUp, setIsSignUp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Sign In State
   const [email, setEmail] = useState('');
@@ -49,181 +46,87 @@ export const LoginForm: React.FC = () => {
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [showRegConfirmPassword, setShowRegConfirmPassword] = useState(false);
   const [regError, setRegError] = useState('');
+  const [regOptions, setRegOptions] = useState<RegistrationDepartment[]>([]);
   const [regSubmittedModal, setRegSubmittedModal] = useState<{
     name: string;
     email: string;
     departmentName: string;
     subDepartment: 'sales' | 'support';
+    needsEmailConfirmation?: boolean;
   } | null>(null);
 
-  // Google OAuth Modal
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
-
-  // Main System Login Credentials
-  const mainLoginCredentials = {
-    superadmin: { email: 'superadmin@amuwa.com', password: 'superadmin123', name: 'Super Admin', role: 'superadmin' as const },
-    admin: { email: 'admin@amuwa.com', password: 'admin123', name: 'Admin (Department Head)', role: 'admin' as const },
-    hr: { email: 'hr@amuwa.com', password: 'hr123', name: 'HR Manager', role: 'hr' as const },
-    lead: { email: 'lead@amuwa.com', password: 'lead123', name: 'Vikram Deshmukh (Team Lead)', role: 'team-lead' as const },
-    accounts: { email: 'accounts@amuwa.com', password: 'accounts123', name: 'Rajiv Khanna (Accounts Head)', role: 'admin' as const, departmentId: 'accounts' },
-    techsupport: { email: 'techsupport@wabastore.com', password: 'support123', name: 'Rohan Mehta (Technical Support)', role: 'technical-support' as const, departmentId: 'wabastore' }
-  };
-
-  const handleQuickFill = (targetEmail: string, targetPass: string) => {
-    setEmail(targetEmail);
-    setPassword(targetPass);
-    setLoginError('');
-  };
+  // Departments/teams for sign-up come from the database (anon-callable RPC).
+  useEffect(() => {
+    if (!isSignUp || regOptions.length) return;
+    fetchRegistrationOptions()
+      .then(setRegOptions)
+      .catch(err => setRegError(err.message));
+  }, [isSignUp, regOptions.length]);
 
   // --------------------------------------------------------------------------
-  // SIGN IN SUBMISSION (With security status verification)
+  // SIGN IN — Supabase Auth; role & account status are read from the database
   // --------------------------------------------------------------------------
-  const handleSignInSubmit = (e: React.FormEvent) => {
+  const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setLoginError('Please enter both email and password');
       return;
     }
-
-    const cleanEmail = email.trim().toLowerCase();
-
-    // 1. Check User Approval Store (Handles PENDING_APPROVAL and REVOKED accounts)
-    const approvalCheck = userApprovalStore.validateLogin(cleanEmail, password);
-    if (approvalCheck.user) {
-      if (!approvalCheck.allowed) {
-        setLoginError(approvalCheck.message || 'Access restricted.');
-        return;
-      }
-      // If approved & active in store:
-      setLoginError('');
-      loginWithEmail(
-        approvalCheck.user.email,
-        password,
-        approvalCheck.user.role,
-        approvalCheck.user.departmentId
-      );
-      return;
-    }
-
-    // 2. Check Static Team Member Credentials (fallback)
-    const teamMember = SAMPLE_TEAM_MEMBERS.find(
-      tm => tm.email.toLowerCase() === cleanEmail && tm.password === password
-    );
-
-    if (teamMember) {
-      setLoginError('');
-      loginWithEmail(teamMember.email, password, 'team-member', teamMember.departmentId);
-      return;
-    }
-
-    // 3. Validate Main Login Credentials (SuperAdmin / Admin / HR / Accounts / TechSupport)
-    const validRole = Object.entries(mainLoginCredentials).find(
-      ([_, creds]) => creds.email.toLowerCase() === cleanEmail && creds.password === password
-    );
-
-    if (!validRole) {
-      setLoginError('Invalid email or password');
-      return;
-    }
-
+    setSubmitting(true);
     setLoginError('');
-    const role = validRole[1].role;
-    loginWithEmail(email, password, role, (validRole[1] as any).departmentId);
+    clearAccountNotice();
+    const result = await signIn(email, password);
+    setSubmitting(false);
+    if (!result.ok) setLoginError(result.message || 'Sign in failed.');
   };
 
   // --------------------------------------------------------------------------
-  // SIGN UP SUBMISSION
+  // SIGN UP — creates a PENDING account; the database routes the approval
+  // request and notifications to the right Team Head / Department Head.
   // --------------------------------------------------------------------------
-  const handleSignUpSubmit = (e: React.FormEvent) => {
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegError('');
 
-    if (!regName.trim()) {
-      setRegError('Please enter your full name');
-      return;
-    }
+    if (!regName.trim()) return setRegError('Please enter your full name');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(regEmail.trim())) return setRegError('Please enter a valid organization email address');
+    if (!regDepartmentId) return setRegError('Please select your department from the dropdown');
+    if (regPassword.length < 10) return setRegError('Password must be at least 10 characters long');
+    if (regPassword !== regConfirmPassword) return setRegError('Passwords do not match. Please verify both password fields.');
 
-    if (!regEmail.trim()) {
-      setRegError('Please enter your organization email address');
-      return;
-    }
+    const selectedDept = regOptions.find(d => d.id === regDepartmentId);
+    const division = regSubDepartment === 'support' ? 'SUPPORT' : 'SALES';
+    const team = selectedDept?.teams.find(t => t.division === division) || (selectedDept?.teams.length === 1 ? selectedDept.teams[0] : undefined);
 
-    if (!regDepartmentId) {
-      setRegError('Please select your department from the dropdown');
-      return;
-    }
-
-    if (!regPassword) {
-      setRegError('Please enter a secure password');
-      return;
-    }
-
-    if (regPassword.length < 6) {
-      setRegError('Password must be at least 6 characters long');
-      return;
-    }
-
-    if (regPassword !== regConfirmPassword) {
-      setRegError('Passwords do not match. Please verify both password fields.');
-      return;
-    }
-
-    const selectedDept = departments.find(d => d.id === regDepartmentId);
-    const departmentName = selectedDept ? selectedDept.name : regDepartmentId;
-
-    // Register user in store (status will be PENDING_APPROVAL)
-    const result = userApprovalStore.register({
-      name: regName.trim(),
-      email: regEmail.trim(),
+    setSubmitting(true);
+    const result = await signUp({
+      fullName: regName,
+      email: regEmail,
       password: regPassword,
       departmentId: regDepartmentId,
-      departmentName,
-      subDepartment: regSubDepartment
+      teamId: team?.id
     });
+    setSubmitting(false);
+    if (!result.ok) return setRegError(result.message || 'Registration failed.');
 
-    if (!result.success) {
-      setRegError(result.message);
-      return;
-    }
-
-    // Send high-priority notification to Super Admin, Department Heads, and Team Leads
-    try {
-      sendNotification({
-        title: `🛡️ New Account Authorization Required: ${regName}`,
-        message: `${regName} (${regEmail}) has registered for ${departmentName} [${regSubDepartment.toUpperCase()} Division]. Please review and authorize account access in Staff Access & Approvals.`,
-        senderName: regName,
-        senderDept: `${departmentName} (${regSubDepartment.toUpperCase()})`,
-        senderDeptKey: `${regDepartmentId}_${regSubDepartment}`,
-        targetKey: 'all',
-        targetLabel: 'Super Admin, Department Head & Team Lead',
-        priority: 'urgent'
-      });
-    } catch (err) {
-      console.warn('Could not dispatch approval notification:', err);
-    }
-
-    // Show Confirmation Modal
     setRegSubmittedModal({
       name: regName,
       email: regEmail,
-      departmentName,
-      subDepartment: regSubDepartment
+      departmentName: selectedDept?.name || '',
+      subDepartment: regSubDepartment,
+      needsEmailConfirmation: result.needsEmailConfirmation
     });
-
-    // Reset registration form fields
     setRegName('');
     setRegEmail('');
     setRegDepartmentId('');
     setRegSubDepartment('sales');
     setRegPassword('');
     setRegConfirmPassword('');
-    setRegError('');
   };
 
-  const handleGoogleSelect = (selectedEmail: string) => {
-    loginWithGoogle(selectedEmail);
-    setShowGoogleModal(false);
+  const handleGoogleSignIn = async () => {
+    const result = await loginWithGoogle();
+    if (!result.ok) setLoginError(result.message || 'Google sign-in failed.');
   };
 
   return (
@@ -405,7 +308,7 @@ export const LoginForm: React.FC = () => {
                       className="w-full pl-9 pr-8 py-1.5 bg-slate-50/70 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-500/15 transition-all appearance-none cursor-pointer"
                     >
                       <option value="">Choose department...</option>
-                      {departments.map(d => (
+                      {regOptions.map(d => (
                         <option key={d.id} value={d.id}>
                           {d.name}
                         </option>
@@ -565,7 +468,8 @@ export const LoginForm: React.FC = () => {
                 {/* Sign Up Submit Button */}
                 <button
                   type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 hover:shadow-lg transition-all active:scale-[0.99] mt-2 group"
+                  disabled={submitting}
+                  className="w-full py-2.5 px-4 rounded-xl disabled:opacity-60 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 hover:shadow-lg transition-all active:scale-[0.99] mt-2 group"
                 >
                   <span>Sign Up</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -597,7 +501,7 @@ export const LoginForm: React.FC = () => {
               {/* 1. Google OAuth Button */}
               <button
                 type="button"
-                onClick={() => setShowGoogleModal(true)}
+                onClick={() => void handleGoogleSignIn()}
                 className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 text-xs font-semibold flex items-center justify-center gap-2.5 transition-all shadow-xs hover:shadow-md active:scale-[0.99] group btn-shimmer"
               >
                 <svg className="w-4 h-4 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
@@ -620,10 +524,10 @@ export const LoginForm: React.FC = () => {
               </div>
 
               {/* Error Message Display */}
-              {loginError && (
+              {(loginError || accountNotice) && (
                 <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{loginError}</span>
+                  <span>{loginError || accountNotice}</span>
                 </div>
               )}
 
@@ -699,7 +603,8 @@ export const LoginForm: React.FC = () => {
                 {/* Sign In Button */}
                 <button
                   type="submit"
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 hover:shadow-lg transition-all active:scale-[0.99] mt-1 btn-shimmer group"
+                  disabled={submitting}
+                  className="w-full py-2.5 px-4 rounded-xl disabled:opacity-60 bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 hover:shadow-lg transition-all active:scale-[0.99] mt-1 btn-shimmer group"
                 >
                   <span>Sign In</span>
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -722,83 +627,6 @@ export const LoginForm: React.FC = () => {
                 </div>
               </form>
 
-              {/* Quick Demo Test Accounts */}
-              <div className="mt-3.5 pt-3 border-t border-slate-100 space-y-1.5 text-left">
-                <div className="flex items-center justify-between text-[11px] font-mono text-slate-500">
-                  <span>TEST ACCOUNTS (1-CLICK FILL):</span>
-                </div>
-                <div className="grid grid-cols-1 gap-1 text-xs">
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('techsupport@wabastore.com', 'support123')}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200/80 flex items-center justify-between font-mono text-[11px] transition-colors"
-                  >
-                    <span><strong>Rohan Mehta</strong> (Technical Support)</span>
-                    <span className="text-[10px] bg-teal-200/70 text-teal-900 font-bold px-1.5 py-0.5 rounded">Wabastore Support</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('lead@amuwa.com', 'lead123')}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200/80 flex items-center justify-between font-mono text-[11px] transition-colors"
-                  >
-                    <span><strong>Vikram Deshmukh</strong> (Team Lead)</span>
-                    <span className="text-[10px] bg-indigo-200/70 text-indigo-900 font-bold px-1.5 py-0.5 rounded">Pod Alpha</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('rahul@amuwa.com', 'TM@Pass1')}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 flex items-center justify-between font-mono text-[11px] transition-colors"
-                  >
-                    <span><strong>Rahul Kumar</strong> (Team Member)</span>
-                    <span className="text-[10px] bg-emerald-200/60 px-1.5 py-0.5 rounded">5 Leads</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('priya@amuwa.com', 'TM@Pass2')}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 flex items-center justify-between font-mono text-[11px] transition-colors"
-                  >
-                    <span><strong>Priya Singh</strong> (Team Member)</span>
-                    <span className="text-[10px] bg-emerald-200/60 px-1.5 py-0.5 rounded">4 Leads</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('amit@amuwa.com', 'TM@Pass3')}
-                    className="w-full px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 flex items-center justify-between font-mono text-[11px] transition-colors"
-                  >
-                    <span><strong>Amit Patel</strong> (Team Member)</span>
-                    <span className="text-[10px] bg-emerald-200/60 px-1.5 py-0.5 rounded">6 Leads</span>
-                  </button>
-
-                  <div className="grid grid-cols-3 gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickFill('admin@amuwa.com', 'admin123')}
-                      className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] text-center border border-slate-200 transition-colors"
-                    >
-                      Admin (Wabastore)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickFill('accounts@amuwa.com', 'accounts123')}
-                      className="px-1.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-mono text-[10px] text-center border border-emerald-200 font-bold transition-colors"
-                    >
-                      Accounts Head
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickFill('superadmin@amuwa.com', 'superadmin123')}
-                      className="px-1.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono text-[10px] text-center border border-slate-200 transition-colors"
-                    >
-                      Super Admin
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
@@ -858,7 +686,10 @@ export const LoginForm: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              A notification has been sent to the <strong>Super Admin</strong>, <strong>Department Head</strong>, and <strong>Team Lead</strong>. Once authorized, you can sign in directly with your email and password.
+              {regSubmittedModal.needsEmailConfirmation && (
+                <><strong>First confirm your e-mail address</strong> using the link we sent you. </>
+              )}
+              Your request has been sent to your <strong>Team Head</strong> and <strong>Department Head</strong>. Once approved, you can sign in with your email and password.
             </p>
 
             <button
@@ -875,76 +706,6 @@ export const LoginForm: React.FC = () => {
         </div>
       )}
 
-      {/* Simulated Google Account Picker Modal */}
-      {showGoogleModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl animate-scale-up">
-            <div className="flex items-center gap-3 mb-4">
-              <svg className="w-6 h-6" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-              </svg>
-              <h3 className="text-lg font-bold text-slate-900 font-heading">Sign in with Google</h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4">Select account:</p>
-
-            <div className="space-y-2 mb-4">
-              <button
-                type="button"
-                onClick={() => handleGoogleSelect('alexander.w@amuwa.com')}
-                className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-between text-left transition-colors"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Alexander Wright</p>
-                  <p className="text-xs text-slate-500 font-mono">alexander.w@amuwa.com</p>
-                </div>
-                <CheckCircle2 className="w-4 h-4 text-blue-600" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleGoogleSelect('priya.sharma@amuwa.com')}
-                className="w-full p-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 flex items-center justify-between text-left transition-colors"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Priya Sharma</p>
-                  <p className="text-xs text-slate-500 font-mono">priya.sharma@amuwa.com</p>
-                </div>
-                <CheckCircle2 className="w-4 h-4 text-slate-300" />
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <input
-                type="email"
-                placeholder="Or enter custom email"
-                value={customGoogleEmail}
-                onChange={e => setCustomGoogleEmail(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-600 font-mono"
-              />
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setShowGoogleModal(false)}
-                className="w-1/2 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleGoogleSelect(customGoogleEmail || 'staff.user@amuwa.com')}
-                className="w-1/2 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
-              >
-                Sign In
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

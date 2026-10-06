@@ -9,9 +9,8 @@ import { useDepartments } from '../../context/DepartmentContext';
 import { useTabs } from '../../context/TabContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { Department } from '../../types/crm';
-import { DepartmentUnlockModal } from '../auth/DepartmentUnlockModal';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
-import { userApprovalStore } from '../../services/userApprovalStore';
+import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 const getFallbackIcon = (iconName: string) => {
@@ -40,7 +39,7 @@ export const DepartmentSelector: React.FC = () => {
     departments,
     addDepartment,
     deleteDepartment,
-    resetToDefaults,
+    refreshDepartments,
     lockDepartment,
     unlockDepartment
   } = useDepartments();
@@ -51,38 +50,30 @@ export const DepartmentSelector: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [lockTarget, setLockTarget] = useState<Department | null>(null);
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
-  const [unlockTarget, setUnlockTarget] = useState<Department | null>(null);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-  const [pendingCount, setPendingCount] = useState<number>(() => userApprovalStore.getPendingUsers().length);
+  const pendingCount = usePendingApprovalsCount();
 
-  React.useEffect(() => {
-    const handleStorageChange = () => {
-      setPendingCount(userApprovalStore.getPendingUsers().length);
-    };
-    window.addEventListener('amuwa_user_registrations_changed', handleStorageChange);
-    return () => window.removeEventListener('amuwa_user_registrations_changed', handleStorageChange);
-  }, []);
+  const showNotice = (message: string) => {
+    setLockedNotice(message);
+    setTimeout(() => setLockedNotice(null), 4000);
+  };
 
+  // Access is decided by the user's database profile: Super Admins may open
+  // any unlocked department, department heads only their own. (No shared
+  // department passwords — data inside is scoped by RLS regardless.)
   const handleEnter = (dept: Department) => {
-    if (isSuperAdmin) {
-      selectDepartment(dept.id);
+    if (dept.locked) {
+      showNotice(`${dept.name} is locked by the Super Admin.`);
       return;
     }
-
-    // For admin/HR users, show unlock modal instead
-    if (isAdminOrHR) {
-      setUnlockTarget(dept);
-      return;
+    if (!selectDepartment(dept.id)) {
+      showNotice(`You do not have access to ${dept.name}.`);
     }
   };
 
   const handleOpenInTab = (e: React.MouseEvent, dept: Department) => {
     e.stopPropagation();
     openDepartment(dept.id, dept.name);
-  };
-
-  const handleDepartmentUnlock = (departmentId: string) => {
-    selectDepartment(departmentId);
   };
 
   return (
@@ -148,11 +139,11 @@ export const DepartmentSelector: React.FC = () => {
         {isSuperAdmin && (
           <div className="pt-1">
             <button
-              onClick={resetToDefaults}
+              onClick={() => void refreshDepartments()}
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-all cursor-pointer active:scale-95"
             >
               <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-              <span>Restore 11 Official Departments</span>
+              <span>Reload Departments</span>
             </button>
           </div>
         )}
@@ -197,7 +188,8 @@ export const DepartmentSelector: React.FC = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteDepartment(dept.id);
+                    if (!window.confirm(`Delete ${dept.name}? This cannot be undone.`)) return;
+                    void deleteDepartment(dept.id).then(r => !r.ok && showNotice(r.error || 'Could not delete department.'));
                   }}
                   title="Delete custom department"
                   aria-label={`Delete ${dept.name}`}
@@ -228,7 +220,7 @@ export const DepartmentSelector: React.FC = () => {
               )}
 
               {/* Lock icon indicator for Admin/HR users */}
-              {isAdminOrHR && (
+              {isAdminOrHR && dept.id !== user?.departmentId && (
                 <div className="absolute top-4 right-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 border border-blue-200 text-blue-600 cursor-pointer hover:bg-blue-100 transition-all group-hover:scale-110">
                   <Lock className="w-4 h-4" />
                 </div>
@@ -330,21 +322,12 @@ export const DepartmentSelector: React.FC = () => {
           department={lockTarget}
           onCancel={() => setLockTarget(null)}
           onConfirm={() => {
-            if (lockTarget.locked) unlockDepartment(lockTarget.id);
-            else lockDepartment(lockTarget.id);
+            const action = lockTarget.locked ? unlockDepartment(lockTarget.id) : lockDepartment(lockTarget.id);
+            void action.then(r => !r.ok && showNotice(r.error || 'Could not update department.'));
             setLockTarget(null);
           }}
         />
       )}
-
-      {/* Department Unlock Modal for Admin/HR users */}
-      <DepartmentUnlockModal
-        isOpen={!!unlockTarget}
-        department={unlockTarget}
-        userRole={user?.role === 'hr' ? 'hr' : 'admin'}
-        onUnlock={handleDepartmentUnlock}
-        onClose={() => setUnlockTarget(null)}
-      />
 
       {/* Staff Access & Approvals Modal */}
       {isAccessModalOpen && (
@@ -363,7 +346,7 @@ export const DepartmentSelector: React.FC = () => {
 
 interface AddDepartmentModalProps {
   onClose: () => void;
-  onCreate: (input: { name: string; description: string; category?: string }) => { ok: boolean; error?: string };
+  onCreate: (input: { name: string; description: string; category?: string }) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const AddDepartmentModal: React.FC<AddDepartmentModalProps> = ({ onClose, onCreate }) => {
@@ -372,9 +355,9 @@ const AddDepartmentModal: React.FC<AddDepartmentModalProps> = ({ onClose, onCrea
   const [category, setCategory] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = onCreate({ name, description, category: category || undefined });
+    const result = await onCreate({ name, description, category: category || undefined });
     if (!result.ok) {
       setError(result.error || 'Could not create department.');
       return;

@@ -20,7 +20,10 @@ import {
   UserMinus,
   Sparkles
 } from 'lucide-react';
-import { userApprovalStore, RegisteredUser } from '../../services/userApprovalStore';
+import type { ApprovalRequest, Profile, Team } from '../../../shared/contracts';
+import { approvalsApi, organizationApi, usersApi } from '../../lib/api/endpoints';
+import { errorMessage } from '../../lib/api/client';
+import { APPROVALS_CHANGED_EVENT } from '../../hooks/usePendingApprovalsCount';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 
@@ -30,120 +33,229 @@ interface UserAccessManagementModalProps {
   initialTab?: 'pending' | 'active' | 'revoked';
 }
 
+/** View model rendered by this modal, built from API data. */
+interface StaffRow {
+  id: string;
+  requestId?: string;
+  name: string;
+  email: string;
+  departmentId: string; // slug, used by the department filter
+  departmentName: string;
+  teamId: string | null;
+  subDepartment: string;
+  position: string;
+  status: string;
+  registeredAt: string;
+  approvedBy?: string;
+  revokeReason?: string | null;
+  revokedBy?: string;
+  revokedAt?: string;
+}
+
+const LIST_LIMIT = 100;
+
 export const UserAccessManagementModal: React.FC<UserAccessManagementModalProps> = ({
   isOpen,
   onClose,
   initialTab = 'pending'
 }) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { departments } = useDepartments();
 
   const [activeTab, setActiveTab] = useState<'pending' | 'active' | 'revoked'>(initialTab);
-  const [users, setUsers] = useState<RegisteredUser[]>(() => userApprovalStore.getAllUsers());
+  const [pendingRows, setPendingRows] = useState<StaffRow[]>([]);
+  const [activeRows, setActiveRows] = useState<StaffRow[]>([]);
+  const [revokedRows, setRevokedRows] = useState<StaffRow[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamChoice, setTeamChoice] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
 
   // Revoke Access dialog state
-  const [revokingUser, setRevokingUser] = useState<RegisteredUser | null>(null);
+  const [revokingUser, setRevokingUser] = useState<StaffRow | null>(null);
   const [revokeReason, setRevokeReason] = useState('Employee left organization');
   const [customRevokeReason, setCustomRevokeReason] = useState('');
 
   // Toast / Status banner
   const [actionNotice, setActionNotice] = useState<{ text: string; type: 'success' | 'danger' } | null>(null);
 
-  // Sync users whenever store changes or modal opens
-  const refreshUsers = () => {
-    setUsers(userApprovalStore.getAllUsers());
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      refreshUsers();
-      const handleStorageChange = () => refreshUsers();
-      window.addEventListener('amuwa_user_registrations_changed', handleStorageChange);
-      return () => {
-        window.removeEventListener('amuwa_user_registrations_changed', handleStorageChange);
-      };
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const currentApproverName = user?.name || 'Administrator';
-  const currentApproverRole = user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'team-lead' ? 'Team Lead' : 'Department Head';
-
-  // Filtered lists
-  const filteredUsers = users.filter(u => {
-    const matchesSearch =
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.departmentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.position.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesDept = selectedDeptFilter === 'all' || u.departmentId === selectedDeptFilter;
-    return matchesSearch && matchesDept;
-  });
-
-  const pendingList = filteredUsers.filter(u => u.status === 'PENDING_APPROVAL');
-  const activeList = filteredUsers.filter(u => u.status === 'ACTIVE');
-  const revokedList = filteredUsers.filter(u => u.status === 'REVOKED' || u.status === 'REJECTED');
-
-  const allPendingTotal = users.filter(u => u.status === 'PENDING_APPROVAL').length;
-  const allActiveTotal = users.filter(u => u.status === 'ACTIVE').length;
-  const allRevokedTotal = users.filter(u => u.status === 'REVOKED' || u.status === 'REJECTED').length;
-
-  // Actions
-  const handleApprove = (u: RegisteredUser) => {
-    userApprovalStore.approveUser(u.id, currentApproverName, currentApproverRole);
-    refreshUsers();
-    setActionNotice({
-      text: `✓ Authorized & Activated account for ${u.name} (${u.departmentName}). They can now sign in immediately.`,
-      type: 'success'
-    });
+  const notify = (text: string, type: 'success' | 'danger') => {
+    setActionNotice({ text, type });
     setTimeout(() => setActionNotice(null), 5000);
   };
 
-  const handleReject = (u: RegisteredUser) => {
+  const deptBySlugOrId = (id: string | null | undefined) => departments.find(d => d.dbId === id || d.id === id);
+
+  const fromProfile = (p: Profile): StaffRow => ({
+    id: p.id,
+    name: p.fullName,
+    email: p.email,
+    departmentId: p.department?.slug || '',
+    departmentName: p.department?.name || 'Unassigned',
+    teamId: p.teamId,
+    subDepartment: (p.team?.division || 'general').toLowerCase(),
+    position: p.position || p.role.replace('_', ' ').toLowerCase(),
+    status: p.status,
+    registeredAt: p.createdAt,
+    approvedBy: p.approvedAt ? new Date(p.approvedAt).toLocaleDateString() : undefined,
+    revokeReason: p.statusReason
+  });
+
+  const fromRequest = (r: ApprovalRequest, teamList: Team[]): StaffRow => {
+    const dept = deptBySlugOrId(r.departmentId);
+    const team = teamList.find(t => t.id === r.teamId);
+    return {
+      id: r.subject?.id || r.id,
+      requestId: r.id,
+      name: r.subject?.fullName || 'Unknown user',
+      email: r.subject?.email || '',
+      departmentId: dept?.id || '',
+      departmentName: dept?.name || 'No department selected',
+      teamId: r.teamId,
+      subDepartment: (team?.division || 'general').toLowerCase(),
+      position: team ? `${team.name} team` : 'Team not selected',
+      status: 'PENDING_APPROVAL',
+      registeredAt: r.createdAt
+    };
+  };
+
+  // Load everything from the API (RLS limits results to the caller's hierarchy)
+  const refreshUsers = async () => {
+    try {
+      const [teamList, pending, active, revoked, suspended, rejected] = await Promise.all([
+        organizationApi.teams(),
+        approvalsApi.list({ status: 'PENDING', pageSize: LIST_LIMIT }),
+        usersApi.list({ status: 'ACTIVE', pageSize: LIST_LIMIT }),
+        usersApi.list({ status: 'REVOKED', pageSize: LIST_LIMIT }),
+        usersApi.list({ status: 'SUSPENDED', pageSize: LIST_LIMIT }),
+        usersApi.list({ status: 'REJECTED', pageSize: LIST_LIMIT })
+      ]);
+      setTeams(teamList);
+      setPendingRows(pending.items.map(r => fromRequest(r, teamList)));
+      setActiveRows(active.items.filter(p => p.id !== profile?.id).map(fromProfile));
+      setRevokedRows([...revoked.items, ...suspended.items, ...rejected.items].map(fromProfile));
+    } catch (err) {
+      notify(errorMessage(err), 'danger');
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) void refreshUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, departments.length]);
+
+  if (!isOpen) return null;
+
+  const isSuperAdmin = user?.role === 'superadmin';
+  const currentApproverRole = (profile?.role || '').replace('_', ' ');
+
+  const matches = (u: StaffRow) => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch =
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.departmentName.toLowerCase().includes(q) ||
+      u.position.toLowerCase().includes(q);
+    return matchesSearch && (selectedDeptFilter === 'all' || u.departmentId === selectedDeptFilter);
+  };
+
+  const pendingList = pendingRows.filter(matches);
+  const activeList = activeRows.filter(matches);
+  const revokedList = revokedRows.filter(matches);
+
+  const allPendingTotal = pendingRows.length;
+  const allActiveTotal = activeRows.length;
+  const allRevokedTotal = revokedRows.length;
+
+  /** Run a server action, then reload from the database (the UI never assumes success). */
+  const run = async (action: () => Promise<unknown>, success: string, type: 'success' | 'danger' = 'success') => {
+    setBusy(true);
+    try {
+      await action();
+      notify(success, type);
+      window.dispatchEvent(new CustomEvent(APPROVALS_CHANGED_EVENT));
+      await refreshUsers();
+    } catch (err) {
+      notify(errorMessage(err), 'danger');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Actions
+  const handleApprove = (u: StaffRow) => {
+    if (!u.requestId || busy) return;
+    const teamId = u.teamId || teamChoice[u.requestId];
+    if (!teamId) {
+      notify(`Select a team for ${u.name} before approving.`, 'danger');
+      return;
+    }
+    void run(
+      () => approvalsApi.approve(u.requestId!, { teamId }),
+      `✓ Authorized & Activated account for ${u.name} (${u.departmentName}). They can now sign in.`
+    );
+  };
+
+  const handleReject = (u: StaffRow) => {
+    if (!u.requestId || busy) return;
     if (window.confirm(`Are you sure you want to decline registration for ${u.name} (${u.email})?`)) {
-      userApprovalStore.rejectUser(u.id, currentApproverName);
-      refreshUsers();
-      setActionNotice({
-        text: `Declined registration for ${u.name}.`,
-        type: 'danger'
-      });
-      setTimeout(() => setActionNotice(null), 5000);
+      void run(() => approvalsApi.reject(u.requestId!), `Declined registration for ${u.name}.`, 'danger');
     }
   };
 
   const handleConfirmRevoke = () => {
-    if (!revokingUser) return;
+    if (!revokingUser || busy) return;
+    const target = revokingUser;
     const finalReason = revokeReason === 'Other' ? customRevokeReason.trim() || 'Separation / Security policy' : revokeReason;
-    userApprovalStore.revokeAccess(revokingUser.id, currentApproverName, finalReason);
     setRevokingUser(null);
     setCustomRevokeReason('');
-    refreshUsers();
-    setActionNotice({
-      text: `🚫 Access REVOKED for ${revokingUser.name}. System login and customer data access is immediately blocked.`,
-      type: 'danger'
-    });
-    setTimeout(() => setActionNotice(null), 6000);
+    void run(
+      () => usersApi.setStatus(target.id, 'REVOKED', finalReason),
+      `🚫 Access REVOKED for ${target.name}. Their access to CRM data is blocked immediately.`,
+      'danger'
+    );
   };
 
-  const handleRestoreAccess = (u: RegisteredUser) => {
-    userApprovalStore.restoreAccess(u.id, currentApproverName);
-    refreshUsers();
-    setActionNotice({
-      text: `✓ System access restored for ${u.name}.`,
-      type: 'success'
-    });
-    setTimeout(() => setActionNotice(null), 5000);
-  };
-
-  const handleDeletePermanent = (u: RegisteredUser) => {
-    if (window.confirm(`Permanently remove record for ${u.name}? This cannot be undone.`)) {
-      userApprovalStore.deleteUser(u.id);
-      refreshUsers();
+  const handleRestoreAccess = (u: StaffRow) => {
+    if (busy) return;
+    if (u.status === 'REJECTED') {
+      notify('Declined registrations cannot be restored; ask the person to contact their manager.', 'danger');
+      return;
     }
+    void run(() => usersApi.setStatus(u.id, 'ACTIVE'), `✓ System access restored for ${u.name}.`);
+  };
+
+  const handleDeletePermanent = (u: StaffRow) => {
+    if (!isSuperAdmin) {
+      notify('Only a Super Admin can permanently delete users.', 'danger');
+      return;
+    }
+    if (window.confirm(`Permanently remove record for ${u.name}? This cannot be undone.`)) {
+      void run(() => usersApi.remove(u.id), `Removed ${u.name}.`, 'danger');
+    }
+  };
+
+  /** Team picker shown for pending requests that arrived without a team. */
+  const renderTeamPicker = (u: StaffRow) => {
+    if (u.teamId || !u.requestId) return null;
+    const dept = departments.find(d => d.id === u.departmentId);
+    const options = teams.filter(t => !dept || t.departmentId === dept.dbId);
+    return (
+      <select
+        value={teamChoice[u.requestId] || ''}
+        onChange={e => setTeamChoice(prev => ({ ...prev, [u.requestId!]: e.target.value }))}
+        className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700"
+        aria-label={`Team for ${u.name}`}
+      >
+        <option value="">Select team…</option>
+        {options.map(t => (
+          <option key={t.id} value={t.id}>
+            {(departments.find(d => d.dbId === t.departmentId)?.name || '') + ' · ' + t.name}
+          </option>
+        ))}
+      </select>
+    );
   };
 
   return (
@@ -349,6 +461,7 @@ export const UserAccessManagementModal: React.FC<UserAccessManagementModalProps>
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      {renderTeamPicker(item)}
                       <button
                         type="button"
                         onClick={() => handleReject(item)}

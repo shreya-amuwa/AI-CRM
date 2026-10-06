@@ -54,11 +54,11 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
     setTargetLabel(selectedText);
   };
 
-  const handleSendSubmit = (e: React.FormEvent) => {
+  const handleSendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !message) return;
 
-    sendNotification({
+    const result = await sendNotification({
       title,
       message,
       senderName: user?.name || 'Administrator',
@@ -69,10 +69,14 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
       priority
     });
 
+    if (!result.ok) {
+      alert(result.message);
+      return;
+    }
     setShowComposeModal(false);
     setTitle('');
     setMessage('');
-    alert(`Notification dispatched successfully to ${targetLabel}! (Strictly restricted to authorized recipients)`);
+    alert(result.message);
   };
 
   const filteredNotifications = userNotifications.filter(n => {
