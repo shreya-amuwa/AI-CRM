@@ -1,16 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Users, UserCheck, ShieldCheck, Plus, CheckCircle2,
   Clock, ArrowRight, Search, Trash2, Phone, Mail, Building2,
   Tag, Sparkles, X, Check, AlertCircle, LogOut, RefreshCw,
-  Layers, ExternalLink, UserPlus, DollarSign
+  Layers, ExternalLink, UserPlus, DollarSign,
+  FileText, Upload, Download, Eye, FileCheck
 } from 'lucide-react';
 import {
   technicalSupportStore,
   TechSupportLead,
   TechSupportContact,
-  TechSupportCustomer
+  TechSupportCustomer,
+  TechSupportInvoice
 } from '../../services/technicalSupportStore';
+import {
+  generateOfficialInvoicePdf,
+  readUploadedPdfFile,
+  openPdfInNewTab,
+  downloadPdfFile
+} from '../../utils/invoicePdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 
@@ -67,6 +75,13 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
   // Convert to Customer Form State
   const [convertPaymentAmount, setConvertPaymentAmount] = useState<string>('');
   const [convertPaymentMode, setConvertPaymentMode] = useState('UPI / Bank Transfer');
+  const [invoiceNumberInput, setInvoiceNumberInput] = useState('');
+  const [attachedInvoice, setAttachedInvoice] = useState<TechSupportInvoice | null>(null);
+  const [isReadingPdf, setIsReadingPdf] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Invoice viewer modal state (for customers tab)
+  const [viewingCustomerInvoice, setViewingCustomerInvoice] = useState<TechSupportCustomer | null>(null);
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
@@ -149,23 +164,105 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
     }
   };
 
-  // Confirm Convert to Customer (Payment Done)
+  // Open convert modal with clean invoice initialization
+  const handleOpenConvertModal = (type: 'lead' | 'contact', item: TechSupportLead | TechSupportContact) => {
+    setConvertTarget({ type, item });
+    const expected = type === 'contact' ? (item as TechSupportContact).expectedAmount : undefined;
+    setConvertPaymentAmount(expected ? String(expected) : '');
+    setConvertPaymentMode('UPI / QR');
+    const autoNum = `INV-TS-${Date.now().toString().slice(-5)}`;
+    setInvoiceNumberInput(autoNum);
+    setAttachedInvoice(null);
+  };
+
+  // Upload PDF Handler
+  const handleFileUploadChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsReadingPdf(true);
+    try {
+      const inv = await readUploadedPdfFile(file, invoiceNumberInput.trim() || undefined);
+      setAttachedInvoice({
+        invoiceNumber: inv.invoiceNumber,
+        fileName: inv.fileName,
+        fileSize: inv.fileSize,
+        dataUrl: inv.dataUrl,
+        uploadedAt: new Date().toISOString()
+      });
+      showToast(`Invoice PDF "${inv.fileName}" attached successfully!`);
+    } catch (err: any) {
+      showToast(err.message || 'Failed to read PDF file', 'info');
+    } finally {
+      setIsReadingPdf(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // 1-Click Auto-Generate PDF Invoice
+  const handleAutoGenerateInvoice = () => {
+    if (!convertTarget) return;
+    const num = invoiceNumberInput.trim() || `INV-TS-${Date.now().toString().slice(-5)}`;
+    const amt = convertPaymentAmount ? parseFloat(convertPaymentAmount) : 0;
+    const generated = generateOfficialInvoicePdf({
+      invoiceNumber: num,
+      customerName: convertTarget.item.name,
+      businessName: convertTarget.item.businessName,
+      services: convertTarget.item.services,
+      amount: amt,
+      paymentMode: convertPaymentMode,
+      dateStr: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    });
+    setAttachedInvoice({
+      invoiceNumber: num,
+      fileName: generated.fileName,
+      fileSize: generated.fileSize,
+      dataUrl: generated.dataUrl,
+      uploadedAt: new Date().toISOString()
+    });
+    showToast(`Official PDF Invoice "${generated.fileName}" generated!`);
+  };
+
+  // Confirm Convert to Customer (Payment Done & PDF Invoice saved)
   const handleConfirmConvertToCustomer = () => {
     if (!convertTarget) return;
 
     const amount = convertPaymentAmount ? parseFloat(convertPaymentAmount) : undefined;
 
+    // Use attached invoice, or auto-generate on the fly if user didn't attach one
+    let finalInvoice = attachedInvoice;
+    if (!finalInvoice) {
+      const num = invoiceNumberInput.trim() || `INV-TS-${Date.now().toString().slice(-5)}`;
+      const gen = generateOfficialInvoicePdf({
+        invoiceNumber: num,
+        customerName: convertTarget.item.name,
+        businessName: convertTarget.item.businessName,
+        services: convertTarget.item.services,
+        amount: amount || 0,
+        paymentMode: convertPaymentMode,
+        dateStr: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      });
+      finalInvoice = {
+        invoiceNumber: num,
+        fileName: gen.fileName,
+        fileSize: gen.fileSize,
+        dataUrl: gen.dataUrl,
+        uploadedAt: new Date().toISOString()
+      };
+    }
+
     if (convertTarget.type === 'lead') {
       technicalSupportStore.convertToCustomerFromLead(
         convertTarget.item.id,
         amount,
-        convertPaymentMode
+        convertPaymentMode,
+        finalInvoice
       );
     } else {
       technicalSupportStore.convertToCustomerFromContact(
         convertTarget.item.id,
         amount,
-        convertPaymentMode
+        convertPaymentMode,
+        finalInvoice
       );
     }
 
@@ -174,7 +271,8 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
     const biz = convertTarget.item.businessName;
     setConvertTarget(null);
     setConvertPaymentAmount('');
-    showToast(`🎉 "${name}" (${biz}) converted to Paid Customer! Payment marked as completed.`);
+    setAttachedInvoice(null);
+    showToast(`🎉 "${name}" (${biz}) converted to Paid Customer with Invoice PDF attached!`);
   };
 
   // Deletions
@@ -540,7 +638,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                                 {/* Convert to Customer (Payment Done) */}
                                 <button
                                   type="button"
-                                  onClick={() => setConvertTarget({ type: 'lead', item: lead })}
+                                  onClick={() => handleOpenConvertModal('lead', lead)}
                                   title="Convert to Paid Customer"
                                   className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-[11px] font-bold shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1"
                                 >
@@ -674,7 +772,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                               <div className="flex items-center justify-end gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => setConvertTarget({ type: 'contact', item: contact })}
+                                  onClick={() => handleOpenConvertModal('contact', contact)}
                                   title="Mark payment as done and convert to Customer"
                                   className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold shadow-xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
                                 >
@@ -752,6 +850,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                         <th className="py-3.5 px-6">Services</th>
                         <th className="py-3.5 px-4">Payment Status</th>
                         <th className="py-3.5 px-4">Amount / Mode</th>
+                        <th className="py-3.5 px-4">Invoice (PDF)</th>
                         <th className="py-3.5 px-4">Client Status</th>
                         <th className="py-3.5 px-4 text-center">Action</th>
                       </tr>
@@ -814,7 +913,70 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                               </span>
                             </td>
 
-                            {/* 6. Client Status */}
+                            {/* 6. Invoice (PDF) */}
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              {cust.invoice ? (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewingCustomerInvoice(cust)}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-mono font-bold bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer group/pdf shadow-2xs"
+                                    title="View Invoice Document"
+                                  >
+                                    <FileText className="w-3.5 h-3.5 text-rose-600 group-hover/pdf:scale-110 transition-transform" />
+                                    <span className="max-w-[120px] truncate">{cust.invoice.fileName || 'Invoice.pdf'}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openPdfInNewTab(cust.invoice?.dataUrl || '')}
+                                    title="Preview in new tab"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => downloadPdfFile(cust.invoice?.dataUrl || '', cust.invoice?.fileName || 'Invoice.pdf')}
+                                    title="Download PDF"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer transition-colors"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const num = `INV-TS-${Date.now().toString().slice(-5)}`;
+                                    const gen = generateOfficialInvoicePdf({
+                                      invoiceNumber: num,
+                                      customerName: cust.name,
+                                      businessName: cust.businessName,
+                                      services: cust.services,
+                                      amount: cust.paymentAmount || 0,
+                                      paymentMode: cust.paymentMode || 'UPI / Instant Transfer',
+                                      dateStr: new Date(cust.convertedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                    });
+                                    technicalSupportStore.attachInvoiceToCustomer(cust.id, {
+                                      invoiceNumber: num,
+                                      fileName: gen.fileName,
+                                      fileSize: gen.fileSize,
+                                      dataUrl: gen.dataUrl,
+                                      uploadedAt: new Date().toISOString()
+                                    });
+                                    refreshAll();
+                                    showToast(`Generated & attached PDF invoice for ${cust.name}!`);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-mono text-rose-600 hover:bg-rose-50 border border-dashed border-rose-300 transition-colors cursor-pointer"
+                                  title="Attach or generate invoice PDF"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Attach PDF</span>
+                                </button>
+                              )}
+                            </td>
+
+                            {/* 7. Client Status */}
                             <td className="py-3.5 px-4 whitespace-nowrap">
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
                                 <ShieldCheck className="w-3 h-3" />
@@ -822,7 +984,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                               </span>
                             </td>
 
-                            {/* 7. Action */}
+                            {/* 8. Action */}
                             <td className="py-3.5 px-4 text-center">
                               <button
                                 type="button"
@@ -838,7 +1000,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={7} className="py-16 text-center text-slate-400">
+                          <td colSpan={8} className="py-16 text-center text-slate-400">
                             <CheckCircle2 className="w-10 h-10 mx-auto mb-2 opacity-30 text-emerald-500" />
                             <p className="font-semibold text-slate-700 text-sm">No customers converted yet.</p>
                             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
@@ -1028,7 +1190,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
           ========================================================================= */}
       {convertTarget && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
@@ -1036,7 +1198,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                 </div>
                 <div>
                   <h3 className="text-base font-bold font-heading text-slate-900">Convert to Paid Customer</h3>
-                  <p className="text-[11px] text-slate-500">Confirm payment received to move to Customers</p>
+                  <p className="text-[11px] text-slate-500">Confirm payment received &amp; attach invoice to move to Customers</p>
                 </div>
               </div>
               <button
@@ -1048,8 +1210,9 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
               </button>
             </div>
 
-            <div className="py-4 space-y-3 text-xs">
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+            <div className="py-4 space-y-3.5 text-xs">
+              {/* Contact Header Badge */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                 <p className="font-bold text-slate-900 text-sm">{convertTarget.item.name}</p>
                 <p className="text-slate-600 font-medium">{convertTarget.item.businessName}</p>
                 <div className="flex flex-wrap gap-1 pt-1">
@@ -1061,6 +1224,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                 </div>
               </div>
 
+              {/* Payment Amount */}
               <div>
                 <label className="text-[11px] font-mono font-bold text-slate-500 uppercase block mb-1">
                   Payment Amount Received (₹)
@@ -1074,6 +1238,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                 />
               </div>
 
+              {/* Payment Mode */}
               <div>
                 <label className="text-[11px] font-mono font-bold text-slate-500 uppercase block mb-1">
                   Payment Mode
@@ -1089,6 +1254,125 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
                   <option value="Razorpay Payment Link">Razorpay Payment Link</option>
                   <option value="Cash / Cheque">Cash / Cheque</option>
                 </select>
+              </div>
+
+              {/* Invoice (PDF) Section */}
+              <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-mono font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Attach Invoice (PDF Form)</span>
+                  </label>
+                  <span className="text-[10px] font-mono bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-bold">
+                    PDF Document
+                  </span>
+                </div>
+
+                {/* Invoice Number Input */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-slate-500 whitespace-nowrap">Invoice #:</span>
+                  <input
+                    type="text"
+                    value={invoiceNumberInput}
+                    onChange={e => setInvoiceNumberInput(e.target.value)}
+                    placeholder="e.g. INV-2026-0042"
+                    className="flex-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:outline-hidden focus:border-rose-400"
+                  />
+                </div>
+
+                {/* Hidden file input for PDF file upload */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="application/pdf,.pdf"
+                  onChange={handleFileUploadChange}
+                  className="hidden"
+                />
+
+                {!attachedInvoice ? (
+                  <div className="space-y-2">
+                    {/* Upload PDF Box */}
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-slate-300 hover:border-rose-400 rounded-2xl p-4 text-center bg-slate-50/70 hover:bg-rose-50/30 transition-all cursor-pointer group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 text-rose-600 group-hover:scale-105 flex items-center justify-center mx-auto mb-1.5 shadow-2xs transition-transform">
+                        <Upload className="w-5 h-5 text-rose-600" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-800">
+                        {isReadingPdf ? 'Attaching PDF...' : <>Click to upload Invoice <span className="text-rose-600 font-mono">(.pdf)</span></>}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Select customer billing invoice from device in PDF format
+                      </p>
+                    </div>
+
+                    {/* Instant Auto-Generate Button */}
+                    <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <span className="text-[11px] text-slate-600 font-medium">Don't have a PDF ready?</span>
+                      <button
+                        type="button"
+                        onClick={handleAutoGenerateInvoice}
+                        className="px-3 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-mono font-bold shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Generate Invoice PDF</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Attached PDF Card Preview */
+                  <div className="p-3 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold">
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate font-mono">
+                            {attachedInvoice.fileName}
+                          </p>
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            Invoice #{attachedInvoice.invoiceNumber} • {attachedInvoice.fileSize || 'PDF'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => openPdfInNewTab(attachedInvoice.dataUrl || '')}
+                          title="Preview PDF"
+                          className="p-1.5 rounded-lg bg-white hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-mono font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">View</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => downloadPdfFile(attachedInvoice.dataUrl || '', attachedInvoice.fileName)}
+                          title="Download PDF"
+                          className="p-1.5 rounded-lg bg-white hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-mono font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAttachedInvoice(null)}
+                          title="Remove PDF"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 font-mono flex items-center gap-1.5 font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Invoice PDF attached! Ready to convert into Customer.</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1110,6 +1394,120 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODAL 3: INVOICE VIEWER / DETAILS MODAL
+          ========================================================================= */}
+      {viewingCustomerInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold font-heading text-slate-900">
+                    Customer Invoice Document
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-mono">
+                    {viewingCustomerInvoice.invoice?.invoiceNumber || 'Official Invoice'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingCustomerInvoice(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Document Visual Preview Card */}
+            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 font-sans text-xs">
+              <div className="flex items-start justify-between pb-3 border-b border-slate-200">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">WABASTORE SUPPORT</h4>
+                  <p className="text-[10px] text-slate-500 font-mono">Official Integration &amp; Tech Solutions</p>
+                </div>
+                <div className="text-right font-mono">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    PAID / SETTLED
+                  </span>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {viewingCustomerInvoice.invoice?.invoiceNumber}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase block">Client Name</span>
+                  <strong className="text-slate-900">{viewingCustomerInvoice.name}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase block">Business Name</span>
+                  <strong className="text-slate-900">{viewingCustomerInvoice.businessName}</strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase block">Total Amount</span>
+                  <strong className="text-emerald-700 font-mono">
+                    {viewingCustomerInvoice.paymentAmount ? formatCurrency(viewingCustomerInvoice.paymentAmount) : 'Paid'}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase block">Payment Mode</span>
+                  <span className="text-slate-700 font-mono">{viewingCustomerInvoice.paymentMode}</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-mono text-slate-400 uppercase block mb-1">Services Covered</span>
+                <div className="flex flex-wrap gap-1">
+                  {viewingCustomerInvoice.services.map((s, idx) => (
+                    <span key={idx} className="px-2 py-0.5 rounded text-[10px] font-mono bg-white border border-slate-200 text-slate-700">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] font-mono text-slate-500">
+                <span>File: {viewingCustomerInvoice.invoice?.fileName}</span>
+                <span>{viewingCustomerInvoice.invoice?.fileSize || 'PDF Format'}</span>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setViewingCustomerInvoice(null)}
+                className="px-4 py-2 rounded-xl text-xs font-mono font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadPdfFile(viewingCustomerInvoice.invoice?.dataUrl || '', viewingCustomerInvoice.invoice?.fileName || 'Invoice.pdf')}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openPdfInNewTab(viewingCustomerInvoice.invoice?.dataUrl || '')}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span>Open PDF in Viewer</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

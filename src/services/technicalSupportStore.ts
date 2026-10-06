@@ -32,6 +32,14 @@ export interface TechSupportContact {
   notes?: string;
 }
 
+export interface TechSupportInvoice {
+  invoiceNumber: string;
+  fileName: string;
+  fileSize?: string;
+  dataUrl?: string; // base64 data url for viewing/downloading the PDF
+  uploadedAt: string;
+}
+
 export interface TechSupportCustomer {
   id: string;
   contactId?: string;
@@ -44,6 +52,7 @@ export interface TechSupportCustomer {
   paymentStatus: 'Paid';
   paymentAmount?: number;
   paymentMode?: string;
+  invoice?: TechSupportInvoice;
   convertedAt: string;
   notes?: string;
 }
@@ -169,7 +178,8 @@ class TechnicalSupportStore {
   public convertToCustomerFromLead(
     leadId: string,
     paymentAmount?: number,
-    paymentMode?: string
+    paymentMode?: string,
+    invoice?: TechSupportInvoice
   ): TechSupportCustomer | null {
     const leadIdx = this.data.leads.findIndex(l => l.id === leadId);
     if (leadIdx === -1) return null;
@@ -188,6 +198,7 @@ class TechnicalSupportStore {
       paymentStatus: 'Paid',
       paymentAmount: paymentAmount || 0,
       paymentMode: paymentMode || 'UPI / Bank Transfer',
+      invoice: invoice,
       convertedAt: new Date().toISOString(),
       notes: lead.notes
     };
@@ -203,7 +214,8 @@ class TechnicalSupportStore {
   public convertToCustomerFromContact(
     contactId: string,
     paymentAmount?: number,
-    paymentMode?: string
+    paymentMode?: string,
+    invoice?: TechSupportInvoice
   ): TechSupportCustomer | null {
     const contactIdx = this.data.contacts.findIndex(c => c.id === contactId);
     if (contactIdx === -1) return null;
@@ -223,6 +235,7 @@ class TechnicalSupportStore {
       paymentStatus: 'Paid',
       paymentAmount: paymentAmount !== undefined ? paymentAmount : (contact.expectedAmount || 0),
       paymentMode: paymentMode || 'UPI / Bank Transfer',
+      invoice: invoice,
       convertedAt: new Date().toISOString(),
       notes: contact.notes
     };
@@ -230,6 +243,17 @@ class TechnicalSupportStore {
     this.data.customers.unshift(newCustomer);
     this.save();
     return newCustomer;
+  }
+
+  public attachInvoiceToCustomer(
+    customerId: string,
+    invoice: TechSupportInvoice
+  ): boolean {
+    const cust = this.data.customers.find(c => c.id === customerId);
+    if (!cust) return false;
+    cust.invoice = invoice;
+    this.save();
+    return true;
   }
 
   public deleteLead(id: string): void {
