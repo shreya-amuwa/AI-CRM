@@ -33,6 +33,7 @@ import { Sparkles } from 'lucide-react';
 import { TeamMemberLayout } from './components/team-member/TeamMemberLayout';
 import { TeamMemberDashboard } from './components/team-member/TeamMemberDashboard';
 import { TeamLeadDashboard } from './components/team-lead/TeamLeadDashboard';
+import { TechnicalSupportDashboard } from './components/support/TechnicalSupportDashboard';
 import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole } from './utils/router';
 
 const MainAppContent: React.FC = () => {
@@ -70,7 +71,13 @@ const MainAppContent: React.FC = () => {
       return;
     }
 
-    if (user.role === 'team-member') {
+    if (user.role === 'technical-support') {
+      const target = '/technical-support/dashboard';
+      if (window.location.pathname !== target) {
+        navigateTo(target);
+        setRoute(parseCurrentRoute());
+      }
+    } else if (user.role === 'team-member') {
       const target = `/team-member/dashboard/${user.id}`;
       if (window.location.pathname !== target) {
         navigateTo(target);
@@ -95,7 +102,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'team-lead') {
+    if (user && user.role !== 'team-member' && user.role !== 'team-lead' && user.role !== 'technical-support') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -120,6 +127,11 @@ const MainAppContent: React.FC = () => {
   // Step 1: Sign-In Screen if not authenticated
   if (!user) {
     return <LoginForm />;
+  }
+
+  // Step 1.4: Dedicated Technical Support Dashboard (Wabastore Support Sub-Department)
+  if (user.role === 'technical-support') {
+    return <TechnicalSupportDashboard currentUserId={user.id} userName={user.name} />;
   }
 
   // Step 1.5: Dedicated Team Member Dashboard

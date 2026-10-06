@@ -813,8 +813,9 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     { name: 'Kavita Reddy', id: 'EMP-WABA-01', email: 'kavita@wabastore.com' }
   ];
   const supportUsers = [
-    { name: 'Aakash Verma', id: 'EMP-WABA-101', email: 'aakash@wabastore.com' },
-    { name: 'Sneha Roy', id: 'EMP-WABA-102', email: 'sneha@wabastore.com' }
+    { name: 'Rohan Mehta', id: 'EMP-TS-2034', email: 'techsupport@wabastore.com', role: 'Technical Support' },
+    { name: 'Aakash Verma', id: 'EMP-WABA-101', email: 'aakash@wabastore.com', role: 'Support Agent' },
+    { name: 'Sneha Roy', id: 'EMP-WABA-102', email: 'sneha@wabastore.com', role: 'Support Agent' }
   ];
 
   const handleCopyText = (text: string, label: string) => {
@@ -1089,9 +1090,16 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                         <span className="text-[10px] text-slate-400">{usr.email}</span>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
-                      ACTIVE
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {(usr as any).role && (
+                        <span className="px-2 py-0.5 rounded bg-teal-100 text-teal-800 text-[9px] font-bold">
+                          {(usr as any).role}
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                        ACTIVE
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

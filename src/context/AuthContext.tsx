@@ -27,7 +27,7 @@ interface AuthContextType {
 
   // Actions
   loginWithGoogle: (customEmail?: string) => void;
-  loginWithEmail: (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead', departmentId?: string) => void;
+  loginWithEmail: (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead' | 'technical-support', departmentId?: string) => void;
   setTempAuthUser: (user: TempAuthUser | null) => void;
   logout: () => void;
   selectDepartment: (departmentId: DepartmentId) => boolean;
@@ -103,7 +103,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
   };
 
-  const loginWithEmail = (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead', departmentId?: string) => {
+  const loginWithEmail = (email: string, password?: string, role?: 'superadmin' | 'admin' | 'hr' | 'team-member' | 'team-lead' | 'technical-support', departmentId?: string) => {
+    // Check if Technical Support login (Wabastore Support sub-department)
+    if (email.toLowerCase() === 'techsupport@wabastore.com' || role === 'technical-support') {
+      const newUser: AuthUser = {
+        id: 'EMP-TS-2034',
+        name: 'Rohan Mehta (Technical Support)',
+        email: 'techsupport@wabastore.com',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        role: 'technical-support',
+        departmentId: 'wabastore',
+        subDepartment: 'support',
+        position: 'Technical Support'
+      };
+      setUser(newUser);
+      localStorage.setItem('unified_crm_user', JSON.stringify(newUser));
+
+      // Record exact login time into HR Attendance Register
+      attendanceStore.recordMemberLogin({
+        empId: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: 'Technical Support',
+        department: 'Wabastore Support',
+        avatar: 'RM',
+        authMethod: 'ID & Password Auth (System Login)',
+        device: 'CRM Web Client (ID & Password)'
+      });
+      return;
+    }
+
     // Check if matching Team Lead
     if (email.toLowerCase() === SAMPLE_TEAM_LEAD.email.toLowerCase() || role === 'team-lead') {
       const newUser: AuthUser = {

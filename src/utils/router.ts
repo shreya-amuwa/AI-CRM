@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'team-lead' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'team-lead' | 'technical-support' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -30,6 +30,14 @@ export const parseCurrentRoute = (): ParsedRoute => {
       path,
       type: 'team-lead',
       paramId: tlMatch[1] || 'tl-vikram'
+    };
+  }
+
+  // 1c. /technical-support/dashboard or /technical-support
+  if (path === '/technical-support/dashboard' || path.startsWith('/technical-support')) {
+    return {
+      path,
+      type: 'technical-support'
     };
   }
 
@@ -69,6 +77,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
   if (!user) return '/login';
 
   switch (user.role) {
+    case 'technical-support':
+      return '/technical-support/dashboard';
     case 'team-member':
       return `/team-member/dashboard/${user.id}`;
     case 'team-lead':
@@ -97,6 +107,14 @@ export const validateRouteAccess = (
   // If user is not logged in:
   if (!user) {
     return { allowed: false, redirectTo: '/login' };
+  }
+
+  // If user is technical-support:
+  if (user.role === 'technical-support') {
+    if (route.type === 'technical-support') {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: '/technical-support/dashboard' };
   }
 
   // If user is team-member:

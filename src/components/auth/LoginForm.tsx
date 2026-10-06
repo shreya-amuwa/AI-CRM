@@ -23,7 +23,8 @@ export const LoginForm: React.FC = () => {
     admin: { email: 'admin@amuwa.com', password: 'admin123', name: 'Admin (Department Head)', role: 'admin' as const },
     hr: { email: 'hr@amuwa.com', password: 'hr123', name: 'HR Manager', role: 'hr' as const },
     lead: { email: 'lead@amuwa.com', password: 'lead123', name: 'Vikram Deshmukh (Team Lead)', role: 'team-lead' as const },
-    accounts: { email: 'accounts@amuwa.com', password: 'accounts123', name: 'Rajiv Khanna (Accounts Head)', role: 'admin' as const, departmentId: 'accounts' }
+    accounts: { email: 'accounts@amuwa.com', password: 'accounts123', name: 'Rajiv Khanna (Accounts Head)', role: 'admin' as const, departmentId: 'accounts' },
+    techsupport: { email: 'techsupport@wabastore.com', password: 'support123', name: 'Rohan Mehta (Technical Support)', role: 'technical-support' as const, departmentId: 'wabastore' }
   };
 
   const handleQuickFill = (targetEmail: string, targetPass: string) => {
@@ -255,6 +256,15 @@ export const LoginForm: React.FC = () => {
               <span>TEST ACCOUNTS (1-CLICK FILL):</span>
             </div>
             <div className="grid grid-cols-1 gap-1.5 text-xs">
+
+              <button
+                type="button"
+                onClick={() => handleQuickFill('techsupport@wabastore.com', 'support123')}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-200/80 flex items-center justify-between font-mono text-[11px] transition-colors"
+              >
+                <span><strong>Rohan Mehta</strong> (Technical Support)</span>
+                <span className="text-[10px] bg-teal-200/70 text-teal-900 font-bold px-1.5 py-0.5 rounded">Wabastore Support</span>
+              </button>
 
               <button
                 type="button"

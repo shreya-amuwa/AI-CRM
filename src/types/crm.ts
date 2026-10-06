@@ -92,9 +92,11 @@ export interface AuthUser {
   name: string;
   email: string;
   avatar?: string;
-  role: 'superadmin' | 'admin' | 'hr' | 'client' | 'team-member' | 'team-lead';
+  role: 'superadmin' | 'admin' | 'hr' | 'client' | 'team-member' | 'team-lead' | 'technical-support';
   clientCompany?: string;
   departmentId?: string;
+  subDepartment?: string;
+  position?: string;
 }
 
 export interface TeamMemberActivity {
