@@ -13,6 +13,7 @@ import { Header } from './components/layout/Header';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { TabBar } from './components/layout/TabBar';
 import { NotificationCenterPanel } from './components/notifications/NotificationCenterPanel';
+import { StaffManagementPanel } from './components/common/StaffManagementPanel';
 
 // Dedicated Department Panels
 import { AmuwaHqPanel } from './components/departments/amuwa/AmuwaHqPanel';
@@ -297,6 +298,8 @@ const MainAppContent: React.FC = () => {
                   onNavigateToLeads={() => handleTabUpdate('leads')}
                 />
               )
+            ) : currentActiveTab === 'staff_access' ? (
+              <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} />
             ) : currentActiveTab === 'notifications' ? (
               <NotificationCenterPanel subDept={currentSubDept} />
             ) : currentActiveTab === 'settings' && currentDeptId === 'amuwa' ? (
