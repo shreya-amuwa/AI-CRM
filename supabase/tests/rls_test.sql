@@ -394,4 +394,19 @@ select test.login('sa');
 select test.check((select count(*) = 1 from hr_employees), 'super admin reads HR employees');
 reset role;
 
+-- ---------------------------------------------------------------------------
+\echo '--- 11. AI-generated avatars'
+-- ---------------------------------------------------------------------------
+select test.check((select bool_and(avatar_url = private.generated_avatar_url(id::text)) from profiles),
+  'every profile gets a generated avatar on creation');
+set role authenticated;
+select test.login('tm_a');
+update profiles set avatar_url = 'https://images.unsplash.com/photo-1' where id = test.id('tm_a');
+select test.check((select avatar_url = private.generated_avatar_url(id::text) from profiles where id = test.id('tm_a')),
+  'a personal/stock photo is replaced by the generated avatar');
+update profiles set avatar_url = private.generated_avatar_url('regen-1') where id = test.id('tm_a');
+reset role;
+select test.check((select avatar_url = private.generated_avatar_url('regen-1') from profiles where id = test.id('tm_a')),
+  'a regenerated avatar is kept');
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

@@ -7,18 +7,17 @@ import {
   CheckSquare,
   Calendar as CalendarIcon,
   FileText,
-  BarChart3,
   Settings,
   HelpCircle,
   Bell,
-  Search,
   LogOut,
   Menu,
   X,
   Navigation
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { AmuwaLogo } from '../common/AmuwaLogo';
+import { useNotifications } from '../../context/NotificationContext';
+import { resolveAvatarUrl } from '../../lib/avatar';
 
 export type TeamMemberNav =
   | 'home'
@@ -29,25 +28,21 @@ export type TeamMemberNav =
   | 'tasks'
   | 'calendar'
   | 'invoices'
-  | 'reports'
   | 'settings';
 
 interface TeamMemberLayoutProps {
   children: React.ReactNode;
   activeNav?: TeamMemberNav;
   onSelectNav?: (nav: TeamMemberNav) => void;
-  searchQuery?: string;
-  onSearchChange?: (q: string) => void;
 }
 
 export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   children,
   activeNav = 'leads',
-  onSelectNav,
-  searchQuery = '',
-  onSearchChange
+  onSelectNav
 }) => {
   const { user, logout } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
@@ -60,7 +55,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
-    { id: 'reports' as TeamMemberNav, label: 'Reports', icon: BarChart3 },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings }
   ];
 
@@ -80,11 +74,9 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     setIsMobileMenuOpen(false);
   };
 
-  const displayName = user?.name || 'Priya Nair';
-  const displayRole = 'Sales Executive';
-  const displayAvatar =
-    user?.avatar ||
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80';
+  const displayName = user?.name || 'Team Member';
+  const displayRole = user?.position || 'Sales Executive';
+  const displayAvatar = resolveAvatarUrl(user?.avatar, user?.id || displayName);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex font-sans antialiased">
@@ -183,7 +175,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
         {/* TOP BAR / HEADER */}
         <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-8 flex items-center justify-between sticky top-0 z-30">
           {/* Mobile hamburger + Search bar */}
-          <div className="flex items-center gap-3 flex-1 max-w-xl">
+          <div className="flex items-center gap-3 flex-1">
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen(true)}
@@ -192,43 +184,62 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="relative w-full max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
-                placeholder="Search leads, customers, or anything..."
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-sans"
-              />
-            </div>
           </div>
 
           {/* Right actions: notifications and user profile */}
           <div className="flex items-center gap-3 sm:gap-5">
-            {/* Notification Bell */}
+            {/* Notification Bell (live notifications from the database) */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                className="relative p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition-colors cursor-pointer"
+                aria-label="Notifications"
+                className="relative p-2.5 rounded-xl text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
               >
-                <Bell className="w-4 h-4" />
-                <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center ring-2 ring-white">
-                  1
-                </span>
+                <Bell className="w-6 h-6" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </button>
 
               {isNotificationsOpen && (
-                <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 p-3 z-50 text-xs animate-in fade-in slide-in-from-top-1">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="absolute right-0 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border border-slate-100 p-4 z-50 text-sm animate-in fade-in slide-in-from-top-1">
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                     <span className="font-bold text-slate-900">Notifications</span>
-                    <span className="text-[10px] text-blue-600 font-semibold cursor-pointer">Mark read</span>
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => markAllAsRead()}
+                        className="text-xs text-blue-600 font-semibold cursor-pointer hover:text-blue-700"
+                      >
+                        Mark all read
+                      </button>
+                    )}
                   </div>
-                  <div className="py-2.5">
-                    <div className="font-semibold text-slate-800">Follow-up due in 30 mins</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">Rohan Mehta (Rohan Traders) – Discuss proposal</div>
-                    <div className="text-[10px] text-slate-400 mt-1">10:00 AM today</div>
+                  <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
+                    {notifications.length === 0 ? (
+                      <p className="py-8 text-center text-xs text-slate-400">You're all caught up.</p>
+                    ) : (
+                      notifications.map(n => (
+                        <button
+                          key={n.id}
+                          type="button"
+                          onClick={() => markAsRead(n.id)}
+                          className={`w-full text-left py-3 px-1 ${n.isRead ? '' : 'bg-blue-50/40'} hover:bg-slate-50 transition-colors cursor-pointer`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!n.isRead && <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-800 text-xs">{n.title}</div>
+                              <div className="text-[11px] text-slate-500 mt-0.5">{n.message}</div>
+                              <div className="text-[10px] text-slate-400 mt-1">{n.timestamp}</div>
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

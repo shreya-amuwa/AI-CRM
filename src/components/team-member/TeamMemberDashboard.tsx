@@ -3,7 +3,6 @@ import {
   Users,
   Clock,
   CheckCircle2,
-  TrendingUp,
   Calendar,
   X,
   Plus,
@@ -12,13 +11,6 @@ import {
   Handshake,
   Send,
   Sparkles,
-  AlertCircle,
-  Building2,
-  Mail,
-  Check,
-  Bell,
-  Search,
-  FileText,
   Activity
 } from 'lucide-react';
 import { Lead, TeamMemberActivity, EndOfDayReport, FollowUpTask, Deal } from '../../types/crm';
@@ -33,9 +25,9 @@ import { MemberCustomersDashboard } from './MemberCustomersDashboard';
 import { MemberDealsDashboard } from './MemberDealsDashboard';
 import { MemberCalendarDashboard } from './MemberCalendarDashboard';
 import { MemberInvoicesDashboard } from './MemberInvoicesDashboard';
-import { MemberReportsDashboard } from './MemberReportsDashboard';
 import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
+import { resolveAvatarUrl } from '../../lib/avatar';
 
 interface TeamMemberDashboardProps {
   currentUserId: string;
@@ -49,28 +41,22 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   const { profile } = useAuth();
   // Navigation State: 'home' is default, or 'leads'
   const [activeNav, setActiveNav] = useState<TeamMemberNav>('home');
-  const [globalSearch, setGlobalSearch] = useState('');
 
   // Store state
   const [leads, setLeads] = useState<Lead[]>([]);
   const [activities, setActivities] = useState<TeamMemberActivity[]>([]);
   const [followUps, setFollowUps] = useState<FollowUpTask[]>([]);
   const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
-  const [kpis, setKpis] = useState({
-    totalLeads: 28,
-    totalLeadsGrowth: '+12%',
-    followUpsDue: 6,
-    followUpsGrowth: '+2%',
-    convertedLeads: 8,
-    convertedGrowth: '+33%',
-    dealsInProgress: 12,
-    dealsGrowth: '+9%'
-  });
-  const [target, setTarget] = useState({ current: 8, goal: 15, percentage: 53 });
+  const [kpis, setKpis] = useState(() => teamMemberStore.getDashboardKpis(currentUserId));
+  const [target, setTarget] = useState(() => teamMemberStore.getMemberTarget(currentUserId));
   const [eodReport, setEodReport] = useState<EndOfDayReport | null>(null);
 
-  // Date Range state
-  const [dateRange, setDateRange] = useState('Sep 1, 2026 – Sep 30, 2026');
+  // Current calendar month, e.g. "Oct 1, 2026 – Oct 31, 2026"
+  const dateRange = (() => {
+    const now = new Date();
+    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${fmt(new Date(now.getFullYear(), now.getMonth(), 1))} – ${fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))}`;
+  })();
 
   // Modals & Forms
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -143,16 +129,30 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   // Dynamic Greeting based on time of day
   const getGreeting = () => {
     const hour = new Date().getHours();
-    const firstName = userName.split(' ')[0] || 'Priya';
+    const firstName = userName.split(' ')[0] || 'there';
     if (hour < 12) return `Good Morning, ${firstName} ☀️`;
     if (hour < 17) return `Good Afternoon, ${firstName} 🌤️`;
     return `Good Evening, ${firstName} 🌙`;
   };
 
-  // Profile avatar
-  const avatarUrl =
-    profile?.avatarUrl ||
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80';
+  // AI-generated avatar (never a stock photo)
+  const avatarUrl = resolveAvatarUrl(profile?.avatarUrl, currentUserId);
+
+  // Follow-up tasks may point at a lead that is no longer assigned; open the
+  // action modals with what the task itself knows.
+  const leadForTask = (task: FollowUpTask): Lead =>
+    leads.find(l => l.id === task.leadId) || {
+      id: task.leadId,
+      name: task.leadName,
+      company: task.company,
+      contact: '',
+      sourceId: 'whatsapp' as any,
+      departmentId: 'wabastore',
+      assignedTo: currentUserId,
+      receivedAt: new Date().toISOString(),
+      status: 'Verified' as any,
+      rawPayload: {}
+    };
 
   // --- ACTIONS ---
   const handleConfirmCall = () => {
@@ -306,8 +306,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     <TeamMemberLayout
       activeNav={activeNav}
       onSelectNav={setActiveNav}
-      searchQuery={globalSearch}
-      onSearchChange={setGlobalSearch}
     >
       <div className="space-y-6 max-w-7xl mx-auto pb-10">
         {/* TOAST NOTIFICATION */}
@@ -349,71 +347,28 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
               </div>
             </div>
 
-            {/* TOP 4 METRIC KPI CARDS */}
+            {/* TOP 4 METRIC KPI CARDS (computed from the member's own records) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-slate-500">Total Leads</span>
-                  <div className="text-2xl font-bold font-heading text-slate-900 leading-none">
-                    {kpis.totalLeads}
+              {[
+                { label: 'Total Leads', value: kpis.totalLeads, note: `${kpis.newLeadsThisWeek} new in last 7 days`, icon: Users, tone: 'bg-blue-50 text-blue-600' },
+                { label: 'Follow-ups Due', value: kpis.followUpsDue, note: 'Open follow-ups', icon: Clock, tone: 'bg-amber-50 text-amber-600' },
+                { label: 'Converted Leads', value: kpis.convertedLeads, note: `${kpis.conversionRate}% conversion`, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' },
+                { label: 'Deals in Progress', value: kpis.dealsInProgress, note: 'Contacted to proposal', icon: Handshake, tone: 'bg-purple-50 text-purple-600' }
+              ].map(card => {
+                const Icon = card.icon;
+                return (
+                  <div key={card.label} className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-slate-500">{card.label}</span>
+                      <div className="text-2xl font-bold font-heading text-slate-900 leading-none">{card.value}</div>
+                      <div className="text-[11px] font-medium text-slate-400 pt-1">{card.note}</div>
+                    </div>
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${card.tone}`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
-                    <TrendingUp className="w-3 h-3" />
-                    <span>{kpis.totalLeadsGrowth} vs. last 7 days</span>
-                  </div>
-                </div>
-                <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                  <Users className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-slate-500">Follow-ups Due</span>
-                  <div className="text-2xl font-bold font-heading text-slate-900 leading-none">
-                    {kpis.followUpsDue}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
-                    <TrendingUp className="w-3 h-3" />
-                    <span>{kpis.followUpsGrowth} vs. last 7 days</span>
-                  </div>
-                </div>
-                <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-slate-500">Converted Leads</span>
-                  <div className="text-2xl font-bold font-heading text-slate-900 leading-none">
-                    {kpis.convertedLeads}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
-                    <TrendingUp className="w-3 h-3" />
-                    <span>{kpis.convertedGrowth} vs. last 7 days</span>
-                  </div>
-                </div>
-                <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-medium text-slate-500">Deals in Progress</span>
-                  <div className="text-2xl font-bold font-heading text-slate-900 leading-none">
-                    {kpis.dealsInProgress}
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 pt-1">
-                    <TrendingUp className="w-3 h-3" />
-                    <span>{kpis.dealsGrowth} vs. last 7 days</span>
-                  </div>
-                </div>
-                <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
+                );
+              })}
             </div>
 
             {/* MAIN HOME GRID: LEAD SOURCE, CONVERSION RATE & NEW UPDATES ON HOME SECTION */}
@@ -426,10 +381,9 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <MemberAnalyticsWidgets
                     leadSources={leadSources}
-                    conversionRate={28}
-                    conversionChange="+6%"
-                    convertedCount={8}
-                    totalLeads={leads.length || 28}
+                    conversionRate={kpis.conversionRate}
+                    convertedCount={kpis.convertedLeads}
+                    totalLeads={kpis.totalLeads}
                   />
 
                   {/* 2. RECENT / NEW UPDATES PANEL ON HOME SECTION */}
@@ -448,6 +402,9 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                       </div>
 
                       <div className="space-y-3.5">
+                        {recentUpdates.length === 0 && (
+                          <p className="text-xs text-slate-400 py-6 text-center">No updates yet.</p>
+                        )}
                         {recentUpdates.map((update) => (
                           <div key={update.id} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors">
                             <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
@@ -466,13 +423,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-500">Live webhook synchronization</span>
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                        Connected
-                      </span>
-                    </div>
                   </div>
                 </div>
 
@@ -481,35 +431,11 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                   <MemberFollowUpsTable
                     followUps={followUps}
                     onCall={(task) => {
-                      const lead = leads.find(l => l.id === task.leadId) || {
-                        id: task.leadId,
-                        name: task.leadName,
-                        company: task.company,
-                        contact: '+91 98765 00000',
-                        sourceId: 'whatsapp' as any,
-                        departmentId: 'wabastore',
-                        assignedTo: currentUserId,
-                        receivedAt: new Date().toISOString(),
-                        status: 'Verified' as any,
-                        rawPayload: {}
-                      };
-                      setSelectedLead(lead);
+                      setSelectedLead(leadForTask(task));
                       setActionModalType('call');
                     }}
                     onOpenMessage={(task) => {
-                      const lead = leads.find(l => l.id === task.leadId) || {
-                        id: task.leadId,
-                        name: task.leadName,
-                        company: task.company,
-                        contact: '+91 98765 00000',
-                        sourceId: 'whatsapp' as any,
-                        departmentId: 'wabastore',
-                        assignedTo: currentUserId,
-                        receivedAt: new Date().toISOString(),
-                        status: 'Verified' as any,
-                        rawPayload: {}
-                      };
-                      setSelectedLead(lead);
+                      setSelectedLead(leadForTask(task));
                       setActionModalType('message');
                     }}
                     onViewDetails={(task) => {
@@ -643,35 +569,11 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             <MemberFollowUpsTable
               followUps={followUps}
               onCall={(task) => {
-                const lead = leads.find(l => l.id === task.leadId) || {
-                  id: task.leadId,
-                  name: task.leadName,
-                  company: task.company,
-                  contact: '+91 98765 00000',
-                  sourceId: 'whatsapp' as any,
-                  departmentId: 'wabastore',
-                  assignedTo: currentUserId,
-                  receivedAt: new Date().toISOString(),
-                  status: 'Verified' as any,
-                  rawPayload: {}
-                };
-                setSelectedLead(lead);
+                setSelectedLead(leadForTask(task));
                 setActionModalType('call');
               }}
               onOpenMessage={(task) => {
-                const lead = leads.find(l => l.id === task.leadId) || {
-                  id: task.leadId,
-                  name: task.leadName,
-                  company: task.company,
-                  contact: '+91 98765 00000',
-                  sourceId: 'whatsapp' as any,
-                  departmentId: 'wabastore',
-                  assignedTo: currentUserId,
-                  receivedAt: new Date().toISOString(),
-                  status: 'Verified' as any,
-                  rawPayload: {}
-                };
-                setSelectedLead(lead);
+                setSelectedLead(leadForTask(task));
                 setActionModalType('message');
               }}
               onViewDetails={(task) => {
@@ -722,14 +624,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* VIEW 8: PERFORMANCE REPORTS */}
-        {/* ========================================================================= */}
-        {activeNav === 'reports' && (
-          <MemberReportsDashboard currentUserId={currentUserId} />
-        )}
-
-        {/* ========================================================================= */}
-        {/* VIEW 9: SETTINGS & TARGETS */}
+        {/* VIEW 8: SETTINGS & TARGETS */}
         {/* ========================================================================= */}
         {activeNav === 'settings' && (
           <MemberSettingsDashboard

@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { meApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
+import { generatedAvatarUrl, resolveAvatarUrl } from '../../lib/avatar';
 
 interface MemberSettingsDashboardProps {
   currentUserId: string;
@@ -52,6 +53,17 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
     }
   };
 
+  // Avatars are always AI-generated; "regenerate" stores a fresh one.
+  const handleRegenerateAvatar = async () => {
+    setSaveError(null);
+    try {
+      await meApi.update({ avatarUrl: generatedAvatarUrl(`${currentUserId}-${Date.now()}`) });
+      await refreshProfile();
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {saveError && (
@@ -83,21 +95,19 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
 
           <div className="flex items-center gap-4">
             <img
-              src={
-                profile?.avatarUrl ||
-                'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'
-              }
+              src={resolveAvatarUrl(profile?.avatarUrl, currentUserId)}
               alt={name}
               className="w-16 h-16 rounded-2xl object-cover ring-2 ring-blue-500/20 shadow-xs"
             />
             <div>
               <button
                 type="button"
+                onClick={handleRegenerateAvatar}
                 className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs transition-colors"
               >
-                Change Avatar
+                Generate New Avatar
               </button>
-              <p className="text-[11px] text-slate-400 mt-1">Recommended size 200x200px (JPG, PNG)</p>
+              <p className="text-[11px] text-slate-400 mt-1">Your avatar is AI-generated for you.</p>
             </div>
           </div>
 

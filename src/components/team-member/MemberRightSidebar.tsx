@@ -92,21 +92,30 @@ export const MemberRightSidebar: React.FC<MemberRightSidebarProps> = ({
 
         {/* Progress Bar */}
         <div className="mt-4 pt-3 border-t border-slate-100">
-          <div className="flex items-center justify-between text-xs mb-1.5">
-            <span className="text-slate-500 font-medium">Target</span>
-            <span className="font-bold text-slate-800">
-              {target.current} / {target.goal} deals
-            </span>
-          </div>
-          <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden relative">
-            <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-500 ease-out"
-              style={{ width: `${Math.min(100, target.percentage)}%` }}
-            />
-          </div>
-          <div className="text-right text-[11px] font-bold text-blue-600 mt-1">
-            {target.percentage}%
-          </div>
+          {target.goal > 0 ? (
+            <>
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-slate-500 font-medium">Target</span>
+                <span className="font-bold text-slate-800">
+                  {target.current} / {target.goal} deals
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden relative">
+                <div
+                  className="h-full rounded-full bg-blue-600 transition-all duration-500 ease-out"
+                  style={{ width: `${Math.min(100, target.percentage)}%` }}
+                />
+              </div>
+              <div className="text-right text-[11px] font-bold text-blue-600 mt-1">
+                {target.percentage}%
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-medium">Target</span>
+              <span className="text-slate-400">No target assigned yet</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -208,6 +217,9 @@ export const MemberRightSidebar: React.FC<MemberRightSidebarProps> = ({
         </div>
 
         <div className="space-y-3">
+          {recentUpdates.length === 0 && (
+            <p className="text-xs text-slate-400 py-3 text-center">No recent updates.</p>
+          )}
           {recentUpdates.slice(0, 3).map(update => (
             <div key={update.id} className="flex items-start gap-2.5">
               <div className="w-6 h-6 rounded-lg bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">

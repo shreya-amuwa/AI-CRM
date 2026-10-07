@@ -1,3 +1,4 @@
+import { generatedAvatarUrl } from '../lib/avatar';
 import {
   TeamLeadUser,
   TeamRepPerformance,
@@ -14,7 +15,7 @@ export const SAMPLE_TEAM_LEAD: TeamLeadUser = {
   title: 'Sales Team Lead',
   podName: 'WabaStore Sales Pod Alpha',
   departmentId: 'wabastore',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  avatar: generatedAvatarUrl('tl-vikram'),
   teamMemberIds: ['tm-priya', 'tm-rahul', 'tm-amit', 'tm-sneha', 'tm-rohan']
 };
 
@@ -23,7 +24,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-priya',
     name: 'Priya Nair',
     email: 'priya@amuwa.com',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-priya'),
     status: 'Available',
     activeLeads: 28,
     callsToday: 18,
@@ -41,7 +42,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-rahul',
     name: 'Rahul Kumar',
     email: 'rahul@amuwa.com',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-rahul'),
     status: 'On Call',
     activeLeads: 21,
     callsToday: 14,
@@ -59,7 +60,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-amit',
     name: 'Amit Patel',
     email: 'amit@amuwa.com',
-    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-amit'),
     status: 'In Demo',
     activeLeads: 24,
     callsToday: 16,
@@ -77,7 +78,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-sneha',
     name: 'Sneha Deshmukh',
     email: 'sneha.d@amuwa.com',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-sneha'),
     status: 'Available',
     activeLeads: 16,
     callsToday: 12,
@@ -95,7 +96,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-rohan',
     name: 'Rohan Varma',
     email: 'rohan.v@amuwa.com',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-rohan'),
     status: 'Offline',
     activeLeads: 14,
     callsToday: 9,

@@ -1,21 +1,18 @@
 import React from 'react';
-import { TrendingUp } from 'lucide-react';
 import { LeadSourceStat } from '../../types/crm';
 
 interface MemberAnalyticsWidgetsProps {
   leadSources: LeadSourceStat[];
-  conversionRate?: number;
-  conversionChange?: string;
-  convertedCount?: number;
-  totalLeads?: number;
+  conversionRate: number;
+  convertedCount: number;
+  totalLeads: number;
 }
 
 export const MemberAnalyticsWidgets: React.FC<MemberAnalyticsWidgetsProps> = ({
   leadSources,
-  conversionRate = 28,
-  conversionChange = '+6%',
-  convertedCount = 8,
-  totalLeads = 28
+  conversionRate,
+  convertedCount,
+  totalLeads
 }) => {
   // SVG Donut calculation
   const size = 120;
@@ -25,7 +22,7 @@ export const MemberAnalyticsWidgets: React.FC<MemberAnalyticsWidgetsProps> = ({
 
   // Compute strokeDasharrays for donut
   let cumulativeOffset = 0;
-  const segments = leadSources.map((source) => {
+  const segments = leadSources.filter(source => source.count > 0).map((source) => {
     const strokeDasharray = `${(source.percentage / 100) * circumference} ${circumference}`;
     const strokeDashoffset = -cumulativeOffset;
     cumulativeOffset += (source.percentage / 100) * circumference;
@@ -102,44 +99,13 @@ export const MemberAnalyticsWidgets: React.FC<MemberAnalyticsWidgetsProps> = ({
 
       {/* 2. CONVERSION RATE CARD */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-xs font-bold font-heading text-slate-900">Conversion Rate</h3>
-            <div className="flex items-baseline gap-2 mt-2">
-              <span className="text-2xl font-bold font-heading text-slate-900">{conversionRate}%</span>
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold text-emerald-600 bg-emerald-50">
-                <TrendingUp className="w-2.5 h-2.5" />
-                <span>{conversionChange}</span>
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {convertedCount} out of {totalLeads} leads converted
-            </p>
-          </div>
-
-          {/* Mini Sparkline Chart */}
-          <div className="w-24 h-12 pt-2">
-            <svg className="w-full h-full overflow-visible" viewBox="0 0 100 40">
-              <defs>
-                <linearGradient id="sparklineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-              <path
-                d="M 0,35 Q 20,25 40,30 T 70,15 T 100,5"
-                fill="none"
-                stroke="#10B981"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
-              <path
-                d="M 0,35 Q 20,25 40,30 T 70,15 T 100,5 L 100,40 L 0,40 Z"
-                fill="url(#sparklineGrad)"
-              />
-              <circle cx="100" cy="5" r="3" fill="#10B981" />
-            </svg>
-          </div>
+        <h3 className="text-xs font-bold font-heading text-slate-900">Conversion Rate</h3>
+        <div className="text-2xl font-bold font-heading text-slate-900 mt-2">{conversionRate}%</div>
+        <p className="text-[11px] text-slate-500 mt-1">
+          {convertedCount} out of {totalLeads} leads converted
+        </p>
+        <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden mt-3">
+          <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.min(100, conversionRate)}%` }} />
         </div>
       </div>
     </div>

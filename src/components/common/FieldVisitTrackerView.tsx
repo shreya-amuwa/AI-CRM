@@ -148,7 +148,22 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
         </div>
       )}
 
-      {/* Header Banner */}
+      {/* Team members get a plain header; the tracking banner is for managers. */}
+      {viewerRole === 'team-member' ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">Field Visits</h1>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Start and manage your on-site client visits.</p>
+          </div>
+          <button
+            onClick={() => setShowStartVisitModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Start New Field Visit</span>
+          </button>
+        </div>
+      ) : (
       <div className="p-6 rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white shadow-xl relative overflow-hidden">
         <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500/20 via-transparent to-transparent pointer-events-none" />
 
@@ -232,6 +247,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
           </div>
         </div>
       </div>
+      )}
 
       {/* Main Grid: Visits List on Left, Active Tracking Dossier on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
