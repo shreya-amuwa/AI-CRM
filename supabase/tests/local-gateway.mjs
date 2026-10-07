@@ -2,6 +2,9 @@
 //   /rest/v1/*  → proxied to a real PostgREST (JWT-authenticated, RLS applies)
 //   /auth/v1/*  → minimal GoTrue emulation: token verification, sign-in,
 //                 admin create/update user (writes auth.users directly)
+//   /storage/v1/* → in-memory Storage emulation (private buckets only): signed
+//                 upload tokens, signed download URLs, list, remove. Object
+//                 operations other than token-based ones need the service role.
 // Env: GATEWAY_PORT, POSTGREST_URL, JWT_SECRET, PG* for the database.
 import http from 'node:http';
 import crypto from 'node:crypto';
@@ -96,6 +99,86 @@ async function handleAuth(req, res, path) {
   return json(res, 404, { msg: `unhandled auth route ${req.method} ${path}` });
 }
 
+// ---- Storage emulation ------------------------------------------------------
+const objects = new Map(); // "bucket/path" → { body: Buffer, contentType, created }
+const tokens = new Map();  // token → { key, kind: 'upload' | 'read', exp }
+const readRaw = req => new Promise(r => { const c = []; req.on('data', d => c.push(d)); req.on('end', () => r(Buffer.concat(c))); });
+const newToken = (key, kind, seconds) => {
+  const t = crypto.randomBytes(24).toString('base64url');
+  tokens.set(t, { key, kind, exp: Date.now() + seconds * 1000 });
+  return t;
+};
+async function bucketRules(bucket) {
+  const { rows } = await db.query('select file_size_limit, allowed_mime_types from storage.buckets where id = $1', [bucket]);
+  return rows[0];
+}
+async function handleStorage(req, res, path, url) {
+  const claims = verifyJwt((req.headers.authorization || '').replace(/^Bearer /i, '') || req.headers.apikey);
+  const service = claims?.role === 'service_role';
+  let m;
+  // Token-based upload (browser): PUT /object/upload/sign/<bucket>/<path>?token=
+  if ((m = /^\/object\/upload\/sign\/(.+)$/.exec(path)) && req.method === 'PUT') {
+    const key = decodeURIComponent(m[1]);
+    const t = tokens.get(url.searchParams.get('token'));
+    if (!t || t.kind !== 'upload' || t.key !== key || t.exp < Date.now()) return json(res, 400, { statusCode: '403', error: 'InvalidSignature', message: 'invalid signature' });
+    if (objects.has(key)) return json(res, 400, { statusCode: '409', error: 'Duplicate', message: 'The resource already exists' });
+    const rules = await bucketRules(key.split('/')[0]);
+    const body = await readRaw(req);
+    const type = (req.headers['content-type'] || '').split(';')[0];
+    if (rules?.allowed_mime_types && !rules.allowed_mime_types.includes(type)) return json(res, 400, { statusCode: '415', error: 'invalid_mime_type', message: `mime type ${type} is not supported` });
+    if (rules?.file_size_limit && body.length > Number(rules.file_size_limit)) return json(res, 400, { statusCode: '413', error: 'Payload too large', message: 'The object exceeded the maximum allowed size' });
+    tokens.delete(url.searchParams.get('token'));
+    objects.set(key, { body, contentType: type, created: new Date().toISOString() });
+    return json(res, 200, { Key: key });
+  }
+  // Token-based read: GET /object/sign/<bucket>/<path>?token=
+  if ((m = /^\/object\/sign\/(.+)$/.exec(path)) && req.method === 'GET') {
+    const key = decodeURIComponent(m[1]);
+    const t = tokens.get(url.searchParams.get('token'));
+    if (!t || t.kind !== 'read' || t.key !== key || t.exp < Date.now()) return json(res, 400, { statusCode: '400', error: 'InvalidJWT', message: 'jwt expired or invalid' });
+    const obj = objects.get(key);
+    if (!obj) return json(res, 404, { statusCode: '404', error: 'not_found', message: 'Object not found' });
+    const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
+    const body = range ? obj.body.subarray(Number(range[1]), Number(range[2]) + 1) : obj.body;
+    const headers = { 'content-type': obj.contentType, ...CORS };
+    if (url.searchParams.has('download')) headers['content-disposition'] = `attachment; filename="${url.searchParams.get('download') || key.split('/').pop()}"`;
+    res.writeHead(range ? 206 : 200, headers);
+    return res.end(body);
+  }
+  if (!service) return json(res, 403, { statusCode: '403', error: 'Unauthorized', message: 'new row violates row-level security policy' });
+  if ((m = /^\/object\/upload\/sign\/(.+)$/.exec(path)) && req.method === 'POST') {
+    const key = decodeURIComponent(m[1]);
+    return json(res, 200, { url: `/object/upload/sign/${m[1]}?token=${newToken(key, 'upload', 7200)}` });
+  }
+  if ((m = /^\/object\/sign\/(.+)$/.exec(path)) && req.method === 'POST') {
+    const key = decodeURIComponent(m[1]);
+    const body = JSON.parse((await readBody(req)) || '{}');
+    if (!objects.has(key)) return json(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' });
+    return json(res, 200, { signedURL: `/object/sign/${m[1]}?token=${newToken(key, 'read', Number(body.expiresIn) || 60)}` });
+  }
+  if ((m = /^\/object\/list\/([^/]+)$/.exec(path)) && req.method === 'POST') {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const prefix = `${m[1]}/${body.prefix ? body.prefix.replace(/\/$/, '') + '/' : ''}`;
+    const out = [];
+    for (const [key, obj] of objects) {
+      if (!key.startsWith(prefix) || key.slice(prefix.length).includes('/')) continue;
+      const name = key.slice(prefix.length);
+      if (body.search && !name.includes(body.search)) continue;
+      out.push({ name, id: key, created_at: obj.created, metadata: { size: obj.body.length, mimetype: obj.contentType } });
+    }
+    return json(res, 200, out.slice(0, body.limit || 100));
+  }
+  if ((m = /^\/object\/([^/]+)$/.exec(path)) && req.method === 'DELETE') {
+    const body = JSON.parse((await readBody(req)) || '{}');
+    const removed = [];
+    for (const p of body.prefixes || []) if (objects.delete(`${m[1]}/${p}`)) removed.push({ name: p });
+    return json(res, 200, removed);
+  }
+  // Test hook: GET /__objects lists stored keys (service role only).
+  if (path === '/__objects') return json(res, 200, [...objects.keys()]);
+  return json(res, 404, { msg: `unhandled storage route ${req.method} ${path}` });
+}
+
 http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
@@ -109,6 +192,13 @@ http.createServer(async (req, res) => {
         return res.end();
       }
       return await handleAuth(req, res, url.pathname.slice(8));
+    }
+    if (url.pathname.startsWith('/storage/v1')) {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, { ...CORS, 'access-control-allow-headers': CORS['access-control-allow-headers'] + ', x-upsert, cache-control, range' });
+        return res.end();
+      }
+      return await handleStorage(req, res, url.pathname.slice(11), url);
     }
     if (url.pathname.startsWith('/rest/v1')) {
       const target = POSTGREST_URL + url.pathname.slice(8) + url.search;

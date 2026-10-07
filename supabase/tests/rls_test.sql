@@ -425,4 +425,168 @@ select test.check((select count(*) = 0 from member_follow_ups), 'other team head
 reset role;
 select test.check((select count(*) = 0 from profiles where avatar_url is not null), 'no profile carries an avatar');
 
+-- ---------------------------------------------------------------------------
+\echo '--- 12. Sales pipeline: Lead → Potential → Onboarding'
+-- ---------------------------------------------------------------------------
+set role authenticated;
+select test.login('tm_a');
+create temp table pipeline (name text primary key, id uuid);
+reset role;
+grant all on pipeline to authenticated;
+set role authenticated;
+insert into pipeline select 'A', create_lead(
+  '{"name":"Ankit Shah","company":"Shree Ganesh Jewellers","phone":"+91 98765 11111","city":"Mumbai","leadSource":"Walk-in","businessCategory":"Jewellery / Gold"}',
+  array['META_ADS_MANAGEMENT','YEARLY_GOLD_RATE_PACKAGE']);
+select test.check((select lifecycle_stage = 'LEAD' and lead_status = 'NEW' and owner_id = test.id('tm_a') from customers where id = (select id from pipeline where name = 'A')),
+  'create_lead stores one LEAD customer owned by the salesperson');
+select test.check((select count(*) = 2 from customer_services where customer_id = (select id from pipeline where name = 'A')), 'services stored with the lead');
+select test.check((select count(*) = 1 from customer_activities where customer_id = (select id from pipeline where name = 'A') and type = 'LEAD_CREATED'), 'lead creation logged as activity');
+select test.must_fail($$select create_lead('{"name":"X","phone":"12345678"}', array[]::text[])$$, 'a lead needs at least one service', 'service');
+select test.must_fail($$select create_lead('{"name":"X","phone":"12345678"}', array['NOPE'])$$, 'unknown services are rejected', 'Unknown service');
+select test.must_fail($$insert into customers (name, phone, lifecycle_stage) values ('Skip', '12345678', 'ONBOARDING')$$,
+  'cannot create a record directly in a later stage', 'start as a lead');
+select test.must_fail($$update customers set lifecycle_stage = 'ONBOARDING' where id = (select id from pipeline where name = 'A')$$,
+  'cannot change lifecycle stage directly', 'permission denied');
+select test.must_fail($$update customers set amount_received = 999 where id = (select id from pipeline where name = 'A')$$,
+  'cannot write payment fields directly', 'permission denied');
+select update_lead((select id from pipeline where name = 'A'), '{"leadStatus":"CONTACTED","activityNote":"Called, sent brochure"}');
+select test.check((select lead_status = 'CONTACTED' from customers where id = (select id from pipeline where name = 'A')), 'lead status updated');
+select test.check((select count(*) = 1 from customer_activities where type = 'STATUS_CONTACTED' and note = 'Called, sent brochure'), 'status change logged with note');
+select test.must_fail($$select move_customer_to_potential((select id from pipeline where name = 'A'), 0, current_date + 7)$$,
+  'moving to Potential needs a deal amount', 'deal amount');
+
+select test.login('pending_d');
+select test.must_fail($$select update_lead((select id from pipeline where name = 'A'), '{"name":"hijack"}')$$, 'teammate cannot edit another member''s lead', 'NOT_FOUND');
+select test.must_fail($$select move_customer_to_potential((select id from pipeline where name = 'A'), 100, current_date)$$, 'teammate cannot move another member''s lead', 'NOT_FOUND');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'other department cannot see the lead');
+
+select test.login('tm_a');
+select move_customer_to_potential((select id from pipeline where name = 'A'), 42000, current_date + 7);
+select test.check((select lifecycle_stage = 'POTENTIAL' and lead_status = 'READY_TO_BUY' and deal_amount = 42000 from customers where id = (select id from pipeline where name = 'A')),
+  'LEAD → POTENTIAL on the same record (no duplicate)');
+select test.check((select count(*) = 1 from customers where company = 'Shree Ganesh Jewellers'), 'still exactly one customer row');
+select test.must_fail($$select update_lead((select id from pipeline where name = 'A'), '{"leadStatus":"NEW"}')$$, 'lead status frozen after leaving Leads', 'only change while');
+select test.must_fail($$select record_customer_payment((select id from pipeline where name = 'A'), 50000)$$, 'payment cannot exceed deal amount', 'exceed');
+select record_customer_payment((select id from pipeline where name = 'A'), 15000, 'UPI');
+select test.check((select amount_received = 15000 from customers where id = (select id from pipeline where name = 'A')), 'part payment recorded');
+select test.must_fail($$select start_customer_onboarding((select id from pipeline where name = 'A'), 0, null)$$, 'onboarding needs a payment method', 'how the customer paid');
+select start_customer_onboarding((select id from pipeline where name = 'A'), 27000, 'UPI', current_date + 10);
+select test.check((select lifecycle_stage = 'ONBOARDING' and amount_received = 42000 from customers where id = (select id from pipeline where name = 'A')),
+  'POTENTIAL → ONBOARDING with full payment');
+select test.check((select stage = 'COLLECT_REQUIREMENTS' and payment_method = 'UPI' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'onboarding record created');
+select test.must_fail($$select start_customer_onboarding((select id from pipeline where name = 'A'), 1, 'UPI')$$, 'cannot start onboarding twice', 'CONFLICT');
+
+-- A second customer of the same salesperson (isolation of documents per customer)
+insert into pipeline select 'B', create_lead('{"name":"Sneha Pillai","company":"Pillai Skin Clinic","phone":"+91 90000 22222"}', array['AI_CALLING']);
+select move_customer_to_potential((select id from pipeline where name = 'B'), 60000, current_date + 3);
+select start_customer_onboarding((select id from pipeline where name = 'B'), 30000, 'BANK_TRANSFER');
+reset role;
+select test.check((select count(*) = 2 from audit_logs where action = 'CUSTOMER_STAGE_CHANGED' and entity_id = (select id from pipeline where name = 'A')),
+  'both stage changes audited');
+
+-- ---------------------------------------------------------------------------
+\echo '--- 13. Customer documents (metadata + authorization)'
+-- ---------------------------------------------------------------------------
+create temp table docs (name text primary key, id uuid, path text);
+grant all on docs to authenticated;
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.png', 'image/png', 1000)$$,
+  'only PDFs are accepted', 'must be a PDF');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'big.pdf', 'application/pdf', 50000000)$$,
+  'file size limit enforced', 'smaller than');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'PASSPORT', 'x.pdf', 'application/pdf', 1000)$$,
+  'unknown document type rejected', 'Unknown document type');
+insert into docs select 'A_inv1', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'invoice-oct.pdf', 'application/pdf', 1200);
+select test.check((select path = format('customers/%s/invoices/%s.pdf', (select id from pipeline where name = 'A'), id) from docs where name = 'A_inv1'),
+  'storage path = customers/<customer_id>/invoices/<document_id>.pdf (no PII)');
+select test.check((select status = 'PENDING' from customer_documents where id = (select id from docs where name = 'A_inv1')), 'metadata starts PENDING until the file is verified');
+select test.must_fail($$insert into customer_documents (customer_id, document_type, version, storage_path, original_file_name, mime_type)
+  values ((select id from pipeline where name = 'B'), 'INVOICE', 9, 'customers/x/y.pdf', 'x.pdf', 'application/pdf')$$,
+  'cannot insert document metadata directly', 'permission denied');
+select test.must_fail($$update customer_documents set customer_id = (select id from pipeline where name = 'B')$$,
+  'cannot re-map a document to another customer', 'permission denied');
+select complete_document_upload((select id from docs where name = 'A_inv1'), 1200);
+select test.must_fail($$select complete_document_upload((select id from docs where name = 'A_inv1'), 1200)$$, 'cannot complete twice', 'already finished');
+insert into docs select 'A_inv2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'invoice-v2.pdf', 'application/pdf', 1300);
+select complete_document_upload((select id from docs where name = 'A_inv2'), 1300);
+select test.check((select status = 'SUPERSEDED' from customer_documents where id = (select id from docs where name = 'A_inv1'))
+              and (select status = 'UPLOADED' and version = 2 from customer_documents where id = (select id from docs where name = 'A_inv2')),
+  'replacement keeps the old version (SUPERSEDED) and the new one current');
+insert into docs select 'B_inv', id, storage_path from begin_document_upload((select id from pipeline where name = 'B'), 'INVOICE', 'b.pdf', 'application/pdf', 900);
+select complete_document_upload((select id from docs where name = 'B_inv'), 900);
+select test.check((select bool_and(customer_id = (select id from pipeline where name = 'A')) from customer_documents where document_type = 'INVOICE' and id in (select id from docs where name like 'A_%')),
+  'customer A documents map to customer A only');
+select test.check((select count(*) = 1 from customer_documents where customer_id = (select id from pipeline where name = 'B')), 'customer B sees only its own document');
+insert into docs select 'A_fail', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc.pdf', 'application/pdf', 5000);
+select test.check((select fail_document_upload((select id from docs where name = 'A_fail')) = (select path from docs where name = 'A_fail')), 'failed upload returns path for cleanup');
+select test.check((select status = 'FAILED' from customer_documents where id = (select id from docs where name = 'A_fail')), 'failed upload never shows as uploaded');
+select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$, 'forwarding needs all mandatory documents', 'All Important Documents');
+select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_inv2'), 'VIEW')), 'owner may view own customer document');
+
+select test.login('pending_d');
+select test.must_fail($$select * from authorize_document_access((select id from docs where name = 'A_inv2'), 'DOWNLOAD')$$, 'teammate cannot open another member''s document', 'NOT_FOUND');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 100)$$, 'teammate cannot upload to another member''s customer', 'NOT_FOUND');
+select test.must_fail($$select delete_customer_document((select id from docs where name = 'A_inv2'))$$, 'teammate cannot delete another member''s document', 'NOT_FOUND');
+select test.check((select count(*) = 0 from customer_documents), 'teammate cannot list another member''s documents');
+select test.login('tm_c');
+select test.must_fail($$select * from authorize_document_access((select id from docs where name = 'A_inv2'), 'VIEW')$$, 'other department cannot open the document', 'NOT_FOUND');
+select test.login('dh_wbx');
+select test.check((select count(*) = 0 from customer_documents), 'other department head sees no documents');
+select test.login('th_wab');
+select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_inv2'), 'DOWNLOAD')), 'team head may download team customer documents');
+select test.login('dh_wab');
+select test.check((select count(*) >= 3 from customer_documents), 'department head sees department documents');
+
+select test.login('tm_a');
+insert into docs select 'A_kyc', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'aadhaar-pan.pdf', 'application/pdf', 5000);
+select test.check((select path like '%/onboarding/%' from docs where name = 'A_kyc'), 'important documents stored under onboarding/');
+select complete_document_upload((select id from docs where name = 'A_kyc'), 5000);
+select forward_onboarding_to_support((select id from pipeline where name = 'A'));
+select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
+                   and (select mandatory_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'B')),
+  'onboarding progress tracks saved mandatory documents per customer');
+select test.check((select stage = 'SETUP' and forwarded_to_support_at is not null from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'forwarded to support once mandatory documents are saved');
+select test.must_fail($$select delete_customer_document((select id from docs where name = 'A_kyc'))$$, 'current documents locked after forwarding', 'locked');
+select test.check((select delete_customer_document((select id from docs where name = 'A_inv1')) = (select path from docs where name = 'A_inv1')),
+  'old version can be deleted (path returned for storage removal)');
+select test.check((select count(*) = 0 from customer_documents where id = (select id from docs where name = 'A_inv1')), 'deleted document hidden from listings');
+select test.must_fail($$select expire_stale_document_uploads()$$, 'only the server may expire stale uploads', 'permission denied');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_FORWARDED' and recipient_id = test.id('tm_b')),
+  'support team head notified');
+select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_REPLACED' and actor_id = test.id('tm_a') and metadata ->> 'customer_id' = (select id::text from pipeline where name = 'A')),
+  'invoice replacement audited with actor + customer');
+select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_DOWNLOADED' and actor_id = test.id('th_wab')), 'download audited');
+select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_DELETED'), 'deletion audited');
+
+-- ---------------------------------------------------------------------------
+\echo '--- 14. Inbound webhook leads → pipeline'
+-- ---------------------------------------------------------------------------
+insert into crm_leads (id, name, phone, department, channel, stage) values ('L-in', 'Inbound Ravi', '+91 91234 56789', 'wabastore', 'whatsapp', 'Interested');
+insert into crm_leads (id, name, department) values ('L-nocontact', 'No contact', 'wabastore');
+set role authenticated;
+select test.login('tm_c');
+select test.must_fail($$select claim_inbound_lead('L-in')$$, 'other department cannot claim the lead', 'NOT_FOUND');
+select test.login('tm_a');
+insert into pipeline select 'IN', claim_inbound_lead('L-in');
+select test.check((select lifecycle_stage = 'LEAD' and lead_status = 'INTERESTED' and source_lead_id = 'L-in' from customers where id = (select id from pipeline where name = 'IN')),
+  'claiming converts the inbound lead into one LEAD customer');
+select test.must_fail($$select claim_inbound_lead('L-in')$$, 'a lead cannot be claimed twice', 'already in a pipeline');
+select test.must_fail($$select claim_inbound_lead('L-nocontact')$$, 'leads without phone/e-mail are rejected', 'no valid phone');
+select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'all')::int = 2
+                   and (customer_pipeline_counts() -> 'leads' ->> 'INTERESTED')::int = 1), 'pipeline counts scoped to the salesperson');
+select test.check((select (customer_summary() ->> 'total')::int = (select count(*) from customers where lifecycle_stage in ('ONBOARDING', 'CUSTOMER'))
+                   and (select count(*) from customers where lifecycle_stage = 'LEAD') > 0), 'My Customers summary counts only onboarding + paying customers, not leads');
+reset role;
+set role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', false);
+select test.must_fail($$select begin_document_upload(gen_random_uuid(), 'INVOICE', 'x.pdf', 'application/pdf', 1)$$, 'anon cannot start uploads', 'permission denied');
+select test.must_fail($$select * from customer_documents$$, 'anon cannot read document metadata', 'permission denied');
+reset role;
+select test.check((select public = false from storage.buckets where id = 'customer-documents'), 'customer-documents bucket is private');
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='
