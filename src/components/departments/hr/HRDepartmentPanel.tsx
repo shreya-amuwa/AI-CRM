@@ -1800,11 +1800,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                           <td className="p-3.5">
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-9 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center font-mono font-bold text-slate-800 overflow-hidden shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-                                {emp.avatarUrl ? (
-                                  <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" />
-                                ) : (
-                                  <span>{emp.name.charAt(0)}</span>
-                                )}
+                                <span>{emp.name.charAt(0)}</span>
                               </div>
                               <div>
                                 <span className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors block">{emp.name}</span>

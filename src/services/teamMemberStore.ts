@@ -1,6 +1,8 @@
-import { generatedAvatarUrl } from '../lib/avatar';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import {
   Lead,
+  LeadSourceId,
+  DepartmentId,
   TeamMemberActivity,
   EndOfDayReport,
   FollowUpTask,
@@ -8,733 +10,604 @@ import {
   RecentUpdate,
   LeadSourceStat,
   MemberTarget,
-  Customer,
   Invoice,
   CalendarEvent
 } from '../types/crm';
+import { getSupabase } from './supabaseClient';
 
-export interface TeamMemberUser {
-  id: string;
-  name: string;
-  email: string;
-  role: 'team-member';
-  title: string;
-  department: string;
-  departmentId: string;
-  avatar: string;
-  targetCalls: number;
-  targetDemos: number;
-  targetDeals: number;
-  currentDeals: number;
+/**
+ * The team member's workspace, stored in Supabase (see migration
+ * 20261007000200_member_workspace.sql) so every device signed in to the same
+ * account sees the same data.
+ *
+ * Components read synchronously from an in-memory copy; `connect()` loads it
+ * from the database and keeps it current through Realtime, and every write
+ * goes to the database first. Listeners registered with `subscribe()` are
+ * called whenever the copy changes (locally or from another device).
+ *
+ * Leads come only from the live `crm_leads` table (inbound webhooks + leads
+ * the member adds). A member sees leads assigned to them and unassigned leads
+ * of their department; acting on an unassigned lead claims it.
+ */
+
+type Row = Record<string, any>;
+
+const MEMBER_TABLES = [
+  'member_follow_ups',
+  'member_activities',
+  'member_deals',
+  'member_calendar_events',
+  'member_eod_reports',
+  'member_invoices'
+] as const;
+type MemberTable = (typeof MEMBER_TABLES)[number];
+
+const SOURCE_COLORS: Record<string, string> = {
+  WhatsApp: '#10B981',
+  'Meta Ads': '#3B82F6',
+  Website: '#8B5CF6',
+  Referral: '#F59E0B',
+  Other: '#94A3B8'
+};
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
-  {
-    id: 'tm-priya',
-    name: 'Priya Nair',
-    email: 'priya@amuwa.com',
-    role: 'team-member',
-    title: 'Sales Executive',
-    department: 'Wabastore',
-    departmentId: 'wabastore',
-    avatar: generatedAvatarUrl('tm-priya'),
-    targetCalls: 15,
-    targetDemos: 5,
-    targetDeals: 15,
-    currentDeals: 8
-  },
-  {
-    id: 'tm-rahul',
-    name: 'Rahul Kumar',
-    email: 'rahul@amuwa.com',
-    role: 'team-member',
-    title: 'Sales Executive',
-    department: 'Wabastore',
-    departmentId: 'wabastore',
-    avatar: generatedAvatarUrl('tm-rahul'),
-    targetCalls: 12,
-    targetDemos: 4,
-    targetDeals: 12,
-    currentDeals: 6
-  },
-  {
-    id: 'tm-amit',
-    name: 'Amit Patel',
-    email: 'amit@amuwa.com',
-    role: 'team-member',
-    title: 'Senior Sales Specialist',
-    department: 'Wabastore',
-    departmentId: 'wabastore',
-    avatar: generatedAvatarUrl('tm-amit'),
-    targetCalls: 14,
-    targetDemos: 4,
-    targetDeals: 14,
-    currentDeals: 7
-  }
-];
+function localDate(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
-export const INITIAL_PRIYA_LEADS: Lead[] = [];
-export const INITIAL_RAHUL_LEADS: Lead[] = [];
-export const INITIAL_AMIT_LEADS: Lead[] = [];
-export const INITIAL_FOLLOW_UPS: FollowUpTask[] = [];
-export const INITIAL_ACTIVITIES: TeamMemberActivity[] = [];
-export const INITIAL_RECENT_UPDATES: RecentUpdate[] = [];
-export const INITIAL_CUSTOMERS: Customer[] = [];
-export const INITIAL_CUSTOMER_ACTIVITIES: any[] = [];
-export const INITIAL_INVOICES: Invoice[] = [
-  {
-    id: 'INV-WAB-001',
-    invoiceNumber: 'WAB-SLS-2026-101',
-    customerName: 'Rajesh Mehra',
-    company: 'Titan Company Limited',
-    amount: 185000,
-    issueDate: 'Sep 25, 2026',
-    dueDate: '2026-10-15',
-    status: 'Paid',
-    departmentId: 'wabastore-sales',
-    departmentName: 'Wabastore (Sales Division)',
-    division: 'Sales',
-    terms: 'Net 15 days. Subject to Meta Cloud WhatsApp Commerce terms.',
-    contactEmail: 'billing@wabastore.com',
-    contactPhone: '+91 80 4912 2001',
-    userId: 'tm-priya',
-    teamMemberId: 'tm-priya',
-    teamMemberName: 'Priya Nair',
-    teamMemberRole: 'Sales Executive',
-    items: [
-      { description: 'Wabastore E-Commerce Storefront Engine & Catalog Sync', quantity: 1, rate: 185000, amount: 185000 }
-    ]
-  },
-  {
-    id: 'INV-WBX-001',
-    invoiceNumber: 'WBX-SLS-2026-102',
-    customerName: 'Sanjay Kapoor',
-    company: 'FabIndia Overseas Pvt Ltd',
-    amount: 215000,
-    issueDate: 'Sep 27, 2026',
-    dueDate: '2026-10-18',
-    status: 'Pending',
-    departmentId: 'whatsbox-sales',
-    departmentName: 'Whatsbox (Sales Division)',
-    division: 'Sales',
-    terms: 'Annual subscription billed upfront with 99.9% uptime SLA.',
-    contactEmail: 'sales@whatsbox.com',
-    contactPhone: '+91 80 4912 3001',
-    userId: 'tm-rahul',
-    teamMemberId: 'tm-rahul',
-    teamMemberName: 'Rahul Kumar',
-    teamMemberRole: 'Sales Executive',
-    items: [
-      { description: 'Whatsbox Multi-Agent Unified Inbox License (25 Seats)', quantity: 1, rate: 215000, amount: 215000 }
-    ]
-  },
-  {
-    id: 'INV-DTK-001',
-    invoiceNumber: 'DTK-SLS-2026-103',
-    customerName: 'Girish Kulkarni',
-    company: 'Bajaj Finance Limited',
-    amount: 240000,
-    issueDate: 'Sep 28, 2026',
-    dueDate: '2026-10-12',
-    status: 'Pending',
-    departmentId: 'dtalk-sales',
-    departmentName: 'D-Talk (Sales Division)',
-    division: 'Sales',
-    terms: 'Includes 100-channel PRI line allocation. TRAI compliance guidelines apply.',
-    contactEmail: 'sales@dtalk.com',
-    contactPhone: '+91 20 6711 5001',
-    userId: 'tm-amit',
-    teamMemberId: 'tm-amit',
-    teamMemberName: 'Amit Patel',
-    teamMemberRole: 'Senior Sales Specialist',
-    items: [
-      { description: 'Enterprise 100-Channel PRI SIP Trunking & Dialer Suite', quantity: 1, rate: 240000, amount: 240000 }
-    ]
-  },
-  {
-    id: 'INV-DGT-001',
-    invoiceNumber: 'DGT-SLS-2026-104',
-    customerName: 'Manish Chawla',
-    company: 'Cognizant Technology Solutions',
-    amount: 195000,
-    issueDate: 'Sep 29, 2026',
-    dueDate: '2026-10-14',
-    status: 'Paid',
-    departmentId: 'digitree-sales',
-    departmentName: 'Digitree (Sales Division)',
-    division: 'Sales',
-    terms: 'Software license valid for 12 months with unlimited dynamic QR generations.',
-    contactEmail: 'sales@digitree.com',
-    contactPhone: '+91 124 459 8001',
-    userId: 'tm-priya',
-    teamMemberId: 'tm-priya',
-    teamMemberName: 'Priya Nair',
-    teamMemberRole: 'Sales Executive',
-    items: [
-      { description: 'Digitree Dynamic AIQR Enterprise Multi-Brand Platform', quantity: 1, rate: 195000, amount: 195000 }
-    ]
-  },
-  {
-    id: 'INV-MPL-001',
-    invoiceNumber: 'MPL-SLS-2026-105',
-    customerName: 'Anil Agrawal',
-    company: 'Godrej Properties Limited',
-    amount: 280000,
-    issueDate: 'Sep 20, 2026',
-    dueDate: '2026-09-30',
-    status: 'Overdue',
-    departmentId: 'mpillar-sales',
-    departmentName: 'M Pillar (Sales Division)',
-    division: 'Sales',
-    terms: 'Mobilization within 14 business days. Milestone billing upon site setup.',
-    contactEmail: 'sales@mpillar.com',
-    contactPhone: '+91 22 6889 6001',
-    userId: 'tm-rahul',
-    teamMemberId: 'tm-rahul',
-    teamMemberName: 'Rahul Kumar',
-    teamMemberRole: 'Sales Executive',
-    items: [
-      { description: 'Smart Construction Site Safety & Daily Attendance IoT Suite', quantity: 1, rate: 280000, amount: 280000 }
-    ]
-  },
-  {
-    id: 'INV-WBS-001',
-    invoiceNumber: 'WBS-SLS-2026-106',
-    customerName: 'Karthik Raman',
-    company: 'Nykaa E-Retail Limited',
-    amount: 230000,
-    issueDate: 'Sep 26, 2026',
-    dueDate: '2026-10-16',
-    status: 'Paid',
-    departmentId: 'wabastar-sales',
-    departmentName: 'Wabastar (Sales Division)',
-    division: 'Sales',
-    terms: 'Net 15 days. Dedicated high-throughput messaging quotas apply.',
-    contactEmail: 'sales@wabastar.com',
-    contactPhone: '+91 80 4912 2005',
-    userId: 'tm-amit',
-    teamMemberId: 'tm-amit',
-    teamMemberName: 'Amit Patel',
-    teamMemberRole: 'Senior Sales Specialist',
-    items: [
-      { description: 'Wabastar High-Throughput Marketing Automation License', quantity: 1, rate: 230000, amount: 230000 }
-    ]
-  }
-];
-export const INITIAL_CALENDAR_EVENTS: CalendarEvent[] = [];
-export const INITIAL_DEALS_CRM: Deal[] = [];
+function timeAgo(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  return `${Math.round(hours / 24)} d ago`;
+}
+
+function toLead(r: Row): Lead {
+  const raw = r.raw_payload || {};
+  return {
+    id: r.id,
+    name: r.name || raw.name || 'Inbound Lead',
+    contact: (r.phone || raw.phone || raw.number || '').toString(),
+    email: r.email || raw.email || '',
+    company: r.company || raw.company || '',
+    sourceId: (r.channel || 'other') as LeadSourceId,
+    departmentId: (r.department || '') as DepartmentId,
+    assignedTo: r.assigned_to || undefined,
+    stage: r.stage || 'New',
+    priority: r.priority || 'Medium',
+    lastActionDate: r.updated_at ? new Date(r.updated_at).toLocaleString() : undefined,
+    receivedAt: r.created_at,
+    status: 'Verified',
+    dealValue: Number(r.value) || 0,
+    notes: r.notes || '',
+    rawPayload: raw
+  };
+}
+
+const toFollowUp = (r: Row): FollowUpTask => ({
+  id: r.id,
+  userId: r.owner_id,
+  leadId: r.lead_id || '',
+  leadName: r.lead_name,
+  company: r.company || '',
+  type: r.type,
+  dateTimeStr: r.due_label,
+  notes: r.notes,
+  status: r.status,
+  completedAt: r.completed_at || undefined
+});
+
+const toActivity = (r: Row): TeamMemberActivity & { createdAt: string } => ({
+  id: r.id,
+  userId: r.owner_id,
+  leadId: r.lead_id || '',
+  leadName: r.lead_name,
+  action: r.action,
+  notes: r.notes || undefined,
+  type: r.type,
+  time: formatTime(r.created_at),
+  date: localDate(new Date(r.created_at)),
+  createdAt: r.created_at
+});
+
+const toDeal = (r: Row): Deal => ({
+  id: r.id,
+  userId: r.owner_id,
+  leadId: r.lead_id || '',
+  leadName: r.lead_name,
+  company: r.company,
+  value: Number(r.value) || 0,
+  stage: r.stage,
+  expectedClose: r.expected_close || '',
+  createdAt: localDate(new Date(r.created_at))
+});
+
+const toEvent = (r: Row): CalendarEvent => ({
+  id: r.id,
+  userId: r.owner_id,
+  title: r.title,
+  customer: r.customer,
+  company: r.company || undefined,
+  type: r.type,
+  date: r.event_date,
+  time: r.event_time,
+  status: r.status
+});
+
+const toEod = (r: Row): EndOfDayReport => ({
+  id: r.id,
+  userId: r.owner_id,
+  userName: r.user_name,
+  date: r.report_date,
+  timestamp: r.created_at,
+  leadsAdvanced: r.leads_advanced,
+  salesClosed: r.sales_closed,
+  callsMade: r.calls_made,
+  demosScheduled: r.demos_scheduled,
+  notes: r.notes || undefined
+});
+
+const toInvoice = (r: Row): Invoice => ({
+  ...(r.details || {}),
+  id: r.id,
+  invoiceNumber: r.invoice_number,
+  customerName: r.customer_name,
+  company: r.company,
+  amount: Number(r.amount) || 0,
+  status: r.status,
+  issueDate: r.issue_date,
+  dueDate: r.due_date,
+  userId: r.owner_id,
+  teamMemberId: r.owner_id
+});
 
 class TeamMemberStore {
-  private leadsKey = 'amuwa_crm_team_member_leads_v3';
-  private activitiesKey = 'amuwa_crm_team_member_activities_v3';
-  private followUpsKey = 'amuwa_crm_team_member_followups_v3';
-  private reportsKey = 'amuwa_crm_team_member_reports_v3';
-  private updatesKey = 'amuwa_crm_team_member_recent_updates_v3';
-  private invoicesKey = 'amuwa_crm_team_member_invoices_v3';
-  private eventsKey = 'amuwa_crm_team_member_events_v3';
-  private dealsKey = 'amuwa_crm_team_member_deals_v3';
+  private userId: string | null = null;
+  private departmentSlug: string | null = null;
+  private channel: RealtimeChannel | null = null;
+  private listeners = new Set<() => void>();
+  private reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private generation = 0;
 
-  constructor() {
-    this.initStore();
-  }
+  private leads: Lead[] = [];
+  private followUps: FollowUpTask[] = [];
+  private activities: (TeamMemberActivity & { createdAt: string })[] = [];
+  private deals: Deal[] = [];
+  private events: CalendarEvent[] = [];
+  private eodReports: EndOfDayReport[] = [];
+  private invoices: Invoice[] = [];
 
-  private initStore() {
-    try {
-      if (!localStorage.getItem(this.leadsKey)) {
-        const all = [...INITIAL_PRIYA_LEADS, ...INITIAL_RAHUL_LEADS, ...INITIAL_AMIT_LEADS];
-        localStorage.setItem(this.leadsKey, JSON.stringify(all));
-      }
-      if (!localStorage.getItem(this.activitiesKey)) {
-        localStorage.setItem(this.activitiesKey, JSON.stringify(INITIAL_ACTIVITIES));
-      }
-      if (!localStorage.getItem(this.followUpsKey)) {
-        localStorage.setItem(this.followUpsKey, JSON.stringify(INITIAL_FOLLOW_UPS));
-      }
-      if (!localStorage.getItem(this.updatesKey)) {
-        localStorage.setItem(this.updatesKey, JSON.stringify(INITIAL_RECENT_UPDATES));
-      }
-      if (!localStorage.getItem(this.invoicesKey)) {
-        localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
-      }
-      if (!localStorage.getItem(this.eventsKey)) {
-        localStorage.setItem(this.eventsKey, JSON.stringify(INITIAL_CALENDAR_EVENTS));
-      }
-      if (!localStorage.getItem(this.dealsKey)) {
-        localStorage.setItem(this.dealsKey, JSON.stringify(INITIAL_DEALS_CRM));
-      }
-    } catch (e) {
-      console.error('Failed to init TeamMemberStore:', e);
+  public loading = false;
+  public lastError: string | null = null;
+
+  // --- CONNECTION -----------------------------------------------------------
+
+  /** Loads the member's workspace and keeps it live. Safe to call repeatedly. */
+  public async connect(userId: string, departmentSlug?: string | null): Promise<void> {
+    const dept = departmentSlug || null;
+    if (this.userId === userId && this.departmentSlug === dept && this.channel) return;
+    this.disconnect();
+    const generation = this.generation;
+    this.userId = userId;
+    this.departmentSlug = dept;
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      this.lastError = 'The CRM is not connected to its database.';
+      this.emit();
+      return;
     }
-  }
 
-  // --- LEADS ---
-  public getAssignedLeads(userId: string): Lead[] {
-    try {
-      const all: Lead[] = JSON.parse(localStorage.getItem(this.leadsKey) || '[]');
-      return all.filter(l => l.assignedTo === userId);
-    } catch {
-      return [];
+    this.loading = true;
+    this.emit();
+    await Promise.all([this.reload('crm_leads'), ...MEMBER_TABLES.map(t => this.reload(t))]);
+    if (generation !== this.generation) return; // disconnected or reconnected meanwhile
+    this.loading = false;
+    this.emit();
+
+    let channel = supabase.channel(`member-workspace-${userId}`);
+    for (const table of MEMBER_TABLES) {
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table, filter: `owner_id=eq.${userId}` },
+        () => this.scheduleReload(table)
+      );
     }
+    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'crm_leads' }, () =>
+      this.scheduleReload('crm_leads')
+    );
+    this.channel = channel.subscribe();
   }
 
-  public addLead(leadData: Partial<Lead> & { name: string; contact: string; assignedTo: string }): Lead {
-    const newLead: Lead = {
-      id: `PLD-${Date.now()}`,
-      name: leadData.name,
-      contact: leadData.contact,
-      email: leadData.email,
-      company: leadData.company || 'Private Client',
-      sourceId: leadData.sourceId || 'whatsapp',
-      departmentId: leadData.departmentId || 'wabastore',
-      assignedTo: leadData.assignedTo,
-      stage: leadData.stage || 'New',
-      priority: leadData.priority || 'Medium',
-      lastActionDate: 'Just now',
-      receivedAt: new Date().toISOString(),
-      status: 'Verified',
-      dealValue: leadData.dealValue || 30000,
-      notes: leadData.notes || '',
-      rawPayload: {}
+  public disconnect(): void {
+    this.generation++;
+    this.loading = false;
+    const supabase = getSupabase();
+    if (this.channel && supabase) void supabase.removeChannel(this.channel);
+    this.channel = null;
+    this.reloadTimers.forEach(t => clearTimeout(t));
+    this.reloadTimers.clear();
+    this.userId = null;
+    this.leads = [];
+    this.followUps = [];
+    this.activities = [];
+    this.deals = [];
+    this.events = [];
+    this.eodReports = [];
+    this.invoices = [];
+  }
+
+  public subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
     };
-
-    try {
-      const all: Lead[] = JSON.parse(localStorage.getItem(this.leadsKey) || '[]');
-      localStorage.setItem(this.leadsKey, JSON.stringify([newLead, ...all]));
-      this.addRecentUpdate(`New lead added: ${newLead.company || newLead.name}`, 'lead');
-    } catch (e) {
-      console.error('Failed to add lead:', e);
-    }
-
-    return newLead;
   }
 
-  public updateLeadStage(leadId: string, userId: string, newStage: Lead['stage'], notes?: string): boolean {
-    try {
-      const all: Lead[] = JSON.parse(localStorage.getItem(this.leadsKey) || '[]');
-      let targetLead: Lead | undefined;
-      const updated = all.map(l => {
-        if (l.id === leadId && l.assignedTo === userId) {
-          targetLead = l;
-          return {
-            ...l,
-            stage: newStage,
-            lastActionDate: `Today, ${this.formatCurrentTime()}`,
-            notes: notes ? `${l.notes ? l.notes + ' | ' : ''}${notes}` : l.notes
-          };
-        }
-        return l;
-      });
-
-      localStorage.setItem(this.leadsKey, JSON.stringify(updated));
-
-      if (targetLead) {
-        this.logActivity({
-          userId,
-          leadId,
-          leadName: targetLead.name,
-          action: `Stage updated to ${newStage}`,
-          type: 'stage',
-          notes: notes || `Moved to ${newStage}`
-        });
-
-        this.addRecentUpdate(`Deal moved to ${newStage} – ${targetLead.company || targetLead.name}`, 'deal');
-      }
-
-      return true;
-    } catch {
-      return false;
-    }
+  private emit(): void {
+    this.listeners.forEach(l => l());
   }
 
-  // --- FOLLOW UPS ---
-  public getFollowUps(userId: string, status?: 'upcoming' | 'overdue' | 'completed'): FollowUpTask[] {
-    try {
-      const all: FollowUpTask[] = JSON.parse(localStorage.getItem(this.followUpsKey) || '[]');
-      const userTasks = all.filter(f => f.userId === userId || (!f.userId && userId === 'tm-priya'));
-      if (status) {
-        return userTasks.filter(f => f.status === status);
-      }
-      return userTasks;
-    } catch {
-      return [];
-    }
+  private scheduleReload(table: MemberTable | 'crm_leads'): void {
+    clearTimeout(this.reloadTimers.get(table));
+    this.reloadTimers.set(
+      table,
+      setTimeout(() => {
+        void this.reload(table).then(() => this.emit());
+      }, 250)
+    );
   }
 
-  public toggleFollowUpStatus(followUpId: string): boolean {
-    try {
-      const all: FollowUpTask[] = JSON.parse(localStorage.getItem(this.followUpsKey) || '[]');
-      const updated = all.map(t => {
-        if (t.id === followUpId) {
-          const nextStatus = t.status === 'completed' ? 'upcoming' : 'completed';
-          return {
-            ...t,
-            status: nextStatus as any,
-            completedAt: nextStatus === 'completed' ? new Date().toISOString() : undefined
-          };
-        }
-        return t;
-      });
-      localStorage.setItem(this.followUpsKey, JSON.stringify(updated));
-      return true;
-    } catch {
-      return false;
+  private async reload(table: MemberTable | 'crm_leads'): Promise<void> {
+    const supabase = getSupabase();
+    const userId = this.userId;
+    if (!supabase || !userId) return;
+
+    let query;
+    if (table === 'crm_leads') {
+      const filter = this.departmentSlug
+        ? `assigned_to.eq.${userId},and(assigned_to.is.null,department.eq.${this.departmentSlug})`
+        : `assigned_to.eq.${userId}`;
+      query = supabase.from('crm_leads').select('*').or(filter).order('created_at', { ascending: false }).limit(500);
+    } else {
+      query = supabase.from(table).select('*').eq('owner_id', userId).order('created_at', { ascending: false }).limit(500);
+    }
+
+    const { data, error } = await query;
+    if (this.userId !== userId) return; // signed out / switched user meanwhile
+    if (error) {
+      this.lastError = error.message;
+      console.error(`[teamMemberStore] failed to load ${table}:`, error.message);
+      return;
+    }
+    const rows = data || [];
+    switch (table) {
+      case 'crm_leads':
+        this.leads = rows.map(toLead);
+        break;
+      case 'member_follow_ups':
+        this.followUps = rows.map(toFollowUp);
+        break;
+      case 'member_activities':
+        this.activities = rows.map(toActivity);
+        break;
+      case 'member_deals':
+        this.deals = rows.map(toDeal);
+        break;
+      case 'member_calendar_events':
+        this.events = rows.map(toEvent);
+        break;
+      case 'member_eod_reports':
+        this.eodReports = rows.map(toEod);
+        break;
+      case 'member_invoices':
+        this.invoices = rows.map(toInvoice);
+        break;
     }
   }
 
-  public addFollowUp(task: Omit<FollowUpTask, 'id'>): FollowUpTask {
-    const newTask: FollowUpTask = {
-      ...task,
-      id: `FUP-${Date.now()}`
-    };
-    try {
-      const all: FollowUpTask[] = JSON.parse(localStorage.getItem(this.followUpsKey) || '[]');
-      localStorage.setItem(this.followUpsKey, JSON.stringify([newTask, ...all]));
-    } catch {}
-    return newTask;
-  }
-
-  // --- RECENT UPDATES ---
-  public getRecentUpdates(): RecentUpdate[] {
-    try {
-      return JSON.parse(localStorage.getItem(this.updatesKey) || '[]');
-    } catch {
-      return INITIAL_RECENT_UPDATES;
+  /** Runs a write, then refreshes the affected table(s) and notifies listeners. */
+  private async write(tables: (MemberTable | 'crm_leads')[], op: () => PromiseLike<{ error: any }>): Promise<void> {
+    const { error } = await op();
+    if (error) {
+      this.lastError = error.message;
+      throw new Error(error.message);
     }
+    await Promise.all(tables.map(t => this.reload(t)));
+    this.emit();
   }
 
-  public addRecentUpdate(title: string, type: 'lead' | 'deal' | 'invoice' | 'call'): void {
-    const newUpdate: RecentUpdate = {
-      id: `RUP-${Date.now()}`,
-      title,
-      timeAgo: 'Just now',
-      type,
-      timestamp: new Date().toISOString()
-    };
-    try {
-      const all = this.getRecentUpdates();
-      localStorage.setItem(this.updatesKey, JSON.stringify([newUpdate, ...all.slice(0, 15)]));
-    } catch {}
+  private db() {
+    const supabase = getSupabase();
+    if (!supabase || !this.userId) throw new Error('Not connected to the CRM database.');
+    return supabase;
   }
 
-  // --- ACTIVITIES ---
-  public getTodayActivities(userId: string): TeamMemberActivity[] {
-    try {
-      const all: TeamMemberActivity[] = JSON.parse(localStorage.getItem(this.activitiesKey) || '[]');
-      return all.filter(a => a.userId === userId || (!a.userId && userId === 'tm-priya'));
-    } catch {
-      return [];
-    }
+  // --- LEADS ----------------------------------------------------------------
+
+  public getAssignedLeads(_userId?: string): Lead[] {
+    return this.leads;
   }
 
-  public logActivity(item: {
-    userId: string;
+  public async addLead(leadData: Partial<Lead> & { name: string; contact: string }): Promise<void> {
+    const db = this.db();
+    await this.write(['crm_leads'], () =>
+      db.from('crm_leads').insert({
+        name: leadData.name,
+        phone: leadData.contact,
+        email: leadData.email || null,
+        company: leadData.company || null,
+        channel: leadData.sourceId || 'manual',
+        department: this.departmentSlug || 'wabastore',
+        sub_department: 'sales',
+        status: 'New',
+        stage: leadData.stage || 'New',
+        priority: leadData.priority || 'Medium',
+        value: leadData.dealValue || 0,
+        notes: leadData.notes || null,
+        assigned_to: this.userId
+      })
+    );
+  }
+
+  /** Claims an unassigned lead for the signed-in member. */
+  private claimPatch(leadId: string): Row {
+    const lead = this.leads.find(l => l.id === leadId);
+    return lead && !lead.assignedTo ? { assigned_to: this.userId } : {};
+  }
+
+  public async updateLeadStage(leadId: string, _userId: string, newStage: Lead['stage'], notes?: string): Promise<void> {
+    const db = this.db();
+    const lead = this.leads.find(l => l.id === leadId);
+    const patch: Row = { stage: newStage, ...this.claimPatch(leadId) };
+    if (notes) patch.notes = lead?.notes ? `${lead.notes} | ${notes}` : notes;
+    await this.write(['crm_leads'], () => db.from('crm_leads').update(patch).eq('id', leadId));
+    await this.logActivity({
+      leadId,
+      leadName: lead?.name || '',
+      action: `Stage updated to ${newStage}`,
+      type: 'stage',
+      notes: notes || `Moved to ${newStage}`
+    });
+  }
+
+  // --- FOLLOW UPS -----------------------------------------------------------
+
+  public getFollowUps(_userId?: string, status?: FollowUpTask['status']): FollowUpTask[] {
+    return status ? this.followUps.filter(f => f.status === status) : this.followUps;
+  }
+
+  public async toggleFollowUpStatus(followUpId: string): Promise<void> {
+    const db = this.db();
+    const task = this.followUps.find(t => t.id === followUpId);
+    if (!task) return;
+    const next = task.status === 'completed' ? 'upcoming' : 'completed';
+    await this.write(['member_follow_ups'], () =>
+      db
+        .from('member_follow_ups')
+        .update({ status: next, completed_at: next === 'completed' ? new Date().toISOString() : null })
+        .eq('id', followUpId)
+    );
+  }
+
+  public async addFollowUp(task: Omit<FollowUpTask, 'id' | 'userId'>): Promise<void> {
+    const db = this.db();
+    await this.write(['member_follow_ups'], () =>
+      db.from('member_follow_ups').insert({
+        lead_id: task.leadId || null,
+        lead_name: task.leadName,
+        company: task.company || null,
+        type: task.type,
+        due_label: task.dateTimeStr,
+        notes: task.notes,
+        status: task.status
+      })
+    );
+  }
+
+  // --- ACTIVITIES & UPDATES -------------------------------------------------
+
+  public getTodayActivities(_userId?: string): TeamMemberActivity[] {
+    const today = localDate();
+    return this.activities.filter(a => a.date === today);
+  }
+
+  public async logActivity(item: {
     leadId: string;
     leadName: string;
     action: string;
     notes?: string;
     type?: TeamMemberActivity['type'];
-  }): TeamMemberActivity {
-    const today = new Date().toISOString().split('T')[0];
-    const nowTime = this.formatCurrentTime();
-
-    const newAct: TeamMemberActivity = {
-      id: `ACT-${Date.now()}`,
-      userId: item.userId,
-      leadId: item.leadId,
-      leadName: item.leadName,
-      action: item.action,
-      time: nowTime,
-      date: today,
-      type: item.type || 'update',
-      notes: item.notes
-    };
-
-    try {
-      const all: TeamMemberActivity[] = JSON.parse(localStorage.getItem(this.activitiesKey) || '[]');
-      localStorage.setItem(this.activitiesKey, JSON.stringify([newAct, ...all]));
-    } catch (e) {
-      console.error('Failed to log activity:', e);
+  }): Promise<void> {
+    const db = this.db();
+    const claim = this.claimPatch(item.leadId);
+    if (claim.assigned_to) {
+      await this.write(['crm_leads'], () => db.from('crm_leads').update(claim).eq('id', item.leadId));
     }
-
-    return newAct;
+    await this.write(['member_activities'], () =>
+      db.from('member_activities').insert({
+        lead_id: item.leadId || null,
+        lead_name: item.leadName,
+        action: item.action,
+        notes: item.notes || null,
+        type: item.type || 'update'
+      })
+    );
   }
 
-  // --- LEAD SOURCES ANALYTICS ---
-  public getLeadSources(userId: string): LeadSourceStat[] {
-    const leads = this.getAssignedLeads(userId);
-    const total = leads.length || 1;
+  /** New leads and the member's own actions, newest first. */
+  public getRecentUpdates(): RecentUpdate[] {
+    const fromLeads = this.leads.map(l => ({
+      id: `lead-${l.id}`,
+      title: `New lead: ${l.company || l.name}`,
+      type: 'lead' as const,
+      timestamp: l.receivedAt
+    }));
+    const fromActivities = this.activities.map(a => ({
+      id: `act-${a.id}`,
+      title: a.action,
+      type: (a.type === 'call' ? 'call' : a.type === 'stage' ? 'deal' : 'lead') as RecentUpdate['type'],
+      timestamp: a.createdAt
+    }));
+    return [...fromLeads, ...fromActivities]
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, 10)
+      .map(u => ({ ...u, timeAgo: timeAgo(u.timestamp) }));
+  }
 
-    const counts: Record<string, number> = {
-      WhatsApp: 0,
-      'Meta Ads': 0,
-      Website: 0,
-      Referral: 0,
-      Other: 0
-    };
+  // --- ANALYTICS ------------------------------------------------------------
 
-    leads.forEach(l => {
+  public getLeadSources(_userId?: string): LeadSourceStat[] {
+    const total = this.leads.length || 1;
+    const counts: Record<string, number> = { WhatsApp: 0, 'Meta Ads': 0, Website: 0, Referral: 0, Other: 0 };
+    this.leads.forEach(l => {
       if (l.sourceId === 'whatsapp') counts.WhatsApp++;
       else if (l.sourceId === 'meta') counts['Meta Ads']++;
       else if (l.sourceId === 'website') counts.Website++;
       else if (l.sourceId === 'references') counts.Referral++;
       else counts.Other++;
     });
-
-    const colors: Record<string, string> = {
-      WhatsApp: '#10B981',
-      'Meta Ads': '#3B82F6',
-      Website: '#8B5CF6',
-      Referral: '#F59E0B',
-      Other: '#94A3B8'
-    };
-
     return Object.entries(counts).map(([name, count]) => ({
       name,
       count,
       percentage: Math.round((count / total) * 100),
-      color: colors[name] || '#94A3B8'
+      color: SOURCE_COLORS[name]
     }));
   }
 
-  // --- TARGET & STATS ---
-  /** Deals won vs. the member's assigned deal target (0 when none is assigned). */
-  public getMemberTarget(userId: string): MemberTarget {
-    const user = SAMPLE_TEAM_MEMBERS.find(u => u.id === userId);
-    const goal = user?.targetDeals || 0;
-    const current = this.getAssignedLeads(userId).filter(l => l.stage === 'Won').length;
-    const percentage = goal > 0 ? Math.round((current / goal) * 100) : 0;
-    return { current, goal, percentage };
+  /** No sales targets are stored yet, so only the won count is real. */
+  public getMemberTarget(_userId?: string): MemberTarget {
+    const current = this.leads.filter(l => l.stage === 'Won').length;
+    return { current, goal: 0, percentage: 0 };
   }
 
-  /** Every figure is computed from the member's own records — no placeholders. */
-  public getDashboardKpis(userId: string) {
-    const leads = this.getAssignedLeads(userId);
+  public getDashboardKpis(_userId?: string) {
+    const leads = this.leads;
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const followUpsDue = this.getFollowUps(userId).filter(f => f.status !== 'completed').length;
     const convertedLeads = leads.filter(l => l.stage === 'Won').length;
-    const dealsInProgress = leads.filter(l => l.stage === 'Contacted' || l.stage === 'Interested' || l.stage === 'Proposal').length;
-    const newLeadsThisWeek = leads.filter(l => new Date(l.receivedAt).getTime() >= weekAgo).length;
-
     return {
       totalLeads: leads.length,
-      newLeadsThisWeek,
-      followUpsDue,
+      newLeadsThisWeek: leads.filter(l => new Date(l.receivedAt).getTime() >= weekAgo).length,
+      followUpsDue: this.followUps.filter(f => f.status !== 'completed').length,
       convertedLeads,
-      dealsInProgress,
+      dealsInProgress: leads.filter(l => l.stage === 'Contacted' || l.stage === 'Interested' || l.stage === 'Proposal').length,
       conversionRate: leads.length > 0 ? Math.round((convertedLeads / leads.length) * 100) : 0
     };
   }
 
-  // --- END OF DAY REPORT ---
-  public saveEndOfDayReport(report: {
-    userId: string;
+  // --- END OF DAY REPORT ----------------------------------------------------
+
+  public async saveEndOfDayReport(report: {
     userName: string;
     leadsAdvanced: number;
     salesClosed: number;
     callsMade: number;
     demosScheduled: number;
     notes?: string;
-  }): EndOfDayReport {
-    const today = new Date().toISOString().split('T')[0];
-    const newReport: EndOfDayReport = {
-      id: `EOD-${Date.now()}`,
-      userId: report.userId,
-      userName: report.userName,
-      date: today,
-      timestamp: new Date().toISOString(),
-      leadsAdvanced: report.leadsAdvanced,
-      salesClosed: report.salesClosed,
-      callsMade: report.callsMade,
-      demosScheduled: report.demosScheduled,
-      notes: report.notes
-    };
-
-    try {
-      const all: EndOfDayReport[] = JSON.parse(localStorage.getItem(this.reportsKey) || '[]');
-      const filtered = all.filter(r => !(r.userId === report.userId && r.date === today));
-      localStorage.setItem(this.reportsKey, JSON.stringify([newReport, ...filtered]));
-    } catch (e) {
-      console.error('Failed to save EOD report:', e);
-    }
-
-    return newReport;
+  }): Promise<EndOfDayReport | null> {
+    const db = this.db();
+    await this.write(['member_eod_reports'], () =>
+      db.from('member_eod_reports').upsert(
+        {
+          owner_id: this.userId,
+          user_name: report.userName,
+          report_date: localDate(),
+          leads_advanced: report.leadsAdvanced,
+          sales_closed: report.salesClosed,
+          calls_made: report.callsMade,
+          demos_scheduled: report.demosScheduled,
+          notes: report.notes || null
+        },
+        { onConflict: 'owner_id,report_date' }
+      )
+    );
+    return this.getTodayEndOfDayReport();
   }
 
-  public getTodayEndOfDayReport(userId: string): EndOfDayReport | null {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const all: EndOfDayReport[] = JSON.parse(localStorage.getItem(this.reportsKey) || '[]');
-      return all.find(r => r.userId === userId && r.date === today) || null;
-    } catch {
-      return null;
-    }
+  public getTodayEndOfDayReport(_userId?: string): EndOfDayReport | null {
+    const today = localDate();
+    return this.eodReports.find(r => r.date === today) || null;
   }
 
-  // --- CUSTOMERS ---
-  // Customers live in Supabase (see src/hooks/useCustomers.ts). The legacy
-  // browser copy is only read once for import (src/lib/legacyStorage.ts).
+  // --- INVOICES -------------------------------------------------------------
 
-  // TODO(db-migration): invoices, leads, deals, follow-ups, events and reports
-  // below are still browser-local and move to Supabase in the next phase.
-  // --- INVOICES ---
-  public getInvoices(userId?: string): Invoice[] {
-    try {
-      const stored = localStorage.getItem(this.invoicesKey);
-      let list: Invoice[] = [];
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Normalize legacy entries in storage to assign ownership
-          list = parsed.map((inv: any) => {
-            if (!inv.userId && !inv.teamMemberId) {
-              if (inv.invoiceNumber === 'WAB-SLS-2026-101' || inv.invoiceNumber === 'DGT-SLS-2026-104') {
-                return { ...inv, userId: 'tm-priya', teamMemberId: 'tm-priya', teamMemberName: 'Priya Nair', teamMemberRole: 'Sales Executive' };
-              }
-              if (inv.invoiceNumber === 'WBX-SLS-2026-102' || inv.invoiceNumber === 'MPL-SLS-2026-105') {
-                return { ...inv, userId: 'tm-rahul', teamMemberId: 'tm-rahul', teamMemberName: 'Rahul Kumar', teamMemberRole: 'Sales Executive' };
-              }
-              if (inv.invoiceNumber === 'DTK-SLS-2026-103' || inv.invoiceNumber === 'WBS-SLS-2026-106') {
-                return { ...inv, userId: 'tm-amit', teamMemberId: 'tm-amit', teamMemberName: 'Amit Patel', teamMemberRole: 'Senior Sales Specialist' };
-              }
-              if (inv.teamMemberName?.toLowerCase().includes('rahul')) {
-                return { ...inv, userId: 'tm-rahul', teamMemberId: 'tm-rahul' };
-              }
-              if (inv.teamMemberName?.toLowerCase().includes('amit')) {
-                return { ...inv, userId: 'tm-amit', teamMemberId: 'tm-amit' };
-              }
-              return { ...inv, userId: 'tm-priya', teamMemberId: 'tm-priya', teamMemberName: inv.teamMemberName || 'Priya Nair' };
-            }
-            return inv;
-          }).filter(inv =>
-            !inv.departmentId?.includes('education') &&
-            !inv.departmentId?.includes('hr') &&
-            !inv.departmentId?.includes('amuwa')
-          );
-        }
-      }
-      if (list.length === 0) {
-        list = INITIAL_INVOICES;
-        localStorage.setItem(this.invoicesKey, JSON.stringify(INITIAL_INVOICES));
-      }
-
-      // Isolate strictly by team member ID when querying for a team member
-      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin' && userId !== 'accounts-head') {
-        return list.filter(inv => inv.userId === userId || inv.teamMemberId === userId);
-      }
-
-      // Superadmin / Central Accounts Head / System View queries see all invoices
-      return list;
-    } catch {
-      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin' && userId !== 'accounts-head') {
-        return INITIAL_INVOICES.filter(inv => inv.userId === userId || inv.teamMemberId === userId);
-      }
-      return INITIAL_INVOICES;
-    }
+  public getInvoices(_userId?: string): Invoice[] {
+    return this.invoices;
   }
 
-  public addInvoice(invoice: Omit<Invoice, 'id'>): Invoice {
-    const newInv: Invoice = {
-      ...invoice,
-      id: `INV-${Date.now()}`
-    };
-    try {
-      // Read directly from storage without user filtering to preserve all team members' data
-      const stored = localStorage.getItem(this.invoicesKey);
-      let all: Invoice[] = [];
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed)) all = parsed;
-        } catch {}
-      }
-      if (all.length === 0) all = [...INITIAL_INVOICES];
-      
-      const updated = [newInv, ...all];
-      localStorage.setItem(this.invoicesKey, JSON.stringify(updated));
-
-      // Global notification event for reactive UI updates across open views
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('amuwa_crm_invoice_created', { detail: newInv }));
-      }
-    } catch (e) {
-      console.error('Failed to add invoice in teamMemberStore:', e);
-    }
-    return newInv;
+  public async addInvoice(invoice: Omit<Invoice, 'id'>): Promise<void> {
+    const db = this.db();
+    const { invoiceNumber, customerName, company, amount, status, issueDate, dueDate, userId, teamMemberId, ...details } =
+      invoice;
+    await this.write(['member_invoices'], () =>
+      db.from('member_invoices').insert({
+        invoice_number: invoiceNumber,
+        customer_name: customerName,
+        company: company || '',
+        amount,
+        status,
+        issue_date: issueDate,
+        due_date: dueDate,
+        details
+      })
+    );
   }
 
-  // --- CALENDAR EVENTS ---
-  public getCalendarEvents(userId?: string): CalendarEvent[] {
-    try {
-      const all: CalendarEvent[] = JSON.parse(localStorage.getItem(this.eventsKey) || '[]');
-      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin') {
-        return all.filter(e => !e.userId || e.userId === userId);
-      }
-      return all;
-    } catch {
-      return INITIAL_CALENDAR_EVENTS;
-    }
+  // --- CALENDAR -------------------------------------------------------------
+
+  public getCalendarEvents(_userId?: string): CalendarEvent[] {
+    return this.events;
   }
 
-  public addCalendarEvent(event: Omit<CalendarEvent, 'id'>): CalendarEvent {
-    const newEvt: CalendarEvent = {
-      ...event,
-      id: `EVT-${Date.now()}`
-    };
-    try {
-      const raw = localStorage.getItem(this.eventsKey);
-      const all: CalendarEvent[] = raw ? JSON.parse(raw) : [];
-      localStorage.setItem(this.eventsKey, JSON.stringify([...all, newEvt]));
-    } catch {}
-    return newEvt;
+  public async addCalendarEvent(event: Omit<CalendarEvent, 'id' | 'userId'>): Promise<void> {
+    const db = this.db();
+    await this.write(['member_calendar_events'], () =>
+      db.from('member_calendar_events').insert({
+        title: event.title,
+        customer: event.customer,
+        company: event.company || null,
+        type: event.type,
+        event_date: event.date,
+        event_time: event.time,
+        status: event.status
+      })
+    );
   }
 
-  // --- DEALS ---
-  public getDeals(userId?: string): Deal[] {
-    try {
-      const all: Deal[] = JSON.parse(localStorage.getItem(this.dealsKey) || '[]');
-      if (userId && userId !== 'all' && userId !== 'admin' && userId !== 'superadmin') {
-        return all.filter(d => !d.userId || d.userId === userId);
-      }
-      return all;
-    } catch {
-      return INITIAL_DEALS_CRM;
-    }
+  public async deleteCalendarEvent(eventId: string): Promise<void> {
+    const db = this.db();
+    await this.write(['member_calendar_events'], () => db.from('member_calendar_events').delete().eq('id', eventId));
   }
 
-  public addDeal(deal: Omit<Deal, 'id' | 'createdAt'>): Deal {
-    const newDeal: Deal = {
-      ...deal,
-      id: `DL-${Date.now()}`,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    try {
-      const raw = localStorage.getItem(this.dealsKey);
-      const all: Deal[] = raw ? JSON.parse(raw) : [];
-      localStorage.setItem(this.dealsKey, JSON.stringify([newDeal, ...all]));
-    } catch {}
-    return newDeal;
+  // --- DEALS ----------------------------------------------------------------
+
+  public getDeals(_userId?: string): Deal[] {
+    return this.deals;
   }
 
-  public updateDealStage(dealId: string, newStage: Deal['stage']): boolean {
-    try {
-      const all = this.getDeals();
-      const updated = all.map(d => (d.id === dealId ? { ...d, stage: newStage } : d));
-      localStorage.setItem(this.dealsKey, JSON.stringify(updated));
-      return true;
-    } catch {
-      return false;
-    }
+  public async addDeal(deal: Omit<Deal, 'id' | 'createdAt' | 'userId'>): Promise<void> {
+    const db = this.db();
+    await this.write(['member_deals'], () =>
+      db.from('member_deals').insert({
+        lead_id: deal.leadId || null,
+        lead_name: deal.leadName,
+        company: deal.company || '',
+        value: deal.value,
+        stage: deal.stage,
+        expected_close: deal.expectedClose || null
+      })
+    );
   }
 
-  private formatCurrentTime(): string {
-    const d = new Date();
-    let hours = d.getHours();
-    const minutes = d.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-    return `${hours}:${minutesStr} ${ampm}`;
+  public async updateDealStage(dealId: string, newStage: Deal['stage']): Promise<void> {
+    const db = this.db();
+    await this.write(['member_deals'], () => db.from('member_deals').update({ stage: newStage }).eq('id', dealId));
   }
 }
 

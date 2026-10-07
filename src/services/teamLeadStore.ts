@@ -1,4 +1,3 @@
-import { generatedAvatarUrl } from '../lib/avatar';
 import {
   TeamLeadUser,
   TeamRepPerformance,
@@ -15,7 +14,7 @@ export const SAMPLE_TEAM_LEAD: TeamLeadUser = {
   title: 'Sales Team Lead',
   podName: 'WabaStore Sales Pod Alpha',
   departmentId: 'wabastore',
-  avatar: generatedAvatarUrl('tl-vikram'),
+  avatar: '',
   teamMemberIds: ['tm-priya', 'tm-rahul', 'tm-amit', 'tm-sneha', 'tm-rohan']
 };
 
@@ -24,7 +23,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-priya',
     name: 'Priya Nair',
     email: 'priya@amuwa.com',
-    avatar: generatedAvatarUrl('tm-priya'),
+    avatar: '',
     status: 'Available',
     activeLeads: 28,
     callsToday: 18,
@@ -42,7 +41,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-rahul',
     name: 'Rahul Kumar',
     email: 'rahul@amuwa.com',
-    avatar: generatedAvatarUrl('tm-rahul'),
+    avatar: '',
     status: 'On Call',
     activeLeads: 21,
     callsToday: 14,
@@ -60,7 +59,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-amit',
     name: 'Amit Patel',
     email: 'amit@amuwa.com',
-    avatar: generatedAvatarUrl('tm-amit'),
+    avatar: '',
     status: 'In Demo',
     activeLeads: 24,
     callsToday: 16,
@@ -78,7 +77,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-sneha',
     name: 'Sneha Deshmukh',
     email: 'sneha.d@amuwa.com',
-    avatar: generatedAvatarUrl('tm-sneha'),
+    avatar: '',
     status: 'Available',
     activeLeads: 16,
     callsToday: 12,
@@ -96,7 +95,7 @@ export const INITIAL_POD_REPS: TeamRepPerformance[] = [
     id: 'tm-rohan',
     name: 'Rohan Varma',
     email: 'rohan.v@amuwa.com',
-    avatar: generatedAvatarUrl('tm-rohan'),
+    avatar: '',
     status: 'Offline',
     activeLeads: 14,
     callsToday: 9,

@@ -212,17 +212,9 @@ export const DepartmentAccountsBillingView: React.FC<DepartmentAccountsBillingVi
                 className="bg-white rounded-3xl border border-slate-200 p-5 shadow-xs space-y-3"
               >
                 <div className="flex items-center gap-3">
-                  {member.avatar ? (
-                    <img
-                      src={member.avatar}
-                      alt={member.name}
-                      className="w-12 h-12 rounded-2xl object-cover border border-slate-200 shadow-2xs"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center">
-                      {member.name.slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
+                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 font-bold flex items-center justify-center">
+                    {member.name.slice(0, 2).toUpperCase()}
+                  </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="text-sm font-bold text-slate-900 truncate">{member.name}</h4>
                     <p className="text-[11px] text-slate-500 truncate">{member.role}</p>

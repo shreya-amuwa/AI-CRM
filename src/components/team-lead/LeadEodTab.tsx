@@ -114,11 +114,6 @@ export const LeadEodTab: React.FC<LeadEodTabProps> = ({
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={sub.repAvatar}
-                    alt={sub.repName}
-                    className="w-10 h-10 rounded-xl object-cover ring-2 ring-indigo-500/20"
-                  />
                   <div>
                     <h3 className="font-bold text-sm text-slate-900">{sub.repName}</h3>
                     <p className="text-[11px] text-slate-500">{sub.submittedAt}</p>

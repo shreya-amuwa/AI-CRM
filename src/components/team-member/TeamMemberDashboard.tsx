@@ -27,7 +27,6 @@ import { MemberCalendarDashboard } from './MemberCalendarDashboard';
 import { MemberInvoicesDashboard } from './MemberInvoicesDashboard';
 import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
-import { resolveAvatarUrl } from '../../lib/avatar';
 
 interface TeamMemberDashboardProps {
   currentUserId: string;
@@ -67,8 +66,8 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   // Form states
   const [callNotes, setCallNotes] = useState('');
   const [customMessage, setCustomMessage] = useState('Hello, I am reaching out from Wabastore regarding your inquiry.');
-  const [demoDate, setDemoDate] = useState('2026-09-30');
-  const [demoTime, setDemoTime] = useState('03:00 PM');
+  const [demoDate, setDemoDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [demoTime, setDemoTime] = useState('15:00');
   const [selectedStage, setSelectedStage] = useState<Lead['stage']>('Contacted');
   const [updateNotes, setUpdateNotes] = useState('');
 
@@ -80,7 +79,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     company: '',
     priority: 'Medium' as 'High' | 'Medium' | 'Low',
     stage: 'New' as Lead['stage'],
-    dealValue: 35000,
+    dealValue: 0,
     notes: ''
   });
 
@@ -88,9 +87,9 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   const [dealForm, setDealForm] = useState({
     leadId: '',
     company: '',
-    value: 50000,
+    value: 0,
     stage: 'Proposal' as 'Proposal' | 'Negotiation' | 'Won',
-    expectedClose: '2026-10-15'
+    expectedClose: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
   });
 
   // End of Day Modal
@@ -122,9 +121,16 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     setEodReport(eod);
   };
 
+  // Load the workspace from the database and stay subscribed to live changes.
+  const departmentSlug = profile?.department?.slug;
   useEffect(() => {
-    refreshData();
-  }, [currentUserId]);
+    const unsubscribe = teamMemberStore.subscribe(refreshData);
+    void teamMemberStore.connect(currentUserId, departmentSlug).then(refreshData);
+    return () => {
+      unsubscribe();
+      teamMemberStore.disconnect();
+    };
+  }, [currentUserId, departmentSlug]);
 
   // Dynamic Greeting based on time of day
   const getGreeting = () => {
@@ -135,8 +141,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     return `Good Evening, ${firstName} 🌙`;
   };
 
-  // AI-generated avatar (never a stock photo)
-  const avatarUrl = resolveAvatarUrl(profile?.avatarUrl, currentUserId);
 
   // Follow-up tasks may point at a lead that is no longer assigned; open the
   // action modals with what the task itself knows.
@@ -155,149 +159,167 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     };
 
   // --- ACTIONS ---
-  const handleConfirmCall = () => {
-    if (!selectedLead) return;
-    teamMemberStore.logActivity({
-      userId: currentUserId,
-      leadId: selectedLead.id,
-      leadName: selectedLead.name,
-      action: `Call with ${selectedLead.company || selectedLead.name}`,
-      notes: callNotes || 'Phone conversation completed.',
-      type: 'call'
-    });
-    showToast(`Call logged for ${selectedLead.name}`);
-    setActionModalType(null);
-    setCallNotes('');
-    refreshData();
+  // Every action writes to the database; the store then refreshes this view
+  // (and any other device signed in to the same account).
+  const run = async (action: () => Promise<unknown>, success: string) => {
+    try {
+      await action();
+      showToast(success);
+      return true;
+    } catch (err) {
+      showToast(`Could not save: ${err instanceof Error ? err.message : 'unknown error'}`);
+      return false;
+    }
   };
 
-  const handleConfirmMessage = () => {
+  const handleConfirmCall = async () => {
     if (!selectedLead) return;
-    const cleanPhone = selectedLead.contact.replace(/[^\d]/g, '');
-    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(customMessage)}`;
-    window.open(waUrl, '_blank');
-
-    teamMemberStore.logActivity({
-      userId: currentUserId,
-      leadId: selectedLead.id,
-      leadName: selectedLead.name,
-      action: `WhatsApp sent to ${selectedLead.company || selectedLead.name}`,
-      notes: customMessage,
-      type: 'message'
-    });
-
-    showToast(`WhatsApp message logged for ${selectedLead.name}`);
-    setActionModalType(null);
-    refreshData();
+    const lead = selectedLead;
+    const ok = await run(
+      () =>
+        teamMemberStore.logActivity({
+          leadId: lead.id,
+          leadName: lead.name,
+          action: `Call with ${lead.company || lead.name}`,
+          notes: callNotes || 'Phone conversation completed.',
+          type: 'call'
+        }),
+      `Call logged for ${lead.name}`
+    );
+    if (ok) {
+      setActionModalType(null);
+      setCallNotes('');
+    }
   };
 
-  const handleConfirmScheduleDemo = () => {
+  const handleConfirmMessage = async () => {
     if (!selectedLead) return;
-    teamMemberStore.updateLeadStage(selectedLead.id, currentUserId, 'Interested', `Demo scheduled on ${demoDate} at ${demoTime}`);
-    teamMemberStore.logActivity({
-      userId: currentUserId,
-      leadId: selectedLead.id,
-      leadName: selectedLead.name,
-      action: `Demo scheduled: ${selectedLead.company || selectedLead.name}`,
-      notes: `Scheduled for ${demoDate} at ${demoTime}`,
-      type: 'demo'
-    });
-    teamMemberStore.addFollowUp({
-      userId: currentUserId,
-      leadId: selectedLead.id,
-      leadName: selectedLead.name,
-      company: selectedLead.company || 'Client',
-      type: 'Meeting',
-      dateTimeStr: `${demoDate} • ${demoTime}`,
-      notes: 'Live product walkthrough & commercial review',
-      status: 'upcoming'
-    });
-    showToast(`Demo scheduled with ${selectedLead.name}`);
-    setActionModalType(null);
-    refreshData();
+    const lead = selectedLead;
+    const cleanPhone = lead.contact.replace(/[^\d]/g, '');
+    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(customMessage)}`, '_blank');
+    const ok = await run(
+      () =>
+        teamMemberStore.logActivity({
+          leadId: lead.id,
+          leadName: lead.name,
+          action: `WhatsApp sent to ${lead.company || lead.name}`,
+          notes: customMessage,
+          type: 'message'
+        }),
+      `WhatsApp message logged for ${lead.name}`
+    );
+    if (ok) setActionModalType(null);
   };
 
-  const handleConfirmUpdateStage = () => {
+  const handleConfirmScheduleDemo = async () => {
     if (!selectedLead) return;
-    teamMemberStore.updateLeadStage(selectedLead.id, currentUserId, selectedStage, updateNotes);
-    showToast(`Lead stage updated to ${selectedStage}`);
-    setActionModalType(null);
-    setUpdateNotes('');
-    refreshData();
+    const lead = selectedLead;
+    const ok = await run(async () => {
+      await teamMemberStore.updateLeadStage(lead.id, currentUserId, 'Interested', `Demo scheduled on ${demoDate} at ${demoTime}`);
+      await teamMemberStore.logActivity({
+        leadId: lead.id,
+        leadName: lead.name,
+        action: `Demo scheduled: ${lead.company || lead.name}`,
+        notes: `Scheduled for ${demoDate} at ${demoTime}`,
+        type: 'demo'
+      });
+      await teamMemberStore.addFollowUp({
+        leadId: lead.id,
+        leadName: lead.name,
+        company: lead.company || '',
+        type: 'Meeting',
+        dateTimeStr: `${demoDate} • ${demoTime}`,
+        notes: 'Product demo',
+        status: 'upcoming'
+      });
+      await teamMemberStore.addCalendarEvent({
+        title: `Demo: ${lead.company || lead.name}`,
+        customer: lead.name,
+        company: lead.company,
+        type: 'demo',
+        date: demoDate,
+        time: demoTime,
+        status: 'confirmed'
+      });
+    }, `Demo scheduled with ${lead.name}`);
+    if (ok) setActionModalType(null);
   };
 
-  const handleCreateNewLead = (e: React.FormEvent) => {
+  const handleConfirmUpdateStage = async () => {
+    if (!selectedLead) return;
+    const lead = selectedLead;
+    const ok = await run(
+      () => teamMemberStore.updateLeadStage(lead.id, currentUserId, selectedStage, updateNotes),
+      `Lead stage updated to ${selectedStage}`
+    );
+    if (ok) {
+      setActionModalType(null);
+      setUpdateNotes('');
+    }
+  };
+
+  const handleCreateNewLead = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLeadForm.name.trim() || !newLeadForm.contact.trim()) {
       alert('Please provide name and phone number');
       return;
     }
-
-    teamMemberStore.addLead({
-      name: newLeadForm.name,
-      contact: newLeadForm.contact,
-      email: newLeadForm.email,
-      company: newLeadForm.company,
-      priority: newLeadForm.priority,
-      stage: newLeadForm.stage,
-      dealValue: Number(newLeadForm.dealValue),
-      notes: newLeadForm.notes,
-      assignedTo: currentUserId
-    });
-
-    showToast(`New lead added: ${newLeadForm.name}`);
+    const ok = await run(
+      () =>
+        teamMemberStore.addLead({
+          name: newLeadForm.name.trim(),
+          contact: newLeadForm.contact.trim(),
+          email: newLeadForm.email,
+          company: newLeadForm.company,
+          priority: newLeadForm.priority,
+          stage: newLeadForm.stage,
+          dealValue: Number(newLeadForm.dealValue),
+          notes: newLeadForm.notes
+        }),
+      `New lead added: ${newLeadForm.name}`
+    );
+    if (!ok) return;
     setActionModalType(null);
-    setNewLeadForm({
-      name: '',
-      contact: '',
-      email: '',
-      company: '',
-      priority: 'Medium',
-      stage: 'New',
-      dealValue: 35000,
-      notes: ''
-    });
-    refreshData();
+    setNewLeadForm({ name: '', contact: '', email: '', company: '', priority: 'Medium', stage: 'New', dealValue: 0, notes: '' });
   };
 
-  const handleCreateDealSubmit = (e: React.FormEvent) => {
+  const handleCreateDealSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const targetLead = leads.find(l => l.id === dealForm.leadId) || leads[0];
-    if (targetLead) {
-      teamMemberStore.updateLeadStage(targetLead.id, currentUserId, dealForm.stage, `Deal created: ₹${dealForm.value.toLocaleString('en-IN')}`);
-      teamMemberStore.logActivity({
-        userId: currentUserId,
+    const targetLead = leads.find(l => l.id === dealForm.leadId);
+    if (!targetLead) {
+      showToast('Pick a lead for this deal.');
+      return;
+    }
+    const value = Number(dealForm.value) || 0;
+    const ok = await run(async () => {
+      await teamMemberStore.addDeal({
         leadId: targetLead.id,
         leadName: targetLead.name,
-        action: `Deal created – ${targetLead.company || targetLead.name} (₹${dealForm.value.toLocaleString('en-IN')})`,
-        type: 'stage'
+        company: targetLead.company || dealForm.company,
+        value,
+        stage: dealForm.stage,
+        expectedClose: dealForm.expectedClose
       });
-    }
-    showToast('New deal created successfully!');
-    setActionModalType(null);
-    refreshData();
+      await teamMemberStore.updateLeadStage(targetLead.id, currentUserId, dealForm.stage, `Deal created: ₹${value.toLocaleString('en-IN')}`);
+    }, 'New deal created successfully!');
+    if (ok) setActionModalType(null);
   };
 
-  const handleSubmitEndOfDay = () => {
-    const todayActs = teamMemberStore.getTodayActivities(currentUserId);
-    const callsMade = todayActs.filter(a => a.type === 'call' || a.action.toLowerCase().includes('call')).length;
-    const demosScheduled = todayActs.filter(a => a.type === 'demo' || a.action.toLowerCase().includes('demo')).length;
-    const leadsAdvanced = todayActs.filter(a => a.type === 'stage' || a.action.toLowerCase().includes('stage')).length;
-    const salesClosed = leads.filter(l => l.stage === 'Won').length;
-
-    const saved = teamMemberStore.saveEndOfDayReport({
-      userId: currentUserId,
-      userName,
-      leadsAdvanced,
-      salesClosed,
-      callsMade,
-      demosScheduled,
-      notes: eodNotes
-    });
-
-    setEodReport(saved);
-    setIsEodModalOpen(false);
-    showToast(`Great work today, ${userName.split(' ')[0]}! Day completed.`);
+  const handleSubmitEndOfDay = async () => {
+    const todayActs = teamMemberStore.getTodayActivities();
+    const ok = await run(
+      () =>
+        teamMemberStore.saveEndOfDayReport({
+          userName,
+          callsMade: todayActs.filter(a => a.type === 'call').length,
+          demosScheduled: todayActs.filter(a => a.type === 'demo').length,
+          leadsAdvanced: todayActs.filter(a => a.type === 'stage').length,
+          salesClosed: leads.filter(l => l.stage === 'Won').length,
+          notes: eodNotes
+        }),
+      `Great work today, ${userName.split(' ')[0]}! Day completed.`
+    );
+    if (ok) setIsEodModalOpen(false);
   };
 
   const leadSources = teamMemberStore.getLeadSources(currentUserId);
@@ -442,9 +464,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                       alert(`Follow-up Details:\n${task.leadName} (${task.company})\nTime: ${task.dateTimeStr}\nNotes: ${task.notes}`);
                     }}
                     onToggleComplete={(taskId) => {
-                      teamMemberStore.toggleFollowUpStatus(taskId);
-                      refreshData();
-                      showToast('Follow-up status updated');
+                      void run(() => teamMemberStore.toggleFollowUpStatus(taskId), 'Follow-up status updated');
                     }}
                   />
                 </div>
@@ -455,7 +475,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                 <MemberRightSidebar
                   userName={userName}
                   userRole="Sales Executive"
-                  avatarUrl={avatarUrl}
                   target={target}
                   activities={activities}
                   recentUpdates={recentUpdates}
@@ -523,9 +542,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                 setActionModalType('leadDetail');
               }}
               onAdvanceStage={(leadId, nextStage) => {
-                teamMemberStore.updateLeadStage(leadId, currentUserId, nextStage);
-                showToast(`Moved lead to ${nextStage}`);
-                refreshData();
+                void run(() => teamMemberStore.updateLeadStage(leadId, currentUserId, nextStage), `Moved lead to ${nextStage}`);
               }}
               onCallLead={(lead) => {
                 setSelectedLead(lead);
@@ -580,9 +597,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                 alert(`Follow-up Details:\n${task.leadName} (${task.company})\nTime: ${task.dateTimeStr}\nNotes: ${task.notes}`);
               }}
               onToggleComplete={(taskId) => {
-                teamMemberStore.toggleFollowUpStatus(taskId);
-                refreshData();
-                showToast('Follow-up status updated');
+                void run(() => teamMemberStore.toggleFollowUpStatus(taskId), 'Follow-up status updated');
               }}
             />
           </div>
@@ -606,14 +621,14 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         {/* VIEW 5: DEALS WORKSPACE */}
         {/* ========================================================================= */}
         {activeNav === 'deals' && (
-          <MemberDealsDashboard currentUserId={currentUserId} />
+          <MemberDealsDashboard />
         )}
 
         {/* ========================================================================= */}
         {/* VIEW 6: CALENDAR */}
         {/* ========================================================================= */}
         {activeNav === 'calendar' && (
-          <MemberCalendarDashboard currentUserId={currentUserId} />
+          <MemberCalendarDashboard />
         )}
 
         {/* ========================================================================= */}
@@ -915,6 +930,75 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                     className="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 cursor-pointer"
                   >
                     Save Call Log
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SCHEDULE DEMO MODAL */}
+        {actionModalType === 'demo' && selectedLead && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-slate-900">Schedule Demo</h3>
+                </div>
+                <button
+                  onClick={() => setActionModalType(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div className="font-bold text-slate-900 text-xs">{selectedLead.name}</div>
+                <div className="text-[11px] text-slate-500">{selectedLead.company}</div>
+              </div>
+
+              <div className="mt-4 space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Date</label>
+                    <input
+                      type="date"
+                      value={demoDate}
+                      onChange={(e) => setDemoDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Time</label>
+                    <input
+                      type="time"
+                      value={demoTime}
+                      onChange={(e) => setDemoTime(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-500">The demo is added to your calendar and follow-ups.</p>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActionModalType(null)}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmScheduleDemo}
+                    disabled={!demoDate || !demoTime}
+                    className="px-5 py-2 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 disabled:opacity-50 cursor-pointer"
+                  >
+                    Schedule Demo
                   </button>
                 </div>
               </div>

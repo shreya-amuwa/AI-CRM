@@ -323,11 +323,6 @@ export const CustomerSocialPortal: React.FC<CustomerSocialPortalProps> = ({ onCl
             {/* Top User Session Light Glass Bar */}
             <div className="bg-white/90 backdrop-blur-2xl rounded-3xl p-6 border border-slate-200 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <img
-                  src={authenticatedUser.avatar}
-                  alt="User Avatar"
-                  className="w-14 h-14 rounded-2xl border-2 border-blue-500/30 object-cover shadow-sm"
-                />
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-xl font-bold font-heading text-slate-900">{authenticatedUser.name}</h3>

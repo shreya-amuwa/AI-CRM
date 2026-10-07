@@ -244,11 +244,6 @@ export const LeadOverviewTab: React.FC<LeadOverviewTabProps> = ({
                 <div key={rep.id} className="py-3.5 flex items-center justify-between gap-4 first:pt-0 last:pb-0">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="relative">
-                      <img
-                        src={rep.avatar}
-                        alt={rep.name}
-                        className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-100"
-                      />
                       <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${statusDot}`} />
                     </div>
                     <div className="min-w-0">

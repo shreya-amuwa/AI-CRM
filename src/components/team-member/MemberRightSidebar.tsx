@@ -16,7 +16,6 @@ import { TeamMemberActivity, RecentUpdate, MemberTarget } from '../../types/crm'
 interface MemberRightSidebarProps {
   userName: string;
   userRole?: string;
-  avatarUrl: string;
   target: MemberTarget;
   activities: TeamMemberActivity[];
   recentUpdates: RecentUpdate[];
@@ -31,7 +30,6 @@ interface MemberRightSidebarProps {
 export const MemberRightSidebar: React.FC<MemberRightSidebarProps> = ({
   userName,
   userRole = 'Sales Executive',
-  avatarUrl,
   target,
   activities,
   recentUpdates,
@@ -75,11 +73,6 @@ export const MemberRightSidebar: React.FC<MemberRightSidebarProps> = ({
       {/* 1. PROFILE & TARGET CARD */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
         <div className="flex items-center gap-3">
-          <img
-            src={avatarUrl}
-            alt={userName}
-            className="w-12 h-12 rounded-full object-cover ring-2 ring-blue-500/20"
-          />
           <div>
             <h3 className="text-sm font-bold font-heading text-slate-900 leading-tight">
               {userName}
