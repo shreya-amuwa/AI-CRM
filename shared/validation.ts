@@ -5,6 +5,11 @@
 import { z } from 'zod';
 import {
   ACCOUNT_STATUSES,
+  LEAD_STATUSES,
+  ONBOARDING_FILTERS,
+  PAYMENT_FILTERS,
+  PAYMENT_METHODS,
+  PIPELINE_STAGES,
   APPROVAL_STATUSES,
   CUSTOMER_SEGMENTS,
   CUSTOMER_STATUSES,
@@ -68,6 +73,11 @@ export const customerListQuerySchema = z.object({
   teamId: uuidSchema.optional(),
   departmentId: uuidSchema.optional(),
   sort: z.enum(['createdAt', 'name', 'lastOrderAmount']).default('createdAt'),
+  /** Comma-separated lifecycle stages, e.g. "ONBOARDING,CUSTOMER" for My Customers. */
+  lifecycle: z
+    .string()
+    .regex(/^(LEAD|POTENTIAL|ONBOARDING|CUSTOMER|LOST)(,(LEAD|POTENTIAL|ONBOARDING|CUSTOMER|LOST))*$/)
+    .optional(),
   order: z.enum(['asc', 'desc']).default('desc')
 });
 export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
@@ -237,3 +247,91 @@ export const auditListQuerySchema = z.object({
   departmentId: uuidSchema.optional(),
   teamId: uuidSchema.optional()
 });
+
+// ---------------------------------------------------------------------------
+// Sales pipeline
+// ---------------------------------------------------------------------------
+const serviceCodes = z.array(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/)).max(40);
+const datetime = z.string().datetime({ offset: true });
+
+const leadFields = {
+  name: trimmed(200).min(1, 'Contact person is required.'),
+  company: trimmed(200).min(1, 'Business name is required.'),
+  phone: phoneSchema,
+  whatsapp: z.preprocess(v => (v === '' ? null : v), phoneSchema.nullable().optional()),
+  email: z.preprocess(v => (v === '' ? null : v), emailSchema.nullable().optional()),
+  city: optionalText(120),
+  businessCategory: optionalText(120),
+  leadSource: trimmed(60).min(1, 'Lead source is required.'),
+  leadStatus: z.enum(LEAD_STATUSES).optional(),
+  nextFollowUpAt: z.preprocess(v => (v === '' ? null : v), datetime.nullable().optional()),
+  expectedBudget: z.preprocess(v => (v === '' || v === null ? null : v), z.coerce.number().min(0).max(1e12).nullable().optional()),
+  notes: optionalText(5000)
+};
+
+export const leadCreateSchema = z
+  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional() })
+  .strict();
+export type LeadCreateInput = z.infer<typeof leadCreateSchema>;
+
+export const leadUpdateSchema = z
+  .object(leadFields)
+  .partial()
+  .extend({
+    services: serviceCodes.min(1, 'Select at least one service.').optional(),
+    activityNote: optionalText(500)
+  })
+  .strict()
+  .refine(v => Object.keys(v).length > 0, { message: 'Nothing to update.' });
+export type LeadUpdateInput = z.infer<typeof leadUpdateSchema>;
+
+export const pipelineListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(10),
+  stage: z.enum(PIPELINE_STAGES),
+  search: trimmed(100).optional(),
+  service: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).optional(),
+  source: trimmed(60).optional(),
+  leadStatus: z.enum(LEAD_STATUSES).optional(),
+  /** Follow-up window computed by the client in the user's timezone. */
+  followUpFrom: datetime.optional(),
+  followUpTo: datetime.optional(),
+  noFollowUp: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
+  payment: z.enum(PAYMENT_FILTERS).optional(),
+  onboarding: z.enum(ONBOARDING_FILTERS).optional(),
+  sort: z.enum(['newest', 'oldest', 'followUp', 'dueDate', 'amount', 'name']).default('newest')
+});
+export type PipelineListQuery = z.infer<typeof pipelineListQuerySchema>;
+
+export const moveToPotentialSchema = z
+  .object({
+    dealAmount: z.coerce.number().positive('Enter the deal amount.').max(1e12),
+    paymentDueDate: isoDate
+  })
+  .strict();
+
+export const recordPaymentSchema = z
+  .object({
+    amount: z.coerce.number().positive('Enter the amount received.').max(1e12),
+    method: z.enum(PAYMENT_METHODS).optional()
+  })
+  .strict();
+
+export const startOnboardingSchema = z
+  .object({
+    amountReceived: z.coerce.number().min(0).max(1e12).default(0),
+    paymentMethod: z.enum(PAYMENT_METHODS),
+    targetHandoverDate: isoDate.nullable().optional()
+  })
+  .strict();
+
+export const onboardingUpdateSchema = z.object({ targetHandoverDate: isoDate.nullable() }).strict();
+
+export const documentUploadSchema = z
+  .object({
+    documentType: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown document type.'),
+    fileName: trimmed(255).min(1),
+    mimeType: z.literal('application/pdf', { errorMap: () => ({ message: 'Only PDF files are accepted.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(52428800)
+  })
+  .strict();

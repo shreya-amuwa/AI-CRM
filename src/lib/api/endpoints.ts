@@ -9,8 +9,21 @@ import type {
   CustomerActivity,
   CustomerSegment,
   CustomerStatus,
+  CustomerDocument,
   CustomerSummary,
   Department,
+  DocumentUploadTicket,
+  DocumentUrl,
+  InboundLead,
+  LeadStatus,
+  OnboardingFilter,
+  PaymentFilter,
+  PaymentMethod,
+  PipelineCounts,
+  PipelineCustomer,
+  PipelineCustomerDetail,
+  PipelineStage,
+  ServiceCatalogItem,
   ImportResult,
   Notification,
   NotificationPriority,
@@ -21,7 +34,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { CustomerCreateInput, CustomerUpdateInput } from '../../../shared/validation';
+import type { CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -36,7 +49,54 @@ export interface CustomerQuery {
   departmentId?: string;
   sort?: 'createdAt' | 'name' | 'lastOrderAmount';
   order?: 'asc' | 'desc';
+  /** Comma-separated lifecycle stages, e.g. 'ONBOARDING,CUSTOMER'. */
+  lifecycle?: string;
 }
+
+export interface PipelineQuery {
+  stage: PipelineStage;
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  service?: string;
+  source?: string;
+  leadStatus?: LeadStatus;
+  followUpFrom?: string;
+  followUpTo?: string;
+  noFollowUp?: boolean;
+  payment?: PaymentFilter;
+  onboarding?: OnboardingFilter;
+  sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
+}
+
+export const pipelineApi = {
+  services: () => api.get<ServiceCatalogItem[]>('/pipeline/services'),
+  counts: () => api.get<PipelineCounts>('/pipeline/counts'),
+  list: (q: PipelineQuery) => api.get<Paginated<PipelineCustomer>>('/pipeline/customers', { ...q }),
+  get: (id: string) => api.get<PipelineCustomerDetail>(`/pipeline/customers/${id}`),
+  createLead: (body: LeadCreateInput) => api.post<PipelineCustomer>('/pipeline/leads', body),
+  updateLead: (id: string, body: LeadUpdateInput) => api.patch<PipelineCustomer>(`/pipeline/leads/${id}`, body),
+  moveToPotential: (id: string, body: { dealAmount: number; paymentDueDate: string }) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
+  recordPayment: (id: string, body: { amount: number; method?: PaymentMethod }) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/payments`, body),
+  startOnboarding: (id: string, body: { amountReceived: number; paymentMethod: PaymentMethod; targetHandoverDate?: string | null }) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/start-onboarding`, body),
+  updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>
+    api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
+  forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
+  inbound: () => api.get<InboundLead[]>('/pipeline/inbound'),
+  claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`)
+};
+
+export const documentsApi = {
+  beginUpload: (customerId: string, body: { documentType: string; fileName: string; mimeType: 'application/pdf'; sizeBytes: number }) =>
+    api.post<DocumentUploadTicket>(`/pipeline/customers/${customerId}/documents`, body),
+  complete: (documentId: string) => api.post<CustomerDocument>(`/documents/${documentId}/complete`),
+  abort: (documentId: string) => api.post<null>(`/documents/${documentId}/abort`),
+  url: (documentId: string, action: 'view' | 'download') => api.get<DocumentUrl>(`/documents/${documentId}/url`, { action }),
+  remove: (documentId: string) => api.delete<null>(`/documents/${documentId}`)
+};
 
 export const meApi = {
   get: () => api.get<Profile>('/me'),

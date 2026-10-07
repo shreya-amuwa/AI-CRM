@@ -2,9 +2,11 @@ import {
   approvalsController as approvals,
   auditController as audit,
   customersController as customers,
+  documentsController as documents,
   meController as me,
   notificationsController as notifications,
   organizationController as org,
+  pipelineController as pipeline,
   usersController as users
 } from './controllers/index.js';
 import type { RouteDef } from './http/types.js';
@@ -40,6 +42,26 @@ export const routes: RouteDef[] = [
   { method: 'DELETE', path: '/customers/:id', handler: customers.remove, options: S },
   { method: 'GET', path: '/customers/:id/activities', handler: customers.listActivities },
   { method: 'POST', path: '/customers/:id/activities', handler: customers.addActivity },
+
+  { method: 'GET', path: '/pipeline/services', handler: pipeline.services },
+  { method: 'GET', path: '/pipeline/counts', handler: pipeline.counts },
+  { method: 'GET', path: '/pipeline/customers', handler: pipeline.list },
+  { method: 'GET', path: '/pipeline/customers/:id', handler: pipeline.get },
+  { method: 'POST', path: '/pipeline/leads', handler: pipeline.createLead },
+  { method: 'PATCH', path: '/pipeline/leads/:id', handler: pipeline.updateLead },
+  { method: 'POST', path: '/pipeline/customers/:id/move-to-potential', handler: pipeline.moveToPotential },
+  { method: 'POST', path: '/pipeline/customers/:id/payments', handler: pipeline.recordPayment, options: S },
+  { method: 'POST', path: '/pipeline/customers/:id/start-onboarding', handler: pipeline.startOnboarding },
+  { method: 'PATCH', path: '/pipeline/customers/:id/onboarding', handler: pipeline.updateOnboarding },
+  { method: 'POST', path: '/pipeline/customers/:id/forward-to-support', handler: pipeline.forwardToSupport },
+  { method: 'GET', path: '/pipeline/inbound', handler: pipeline.inbound },
+  { method: 'POST', path: '/pipeline/inbound/:leadId/claim', handler: pipeline.claimInbound },
+
+  { method: 'POST', path: '/pipeline/customers/:id/documents', handler: documents.beginUpload, options: S },
+  { method: 'POST', path: '/documents/:id/complete', handler: documents.complete },
+  { method: 'POST', path: '/documents/:id/abort', handler: documents.abort },
+  { method: 'GET', path: '/documents/:id/url', handler: documents.url },
+  { method: 'DELETE', path: '/documents/:id', handler: documents.remove, options: S },
 
   { method: 'GET', path: '/notifications', handler: notifications.list },
   { method: 'GET', path: '/notifications/unread-count', handler: notifications.unreadCount },

@@ -67,6 +67,7 @@ export class CustomerRepository {
     if (q.ownerId) query = query.eq('owner_id', q.ownerId);
     if (q.teamId) query = query.eq('team_id', q.teamId);
     if (q.departmentId) query = query.eq('department_id', q.departmentId);
+    if (q.lifecycle) query = query.in('lifecycle_stage', q.lifecycle.split(','));
     if (q.search) query = query.ilike('search_text', likePattern(q.search));
     const { data, error, count } = await query
       .order(SORT_COLUMNS[q.sort], { ascending: q.order === 'asc', nullsFirst: false })

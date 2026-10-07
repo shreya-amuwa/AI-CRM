@@ -196,3 +196,133 @@ export interface ApiErrorBody {
 }
 
 export type ApiResponse<T> = { success: true; data: T } | { success: false; error: ApiErrorBody };
+
+// ---------------------------------------------------------------------------
+// Sales pipeline: Lead → Potential → Onboarding (one customer record)
+// ---------------------------------------------------------------------------
+export const LIFECYCLE_STAGES = ['LEAD', 'POTENTIAL', 'ONBOARDING', 'CUSTOMER', 'LOST'] as const;
+export type LifecycleStage = (typeof LIFECYCLE_STAGES)[number];
+
+export const PIPELINE_STAGES = ['LEAD', 'POTENTIAL', 'ONBOARDING'] as const;
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+export const LEAD_STATUSES = ['NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY'] as const;
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+export const PAYMENT_FILTERS = ['AWAITING', 'PART_PAID', 'OVERDUE'] as const;
+export type PaymentFilter = (typeof PAYMENT_FILTERS)[number];
+
+export const ONBOARDING_FILTERS = ['COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'] as const;
+export type OnboardingFilter = (typeof ONBOARDING_FILTERS)[number];
+
+export const PAYMENT_METHODS = ['UPI', 'BANK_TRANSFER', 'CASH', 'CARD', 'CHEQUE', 'OTHER'] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+export const ONBOARDING_STAGES = ['SALES_CONSULTATION', 'COLLECT_REQUIREMENTS', 'SETUP', 'APPROVAL', 'HANDOVER', 'COMPLETED'] as const;
+export type OnboardingStage = (typeof ONBOARDING_STAGES)[number];
+
+export interface ServiceCatalogItem {
+  code: string;
+  name: string;
+  category: string;
+}
+
+export interface PipelineCustomer {
+  id: string;
+  lifecycleStage: LifecycleStage;
+  leadStatus: LeadStatus;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  city: string | null;
+  businessCategory: string | null;
+  leadSource: string | null;
+  notes: string | null;
+  nextFollowUpAt: string | null;
+  expectedBudget: number | null;
+  dealAmount: number | null;
+  amountReceived: number;
+  paymentDueDate: string | null;
+  services: string[];
+  owner: ProfileSummary | null;
+  ownerId: string;
+  teamId: string;
+  departmentId: string;
+  stageChangedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  onboarding: CustomerOnboarding | null;
+}
+
+export interface CustomerOnboarding {
+  stage: OnboardingStage;
+  paymentMethod: PaymentMethod | null;
+  startedAt: string;
+  targetHandoverDate: string | null;
+  forwardedToSupportAt: string | null;
+  mandatorySaved: number;
+}
+
+export interface DocumentType {
+  code: string;
+  label: string;
+  description: string;
+  isMandatory: boolean;
+  allowedMimeTypes: string[];
+  maxSizeBytes: number;
+}
+
+export type DocumentStatus = 'PENDING' | 'UPLOADED' | 'SUPERSEDED' | 'FAILED';
+
+export interface CustomerDocument {
+  id: string;
+  customerId: string;
+  documentType: string;
+  version: number | null;
+  status: DocumentStatus;
+  originalFileName: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  uploadedBy: ProfileSummary | null;
+  uploadedAt: string | null;
+  createdAt: string;
+}
+
+export interface PipelineCustomerDetail extends PipelineCustomer {
+  documents: CustomerDocument[];
+  documentTypes: DocumentType[];
+  activities: CustomerActivity[];
+}
+
+export interface PipelineCounts {
+  leads: Record<'all' | LeadStatus, number>;
+  potential: Record<'all' | PaymentFilter, number>;
+  onboarding: Record<'all' | OnboardingFilter, number>;
+  mandatoryDocuments: number;
+}
+
+export interface InboundLead {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  company: string | null;
+  channel: string | null;
+  receivedAt: string;
+}
+
+/** Returned when an upload starts: the browser PUTs the file to this one path only. */
+export interface DocumentUploadTicket {
+  document: CustomerDocument;
+  bucket: string;
+  path: string;
+  token: string;
+}
+
+export interface DocumentUrl {
+  url: string;
+  expiresInSeconds: number;
+  fileName: string;
+}

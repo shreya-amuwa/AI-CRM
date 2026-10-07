@@ -77,3 +77,33 @@ export const organizationController = {
 export const auditController = {
   list: (async ctx => ok(await svc(ctx).audit.list(ctx.actor, ctx.req.query))) as Handler
 };
+
+export const pipelineController = {
+  services: (async ctx => ok(await svc(ctx).pipeline.services())) as Handler,
+  counts: (async ctx => ok(await svc(ctx).pipeline.counts())) as Handler,
+  list: (async ctx => ok(await svc(ctx).pipeline.list(ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).pipeline.get(ctx.params.id))) as Handler,
+  createLead: (async ctx => ok(await svc(ctx).pipeline.createLead(ctx.actor, ctx.req.body), 201)) as Handler,
+  updateLead: (async ctx => ok(await svc(ctx).pipeline.updateLead(ctx.params.id, ctx.req.body))) as Handler,
+  moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
+  recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
+  startOnboarding: (async ctx => ok(await svc(ctx).pipeline.startOnboarding(ctx.params.id, ctx.req.body))) as Handler,
+  updateOnboarding: (async ctx => ok(await svc(ctx).pipeline.updateOnboarding(ctx.params.id, ctx.req.body))) as Handler,
+  forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,
+  inbound: (async ctx => ok(await svc(ctx).pipeline.inbound(ctx.actor))) as Handler,
+  claimInbound: (async ctx => ok(await svc(ctx).pipeline.claimInbound(ctx.params.leadId), 201)) as Handler
+};
+
+export const documentsController = {
+  beginUpload: (async ctx => ok(await svc(ctx).pipeline.beginUpload(ctx.params.id, ctx.req.body), 201)) as Handler,
+  complete: (async ctx => ok(await svc(ctx).pipeline.completeUpload(ctx.params.id))) as Handler,
+  abort: (async ctx => {
+    await svc(ctx).pipeline.abortUpload(ctx.params.id);
+    return ok(null);
+  }) as Handler,
+  url: (async ctx => ok(await svc(ctx).pipeline.documentUrl(ctx.params.id, ctx.req.query))) as Handler,
+  remove: (async ctx => {
+    await svc(ctx).pipeline.deleteDocument(ctx.params.id);
+    return ok(null);
+  }) as Handler
+};

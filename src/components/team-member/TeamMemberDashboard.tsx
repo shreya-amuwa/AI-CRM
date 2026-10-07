@@ -17,7 +17,6 @@ import { Lead, TeamMemberActivity, EndOfDayReport, FollowUpTask, Deal } from '..
 import { teamMemberStore } from '../../services/teamMemberStore';
 import { useAuth } from '../../context/AuthContext';
 import { TeamMemberLayout, TeamMemberNav } from './TeamMemberLayout';
-import { MemberPipelineRows } from './MemberPipelineRows';
 import { MemberAnalyticsWidgets } from './MemberAnalyticsWidgets';
 import { MemberFollowUpsTable } from './MemberFollowUpsTable';
 import { MemberRightSidebar } from './MemberRightSidebar';
@@ -27,6 +26,8 @@ import { MemberCalendarDashboard } from './MemberCalendarDashboard';
 import { MemberInvoicesDashboard } from './MemberInvoicesDashboard';
 import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
+import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
+import { usePipelineCounts } from './pipeline/shared';
 
 interface TeamMemberDashboardProps {
   currentUserId: string;
@@ -39,7 +40,17 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
 }) => {
   const { profile } = useAuth();
   // Navigation State: 'home' is default, or 'leads'
-  const [activeNav, setActiveNav] = useState<TeamMemberNav>('home');
+  const [activeNav, setActiveNavState] = useState<TeamMemberNav>('home');
+  // "Add lead" from Home opens the database-backed lead form in My Leads → Leads.
+  const [openAddLead, setOpenAddLead] = useState(false);
+  // Bumped on every sidebar click so re-selecting a section returns to its list.
+  const [navNonce, setNavNonce] = useState(0);
+  const setActiveNav = (nav: TeamMemberNav) => {
+    setOpenAddLead(false);
+    setActiveNavState(nav);
+    setNavNonce(n => n + 1);
+  };
+  const { counts: pipelineCounts } = usePipelineCounts();
 
   // Store state
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -328,6 +339,11 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     <TeamMemberLayout
       activeNav={activeNav}
       onSelectNav={setActiveNav}
+      pipelineCounts={
+        pipelineCounts
+          ? { leads: pipelineCounts.leads.all, potential: pipelineCounts.potential.all, onboarding: pipelineCounts.onboarding.all }
+          : null
+      }
     >
       <div className="space-y-6 max-w-7xl mx-auto pb-10">
         {/* TOAST NOTIFICATION */}
@@ -478,7 +494,10 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
                   target={target}
                   activities={activities}
                   recentUpdates={recentUpdates}
-                  onAddLead={() => setActionModalType('addLead')}
+                  onAddLead={() => {
+                    setActiveNavState('leads');
+                    setOpenAddLead(true);
+                  }}
                   onLogCall={() => {
                     if (leads.length > 0) {
                       setSelectedLead(leads[0]);
@@ -512,48 +531,14 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         {/* ========================================================================= */}
         {/* VIEW 2: MY LEADS SECTION (MY LEADS PIPELINE IN ROW MANNER) */}
         {/* ========================================================================= */}
-        {activeNav === 'leads' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">
-                  My Leads
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Full pipeline view displaying your assigned leads in organized row format.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setActionModalType('addLead')}
-                className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 shadow-xs transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add New Lead</span>
-              </button>
-            </div>
-
-            {/* PIPELINE IN ROW MANNER */}
-            <MemberPipelineRows
-              leads={leads}
-              onSelectLead={(lead) => {
-                setSelectedLead(lead);
-                setActionModalType('leadDetail');
-              }}
-              onAdvanceStage={(leadId, nextStage) => {
-                void run(() => teamMemberStore.updateLeadStage(leadId, currentUserId, nextStage), `Moved lead to ${nextStage}`);
-              }}
-              onCallLead={(lead) => {
-                setSelectedLead(lead);
-                setActionModalType('call');
-              }}
-              onMessageLead={(lead) => {
-                setSelectedLead(lead);
-                setActionModalType('message');
-              }}
-            />
-          </div>
+        {(activeNav === 'leads' || activeNav === 'potential' || activeNav === 'onboarding') && (
+          <PipelineWorkspace
+            section={activeNav}
+            counts={pipelineCounts}
+            startWithAdd={openAddLead}
+            resetKey={navNonce}
+            onNavigate={nav => setActiveNav(nav)}
+          />
         )}
 
         {/* ========================================================================= */}

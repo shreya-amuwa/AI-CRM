@@ -19,6 +19,7 @@ process.env.SUPABASE_URL = process.env.GATEWAY_URL;
 process.env.SUPABASE_ANON_KEY = sign({ role: 'anon' });
 process.env.SUPABASE_SERVICE_ROLE_KEY = sign({ role: 'service_role' });
 process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
+process.env.RATE_LIMIT_SENSITIVE_PER_MIN = '100';
 process.env.API_ACCESS_LOG = 'off';
 
 const { handleApiRequest } = await import('../../server/app.js');
@@ -237,6 +238,188 @@ r = await api('sa', 'DELETE', `/users/${pendingId}`);
 check(r.status === 200, 'super admin deletes user', r);
 r = await api('sa', 'GET', '/nope');
 check(r.status === 404 && r.json.error.code === 'NOT_FOUND', 'unknown route → 404');
+// --- sales pipeline: one customer record LEAD → POTENTIAL → ONBOARDING -----------
+tokens.set('b', tokenFor(orphanId)); // second sales team member
+const GW = process.env.GATEWAY_URL!;
+const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+r = await api('a', 'GET', '/pipeline/services');
+check(r.status === 200 && r.json.data.length === 21 && r.json.data[0].category, 'service catalogue comes from the database', r);
+
+const leadBody = { name: 'Siddhesh', company: 'Galaxy Jewellers', phone: '+91 98200 11111', leadSource: 'Instagram', services: ['META_ADS_MANAGEMENT', 'AI_CALLING'], expectedBudget: 35000 };
+r = await api('a', 'POST', '/pipeline/leads', { ...leadBody, services: [] });
+check(r.status === 422, 'lead requires at least one service', r);
+r = await api('a', 'POST', '/pipeline/leads', { ...leadBody, services: ['NOT_A_SERVICE'] });
+check(r.status === 422, 'unknown service code rejected by the database', r);
+r = await api('a', 'POST', '/pipeline/leads', leadBody);
+check(r.status === 201 && r.json.data.lifecycleStage === 'LEAD' && r.json.data.leadStatus === 'NEW' && r.json.data.ownerId === memberA && r.json.data.services.length === 2,
+  'team member adds a lead (customer record in LEAD stage)', r);
+const leadA = r.json.data.id;
+r = await api('b', 'POST', '/pipeline/leads', { ...leadBody, name: 'Other', company: 'Other Co', phone: '+91 98200 22222' });
+check(r.status === 201, 'second member adds a lead', r);
+const leadB = r.json.data.id;
+
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD');
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'member A sees only their own lead', r);
+r = await api('b', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 404, "member B cannot open A's lead", r);
+r = await api('b', 'PATCH', `/pipeline/leads/${leadA}`, { leadStatus: 'CONTACTED' });
+check(r.status === 404, "member B cannot edit A's lead", r);
+r = await api('th', 'GET', '/pipeline/customers?stage=LEAD');
+check(r.json.data.total === 2, 'team head sees both leads');
+
+r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { leadStatus: 'CONTACTED', activityNote: 'Called, wants a demo' });
+check(r.status === 200 && r.json.data.leadStatus === 'CONTACTED', 'lead status updated', r);
+r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { lifecycleStage: 'ONBOARDING' });
+check(r.status === 422, 'lifecycle cannot be set through lead edit', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+check(r.json.data.activities.some((x: any) => /demo/.test(x.note || '')) && r.json.data.documentTypes.length === 2, 'detail includes activity trail and document types', r);
+r = await api('a', 'GET', '/pipeline/counts');
+check(r.json.data.leads.all === 1 && r.json.data.leads.CONTACTED === 1 && r.json.data.mandatoryDocuments === 2, 'stage counts are RLS-scoped', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&service=AI_CALLING&leadStatus=CONTACTED&search=galaxy');
+check(r.json.data.total === 1 && r.json.data.items[0].services.length === 2, 'server-side service/status/search filters', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&service=SEO');
+check(r.json.data.total === 0, 'service filter excludes non-matching leads');
+
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'INVOICE', fileName: 'inv.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+check(r.status === 409 || r.status === 422, 'documents cannot be uploaded before onboarding', r);
+
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/move-to-potential`, { dealAmount: 50000, paymentDueDate: tomorrow });
+check(r.status === 200 && r.json.data.lifecycleStage === 'POTENTIAL' && r.json.data.id === leadA && r.json.data.dealAmount === 50000, 'moved to Potential (same record)', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD');
+check(r.json.data.total === 0, 'no duplicate left behind in Leads');
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 60000 });
+check(r.status === 422, 'payment cannot exceed deal amount', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 10000, method: 'UPI' });
+check(r.status === 200 && r.json.data.amountReceived === 10000, 'part payment recorded', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=POTENTIAL&payment=PART_PAID');
+check(r.json.data.total === 1, 'payment filter (part paid)', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/start-onboarding`, { amountReceived: 5000, paymentMethod: 'UPI', targetHandoverDate: tomorrow });
+check(r.status === 200 && r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.amountReceived === 15000 && r.json.data.onboarding.mandatorySaved === 0,
+  'onboarding started on the same record', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
+check(r.status === 422 || r.status === 409, 'cannot forward to support without mandatory documents', r);
+
+// --- documents: private storage, signed single-path uploads, content checks --------
+const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
+const put = (t: any, body: Buffer, type = 'application/pdf') =>
+  fetch(`${GW}/storage/v1/object/upload/sign/${t.bucket}/${t.path}?token=${t.token}`, { method: 'PUT', headers: { 'content-type': type, 'x-upsert': 'false' }, body });
+const begin = (who: string, customer: string, documentType: string, fileName = 'Galaxy Invoice.pdf', extra: object = {}) =>
+  api(who, 'POST', `/pipeline/customers/${customer}/documents`, { documentType, fileName, mimeType: 'application/pdf', sizeBytes: PDF.length, ...extra });
+
+r = await begin('a', leadA, 'INVOICE', 'x.png', { mimeType: 'image/png' });
+check(r.status === 422, 'non-PDF declared type rejected', r);
+r = await begin('a', leadA, 'INVOICE', 'big.pdf', { sizeBytes: 30 * 1024 * 1024 });
+check(r.status === 422, 'oversize file rejected before upload', r);
+r = await begin('b', leadA, 'INVOICE');
+check(r.status === 404, "member B cannot upload to A's customer", r);
+
+r = await begin('a', leadA, 'INVOICE', 'fake.pdf');
+check(r.status === 201 && r.json.data.token && r.json.data.path === `customers/${leadA}/invoices/${r.json.data.document.id}.pdf` && r.json.data.document.status === 'PENDING',
+  'upload ticket: path uses ids only (no file name / PII)', r);
+let ticket = r.json.data;
+let up = await put(ticket, Buffer.from('MZ this is an executable renamed to .pdf'));
+check(up.status === 200, 'renamed non-PDF reaches storage (content check happens next)');
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 422 && /not a valid PDF/.test(r.json.error.message), 'file content verified by signature, not extension', r);
+let keys = await fetch(`${GW}/storage/v1/__objects`, { headers: { authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }).then(x => x.json()) as string[];
+check(!keys.some(k => k.includes(ticket.document.id)), 'rejected object removed from storage (no orphan)');
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 409, 'failed upload cannot be completed later', r);
+
+r = await begin('a', leadA, 'INVOICE');
+ticket = r.json.data;
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 422 && /did not finish/.test(r.json.error.message), 'complete without an object → no fake success', r);
+
+r = await begin('a', leadA, 'INVOICE');
+ticket = r.json.data;
+up = await put({ ...ticket, path: ticket.path.replace(ticket.document.id, crypto.randomUUID()) }, PDF);
+check(up.status !== 200, 'upload token is bound to its exact path');
+up = await put(ticket, PDF, 'image/png');
+check(up.status !== 200, 'bucket rejects non-PDF content type');
+up = await put(ticket, PDF);
+check(up.status === 200, 'browser uploads PDF with signed token');
+up = await put(ticket, PDF);
+check(up.status !== 200, 'upload token is single-use / no overwrite');
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 200 && r.json.data.status === 'UPLOADED' && r.json.data.version === 1 && r.json.data.sizeBytes === PDF.length, 'invoice v1 uploaded', r);
+const invoiceV1 = r.json.data.id;
+
+r = await api('b', 'GET', `/documents/${invoiceV1}/url`);
+check(r.status === 404, "member B cannot get a URL for A's document", r);
+const direct = await fetch(`${GW}/storage/v1/object/sign/${ticket.bucket}/${ticket.path}`, {
+  method: 'POST', headers: { authorization: `Bearer ${tokens.get('b')}`, 'content-type': 'application/json' }, body: '{"expiresIn":60}' });
+check(direct.status >= 400, 'storage cannot be signed with a user token (private bucket)');
+r = await api('a', 'GET', `/documents/${invoiceV1}/url?action=view`);
+check(r.status === 200 && r.json.data.expiresInSeconds <= 300 && r.json.data.fileName === 'Galaxy Invoice.pdf', 'short-lived signed view URL', r);
+const fileText = await fetch(r.json.data.url).then(x => x.text());
+check(fileText.startsWith('%PDF-'), 'signed URL serves the stored PDF');
+r = await api('th', 'GET', `/documents/${invoiceV1}/url?action=download`);
+check(r.status === 200 && /download=/.test(r.json.data.url), 'team head can download team documents', r);
+
+r = await begin('a', leadA, 'INVOICE', 'Invoice v2.pdf');
+ticket = r.json.data;
+await put(ticket, PDF);
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 200 && r.json.data.version === 2, 'replacement creates version 2', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+const invoices = r.json.data.documents.filter((d: any) => d.documentType === 'INVOICE');
+check(invoices.length === 2 && invoices.find((d: any) => d.version === 1).status === 'SUPERSEDED' && r.json.data.onboarding.mandatorySaved === 1,
+  'old version superseded, progress 1 of 2', r.json.data);
+
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'kyc.pdf');
+ticket = r.json.data;
+check(ticket.path.includes('/onboarding/'), 'important documents stored under onboarding/');
+await put(ticket, PDF);
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+const importantDoc = r.json.data.id;
+r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=READY_FOR_HANDOVER');
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2, 'onboarding filter: ready for handover', r);
+
+// a pending upload abandoned by the browser
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'abandoned.pdf');
+const abandoned = r.json.data;
+await put(abandoned, PDF);
+r = await api('a', 'POST', `/documents/${abandoned.document.id}/abort`);
+check(r.status === 200, 'aborted upload acknowledged');
+keys = await fetch(`${GW}/storage/v1/__objects`, { headers: { authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }).then(x => x.json()) as string[];
+check(!keys.some(k => k.includes(abandoned.document.id)), 'aborted upload object cleaned up');
+
+r = await api('b', 'DELETE', `/documents/${importantDoc}`);
+check(r.status === 404, "member B cannot delete A's document", r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
+check(r.status === 200 && r.json.data.onboarding.forwardedToSupportAt && r.json.data.onboarding.stage === 'SETUP', 'forwarded to support once documents are in', r);
+r = await api('a', 'DELETE', `/documents/${importantDoc}`);
+check(r.status === 409, 'current documents are locked after forwarding', r);
+r = await api('a', 'DELETE', `/documents/${invoiceV1}`);
+check(r.status === 200, 'superseded version can be deleted', r);
+r = await api('a', 'GET', `/documents/${invoiceV1}/url`);
+check(r.status === 404, 'deleted document is no longer reachable');
+
+const { rows: audit } = await db.query(
+  `select action from public.audit_logs where entity_type = 'customer_document' order by created_at`);
+const actions = audit.map((x: any) => x.action);
+for (const a of ['INVOICE_UPLOADED', 'INVOICE_REPLACED', 'DOCUMENT_UPLOADED', 'DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED', 'INVOICE_DELETED']) {
+  check(actions.includes(a), `audit log has ${a}`, actions);
+}
+
+r = await api('a', 'GET', '/customers?lifecycle=ONBOARDING,CUSTOMER&search=galaxy');
+check(r.json.data.total === 1, 'My Customers can be limited to onboarding/customer lifecycle', r);
+r = await api('b', 'GET', `/pipeline/customers?stage=ONBOARDING`);
+check(r.json.data.total === 0, 'member B sees no onboarding customers of A');
+
+// --- inbound website/WhatsApp leads are claimed into the pipeline once ------------
+await db.query(`insert into public.crm_leads (id, name, phone, company, channel, department) values ('W-1', 'Web Visitor', '+91 90000 00000', 'Web Co', 'website', 'wabastore')`);
+r = await api('a', 'GET', '/pipeline/inbound');
+check(r.status === 200 && r.json.data.some((l: any) => l.id === 'W-1'), 'unassigned inbound lead visible to the sales team', r);
+r = await api('a', 'POST', '/pipeline/inbound/W-1/claim');
+check(r.status === 201 && r.json.data.lifecycleStage === 'LEAD' && r.json.data.ownerId === memberA, 'claim converts inbound lead into a LEAD record', r);
+r = await api('b', 'POST', '/pipeline/inbound/W-1/claim');
+check(r.status === 409, 'second claim → 409 (no duplicate customers)', r);
+r = await api('b', 'GET', '/pipeline/inbound');
+check(!r.json.data.some((l: any) => l.id === 'W-1'), 'claimed lead leaves the inbound list');
+void leadB;
+
 // --- rate limiting (shared Postgres counters) + response headers -------------
 let limited: Response | null = null;
 for (let i = 0; i < 4 && !limited; i++) {

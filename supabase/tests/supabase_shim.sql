@@ -37,7 +37,8 @@ create or replace function auth.role() returns text language sql stable as $$
 $$;
 
 create table if not exists storage.buckets (
-  id text primary key, name text not null, public boolean default false
+  id text primary key, name text not null, public boolean default false,
+  file_size_limit bigint, allowed_mime_types text[]
 );
 
 do $$ begin

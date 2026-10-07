@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   X,
-  Navigation
+  Navigation,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -21,6 +22,8 @@ import { useNotifications } from '../../context/NotificationContext';
 export type TeamMemberNav =
   | 'home'
   | 'leads'
+  | 'potential'
+  | 'onboarding'
   | 'field-visits'
   | 'customers'
   | 'deals'
@@ -33,12 +36,22 @@ interface TeamMemberLayoutProps {
   children: React.ReactNode;
   activeNav?: TeamMemberNav;
   onSelectNav?: (nav: TeamMemberNav) => void;
+  /** Live counts for the My Leads sub-tree (from the database). */
+  pipelineCounts?: { leads: number; potential: number; onboarding: number } | null;
 }
+
+const PIPELINE_CHILDREN: { id: TeamMemberNav; label: string; step: number; badge: string; activeBadge: string; countKey: 'leads' | 'potential' | 'onboarding' }[] = [
+  { id: 'leads', label: 'Leads', step: 1, badge: 'bg-indigo-50 text-indigo-700', activeBadge: 'bg-indigo-600 text-white', countKey: 'leads' },
+  { id: 'potential', label: 'Potential', step: 2, badge: 'bg-orange-50 text-orange-700', activeBadge: 'bg-orange-700 text-white', countKey: 'potential' },
+  { id: 'onboarding', label: 'Customer onboarding', step: 3, badge: 'bg-emerald-50 text-emerald-700', activeBadge: 'bg-emerald-700 text-white', countKey: 'onboarding' }
+];
+const isPipelineNav = (n: TeamMemberNav) => n === 'leads' || n === 'potential' || n === 'onboarding';
 
 export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   children,
   activeNav = 'leads',
-  onSelectNav
+  onSelectNav,
+  pipelineCounts
 }) => {
   const { user, logout } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
@@ -58,10 +71,12 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   ];
 
   const [currentNav, setCurrentNav] = useState<TeamMemberNav>(activeNav || 'leads');
+  const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
 
   React.useEffect(() => {
     if (activeNav) {
       setCurrentNav(activeNav);
+      if (isPipelineNav(activeNav)) setLeadsOpen(true);
     }
   }, [activeNav]);
 
@@ -134,9 +149,76 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           </div>
 
           {/* Navigation Links */}
-          <nav className="space-y-1">
+          <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-14rem)]" aria-label="Main">
             {navItems.map((item) => {
               const Icon = item.icon;
+              if (item.id === 'leads') {
+                const inPipeline = isPipelineNav(currentNav);
+                return (
+                  <div key="my-leads">
+                    <button
+                      type="button"
+                      aria-expanded={leadsOpen}
+                      aria-controls="my-leads-subtree"
+                      onClick={() => {
+                        if (!inPipeline) {
+                          setLeadsOpen(true);
+                          handleNavClick('leads');
+                        } else {
+                          setLeadsOpen(o => !o);
+                        }
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'ArrowRight') setLeadsOpen(true);
+                        if (e.key === 'ArrowLeft') setLeadsOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                        inPipeline ? 'text-blue-600 font-bold' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 ${inPipeline ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span className="flex-1">{item.label}</span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${leadsOpen ? '' : '-rotate-90'}`} aria-hidden="true" />
+                    </button>
+                    {leadsOpen && (
+                      <ul id="my-leads-subtree" role="group" aria-label="My Leads" className="mt-1 ml-3 pl-2 border-l border-slate-100 space-y-0.5">
+                        {PIPELINE_CHILDREN.map(child => {
+                          const active = currentNav === child.id;
+                          const count = pipelineCounts?.[child.countKey];
+                          return (
+                            <li key={child.id}>
+                              <button
+                                type="button"
+                                aria-current={active ? 'page' : undefined}
+                                onClick={() => handleNavClick(child.id)}
+                                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                                  active ? 'bg-white shadow-sm ring-1 ring-slate-200 font-bold text-slate-900' : 'font-medium text-slate-600 hover:bg-slate-50'
+                                }`}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className={`w-5 h-5 rounded-md inline-flex items-center justify-center text-[10px] font-bold shrink-0 ${active ? child.activeBadge : child.badge}`}
+                                >
+                                  {child.step}
+                                </span>
+                                <span className="flex-1 leading-tight">{child.label}</span>
+                                {count !== undefined && (
+                                  <span
+                                    className={`text-[10px] font-semibold ${active ? `px-1.5 py-0.5 rounded-md ${child.badge}` : 'text-slate-400'}`}
+                                    aria-label={`${count} ${child.label.toLowerCase()}`}
+                                  >
+                                    {count}
+                                  </span>
+                                )}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                );
+              }
               const isActive = currentNav === item.id;
               return (
                 <button
