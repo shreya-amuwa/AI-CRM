@@ -22,6 +22,7 @@ import {
   Check
 } from 'lucide-react';
 import { fieldVisitStore, FieldVisit, FieldVisitStop } from '../../services/fieldVisitStore';
+import { useAuth } from '../../context/AuthContext';
 
 interface FieldVisitTrackerViewProps {
   viewerRole?: 'superadmin' | 'admin' | 'team-lead' | 'team-member';
@@ -34,7 +35,9 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
   currentUserId,
   userName
 }) => {
+  const { profile } = useAuth();
   const [visits, setVisits] = useState<FieldVisit[]>(() => fieldVisitStore.getVisits());
+  const [isSaving, setIsSaving] = useState(false);
   const [filter, setFilter] = useState<'all' | 'transit' | 'reached' | 'alerts'>('all');
   const [selectedVisitId, setSelectedVisitId] = useState<string | null>(visits[0]?.id || null);
   const [showStartVisitModal, setShowStartVisitModal] = useState(false);
@@ -46,7 +49,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
   const [newClientAddress, setNewClientAddress] = useState('');
   const [newClientContact, setNewClientContact] = useState('');
   const [newPurpose, setNewPurpose] = useState('');
-  const [newEstimatedArrival, setNewEstimatedArrival] = useState('Within 45 mins');
+  const [newEstimatedArrival, setNewEstimatedArrival] = useState('');
 
   // Log Stop Form State
   const [stopLocation, setStopLocation] = useState('');
@@ -65,58 +68,87 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const handleStartVisit = (e: React.FormEvent) => {
+  // Every change is saved to the database; failures are shown, not swallowed.
+  const run = async (action: () => Promise<unknown>) => {
+    setIsSaving(true);
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      showToast(`Could not save: ${err instanceof Error ? err.message : 'unknown error'}`);
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleStartVisit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientName || !newClientAddress) return;
-
-    const visit = fieldVisitStore.startVisit({
-      employeeId: currentUserId || 'tm-user',
-      employeeName: userName || 'Sales Executive',
-      employeeRole: 'Sales Executive',
-      clientName: newClientName,
-      clientAddress: newClientAddress,
-      clientContact: newClientContact || '+91 98000 00000',
-      purpose: newPurpose || 'Client On-Site Consultation & Demo',
-      estimatedArrivalTime: newEstimatedArrival
+    let started: FieldVisit | null = null;
+    const ok = await run(async () => {
+      started = await fieldVisitStore.startVisit({
+        employeeName: userName || profile?.fullName || 'Sales Executive',
+        employeeRole: profile?.position || 'Sales Executive',
+        employeePhone: profile?.phone || '',
+        clientName: newClientName,
+        clientAddress: newClientAddress,
+        clientContact: newClientContact,
+        purpose: newPurpose || 'Client visit',
+        estimatedArrivalTime: newEstimatedArrival
+      });
     });
-
+    if (!ok || !started) return;
+    const visit: FieldVisit = started;
     setSelectedVisitId(visit.id);
     setShowStartVisitModal(false);
     setNewClientName('');
     setNewClientAddress('');
     setNewClientContact('');
     setNewPurpose('');
-    showToast(`📍 Field Visit started for ${visit.clientName}! Live GPS phone location tracking is now ACTIVE.`);
+    showToast(
+      visit.currentLocation
+        ? `📍 Field visit started for ${visit.clientName}. Your current location was recorded.`
+        : `📍 Field visit started for ${visit.clientName}. ${visit.locationError || 'Location unavailable.'}`
+    );
   };
 
-  const handleMarkReached = (visitId: string) => {
-    fieldVisitStore.markDestinationReached(visitId);
-    showToast('✅ Verified: Sales Executive has officially REACHED the client destination!');
-  };
-
-  const handleLogStop = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedVisitId || !stopLocation) return;
-
-    fieldVisitStore.logStop(selectedVisitId, {
-      locationName: stopLocation,
-      durationMinutes: Number(stopDuration),
-      notes: stopNotes
+  const handlePingLocation = async (visitId: string) => {
+    let locationError: string | null = null;
+    const ok = await run(async () => {
+      locationError = await fieldVisitStore.pingLocation(visitId);
     });
+    if (ok) showToast(locationError ? `⚠️ ${locationError}` : '📍 Location updated.');
+  };
 
-    setShowLogStopModal(false);
-    setStopLocation('');
-    setStopNotes('');
-    if (Number(stopDuration) > 15) {
-      showToast(`⚠️ Stop logged (${stopDuration} mins): Flagged as >15 min waiting delay.`);
-    } else {
-      showToast(`⏱️ Stop logged at ${stopLocation} (${stopDuration} mins).`);
+  const handleMarkReached = async (visitId: string) => {
+    if (await run(() => fieldVisitStore.markDestinationReached(visitId))) {
+      showToast('✅ Marked as reached at the client destination.');
     }
   };
 
-  const handleCompleteVisit = (visitId: string) => {
-    fieldVisitStore.completeVisit(visitId);
-    showToast('🏁 Field visit marked as completed and logged to company records.');
+  const handleLogStop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedVisitId || !stopLocation) return;
+    const duration = Number(stopDuration);
+    const ok = await run(() =>
+      fieldVisitStore.logStop(selectedVisitId, { locationName: stopLocation, durationMinutes: duration, notes: stopNotes })
+    );
+    if (!ok) return;
+    setShowLogStopModal(false);
+    setStopLocation('');
+    setStopNotes('');
+    showToast(
+      duration > 15
+        ? `⚠️ Stop logged (${duration} mins): Flagged as >15 min waiting delay.`
+        : `⏱️ Stop logged at ${stopLocation} (${duration} mins).`
+    );
+  };
+
+  const handleCompleteVisit = async (visitId: string) => {
+    if (await run(() => fieldVisitStore.completeVisit(visitId))) {
+      showToast('🏁 Field visit marked as completed.');
+    }
   };
 
   const activeVisitsCount = visits.filter(v => v.currentStatus !== 'Completed').length;
@@ -132,6 +164,8 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
   });
 
   const selectedVisit = visits.find(v => v.id === selectedVisitId) || visits[0];
+  const canEditSelected = !!selectedVisit && !!profile && selectedVisit.employeeId === profile.id;
+  const locationSharedCount = visits.filter(v => v.currentLocation).length;
 
   return (
     <div className="space-y-6 font-sans">
@@ -198,12 +232,12 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
             <button
               onClick={() => {
                 setVisits(fieldVisitStore.getVisits());
-                showToast('🔄 Refreshed real-time phone GPS telemetry coordinates.');
+                showToast('🔄 Field visits refreshed.');
               }}
               className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/15 transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Ping GPS</span>
+              <span>Refresh</span>
             </button>
           </div>
         </div>
@@ -238,11 +272,11 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
           </div>
 
           <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
-            <div className="text-[11px] font-mono text-slate-400 uppercase">Phone Telemetry</div>
-            <div className="text-2xl font-bold text-white mt-1">100% Online</div>
+            <div className="text-[11px] font-mono text-slate-400 uppercase">Location Shared</div>
+            <div className="text-2xl font-bold text-white mt-1">{locationSharedCount} of {visits.length}</div>
             <div className="text-[11px] text-emerald-400 font-mono flex items-center gap-1 mt-0.5">
               <Battery className="w-3 h-3" />
-              <span>GPS Precision ±3-5m</span>
+              <span>From the executive's phone</span>
             </div>
           </div>
         </div>
@@ -303,11 +337,6 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={visit.employeeAvatar}
-                        alt={visit.employeeName}
-                        className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-xs shrink-0"
-                      />
                       <div>
                         <h4 className="text-sm font-bold text-slate-900">{visit.employeeName}</h4>
                         <p className="text-[11px] text-slate-500">{visit.employeeRole}</p>
@@ -367,35 +396,42 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
               {/* Executive Details & Direct Contact */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
                 <div className="flex items-center gap-4">
-                  <img
-                    src={selectedVisit.employeeAvatar}
-                    alt={selectedVisit.employeeName}
-                    className="w-14 h-14 rounded-2xl object-cover border-2 border-indigo-100 shadow-xs"
-                  />
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-bold text-slate-900">{selectedVisit.employeeName}</h3>
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                        {selectedVisit.employeeId}
-                      </span>
                     </div>
-                    <p className="text-xs text-slate-500">{selectedVisit.employeeRole} • {selectedVisit.employeePhone}</p>
+                    <p className="text-xs text-slate-500">
+                      {selectedVisit.employeeRole}
+                      {selectedVisit.employeePhone ? ` • ${selectedVisit.employeePhone}` : ''}
+                    </p>
                     <div className="flex items-center gap-2 mt-1 text-[11px] font-mono text-slate-600">
                       <span>Trip Started: <strong>{selectedVisit.startTime}</strong></span>
                       <span>•</span>
-                      <span>Est. Arrival: <strong>{selectedVisit.estimatedArrivalTime}</strong></span>
+                      <span>Est. Arrival: <strong>{selectedVisit.estimatedArrivalTime || '—'}</strong></span>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                  <a
-                    href={`tel:${selectedVisit.employeePhone}`}
-                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  {selectedVisit.employeePhone && !canEditSelected && (
+                    <a
+                      href={`tel:${selectedVisit.employeePhone}`}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                    >
+                      <Phone className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Call Phone</span>
+                    </a>
+                  )}
+                  {canEditSelected && selectedVisit.currentStatus !== 'Completed' && (
+                  <>
+                  <button
+                    onClick={() => handlePingLocation(selectedVisit.id)}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <Phone className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Call Phone</span>
-                  </a>
+                    <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Update Location</span>
+                  </button>
                   <button
                     onClick={() => setShowLogStopModal(true)}
                     className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -420,6 +456,8 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                       <span>End &amp; Complete Visit</span>
                     </button>
                   )}
+                  </>
+                  )}
                 </div>
               </div>
 
@@ -441,13 +479,15 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                     </div>
                     <div className="text-base font-bold font-heading">
                       {selectedVisit.reachedDestination
-                        ? `✓ DESTINATION REACHED (Arrived at ${selectedVisit.actualArrivalTime || '11:42 AM'})`
+                        ? `✓ DESTINATION REACHED${selectedVisit.actualArrivalTime ? ` (Arrived at ${selectedVisit.actualArrivalTime})` : ''}`
                         : `⏳ IN TRANSIT — DESTINATION NOT YET REACHED`}
                     </div>
                     <div className="text-xs mt-0.5">
                       {selectedVisit.reachedDestination
                         ? `Sales executive is currently checked in at ${selectedVisit.clientName}. On-site meeting in progress.`
-                        : `Estimated remaining distance: ${selectedVisit.distanceRemainingKm} km. Target arrival ${selectedVisit.estimatedArrivalTime}.`}
+                        : selectedVisit.estimatedArrivalTime
+                          ? `Target arrival ${selectedVisit.estimatedArrivalTime}.`
+                          : 'Not yet checked in at the client.'}
                     </div>
                   </div>
                 </div>
@@ -466,67 +506,53 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                     <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
                     <span>{selectedVisit.clientAddress}</span>
                   </div>
-                  <div className="text-xs text-slate-500 font-mono pt-1">
-                    Contact: <strong className="text-slate-800">{selectedVisit.clientContact}</strong>
-                  </div>
+                  {selectedVisit.clientContact && (
+                    <div className="text-xs text-slate-500 font-mono pt-1">
+                      Contact: <strong className="text-slate-800">{selectedVisit.clientContact}</strong>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
                   <span className="text-[10px] font-mono text-slate-400 uppercase font-bold">Visit Objective &amp; Commercial Scope</span>
-                  <div className="font-bold text-sm text-slate-900">Enterprise Engagement</div>
                   <p className="text-xs text-slate-600 leading-relaxed">
                     {selectedVisit.purpose}
                   </p>
-                  <div className="text-xs text-slate-500 font-mono pt-1">
-                    Total Estimated Distance: <strong>{selectedVisit.totalDistanceKm} km</strong>
-                  </div>
                 </div>
               </div>
 
-              {/* LIVE PHONE GPS RADAR & LOCATION */}
-              <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
-                    <span className="text-xs font-mono font-bold text-emerald-400">
-                      LIVE PHONE GPS TELEMETRY
-                    </span>
-                    <span className="text-xs text-slate-400">({selectedVisit.currentLocation.lastPingTime})</span>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-xs font-mono text-slate-300">
-                    <span>Speed: <strong className="text-white">{selectedVisit.currentLocation.speedKmH} km/h</strong></span>
-                    <span>Battery: <strong className="text-white">{selectedVisit.currentLocation.batteryLevel}%</strong></span>
-                    <span>GPS Accuracy: <strong className="text-emerald-400">±{selectedVisit.currentLocation.gpsAccuracyMeters}m</strong></span>
-                  </div>
+              {/* LAST KNOWN PHONE LOCATION (browser geolocation) */}
+              <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
+                <div className="flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-emerald-400" />
+                  <span className="text-xs font-mono font-bold text-emerald-400">LAST KNOWN PHONE LOCATION</span>
                 </div>
-
-                {/* Simulated Visual Route Trail */}
-                <div className="p-4 rounded-xl bg-slate-800/80 border border-slate-700 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Current Phone Location:</span>
-                      <strong className="text-white">{selectedVisit.currentLocation.address}</strong>
-                    </span>
-                    <span className="font-mono text-emerald-400">Lat: {selectedVisit.currentLocation.lat.toFixed(4)}, Lng: {selectedVisit.currentLocation.lng.toFixed(4)}</span>
-                  </div>
-
-                  {/* Route progress visual bar */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                      <span>Office HQ (Start)</span>
-                      <span className="text-indigo-400 font-semibold">{selectedVisit.reachedDestination ? '100% Completed' : 'En Route (80% Completed)'}</span>
-                      <span>{selectedVisit.clientName} (Target)</span>
+                {selectedVisit.currentLocation ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="space-y-1 font-mono text-slate-300">
+                      <div>
+                        Lat <strong className="text-white">{selectedVisit.currentLocation.lat.toFixed(5)}</strong>, Lng{' '}
+                        <strong className="text-white">{selectedVisit.currentLocation.lng.toFixed(5)}</strong>
+                      </div>
+                      <div>
+                        Accuracy ±{selectedVisit.currentLocation.accuracyMeters} m • Captured{' '}
+                        {new Date(selectedVisit.currentLocation.capturedAt).toLocaleString()}
+                      </div>
                     </div>
-                    <div className="w-full h-3 rounded-full bg-slate-700 overflow-hidden relative">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500 rounded-full transition-all"
-                        style={{ width: selectedVisit.reachedDestination ? '100%' : '78%' }}
-                      />
-                    </div>
+                    <a
+                      href={`https://www.google.com/maps?q=${selectedVisit.currentLocation.lat},${selectedVisit.currentLocation.lng}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 font-semibold text-white text-center"
+                    >
+                      Open in Google Maps
+                    </a>
                   </div>
-                </div>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    {selectedVisit.locationError || 'No location has been shared for this visit yet.'}
+                  </p>
+                )}
               </div>
 
               {/* STOPS & >15 MINUTE WAITING DURATION INSPECTION */}

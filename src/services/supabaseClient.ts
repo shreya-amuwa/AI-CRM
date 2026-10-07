@@ -5,10 +5,12 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
  * environment variables (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY); there
  * are no hard-coded fallbacks and no runtime overrides from localStorage.
  *
- * The browser uses Supabase for exactly two things:
+ * The browser uses Supabase for:
  *   1. Auth (sign in / sign up / session refresh)
  *   2. Realtime pings on tables protected by RLS
- * All CRM data goes through the API client in src/lib/api.
+ *   3. The team member workspace and field visits (teamMemberStore,
+ *      fieldVisitStore), read and written directly under RLS
+ * Other CRM data goes through the API client in src/lib/api.
  */
 export interface SupabaseConfig {
   url: string;

@@ -9,7 +9,7 @@ import { useDepartments } from './DepartmentContext';
 /**
  * Notifications are rows in Supabase, one per recipient. The server returns
  * only the signed-in user's notifications (RLS), so no client-side privacy
- * filtering is needed. Realtime inserts trigger a refetch.
+ * filtering is needed. Realtime changes trigger a refetch.
  */
 export interface AppNotification {
   id: string;
@@ -134,7 +134,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       ?.channel(`notifications-${profile.id}`)
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${profile.id}` },
+        // Any change (new, read on another device, deleted) keeps every device in sync.
+        { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${profile.id}` },
         () => void refresh()
       )
       .subscribe();
@@ -156,6 +157,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   };
 
   const markAllAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    setUnreadCount(0);
     void notificationsApi.markAllRead().then(refresh).catch(() => void refresh());
   };
 

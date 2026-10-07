@@ -395,18 +395,34 @@ select test.check((select count(*) = 1 from hr_employees), 'super admin reads HR
 reset role;
 
 -- ---------------------------------------------------------------------------
-\echo '--- 11. AI-generated avatars'
+\echo '--- 11. Member workspace (shared across devices)'
 -- ---------------------------------------------------------------------------
-select test.check((select bool_and(avatar_url = private.generated_avatar_url(id::text)) from profiles),
-  'every profile gets a generated avatar on creation');
+reset role;
+insert into crm_leads (id, name, department) values ('L-pool', 'Pool lead', 'wabastore');
+insert into crm_leads (id, name, department, assigned_to) values ('L-c', 'Lead of C', 'whatsbox', test.id('tm_c'));
 set role authenticated;
 select test.login('tm_a');
-update profiles set avatar_url = 'https://images.unsplash.com/photo-1' where id = test.id('tm_a');
-select test.check((select avatar_url = private.generated_avatar_url(id::text) from profiles where id = test.id('tm_a')),
-  'a personal/stock photo is replaced by the generated avatar');
-update profiles set avatar_url = private.generated_avatar_url('regen-1') where id = test.id('tm_a');
+insert into member_follow_ups (lead_id, lead_name, type) values ('L-pool', 'Pool lead', 'Call');
+insert into member_calendar_events (title, customer, event_date) values ('Demo', 'Pool lead', current_date);
+select test.check((select count(*) = 1 from member_follow_ups), 'member sees own follow-up');
+select test.check((select owner_id = test.id('tm_a') from member_calendar_events), 'owner defaults to the signed-in user');
+select test.must_fail($$insert into member_deals (owner_id, lead_name) values (test.id('tm_c'), 'x')$$,
+  'member cannot write rows for someone else', 'row-level security');
+select test.check(test.rows($$update crm_leads set assigned_to = test.id('tm_a'), stage = 'Contacted' where id = 'L-pool'$$) = 1,
+  'member claims an unassigned lead');
+select test.must_fail($$update crm_leads set stage = 'Won' where id = 'L-c'$$,
+  'member cannot work a lead assigned to someone else', 'FORBIDDEN');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from member_follow_ups), 'other member cannot see the follow-up');
+select test.check(test.rows($$delete from member_calendar_events$$) = 0, 'other member cannot delete the event');
+select test.must_fail($$update crm_leads set assigned_to = test.id('tm_c') where id = 'L-pool'$$,
+  'member cannot take over a claimed lead', 'FORBIDDEN');
+select test.login('th_wab');
+select test.check((select count(*) = 1 from member_follow_ups), 'team head reads team member follow-ups');
+select test.check(test.rows($$update member_follow_ups set status = 'completed'$$) = 0, 'team head cannot edit member follow-ups');
+select test.login('th_wbx');
+select test.check((select count(*) = 0 from member_follow_ups), 'other team head cannot read them');
 reset role;
-select test.check((select avatar_url = private.generated_avatar_url('regen-1') from profiles where id = test.id('tm_a')),
-  'a regenerated avatar is kept');
+select test.check((select count(*) = 0 from profiles where avatar_url is not null), 'no profile carries an avatar');
 
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

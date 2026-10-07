@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { resolveAvatarUrl } from '../../lib/avatar';
 
 export type TeamMemberNav =
   | 'home'
@@ -76,7 +75,22 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
 
   const displayName = user?.name || 'Team Member';
   const displayRole = user?.position || 'Sales Executive';
-  const displayAvatar = resolveAvatarUrl(user?.avatar, user?.id || displayName);
+
+  // Close the notification panel on outside click or Escape.
+  const bellRef = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!isNotificationsOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setIsNotificationsOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setIsNotificationsOpen(false);
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isNotificationsOpen]);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex font-sans antialiased">
@@ -189,16 +203,17 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {/* Right actions: notifications and user profile */}
           <div className="flex items-center gap-3 sm:gap-5">
             {/* Notification Bell (live notifications from the database) */}
-            <div className="relative">
+            <div className="relative" ref={bellRef}>
               <button
                 type="button"
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
-                aria-label="Notifications"
-                className="relative p-2.5 rounded-xl text-slate-600 bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+                aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+                aria-expanded={isNotificationsOpen}
+                className="relative p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors cursor-pointer"
               >
-                <Bell className="w-6 h-6" />
+                <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-white">
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
@@ -226,7 +241,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
                         <button
                           key={n.id}
                           type="button"
-                          onClick={() => markAsRead(n.id)}
+                          onClick={() => !n.isRead && markAsRead(n.id)}
                           className={`w-full text-left py-3 px-1 ${n.isRead ? '' : 'bg-blue-50/40'} hover:bg-slate-50 transition-colors cursor-pointer`}
                         >
                           <div className="flex items-start gap-2">
@@ -245,14 +260,9 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
               )}
             </div>
 
-            {/* Profile Avatar & Info */}
-            <div className="flex items-center gap-3 pl-2 sm:border-l border-slate-200">
-              <img
-                src={displayAvatar}
-                alt={displayName}
-                className="w-8 h-8 rounded-full object-cover ring-1 ring-slate-200"
-              />
-              <div className="hidden sm:block text-left">
+            {/* Profile Info */}
+            <div className="flex items-center pl-3 border-l border-slate-200">
+              <div className="text-left">
                 <div className="text-xs font-bold text-slate-900 leading-none">{displayName}</div>
                 <div className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5">{displayRole}</div>
               </div>

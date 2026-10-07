@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { 
-  X, User, Camera, ShieldCheck, AlertCircle, Upload, Download, 
+  X, User, ShieldCheck, AlertCircle, Upload, Download, 
   FileText, Calendar, CheckCircle2, UserMinus, Clock, Mail, Paperclip,
   Trash2, XCircle, Plus, DollarSign, Eye, Sparkles
 } from 'lucide-react';
@@ -22,7 +22,6 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<UploadedDocument | null>(null);
 
   // File Inputs Refs
-  const avatarInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
 
   // Leave Form State with Custom Time Inputs
@@ -41,20 +40,6 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   const [cancellingLeaveId, setCancellingLeaveId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelMailFile, setCancelMailFile] = useState<File | null>(null);
-
-  // 1. Profile Picture Upload Handler
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const updated = { ...emp, avatarUrl: reader.result as string };
-      setEmp(updated);
-      onUpdateEmployee(updated);
-    };
-    reader.readAsDataURL(file);
-  };
 
   // 2. Document Upload Handler
   const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -211,33 +196,8 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
         <div className="px-6 py-5 bg-gradient-to-r from-slate-900 via-slate-800 to-red-950 text-white flex items-center justify-between">
           <div className="flex items-center gap-4">
             
-            {/* Avatar Image with Upload Overlay */}
-            <div className="relative group">
-              <div className="w-16 h-16 rounded-2xl bg-white/10 border-2 border-white/20 overflow-hidden flex items-center justify-center text-white font-bold text-xl font-mono shadow-md">
-                {emp.avatarUrl ? (
-                  <img src={emp.avatarUrl} alt={emp.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span>{emp.name.charAt(0)}</span>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                className="absolute inset-0 bg-slate-900/70 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex flex-col items-center justify-center text-[10px] font-mono text-white gap-0.5 cursor-pointer"
-                title="Upload Image from Computer"
-              >
-                <Camera className="w-4 h-4 text-white" />
-                <span>Upload</span>
-              </button>
-
-              <input
-                ref={avatarInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarChange}
-                className="hidden"
-              />
+            <div className="w-16 h-16 rounded-2xl bg-white/10 border-2 border-white/20 flex items-center justify-center text-white font-bold text-xl font-mono shadow-md">
+              <span>{emp.name.charAt(0)}</span>
             </div>
 
             <div>

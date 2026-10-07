@@ -12,23 +12,21 @@ import {
   X
 } from 'lucide-react';
 import { Deal } from '../../types/crm';
-import { teamMemberStore } from '../../services/teamMemberStore';
+import { useTeamMemberStore } from '../../hooks/useTeamMemberStore';
 
-interface MemberDealsDashboardProps {
-  currentUserId: string;
-}
-
-export const MemberDealsDashboard: React.FC<MemberDealsDashboardProps> = ({ currentUserId }) => {
-  const [deals, setDeals] = useState<Deal[]>(() => teamMemberStore.getDeals(currentUserId));
+export const MemberDealsDashboard: React.FC = () => {
+  const teamMemberStore = useTeamMemberStore();
+  const deals = teamMemberStore.getDeals();
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [newDealForm, setNewDealForm] = useState({
     leadName: '',
     company: '',
-    value: 65000,
+    value: 0,
     stage: 'Proposal' as Deal['stage'],
-    expectedClose: '2026-10-15'
+    expectedClose: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
   });
 
   const stages: Deal['stage'][] = ['Proposal', 'Negotiation', 'Won', 'Lost'];
@@ -46,33 +44,39 @@ export const MemberDealsDashboard: React.FC<MemberDealsDashboardProps> = ({ curr
   const winRate = deals.length > 0 ? Math.round((wonDeals.length / deals.length) * 100) : 0;
   const avgDealSize = deals.length > 0 ? Math.round(totalValue / deals.length) : 0;
 
-  const handleAdvance = (dealId: string, next: Deal['stage']) => {
-    teamMemberStore.updateDealStage(dealId, next);
-    setDeals(teamMemberStore.getDeals(currentUserId));
+  const handleAdvance = async (dealId: string, next: Deal['stage']) => {
+    setSaveError(null);
+    try {
+      await teamMemberStore.updateDealStage(dealId, next);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not update the deal.');
+    }
   };
 
-  const handleAddSubmit = (e: React.FormEvent) => {
+  const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newDealForm.leadName || !newDealForm.company) return;
-
-    teamMemberStore.addDeal({
-      userId: currentUserId,
-      leadId: `LD-${Date.now()}`,
-      leadName: newDealForm.leadName,
-      company: newDealForm.company,
-      value: Number(newDealForm.value) || 50000,
-      stage: newDealForm.stage,
-      expectedClose: newDealForm.expectedClose
-    });
-
-    setDeals(teamMemberStore.getDeals(currentUserId));
+    setSaveError(null);
+    try {
+      await teamMemberStore.addDeal({
+        leadId: '',
+        leadName: newDealForm.leadName,
+        company: newDealForm.company,
+        value: Number(newDealForm.value) || 0,
+        stage: newDealForm.stage,
+        expectedClose: newDealForm.expectedClose
+      });
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save the deal.');
+      return;
+    }
     setIsAddModalOpen(false);
     setNewDealForm({
       leadName: '',
       company: '',
-      value: 65000,
+      value: 0,
       stage: 'Proposal',
-      expectedClose: '2026-10-15'
+      expectedClose: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
     });
   };
 
@@ -83,6 +87,9 @@ export const MemberDealsDashboard: React.FC<MemberDealsDashboardProps> = ({ curr
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
+      {saveError && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">{saveError}</div>
+      )}
       {/* HEADER */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -140,7 +147,7 @@ export const MemberDealsDashboard: React.FC<MemberDealsDashboardProps> = ({ curr
             <div className="text-xl font-bold font-heading text-slate-900 mt-1">
               {winRate}%
             </div>
-            <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">↑ 8% vs target</span>
+            <span className="text-[11px] text-slate-400 font-medium mt-1 block">Won ÷ all deals</span>
           </div>
           <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
             <TrendingUp className="w-5 h-5" />

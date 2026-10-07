@@ -99,11 +99,6 @@ export const LeadAnalyticsTab: React.FC<LeadAnalyticsTabProps> = ({
                   >
                     #{idx + 1}
                   </span>
-                  <img
-                    src={rep.avatar}
-                    alt={rep.name}
-                    className="w-10 h-10 rounded-xl object-cover ring-2 ring-slate-100"
-                  />
                   <div>
                     <h3 className="font-bold text-xs sm:text-sm text-slate-900">{rep.name}</h3>
                     <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">

@@ -61,13 +61,9 @@ export const AiqrHeader: React.FC<AiqrHeaderProps> = ({ onOpenPublicScanDemo }) 
         {/* User Avatar & Logout */}
         <div className="flex items-center gap-3 pl-3 border-l border-slate-800">
           <div className="flex items-center gap-2">
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full border border-indigo-500/40 object-cover" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
-                {user?.name?.[0] || 'U'}
-              </div>
-            )}
+            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center">
+              {user?.name?.[0] || 'U'}
+            </div>
             <div className="hidden lg:block text-left font-mono">
               <div className="text-xs font-bold text-slate-200">{user?.name || 'Operator'}</div>
               <div className="text-[10px] text-slate-400">{user?.email || 'admin@aiqr.io'}</div>

@@ -23,7 +23,7 @@ import {
   Phone
 } from 'lucide-react';
 import { Invoice } from '../../types/crm';
-import { teamMemberStore } from '../../services/teamMemberStore';
+import { useTeamMemberStore } from '../../hooks/useTeamMemberStore';
 import { useAuth } from '../../context/AuthContext';
 import { accountsStore, normalizeDepartmentId } from '../../services/accountsStore';
 
@@ -257,33 +257,17 @@ export const SYSTEM_DEPARTMENTS: DepartmentConfig[] = [
 
 export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = ({ currentUserId }) => {
   const { user } = useAuth();
-  const effectiveUserId = currentUserId || user?.id || 'tm-priya';
-  const effectiveUserName = user?.name || (effectiveUserId === 'tm-rahul' ? 'Rahul Kumar' : effectiveUserId === 'tm-amit' ? 'Amit Patel' : 'Priya Nair');
+  const effectiveUserId = currentUserId || user?.id || '';
+  const effectiveUserName = user?.name || '';
 
-  const [invoices, setInvoices] = useState<Invoice[]>(() => teamMemberStore.getInvoices(effectiveUserId));
+  // Invoices live in the database, so every device shows the same list.
+  const teamMemberStore = useTeamMemberStore();
+  const invoices = teamMemberStore.getInvoices();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-
-  // Real-time synchronization listener with Accounts Dashboard
-  useEffect(() => {
-    const handleInvoiceCreated = () => {
-      setInvoices(teamMemberStore.getInvoices(effectiveUserId));
-    };
-    window.addEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
-    window.addEventListener('storage', handleInvoiceCreated);
-    return () => {
-      window.removeEventListener('amuwa_crm_invoice_created', handleInvoiceCreated);
-      window.removeEventListener('storage', handleInvoiceCreated);
-    };
-  }, [effectiveUserId]);
-
-  // Keep invoices refreshed whenever effective user changes
-  useEffect(() => {
-    setInvoices(teamMemberStore.getInvoices(effectiveUserId));
-  }, [effectiveUserId]);
 
   // Success Notification state
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -382,7 +366,7 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
   const overdueAmount = overdueInvoices.reduce((acc, inv) => acc + inv.amount, 0);
 
   // Form Submission
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!form.customerName.trim()) {
@@ -437,8 +421,13 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       teamMemberRole: user?.role === 'team-lead' ? 'Senior Sales Lead' : 'Account Sales Executive'
     };
 
-    // 1. Add to Team Member Store (scoped to this team member)
-    teamMemberStore.addInvoice(newInvoiceData);
+    // 1. Save to the database (scoped to this team member)
+    try {
+      await teamMemberStore.addInvoice(newInvoiceData);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not save the invoice.');
+      return;
+    }
 
     // 2. Add to Central Accounts Department Store (consolidated across all departments & team members)
     accountsStore.addInvoice({
@@ -464,8 +453,6 @@ export const MemberInvoicesDashboard: React.FC<MemberInvoicesDashboardProps> = (
       notes: dept.terms
     });
 
-    const updated = teamMemberStore.getInvoices(effectiveUserId);
-    setInvoices(updated);
 
     // Save department persistence
     try {

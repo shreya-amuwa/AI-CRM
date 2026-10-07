@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
-import { resolveAvatarUrl } from '../../lib/avatar';
 import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
@@ -244,11 +243,6 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
 
           {/* Team Lead Profile Pill */}
           <div className="flex items-center gap-2 pl-2 sm:pl-3 border-l border-slate-200">
-            <img
-              src={resolveAvatarUrl(user?.avatar, user?.id || 'team-lead')}
-              alt={user?.name || 'Vikram Deshmukh'}
-              className="w-8 h-8 rounded-xl object-cover ring-2 ring-indigo-500/20"
-            />
             <div className="hidden lg:flex flex-col text-left">
               <span className="text-xs font-bold text-slate-800 leading-tight">
                 {user?.name || 'Vikram Deshmukh'}

@@ -91,11 +91,6 @@ export const LeadRepsTab: React.FC<LeadRepsTabProps> = ({
               <div>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <img
-                      src={rep.avatar}
-                      alt={rep.name}
-                      className="w-12 h-12 rounded-xl object-cover ring-2 ring-indigo-500/20"
-                    />
                     <div>
                       <h3 className="font-bold text-sm text-slate-900">{rep.name}</h3>
                       <p className="text-[11px] text-slate-500 font-mono">{rep.email}</p>
