@@ -1,3 +1,4 @@
+import { generatedAvatarUrl } from '../lib/avatar';
 import {
   Lead,
   TeamMemberActivity,
@@ -36,7 +37,7 @@ export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
     title: 'Sales Executive',
     department: 'Wabastore',
     departmentId: 'wabastore',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-priya'),
     targetCalls: 15,
     targetDemos: 5,
     targetDeals: 15,
@@ -50,7 +51,7 @@ export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
     title: 'Sales Executive',
     department: 'Wabastore',
     departmentId: 'wabastore',
-    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-rahul'),
     targetCalls: 12,
     targetDemos: 4,
     targetDeals: 12,
@@ -64,7 +65,7 @@ export const SAMPLE_TEAM_MEMBERS: TeamMemberUser[] = [
     title: 'Senior Sales Specialist',
     department: 'Wabastore',
     departmentId: 'wabastore',
-    avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+    avatar: generatedAvatarUrl('tm-amit'),
     targetCalls: 14,
     targetDemos: 4,
     targetDeals: 14,
@@ -496,37 +497,31 @@ class TeamMemberStore {
   }
 
   // --- TARGET & STATS ---
+  /** Deals won vs. the member's assigned deal target (0 when none is assigned). */
   public getMemberTarget(userId: string): MemberTarget {
     const user = SAMPLE_TEAM_MEMBERS.find(u => u.id === userId);
-    const goal = user?.targetDeals || 15;
-    const current = (user?.currentDeals || 8);
-    const percentage = Math.round((current / goal) * 100);
-
-    return {
-      current,
-      goal,
-      percentage
-    };
+    const goal = user?.targetDeals || 0;
+    const current = this.getAssignedLeads(userId).filter(l => l.stage === 'Won').length;
+    const percentage = goal > 0 ? Math.round((current / goal) * 100) : 0;
+    return { current, goal, percentage };
   }
 
+  /** Every figure is computed from the member's own records — no placeholders. */
   public getDashboardKpis(userId: string) {
     const leads = this.getAssignedLeads(userId);
-    const totalLeads = leads.length || 28;
-    const followUps = this.getFollowUps(userId, 'upcoming');
-    const overdueFollowUps = this.getFollowUps(userId, 'overdue');
-    const followUpsDue = (followUps.length + overdueFollowUps.length) || 6;
-    const convertedLeads = leads.filter(l => l.stage === 'Won').length + 6; // Historical + won
-    const dealsInProgress = leads.filter(l => l.stage === 'Contacted' || l.stage === 'Interested' || l.stage === 'Proposal').length || 12;
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const followUpsDue = this.getFollowUps(userId).filter(f => f.status !== 'completed').length;
+    const convertedLeads = leads.filter(l => l.stage === 'Won').length;
+    const dealsInProgress = leads.filter(l => l.stage === 'Contacted' || l.stage === 'Interested' || l.stage === 'Proposal').length;
+    const newLeadsThisWeek = leads.filter(l => new Date(l.receivedAt).getTime() >= weekAgo).length;
 
     return {
-      totalLeads,
-      totalLeadsGrowth: '+12%',
+      totalLeads: leads.length,
+      newLeadsThisWeek,
       followUpsDue,
-      followUpsGrowth: '+2%',
       convertedLeads,
-      convertedGrowth: '+33%',
       dealsInProgress,
-      dealsGrowth: '+9%'
+      conversionRate: leads.length > 0 ? Math.round((convertedLeads / leads.length) * 100) : 0
     };
   }
 

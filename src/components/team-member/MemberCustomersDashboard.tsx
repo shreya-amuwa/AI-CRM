@@ -30,7 +30,6 @@ import { errorMessage } from '../../lib/api/client';
 import { countLegacyCustomers, legacyCustomersAsImport, retainLegacyCustomers } from '../../lib/legacyStorage';
 
 const PAGE_SIZE = 8;
-const SEGMENT_COLORS: Record<string, string> = { Retail: '#2563EB', Wholesale: '#8B5CF6', Corporate: '#10B981', Others: '#F97316' };
 const SORTS = {
   latest: { sort: 'createdAt', order: 'desc' },
   name: { sort: 'name', order: 'asc' },
@@ -104,11 +103,6 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
     newThisMonth: summary.newThisMonth,
     newGrowth: `${newDelta >= 0 ? '+' : ''}${newDelta} vs. last month`
   };
-  const segments = (['Retail', 'Wholesale', 'Corporate', 'Others'] as const).map(name => {
-    const count = summary.bySegment[segmentFromLabel(name)!] || 0;
-    return { name, count, percentage: summary.total ? Math.round((count / summary.total) * 100) : 0, color: SEGMENT_COLORS[name] };
-  });
-
   const getInitials = (name: string) => {
     const parts = name.trim().split(' ');
     if (parts.length >= 2) {
@@ -217,23 +211,6 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
   };
 
   // SVG Donut Setup
-  const donutSize = 130;
-  const strokeWidth = 14;
-  const radius = (donutSize - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-
-  let cumulativeOffset = 0;
-  const donutSegments = segments.map(seg => {
-    const strokeDasharray = `${(seg.percentage / 100) * circumference} ${circumference}`;
-    const strokeDashoffset = -cumulativeOffset;
-    cumulativeOffset += (seg.percentage / 100) * circumference;
-    return {
-      ...seg,
-      strokeDasharray,
-      strokeDashoffset
-    };
-  });
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {(legacyCount > 0 || importNotice) && (
@@ -271,7 +248,11 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
             className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
           >
             <Calendar className="w-3.5 h-3.5 text-slate-400" />
-            <span>Sep 1, 2026 – Sep 30, 2026</span>
+            <span>{(() => {
+              const now = new Date();
+              const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              return `${fmt(new Date(now.getFullYear(), now.getMonth(), 1))} – ${fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))}`;
+            })()}</span>
             <svg className="w-3.5 h-3.5 text-slate-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
             </svg>
@@ -578,77 +559,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
         {/* RIGHT SIDEBAR (4 cols) */}
         <div className="lg:col-span-4 space-y-4">
           
-          {/* 1. CUSTOMER SEGMENTS CARD */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-              <h3 className="text-xs font-bold font-heading text-slate-900">Customer Segments</h3>
-              <button
-                type="button"
-                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 cursor-pointer"
-              >
-                View all
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Donut Chart */}
-              <div className="relative w-28 h-28 shrink-0 flex items-center justify-center">
-                <svg className="w-full h-full -rotate-90" viewBox={`0 0 ${donutSize} ${donutSize}`}>
-                  <circle
-                    cx={donutSize / 2}
-                    cy={donutSize / 2}
-                    r={radius}
-                    fill="none"
-                    stroke="#F1F5F9"
-                    strokeWidth={strokeWidth}
-                  />
-                  {donutSegments.map((seg, idx) => (
-                    <circle
-                      key={idx}
-                      cx={donutSize / 2}
-                      cy={donutSize / 2}
-                      r={radius}
-                      fill="none"
-                      stroke={seg.color}
-                      strokeWidth={strokeWidth}
-                      strokeDasharray={seg.strokeDasharray}
-                      strokeDashoffset={seg.strokeDashoffset}
-                      strokeLinecap="round"
-                      className="transition-all duration-500 ease-out"
-                    />
-                  ))}
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                  <span className="text-lg font-bold font-heading text-slate-900 leading-tight">
-                    248
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-medium leading-none">
-                    Total Customers
-                  </span>
-                </div>
-              </div>
-
-              {/* Legend */}
-              <div className="flex-1 space-y-2 text-[11px]">
-                {segments.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-slate-600">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span className="font-medium text-slate-700">{item.name}</span>
-                    </div>
-                    <span className="font-mono text-slate-500 text-[10px]">
-                      {item.count} ({item.percentage}%)
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 2. QUICK ACTIONS PANEL (2x2 GRID) */}
+          {/* QUICK ACTIONS PANEL (2x2 GRID) */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
             <h3 className="text-xs font-bold font-heading text-slate-900 mb-3">Quick Actions</h3>
             <div className="grid grid-cols-2 gap-2.5">
