@@ -46,7 +46,17 @@ export function useCustomers(filters: CustomerFilters) {
     setLoading(true);
     setError(null);
     try {
-      const result = await customersApi.list({ search: search || undefined, segment, status, sort, order, page, pageSize });
+      // Leads and potential customers live in My Leads; customers start at onboarding.
+      const result = await customersApi.list({
+        search: search || undefined,
+        segment,
+        status,
+        sort,
+        order,
+        page,
+        pageSize,
+        lifecycle: 'ONBOARDING,CUSTOMER'
+      });
       setItems(result.items.map(toViewCustomer));
       setTotal(result.total);
     } catch (err) {
