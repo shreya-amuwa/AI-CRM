@@ -7,6 +7,7 @@ import {
   ACCOUNT_STATUSES,
   LEAD_STATUSES,
   ONBOARDING_FILTERS,
+  REVIEW_FILTERS,
   PAYMENT_FILTERS,
   PAYMENT_METHODS,
   PIPELINE_STAGES,
@@ -299,6 +300,9 @@ export const pipelineListQuerySchema = z.object({
   noFollowUp: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   payment: z.enum(PAYMENT_FILTERS).optional(),
   onboarding: z.enum(ONBOARDING_FILTERS).optional(),
+  /** Technical Consultant queue: only customers forwarded to support. */
+  review: z.enum(REVIEW_FILTERS).optional(),
+  forwarded: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   sort: z.enum(['newest', 'oldest', 'followUp', 'dueDate', 'amount', 'name']).default('newest')
 });
 export type PipelineListQuery = z.infer<typeof pipelineListQuerySchema>;
@@ -327,11 +331,35 @@ export const startOnboardingSchema = z
 
 export const onboardingUpdateSchema = z.object({ targetHandoverDate: isoDate.nullable() }).strict();
 
+/** File types the private document bucket accepts (checked again by content on the server). */
+export const UPLOAD_MIME_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/mp4'
+] as const;
+export type UploadMimeType = (typeof UPLOAD_MIME_TYPES)[number];
+
+export const checklistSaveSchema = z.object({ value: z.string().trim().min(1, 'Enter a value.').max(4000) }).strict();
+export const checklistReviewSchema = z
+  .object({
+    decision: z.enum(['VERIFIED', 'REJECTED']),
+    note: z.string().trim().max(1000).optional().nullable()
+  })
+  .strict()
+  .refine(v => v.decision === 'VERIFIED' || !!v.note, { message: 'Tell the sales team what needs fixing.', path: ['note'] });
+export const checklistItemCodeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown item.');
+
 export const documentUploadSchema = z
   .object({
     documentType: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown document type.'),
     fileName: trimmed(255).min(1),
-    mimeType: z.literal('application/pdf', { errorMap: () => ({ message: 'Only PDF files are accepted.' }) }),
+    mimeType: z.enum(UPLOAD_MIME_TYPES, { errorMap: () => ({ message: 'This file type is not accepted.' }) }),
     sizeBytes: z.coerce.number().int().positive().max(52428800)
   })
   .strict();

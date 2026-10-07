@@ -21,6 +21,7 @@ import {
 } from '../../utils/invoicePdfGenerator';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { OnboardingVerificationWorkspace } from '../team-member/pipeline/VerificationViews';
 
 interface TechnicalSupportDashboardProps {
   currentUserId?: string;
@@ -46,7 +47,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
   const { logout, user } = useAuth();
 
   // Navigation tab: 'leads' | 'contacts' | 'customers'
-  const [activeTab, setActiveTab] = useState<'leads' | 'contacts' | 'customers'>('leads');
+  const [activeTab, setActiveTab] = useState<'verification' | 'leads' | 'contacts' | 'customers'>('verification');
 
   // Real-time store state (STRICTLY ZERO DUMMY DATA)
   const [leads, setLeads] = useState<TechSupportLead[]>(() => technicalSupportStore.getLeads());
@@ -398,6 +399,21 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
 
               <nav className="space-y-1.5 font-mono text-xs font-bold">
                 
+                {/* Onboarding verification (database-backed) */}
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('verification')}
+                  aria-current={activeTab === 'verification' ? 'page' : undefined}
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl transition-all cursor-pointer ${
+                    activeTab === 'verification' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck className={`w-4 h-4 ${activeTab === 'verification' ? 'text-indigo-300' : 'text-slate-500'}`} />
+                    <span>Onboarding verification</span>
+                  </div>
+                </button>
+
                 {/* 1. Leads */}
                 <button
                   type="button"
@@ -506,6 +522,10 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
             </div>
           )}
 
+          {activeTab === 'verification' && <OnboardingVerificationWorkspace />}
+
+          {activeTab !== 'verification' && (
+          <>
           {/* Search Box Bar */}
           <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="relative flex-1 max-w-md">
@@ -531,6 +551,9 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
               </button>
             )}
           </div>
+
+          </>
+          )}
 
           {/* =========================================================================
               VIEW 1: LEADS VIEW

@@ -81,8 +81,8 @@ confirmed the caller may do it.
 
 | Bucket | Default | Env override |
 |---|---|---|
-| Per IP (memory, per instance) | 300 req/min | `RATE_LIMIT_IP_PER_MIN` |
-| Per user, all endpoints (Postgres) | 120 req/min | `RATE_LIMIT_USER_PER_MIN` |
+| Per IP (memory, per instance) | 600 req/min | `RATE_LIMIT_IP_PER_MIN` |
+| Per user, all endpoints (Postgres) | 300 req/min | `RATE_LIMIT_USER_PER_MIN` |
 | Per user, sensitive endpoints (create users, approvals, status/role changes, deletes, announcements, org changes) | 20 req/min | `RATE_LIMIT_SENSITIVE_PER_MIN` |
 | Per user, customer import | 5 req/min | `RATE_LIMIT_IMPORT_PER_MIN` |
 

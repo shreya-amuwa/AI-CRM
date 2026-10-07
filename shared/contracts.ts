@@ -263,6 +263,10 @@ export interface CustomerOnboarding {
   targetHandoverDate: string | null;
   forwardedToSupportAt: string | null;
   mandatorySaved: number;
+  itemsTotal: number;
+  itemsSaved: number;
+  itemsVerified: number;
+  itemsRejected: number;
 }
 
 export interface DocumentType {
@@ -290,10 +294,44 @@ export interface CustomerDocument {
   createdAt: string;
 }
 
+export const CHECKLIST_KINDS = ['DETAILS', 'FILE', 'YES_NO', 'APPROVAL', 'ACCESS', 'AMOUNT', 'CHOICE'] as const;
+export type ChecklistKind = (typeof CHECKLIST_KINDS)[number];
+export type ChecklistSection = 'BUSINESS_BASICS' | 'SERVICE' | 'MANDATORY_DOCUMENTS';
+export type ChecklistEntryStatus = 'SAVED' | 'VERIFIED' | 'REJECTED';
+
+/** One thing to collect during onboarding, with what was collected so far. */
+export interface ChecklistItem {
+  code: string;
+  section: ChecklistSection;
+  label: string;
+  hint: string;
+  kind: ChecklistKind;
+  options: string[] | null;
+  /** Service the item is listed under (first sold service that needs it). */
+  serviceCode: string | null;
+  services: string[];
+  allowedMimeTypes: string[] | null;
+  maxSizeBytes: number | null;
+  entry: {
+    status: ChecklistEntryStatus;
+    value: string | null;
+    documentId: string | null;
+    savedBy: string | null;
+    savedAt: string;
+    reviewedBy: string | null;
+    reviewedAt: string | null;
+    reviewNote: string | null;
+  } | null;
+}
+
+export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED'] as const;
+export type ReviewFilter = (typeof REVIEW_FILTERS)[number];
+
 export interface PipelineCustomerDetail extends PipelineCustomer {
   documents: CustomerDocument[];
   documentTypes: DocumentType[];
   activities: CustomerActivity[];
+  checklist: ChecklistItem[];
 }
 
 export interface PipelineCounts {

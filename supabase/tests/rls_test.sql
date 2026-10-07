@@ -494,7 +494,7 @@ grant all on docs to authenticated;
 set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.png', 'image/png', 1000)$$,
-  'only PDFs are accepted', 'must be a PDF');
+  'only PDFs are accepted', 'not accepted');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'big.pdf', 'application/pdf', 50000000)$$,
   'file size limit enforced', 'smaller than');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'PASSPORT', 'x.pdf', 'application/pdf', 1000)$$,
@@ -544,6 +544,31 @@ select test.login('tm_a');
 insert into docs select 'A_kyc', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'aadhaar-pan.pdf', 'application/pdf', 5000);
 select test.check((select path like '%/onboarding/%' from docs where name = 'A_kyc'), 'important documents stored under onboarding/');
 select complete_document_upload((select id from docs where name = 'A_kyc'), 5000);
+-- Service checklist: Meta Ads + Gold Rate package for customer A.
+select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 13),
+  'checklist = 2 basics + 5 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
+select test.check((select items_total = 13 and items_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'uploaded mandatory documents count as saved checklist items');
+select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$, 'forwarding needs every checklist item', 'Complete these items first');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'WABA_ID', '123')$$,
+  'items of services not sold are rejected', 'not part of');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'GOLD_CONFIRM_JEWELLER', 'maybe')$$, 'yes/no validated', 'yes or no');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'META_AD_BUDGET', 'lots')$$, 'amount validated', 'amount');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x')$$, 'file items need an upload', 'Upload a file');
+select save_onboarding_entry((select id from pipeline where name = 'A'), c, v) from (values
+  ('BUSINESS_NAME_ADDRESS', 'Shree Ganesh Jewellers, Zaveri Bazaar, Mumbai'), ('CONTACT_PERSON_MOBILE', 'Ankit Shah +91 98765 11111'),
+  ('META_CAMPAIGN_GOAL', 'Walk-in leads for Diwali'), ('FACEBOOK_PAGE_ACCESS', 'Partner access to Amuwa BM'),
+  ('INSTAGRAM_PAGE_ACCESS', 'Connected'), ('META_TARGET_AUDIENCE', 'Women 25-50, Mumbai, 200 leads'), ('META_AD_BUDGET', '15000'),
+  ('GOLD_CONFIRM_JEWELLER', 'YES'), ('BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C'), ('GOLD_TEMPLATE_APPROVAL', 'Approved on call')) v(c, v);
+insert into docs select 'A_logo', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo.png', 'image/png', 3000);
+select test.check((select path like '%.png' from docs where name = 'A_logo'), 'stored file keeps an extension matching its type');
+select complete_document_upload((select id from docs where name = 'A_logo'), 3000);
+select test.check((select items_saved = 13 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 13 items saved');
+select test.login('tm_b');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$,
+  'support cannot review before the customer is forwarded', 'NOT_FOUND');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'support cannot see the customer before forwarding');
+select test.login('tm_a');
 select forward_onboarding_to_support((select id from pipeline where name = 'A'));
 select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
                    and (select mandatory_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'B')),
@@ -555,6 +580,35 @@ select test.check((select delete_customer_document((select id from docs where na
   'old version can be deleted (path returned for storage removal)');
 select test.check((select count(*) = 0 from customer_documents where id = (select id from docs where name = 'A_inv1')), 'deleted document hidden from listings');
 select test.must_fail($$select expire_stale_document_uploads()$$, 'only the server may expire stale uploads', 'permission denied');
+
+\echo '--- 13b. Technical Consultant verification'
+select test.login('tm_b');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'support sees the forwarded customer');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'B')), 'support does not see customers that were not forwarded');
+select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_logo'), 'VIEW')), 'support can open the forwarded customer''s files');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Blue')$$, 'support cannot edit sales details', 'NOT_FOUND');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x.png', 'image/png', 10)$$, 'support cannot upload', 'NOT_FOUND');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', '')$$, 'rejection needs a note', 'needs fixing');
+select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', 'Gold hex code is missing');
+select review_onboarding_entry((select id from pipeline where name = 'A'), c, 'VERIFIED', null)
+  from unnest(array['BUSINESS_NAME_ADDRESS','CONTACT_PERSON_MOBILE','META_CAMPAIGN_GOAL','FACEBOOK_PAGE_ACCESS','INSTAGRAM_PAGE_ACCESS',
+                    'META_TARGET_AUDIENCE','META_AD_BUDGET','GOLD_CONFIRM_JEWELLER','GOLD_TEMPLATE_APPROVAL','BRAND_LOGO','INVOICE','IMPORTANT_DOCUMENTS']) c;
+select test.check((select items_verified = 12 and items_rejected = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'review progress tracked (12 verified, 1 needs fixing)');
+select test.login('tm_c');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$, 'other department cannot review', 'NOT_FOUND');
+select test.login('pending_d');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$, 'sales teammate cannot review', 'NOT_FOUND');
+select test.login('tm_a');
+select test.check((select (e -> 'entry' ->> 'status') = 'REJECTED' and (e -> 'entry' ->> 'reviewNote') like '%hex%' from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' = 'BRAND_COLOURS'),
+  'salesperson sees the rejection note');
+select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C');
+select test.check((select status = 'SAVED' from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'BRAND_COLOURS'),
+  'fixed item goes back for review');
+select test.must_fail($$update customer_onboarding_entries set status = 'VERIFIED'$$, 'sales cannot mark items verified directly', 'permission denied');
+select test.login('tm_b');
+select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'VERIFIED', null);
+select test.login('tm_a');
 reset role;
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_FORWARDED' and recipient_id = test.id('tm_b')),
   'support team head notified');
@@ -562,6 +616,9 @@ select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_R
   'invoice replacement audited with actor + customer');
 select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_DOWNLOADED' and actor_id = test.id('th_wab')), 'download audited');
 select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_DELETED'), 'deletion audited');
+select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'owner notified of the rejection');
+select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_VERIFIED' and recipient_id = test.id('tm_a')), 'owner notified when everything is verified');
+select test.check((select count(*) = 13 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
 
 -- ---------------------------------------------------------------------------
 \echo '--- 14. Inbound webhook leads → pipeline'

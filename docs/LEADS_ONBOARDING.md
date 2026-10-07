@@ -87,9 +87,29 @@ Onboarding list (cards with document progress) and the one-customer page whose
 (with a keyboard-accessible ? tooltip). Stage changes wait for the server (no optimistic
 updates); lists refresh through Supabase Realtime.
 
-Not built yet: the design's service-specific checklists (e.g. "Brand logo", "Facebook page
-access") — there is no agreed list of items per service. `document_types` is extensible, so
-they can be added as data later.
+### Service checklists (migration `20261007000500_service_onboarding_checklists.sql`)
+
+The onboarding page builds its checklist from the services sold, following the Service
+Onboarding guide: **Business basics** (always name/address and contact; GST and Udyam
+certificates when a sold service needs them), one section per service, and **Mandatory
+Documents** last. Items shared by several services (brand logo, Facebook/Instagram access,
+billing cycle…) are collected once. Item kinds: details, file, yes/no, approval, access,
+amount, choice. The catalogue is data (`onboarding_items`, `onboarding_item_services`), so
+items can be added or changed without code changes.
+
+Files accept the types each item allows (PDF, JPG/PNG/WEBP, CSV/Excel, MP3/WAV/M4A) and are
+checked by their content signature on the server, not by name. *Forward to support* unlocks
+only when every item is saved.
+
+### Technical Consultant verification
+
+Support-team members of the same department ("Technical Consultants") — plus department heads
+and the super admin — see a customer only after it is forwarded. In the Technical Support
+dashboard, **Onboarding verification** lists forwarded customers (To verify / Sent back /
+Verified). Each item can be verified, or sent back with a note: the salesperson is notified,
+sees the note on the item, and fixing it (re-saving or re-uploading) sends it back for review.
+When everything is verified the salesperson is notified. Consultants can view files but never
+change sales data; every verification is audited.
 
 ## 6. Tests
 
@@ -101,7 +121,17 @@ they can be added as data later.
 - Browser run (Playwright, local stack): full Lead → Potential → Onboarding flow, tooltip via
   keyboard, uploads, second salesperson on a phone-sized screen sees nothing of the first.
 
-## 7. Deploying
+## 7. Speed
+
+- Each API request now makes **one** database round trip before its real work
+  (`api_session`: token check by PostgREST + profile + rate limit), instead of three.
+- Tailwind is compiled at build time (was compiled in the browser on every load).
+- Dashboards and department panels load on demand; the first download went from
+  1.87 MB to about 550 KB (≈150 KB gzipped), with long-cached vendor files.
+- Biggest remaining factor: put the Vercel function in the same region as the Supabase
+  project (Vercel → Settings → Functions → Region, e.g. Mumbai `bom1` for `ap-south-1`).
+
+## 8. Deploying
 
 Apply the migration (`supabase db push` or the SQL editor). It creates the private bucket.
 `SUPABASE_SERVICE_ROLE_KEY` must be set on the server (Vercel) for uploads and signed URLs;

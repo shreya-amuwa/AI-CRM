@@ -34,7 +34,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput } from '../../../shared/validation';
+import type { CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -66,6 +66,8 @@ export interface PipelineQuery {
   noFollowUp?: boolean;
   payment?: PaymentFilter;
   onboarding?: OnboardingFilter;
+  review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED';
+  forwarded?: boolean;
   sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
 }
 
@@ -86,11 +88,15 @@ export const pipelineApi = {
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
   inbound: () => api.get<InboundLead[]>('/pipeline/inbound'),
-  claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`)
+  claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`),
+  saveChecklistItem: (id: string, item: string, body: { value: string }) =>
+    api.patch<null>(`/pipeline/customers/${id}/checklist/${item}`, body),
+  reviewChecklistItem: (id: string, item: string, body: { decision: 'VERIFIED' | 'REJECTED'; note?: string | null }) =>
+    api.post<null>(`/pipeline/customers/${id}/checklist/${item}/review`, body)
 };
 
 export const documentsApi = {
-  beginUpload: (customerId: string, body: { documentType: string; fileName: string; mimeType: 'application/pdf'; sizeBytes: number }) =>
+  beginUpload: (customerId: string, body: { documentType: string; fileName: string; mimeType: UploadMimeType; sizeBytes: number }) =>
     api.post<DocumentUploadTicket>(`/pipeline/customers/${customerId}/documents`, body),
   complete: (documentId: string) => api.post<CustomerDocument>(`/documents/${documentId}/complete`),
   abort: (documentId: string) => api.post<null>(`/documents/${documentId}/abort`),

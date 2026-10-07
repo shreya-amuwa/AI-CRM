@@ -1,24 +1,13 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   Database,
-  Download,
-  Eye,
-  FileText,
-  HelpCircle,
-  History,
-  Loader2,
   MessageCircle,
-  RefreshCw,
-  Search,
-  Trash2,
-  Upload
+  Search
 } from 'lucide-react';
 import type {
-  CustomerDocument,
-  DocumentType,
   OnboardingFilter,
   OnboardingStage,
   Paginated,
@@ -26,15 +15,25 @@ import type {
   PipelineCustomer,
   PipelineCustomerDetail
 } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
-import { documentsApi, pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
-import { requireSupabase } from '../../../services/supabaseClient';
-import { ActivityCard } from './LeadForms';
+import {
+  errorMessage
+} from '../../../lib/api/client';
+import {
+  pipelineApi,
+  type PipelineQuery
+} from '../../../lib/api/endpoints';
+import {
+  ActivityCard
+} from './LeadForms';
+import {
+  ChecklistPanel,
+  isDone,
+  type ChecklistMode
+} from './ChecklistPanel';
 import {
   Avatar,
   btn,
   Card,
-  Dialog,
   ErrorBanner,
   inputCls,
   longDate,
@@ -162,9 +161,10 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; onOpe
       ) : (
         <ul className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
           {data?.items.map(c => {
-            const saved = c.onboarding?.mandatorySaved ?? 0;
-            const st = onboardingState(saved, total);
-            const done = saved >= total;
+            const saved = c.onboarding?.itemsSaved ?? 0;
+            const itemsTotal = c.onboarding?.itemsTotal || total;
+            const st = onboardingState(saved, itemsTotal);
+            const done = saved >= itemsTotal;
             return (
               <li key={c.id}>
                 <Card className="p-4 h-full flex flex-col">
@@ -183,9 +183,9 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; onOpe
                     <ServiceChips codes={c.services} catalog={byCode} max={3} />
                   </div>
                   <div className="mt-4 flex items-center justify-between text-xs">
-                    <span className="text-slate-600">Documents</span>
+                    <span className="text-slate-600">Documents &amp; details</span>
                     <span className="font-bold text-slate-900">
-                      {saved} of {total}
+                      {saved} of {itemsTotal}
                     </span>
                   </div>
                   <div
@@ -194,9 +194,9 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; onOpe
                     aria-label={`Documents saved for ${c.company || c.name}`}
                     aria-valuenow={saved}
                     aria-valuemin={0}
-                    aria-valuemax={total}
+                    aria-valuemax={itemsTotal}
                   >
-                    <div className={`h-full ${done ? 'bg-emerald-600' : 'bg-indigo-500'}`} style={{ width: `${(saved / total) * 100}%` }} />
+                    <div className={`h-full ${done ? 'bg-emerald-600' : 'bg-indigo-500'}`} style={{ width: `${(saved / itemsTotal) * 100}%` }} />
                   </div>
                   <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-100 mt-4 text-xs text-slate-500">
                     <span>
@@ -237,12 +237,11 @@ const STAGES: { key: OnboardingStage; label: string; hint: string }[] = [
   { key: 'HANDOVER', label: 'Client handover', hint: 'Forward to support' }
 ];
 
-export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void }> = ({ id, onBack }) => {
+export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; mode?: ChecklistMode }> = ({ id, onBack, mode = 'sales' }) => {
   const { byCode } = useServiceCatalog();
   const [c, setC] = useState<PipelineCustomerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'all' | 'pending' | 'saved'>('all');
   const [forwarding, setForwarding] = useState(false);
   const [editingHandover, setEditingHandover] = useState(false);
 
@@ -261,15 +260,20 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void }
   if (error && !c) return <ErrorBanner message={error} onRetry={load} />;
   if (!c) return <Spinner label="Loading onboarding…" />;
 
-  const types = c.documentTypes.filter(t => t.isMandatory);
-  const current = (code: string) => c.documents.find(d => d.documentType === code && d.status === 'UPLOADED') || null;
-  const savedTypes = types.filter(t => current(t.code));
-  const missing = types.filter(t => !current(t.code));
-  const pct = types.length ? Math.round((savedTypes.length / types.length) * 100) : 0;
+  const items = c.checklist;
+  const savedTypes = items.filter(isDone);
+  const missing = items.filter(i => !isDone(i));
+  const verified = items.filter(i => i.entry?.status === 'VERIFIED');
+  const rejected = items.filter(i => i.entry?.status === 'REJECTED');
+  const types = items;
+  const pct = items.length ? Math.round(((mode === 'review' ? verified.length : savedTypes.length) / items.length) * 100) : 0;
   const forwarded = !!c.onboarding?.forwardedToSupportAt;
   const stageIndex = STAGES.findIndex(s => s.key === (c.onboarding?.stage === 'COMPLETED' ? 'HANDOVER' : c.onboarding?.stage));
   const phoneDigits = (c.whatsapp || c.phone || '').replace(/\D/g, '');
-  const visibleTypes = types.filter(t => (tab === 'all' ? true : tab === 'saved' ? !!current(t.code) : !current(t.code)));
+  const changed = () => {
+    notifyPipelineChanged();
+    load();
+  };
 
   const forward = async () => {
     setForwarding(true);
@@ -286,8 +290,8 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void }
   };
 
   const askOnWhatsApp = () => {
-    const list = missing.map((t, i) => `${i + 1}. ${t.label}`).join('\n');
-    const text = `Hello ${c.name}, to complete your onboarding with us please share the following as PDF:\n${list}\nThank you!`;
+    const list = missing.map((t, i) => `${i + 1}. ${t.label}${t.entry?.reviewNote ? ` (${t.entry.reviewNote})` : ''}`).join('\n');
+    const text = `Hello ${c.name}, to complete your onboarding with us please share the following:\n${list}\nThank you!`;
     window.open(`https://wa.me/${phoneDigits}?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
   };
 
@@ -295,10 +299,10 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void }
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button type="button" onClick={onBack} className={btn.secondary}>
-          <ArrowLeft className="w-3.5 h-3.5" /> All onboarding customers
+          <ArrowLeft className="w-3.5 h-3.5" /> {mode === 'review' ? 'All customers to verify' : 'All onboarding customers'}
         </button>
         <nav aria-label="Breadcrumb" className="text-xs text-slate-500">
-          Pipeline / Customer onboarding / <span aria-current="page">{c.company || c.name}</span>
+          {mode === 'review' ? 'Onboarding verification' : 'Pipeline / Customer onboarding'} / <span aria-current="page">{c.company || c.name}</span>
         </nav>
       </div>
 
@@ -345,103 +349,69 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void }
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Documents &amp; details</h2>
-              <p className="text-xs text-slate-500">Required to complete this customer's onboarding</p>
-            </div>
-            <div role="tablist" aria-label="Show documents" className="flex p-1 rounded-xl bg-slate-100 text-xs font-semibold">
-              {(
-                [
-                  ['all', `All ${types.length}`],
-                  ['pending', `Pending ${missing.length}`],
-                  ['saved', `Saved ${savedTypes.length}`]
-                ] as const
-              ).map(([k, label]) => (
-                <button
-                  key={k}
-                  role="tab"
-                  type="button"
-                  aria-selected={tab === k}
-                  onClick={() => setTab(k)}
-                  className={`px-3 py-1.5 rounded-lg ${tab === k ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Mandatory Documents — always the last section of this panel. */}
-          <section aria-labelledby="mandatory-docs-heading" className="mt-6">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-              <span className="w-2 h-2 rounded-full bg-indigo-600" aria-hidden="true" />
-              <h3 id="mandatory-docs-heading" className="text-sm font-bold text-slate-900">
-                Mandatory Documents
-              </h3>
-              <span className="text-xs text-slate-500">
-                {savedTypes.length} of {types.length} saved
-              </span>
-            </div>
-            {visibleTypes.length === 0 ? (
-              <p className="py-6 text-xs text-slate-500 text-center">{tab === 'saved' ? 'Nothing saved yet.' : 'All mandatory documents are saved.'}</p>
-            ) : (
-              <ol className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                {visibleTypes.map(t => (
-                  <DocumentCard
-                    key={t.code}
-                    index={types.indexOf(t) + 1}
-                    type={t}
-                    customerId={c.id}
-                    current={current(t.code)}
-                    history={c.documents.filter(d => d.documentType === t.code && d.status === 'SUPERSEDED')}
-                    locked={forwarded}
-                    onChanged={() => {
-                      notifyPipelineChanged();
-                      load();
-                    }}
-                  />
-                ))}
-              </ol>
-            )}
-          </section>
+          <ChecklistPanel customer={c} catalog={byCode} mode={mode} onChanged={changed} />
         </Card>
 
         <div className="space-y-4">
           <Card className="p-5 text-center">
-            <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} />
-            {forwarded ? (
+            {mode === 'review' ? (
               <>
-                <div className="mt-3 text-sm font-bold text-emerald-700">Forwarded to support</div>
-                <p className="text-xs text-slate-500">on {longDate(c.onboarding?.forwardedToSupportAt)}</p>
+                <ProgressRing pct={pct} label={`${verified.length} of ${items.length} verified`} />
+                <div className="mt-3 text-sm font-bold text-slate-900">
+                  {verified.length === items.length
+                    ? 'Everything verified'
+                    : rejected.length
+                      ? `${rejected.length} sent back to sales`
+                      : `${items.length - verified.length} item${items.length - verified.length === 1 ? '' : 's'} to verify`}
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {verified.length === items.length
+                    ? 'The sales owner has been notified.'
+                    : 'Verify each item, or send it back with a note. The salesperson is notified and the item returns here once fixed.'}
+                </p>
               </>
             ) : (
               <>
-                <div className="mt-3 text-sm font-bold text-slate-900">
-                  {missing.length === 0 ? 'All items saved' : `${missing.length} item${missing.length === 1 ? '' : 's'} still needed`}
+                <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} />
+                {forwarded ? (
+                  <>
+                    <div className="mt-3 text-sm font-bold text-emerald-700">Forwarded to the technical team</div>
+                    <p className="text-xs text-slate-500">
+                      on {longDate(c.onboarding?.forwardedToSupportAt)} · {verified.length} of {items.length} verified
+                      {rejected.length ? ` · ${rejected.length} need fixing` : ''}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-3 text-sm font-bold text-slate-900">
+                      {missing.length === 0 ? 'All items saved' : `${missing.length} item${missing.length === 1 ? '' : 's'} still needed`}
+                    </div>
+                    {missing.length > 0 && <p className="text-xs text-slate-500">{missing.map(m => m.label).join(', ')}</p>}
+                  </>
+                )}
+                <div className="mt-4 space-y-2">
+                  <button type="button" className={`${btn.primary} w-full py-2.5`} onClick={askOnWhatsApp} disabled={!phoneDigits || missing.length === 0}>
+                    <MessageCircle className="w-4 h-4" /> Ask client on WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                      missing.length === 0 && !forwarded ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                    }`}
+                    disabled={missing.length > 0 || forwarded || forwarding}
+                    aria-describedby="forward-hint"
+                    onClick={forward}
+                  >
+                    {forwarding ? 'Forwarding…' : forwarded ? 'Forwarded to support team' : 'Forward to support team'}
+                  </button>
+                  <p id="forward-hint" className="text-[11px] text-slate-500">
+                    {forwarded
+                      ? 'The technical team verifies each item. Fix anything sent back; current files can be replaced, not deleted.'
+                      : 'Unlocks when all items are saved'}
+                  </p>
                 </div>
-                {missing.length > 0 && <p className="text-xs text-slate-500">{missing.map(m => m.label).join(', ')}</p>}
               </>
             )}
-            <div className="mt-4 space-y-2">
-              <button type="button" className={`${btn.primary} w-full py-2.5`} onClick={askOnWhatsApp} disabled={!phoneDigits || missing.length === 0}>
-                <MessageCircle className="w-4 h-4" /> Ask client on WhatsApp
-              </button>
-              <button
-                type="button"
-                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                  missing.length === 0 && !forwarded ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                }`}
-                disabled={missing.length > 0 || forwarded || forwarding}
-                aria-describedby="forward-hint"
-                onClick={forward}
-              >
-                {forwarding ? 'Forwarding…' : forwarded ? 'Forwarded to support team' : 'Forward to support team'}
-              </button>
-              <p id="forward-hint" className="text-[11px] text-slate-500">
-                {forwarded ? 'Current documents are locked; upload a replacement if needed.' : 'Unlocks when all items are saved'}
-              </p>
-            </div>
           </Card>
 
           <Card className="p-5">
@@ -551,309 +521,5 @@ const ProgressRing: React.FC<{ pct: number; label: string }> = ({ pct, label }) 
         <span className="text-[10px] text-slate-500">{label}</span>
       </div>
     </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Document card: upload / view / download / replace / delete + versions
-// ---------------------------------------------------------------------------
-
-/** Reads the first bytes: a real PDF starts with "%PDF-" whatever its name. */
-async function looksLikePdf(file: File): Promise<boolean> {
-  const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
-  const text = String.fromCharCode(...head);
-  return text.includes('%PDF-');
-}
-
-const fmtSize = (n: number | null) => (n === null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`);
-
-const DocumentCard: React.FC<{
-  index: number;
-  type: DocumentType;
-  customerId: string;
-  current: CustomerDocument | null;
-  history: CustomerDocument[];
-  locked: boolean;
-  onChanged: () => void;
-}> = ({ index, type, customerId, current, history, locked, onChanged }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [phase, setPhase] = useState<null | 'checking' | 'uploading' | 'verifying'>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [opening, setOpening] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<CustomerDocument | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const busy = phase !== null;
-  const maxMb = Math.round(type.maxSizeBytes / 1048576);
-
-  const upload = async (file: File) => {
-    setError(null);
-    if (file.size === 0) return setError('This file is empty.');
-    if (file.size > type.maxSizeBytes) return setError(`The file is larger than ${maxMb} MB. Please compress it and try again.`);
-    setPhase('checking');
-    if (!(await looksLikePdf(file))) {
-      setPhase(null);
-      return setError('Only a single PDF file is accepted. Please combine the documents into one PDF.');
-    }
-    let documentId: string | null = null;
-    try {
-      const ticket = await documentsApi.beginUpload(customerId, {
-        documentType: type.code,
-        fileName: file.name.toLowerCase().endsWith('.pdf') ? file.name : `${file.name}.pdf`,
-        mimeType: 'application/pdf',
-        sizeBytes: file.size
-      });
-      documentId = ticket.document.id;
-      setPhase('uploading');
-      const { error: upErr } = await requireSupabase()
-        .storage.from(ticket.bucket)
-        .uploadToSignedUrl(ticket.path, ticket.token, await file.arrayBuffer(), { contentType: 'application/pdf', upsert: false });
-      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
-      setPhase('verifying');
-      await documentsApi.complete(documentId);
-      documentId = null;
-      onChanged();
-    } catch (e) {
-      setError(errorMessage(e));
-      // Tell the server the attempt failed so no half-finished file is kept.
-      if (documentId) await documentsApi.abort(documentId).catch(() => undefined);
-    } finally {
-      setPhase(null);
-      if (inputRef.current) inputRef.current.value = '';
-    }
-  };
-
-  const open = async (doc: CustomerDocument, action: 'view' | 'download') => {
-    setError(null);
-    setOpening(`${doc.id}:${action}`);
-    // Open the tab synchronously so popup blockers allow it, then point it at the signed URL.
-    const win = action === 'view' ? window.open('', '_blank') : null;
-    try {
-      const { url } = await documentsApi.url(doc.id, action);
-      if (win) {
-        win.opener = null;
-        win.location.href = url;
-      } else {
-        const a = document.createElement('a');
-        a.href = url;
-        a.rel = 'noopener';
-        a.click();
-      }
-    } catch (e) {
-      win?.close();
-      setError(errorMessage(e));
-    } finally {
-      setOpening(null);
-    }
-  };
-
-  const phaseLabel = { checking: 'Checking file…', uploading: 'Uploading…', verifying: 'Verifying PDF…' } as const;
-
-  return (
-    <li
-      className={`p-4 rounded-2xl border ${current ? 'border-slate-200 bg-white' : 'border-dashed border-indigo-200 bg-indigo-50/30'} ${dragging ? 'ring-2 ring-indigo-400' : ''}`}
-      onDragOver={e => {
-        if (busy) return;
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={e => {
-        e.preventDefault();
-        setDragging(false);
-        const files = e.dataTransfer.files;
-        if (busy || !files.length) return;
-        if (files.length > 1) return setError('Drop a single PDF file.');
-        void upload(files[0]);
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${current ? 'bg-indigo-50 text-indigo-600' : 'bg-indigo-100/70 text-indigo-600'}`} aria-hidden="true">
-          {current ? <FileText className="w-4 h-4" /> : <Upload className="w-4 h-4" />}
-        </span>
-        {current ? <Pill tone="green">Saved</Pill> : <Pill tone="orange">Pending</Pill>}
-      </div>
-      <div className="mt-3 flex items-center gap-1.5">
-        <h4 className="text-sm font-bold text-slate-900">
-          {index}. {type.label}
-        </h4>
-        {type.code === 'IMPORTANT_DOCUMENTS' && <InfoTip text={type.description} />}
-      </div>
-      <p className="text-xs text-slate-500 mt-0.5 break-all">
-        {current
-          ? `${current.originalFileName} · ${fmtSize(current.sizeBytes)} · ${shortDate(current.uploadedAt)}${current.uploadedBy ? ` · ${current.uploadedBy.fullName}` : ''}`
-          : `Single PDF, up to ${maxMb} MB. Drop the file here or upload.`}
-      </p>
-      {current && current.version !== null && current.version > 1 && <p className="text-[11px] text-slate-400">Version {current.version}</p>}
-
-      {error && (
-        <div className="mt-2">
-          <ErrorBanner message={error} />
-        </div>
-      )}
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold tracking-wide text-slate-500">FILE · PDF</span>
-        <div className="flex flex-wrap gap-1.5">
-          <input
-            ref={inputRef}
-            type="file"
-            accept="application/pdf,.pdf"
-            className="sr-only"
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={e => {
-              const f = e.target.files?.[0];
-              if (f) void upload(f);
-            }}
-          />
-          {busy ? (
-            <span role="status" className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-700">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" /> {phaseLabel[phase!]}
-            </span>
-          ) : current ? (
-            <>
-              <button type="button" className={btn.secondary} onClick={() => open(current, 'view')} disabled={opening !== null} aria-label={`View ${type.label}`}>
-                <Eye className="w-3.5 h-3.5" /> View
-              </button>
-              <button
-                type="button"
-                className={btn.secondary}
-                onClick={() => open(current, 'download')}
-                disabled={opening !== null}
-                aria-label={`Download ${type.label}`}
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-              <button type="button" className={btn.secondary} onClick={() => inputRef.current?.click()} aria-label={`Replace ${type.label}`}>
-                <RefreshCw className="w-3.5 h-3.5" /> Replace
-              </button>
-              {!locked && (
-                <button type="button" className={btn.danger} onClick={() => setConfirmDelete(current)} aria-label={`Delete ${type.label}`}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </>
-          ) : (
-            <button type="button" className={btn.primary} onClick={() => inputRef.current?.click()}>
-              <Upload className="w-3.5 h-3.5" /> Upload
-            </button>
-          )}
-        </div>
-      </div>
-
-      {history.length > 0 && (
-        <div className="mt-3 border-t border-slate-100 pt-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900"
-            aria-expanded={showHistory}
-            onClick={() => setShowHistory(v => !v)}
-          >
-            <History className="w-3.5 h-3.5" /> Previous versions ({history.length})
-          </button>
-          {showHistory && (
-            <ul className="mt-2 space-y-1.5">
-              {history.map(d => (
-                <li key={d.id} className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
-                  <span className="truncate">
-                    v{d.version} · {d.originalFileName} · {shortDate(d.uploadedAt)}
-                  </span>
-                  <span className="flex gap-1 shrink-0">
-                    <button type="button" className="underline" onClick={() => open(d, 'view')}>
-                      View
-                    </button>
-                    <button type="button" className="underline text-rose-700" onClick={() => setConfirmDelete(d)}>
-                      Delete
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-      {confirmDelete && (
-        <DeleteDialog
-          doc={confirmDelete}
-          label={type.label}
-          onClose={() => setConfirmDelete(null)}
-          onDeleted={() => {
-            setConfirmDelete(null);
-            onChanged();
-          }}
-        />
-      )}
-    </li>
-  );
-};
-
-const DeleteDialog: React.FC<{ doc: CustomerDocument; label: string; onClose: () => void; onDeleted: () => void }> = ({ doc, label, onClose, onDeleted }) => {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  return (
-    <Dialog
-      title={`Delete ${label}?`}
-      description={`${doc.originalFileName}${doc.version ? ` (version ${doc.version})` : ''} will be removed from this customer's record. This is logged and cannot be undone.`}
-      onClose={onClose}
-    >
-      {err && <ErrorBanner message={err} />}
-      <div className="flex justify-end gap-2">
-        <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 disabled:opacity-50"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            setErr(null);
-            try {
-              await documentsApi.remove(doc.id);
-              onDeleted();
-            } catch (e) {
-              setErr(errorMessage(e));
-              setBusy(false);
-            }
-          }}
-        >
-          {busy ? 'Deleting…' : 'Delete'}
-        </button>
-      </div>
-    </Dialog>
-  );
-};
-
-/** Small "?" help button; tooltip shows on hover and keyboard focus, Escape hides it. */
-const InfoTip: React.FC<{ text: string }> = ({ text }) => {
-  const id = useId();
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative inline-flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button
-        type="button"
-        aria-label="What should be in this PDF?"
-        aria-describedby={open ? id : undefined}
-        aria-expanded={open}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onClick={() => setOpen(o => !o)}
-        onKeyDown={e => e.key === 'Escape' && setOpen(false)}
-        className="w-5 h-5 rounded-full text-slate-500 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 inline-flex items-center justify-center"
-      >
-        <HelpCircle className="w-4 h-4" />
-      </button>
-      {open && (
-        <span
-          id={id}
-          role="tooltip"
-          className="absolute z-20 left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 max-w-[80vw] p-2.5 rounded-lg bg-slate-900 text-white text-[11px] leading-snug font-normal shadow-lg"
-        >
-          {text}
-        </span>
-      )}
-    </span>
   );
 };

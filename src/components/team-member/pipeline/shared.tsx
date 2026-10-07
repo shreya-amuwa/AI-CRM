@@ -363,10 +363,19 @@ export function usePipelineRealtime(onChange: () => void) {
 
 export function usePipelineCounts() {
   const [counts, setCounts] = useState<PipelineCounts | null>(null);
-  const refresh = useCallback(() => {
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const load = useCallback(() => {
     pipelineApi.counts().then(setCounts, err => console.warn('[pipeline] counts failed', errorMessage(err)));
   }, []);
-  useEffect(refresh, [refresh]);
+  // A local change fires both the app event and a realtime event: coalesce them.
+  const refresh = useCallback(() => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(load, 500);
+  }, [load]);
+  useEffect(() => {
+    load();
+    return () => clearTimeout(timer.current);
+  }, [load]);
   usePipelineRealtime(refresh);
   useEffect(() => {
     window.addEventListener('crm:pipeline-changed', refresh);

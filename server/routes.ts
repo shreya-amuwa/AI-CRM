@@ -54,10 +54,12 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/start-onboarding', handler: pipeline.startOnboarding },
   { method: 'PATCH', path: '/pipeline/customers/:id/onboarding', handler: pipeline.updateOnboarding },
   { method: 'POST', path: '/pipeline/customers/:id/forward-to-support', handler: pipeline.forwardToSupport },
+  { method: 'PATCH', path: '/pipeline/customers/:id/checklist/:item', handler: pipeline.saveChecklistItem },
+  { method: 'POST', path: '/pipeline/customers/:id/checklist/:item/review', handler: pipeline.reviewChecklistItem },
   { method: 'GET', path: '/pipeline/inbound', handler: pipeline.inbound },
   { method: 'POST', path: '/pipeline/inbound/:leadId/claim', handler: pipeline.claimInbound },
 
-  { method: 'POST', path: '/pipeline/customers/:id/documents', handler: documents.beginUpload, options: S },
+  { method: 'POST', path: '/pipeline/customers/:id/documents', handler: documents.beginUpload },
   { method: 'POST', path: '/documents/:id/complete', handler: documents.complete },
   { method: 'POST', path: '/documents/:id/abort', handler: documents.abort },
   { method: 'GET', path: '/documents/:id/url', handler: documents.url },

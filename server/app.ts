@@ -7,11 +7,11 @@ import { requestId } from 'hono/request-id';
 import { secureHeaders } from 'hono/secure-headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ApiResponse } from '../shared/contracts.js';
-import { assertActive, authenticate, type Actor } from './auth/authenticate.js';
+import { assertActive, authenticateRequest, type Actor } from './auth/authenticate.js';
 import { ConfigurationError, getEnv } from './config/env.js';
 import { healthCheck } from './health.js';
 import { AppError } from './http/errors.js';
-import { enforce, ipBuckets, userBuckets, type BucketResult } from './http/rateLimit.js';
+import { enforce, ipBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HttpMethod, RouteDef } from './http/types.js';
 import { routes } from './routes.js';
 
@@ -64,7 +64,7 @@ app.use('*', async (c, next) => {
 app.get('/health', async c => c.json(ok(await healthCheck())));
 
 for (const route of routes) {
-  app.on(route.method, route.path, authenticated(route), rateLimited(route), adapt(route));
+  app.on(route.method, route.path, authenticated(route), adapt(route));
 }
 
 const routeMatchers = routes.map(r => new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`));
@@ -91,22 +91,17 @@ app.onError((err, c) => {
 // ---------------------------------------------------------------------------
 // Route middleware
 // ---------------------------------------------------------------------------
-/** Verify the Supabase token, load the profile, require ACTIVE unless allowed. */
+/**
+ * Verify the token, load the profile and consume the per-user quota (one
+ * database round trip), then require ACTIVE unless the route allows otherwise.
+ */
 function authenticated(route: RouteDef): MiddlewareHandler<Env> {
   return async (c, next) => {
-    const { actor, db } = await authenticate(c.req.header('authorization'));
+    const { actor, db, limit } = await authenticateRequest(c.req.header('authorization'), route.options?.rate || 'default');
+    setRateHeaders(c, limit);
     if (!route.options?.allowInactive) assertActive(actor);
     c.set('actor', actor);
     c.set('db', db);
-    await next();
-  };
-}
-
-/** Layer 2: per-user quotas shared across instances (Postgres). */
-function rateLimited(route: RouteDef): MiddlewareHandler<Env> {
-  return async (c, next) => {
-    const result = await enforce(userBuckets(c.get('actor')!.id, route.options?.rate || 'default'), 'shared');
-    setRateHeaders(c, result);
     await next();
   };
 }

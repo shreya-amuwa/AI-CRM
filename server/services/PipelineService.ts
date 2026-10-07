@@ -10,6 +10,9 @@ import type {
   ServiceCatalogItem
 } from '../../shared/contracts.js';
 import {
+  checklistItemCodeSchema,
+  checklistReviewSchema,
+  checklistSaveSchema,
   documentUploadSchema,
   leadCreateSchema,
   leadUpdateSchema,
@@ -53,19 +56,34 @@ export class PipelineService {
 
   async list(query: unknown): Promise<Paginated<PipelineCustomer>> {
     const q = parse(pipelineListQuerySchema, query);
-    const mandatory = q.onboarding ? (await this.repo.documentTypes()).filter(t => t.isMandatory).length : 0;
-    return this.repo.list(q, mandatory);
+    return this.repo.list(q);
   }
 
   async get(id: string): Promise<PipelineCustomerDetail> {
     const customerId = parse(uuidSchema, id);
     const customer = await this.repo.get(customerId);
-    const [documents, documentTypes, activities] = await Promise.all([
+    const [documents, documentTypes, activities, checklist] = await Promise.all([
       this.repo.documents(customerId),
       this.repo.documentTypes(),
-      this.repo.activities(customerId)
+      this.repo.activities(customerId),
+      customer.lifecycleStage === 'ONBOARDING' || customer.lifecycleStage === 'CUSTOMER'
+        ? this.repo.checklist(customerId)
+        : Promise.resolve([])
     ]);
-    return { ...customer, documents, documentTypes, activities };
+    // Technical Consultants cannot read sales profiles; give them the owner's name.
+    const owner = customer.owner ?? (await this.repo.ownerSummary(customerId));
+    return { ...customer, owner, documents, documentTypes, activities, checklist };
+  }
+
+  /** Sales saves a detail / yes-no / approval / access / amount / choice item. */
+  async saveChecklistItem(id: string, item: string, body: unknown): Promise<void> {
+    await this.repo.saveEntry(parse(uuidSchema, id), parse(checklistItemCodeSchema, item), parse(checklistSaveSchema, body).value);
+  }
+
+  /** Technical Consultant verifies or rejects an item. */
+  async reviewChecklistItem(id: string, item: string, body: unknown): Promise<void> {
+    const input = parse(checklistReviewSchema, body);
+    await this.repo.reviewEntry(parse(uuidSchema, id), parse(checklistItemCodeSchema, item), input.decision, input.note || null);
   }
 
   async createLead(actor: Actor, body: unknown): Promise<PipelineCustomer> {
@@ -152,14 +170,19 @@ export class PipelineService {
     if (!doc) throw new AppError('NOT_FOUND', 'Document not found.');
     if (doc.status !== 'PENDING') throw new AppError('CONFLICT', 'This upload is no longer in progress.');
 
-    const object = await this.storage.inspectPdf(doc.storage_bucket, doc.storage_path);
+    const object = await this.storage.inspectFile(doc.storage_bucket, doc.storage_path, doc.mime_type);
     if (!object.exists) {
       await this.discard(id, doc.storage_bucket);
       throw new AppError('VALIDATION_ERROR', 'The file did not finish uploading. Please try again.');
     }
-    if (!object.isPdf) {
+    if (!object.matches) {
       await this.discard(id, doc.storage_bucket);
-      throw new AppError('VALIDATION_ERROR', 'This file is not a valid PDF. Please combine the documents into one PDF and try again.');
+      throw new AppError(
+        'VALIDATION_ERROR',
+        doc.mime_type === 'application/pdf'
+          ? 'This file is not a valid PDF. Please combine the documents into one PDF and try again.'
+          : 'The file content does not match its type. Please upload the original file.'
+      );
     }
     try {
       await this.repo.completeUpload(id, object.size);

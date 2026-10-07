@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  ChecklistItem,
   CustomerActivity,
   CustomerDocument,
   DocumentType,
@@ -17,7 +18,8 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, payment_method, started_at, target_handover_date, forwarded_to_support_at, mandatory_saved)`;
+  onboarding:customer_onboarding(stage, payment_method, started_at, target_handover_date, forwarded_to_support_at, mandatory_saved,
+    items_total, items_saved, items_verified, items_rejected)`;
 
 const SORTS: Record<PipelineListQuery['sort'], { column: string; ascending: boolean }> = {
   newest: { column: 'stage_changed_at', ascending: false },
@@ -66,7 +68,11 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           startedAt: o.started_at,
           targetHandoverDate: o.target_handover_date,
           forwardedToSupportAt: o.forwarded_to_support_at,
-          mandatorySaved: o.mandatory_saved ?? 0
+          mandatorySaved: o.mandatory_saved ?? 0,
+          itemsTotal: o.items_total ?? 0,
+          itemsSaved: o.items_saved ?? 0,
+          itemsVerified: o.items_verified ?? 0,
+          itemsRejected: o.items_rejected ?? 0
         }
       : null
   };
@@ -109,6 +115,22 @@ export class PipelineRepository {
     return rows as ServiceCatalogItem[];
   }
 
+  async checklist(customerId: string): Promise<ChecklistItem[]> {
+    return unwrap(await this.db.rpc('customer_onboarding_checklist', { p_customer: customerId })) as ChecklistItem[];
+  }
+
+  async ownerSummary(customerId: string): Promise<{ id: string; fullName: string } | null> {
+    return (unwrap(await this.db.rpc('customer_owner_summary', { p_customer: customerId })) as any) ?? null;
+  }
+
+  async saveEntry(customerId: string, item: string, value: string): Promise<void> {
+    unwrap(await this.db.rpc('save_onboarding_entry', { p_customer: customerId, p_item: item, p_value: value }));
+  }
+
+  async reviewEntry(customerId: string, item: string, decision: 'VERIFIED' | 'REJECTED', note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('review_onboarding_entry', { p_customer: customerId, p_item: item, p_decision: decision, p_note: note }));
+  }
+
   async documentTypes(): Promise<DocumentType[]> {
     const rows = unwrap(
       await this.db
@@ -130,10 +152,13 @@ export class PipelineRepository {
     return unwrap(await this.db.rpc('customer_pipeline_counts')) as PipelineCounts;
   }
 
-  async list(q: PipelineListQuery, mandatoryTotal: number): Promise<Paginated<PipelineCustomer>> {
+  async list(q: PipelineListQuery): Promise<Paginated<PipelineCustomer>> {
     let columns = BASE_COLUMNS;
     if (q.service) columns += ', service_filter:customer_services!inner(service_code)';
-    if (q.onboarding) columns += ', onboarding_filter:customer_onboarding!inner(mandatory_saved)';
+    const needsOnboarding = q.onboarding || q.review || q.forwarded;
+    if (needsOnboarding) {
+      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, forwarded_to_support_at)';
+    }
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
     if (q.search) query = query.ilike('search_text', likePattern(q.search));
@@ -149,9 +174,10 @@ export class PipelineRepository {
     if (q.payment === 'PART_PAID') query = query.gt('amount_received', 0).gte('payment_due_date', today);
     if (q.payment === 'OVERDUE') query = query.lt('payment_due_date', today);
 
-    if (q.onboarding === 'WAITING_ON_CLIENT') query = query.eq('onboarding_filter.mandatory_saved', 0);
-    if (q.onboarding === 'COLLECTING') query = query.gt('onboarding_filter.mandatory_saved', 0).lt('onboarding_filter.mandatory_saved', mandatoryTotal);
-    if (q.onboarding === 'READY_FOR_HANDOVER') query = query.gte('onboarding_filter.mandatory_saved', mandatoryTotal);
+    // Derived states are generated columns on customer_onboarding.
+    if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);
+    if (q.forwarded || q.review) query = query.not('onboarding_filter.forwarded_to_support_at', 'is', null);
+    if (q.review) query = query.eq('onboarding_filter.review_state', q.review);
 
     const sort = SORTS[q.sort];
     const { data, error, count } = await query
@@ -285,11 +311,13 @@ export class PipelineRepository {
     return unwrap(await this.db.rpc('fail_document_upload', { p_document: documentId })) as string;
   }
 
-  async pendingDocument(documentId: string): Promise<{ id: string; storage_bucket: string; storage_path: string; document_type: string; status: string } | null> {
+  async pendingDocument(
+    documentId: string
+  ): Promise<{ id: string; storage_bucket: string; storage_path: string; document_type: string; status: string; mime_type: string } | null> {
     const row = unwrap(
       await this.db
         .from('customer_documents')
-        .select('id, storage_bucket, storage_path, document_type, status')
+        .select('id, storage_bucket, storage_path, document_type, status, mime_type')
         .eq('id', documentId)
         .maybeSingle()
     ) as any;
