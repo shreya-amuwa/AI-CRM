@@ -5,6 +5,8 @@
 -- same account sees the same data on every device. Realtime is enabled so an
 -- open dashboard updates when another device changes something.
 --
+-- Safe to run more than once (e.g. after a partial run in the SQL editor).
+--
 -- Access:
 --   * the owner reads and writes their own rows
 --   * Super Admin, the department head and the team head can READ rows of
@@ -62,7 +64,7 @@ create trigger crm_leads_before_update before update on public.crm_leads
 -- ---------------------------------------------------------------------------
 -- Member-owned tables
 -- ---------------------------------------------------------------------------
-create table public.member_follow_ups (
+create table if not exists public.member_follow_ups (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   lead_id text check (length(lead_id) <= 100),
@@ -75,9 +77,9 @@ create table public.member_follow_ups (
   completed_at timestamptz,
   created_at timestamptz not null default now()
 );
-create index member_follow_ups_owner_idx on public.member_follow_ups (owner_id, created_at desc);
+create index if not exists member_follow_ups_owner_idx on public.member_follow_ups (owner_id, created_at desc);
 
-create table public.member_activities (
+create table if not exists public.member_activities (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   lead_id text check (length(lead_id) <= 100),
@@ -87,9 +89,9 @@ create table public.member_activities (
   type text not null default 'update' check (type in ('call', 'message', 'demo', 'update', 'stage')),
   created_at timestamptz not null default now()
 );
-create index member_activities_owner_idx on public.member_activities (owner_id, created_at desc);
+create index if not exists member_activities_owner_idx on public.member_activities (owner_id, created_at desc);
 
-create table public.member_deals (
+create table if not exists public.member_deals (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   lead_id text check (length(lead_id) <= 100),
@@ -100,9 +102,9 @@ create table public.member_deals (
   expected_close date,
   created_at timestamptz not null default now()
 );
-create index member_deals_owner_idx on public.member_deals (owner_id, created_at desc);
+create index if not exists member_deals_owner_idx on public.member_deals (owner_id, created_at desc);
 
-create table public.member_calendar_events (
+create table if not exists public.member_calendar_events (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   title text not null check (length(title) <= 200),
@@ -114,9 +116,9 @@ create table public.member_calendar_events (
   status text not null default 'confirmed' check (status in ('confirmed', 'pending', 'completed')),
   created_at timestamptz not null default now()
 );
-create index member_calendar_events_owner_idx on public.member_calendar_events (owner_id, event_date);
+create index if not exists member_calendar_events_owner_idx on public.member_calendar_events (owner_id, event_date);
 
-create table public.member_eod_reports (
+create table if not exists public.member_eod_reports (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   user_name text not null default '' check (length(user_name) <= 160),
@@ -130,7 +132,7 @@ create table public.member_eod_reports (
   unique (owner_id, report_date)
 );
 
-create table public.member_invoices (
+create table if not exists public.member_invoices (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   invoice_number text not null check (length(invoice_number) <= 60),
@@ -144,9 +146,9 @@ create table public.member_invoices (
   details jsonb not null default '{}'::jsonb check (pg_column_size(details) <= 32768),
   created_at timestamptz not null default now()
 );
-create index member_invoices_owner_idx on public.member_invoices (owner_id, created_at desc);
+create index if not exists member_invoices_owner_idx on public.member_invoices (owner_id, created_at desc);
 
-create table public.field_visits (
+create table if not exists public.field_visits (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references public.profiles (id) on delete cascade,
   status text not null default 'In Transit' check (length(status) <= 40),
@@ -155,7 +157,8 @@ create table public.field_visits (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create index field_visits_owner_idx on public.field_visits (owner_id, created_at desc);
+create index if not exists field_visits_owner_idx on public.field_visits (owner_id, created_at desc);
+drop trigger if exists field_visits_set_updated_at on public.field_visits;
 create trigger field_visits_set_updated_at before update on public.field_visits
   for each row execute function public.tg_set_updated_at();
 
@@ -172,6 +175,10 @@ begin
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon, authenticated', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
+    execute format('drop policy if exists %I on public.%I', t || '_select', t);
+    execute format('drop policy if exists %I on public.%I', t || '_insert', t);
+    execute format('drop policy if exists %I on public.%I', t || '_update', t);
+    execute format('drop policy if exists %I on public.%I', t || '_delete', t);
     execute format('create policy %I on public.%I for select to authenticated using (private.can_view_owner(owner_id))',
                    t || '_select', t);
     execute format('create policy %I on public.%I for insert to authenticated with check (owner_id = (select private.my_id()))',
