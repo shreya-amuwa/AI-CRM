@@ -851,4 +851,47 @@ select test.check((select count(*) = 1 from notifications where type = 'TASK_ASS
 select test.check((select count(*) = 1 from notifications where type = 'TASK_UPDATE' and recipient_id = test.id('th_wab')), 'team lead notified of the member update');
 select test.check((select count(*) = 1 from notifications where type = 'TASK_UPDATE' and recipient_id = test.id('dh_wab')), 'department head notified of the lead update');
 
+-- ---------------------------------------------------------------------------
+\echo '--- 18. Supabase Auth writes app_metadata after the INSERT'
+-- ---------------------------------------------------------------------------
+-- auth.admin.createUser inserts the row, then UPDATEs app_metadata in the same
+-- transaction; the profile must still get the role the manager picked.
+do $$
+declare v uuid := gen_random_uuid();
+begin
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v, 'late.head@amuwa.com', '{"full_name":"Late Head"}', '{"provider":"email","providers":["email"]}');
+  update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object(
+    'provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('wabastore'))
+  where id = v;
+  insert into test.users values ('late_head', v);
+end $$;
+select test.check((select role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' and department_id = test.dept('wabastore') and team_id is null
+                     from profiles where id = test.id('late_head')), 'late app_metadata: department head provisioned');
+select test.check((select count(*) = 0 from approval_requests where subject_user_id = test.id('late_head')), 'late app_metadata: no account request');
+
+do $$
+declare v uuid := gen_random_uuid();
+begin
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v, 'late.consultant@amuwa.com', '{"full_name":"Late Consultant"}', '{"provider":"email","providers":["email"]}');
+  update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object(
+    'provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support'),
+    'provisioned_technical_consultant', true)
+  where id = v;
+  insert into test.users values ('late_consultant', v);
+end $$;
+select test.check((select role = 'TEAM_MEMBER' and status = 'ACTIVE' and is_technical_consultant
+                     from profiles where id = test.id('late_consultant')), 'late app_metadata: technical consultant provisioned');
+
+do $$
+declare v uuid := gen_random_uuid();
+begin
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v, 'late.self@amuwa.com', '{"full_name":"Self Signup"}', '{"provider":"email","providers":["email"]}');
+  insert into test.users values ('late_self', v);
+end $$;
+select test.check((select role = 'TEAM_MEMBER' and status = 'PENDING' from profiles where id = test.id('late_self')),
+  'self-registration still creates a pending team member');
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

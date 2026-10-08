@@ -78,15 +78,27 @@ async function handleAuth(req, res, path) {
   // Admin endpoints require the service-role key
   if (claims?.role !== 'service_role') return json(res, 403, { msg: 'forbidden' });
   if (path === '/admin/users' && req.method === 'POST') {
+    // Like Supabase Auth (GoTrue): the user row is inserted first and
+    // app_metadata is written by a separate UPDATE in the same transaction.
+    const client = await db.connect();
     try {
-      const { rows } = await db.query(
-        'insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2, $3) returning *',
-        [body.email, body.user_metadata || {}, body.app_metadata || {}]);
+      await client.query('begin');
+      const { rows: inserted } = await client.query(
+        `insert into auth.users (email, raw_user_meta_data, raw_app_meta_data)
+         values ($1, $2, '{"provider":"email","providers":["email"]}') returning id`,
+        [body.email, body.user_metadata || {}]);
+      const { rows } = await client.query(
+        'update auth.users set raw_app_meta_data = raw_app_meta_data || $2 where id = $1 returning *',
+        [inserted[0].id, body.app_metadata || {}]);
+      await client.query('commit');
       passwords.set(body.email, body.password);
       return json(res, 200, userJson(rows[0]));
     } catch (e) {
+      await client.query('rollback').catch(() => {});
       const dup = /duplicate/.test(e.message);
       return json(res, dup ? 422 : 500, { msg: dup ? 'A user with this email address has already been registered' : 'Database error creating new user', detail: e.message });
+    } finally {
+      client.release();
     }
   }
   const m = /^\/admin\/users\/([0-9a-f-]{36})$/.exec(path);
