@@ -209,7 +209,7 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 export const LEAD_STATUSES = ['NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY'] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
-export const PAYMENT_FILTERS = ['AWAITING', 'PART_PAID', 'OVERDUE'] as const;
+export const PAYMENT_FILTERS = ['AWAITING', 'PART_PAID', 'OVERDUE', 'PAID'] as const;
 export type PaymentFilter = (typeof PAYMENT_FILTERS)[number];
 
 export const ONBOARDING_FILTERS = ['RETURNED', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'] as const;
@@ -270,6 +270,9 @@ export interface CustomerOnboarding {
   itemsSaved: number;
   itemsVerified: number;
   itemsRejected: number;
+  /** Items the Technical Consultant fills in (e.g. WABA ID). */
+  consultantItemsTotal: number;
+  consultantItemsDone: number;
 }
 
 export interface DocumentType {
@@ -310,6 +313,8 @@ export interface ChecklistItem {
   hint: string;
   kind: ChecklistKind;
   options: string[] | null;
+  /** Who fills the item in: sales, or the Technical Consultant (e.g. WABA ID). */
+  filledBy: 'SALES' | 'CONSULTANT';
   /** Service the item is listed under (first sold service that needs it). */
   serviceCode: string | null;
   services: string[];

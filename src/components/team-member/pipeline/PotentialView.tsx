@@ -29,14 +29,18 @@ import {
   useServiceCatalog
 } from './shared';
 
+/** Same rules as the database (customers.fully_paid, customer_pipeline_counts). */
+const isFullyPaid = (c: PipelineCustomer) => !!c.dealAmount && c.dealAmount > 0 && c.amountReceived >= c.dealAmount;
 const paymentState = (c: PipelineCustomer): PaymentFilter => {
+  if (isFullyPaid(c)) return 'PAID';
   if (c.paymentDueDate && dayDiff(c.paymentDueDate) < 0) return 'OVERDUE';
   return c.amountReceived > 0 ? 'PART_PAID' : 'AWAITING';
 };
 const PAYMENT_PILL = {
   AWAITING: { tone: 'orange', label: 'Awaiting' },
   PART_PAID: { tone: 'indigo', label: 'Part paid' },
-  OVERDUE: { tone: 'red', label: 'Overdue' }
+  OVERDUE: { tone: 'red', label: 'Overdue' },
+  PAID: { tone: 'green', label: 'Paid in full' }
 } as const;
 
 function dueText(iso: string | null): { text: string; cls: string } {
@@ -85,7 +89,8 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
     { key: '', label: 'All potential', hint: 'Every potential customer', dot: 'bg-slate-900' },
     { key: 'AWAITING', label: 'Awaiting payment', hint: 'No payment yet', dot: 'bg-orange-500' },
     { key: 'PART_PAID', label: 'Part paid', hint: 'Balance still due', dot: 'bg-indigo-500' },
-    { key: 'OVERDUE', label: 'Overdue', hint: 'Past the due date', dot: 'bg-rose-500' }
+    { key: 'OVERDUE', label: 'Overdue', hint: 'Past the due date', dot: 'bg-rose-500' },
+    { key: 'PAID', label: 'Paid in full', hint: 'Ready to start onboarding', dot: 'bg-emerald-500' }
   ];
   const items = data?.items || [];
   const allChecked = items.length > 0 && items.every(i => selected.has(i.id));
@@ -99,7 +104,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
         <p className="text-sm text-slate-500 mt-0.5">Ready to buy. When payment is received, confirm it to start onboarding.</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" role="group" aria-label="Payment filter">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" role="group" aria-label="Payment filter">
         {cards.map(c => {
           const active = filter === c.key;
           const n = counts ? (c.key ? counts.potential[c.key] : counts.potential.all) : null;
@@ -258,14 +263,16 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                           <div className="h-full bg-indigo-500" style={{ width: `${pct}%` }} />
                         </div>
                         <div className="text-[11px] text-slate-500 mt-1">
-                          {c.amountReceived > 0
-                            ? `${money(c.amountReceived)} received · ${money((c.dealAmount || 0) - c.amountReceived)} due`
-                            : 'Nothing received yet'}
+                          {isFullyPaid(c)
+                            ? `${money(c.amountReceived)} received · nothing due`
+                            : c.amountReceived > 0
+                              ? `${money(c.amountReceived)} received · ${money((c.dealAmount || 0) - c.amountReceived)} due`
+                              : 'Nothing received yet'}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         <div className="font-semibold text-slate-900">{shortDate(c.paymentDueDate)}</div>
-                        <div className={due.cls}>{due.text}</div>
+                        {!isFullyPaid(c) && <div className={due.cls}>{due.text}</div>}
                       </td>
                       <td className="px-4 py-3">
                         <Pill tone={PAYMENT_PILL[st].tone}>{PAYMENT_PILL[st].label}</Pill>
@@ -275,15 +282,17 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                           <button type="button" className={`${btn.green} whitespace-nowrap`} onClick={() => setConfirming(c)}>
                             Confirm &amp; start onboarding
                           </button>
-                          <button
-                            type="button"
-                            className={`${btn.secondary} px-2`}
-                            onClick={() => setPaying(c)}
-                            aria-label={`Record a part payment for ${c.company || c.name}`}
-                            title="Record part payment"
-                          >
-                            <IndianRupee className="w-3.5 h-3.5" />
-                          </button>
+                          {!isFullyPaid(c) && (
+                            <button
+                              type="button"
+                              className={`${btn.secondary} px-2`}
+                              onClick={() => setPaying(c)}
+                              aria-label={`Record a part payment for ${c.company || c.name}`}
+                              title="Record part payment"
+                            >
+                              <IndianRupee className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -332,8 +341,12 @@ const PaymentDialog: React.FC<{
   onClose: () => void;
   onDone: (c: PipelineCustomer) => void;
 }> = ({ mode, customer, onClose, onDone }) => {
-  const balance = Math.max(0, (customer.dealAmount || 0) - customer.amountReceived);
-  const [amount, setAmount] = useState(mode === 'onboard' ? String(balance) : '');
+  const deal = customer.dealAmount || 0;
+  const already = customer.amountReceived;
+  const balance = Math.max(0, deal - already);
+  // Onboarding asks for the TOTAL received (prefilled with the deal amount); a
+  // part payment asks for the amount received now.
+  const [amount, setAmount] = useState(mode === 'onboard' ? String(deal || already) : '');
   const [method, setMethod] = useState<PaymentMethod>('UPI');
   const [handover, setHandover] = useState('');
   const [busy, setBusy] = useState(false);
@@ -342,16 +355,24 @@ const PaymentDialog: React.FC<{
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const n = Number(amount || 0);
-    if (n < 0 || n > balance) return setError(`Enter an amount between ₹0 and ${money(balance)}.`);
-    if (mode === 'part' && n <= 0) return setError('Enter the amount received.');
+    if (!Number.isFinite(n) || n < 0) return setError('Enter the amount in rupees.');
+    let receivedNow = n;
+    if (mode === 'onboard') {
+      if (n > deal) return setError(`The total received can't be more than the deal amount (${money(deal)}).`);
+      if (n < already) return setError(`${money(already)} has already been recorded for this customer. Enter the total received so far.`);
+      receivedNow = n - already;
+    } else {
+      if (n <= 0) return setError('Enter the amount received.');
+      if (n > balance) return setError(`Only ${money(balance)} is still due on this deal.`);
+    }
     setBusy(true);
     setError(null);
     try {
       // Waits for the server to confirm before the customer moves (no optimistic update).
       const c =
         mode === 'onboard'
-          ? await pipelineApi.startOnboarding(customer.id, { amountReceived: n, paymentMethod: method, targetHandoverDate: handover || null })
-          : await pipelineApi.recordPayment(customer.id, { amount: n, method });
+          ? await pipelineApi.startOnboarding(customer.id, { amountReceived: receivedNow, paymentMethod: method, targetHandoverDate: handover || null })
+          : await pipelineApi.recordPayment(customer.id, { amount: receivedNow, method });
       onDone(c);
     } catch (err) {
       setError(errorMessage(err));
@@ -366,9 +387,16 @@ const PaymentDialog: React.FC<{
       onClose={onClose}
     >
       <form onSubmit={submit} className="space-y-3" noValidate>
-        <Field label={mode === 'onboard' ? 'Amount received now (₹)' : 'Amount received (₹)'} required htmlFor="pay-amount">
-          <input id="pay-amount" type="number" min={0} max={balance} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} />
+        <Field label={mode === 'onboard' ? 'Total amount received (₹)' : 'Amount received now (₹)'} required htmlFor="pay-amount">
+          <input id="pay-amount" type="number" min={0} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} />
         </Field>
+        <p className="text-[11px] text-slate-500 -mt-1">
+          {mode === 'onboard'
+            ? balance === 0
+              ? 'Paid in full.'
+              : `Deal ${money(deal)}${already ? ` · ${money(already)} already recorded` : ''}. Enter everything received so far.`
+            : `${money(balance)} still due.`}
+        </p>
         <Field label="Payment method" required htmlFor="pay-method">
           <select id="pay-method" className={inputCls} value={method} onChange={e => setMethod(e.target.value as PaymentMethod)}>
             {PAYMENT_METHODS.map(m => (

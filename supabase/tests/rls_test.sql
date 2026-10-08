@@ -700,4 +700,23 @@ select test.must_fail($$select * from customer_documents$$, 'anon cannot read do
 reset role;
 select test.check((select public = false from storage.buckets where id = 'customer-documents'), 'customer-documents bucket is private');
 
+\echo '--- 15. Paid in full, checklist changes, consultant-only items'
+select test.login('tm_a');
+insert into pipeline select 'W', create_lead('{"name":"Wa Client","company":"WA Traders","phone":"+91 90000 77777","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
+select move_customer_to_potential((select id from pipeline where name = 'W'), 30000, current_date + 5);
+select record_customer_payment((select id from pipeline where name = 'W'), 30000, 'UPI');
+select test.check((select fully_paid from customers where id = (select id from pipeline where name = 'W')), 'full payment marks the customer paid in full');
+select test.check((select (customer_pipeline_counts() -> 'potential' ->> 'PAID')::int = 1
+                      and (customer_pipeline_counts() -> 'potential' ->> 'PART_PAID')::int = 0), 'paid in full is not counted as part paid');
+select start_customer_onboarding((select id from pipeline where name = 'W'), 0, 'UPI', null);
+select test.check((select lifecycle_stage = 'ONBOARDING' from customers where id = (select id from pipeline where name = 'W')),
+  'fully paid customer starts onboarding with nothing more to receive');
+select test.check((select not exists (select 1 from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'W'))) e
+                    where e ->> 'code' in ('GST_CERTIFICATE', 'UDYAM_CERTIFICATE', 'WA_PRICING_APPROVED'))),
+  'GST / Udyam certificates and pricing approval are no longer requested');
+select test.check((select e ->> 'filledBy' = 'CONSULTANT' from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'W'))) e
+                    where e ->> 'code' = 'WABA_ID'), 'WABA ID is filled in by the Technical Consultant');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'W'), 'WABA_ID', '123')$$, 'sales cannot fill in the WABA ID', 'not part of');
+select test.check((select consultant_items_total = 1 and consultant_items_done = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'W')),
+  'consultant items tracked separately from sales progress');
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

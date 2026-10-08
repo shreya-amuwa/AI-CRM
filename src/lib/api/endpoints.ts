@@ -96,6 +96,8 @@ export const pipelineApi = {
   claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`),
   saveChecklistItem: (id: string, item: string, body: { value: string }) =>
     api.patch<null>(`/pipeline/customers/${id}/checklist/${item}`, body),
+  saveConsultantItem: (id: string, item: string, body: { value: string }) =>
+    api.patch<null>(`/pipeline/customers/${id}/consultant-items/${item}`, body),
   reviewCounts: () => api.get<ReviewCounts>('/pipeline/review-counts'),
   verifyAll: (id: string) => api.post<{ verified: number }>(`/pipeline/customers/${id}/checklist/verify-all`),
   automations: (id: string) => api.get<AutomationStatus[]>(`/pipeline/customers/${id}/automations`),

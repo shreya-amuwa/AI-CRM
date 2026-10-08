@@ -375,7 +375,7 @@ r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 const importantDoc = r.json.data.id;
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=COLLECTING');
 check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2 && r.json.data.items[0].onboarding.itemsSaved === 2,
-  'onboarding filter: still collecting (2 of 14 items)', r);
+  'onboarding filter: still collecting (2 of 13 items)', r);
 
 // a pending upload abandoned by the browser
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'abandoned.pdf');
@@ -389,7 +389,7 @@ check(!keys.some(k => k.includes(abandoned.document.id)), 'aborted upload object
 // --- service checklist (Meta Ads + AI Calling) -----------------------------------
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const checklist = r.json.data.checklist as any[];
-check(checklist.length === 14 && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
+check(checklist.length === 13 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
   'checklist built from the services sold (basics first, mandatory documents last)', checklist.map((c: any) => c.code));
 check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'uploaded mandatory documents already count as saved');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
@@ -419,8 +419,10 @@ ticket = r.json.data;
 await put(ticket, PNG, 'image/png');
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 check(r.status === 200, 'real PNG certificate accepted', r);
+r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/consultant-items/WABA_ID`, { value: '123' });
+check(r.status === 404, 'sales cannot use the consultant-only endpoint', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=READY_FOR_HANDOVER');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 14, 'ready for handover once all 14 items are saved', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 13, 'ready for handover once all 13 items are saved', r);
 
 r = await api('b', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 404, "member B cannot delete A's document", r);
@@ -447,21 +449,21 @@ tokens.set('tc', tokenFor(r.json.data.id));
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
 check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant sees forwarded customers of their department', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
-check(r.status === 200 && r.json.data.checklist.length === 14, 'consultant opens the full checklist', r);
+check(r.status === 200 && r.json.data.checklist.length === 13, 'consultant opens the full checklist', r);
 r = await api('tc', 'GET', `/documents/${importantDoc}/url?action=view`);
 check(r.status === 200, 'consultant can view the documents', r);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '1' });
 check(r.status === 404, 'consultant cannot change sales data', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/GST_CERTIFICATE/review`, { decision: 'REJECTED' });
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DOCUMENTS/review`, { decision: 'REJECTED' });
 check(r.status === 422, 'rejection requires a note', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/GST_CERTIFICATE/review`, { decision: 'REJECTED', note: 'Certificate is blurred' });
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DOCUMENTS/review`, { decision: 'REJECTED', note: 'Certificate is blurred' });
 check(r.status === 200, 'consultant rejects an item with a note', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=NEEDS_FIX');
 check(r.json.data.total === 1, 'review queue filter: needs fixing', r);
 r = await api('b', 'POST', `/pipeline/customers/${leadA}/checklist/AI_CALL_PLAN/review`, { decision: 'VERIFIED' });
 check(r.status === 404, 'sales members cannot verify', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
-const gst = r.json.data.checklist.find((c: any) => c.code === 'GST_CERTIFICATE');
+const gst = r.json.data.checklist.find((c: any) => c.code === 'IMPORTANT_DOCUMENTS');
 check(gst.entry.status === 'REJECTED' && gst.entry.reviewNote === 'Certificate is blurred' && gst.entry.reviewedBy === 'Tech Consultant', 'salesperson sees what to fix and who asked', gst);
 r = await api('b', 'POST', `/pipeline/customers/${leadA}/return-to-sales`, { note: 'x' });
 check(r.status === 404, 'sales members cannot send back', r);
@@ -475,13 +477,13 @@ check(r.json.data.total === 1 && r.json.data.items[0].onboarding.returnedAt && r
 r = await api('a', 'GET', '/pipeline/counts');
 check(r.json.data.onboarding.RETURNED === 1, 'returned tab count', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
-check(r.status === 422 && /GST/.test(r.json.error.message), 'cannot send again until fixed', r);
-r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'GST_CERTIFICATE', fileName: 'gst-clear.png', mimeType: 'image/png', sizeBytes: PNG.length });
+check(r.status === 422 && /All Important Documents/.test(r.json.error.message), 'cannot send again until fixed', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'IMPORTANT_DOCUMENTS', fileName: 'kyc-clear.pdf', mimeType: 'application/pdf', sizeBytes: PDF.length });
 ticket = r.json.data;
-await put(ticket, PNG, 'image/png');
+await put(ticket, PDF);
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
-check(r.json.data.checklist.find((c: any) => c.code === 'GST_CERTIFICATE').entry.status === 'SAVED', 'replacement goes back for review');
+check(r.json.data.checklist.find((c: any) => c.code === 'IMPORTANT_DOCUMENTS').entry.status === 'SAVED', 'replacement goes back for review');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
 check(r.status === 200 && r.json.data.onboarding.forwardedToSupportAt && !r.json.data.onboarding.returnedAt, 'fixed customer sent again', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
@@ -490,7 +492,7 @@ for (const item of r.json.data.checklist as any[]) {
   if (rv.status !== 200) check(false, `verify ${item.code}`, rv);
 }
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=VERIFIED');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 14, 'all items verified', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 13, 'all items verified', r);
 r = await api('a', 'GET', '/notifications');
 check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_RETURNED'),
   'salesperson notified of the send-back and of full verification', r.json.data.items.map((n: any) => n.type));

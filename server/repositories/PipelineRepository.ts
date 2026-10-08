@@ -20,7 +20,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
   onboarding:customer_onboarding(stage, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
-    items_total, items_saved, items_verified, items_rejected)`;
+    items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done)`;
 
 const SORTS: Record<PipelineListQuery['sort'], { column: string; ascending: boolean }> = {
   newest: { column: 'stage_changed_at', ascending: false },
@@ -75,7 +75,9 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           itemsTotal: o.items_total ?? 0,
           itemsSaved: o.items_saved ?? 0,
           itemsVerified: o.items_verified ?? 0,
-          itemsRejected: o.items_rejected ?? 0
+          itemsRejected: o.items_rejected ?? 0,
+          consultantItemsTotal: o.consultant_items_total ?? 0,
+          consultantItemsDone: o.consultant_items_done ?? 0
         }
       : null
   };
@@ -161,6 +163,10 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('save_onboarding_entry', { p_customer: customerId, p_item: item, p_value: value }));
   }
 
+  async saveConsultantEntry(customerId: string, item: string, value: string): Promise<void> {
+    unwrap(await this.db.rpc('save_consultant_entry', { p_customer: customerId, p_item: item, p_value: value }));
+  }
+
   async reviewEntry(customerId: string, item: string, decision: 'VERIFIED' | 'REJECTED', note: string | null): Promise<void> {
     unwrap(await this.db.rpc('review_onboarding_entry', { p_customer: customerId, p_item: item, p_decision: decision, p_note: note }));
   }
@@ -205,9 +211,11 @@ export class PipelineRepository {
     if (q.followUpTo) query = query.lt('next_follow_up_at', q.followUpTo);
 
     const today = new Date().toISOString().slice(0, 10);
-    if (q.payment === 'AWAITING') query = query.eq('amount_received', 0).gte('payment_due_date', today);
-    if (q.payment === 'PART_PAID') query = query.gt('amount_received', 0).gte('payment_due_date', today);
-    if (q.payment === 'OVERDUE') query = query.lt('payment_due_date', today);
+    // Same predicates as customer_pipeline_counts(); fully paid is never part paid or overdue.
+    if (q.payment === 'AWAITING') query = query.eq('fully_paid', false).eq('amount_received', 0).gte('payment_due_date', today);
+    if (q.payment === 'PART_PAID') query = query.eq('fully_paid', false).gt('amount_received', 0).gte('payment_due_date', today);
+    if (q.payment === 'OVERDUE') query = query.eq('fully_paid', false).lt('payment_due_date', today);
+    if (q.payment === 'PAID') query = query.eq('fully_paid', true);
 
     // Derived states are generated columns on customer_onboarding.
     if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);

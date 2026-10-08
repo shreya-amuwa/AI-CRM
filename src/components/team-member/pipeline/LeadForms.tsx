@@ -694,7 +694,8 @@ export const ActivityCard: React.FC<{ activities: PipelineCustomerDetail['activi
       <p className="text-xs text-slate-500">No activity yet.</p>
     ) : (
       <ol className="space-y-3">
-        {activities.slice(0, 12).map(a => (
+        {/* Only the five most recent entries. */}
+        {activities.slice(0, 5).map(a => (
           <li key={a.id} className="flex gap-2.5">
             <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${ACTIVITY_DOT[a.type] || 'bg-indigo-400'}`} aria-hidden="true" />
             <div className="min-w-0">

@@ -101,6 +101,21 @@ Files accept the types each item allows (PDF, JPG/PNG/WEBP, CSV/Excel, MP3/WAV/M
 checked by their content signature on the server, not by name. **Send to Technical Consultant**
 unlocks only when every item is saved and asks for confirmation.
 
+### Payment and checklist fixes (migration `20261008000300_sales_payment_and_checklist_fixes.sql`)
+
+- **Paid in full.** `customers.fully_paid` (generated: received ≥ deal amount) drives a new
+  *Paid in full* state, filter card and count. Fully paid customers no longer show as Part paid,
+  Awaiting or Overdue, and the part-payment button is hidden.
+- **Confirm & start onboarding** asks for the *total* amount received so far (prefilled with
+  the deal amount), so a fully paid deal no longer fails with "between ₹0 and ₹0".
+- **GST and Udyam certificates** are no longer separate uploads; they go into the single
+  *All Important Documents* PDF. *Current pricing approved by client* is removed.
+- **WABA ID** is filled in by the Technical Consultant (`onboarding_items.filled_by =
+  'CONSULTANT'`, `save_consultant_entry`) under "To be filled by you" once the customer panel
+  is created. It is hidden from sales and must be saved before the customer counts as verified.
+- The sales Activity card shows the 5 most recent entries.
+
+
 ### Technical Consultant verification
 
 Support-team members of the same department ("Technical Consultants") — plus department heads
