@@ -19,7 +19,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, payment_method, started_at, target_handover_date, forwarded_to_support_at, mandatory_saved,
+  onboarding:customer_onboarding(stage, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected)`;
 
 const SORTS: Record<PipelineListQuery['sort'], { column: string; ascending: boolean }> = {
@@ -69,6 +69,8 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           startedAt: o.started_at,
           targetHandoverDate: o.target_handover_date,
           forwardedToSupportAt: o.forwarded_to_support_at,
+          returnedAt: o.returned_at ?? null,
+          returnNote: o.return_note ?? null,
           mandatorySaved: o.mandatory_saved ?? 0,
           itemsTotal: o.items_total ?? 0,
           itemsSaved: o.items_saved ?? 0,
@@ -279,6 +281,10 @@ export class PipelineRepository {
         p_target_handover: targetHandover ?? null
       })
     );
+  }
+
+  async returnToSales(id: string, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('return_onboarding_to_sales', { p_customer: id, p_note: note }));
   }
 
   async forwardToSupport(id: string): Promise<void> {

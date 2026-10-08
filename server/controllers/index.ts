@@ -90,6 +90,10 @@ export const pipelineController = {
   startOnboarding: (async ctx => ok(await svc(ctx).pipeline.startOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   updateOnboarding: (async ctx => ok(await svc(ctx).pipeline.updateOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,
+  returnToSales: (async ctx => {
+    await svc(ctx).pipeline.returnToSales(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
   inbound: (async ctx => ok(await svc(ctx).pipeline.inbound(ctx.actor))) as Handler,
   claimInbound: (async ctx => ok(await svc(ctx).pipeline.claimInbound(ctx.params.leadId), 201)) as Handler,
   saveChecklistItem: (async ctx => {

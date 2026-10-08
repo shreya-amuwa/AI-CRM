@@ -355,6 +355,7 @@ export const checklistReviewSchema = z
   })
   .strict()
   .refine(v => v.decision === 'VERIFIED' || !!v.note, { message: 'Tell the sales team what needs fixing.', path: ['note'] });
+export const returnToSalesSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const checklistItemCodeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown item.');
 
 export const documentUploadSchema = z

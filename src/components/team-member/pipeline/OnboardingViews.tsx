@@ -54,12 +54,13 @@ import {
 } from './shared';
 
 const ONBOARDING_STATE: Record<OnboardingFilter, { label: string; tone: Tone }> = {
+  RETURNED: { label: 'Returned by consultant', tone: 'red' },
   COLLECTING: { label: 'Collecting', tone: 'indigo' },
   WAITING_ON_CLIENT: { label: 'Waiting on client', tone: 'orange' },
   READY_FOR_HANDOVER: { label: 'Ready for handover', tone: 'green' }
 };
-const onboardingState = (saved: number, total: number): OnboardingFilter =>
-  saved >= total ? 'READY_FOR_HANDOVER' : saved === 0 ? 'WAITING_ON_CLIENT' : 'COLLECTING';
+const onboardingState = (saved: number, total: number, returned = false): OnboardingFilter =>
+  returned ? 'RETURNED' : saved >= total ? 'READY_FOR_HANDOVER' : saved === 0 ? 'WAITING_ON_CLIENT' : 'COLLECTING';
 
 // ---------------------------------------------------------------------------
 // 3 · Customer onboarding (list)
@@ -95,7 +96,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
   useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize]);
   usePipelineRealtime(load);
 
-  const tabs: ('' | OnboardingFilter)[] = ['', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'];
+  const tabs: ('' | OnboardingFilter)[] = ['', 'RETURNED', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'];
 
   return (
     <div className="space-y-5">
@@ -143,7 +144,15 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
               type="button"
               aria-selected={active}
               onClick={() => setFilter(t)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                active
+                  ? t === 'RETURNED'
+                    ? 'bg-rose-600 text-white'
+                    : 'bg-slate-900 text-white'
+                  : t === 'RETURNED' && n
+                    ? 'bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
             >
               {t ? ONBOARDING_STATE[t].label : 'All'} {n !== null && <span className={active ? 'text-slate-300' : 'text-slate-400'}>{n}</span>}
             </button>
@@ -163,11 +172,13 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
           {data?.items.map(c => {
             const saved = c.onboarding?.itemsSaved ?? 0;
             const itemsTotal = c.onboarding?.itemsTotal || total;
-            const st = onboardingState(saved, itemsTotal);
+            const returned = !!c.onboarding?.returnedAt;
+            const toFix = c.onboarding?.itemsRejected ?? 0;
+            const st = onboardingState(saved, itemsTotal, returned);
             const done = saved >= itemsTotal;
             return (
               <li key={c.id}>
-                <Card className="p-4 h-full flex flex-col">
+                <Card className={`p-4 h-full flex flex-col ${returned ? 'ring-1 ring-rose-200' : ''}`}>
                   <div className="flex items-start gap-3">
                     <Avatar name={c.company || c.name} />
                     <div className="flex-1 min-w-0">
@@ -182,6 +193,14 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                   <div className="mt-3">
                     <ServiceChips codes={c.services} catalog={byCode} max={3} />
                   </div>
+                  {returned && (
+                    <div className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800" role="note">
+                      <div className="font-bold">
+                        {toFix > 0 ? `${toFix} item${toFix === 1 ? '' : 's'} to fix` : 'Fixed — send it again'}
+                      </div>
+                      {c.onboarding?.returnNote && <div className="mt-0.5 line-clamp-2">“{c.onboarding.returnNote}”</div>}
+                    </div>
+                  )}
                   <div className="mt-4 flex items-center justify-between text-xs">
                     <span className="text-slate-600">Documents &amp; details</span>
                     <span className="font-bold text-slate-900">
@@ -203,6 +222,8 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                       Paid {money(c.amountReceived)} ·{' '}
                       {c.onboarding?.forwardedToSupportAt ? (
                         <span className="font-semibold text-emerald-700">Sent to Technical Consultant</span>
+                      ) : returned ? (
+                        <span className="font-semibold text-rose-700">Returned {shortDate(c.onboarding!.returnedAt!)}</span>
                       ) : (
                         <span>Not sent yet</span>
                       )}
@@ -274,6 +295,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const types = items;
   const pct = items.length ? Math.round(((mode === 'review' ? verified.length : savedTypes.length) / items.length) * 100) : 0;
   const forwarded = !!c.onboarding?.forwardedToSupportAt;
+  const returned = !forwarded && !!c.onboarding?.returnedAt;
   const stageIndex = STAGES.findIndex(s => s.key === (c.onboarding?.stage === 'COMPLETED' ? 'HANDOVER' : c.onboarding?.stage));
   const phoneDigits = (c.whatsapp || c.phone || '').replace(/\D/g, '');
   const changed = () => {
@@ -354,6 +376,34 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
 
       {actionError && <ErrorBanner message={actionError} />}
 
+      {mode === 'sales' && returned && (
+        <div role="alert" className="p-4 rounded-2xl border border-rose-200 bg-rose-50 text-rose-900">
+          <div className="text-sm font-bold">Returned by the Technical Consultant for re-verification</div>
+          <p className="text-xs mt-0.5">
+            Sent back on {longDate(c.onboarding?.returnedAt)}.
+            {c.onboarding?.returnNote ? ` “${c.onboarding.returnNote}”` : ''}
+          </p>
+          {rejected.length > 0 ? (
+            <>
+              <ul className="mt-2 space-y-1 text-xs">
+                {rejected.map(r => (
+                  <li key={r.code} className="flex gap-1.5">
+                    <span aria-hidden="true">•</span>
+                    <span>
+                      <strong>{r.label}</strong>
+                      {r.entry?.reviewNote ? ` — ${r.entry.reviewNote}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs mt-2">Fix each item marked Not authorized below (edit the details or replace the file), then send it again.</p>
+            </>
+          ) : (
+            <p className="text-xs mt-2 font-semibold">Everything is fixed. Send it to the Technical Consultant again.</p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 p-5">
           <ChecklistPanel customer={c} catalog={byCode} mode={mode} onChanged={changed} />
@@ -403,7 +453,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                   {confirmSend && !forwarded ? (
                     <div role="alertdialog" aria-labelledby="send-confirm-title" className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2">
                       <div id="send-confirm-title" className="text-xs font-bold text-emerald-900">
-                        Send {c.company || c.name} to the Technical Consultant?
+                        Send {c.company || c.name} {returned ? 'back ' : ''}to the Technical Consultant?
                       </div>
                       <p className="text-[11px] text-emerald-800">
                         They will verify every document. After sending, current files can be replaced but not deleted.
@@ -437,7 +487,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                       aria-describedby="forward-hint"
                       onClick={() => setConfirmSend(true)}
                     >
-                      {forwarded ? 'Sent to Technical Consultant' : 'Send to Technical Consultant'}
+                      {forwarded ? 'Sent to Technical Consultant' : returned ? 'Send again to Technical Consultant' : 'Send to Technical Consultant'}
                     </button>
                   )}
                   <p id="forward-hint" className="text-[11px] text-slate-500">

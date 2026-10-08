@@ -621,7 +621,7 @@ select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_R
   'invoice replacement audited with actor + customer');
 select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_DOWNLOADED' and actor_id = test.id('th_wab')), 'download audited');
 select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_DELETED'), 'deletion audited');
-select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'owner notified of the rejection');
+select test.check((select count(*) = 0 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'a single Not authorized does not notify on its own');
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_VERIFIED' and recipient_id = test.id('tm_a')), 'owner notified when everything is verified');
 select test.check((select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
                    and (select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEMS_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
@@ -641,6 +641,38 @@ select test.must_fail($$select finish_onboarding_automation((select id from runs
 select test.login('tm_c');
 select test.must_fail($$select begin_onboarding_automation((select id from pipeline where name = 'A'), 'EMAIL')$$, 'other department cannot trigger automations', 'NOT_FOUND');
 reset role;
+
+\echo '--- 13d. Send back to sales for re-verification'
+set role authenticated;
+select test.login('tm_b');
+select test.must_fail($$select return_onboarding_to_sales((select id from pipeline where name = 'A'), null)$$,
+  'cannot send back without a Not authorized item', 'Mark at least one item');
+select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'REJECTED', 'Logo looks fake / low resolution');
+select return_onboarding_to_sales((select id from pipeline where name = 'A'), 'Please re-check the logo with the client');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'returned customer leaves the consultant queue');
+select test.must_fail($$select return_onboarding_to_sales((select id from pipeline where name = 'A'), null)$$, 'cannot send back twice', 'NOT_FOUND');
+select test.login('tm_a');
+select test.check((select returned_at is not null and forwarded_to_support_at is null and onboarding_state = 'RETURNED'
+                     and return_note like '%logo%' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'salesperson sees the onboarding as returned');
+select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'RETURNED')::int = 1), 'returned tab count');
+select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$,
+  'cannot resend until the rejected item is fixed', 'Brand logo');
+insert into docs select 'A_logo2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo-hd.png', 'image/png', 4000);
+select complete_document_upload((select id from docs where name = 'A_logo2'), 4000);
+select forward_onboarding_to_support((select id from pipeline where name = 'A'));
+select test.check((select returned_at is null and forwarded_to_support_at is not null and onboarding_state <> 'RETURNED'
+                   from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'resending clears the returned state');
+select test.login('tm_b');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'consultant sees the fixed customer again');
+select test.check((select (e -> 'entry' ->> 'status') = 'SAVED' from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e
+                   where e ->> 'code' = 'BRAND_LOGO'), 'fixed item is waiting for review again');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_RETURNED' and recipient_id = test.id('tm_a') and body like '%Brand logo%'),
+  'salesperson notified with the items to fix');
+select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_FORWARDED' and recipient_id = test.id('tm_b') and title like 'Re-verify%'),
+  'consultant notified when the customer comes back');
+select test.check((select count(*) = 1 from audit_logs where action = 'ONBOARDING_RETURNED' and actor_id = test.id('tm_b')), 'send-back audited');
 
 -- ---------------------------------------------------------------------------
 \echo '--- 14. Inbound webhook leads → pipeline'

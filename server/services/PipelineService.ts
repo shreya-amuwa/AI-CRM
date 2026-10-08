@@ -21,6 +21,7 @@ import {
   onboardingUpdateSchema,
   pipelineListQuerySchema,
   recordPaymentSchema,
+  returnToSalesSchema,
   startOnboardingSchema,
   uuidSchema
 } from '../../shared/validation.js';
@@ -138,6 +139,12 @@ export class PipelineService {
     const customerId = parse(uuidSchema, id);
     await this.repo.updateOnboarding(customerId, parse(onboardingUpdateSchema, body).targetHandoverDate);
     return this.repo.get(customerId);
+  }
+
+  /** Technical Consultant sends the onboarding back to sales for re-verification. */
+  async returnToSales(id: string, body: unknown): Promise<void> {
+    const input = parse(returnToSalesSchema, body ?? {});
+    await this.repo.returnToSales(parse(uuidSchema, id), input.note || null);
   }
 
   async forwardToSupport(id: string): Promise<PipelineCustomer> {

@@ -305,7 +305,12 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
       onSelectNav={setActiveNav}
       pipelineCounts={
         pipelineCounts
-          ? { leads: pipelineCounts.leads.all, potential: pipelineCounts.potential.all, onboarding: pipelineCounts.onboarding.all }
+          ? {
+              leads: pipelineCounts.leads.all,
+              potential: pipelineCounts.potential.all,
+              onboarding: pipelineCounts.onboarding.all,
+              returned: pipelineCounts.onboarding.RETURNED ?? 0
+            }
           : null
       }
     >

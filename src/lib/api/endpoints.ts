@@ -91,6 +91,7 @@ export const pipelineApi = {
   updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
+  returnToSales: (id: string, note: string | null) => api.post<null>(`/pipeline/customers/${id}/return-to-sales`, { note }),
   inbound: () => api.get<InboundLead[]>('/pipeline/inbound'),
   claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`),
   saveChecklistItem: (id: string, item: string, body: { value: string }) =>

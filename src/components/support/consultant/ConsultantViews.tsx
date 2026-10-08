@@ -13,6 +13,7 @@ import {
   Mail,
   MessageCircle,
   PhoneCall,
+  RotateCcw,
   Search,
   ShieldCheck,
   FileSpreadsheet,
@@ -249,6 +250,9 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [authorizingAll, setAuthorizingAll] = useState(false);
+  const [sendBackOpen, setSendBackOpen] = useState(false);
+  const [sendingBack, setSendingBack] = useState(false);
+  const [sendBackNote, setSendBackNote] = useState('');
 
   const load = useCallback(() => {
     pipelineApi.get(id).then(
@@ -270,6 +274,23 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
     load();
   };
   const pending = c.checklist.filter(i => i.entry?.status === 'SAVED').length;
+  const rejectedItems = c.checklist.filter(i => i.entry?.status === 'REJECTED');
+
+  const sendBack = async () => {
+    setSendingBack(true);
+    setActionError(null);
+    try {
+      await pipelineApi.returnToSales(c.id, sendBackNote.trim() || null);
+      notifyPipelineChanged();
+      setSendBackOpen(false);
+      onBack();
+    } catch (e) {
+      setActionError(errorMessage(e));
+      setSendBackOpen(false);
+    } finally {
+      setSendingBack(false);
+    }
+  };
 
   const authorizeAll = async () => {
     setAuthorizingAll(true);
@@ -333,7 +354,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-labelledby="docs-heading">
-          <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <IconTile className="w-9 h-9 bg-slate-100 text-slate-600">
                 <FileText className="w-4 h-4" />
@@ -345,15 +366,77 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
                 <p className="text-xs text-slate-500">Submitted by the customer</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={authorizeAll}
-              disabled={pending === 0 || authorizingAll}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ShieldCheck className="w-4 h-4" aria-hidden="true" /> {authorizingAll ? 'Authorizing…' : 'Authorize all'}
-            </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSendBackOpen(true)}
+                disabled={rejectedItems.length === 0 || sendingBack}
+                title={rejectedItems.length === 0 ? 'Mark at least one item as Not authorized first' : undefined}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-rose-300 bg-white text-rose-700 text-xs font-bold hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className="w-4 h-4" aria-hidden="true" /> Send back for re-verification
+              </button>
+              <button
+                type="button"
+                onClick={authorizeAll}
+                disabled={pending === 0 || authorizingAll}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ShieldCheck className="w-4 h-4" aria-hidden="true" /> {authorizingAll ? 'Authorizing…' : 'Authorize all'}
+              </button>
+            </div>
           </div>
+          <p className="mt-3 text-[11px] text-slate-500">
+            {rejectedItems.length > 0
+              ? `${rejectedItems.length} item${rejectedItems.length === 1 ? '' : 's'} marked Not authorized. Click "Send back for re-verification" to return this customer to the salesperson.`
+              : 'Wrong, inappropriate or fake document? Mark it Not authorized with a reason, then send it back to the salesperson for re-verification.'}
+          </p>
+          {sendBackOpen && (
+            <Dialog
+              title="Send back to sales for re-verification"
+              description={`${c.company || c.name} goes back to ${c.owner?.fullName || 'the salesperson'} with these items to fix. It leaves your list until they send it again.`}
+              onClose={() => !sendingBack && setSendBackOpen(false)}
+            >
+              <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                {rejectedItems.map(i => (
+                  <li key={i.code} className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900">
+                    <strong>{i.label}</strong>
+                    {i.entry?.reviewNote ? ` — ${i.entry.reviewNote}` : ''}
+                  </li>
+                ))}
+              </ul>
+              <label className="block text-xs font-medium text-slate-600" htmlFor="send-back-note">
+                Message to the salesperson (optional)
+              </label>
+              <textarea
+                id="send-back-note"
+                rows={2}
+                maxLength={1000}
+                className={inputCls}
+                value={sendBackNote}
+                onChange={e => setSendBackNote(e.target.value)}
+                placeholder="e.g. Please collect original documents from the client"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSendBackOpen(false)}
+                  disabled={sendingBack}
+                  className="px-3.5 py-2 rounded-lg text-xs font-bold border border-slate-200 bg-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={sendBack}
+                  disabled={sendingBack}
+                  className="px-3.5 py-2 rounded-lg text-xs font-bold bg-rose-600 text-white disabled:opacity-40"
+                >
+                  {sendingBack ? 'Sending…' : 'Send back to sales'}
+                </button>
+              </div>
+            </Dialog>
+          )}
           {c.checklist.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">No documents requested for this customer.</p>
           ) : (
@@ -495,7 +578,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
       </div>
       {state === 'REJECTED' && entry?.reviewNote && (
         <p className="mt-2 text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5" role="note">
-          Sent back: {entry.reviewNote}
+          Reason: {entry.reviewNote}
         </p>
       )}
       {error && (
@@ -611,7 +694,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
           </dl>
           {state === 'REJECTED' && entry.reviewNote && (
             <p className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5" role="note">
-              Sent back: {entry.reviewNote}
+              Reason: {entry.reviewNote}
             </p>
           )}
           {error && <ErrorBanner message={error} />}
@@ -647,7 +730,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
 const RejectDialog: React.FC<{ label: string; busy: boolean; onClose: () => void; onConfirm: (note: string) => void }> = ({ label, busy, onClose, onConfirm }) => {
   const [note, setNote] = useState('');
   return (
-    <Dialog title={`Not authorized: ${label}`} description="The salesperson is notified and sees your reason on this document." onClose={onClose}>
+    <Dialog title={`Not authorized: ${label}`} description="The salesperson sees this reason when you send the customer back for re-verification." onClose={onClose}>
       <label className="block text-xs font-medium text-slate-600" htmlFor="reject-reason">
         Reason
       </label>
