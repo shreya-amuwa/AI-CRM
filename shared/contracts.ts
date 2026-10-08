@@ -212,7 +212,7 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
 export const PAYMENT_FILTERS = ['AWAITING', 'PART_PAID', 'OVERDUE'] as const;
 export type PaymentFilter = (typeof PAYMENT_FILTERS)[number];
 
-export const ONBOARDING_FILTERS = ['COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'] as const;
+export const ONBOARDING_FILTERS = ['RETURNED', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'] as const;
 export type OnboardingFilter = (typeof ONBOARDING_FILTERS)[number];
 
 export const PAYMENT_METHODS = ['UPI', 'BANK_TRANSFER', 'CASH', 'CARD', 'CHEQUE', 'OTHER'] as const;
@@ -262,6 +262,9 @@ export interface CustomerOnboarding {
   startedAt: string;
   targetHandoverDate: string | null;
   forwardedToSupportAt: string | null;
+  /** Set when the Technical Consultant sent it back for re-verification. */
+  returnedAt: string | null;
+  returnNote: string | null;
   mandatorySaved: number;
   itemsTotal: number;
   itemsSaved: number;

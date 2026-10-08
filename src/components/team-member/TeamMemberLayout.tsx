@@ -37,7 +37,7 @@ interface TeamMemberLayoutProps {
   activeNav?: TeamMemberNav;
   onSelectNav?: (nav: TeamMemberNav) => void;
   /** Live counts for the My Leads sub-tree (from the database). */
-  pipelineCounts?: { leads: number; potential: number; onboarding: number } | null;
+  pipelineCounts?: { leads: number; potential: number; onboarding: number; returned?: number } | null;
 }
 
 const PIPELINE_CHILDREN: { id: TeamMemberNav; label: string; step: number; badge: string; activeBadge: string; countKey: 'leads' | 'potential' | 'onboarding' }[] = [
@@ -202,6 +202,15 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
                                   {child.step}
                                 </span>
                                 <span className="flex-1 leading-tight">{child.label}</span>
+                                {child.id === 'onboarding' && (pipelineCounts?.returned ?? 0) > 0 && (
+                                  <span
+                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-rose-600 text-white"
+                                    title="Returned by the Technical Consultant"
+                                    aria-label={`${pipelineCounts?.returned} returned by the Technical Consultant`}
+                                  >
+                                    {pipelineCounts?.returned} returned
+                                  </span>
+                                )}
                                 {count !== undefined && (
                                   <span
                                     className={`text-[10px] font-semibold ${active ? `px-1.5 py-0.5 rounded-md ${child.badge}` : 'text-slate-400'}`}

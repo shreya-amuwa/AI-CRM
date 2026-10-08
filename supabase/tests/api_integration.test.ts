@@ -463,12 +463,28 @@ check(r.status === 404, 'sales members cannot verify', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const gst = r.json.data.checklist.find((c: any) => c.code === 'GST_CERTIFICATE');
 check(gst.entry.status === 'REJECTED' && gst.entry.reviewNote === 'Certificate is blurred' && gst.entry.reviewedBy === 'Tech Consultant', 'salesperson sees what to fix and who asked', gst);
+r = await api('b', 'POST', `/pipeline/customers/${leadA}/return-to-sales`, { note: 'x' });
+check(r.status === 404, 'sales members cannot send back', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/return-to-sales`, { note: 'Please get the original certificate' });
+check(r.status === 200, 'consultant sends the customer back for re-verification', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 404, 'returned customer leaves the consultant queue', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=RETURNED');
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.returnedAt && r.json.data.items[0].onboarding.returnNote === 'Please get the original certificate',
+  'salesperson sees it under Returned', r);
+r = await api('a', 'GET', '/pipeline/counts');
+check(r.json.data.onboarding.RETURNED === 1, 'returned tab count', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
+check(r.status === 422 && /GST/.test(r.json.error.message), 'cannot send again until fixed', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'GST_CERTIFICATE', fileName: 'gst-clear.png', mimeType: 'image/png', sizeBytes: PNG.length });
 ticket = r.json.data;
 await put(ticket, PNG, 'image/png');
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 check(r.json.data.checklist.find((c: any) => c.code === 'GST_CERTIFICATE').entry.status === 'SAVED', 'replacement goes back for review');
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
+check(r.status === 200 && r.json.data.onboarding.forwardedToSupportAt && !r.json.data.onboarding.returnedAt, 'fixed customer sent again', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
 for (const item of r.json.data.checklist as any[]) {
   const rv = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/${item.code}/review`, { decision: 'VERIFIED' });
   if (rv.status !== 200) check(false, `verify ${item.code}`, rv);
@@ -476,8 +492,8 @@ for (const item of r.json.data.checklist as any[]) {
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=VERIFIED');
 check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 14, 'all items verified', r);
 r = await api('a', 'GET', '/notifications');
-check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_ITEM_REJECTED'),
-  'salesperson notified of rejection and of full verification', r.json.data.items.map((n: any) => n.type));
+check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_RETURNED'),
+  'salesperson notified of the send-back and of full verification', r.json.data.items.map((n: any) => n.type));
 
 // --- consultant dashboard: counts, authorize all, automations ------------------------
 r = await api('tc', 'GET', '/pipeline/review-counts');

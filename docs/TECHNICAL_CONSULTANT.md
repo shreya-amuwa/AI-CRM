@@ -14,8 +14,12 @@ review too (database rules), but their dashboards don't have this screen yet.
   *Authorized* → every item authorized.
 - **Customer page** — customer, business, services and amount; every document and detail
   the salesperson collected (from the service checklist) with **View document**,
-  **Authorize**, **Not authorized** (requires a reason; sales is notified and the item comes
-  back after it is fixed) and **Authorize all**; and the **Automations** panel.
+  **Authorize**, **Not authorized** (requires a reason) and **Authorize all**; and the
+  **Automations** panel.
+- **Send back for re-verification** — after marking wrong, inappropriate or fake items as
+  *Not authorized*, this returns the customer to the salesperson (optional message). It leaves
+  the consultant's list; the salesperson sees it under **Returned by consultant** with every
+  item and reason, fixes them and clicks **Send again to Technical Consultant**.
 
 ## Automations (Email / WhatsApp / AI Calling)
 Each automation is a Google Sheet. **Trigger → Confirm** makes the API append one row
@@ -53,6 +57,8 @@ when the sheet confirms it. The same automation can't be triggered twice within 
 4. Redeploy. The automation's button becomes active.
 
 ## Database
+Migration `20261008000200_return_onboarding_to_sales.sql`: `return_onboarding_to_sales()`,
+`returned_at` / `return_note`, the RETURNED onboarding state and counts.
 Migration `20261008000100_send_to_technical_consultant.sql`: consultants see and review a
 customer only after sales sends it (`customer_onboarding.forwarded_to_support_at`).
 Migration `20261008000000_technical_consultant_dashboard.sql`: the
