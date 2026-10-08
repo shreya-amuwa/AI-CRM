@@ -197,7 +197,7 @@ export class PipelineRepository {
     if (q.service) columns += ', service_filter:customer_services!inner(service_code)';
     const needsOnboarding = q.onboarding || q.review || q.forwarded;
     if (needsOnboarding) {
-      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, forwarded_to_support_at)';
+      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, with_consultant)';
     }
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
@@ -219,7 +219,8 @@ export class PipelineRepository {
 
     // Derived states are generated columns on customer_onboarding.
     if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);
-    if (q.forwarded || q.review) query = query.not('onboarding_filter.forwarded_to_support_at', 'is', null);
+    // Consultant queue: sent to them, or sent back and waiting for sales.
+    if (q.forwarded || q.review) query = query.eq('onboarding_filter.with_consultant', true);
     if (q.review) query = query.eq('onboarding_filter.review_state', q.review);
 
     const sort = SORTS[q.sort];

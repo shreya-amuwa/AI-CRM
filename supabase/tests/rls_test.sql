@@ -649,7 +649,16 @@ select test.must_fail($$select return_onboarding_to_sales((select id from pipeli
   'cannot send back without a Not authorized item', 'Mark at least one item');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'REJECTED', 'Logo looks fake / low resolution');
 select return_onboarding_to_sales((select id from pipeline where name = 'A'), 'Please re-check the logo with the client');
-select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'returned customer leaves the consultant queue');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'returned customer stays visible to the consultant');
+select test.check((select review_state = 'WAITING_ON_SALES' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'consultant sees it as waiting for sales team');
+select test.check((select (onboarding_review_counts() ->> 'WAITING_ON_SALES')::int = 1), 'waiting for sales team tab count');
+select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) > 0), 'consultant can still read the checklist');
+select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_logo'), 'VIEW')), 'consultant can still view the files');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$,
+  'consultant cannot authorize while waiting for sales', 'NOT_FOUND');
+select test.must_fail($$select verify_all_onboarding_entries((select id from pipeline where name = 'A'))$$, 'no authorize all while waiting for sales', 'NOT_FOUND');
+select test.must_fail($$select begin_onboarding_automation((select id from pipeline where name = 'A'), 'WHATSAPP')$$, 'no automations while waiting for sales', 'NOT_FOUND');
 select test.must_fail($$select return_onboarding_to_sales((select id from pipeline where name = 'A'), null)$$, 'cannot send back twice', 'NOT_FOUND');
 select test.login('tm_a');
 select test.check((select returned_at is not null and forwarded_to_support_at is null and onboarding_state = 'RETURNED'
@@ -660,6 +669,10 @@ select test.must_fail($$select forward_onboarding_to_support((select id from pip
   'cannot resend until the rejected item is fixed', 'Brand logo');
 insert into docs select 'A_logo2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo-hd.png', 'image/png', 4000);
 select complete_document_upload((select id from docs where name = 'A_logo2'), 4000);
+select test.login('tm_b');
+select test.check((select (e -> 'entry' ->> 'status') = 'SAVED' from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e
+                   where e ->> 'code' = 'BRAND_LOGO'), 'consultant sees the fix while still waiting for sales');
+select test.login('tm_a');
 select forward_onboarding_to_support((select id from pipeline where name = 'A'));
 select test.check((select returned_at is null and forwarded_to_support_at is not null and onboarding_state <> 'RETURNED'
                    from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'resending clears the returned state');

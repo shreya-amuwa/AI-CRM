@@ -334,7 +334,7 @@ export interface ChecklistItem {
   } | null;
 }
 
-export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED', 'AWAITING_DOCUMENTS'] as const;
+export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED', 'AWAITING_DOCUMENTS', 'WAITING_ON_SALES'] as const;
 export type ReviewFilter = (typeof REVIEW_FILTERS)[number];
 export type ReviewCounts = Record<'all' | ReviewFilter, number>;
 

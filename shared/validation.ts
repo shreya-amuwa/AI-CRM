@@ -308,7 +308,7 @@ export const pipelineListQuerySchema = z.object({
   noFollowUp: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   payment: z.enum(PAYMENT_FILTERS).optional(),
   onboarding: z.enum(ONBOARDING_FILTERS).optional(),
-  /** Technical Consultant queue: only customers forwarded to support. */
+  /** Technical Consultant queue: customers sent to support (or sent back and waiting for sales). */
   review: z.enum(REVIEW_FILTERS).optional(),
   forwarded: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   /** Only records owned by the caller (e.g. a support member's own pipeline). */
