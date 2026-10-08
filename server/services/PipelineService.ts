@@ -91,6 +91,11 @@ export class PipelineService {
     await this.repo.saveEntry(parse(uuidSchema, id), parse(checklistItemCodeSchema, item), parse(checklistSaveSchema, body).value);
   }
 
+  /** Technical Consultant fills in one of their own items (e.g. WABA ID). */
+  async saveConsultantItem(id: string, item: string, body: unknown): Promise<void> {
+    await this.repo.saveConsultantEntry(parse(uuidSchema, id), parse(checklistItemCodeSchema, item), parse(checklistSaveSchema, body).value);
+  }
+
   /** Technical Consultant verifies or rejects an item. */
   async reviewChecklistItem(id: string, item: string, body: unknown): Promise<void> {
     const input = parse(checklistReviewSchema, body);

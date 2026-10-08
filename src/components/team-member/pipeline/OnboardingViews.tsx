@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Database,
   MessageCircle,
   Search
 } from 'lucide-react';
@@ -287,7 +286,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   if (error && !c) return <ErrorBanner message={error} onRetry={load} />;
   if (!c) return <Spinner label="Loading onboarding…" />;
 
-  const items = c.checklist;
+  // Items the Technical Consultant fills in (e.g. WABA ID) are not shown to sales.
+  const items = c.checklist.filter(i => i.filledBy !== 'CONSULTANT');
+  const salesView = { ...c, checklist: items };
   const savedTypes = items.filter(isDone);
   const missing = items.filter(i => !isDone(i));
   const verified = items.filter(i => i.entry?.status === 'VERIFIED');
@@ -406,7 +407,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 p-5">
-          <ChecklistPanel customer={c} catalog={byCode} mode={mode} onChanged={changed} />
+          <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
         </Card>
 
         <div className="space-y-4">
@@ -532,15 +533,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
             </ol>
           </Card>
 
-          <ActivityCard
-            activities={c.activities}
-            footer={
-              <div className="mt-4 flex gap-2 p-3 rounded-xl bg-indigo-50/60 text-[11px] text-slate-600">
-                <Database className="w-4 h-4 text-indigo-500 shrink-0" aria-hidden="true" />
-                Every file is stored on this customer's record with who added it and when.
-              </div>
-            }
-          />
+          <ActivityCard activities={c.activities} />
         </div>
       </div>
     </div>
