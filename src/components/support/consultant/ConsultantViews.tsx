@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
+  Eye,
   FileText,
   IndianRupee,
   Mail,
@@ -396,22 +397,53 @@ const ROW_STATUS = {
   MISSING: { label: 'Awaiting upload', cls: 'bg-slate-100 text-slate-500 border-slate-200', Icon: Clock }
 } as const;
 
+const SECTION_LABEL: Record<ChecklistItem['section'], string> = {
+  BUSINESS_BASICS: 'Business basics',
+  SERVICE: 'Service requirement',
+  MANDATORY_DOCUMENTS: 'Mandatory document'
+};
+
+const KIND_LABEL: Record<ChecklistItem['kind'], string> = {
+  DETAILS: 'Details provided',
+  FILE: 'File',
+  YES_NO: 'Answer',
+  APPROVAL: 'Approval',
+  ACCESS: 'Access given',
+  AMOUNT: 'Amount',
+  CHOICE: 'Selected option'
+};
+
+function formatEntryValue(item: ChecklistItem, value: string | null): string {
+  if (value == null || value === '') return '—';
+  if (item.kind === 'AMOUNT') return money(Number(value));
+  if (value === 'YES') return 'Yes';
+  if (value === 'NO') return 'No';
+  return value;
+}
+
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
 const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDetail; onChanged: () => void }> = ({ item, customer, onChanged }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
-  const [showValue, setShowValue] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const entry = item.entry;
   const state = entry?.status ?? 'MISSING';
   const S = ROW_STATUS[state];
   const isFile = item.kind === 'FILE';
   const doc: CustomerDocument | null = isFile ? customer.documents.find(d => d.id === entry?.documentId) || null : null;
+  const value = entry ? formatEntryValue(item, entry.value) : null;
   const sub = isFile
     ? doc
       ? `${doc.originalFileName} • ${fmtDateTime(doc.uploadedAt)}`
       : 'Not uploaded yet'
     : entry
-      ? `${item.kind === 'AMOUNT' ? money(Number(entry.value)) : entry.value === 'YES' ? 'Yes' : entry.value === 'NO' ? 'No' : entry.value} • ${fmtDateTime(entry.savedAt)}`
+      ? `${value} • ${fmtDateTime(entry.savedAt)}`
       : 'Not filled yet';
 
   const review = async (decision: 'VERIFIED' | 'REJECTED', note?: string) => {
@@ -420,6 +452,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
     try {
       await pipelineApi.reviewChecklistItem(customer.id, item.code, { decision, note: note || null });
       setRejecting(false);
+      setShowDetails(false);
       onChanged();
     } catch (e) {
       setError(errorMessage(e));
@@ -457,7 +490,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
               <S.Icon className="w-3 h-3" aria-hidden="true" /> {S.label}
             </span>
           </div>
-          <p className={`text-xs text-slate-500 mt-0.5 ${showValue ? 'whitespace-pre-line break-words' : 'truncate'}`}>{sub}</p>
+          <p className="text-xs text-slate-500 mt-0.5 truncate">{sub}</p>
         </div>
       </div>
       {state === 'REJECTED' && entry?.reviewNote && (
@@ -471,27 +504,19 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
         </div>
       )}
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        {isFile ? (
-          <button
-            type="button"
-            onClick={viewDocument}
-            disabled={!doc}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
-            aria-label={`View ${item.label}`}
-          >
-            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /> View document
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setShowValue(v => !v)}
-            disabled={!entry}
-            aria-expanded={showValue}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
-          >
-            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /> {showValue ? 'Hide details' : 'View details'}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setShowDetails(true);
+          }}
+          disabled={!entry}
+          aria-haspopup="dialog"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
+          aria-label={`View details: ${item.label}`}
+        >
+          <Eye className="w-3.5 h-3.5" aria-hidden="true" /> View details
+        </button>
         <div className="flex gap-2 ml-auto">
           <button
             type="button"
@@ -519,6 +544,101 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
           </button>
         </div>
       </div>
+      {showDetails && entry && !rejecting && (
+        <Dialog title={item.label} description={item.hint || undefined} onClose={() => setShowDetails(false)}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-500">{SECTION_LABEL[item.section]}</span>
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold whitespace-nowrap ${S.cls}`}>
+              <S.Icon className="w-3 h-3" aria-hidden="true" /> {S.label}
+            </span>
+          </div>
+
+          {isFile ? (
+            <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-2">
+              {doc ? (
+                <>
+                  <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+                    <dt className="text-slate-500">File</dt>
+                    <dd className="font-semibold text-slate-900 break-all">{doc.originalFileName}</dd>
+                    <dt className="text-slate-500">Type</dt>
+                    <dd className="text-slate-800">{doc.mimeType}</dd>
+                    {doc.sizeBytes != null && (
+                      <>
+                        <dt className="text-slate-500">Size</dt>
+                        <dd className="text-slate-800">{fmtSize(doc.sizeBytes)}</dd>
+                      </>
+                    )}
+                    {doc.version != null && (
+                      <>
+                        <dt className="text-slate-500">Version</dt>
+                        <dd className="text-slate-800">{doc.version}</dd>
+                      </>
+                    )}
+                    <dt className="text-slate-500">Uploaded</dt>
+                    <dd className="text-slate-800">
+                      {fmtDateTime(doc.uploadedAt)}
+                      {doc.uploadedBy ? ` by ${doc.uploadedBy.fullName}` : ''}
+                    </dd>
+                  </dl>
+                  <button
+                    type="button"
+                    onClick={viewDocument}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" /> Open document
+                  </button>
+                </>
+              ) : (
+                <p className="text-xs text-slate-500">The file is not available.</p>
+              )}
+            </div>
+          ) : (
+            <div className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+              <div className="text-[11px] font-medium text-slate-500 mb-1">{KIND_LABEL[item.kind]}</div>
+              <p className="text-sm text-slate-900 whitespace-pre-line break-words">{value}</p>
+            </div>
+          )}
+
+          <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+            <dt className="text-slate-500">Saved by sales</dt>
+            <dd className="text-slate-800">{fmtDateTime(entry.savedAt)}</dd>
+            {entry.reviewedAt && (
+              <>
+                <dt className="text-slate-500">Reviewed</dt>
+                <dd className="text-slate-800">{fmtDateTime(entry.reviewedAt)}</dd>
+              </>
+            )}
+          </dl>
+          {state === 'REJECTED' && entry.reviewNote && (
+            <p className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5" role="note">
+              Sent back: {entry.reviewNote}
+            </p>
+          )}
+          {error && <ErrorBanner message={error} />}
+
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button type="button" onClick={() => setShowDetails(false)} className="px-3.5 py-2 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700">
+              Close
+            </button>
+            <button
+              type="button"
+              disabled={busy || state === 'REJECTED'}
+              onClick={() => setRejecting(true)}
+              className="px-3.5 py-2 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:border-rose-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Not authorized
+            </button>
+            <button
+              type="button"
+              disabled={busy || state === 'VERIFIED' || state === 'REJECTED'}
+              onClick={() => review('VERIFIED')}
+              className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy ? 'Saving…' : state === 'VERIFIED' ? 'Authorized' : 'Authorize'}
+            </button>
+          </div>
+        </Dialog>
+      )}
       {rejecting && <RejectDialog label={item.label} busy={busy} onClose={() => setRejecting(false)} onConfirm={note => review('REJECTED', note)} />}
     </li>
   );
