@@ -13,6 +13,7 @@ import { CustomerService } from './CustomerService.js';
 import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
+import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
@@ -24,7 +25,8 @@ export function createServices(db: SupabaseClient) {
     notifications: new NotificationService(new NotificationRepository(db)),
     organization: new OrganizationService(new OrganizationRepository(db)),
     audit: new AuditService(new AuditRepository(db)),
-    pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository())
+    pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
+    automations: new AutomationService(new PipelineRepository(db))
   };
 }
 export type Services = ReturnType<typeof createServices>;

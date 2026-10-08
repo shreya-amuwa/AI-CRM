@@ -5,6 +5,7 @@ import type {
   InboundLead,
   Paginated,
   PipelineCounts,
+  ReviewCounts,
   PipelineCustomer,
   PipelineCustomerDetail,
   ServiceCatalogItem
@@ -52,6 +53,15 @@ export class PipelineService {
 
   counts(): Promise<PipelineCounts> {
     return this.repo.counts();
+  }
+
+  reviewCounts(): Promise<ReviewCounts> {
+    return this.repo.reviewCounts();
+  }
+
+  /** Technical Consultant authorizes every saved item at once. */
+  async verifyAll(id: string): Promise<{ verified: number }> {
+    return { verified: await this.repo.verifyAll(parse(uuidSchema, id)) };
   }
 
   async list(actor: Actor, query: unknown): Promise<Paginated<PipelineCustomer>> {

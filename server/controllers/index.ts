@@ -96,6 +96,10 @@ export const pipelineController = {
     await svc(ctx).pipeline.saveChecklistItem(ctx.params.id, ctx.params.item, ctx.req.body);
     return ok(null);
   }) as Handler,
+  reviewCounts: (async ctx => ok(await svc(ctx).pipeline.reviewCounts())) as Handler,
+  verifyAll: (async ctx => ok(await svc(ctx).pipeline.verifyAll(ctx.params.id))) as Handler,
+  automations: (async ctx => ok(await svc(ctx).automations.list(ctx.params.id))) as Handler,
+  triggerAutomation: (async ctx => ok(await svc(ctx).automations.trigger(ctx.params.id, ctx.params.automation))) as Handler,
   reviewChecklistItem: (async ctx => {
     await svc(ctx).pipeline.reviewChecklistItem(ctx.params.id, ctx.params.item, ctx.req.body);
     return ok(null);
