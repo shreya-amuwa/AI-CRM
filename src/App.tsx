@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DepartmentProvider, useDepartments } from './context/DepartmentContext';
 import { LeadStoreProvider } from './context/LeadStoreContext';
@@ -7,35 +7,42 @@ import { TabProvider, useTabs } from './context/TabContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
 import { DepartmentSelector } from './components/dashboard/DepartmentSelector';
-import { DepartmentDashboard } from './components/dashboard/DepartmentDashboard';
-import { LeadsTable } from './components/leads/LeadsTable';
 import { Header } from './components/layout/Header';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { TabBar } from './components/layout/TabBar';
-import { NotificationCenterPanel } from './components/notifications/NotificationCenterPanel';
-import { StaffManagementPanel } from './components/common/StaffManagementPanel';
 
 // Dedicated Department Panels
-import { AmuwaHqPanel } from './components/departments/amuwa/AmuwaHqPanel';
-import { AmuwaSettingsPanel } from './components/departments/amuwa/AmuwaSettingsPanel';
-import { HRDepartmentPanel } from './components/departments/hr/HRDepartmentPanel';
-import { WhatsboxPanel } from './components/departments/whatsbox/WhatsboxPanel';
-import { WabastorePanel } from './components/departments/wabastore/WabastorePanel';
-import { DtalkPanel } from './components/departments/dtalk/DtalkPanel';
-import { DigitreePanel } from './components/departments/digitree/DigitreePanel';
-import { MpillarPanel } from './components/departments/mpillar/MpillarPanel';
-import { EduTrainingPanel } from './components/departments/edutraining/EduTrainingPanel';
-import { AccountsDepartmentPanel } from './components/departments/accounts/AccountsDepartmentPanel';
-import { DepartmentAccountsBillingView } from './components/departments/shared/DepartmentAccountsBillingView';
 
 import { Sparkles } from 'lucide-react';
 
 // Team Member Dedicated Components & Routing
 import { TeamMemberLayout } from './components/team-member/TeamMemberLayout';
-import { TeamMemberDashboard } from './components/team-member/TeamMemberDashboard';
-import { TeamLeadDashboard } from './components/team-lead/TeamLeadDashboard';
-import { TechnicalSupportDashboard } from './components/support/TechnicalSupportDashboard';
 import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole } from './utils/router';
+
+// Dashboards and department panels are loaded on demand, so signing in only
+// downloads the code for the screen the user actually opens.
+const StaffManagementPanel = lazy(() => import('./components/common/StaffManagementPanel').then(m => ({ default: m.StaffManagementPanel })));
+const AmuwaHqPanel = lazy(() => import('./components/departments/amuwa/AmuwaHqPanel').then(m => ({ default: m.AmuwaHqPanel })));
+const AmuwaSettingsPanel = lazy(() => import('./components/departments/amuwa/AmuwaSettingsPanel').then(m => ({ default: m.AmuwaSettingsPanel })));
+const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
+const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
+const WabastorePanel = lazy(() => import('./components/departments/wabastore/WabastorePanel').then(m => ({ default: m.WabastorePanel })));
+const DtalkPanel = lazy(() => import('./components/departments/dtalk/DtalkPanel').then(m => ({ default: m.DtalkPanel })));
+const DigitreePanel = lazy(() => import('./components/departments/digitree/DigitreePanel').then(m => ({ default: m.DigitreePanel })));
+const MpillarPanel = lazy(() => import('./components/departments/mpillar/MpillarPanel').then(m => ({ default: m.MpillarPanel })));
+const EduTrainingPanel = lazy(() => import('./components/departments/edutraining/EduTrainingPanel').then(m => ({ default: m.EduTrainingPanel })));
+const AccountsDepartmentPanel = lazy(() => import('./components/departments/accounts/AccountsDepartmentPanel').then(m => ({ default: m.AccountsDepartmentPanel })));
+const DepartmentAccountsBillingView = lazy(() => import('./components/departments/shared/DepartmentAccountsBillingView').then(m => ({ default: m.DepartmentAccountsBillingView })));
+const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
+const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
+const TechnicalSupportDashboard = lazy(() => import('./components/support/TechnicalSupportDashboard').then(m => ({ default: m.TechnicalSupportDashboard })));
+const LeadsTable = lazy(() => import('./components/leads/LeadsTable').then(m => ({ default: m.LeadsTable })));
+const DepartmentDashboard = lazy(() => import('./components/dashboard/DepartmentDashboard').then(m => ({ default: m.DepartmentDashboard })));
+const NotificationCenterPanel = lazy(() => import('./components/notifications/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
+
+const ScreenLoader = () => (
+  <div role="status" className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>
+);
 
 const MainAppContent: React.FC = () => {
   const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout } = useAuth();
@@ -404,7 +411,9 @@ export function App() {
         <TabProvider>
           <LeadStoreProvider>
             <NotificationProvider>
-              <MainAppContent />
+              <Suspense fallback={<ScreenLoader />}>
+                <MainAppContent />
+              </Suspense>
             </NotificationProvider>
           </LeadStoreProvider>
         </TabProvider>

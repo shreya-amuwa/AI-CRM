@@ -196,3 +196,8 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 .glow-references { box-shadow: 0 0 14px rgba(20, 184, 166, 0.25); }
 .glow-coldcalling { box-shadow: 0 0 14px rgba(249, 115, 22, 0.25); }
 .glow-thirdparty { box-shadow: 0 0 14px rgba(244, 63, 94, 0.25); }
+
+/* Tailwind last, matching the old CDN script (which injected its CSS after this file). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

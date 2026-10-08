@@ -518,6 +518,17 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 3000,
     host: true
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Libraries change rarely: separate files stay cached across deploys.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-supabase': ['@supabase/supabase-js']
+        }
+      }
+    }
   }
 };
 });

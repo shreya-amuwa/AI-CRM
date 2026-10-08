@@ -22,10 +22,15 @@ export class StorageRepository {
   }
 
   /**
-   * Confirms the uploaded object exists and really is a PDF (checks the file
-   * signature, not the name or the declared type). Returns its stored size.
+   * Confirms the uploaded object exists and that its first bytes match the
+   * declared type (file signature — never the name or the declared type alone).
+   * Returns its stored size.
    */
-  async inspectPdf(bucket: string, path: string): Promise<{ exists: false } | { exists: true; size: number; isPdf: boolean }> {
+  async inspectFile(
+    bucket: string,
+    path: string,
+    mimeType: string
+  ): Promise<{ exists: false } | { exists: true; size: number; matches: boolean }> {
     const slash = path.lastIndexOf('/');
     const folder = path.slice(0, slash);
     const name = path.slice(slash + 1);
@@ -41,8 +46,8 @@ export class StorageRepository {
     const signed = await this.bucket(bucket).createSignedUrl(path, 60);
     if (signed.error || !signed.data) throw new AppError('SERVICE_UNAVAILABLE');
     const res = await fetch(signed.data.signedUrl, { headers: { Range: 'bytes=0-1023' } });
-    const head = Buffer.from(await res.arrayBuffer()).subarray(0, 1024).toString('latin1');
-    return { exists: true, size, isPdf: head.includes('%PDF-') && head.indexOf('%PDF-') < 1024 };
+    const head = Buffer.from(await res.arrayBuffer()).subarray(0, 1024);
+    return { exists: true, size, matches: matchesSignature(head, mimeType) };
   }
 
   async signedDownloadUrl(bucket: string, path: string, expiresIn: number, downloadName?: string): Promise<string> {
@@ -68,5 +73,36 @@ export class StorageRepository {
     if (error) return console.error('[storage] expire stale uploads failed', error.message);
     const paths = (data as unknown as string[]) || [];
     if (paths.length) await this.remove(bucket, paths);
+  }
+}
+
+/** Does the start of a file look like the given type? */
+export function matchesSignature(head: Buffer, mimeType: string): boolean {
+  const ascii = (from: number, to: number) => head.subarray(from, to).toString('latin1');
+  switch (mimeType) {
+    case 'application/pdf':
+      return head.toString('latin1').includes('%PDF-');
+    case 'image/png':
+      return head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    case 'image/jpeg':
+      return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+    case 'image/webp':
+      return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
+    case 'audio/wav':
+      return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WAVE';
+    case 'audio/mp4':
+      return ascii(4, 8) === 'ftyp';
+    case 'audio/mpeg':
+      return ascii(0, 3) === 'ID3' || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0);
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+    case 'text/csv': {
+      // Plain text: no NUL bytes and valid UTF-8 (ignoring a cut-off final character).
+      if (head.length === 0 || head.includes(0)) return false;
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(head);
+      return !text.slice(0, -1).includes('\uFFFD');
+    }
+    default:
+      return false;
   }
 }

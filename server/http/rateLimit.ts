@@ -36,8 +36,8 @@ const num = (name: string, fallback: number) => {
 
 /** Requests per minute. */
 export const LIMITS = {
-  get ipPerMinute() { return num('RATE_LIMIT_IP_PER_MIN', 300); },
-  get userPerMinute() { return num('RATE_LIMIT_USER_PER_MIN', 120); },
+  get ipPerMinute() { return num('RATE_LIMIT_IP_PER_MIN', 600); },
+  get userPerMinute() { return num('RATE_LIMIT_USER_PER_MIN', 300); },
   /** Account administration: create users, approvals, status/role changes, deletes, announcements. */
   get sensitivePerMinute() { return num('RATE_LIMIT_SENSITIVE_PER_MIN', 20); },
   /** Bulk import. */
@@ -92,6 +92,11 @@ async function consumePostgres(buckets: Bucket[]): Promise<BucketResult[]> {
 /** Throw RATE_LIMITED if any bucket is exhausted; returns the tightest result for headers. */
 export async function enforce(buckets: Bucket[], store: 'memory' | 'shared'): Promise<BucketResult> {
   const results = store === 'shared' && hasServiceClient() ? await consumePostgres(buckets) : consumeMemory(buckets);
+  return evaluate(results);
+}
+
+/** Throw RATE_LIMITED if any result is over its limit; returns the tightest result for headers. */
+export function evaluate(results: BucketResult[]): BucketResult {
   const blocked = results.find(r => !r.allowed);
   const tightest = blocked || results.reduce((a, b) => (b.max_hits - b.hits < a.max_hits - a.hits ? b : a));
   if (blocked) {
@@ -106,6 +111,11 @@ export function userBuckets(userId: string, rateClass: RateClass): Bucket[] {
   if (rateClass === 'sensitive') buckets.push({ key: `user:${userId}:sensitive`, limit: LIMITS.sensitivePerMinute, window: 60 });
   if (rateClass === 'import') buckets.push({ key: `user:${userId}:import`, limit: LIMITS.importPerMinute, window: 60 });
   return buckets;
+}
+
+/** Per-user buckets as sent to api_session (keys are prefixed with the user id in the database). */
+export function userBucketSpecs(rateClass: RateClass): { suffix: string; limit: number; window: number }[] {
+  return userBuckets('', rateClass).map(b => ({ suffix: b.key.slice('user:'.length), limit: b.limit, window: b.window }));
 }
 
 export function ipBuckets(ip: string): Bucket[] {

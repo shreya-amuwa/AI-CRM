@@ -13,6 +13,8 @@ import {
   Invoice,
   CalendarEvent
 } from '../types/crm';
+import type { LeadStatus } from '../../shared/contracts';
+import { pipelineApi } from '../lib/api/endpoints';
 import { getSupabase } from './supabaseClient';
 
 /**
@@ -25,9 +27,8 @@ import { getSupabase } from './supabaseClient';
  * goes to the database first. Listeners registered with `subscribe()` are
  * called whenever the copy changes (locally or from another device).
  *
- * Leads come only from the live `crm_leads` table (inbound webhooks + leads
- * the member adds). A member sees leads assigned to them and unassigned leads
- * of their department; acting on an unassigned lead claims it.
+ * Leads are the member's own pipeline records (customers table, lifecycle
+ * LEAD → POTENTIAL → ONBOARDING), the same data My Leads shows.
  */
 
 type Row = Record<string, any>;
@@ -68,25 +69,51 @@ function timeAgo(iso: string): string {
   return `${Math.round(hours / 24)} d ago`;
 }
 
+/** Lead source text (e.g. "Instagram") → the chart's source buckets. */
+function sourceIdOf(source: string | null): LeadSourceId {
+  const s = (source || '').toLowerCase();
+  if (s.includes('whatsapp')) return 'whatsapp';
+  if (/meta|instagram|facebook/.test(s)) return 'meta';
+  if (/website|web/.test(s)) return 'website';
+  if (s.includes('referr')) return 'references';
+  if (s.includes('cold')) return 'coldcalling';
+  return 'thirdparty';
+}
+
+const LEAD_STATUS_STAGE: Record<string, NonNullable<Lead['stage']>> = {
+  NEW: 'New',
+  CONTACTED: 'Contacted',
+  INTERESTED: 'Interested',
+  READY_TO_BUY: 'Proposal'
+};
+
+/** A pipeline customer (customers table) as the home dashboard's Lead. */
 function toLead(r: Row): Lead {
-  const raw = r.raw_payload || {};
+  const stage: Lead['stage'] =
+    r.lifecycle_stage === 'LEAD'
+      ? LEAD_STATUS_STAGE[r.lead_status] || 'New'
+      : r.lifecycle_stage === 'POTENTIAL'
+        ? 'Negotiation'
+        : r.lifecycle_stage === 'LOST'
+          ? 'Lost'
+          : 'Won';
   return {
     id: r.id,
-    name: r.name || raw.name || 'Inbound Lead',
-    contact: (r.phone || raw.phone || raw.number || '').toString(),
-    email: r.email || raw.email || '',
-    company: r.company || raw.company || '',
-    sourceId: (r.channel || 'other') as LeadSourceId,
-    departmentId: (r.department || '') as DepartmentId,
-    assignedTo: r.assigned_to || undefined,
-    stage: r.stage || 'New',
-    priority: r.priority || 'Medium',
+    name: r.name,
+    contact: r.phone || '',
+    email: r.email || '',
+    company: r.company || '',
+    sourceId: sourceIdOf(r.lead_source),
+    departmentId: '' as DepartmentId,
+    assignedTo: r.owner_id,
+    stage,
+    priority: 'Medium',
     lastActionDate: r.updated_at ? new Date(r.updated_at).toLocaleString() : undefined,
     receivedAt: r.created_at,
     status: 'Verified',
-    dealValue: Number(r.value) || 0,
+    dealValue: Number(r.deal_amount ?? r.expected_budget) || 0,
     notes: r.notes || '',
-    rawPayload: raw
+    rawPayload: {}
   };
 }
 
@@ -176,6 +203,7 @@ class TeamMemberStore {
   private generation = 0;
 
   private leads: Lead[] = [];
+  private rawStages = new Map<string, string>();
   private followUps: FollowUpTask[] = [];
   private activities: (TeamMemberActivity & { createdAt: string })[] = [];
   private deals: Deal[] = [];
@@ -206,7 +234,7 @@ class TeamMemberStore {
 
     this.loading = true;
     this.emit();
-    await Promise.all([this.reload('crm_leads'), ...MEMBER_TABLES.map(t => this.reload(t))]);
+    await Promise.all([this.reload('customers'), ...MEMBER_TABLES.map(t => this.reload(t))]);
     if (generation !== this.generation) return; // disconnected or reconnected meanwhile
     this.loading = false;
     this.emit();
@@ -219,8 +247,10 @@ class TeamMemberStore {
         () => this.scheduleReload(table)
       );
     }
-    channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: 'crm_leads' }, () =>
-      this.scheduleReload('crm_leads')
+    channel = channel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'customers', filter: `owner_id=eq.${userId}` },
+      () => this.scheduleReload('customers')
     );
     this.channel = channel.subscribe();
   }
@@ -254,7 +284,7 @@ class TeamMemberStore {
     this.listeners.forEach(l => l());
   }
 
-  private scheduleReload(table: MemberTable | 'crm_leads'): void {
+  private scheduleReload(table: MemberTable | 'customers'): void {
     clearTimeout(this.reloadTimers.get(table));
     this.reloadTimers.set(
       table,
@@ -264,17 +294,20 @@ class TeamMemberStore {
     );
   }
 
-  private async reload(table: MemberTable | 'crm_leads'): Promise<void> {
+  private async reload(table: MemberTable | 'customers'): Promise<void> {
     const supabase = getSupabase();
     const userId = this.userId;
     if (!supabase || !userId) return;
 
     let query;
-    if (table === 'crm_leads') {
-      const filter = this.departmentSlug
-        ? `assigned_to.eq.${userId},and(assigned_to.is.null,department.eq.${this.departmentSlug})`
-        : `assigned_to.eq.${userId}`;
-      query = supabase.from('crm_leads').select('*').or(filter).order('created_at', { ascending: false }).limit(500);
+    if (table === 'customers') {
+      query = supabase
+        .from('customers')
+        .select('id, name, phone, email, company, lead_source, lifecycle_stage, lead_status, deal_amount, expected_budget, notes, owner_id, created_at, updated_at')
+        .eq('owner_id', userId)
+        .in('lifecycle_stage', ['LEAD', 'POTENTIAL', 'ONBOARDING', 'CUSTOMER', 'LOST'])
+        .order('created_at', { ascending: false })
+        .limit(500);
     } else {
       query = supabase.from(table).select('*').eq('owner_id', userId).order('created_at', { ascending: false }).limit(500);
     }
@@ -288,8 +321,9 @@ class TeamMemberStore {
     }
     const rows = data || [];
     switch (table) {
-      case 'crm_leads':
+      case 'customers':
         this.leads = rows.map(toLead);
+        this.rawStages = new Map(rows.map(r => [r.id, r.lifecycle_stage]));
         break;
       case 'member_follow_ups':
         this.followUps = rows.map(toFollowUp);
@@ -313,7 +347,7 @@ class TeamMemberStore {
   }
 
   /** Runs a write, then refreshes the affected table(s) and notifies listeners. */
-  private async write(tables: (MemberTable | 'crm_leads')[], op: () => PromiseLike<{ error: any }>): Promise<void> {
+  private async write(tables: (MemberTable | 'customers')[], op: () => PromiseLike<{ error: any }>): Promise<void> {
     const { error } = await op();
     if (error) {
       this.lastError = error.message;
@@ -335,39 +369,19 @@ class TeamMemberStore {
     return this.leads;
   }
 
-  public async addLead(leadData: Partial<Lead> & { name: string; contact: string }): Promise<void> {
-    const db = this.db();
-    await this.write(['crm_leads'], () =>
-      db.from('crm_leads').insert({
-        name: leadData.name,
-        phone: leadData.contact,
-        email: leadData.email || null,
-        company: leadData.company || null,
-        channel: leadData.sourceId || 'manual',
-        department: this.departmentSlug || 'wabastore',
-        sub_department: 'sales',
-        status: 'New',
-        stage: leadData.stage || 'New',
-        priority: leadData.priority || 'Medium',
-        value: leadData.dealValue || 0,
-        notes: leadData.notes || null,
-        assigned_to: this.userId
-      })
-    );
-  }
-
-  /** Claims an unassigned lead for the signed-in member. */
-  private claimPatch(leadId: string): Row {
-    const lead = this.leads.find(l => l.id === leadId);
-    return lead && !lead.assignedTo ? { assigned_to: this.userId } : {};
-  }
-
   public async updateLeadStage(leadId: string, _userId: string, newStage: Lead['stage'], notes?: string): Promise<void> {
-    const db = this.db();
     const lead = this.leads.find(l => l.id === leadId);
-    const patch: Row = { stage: newStage, ...this.claimPatch(leadId) };
-    if (notes) patch.notes = lead?.notes ? `${lead.notes} | ${notes}` : notes;
-    await this.write(['crm_leads'], () => db.from('crm_leads').update(patch).eq('id', leadId));
+    // Lead statuses are changed through the pipeline API (validated + audited);
+    // later stages (payment, onboarding) are only changed in My Leads.
+    const status = { New: 'NEW', 'New Lead': 'NEW', Contacted: 'CONTACTED', Interested: 'INTERESTED', Demo: 'INTERESTED', Proposal: 'READY_TO_BUY' }[
+      newStage as string
+    ] as LeadStatus | undefined;
+    const row = this.rawStages.get(leadId);
+    if (status && row === 'LEAD') {
+      await pipelineApi.updateLead(leadId, { leadStatus: status, ...(notes ? { activityNote: notes } : {}) });
+      await this.reload('customers');
+      this.emit();
+    }
     await this.logActivity({
       leadId,
       leadName: lead?.name || '',
@@ -426,10 +440,6 @@ class TeamMemberStore {
     type?: TeamMemberActivity['type'];
   }): Promise<void> {
     const db = this.db();
-    const claim = this.claimPatch(item.leadId);
-    if (claim.assigned_to) {
-      await this.write(['crm_leads'], () => db.from('crm_leads').update(claim).eq('id', item.leadId));
-    }
     await this.write(['member_activities'], () =>
       db.from('member_activities').insert({
         lead_id: item.leadId || null,

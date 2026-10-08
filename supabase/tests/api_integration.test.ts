@@ -272,7 +272,7 @@ check(r.status === 200 && r.json.data.leadStatus === 'CONTACTED', 'lead status u
 r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { lifecycleStage: 'ONBOARDING' });
 check(r.status === 422, 'lifecycle cannot be set through lead edit', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
-check(r.json.data.activities.some((x: any) => /demo/.test(x.note || '')) && r.json.data.documentTypes.length === 2, 'detail includes activity trail and document types', r);
+check(r.json.data.activities.some((x: any) => /demo/.test(x.note || '')) && r.json.data.documentTypes.filter((t: any) => t.isMandatory).length === 2, 'detail includes activity trail and document types', r);
 r = await api('a', 'GET', '/pipeline/counts');
 check(r.json.data.leads.all === 1 && r.json.data.leads.CONTACTED === 1 && r.json.data.mandatoryDocuments === 2, 'stage counts are RLS-scoped', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&service=AI_CALLING&leadStatus=CONTACTED&search=galaxy');
@@ -335,8 +335,8 @@ r = await begin('a', leadA, 'INVOICE');
 ticket = r.json.data;
 up = await put({ ...ticket, path: ticket.path.replace(ticket.document.id, crypto.randomUUID()) }, PDF);
 check(up.status !== 200, 'upload token is bound to its exact path');
-up = await put(ticket, PDF, 'image/png');
-check(up.status !== 200, 'bucket rejects non-PDF content type');
+up = await put(ticket, PDF, 'application/x-msdownload');
+check(up.status !== 200, 'bucket rejects file types it does not accept');
 up = await put(ticket, PDF);
 check(up.status === 200, 'browser uploads PDF with signed token');
 up = await put(ticket, PDF);
@@ -373,8 +373,9 @@ check(ticket.path.includes('/onboarding/'), 'important documents stored under on
 await put(ticket, PDF);
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 const importantDoc = r.json.data.id;
-r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=READY_FOR_HANDOVER');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2, 'onboarding filter: ready for handover', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=COLLECTING');
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2 && r.json.data.items[0].onboarding.itemsSaved === 2,
+  'onboarding filter: still collecting (2 of 14 items)', r);
 
 // a pending upload abandoned by the browser
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'abandoned.pdf');
@@ -384,6 +385,42 @@ r = await api('a', 'POST', `/documents/${abandoned.document.id}/abort`);
 check(r.status === 200, 'aborted upload acknowledged');
 keys = await fetch(`${GW}/storage/v1/__objects`, { headers: { authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }).then(x => x.json()) as string[];
 check(!keys.some(k => k.includes(abandoned.document.id)), 'aborted upload object cleaned up');
+
+// --- service checklist (Meta Ads + AI Calling) -----------------------------------
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+const checklist = r.json.data.checklist as any[];
+check(checklist.length === 14 && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
+  'checklist built from the services sold (basics first, mandatory documents last)', checklist.map((c: any) => c.code));
+check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'uploaded mandatory documents already count as saved');
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
+check(r.status === 422 && /Complete these items first/.test(r.json.error.message), 'forward blocked until every checklist item is saved', r);
+r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_PLAN`, { value: 'Weekly' });
+check(r.status === 422, 'choice items only accept listed options', r);
+r = await api('b', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '15000' });
+check(r.status === 404, "member B cannot fill A's checklist", r);
+for (const [code, value] of Object.entries({
+  BUSINESS_NAME_ADDRESS: 'Galaxy Jewellers, Thane', CONTACT_PERSON_MOBILE: 'Siddhesh +91 98200 11111', META_CAMPAIGN_GOAL: 'Diwali walk-ins',
+  FACEBOOK_PAGE_ACCESS: 'Partner access granted', INSTAGRAM_PAGE_ACCESS: 'Connected', META_TARGET_AUDIENCE: 'Thane, 25-45', META_AD_BUDGET: '15000',
+  AI_CALL_BUSINESS_ROLE: 'Jeweller; agent speaks as store manager', AI_CALL_CUSTOMER_NUMBER: '+91 98200 11111', AI_CALL_SCRIPT: 'Gold rate offers',
+  AI_CALL_PLAN: 'Credit-based'
+})) {
+  r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/checklist/${code}`, { value });
+  if (r.status !== 200) check(false, `save ${code}`, r);
+}
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'GST_CERTIFICATE', fileName: 'gst.png', mimeType: 'image/png', sizeBytes: PDF.length });
+ticket = r.json.data;
+check(r.status === 201 && ticket.path.endsWith('.png'), 'image upload accepted for a certificate; stored with .png', r);
+await put(ticket, PDF, 'image/png');
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 422 && /does not match/.test(r.json.error.message), 'a PDF renamed to .png is rejected by its content', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'GST_CERTIFICATE', fileName: 'gst.png', mimeType: 'image/png', sizeBytes: PNG.length });
+ticket = r.json.data;
+await put(ticket, PNG, 'image/png');
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+check(r.status === 200, 'real PNG certificate accepted', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=READY_FOR_HANDOVER');
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 14, 'ready for handover once all 14 items are saved', r);
 
 r = await api('b', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 404, "member B cannot delete A's document", r);
@@ -402,6 +439,45 @@ const actions = audit.map((x: any) => x.action);
 for (const a of ['INVOICE_UPLOADED', 'INVOICE_REPLACED', 'DOCUMENT_UPLOADED', 'DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED', 'INVOICE_DELETED']) {
   check(actions.includes(a), `audit log has ${a}`, actions);
 }
+
+// --- Technical Consultant (support team) verification ------------------------------
+r = await api('sa', 'POST', '/users', { email: 'tc@amuwa.com', fullName: 'Tech Consultant', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id });
+check(r.status === 201, 'support team member (Technical Consultant) created', r);
+tokens.set('tc', tokenFor(r.json.data.id));
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant sees forwarded customers of their department', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 200 && r.json.data.checklist.length === 14, 'consultant opens the full checklist', r);
+r = await api('tc', 'GET', `/documents/${importantDoc}/url?action=view`);
+check(r.status === 200, 'consultant can view the documents', r);
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '1' });
+check(r.status === 404, 'consultant cannot change sales data', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/GST_CERTIFICATE/review`, { decision: 'REJECTED' });
+check(r.status === 422, 'rejection requires a note', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/GST_CERTIFICATE/review`, { decision: 'REJECTED', note: 'Certificate is blurred' });
+check(r.status === 200, 'consultant rejects an item with a note', r);
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=NEEDS_FIX');
+check(r.json.data.total === 1, 'review queue filter: needs fixing', r);
+r = await api('b', 'POST', `/pipeline/customers/${leadA}/checklist/AI_CALL_PLAN/review`, { decision: 'VERIFIED' });
+check(r.status === 404, 'sales members cannot verify', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+const gst = r.json.data.checklist.find((c: any) => c.code === 'GST_CERTIFICATE');
+check(gst.entry.status === 'REJECTED' && gst.entry.reviewNote === 'Certificate is blurred' && gst.entry.reviewedBy === 'Tech Consultant', 'salesperson sees what to fix and who asked', gst);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'GST_CERTIFICATE', fileName: 'gst-clear.png', mimeType: 'image/png', sizeBytes: PNG.length });
+ticket = r.json.data;
+await put(ticket, PNG, 'image/png');
+r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+check(r.json.data.checklist.find((c: any) => c.code === 'GST_CERTIFICATE').entry.status === 'SAVED', 'replacement goes back for review');
+for (const item of r.json.data.checklist as any[]) {
+  const rv = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/${item.code}/review`, { decision: 'VERIFIED' });
+  if (rv.status !== 200) check(false, `verify ${item.code}`, rv);
+}
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=VERIFIED');
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 14, 'all items verified', r);
+r = await api('a', 'GET', '/notifications');
+check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_ITEM_REJECTED'),
+  'salesperson notified of rejection and of full verification', r.json.data.items.map((n: any) => n.type));
 
 r = await api('a', 'GET', '/customers?lifecycle=ONBOARDING,CUSTOMER&search=galaxy');
 check(r.json.data.total === 1, 'My Customers can be limited to onboarding/customer lifecycle', r);
@@ -436,7 +512,7 @@ check(limitedBody.error.code === 'RATE_LIMITED' && Number(limited!.headers.get('
 const { rows: [rl] } = await db.query(`select count(*)::int n from private.rate_limit_counters where bucket like 'user:%:import'`);
 check(rl.n >= 1, 'quota counters are stored in Postgres (shared across instances)');
 const normal = await fetch(base + '/departments', { headers: { authorization: `Bearer ${tokens.get('sa')}` } });
-check(normal.headers.get('ratelimit-limit') === '120' && normal.headers.get('x-request-id') && normal.headers.get('x-content-type-options') === 'nosniff',
+check(normal.headers.get('ratelimit-limit') === '300' && normal.headers.get('x-request-id') && normal.headers.get('x-content-type-options') === 'nosniff',
   'responses carry RateLimit-*, X-Request-Id and security headers');
 
 const health = await fetch(base + '/health').then(x => x.json()) as any;

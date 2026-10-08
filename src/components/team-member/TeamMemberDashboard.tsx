@@ -71,7 +71,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   // Modals & Forms
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [actionModalType, setActionModalType] = useState<
-    'call' | 'message' | 'demo' | 'update' | 'addLead' | 'createDeal' | 'leadDetail' | null
+    'call' | 'message' | 'demo' | 'update' | 'createDeal' | 'leadDetail' | null
   >(null);
 
   // Form states
@@ -82,17 +82,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   const [selectedStage, setSelectedStage] = useState<Lead['stage']>('Contacted');
   const [updateNotes, setUpdateNotes] = useState('');
 
-  // New Lead form
-  const [newLeadForm, setNewLeadForm] = useState({
-    name: '',
-    contact: '',
-    email: '',
-    company: '',
-    priority: 'Medium' as 'High' | 'Medium' | 'Low',
-    stage: 'New' as Lead['stage'],
-    dealValue: 0,
-    notes: ''
-  });
 
   // Create Deal form
   const [dealForm, setDealForm] = useState({
@@ -267,31 +256,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
       setActionModalType(null);
       setUpdateNotes('');
     }
-  };
-
-  const handleCreateNewLead = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLeadForm.name.trim() || !newLeadForm.contact.trim()) {
-      alert('Please provide name and phone number');
-      return;
-    }
-    const ok = await run(
-      () =>
-        teamMemberStore.addLead({
-          name: newLeadForm.name.trim(),
-          contact: newLeadForm.contact.trim(),
-          email: newLeadForm.email,
-          company: newLeadForm.company,
-          priority: newLeadForm.priority,
-          stage: newLeadForm.stage,
-          dealValue: Number(newLeadForm.dealValue),
-          notes: newLeadForm.notes
-        }),
-      `New lead added: ${newLeadForm.name}`
-    );
-    if (!ok) return;
-    setActionModalType(null);
-    setNewLeadForm({ name: '', contact: '', email: '', company: '', priority: 'Medium', stage: 'New', dealValue: 0, notes: '' });
   };
 
   const handleCreateDealSubmit = async (e: React.FormEvent) => {
@@ -638,131 +602,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         {/* ========================================================================= */}
 
         {/* 1. ADD LEAD MODAL */}
-        {actionModalType === 'addLead' && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                    <Plus className="w-4 h-4" />
-                  </div>
-                  <h3 className="font-bold text-slate-900">Add New Lead</h3>
-                </div>
-                <button
-                  onClick={() => setActionModalType(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleCreateNewLead} className="space-y-3.5 mt-4 text-xs">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Lead / Contact Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Ramesh Chandra"
-                    value={newLeadForm.name}
-                    onChange={(e) => setNewLeadForm({ ...newLeadForm, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Company / Store Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Chandra Enterprises"
-                    value={newLeadForm.company}
-                    onChange={(e) => setNewLeadForm({ ...newLeadForm, company: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Phone Number *</label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="+91 98765 00000"
-                      value={newLeadForm.contact}
-                      onChange={(e) => setNewLeadForm({ ...newLeadForm, contact: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Email (Optional)</label>
-                    <input
-                      type="email"
-                      placeholder="contact@company.com"
-                      value={newLeadForm.email}
-                      onChange={(e) => setNewLeadForm({ ...newLeadForm, email: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Priority</label>
-                    <select
-                      value={newLeadForm.priority}
-                      onChange={(e: any) => setNewLeadForm({ ...newLeadForm, priority: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none cursor-pointer"
-                    >
-                      <option value="High">High Priority</option>
-                      <option value="Medium">Medium Priority</option>
-                      <option value="Low">Low Priority</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-semibold mb-1">Initial Stage</label>
-                    <select
-                      value={newLeadForm.stage}
-                      onChange={(e: any) => setNewLeadForm({ ...newLeadForm, stage: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none cursor-pointer"
-                    >
-                      <option value="New">New</option>
-                      <option value="Contacted">Contacted</option>
-                      <option value="Interested">Interested</option>
-                      <option value="Proposal">Proposal</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Notes / Requirement</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Requirement details..."
-                    value={newLeadForm.notes}
-                    onChange={(e) => setNewLeadForm({ ...newLeadForm, notes: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none"
-                  />
-                </div>
-
-                <div className="pt-2 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setActionModalType(null)}
-                    className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-xs hover:bg-blue-700 cursor-pointer"
-                  >
-                    Create Lead
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
         {/* 2. CREATE DEAL MODAL */}
         {actionModalType === 'createDeal' && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
