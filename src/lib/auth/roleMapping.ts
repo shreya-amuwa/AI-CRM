@@ -87,6 +87,17 @@ export function defaultDashboardLabel(
       return `Team Lead Dashboard${dept}`;
     default:
       if (technicalConsultant && division === 'SUPPORT') return `Technical Consultant Dashboard${dept}`;
-      return division === 'SUPPORT' ? `Support Team Member Dashboard${dept}` : `Sales Team Member Dashboard${dept}`;
+      // Only a Sales team opens as "Sales"; other teams get the plain label.
+      if (division === 'SALES') return `Sales Team Member Dashboard${dept}`;
+      if (division === 'SUPPORT') return `Support Team Member Dashboard${dept}`;
+      return `Team Member Dashboard${dept}`;
   }
+}
+
+/** Title shown under a team member's name: their position, else their team's role. */
+export function memberTitle(user: { position?: string; subDepartment?: string } | null | undefined): string {
+  if (user?.position) return user.position;
+  if (user?.subDepartment === 'sales') return 'Sales Team Member';
+  if (user?.subDepartment === 'support') return 'Support Team Member';
+  return ROLE_LABELS.TEAM_MEMBER;
 }

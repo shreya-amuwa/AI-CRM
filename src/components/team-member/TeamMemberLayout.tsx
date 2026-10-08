@@ -18,6 +18,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { memberTitle } from '../../lib/auth/roleMapping';
 import { useNotifications } from '../../context/NotificationContext';
 
 export type TeamMemberNav =
@@ -92,7 +93,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   };
 
   const displayName = user?.name || 'Team Member';
-  const displayRole = user?.position || 'Sales Executive';
+  const displayRole = memberTitle(user);
 
   // Close the notification panel on outside click or Escape.
   const bellRef = React.useRef<HTMLDivElement>(null);

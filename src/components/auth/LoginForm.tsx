@@ -402,7 +402,7 @@ export const LoginForm: React.FC = () => {
                       Target Dashboard:{' '}
                       <strong className="text-slate-700 font-semibold">
                         {regSubDepartment === 'support'
-                          ? 'Technical Support Dashboard'
+                          ? 'Support Team Member Dashboard'
                           : 'Sales Team Member Dashboard'}
                       </strong>
                     </span>
