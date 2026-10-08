@@ -324,8 +324,18 @@ export interface ChecklistItem {
   } | null;
 }
 
-export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED'] as const;
+export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED', 'AWAITING_DOCUMENTS'] as const;
 export type ReviewFilter = (typeof REVIEW_FILTERS)[number];
+export type ReviewCounts = Record<'all' | ReviewFilter, number>;
+
+export const AUTOMATIONS = ['EMAIL', 'WHATSAPP', 'AI_CALLING'] as const;
+export type AutomationCode = (typeof AUTOMATIONS)[number];
+export interface AutomationStatus {
+  code: AutomationCode;
+  /** A Google Sheet webhook is configured on the server. */
+  connected: boolean;
+  lastRun: { status: 'PENDING' | 'SENT' | 'FAILED'; triggeredAt: string; triggeredBy: string | null; detail: string | null } | null;
+}
 
 export interface PipelineCustomerDetail extends PipelineCustomer {
   documents: CustomerDocument[];

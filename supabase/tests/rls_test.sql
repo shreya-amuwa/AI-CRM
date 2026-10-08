@@ -565,9 +565,10 @@ select test.check((select path like '%.png' from docs where name = 'A_logo'), 's
 select complete_document_upload((select id from docs where name = 'A_logo'), 3000);
 select test.check((select items_saved = 13 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 13 items saved');
 select test.login('tm_b');
-select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$,
-  'support cannot review before the customer is forwarded', 'NOT_FOUND');
-select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'support cannot see the customer before forwarding');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')),
+  'consultant sees onboarding customers of the department before forwarding');
+select test.check((select count(*) = 0 from customers where lifecycle_stage in ('LEAD', 'POTENTIAL')), 'consultant never sees leads or potential customers');
+select test.check((select (onboarding_review_counts() ->> 'TO_REVIEW')::int >= 1), 'review counts include customers with saved items');
 select test.login('tm_a');
 select forward_onboarding_to_support((select id from pipeline where name = 'A'));
 select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
@@ -584,15 +585,14 @@ select test.must_fail($$select expire_stale_document_uploads()$$, 'only the serv
 \echo '--- 13b. Technical Consultant verification'
 select test.login('tm_b');
 select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'support sees the forwarded customer');
-select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'B')), 'support does not see customers that were not forwarded');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'B')), 'support sees every onboarding customer of the department');
 select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_logo'), 'VIEW')), 'support can open the forwarded customer''s files');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Blue')$$, 'support cannot edit sales details', 'NOT_FOUND');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x.png', 'image/png', 10)$$, 'support cannot upload', 'NOT_FOUND');
 select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', '')$$, 'rejection needs a note', 'needs fixing');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', 'Gold hex code is missing');
-select review_onboarding_entry((select id from pipeline where name = 'A'), c, 'VERIFIED', null)
-  from unnest(array['BUSINESS_NAME_ADDRESS','CONTACT_PERSON_MOBILE','META_CAMPAIGN_GOAL','FACEBOOK_PAGE_ACCESS','INSTAGRAM_PAGE_ACCESS',
-                    'META_TARGET_AUDIENCE','META_AD_BUDGET','GOLD_CONFIRM_JEWELLER','GOLD_TEMPLATE_APPROVAL','BRAND_LOGO','INVOICE','IMPORTANT_DOCUMENTS']) c;
+select test.check((select verify_all_onboarding_entries((select id from pipeline where name = 'A')) = 12), 'authorize all verifies the 12 saved items');
+select test.must_fail($$select verify_all_onboarding_entries((select id from pipeline where name = 'A'))$$, 'authorize all with nothing pending', 'Nothing is waiting');
 select test.check((select items_verified = 12 and items_rejected = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'review progress tracked (12 verified, 1 needs fixing)');
 select test.login('tm_c');
@@ -618,7 +618,24 @@ select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_
 select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_DELETED'), 'deletion audited');
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'owner notified of the rejection');
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_VERIFIED' and recipient_id = test.id('tm_a')), 'owner notified when everything is verified');
-select test.check((select count(*) = 13 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
+select test.check((select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
+                   and (select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEMS_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
+
+\echo '--- 13c. Onboarding automations'
+select test.login('tm_b');
+create temp table runs (id uuid);
+grant all on runs to authenticated;
+insert into runs select (begin_onboarding_automation((select id from pipeline where name = 'A'), 'WHATSAPP') ->> 'runId')::uuid;
+select test.must_fail($$select begin_onboarding_automation((select id from pipeline where name = 'A'), 'WHATSAPP')$$, 'no double trigger within a minute', 'just triggered');
+select finish_onboarding_automation((select id from runs), true, 'HTTP 200');
+select test.check((select status = 'SENT' from onboarding_automation_runs where id = (select id from runs)), 'automation run recorded as sent');
+select test.must_fail($$select begin_onboarding_automation((select id from pipeline where name = 'A'), 'SMS')$$, 'unknown automation rejected', 'Unknown automation');
+select test.login('pending_d');
+select test.must_fail($$select begin_onboarding_automation((select id from pipeline where name = 'A'), 'EMAIL')$$, 'sales teammate cannot trigger automations', 'NOT_FOUND');
+select test.must_fail($$select finish_onboarding_automation((select id from runs), false, 'x')$$, 'only the person who started a run can finish it', 'NOT_FOUND');
+select test.login('tm_c');
+select test.must_fail($$select begin_onboarding_automation((select id from pipeline where name = 'A'), 'EMAIL')$$, 'other department cannot trigger automations', 'NOT_FOUND');
+reset role;
 
 -- ---------------------------------------------------------------------------
 \echo '--- 14. Inbound webhook leads → pipeline'

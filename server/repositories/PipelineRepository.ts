@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ChecklistItem,
+  ReviewCounts,
   CustomerActivity,
   CustomerDocument,
   DocumentType,
@@ -117,6 +118,37 @@ export class PipelineRepository {
 
   async checklist(customerId: string): Promise<ChecklistItem[]> {
     return unwrap(await this.db.rpc('customer_onboarding_checklist', { p_customer: customerId })) as ChecklistItem[];
+  }
+
+  async reviewCounts(): Promise<ReviewCounts> {
+    return unwrap(await this.db.rpc('onboarding_review_counts')) as ReviewCounts;
+  }
+
+  async verifyAll(customerId: string): Promise<number> {
+    return unwrap(await this.db.rpc('verify_all_onboarding_entries', { p_customer: customerId })) as number;
+  }
+
+  /** Latest run per automation for one customer. */
+  async automationRuns(customerId: string) {
+    const rows = unwrap(
+      await this.db
+        .from('onboarding_automation_runs')
+        .select('automation, status, detail, triggered_at, triggerer:profiles!onboarding_automation_runs_triggered_by_fkey(full_name)')
+        .eq('customer_id', customerId)
+        .order('triggered_at', { ascending: false })
+        .limit(30)
+    ) as any[];
+    const latest = new Map<string, any>();
+    for (const r of rows) if (!latest.has(r.automation)) latest.set(r.automation, r);
+    return latest;
+  }
+
+  async beginAutomation(customerId: string, automation: string): Promise<any> {
+    return unwrap(await this.db.rpc('begin_onboarding_automation', { p_customer: customerId, p_automation: automation }));
+  }
+
+  async finishAutomation(runId: string, ok: boolean, detail: string): Promise<void> {
+    unwrap(await this.db.rpc('finish_onboarding_automation', { p_run: runId, p_ok: ok, p_detail: detail }));
   }
 
   async ownerSummary(customerId: string): Promise<{ id: string; fullName: string } | null> {

@@ -55,7 +55,11 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/pipeline/customers/:id/onboarding', handler: pipeline.updateOnboarding },
   { method: 'POST', path: '/pipeline/customers/:id/forward-to-support', handler: pipeline.forwardToSupport },
   { method: 'PATCH', path: '/pipeline/customers/:id/checklist/:item', handler: pipeline.saveChecklistItem },
+  { method: 'POST', path: '/pipeline/customers/:id/checklist/verify-all', handler: pipeline.verifyAll },
   { method: 'POST', path: '/pipeline/customers/:id/checklist/:item/review', handler: pipeline.reviewChecklistItem },
+  { method: 'GET', path: '/pipeline/review-counts', handler: pipeline.reviewCounts },
+  { method: 'GET', path: '/pipeline/customers/:id/automations', handler: pipeline.automations },
+  { method: 'POST', path: '/pipeline/customers/:id/automations/:automation', handler: pipeline.triggerAutomation, options: S },
   { method: 'GET', path: '/pipeline/inbound', handler: pipeline.inbound },
   { method: 'POST', path: '/pipeline/inbound/:leadId/claim', handler: pipeline.claimInbound },
 

@@ -20,6 +20,9 @@ import type {
   PaymentFilter,
   PaymentMethod,
   PipelineCounts,
+  ReviewCounts,
+  AutomationCode,
+  AutomationStatus,
   PipelineCustomer,
   PipelineCustomerDetail,
   PipelineStage,
@@ -66,7 +69,7 @@ export interface PipelineQuery {
   noFollowUp?: boolean;
   payment?: PaymentFilter;
   onboarding?: OnboardingFilter;
-  review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED';
+  review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED' | 'AWAITING_DOCUMENTS';
   forwarded?: boolean;
   mine?: boolean;
   sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
@@ -92,6 +95,10 @@ export const pipelineApi = {
   claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`),
   saveChecklistItem: (id: string, item: string, body: { value: string }) =>
     api.patch<null>(`/pipeline/customers/${id}/checklist/${item}`, body),
+  reviewCounts: () => api.get<ReviewCounts>('/pipeline/review-counts'),
+  verifyAll: (id: string) => api.post<{ verified: number }>(`/pipeline/customers/${id}/checklist/verify-all`),
+  automations: (id: string) => api.get<AutomationStatus[]>(`/pipeline/customers/${id}/automations`),
+  triggerAutomation: (id: string, code: AutomationCode) => api.post<AutomationStatus>(`/pipeline/customers/${id}/automations/${code}`),
   reviewChecklistItem: (id: string, item: string, body: { decision: 'VERIFIED' | 'REJECTED'; note?: string | null }) =>
     api.post<null>(`/pipeline/customers/${id}/checklist/${item}/review`, body)
 };

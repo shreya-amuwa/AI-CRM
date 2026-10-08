@@ -479,6 +479,46 @@ r = await api('a', 'GET', '/notifications');
 check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_ITEM_REJECTED'),
   'salesperson notified of rejection and of full verification', r.json.data.items.map((n: any) => n.type));
 
+// --- consultant dashboard: counts, authorize all, automations ------------------------
+r = await api('tc', 'GET', '/pipeline/review-counts');
+check(r.status === 200 && r.json.data.all >= 1 && r.json.data.VERIFIED >= 1, 'review tab counts', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/verify-all`);
+check(r.status === 409, 'authorize all with nothing pending → 409', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/automations`);
+check(r.status === 200 && r.json.data.length === 3 && r.json.data.every((a: any) => !a.connected && !a.lastRun), 'automations listed, none connected yet', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/automations/EMAIL`);
+check(r.status === 409 && /not connected/.test(r.json.error.message), 'unconnected automation cannot run', r);
+const sheetRows: any[] = [];
+let sheetFails = false;
+const sheet = http.createServer((req, res) => {
+  let body = '';
+  req.on('data', c => (body += c));
+  req.on('end', () => {
+    sheetRows.push(JSON.parse(body));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(sheetFails ? '{"ok":false,"error":"Sheet is full"}' : '{"ok":true}');
+  });
+});
+await new Promise<void>(res => sheet.listen(0, res));
+process.env.AUTOMATION_WHATSAPP_WEBHOOK_URL = `http://127.0.0.1:${(sheet.address() as any).port}/exec`;
+process.env.AUTOMATION_WEBHOOK_SECRET = 'sheet-secret';
+r = await api('b', 'POST', `/pipeline/customers/${leadA}/automations/WHATSAPP`);
+check(r.status === 404, 'sales member cannot trigger automations', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/automations/WHATSAPP`);
+check(r.status === 200 && r.json.data.lastRun.status === 'SENT' && r.json.data.lastRun.triggeredBy === 'Tech Consultant', 'WhatsApp automation sent to its sheet', r);
+check(sheetRows.length === 1 && sheetRows[0].secret === 'sheet-secret' && sheetRows[0].customer.company === 'Galaxy Jewellers'
+  && sheetRows[0].services.includes('Meta Ads Management'), 'sheet receives the customer, services and secret', sheetRows[0]);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/automations/WHATSAPP`);
+check(r.status === 409, 'no double trigger within a minute', r);
+await db.query(`update public.onboarding_automation_runs set triggered_at = now() - interval '2 minutes'`);
+sheetFails = true;
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/automations/WHATSAPP`);
+check(r.status === 503 && /Sheet is full/.test(r.json.error.message), 'a sheet error is reported, not shown as success', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/automations`);
+check(r.json.data.find((a: any) => a.code === 'WHATSAPP').lastRun.status === 'FAILED', 'failed run recorded', r);
+sheet.close();
+delete process.env.AUTOMATION_WHATSAPP_WEBHOOK_URL;
+
 r = await api('a', 'GET', '/customers?lifecycle=ONBOARDING,CUSTOMER&search=galaxy');
 check(r.json.data.total === 1, 'My Customers can be limited to onboarding/customer lifecycle', r);
 r = await api('b', 'GET', `/pipeline/customers?stage=ONBOARDING`);
