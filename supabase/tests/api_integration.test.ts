@@ -443,9 +443,25 @@ for (const a of ['INVOICE_UPLOADED', 'INVOICE_REPLACED', 'DOCUMENT_UPLOADED', 'D
 }
 
 // --- Technical Consultant (support team) verification ------------------------------
-r = await api('sa', 'POST', '/users', { email: 'tc@amuwa.com', fullName: 'Tech Consultant', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id });
-check(r.status === 201, 'support team member (Technical Consultant) created', r);
+r = await api('sa', 'POST', '/users', { email: 'sm@amuwa.com', fullName: 'Support Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id });
+check(r.status === 201 && r.json.data.isTechnicalConsultant === false, 'plain support team member is not a Technical Consultant', r);
+const supportMember = r.json.data.id;
+tokens.set('sm', tokenFor(supportMember));
+r = await api('sm', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
+check(r.status === 200 && r.json.data.total === 0, 'plain support member sees no consultant customers', r);
+r = await api('sa', 'POST', '/users', { email: 'x2@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: support.id, technicalConsultant: true });
+check(r.status === 422, 'only a team member can be created as Technical Consultant', r);
+r = await api('sa', 'POST', '/users', { email: 'x3@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, technicalConsultant: true });
+check(r.status === 422, 'a Technical Consultant must be in a support team', r);
+r = await api('sa', 'POST', '/users', { email: 'tc@amuwa.com', fullName: 'Tech Consultant', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, technicalConsultant: true });
+check(r.status === 201 && r.json.data.isTechnicalConsultant === true, 'super admin creates a Technical Consultant', r);
 tokens.set('tc', tokenFor(r.json.data.id));
+r = await api('sm', 'POST', `/users/${supportMember}/technical-consultant`, { value: true });
+check(r.status === 403, 'a member cannot make themselves a Technical Consultant', r);
+r = await api('sa', 'POST', `/users/${supportMember}/technical-consultant`, { value: true });
+check(r.status === 200 && r.json.data.isTechnicalConsultant === true, 'super admin switches a support member to Technical Consultant', r);
+r = await api('sa', 'POST', `/users/${supportMember}/technical-consultant`, { value: false });
+check(r.status === 200 && r.json.data.isTechnicalConsultant === false, 'and back to team member', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
 check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant sees forwarded customers of their department', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);

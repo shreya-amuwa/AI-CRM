@@ -2,6 +2,7 @@ import type { Paginated, Profile } from '../../shared/contracts.js';
 import {
   profileSelfUpdateSchema,
   userAssignSchema,
+  technicalConsultantSchema,
   userCreateSchema,
   userListQuerySchema,
   userStatusSchema,
@@ -10,6 +11,7 @@ import {
 import type { Actor } from '../auth/authenticate.js';
 import { assertCanAssignRole, assertManager, assertSuperAdmin } from '../authz/policies.js';
 import { parse } from '../http/validate.js';
+import { AppError } from '../http/errors.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 
@@ -46,6 +48,9 @@ export class UserService {
     const input = parse(userCreateSchema, body);
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
     await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId);
+    if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
+      throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
+    }
     const id = await this.authAdmin.createProvisionedUser({ ...input, provisionedBy: actor.id });
     return this.profiles.findById(id);
   }
@@ -64,6 +69,14 @@ export class UserService {
     const input = parse(userAssignSchema, body);
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
     await this.profiles.assign(userId, input.role, input.departmentId, input.teamId);
+    return this.profiles.findById(userId);
+  }
+
+  async setTechnicalConsultant(actor: Actor, id: string, body: unknown): Promise<Profile> {
+    assertManager(actor);
+    const userId = parse(uuidSchema, id);
+    const { value } = parse(technicalConsultantSchema, body);
+    await this.profiles.setTechnicalConsultant(userId, value);
     return this.profiles.findById(userId);
   }
 

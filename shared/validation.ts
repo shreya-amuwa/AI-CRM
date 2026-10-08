@@ -108,12 +108,18 @@ export const userCreateSchema = z
     role: assignableRoleSchema,
     departmentId: uuidSchema.optional(),
     teamId: uuidSchema.optional(),
-    position: optionalText(120)
+    position: optionalText(120),
+    /** Team member of a support team who opens the Technical Consultant dashboard. */
+    technicalConsultant: z.boolean().optional()
   })
   .strict()
   .refine(u => (u.role === 'DEPARTMENT_HEAD' ? !!u.departmentId && !u.teamId : !!u.teamId), {
     message: 'Department heads need a department; team heads and members need a team.',
     path: ['teamId']
+  })
+  .refine(u => !u.technicalConsultant || u.role === 'TEAM_MEMBER', {
+    message: 'A Technical Consultant is created as a team member of a support team.',
+    path: ['role']
   });
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 
@@ -141,6 +147,8 @@ export const userAssignSchema = z
     teamId: uuidSchema.optional()
   })
   .strict();
+
+export const technicalConsultantSchema = z.object({ value: z.boolean() }).strict();
 
 export const profileSelfUpdateSchema = z
   .object({

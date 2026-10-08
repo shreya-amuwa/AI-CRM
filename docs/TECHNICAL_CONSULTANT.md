@@ -1,8 +1,13 @@
 # Technical Consultant dashboard
 
-Who: members of a department's **Support** team (role Team Member). They sign in on the
-normal sign-in page and land on this dashboard. Department heads and the super admin may
-review too (database rules), but their dashboards don't have this screen yet.
+Who: staff created as **Technical Consultant** (Super Admin → department → Support →
+*Team Members & Access* → Role: *Technical Consultant*; department heads and the support team
+lead can create them too). They sign in on the normal sign-in page and land on this dashboard.
+A plain **Team Member** of the Support team does *not* get this dashboard or its data; they get
+the normal team member dashboard. An existing support member can be switched with
+*Make Technical Consultant* / *Make team member* in the member list
+(`profiles.is_technical_consultant`, migration `20261008000400_technical_consultant_role.sql`).
+Support team leads, department heads and the super admin may review too (database rules).
 
 ## What it shows
 - **Onboarding Customers** — customers of the consultant's department that the salesperson

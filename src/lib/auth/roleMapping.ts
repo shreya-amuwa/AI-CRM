@@ -20,7 +20,9 @@ export function toAuthUser(profile: Profile): AuthUser {
       role = 'team-lead';
       break;
     default:
-      role = profile.team?.division === 'SUPPORT' ? 'technical-support' : 'team-member';
+      // Only Technical Consultants open the client-onboarding dashboard; other
+      // support team members get the normal team member dashboard.
+      role = isTechnicalConsultant(profile) ? 'technical-support' : 'team-member';
   }
   return {
     id: profile.id,
@@ -34,6 +36,18 @@ export function toAuthUser(profile: Profile): AuthUser {
     profile
   };
 }
+
+/** A support team member created (or marked) as Technical Consultant. */
+export function isTechnicalConsultant(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): boolean {
+  return p.role === 'TEAM_MEMBER' && !!p.isTechnicalConsultant && p.team?.division === 'SUPPORT';
+}
+
+/** Label for a profile's role, with Technical Consultant shown as its own role. */
+export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): string {
+  return isTechnicalConsultant(p) ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[p.role];
+}
+
+export const TECHNICAL_CONSULTANT_LABEL = 'Technical Consultant';
 
 /** Roles the given role may create (mirrors private.actor_can_assign_role). */
 export function creatableRoles(role: Role | undefined): Exclude<Role, 'SUPER_ADMIN'>[] {
@@ -57,7 +71,12 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 /** The dashboard a user lands on after signing in (same rules as toAuthUser). */
-export function defaultDashboardLabel(role: Role, division?: TeamDivision | null, departmentName?: string): string {
+export function defaultDashboardLabel(
+  role: Role,
+  division?: TeamDivision | null,
+  departmentName?: string,
+  technicalConsultant = false
+): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
   switch (role) {
     case 'SUPER_ADMIN':
@@ -67,6 +86,7 @@ export function defaultDashboardLabel(role: Role, division?: TeamDivision | null
     case 'TEAM_HEAD':
       return `Team Lead Dashboard${dept}`;
     default:
-      return division === 'SUPPORT' ? `Technical Support Dashboard${dept}` : `Sales Team Member Dashboard${dept}`;
+      if (technicalConsultant && division === 'SUPPORT') return `Technical Consultant Dashboard${dept}`;
+      return division === 'SUPPORT' ? `Support Team Member Dashboard${dept}` : `Sales Team Member Dashboard${dept}`;
   }
 }

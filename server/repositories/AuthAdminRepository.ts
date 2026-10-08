@@ -17,6 +17,7 @@ export class AuthAdminRepository {
     role: Role;
     departmentId?: string;
     teamId?: string;
+    technicalConsultant?: boolean;
     provisionedBy: string;
   }): Promise<string> {
     const { data, error } = await getServiceClient().auth.admin.createUser({
@@ -30,7 +31,8 @@ export class AuthAdminRepository {
         provisioned_by: input.provisionedBy,
         provisioned_role: input.role,
         provisioned_department_id: input.departmentId ?? null,
-        provisioned_team_id: input.teamId ?? null
+        provisioned_team_id: input.teamId ?? null,
+        provisioned_technical_consultant: input.technicalConsultant === true
       }
     });
     if (error || !data.user) {

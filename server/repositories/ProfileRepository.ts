@@ -3,7 +3,7 @@ import type { Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, status, status_reason,
+const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, status, status_reason,
   department_id, team_id, approved_at, created_at,
   department:departments!profiles_department_id_fkey(id, slug, name),
   team:teams!profiles_team_in_department(id, name, division)`;
@@ -17,6 +17,7 @@ export function mapProfile(row: any): Profile {
     phone: row.phone,
     position: row.position,
     role: row.role,
+    isTechnicalConsultant: !!row.is_technical_consultant,
     status: row.status,
     statusReason: row.status_reason,
     departmentId: row.department_id,
@@ -68,6 +69,16 @@ export class ProfileRepository {
 
   async assign(id: string, role: Role, departmentId?: string, teamId?: string): Promise<void> {
     unwrap(await this.db.rpc('assign_user', { p_user_id: id, p_role: role, p_department_id: departmentId ?? null, p_team_id: teamId ?? null }));
+  }
+
+  /** Division of a team the caller can see (null when not visible). */
+  async teamDivision(teamId: string): Promise<string | null> {
+    const row = unwrap(await this.db.from('teams').select('division').eq('id', teamId).maybeSingle()) as { division: string } | null;
+    return row?.division ?? null;
+  }
+
+  async setTechnicalConsultant(id: string, value: boolean): Promise<void> {
+    unwrap(await this.db.rpc('set_technical_consultant', { p_user_id: id, p_value: value }));
   }
 
   async delete(id: string): Promise<void> {

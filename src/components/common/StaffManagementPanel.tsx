@@ -9,7 +9,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
-import { ROLE_LABELS, creatableRoles, defaultDashboardLabel } from '../../lib/auth/roleMapping';
+import {
+  ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isTechnicalConsultant, staffRoleLabel
+} from '../../lib/auth/roleMapping';
 
 /**
  * Team Members & Access — create staff accounts and manage their access.
@@ -33,6 +35,8 @@ interface StaffManagementPanelProps {
 }
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
+/** Technical Consultant is a team member of a support team with its own dashboard. */
+type StaffChoice = StaffRole | 'TECHNICAL_CONSULTANT';
 
 const DIVISION_BY_SUBDEPT: Record<string, TeamDivision> = { sales: 'SALES', support: 'SUPPORT' };
 
@@ -58,7 +62,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const departmentId = department?.dbId || (profile?.department?.slug === departmentSlug ? profile.departmentId || undefined : undefined);
   const division = subDept ? DIVISION_BY_SUBDEPT[subDept] : undefined;
 
-  const allowedRoles = creatableRoles(profile?.role);
+  const allowedRoles = useMemo(() => creatableRoles(profile?.role), [profile?.role]);
   const isTeamLead = profile?.role === 'TEAM_HEAD';
 
   const [teams, setTeams] = useState<Team[]>([]);
@@ -73,7 +77,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [position, setPosition] = useState('');
-  const [role, setRole] = useState<StaffRole>('TEAM_MEMBER');
+  const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
   const [teamId, setTeamId] = useState('');
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -90,9 +94,24 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     if (defaultTeam) setTeamId(defaultTeam.id);
   }, [defaultTeam]);
 
+  const supportTeams = useMemo(() => teams.filter(t => t.division === 'SUPPORT'), [teams]);
+  // Offered next to Team Lead / Team Member wherever a support team can be picked.
+  const canCreateConsultant = allowedRoles.includes('TEAM_MEMBER') && supportTeams.length > 0 && (!division || division === 'SUPPORT');
+  const choices = useMemo<StaffChoice[]>(
+    () => (canCreateConsultant ? [...allowedRoles, 'TECHNICAL_CONSULTANT'] : allowedRoles),
+    [canCreateConsultant, allowedRoles]
+  );
+  const consultant = choice === 'TECHNICAL_CONSULTANT';
+  const role: StaffRole = consultant ? 'TEAM_MEMBER' : choice;
+
   useEffect(() => {
-    if (!allowedRoles.includes(role) && allowedRoles.length) setRole(allowedRoles[allowedRoles.length - 1]);
-  }, [allowedRoles, role]);
+    if (!choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
+  }, [choices, allowedRoles, choice]);
+
+  // A Technical Consultant always belongs to a support team.
+  useEffect(() => {
+    if (consultant && !supportTeams.some(t => t.id === teamId) && supportTeams[0]) setTeamId(supportTeams[0].id);
+  }, [consultant, supportTeams, teamId]);
 
   const loadMembers = useCallback(async () => {
     if (!departmentId) return;
@@ -150,7 +169,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       role,
       departmentId: role === 'DEPARTMENT_HEAD' ? departmentId : undefined,
       teamId: needsTeam ? teamId || undefined : undefined,
-      position: position || undefined
+      position: position || undefined,
+      technicalConsultant: consultant || undefined
     });
     if (!parsed.success) {
       setFormError(parsed.error.issues[0]?.message || 'Please check the form.');
@@ -161,7 +181,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       const newProfile = await usersApi.create(parsed.data);
       setCreated({
         profile: newProfile,
-        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name)
+        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile))
       });
       resetForm();
       await loadMembers();
@@ -169,6 +189,18 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setFormError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleConsultant = async (member: Profile) => {
+    const value = !isTechnicalConsultant(member);
+    setActionNotice(null);
+    try {
+      await usersApi.setTechnicalConsultant(member.id, value);
+      setActionNotice({ text: `${member.fullName} is now a ${value ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS.TEAM_MEMBER}.`, ok: true });
+      await loadMembers();
+    } catch (err) {
+      setActionNotice({ text: errorMessage(err), ok: false });
     }
   };
 
@@ -200,7 +232,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <h2 className="text-xl font-bold font-heading text-slate-900">Team Members & Access</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> — you can create:{' '}
-              {allowedRoles.map(r => ROLE_LABELS[r]).join(', ')}
+              {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[r])).join(', ')}
             </p>
           </div>
         </div>
@@ -285,9 +317,14 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <label className="block text-xs font-semibold text-slate-700">
             Role *
-            <select className={`${inputClass} mt-1 cursor-pointer`} value={role} onChange={e => setRole(e.target.value as StaffRole)}>
-              {allowedRoles.map(r => (
-                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+            <select
+              id="staff-role"
+              className={`${inputClass} mt-1 cursor-pointer`}
+              value={choice}
+              onChange={e => setChoice(e.target.value as StaffChoice)}
+            >
+              {choices.map(r => (
+                <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[r]}</option>
               ))}
             </select>
           </label>
@@ -302,7 +339,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 disabled={isTeamLead}
               >
                 <option value="">Select team…</option>
-                {teams.map(t => (
+                {(consultant ? supportTeams : teams).map(t => (
                   <option key={t.id} value={t.id}>{t.name} ({t.division.toLowerCase()})</option>
                 ))}
               </select>
@@ -316,7 +353,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant)}</strong>
           </div>
 
           <button
@@ -379,10 +416,20 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                         <div className="text-slate-500 font-mono">{m.email}</div>
                       </td>
                       <td className="py-2.5 pr-3 text-slate-700">
-                        {ROLE_LABELS[m.role]}
+                        {staffRoleLabel(m)}
                         {m.team && <div className="text-slate-400">{m.team.name}</div>}
+                        {m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => void toggleConsultant(m)}
+                            className="mt-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                            aria-label={`${isTechnicalConsultant(m) ? 'Make team member' : 'Make Technical Consultant'}: ${m.fullName}`}
+                          >
+                            {isTechnicalConsultant(m) ? 'Make team member' : 'Make Technical Consultant'}
+                          </button>
+                        )}
                       </td>
-                      <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division)}</td>
+                      <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m))}</td>
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>
