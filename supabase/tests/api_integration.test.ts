@@ -524,6 +524,14 @@ check(viaRewrite.status === 409, 'Vercel rewrite form (?__path=) routes multi-se
 r = await api('sa', 'PUT', '/customers');
 check(r.status === 405, 'wrong method → 405');
 
+// A project missing an earlier migration must still let people sign in.
+await db.query(`alter function public.rate_limit_consume(jsonb) rename to rate_limit_consume_hidden`);
+r = await api('sa', 'GET', '/me');
+check(r.status === 200 && r.json.data.role === 'SUPER_ADMIN', 'sign-in still works when api_session fails (falls back)', r);
+r = await api('sa', 'GET', '/departments');
+check(r.status === 200, 'API keeps working on the fallback path', r);
+await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to rate_limit_consume`);
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
