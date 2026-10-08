@@ -29,7 +29,7 @@ interface MemberRightSidebarProps {
 
 export const MemberRightSidebar: React.FC<MemberRightSidebarProps> = ({
   userName,
-  userRole = 'Sales Executive',
+  userRole = 'Team Member',
   target,
   activities,
   recentUpdates,

@@ -16,6 +16,7 @@ import {
 import { Lead, TeamMemberActivity, EndOfDayReport, FollowUpTask, Deal } from '../../types/crm';
 import { teamMemberStore } from '../../services/teamMemberStore';
 import { useAuth } from '../../context/AuthContext';
+import { memberTitle } from '../../lib/auth/roleMapping';
 import { TeamMemberLayout, TeamMemberNav } from './TeamMemberLayout';
 import { MemberTasksView } from '../tasks/MemberTasksView';
 import { MemberAnalyticsWidgets } from './MemberAnalyticsWidgets';
@@ -39,7 +40,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   currentUserId,
   userName
 }) => {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
   // Navigation State: 'home' is default, or 'leads'
   const [activeNav, setActiveNavState] = useState<TeamMemberNav>('home');
   // "Add lead" from Home opens the database-backed lead form in My Leads → Leads.
@@ -460,7 +461,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
               <div className="lg:col-span-4">
                 <MemberRightSidebar
                   userName={userName}
-                  userRole="Sales Executive"
+                  userRole={memberTitle(user)}
                   target={target}
                   activities={activities}
                   recentUpdates={recentUpdates}
