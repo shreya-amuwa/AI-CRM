@@ -21,7 +21,7 @@
       "destination": "/api/webhook"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|assets/).*)",
       "destination": "/index.html"
     }
   ],

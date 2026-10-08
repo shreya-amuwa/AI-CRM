@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { isChunkLoadError, reloadForNewVersion } from '../../lib/chunkReload';
 
 interface Props {
   children: ReactNode;
@@ -23,6 +24,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary caught error]:', error, errorInfo);
+    // An old tab after a deployment: reload once to get the new version.
+    if (isChunkLoadError(error)) reloadForNewVersion();
   }
 
   private handleReset = () => {
@@ -45,6 +48,7 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
+      const updated = isChunkLoadError(this.state.error);
       return (
         <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-6">
           <div className="max-w-md w-full bg-slate-800/90 border border-slate-700 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 text-center">
@@ -54,10 +58,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
             <div className="space-y-2">
               <h2 className="text-xl font-bold font-heading text-white">
-                Something went wrong
+                {updated ? 'A new version is available' : 'Something went wrong'}
               </h2>
               <p className="text-xs text-slate-400 font-sans leading-relaxed">
-                An unexpected interface error occurred. You can reload the page or reset the view to recover instantly.
+                {updated
+                  ? 'The app was just updated. Reload the page to continue.'
+                  : 'An unexpected interface error occurred. You can reload the page or reset the view to recover instantly.'}
               </p>
             </div>
 
