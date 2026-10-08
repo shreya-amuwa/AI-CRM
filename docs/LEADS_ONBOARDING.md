@@ -153,7 +153,7 @@ Apply the migration (`supabase db push` or the SQL editor). It creates the priva
 `SUPABASE_SERVICE_ROLE_KEY` must be set on the server (Vercel) for uploads and signed URLs;
 it is never sent to the browser.
 
-### Sales flow fixes (migration `20261008000600_sales_flow_fixes.sql`)
+### Sales flow fixes (migration `20261008000700_sales_flow_fixes.sql`)
 
 - **Whole rupees only.** The deal amount and every payment reject paise (`15000.99`) in the
   form (no decimal point can be typed), the API (`422`) and the database functions.
