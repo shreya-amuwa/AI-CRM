@@ -5,8 +5,9 @@ normal sign-in page and land on this dashboard. Department heads and the super a
 review too (database rules), but their dashboards don't have this screen yet.
 
 ## What it shows
-- **Onboarding Customers** — every customer of the consultant's department that is in
-  onboarding (after sales confirms the payment), with tabs *All / Review pending /
+- **Onboarding Customers** — customers of the consultant's department that the salesperson
+  has sent with **Send to Technical Consultant** (on the customer's onboarding page, unlocked
+  once every checklist item is saved). Nothing is visible before sending. Tabs *All / Review pending /
   Needs attention / Authorized* and the number of authorized items (`x/y docs authorized`).
   Status: *Awaiting documents* → nothing to review yet; *Review pending* → items saved by
   sales wait for review; *Needs attention* → an item was marked not authorized;
@@ -52,7 +53,8 @@ when the sheet confirms it. The same automation can't be triggered twice within 
 4. Redeploy. The automation's button becomes active.
 
 ## Database
-Migration `20261008000000_technical_consultant_dashboard.sql`: department-wide visibility of
-onboarding customers for consultants (leads and potential customers stay hidden), the
+Migration `20261008000100_send_to_technical_consultant.sql`: consultants see and review a
+customer only after sales sends it (`customer_onboarding.forwarded_to_support_at`).
+Migration `20261008000000_technical_consultant_dashboard.sql`: the
 *awaiting documents* state, `onboarding_review_counts()`, `verify_all_onboarding_entries()`,
 and `onboarding_automation_runs` with `begin_/finish_onboarding_automation()`.
