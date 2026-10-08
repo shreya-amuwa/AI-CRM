@@ -7,6 +7,7 @@ import {
   ACCOUNT_STATUSES,
   LEAD_STATUSES,
   ONBOARDING_FILTERS,
+  HANDOVER_STAGES,
   REVIEW_FILTERS,
   PAYMENT_FILTERS,
   PAYMENT_METHODS,
@@ -310,6 +311,10 @@ export const pipelineListQuerySchema = z.object({
   onboarding: z.enum(ONBOARDING_FILTERS).optional(),
   /** Technical Consultant queue: customers sent to support (or sent back and waiting for sales). */
   review: z.enum(REVIEW_FILTERS).optional(),
+  /** Hand-over stage (Department Head / Team Lead / Team Member inboxes). */
+  handover: z.enum(HANDOVER_STAGES).optional(),
+  /** Only customers handed to the caller as Team Lead / as Team Member. */
+  handoverMine: z.enum(['TEAM_LEAD', 'TEAM_MEMBER']).optional(),
   forwarded: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   /** Only records owned by the caller (e.g. a support member's own pipeline). */
   mine: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
@@ -375,3 +380,14 @@ export const documentUploadSchema = z
     sizeBytes: z.coerce.number().int().positive().max(52428800)
   })
   .strict();
+
+export const clientAccountSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254),
+    password: z.string().min(10, 'The password must be at least 10 characters.').max(72)
+  })
+  .strict();
+
+export const handoverNoteSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
+export const passToTeamLeadSchema = z.object({ teamLeadId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();
+export const assignToMemberSchema = z.object({ memberId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();

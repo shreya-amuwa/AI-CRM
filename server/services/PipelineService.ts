@@ -21,7 +21,11 @@ import {
   onboardingUpdateSchema,
   pipelineListQuerySchema,
   recordPaymentSchema,
+  assignToMemberSchema,
   backOutSchema,
+  clientAccountSchema,
+  handoverNoteSchema,
+  passToTeamLeadSchema,
   returnToSalesSchema,
   startOnboardingSchema,
   uuidSchema
@@ -30,6 +34,7 @@ import { z } from 'zod';
 import type { Actor } from '../auth/authenticate.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
+import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
@@ -46,7 +51,8 @@ const inboundIdSchema = z.string().trim().min(1).max(100);
 export class PipelineService {
   constructor(
     private readonly repo: PipelineRepository,
-    private readonly storage: StorageRepository
+    private readonly storage: StorageRepository,
+    private readonly authAdmin: AuthAdminRepository = new AuthAdminRepository()
   ) {}
 
   services(): Promise<ServiceCatalogItem[]> {
@@ -84,7 +90,9 @@ export class PipelineService {
     ]);
     // Technical Consultants cannot read sales profiles; give them the owner's name.
     const owner = customer.owner ?? (await this.repo.ownerSummary(customerId));
-    return { ...customer, owner, documents, documentTypes, activities, checklist };
+    const handover =
+      customer.lifecycleStage === 'ONBOARDING' || customer.lifecycleStage === 'CUSTOMER' ? await this.repo.handoverInfo(customerId) : null;
+    return { ...customer, owner, documents, documentTypes, activities, checklist, handover };
   }
 
   /** Sales saves a detail / yes-no / approval / access / amount / choice item. */
@@ -132,6 +140,38 @@ export class PipelineService {
     const input = parse(recordPaymentSchema, body);
     await this.repo.recordPayment(customerId, input.amount, input.method);
     return this.repo.get(customerId);
+  }
+
+  /**
+   * The Technical Consultant creates the client's panel login. The database checks
+   * who may do it first; Supabase Auth then stores the (hashed) password.
+   */
+  async createClientAccount(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(clientAccountSchema, body);
+    await this.repo.assertClientAccountAllowed(customerId, input.email);
+    const userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
+    try {
+      await this.repo.recordClientAccount(customerId, userId, input.email);
+    } catch (e) {
+      await this.authAdmin.deleteUser(userId).catch(() => undefined);
+      throw e;
+    }
+    return { email: input.email };
+  }
+
+  async sendToDepartmentHead(id: string, body: unknown): Promise<void> {
+    await this.repo.sendToDepartmentHead(parse(uuidSchema, id), parse(handoverNoteSchema, body ?? {}).note ?? null);
+  }
+
+  async passToTeamLead(id: string, body: unknown): Promise<void> {
+    const input = parse(passToTeamLeadSchema, body);
+    await this.repo.passToTeamLead(parse(uuidSchema, id), input.teamLeadId, input.note ?? null);
+  }
+
+  async assignToTeamMember(id: string, body: unknown): Promise<void> {
+    const input = parse(assignToMemberSchema, body);
+    await this.repo.assignToTeamMember(parse(uuidSchema, id), input.memberId, input.note ?? null);
   }
 
   /** Customer backs out at Potential: back to Leads. */

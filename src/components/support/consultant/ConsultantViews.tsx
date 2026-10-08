@@ -48,17 +48,19 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
+import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
 
 // ---------------------------------------------------------------------------
 // Status helpers
 // ---------------------------------------------------------------------------
-type CardStatus = 'REVIEW_PENDING' | 'NEEDS_ATTENTION' | 'AUTHORIZED' | 'AWAITING' | 'WAITING_ON_SALES';
+type CardStatus = 'REVIEW_PENDING' | 'NEEDS_ATTENTION' | 'AUTHORIZED' | 'AWAITING' | 'WAITING_ON_SALES' | 'HANDED_OVER';
 const STATUS_STYLE: Record<CardStatus, { label: string; cls: string }> = {
   REVIEW_PENDING: { label: 'Review pending', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   NEEDS_ATTENTION: { label: 'Needs attention', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
   AUTHORIZED: { label: 'Authorized', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   AWAITING: { label: 'Awaiting documents', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-  WAITING_ON_SALES: { label: 'Waiting for sales team', cls: 'bg-violet-50 text-violet-700 border-violet-200' }
+  WAITING_ON_SALES: { label: 'Waiting for sales team', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  HANDED_OVER: { label: 'Handed over', cls: 'bg-sky-50 text-sky-700 border-sky-200' }
 };
 
 /** Same rules as customer_onboarding.review_state; the consultant's own items (WABA ID) count too. */
@@ -66,6 +68,8 @@ function statusOf(o: PipelineCustomer['onboarding']): CardStatus {
   const total = o?.itemsTotal || 0;
   const verified = o?.itemsVerified || 0;
   const consultantPending = (o?.consultantItemsTotal || 0) > (o?.consultantItemsDone || 0);
+  // Verified and passed on to the Department Head (and on): the consultant's part is done.
+  if (o && o.handoverStage && o.handoverStage !== 'CONSULTANT') return 'HANDED_OVER';
   // Sent back for re-verification: read-only until sales sends it again.
   if (o?.returnedAt) return 'WAITING_ON_SALES';
   if ((o?.itemsRejected || 0) > 0) return 'NEEDS_ATTENTION';
@@ -291,6 +295,13 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   const rejectedItems = c.checklist.filter(i => i.entry?.status === 'REJECTED');
   /** Sent back for re-verification: visible here, read-only until sales sends it again. */
   const waiting = !!c.onboarding?.returnedAt;
+  /** Passed on to the Department Head (or further): the consultant's review is closed. */
+  const handedOver = !!c.onboarding && c.onboarding.handoverStage !== 'CONSULTANT';
+  const locked = waiting || handedOver;
+  const canSend = statusOf(c.onboarding) === 'AUTHORIZED' && !!c.handover?.clientAccount;
+  const sendReason = !c.handover?.clientAccount
+    ? "Create the client's login first"
+    : 'Authorize every document and detail first';
 
   const sendBack = async () => {
     setSendingBack(true);
@@ -338,7 +349,12 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
               <p className="text-sm text-slate-500">Onboarding since {longDate(c.onboarding?.startedAt)}</p>
             </div>
           </div>
-          <StatusPill status={statusOf(c.onboarding)} size="md" />
+          <div className="flex flex-wrap items-center gap-2">
+            {!locked && (
+              <SendToDepartmentHead customerId={c.id} businessName={c.company || c.name} ready={canSend} reason={sendReason} onSent={changed} />
+            )}
+            <StatusPill status={statusOf(c.onboarding)} size="md" />
+          </div>
         </div>
         <dl className="mt-5 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <Info icon={<User className="w-4 h-4" />} label="Customer Name" value={c.name} sub={c.phone} />
@@ -367,6 +383,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
       </section>
 
       {actionError && <ErrorBanner message={actionError} />}
+
+      <HandoverBanner info={c.handover} />
 
       {waiting && (
         <div className="p-4 rounded-2xl border border-violet-200 bg-violet-50 text-sm text-violet-900" role="status">
@@ -401,7 +419,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
                 >
                   <Clock className="w-4 h-4" aria-hidden="true" /> Waiting for sales team
                 </button>
-              ) : (
+              ) : handedOver ? null : (
               <>
               <button
                 type="button"
@@ -483,7 +501,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
               <p className="text-xs text-slate-500">Details only the technical team has, e.g. after creating the customer panel.</p>
               <ul className="mt-3 space-y-3">
                 {consultantItems.map(item => (
-                  <ConsultantItemRow key={item.code} item={item} customerId={c.id} onChanged={changed} readOnly={waiting} />
+                  <ConsultantItemRow key={item.code} item={item} customerId={c.id} onChanged={changed} readOnly={locked} />
                 ))}
               </ul>
             </div>
@@ -493,13 +511,16 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           ) : (
             <ul className="mt-4 space-y-3">
               {salesItems.map(item => (
-                <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} readOnly={waiting} />
+                <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} readOnly={locked} />
               ))}
             </ul>
           )}
         </section>
 
-        <AutomationsCard customerId={c.id} locked={waiting} />
+        <div className="space-y-5">
+          <ClientLoginCard customerId={c.id} defaultEmail={c.email} account={c.handover?.clientAccount} locked={waiting || handedOver} onChanged={changed} />
+          <AutomationsCard customerId={c.id} locked={locked} />
+        </div>
       </div>
     </div>
   );

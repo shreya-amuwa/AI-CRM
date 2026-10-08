@@ -9,9 +9,11 @@ import {
   LogOut,
   Menu,
   Plus,
+  UserCheck,
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { HandoverBoard } from '../handover/HandoverBoard';
 import {
   localDateKey,
   summarize,
@@ -24,7 +26,7 @@ import {
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 
-type Nav = 'assign' | 'reports' | 'daily';
+type Nav = 'assign' | 'reports' | 'daily' | 'clients';
 
 /**
  * Department Head dashboard.
@@ -42,7 +44,8 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
   const items: { id: Nav; label: string; icon: React.ElementType }[] = [
     { id: 'assign', label: 'Assign', icon: ClipboardList },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
-    { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck }
+    { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
+    { id: 'clients', label: 'Client Hand-overs', icon: UserCheck }
   ];
 
   return (
@@ -138,6 +141,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'assign' && <AssignPage data={data} />}
           {nav === 'reports' && <ReportsPage data={data} />}
           {nav === 'daily' && <DailyPage data={data} />}
+          {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
         </main>
       </div>
     </div>

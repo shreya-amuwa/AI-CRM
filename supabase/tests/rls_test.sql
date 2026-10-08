@@ -894,4 +894,87 @@ end $$;
 select test.check((select role = 'TEAM_MEMBER' and status = 'PENDING' from profiles where id = test.id('late_self')),
   'self-registration still creates a pending team member');
 
+
+\echo '--- 18. Client login and hand-over: consultant → department head → team lead → team member'
+reset role;
+-- The client's login, created the way the API does it (app_metadata written after the insert).
+do $$
+declare v uuid := gen_random_uuid();
+begin
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v, 'client.a@example.com', '{}', '{"provider":"email","providers":["email"]}');
+  update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('client_customer_id', (select id from pipeline where name = 'A'))
+   where id = v;
+  insert into test.users values ('client_a', v);
+end $$;
+select test.check((select count(*) = 0 from profiles where id = test.id('client_a')), 'a client login never gets a CRM profile');
+insert into teams (department_id, name, division) values (test.dept('wabastore'), 'Delivery', 'GENERAL');
+select test.create_auth_user('th_gen', 'delivery.lead@amuwa.com', '{"full_name":"Delivery Lead"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.team('wabastore', 'Delivery')));
+select test.create_auth_user('tm_d1', 'delivery.member@amuwa.com', '{"full_name":"Delivery Member"}',
+  jsonb_build_object('provisioned_by', test.id('th_gen'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Delivery')));
+select test.create_auth_user('tm_s2', 's2@amuwa.com', '{"full_name":"Second Sales Member"}',
+  jsonb_build_object('provisioned_by', test.id('th_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales')));
+
+set role authenticated;
+select test.login('tm_b');
+select test.must_fail($$select send_to_department_head((select id from pipeline where name = 'A'), null)$$, 'consultant must authorize everything first', 'Authorize every');
+select verify_all_onboarding_entries((select id from pipeline where name = 'A'));
+select test.must_fail($$select send_to_department_head((select id from pipeline where name = 'A'), null)$$, 'consultant must create the client login first', 'login first');
+select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'not-an-email')$$, 'client login needs a valid e-mail', 'valid e-mail');
+select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'DH.WAB@amuwa.com')$$, 'client login cannot reuse a staff e-mail', 'already has a login');
+select assert_client_account_allowed((select id from pipeline where name = 'A'), 'fresh.client@example.com');
+select test.must_fail($$select record_client_account((select id from pipeline where name = 'A'), gen_random_uuid(), 'client.a@example.com')$$, 'only a login made by the API can be recorded', 'not created');
+select test.must_fail($$select record_client_account((select id from pipeline where name = 'A'), test.id('tm_a'), 'a@amuwa.com')$$, 'a staff account cannot be linked as the client login', 'not created');
+select record_client_account((select id from pipeline where name = 'A'), test.id('client_a'), 'client.a@example.com');
+select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'another@example.com')$$, 'one login per customer', 'already has a login');
+select test.login('tm_a');
+select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'x@y.com')$$, 'sales cannot create the client login', 'NOT_FOUND');
+select test.check((select email = 'client.a@example.com' from customer_client_accounts where customer_id = (select id from pipeline where name = 'A')), 'the salesperson can see the client login e-mail');
+select test.login('th_wab');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_gen'), null)$$, 'team lead cannot pass a customer on before the department head', 'NOT_FOUND');
+
+select test.login('tm_b');
+select send_to_department_head((select id from pipeline where name = 'A'), 'All verified, panel created');
+select test.check((select handover_stage = 'DEPARTMENT_HEAD' and stage = 'HANDOVER' and to_department_head_at is not null from customer_onboarding
+                    where customer_id = (select id from pipeline where name = 'A')), 'sent to the department head');
+select test.must_fail($$select send_to_department_head((select id from pipeline where name = 'A'), null)$$, 'cannot send twice', 'NOT_FOUND');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'REJECTED', 'late')$$, 'consultant review closes after the hand-over', 'NOT_FOUND');
+select test.must_fail($$select return_onboarding_to_sales((select id from pipeline where name = 'A'), null)$$, 'consultant cannot send it back after the hand-over', 'NOT_FOUND');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'HANDOVER_TO_DEPARTMENT_HEAD' and recipient_id = test.id('dh_wab')), 'department head notified');
+
+set role authenticated;
+select test.login('tm_s2');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'an unrelated team member does not see the customer');
+select test.login('dh_wab');
+select test.check((select handover_stage = 'DEPARTMENT_HEAD' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'department head sees the hand-over');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('tm_a'), null)$$, 'department head must pick a team lead', 'active Team Lead');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_wbx'), null)$$, 'team lead of another department is refused', 'active Team Lead');
+select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_gen'), 'Please start onboarding the client');
+select test.check((select handover_stage = 'TEAM_LEAD' and team_lead_id = test.id('th_gen') from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'passed to the team lead');
+select test.login('th_wbx');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_wbx'), null)$$, 'another department''s head cannot hand it over', 'NOT_FOUND');
+select test.must_fail($$select assign_to_team_member((select id from pipeline where name = 'A'), test.id('tm_s2'), null)$$, 'only the team lead it was passed to can assign it', 'NOT_FOUND');
+
+select test.login('th_gen');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'the team lead sees the customer passed to them');
+select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) > 0), 'the team lead can read the checklist');
+select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_logo2'), 'VIEW')), 'the team lead can open the files');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'REJECTED', 'x')$$, 'the team lead cannot review', 'NOT_FOUND');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Blue')$$, 'the team lead cannot edit sales details', 'NOT_FOUND');
+select test.must_fail($$select assign_to_team_member((select id from pipeline where name = 'A'), test.id('tm_s2'), null)$$, 'only a member of the lead''s own team can be chosen', 'active Team Member');
+select assign_to_team_member((select id from pipeline where name = 'A'), test.id('tm_d1'), 'You own this client now');
+select test.check((select handover_stage = 'TEAM_MEMBER' and team_member_id = test.id('tm_d1') from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'assigned to the team member');
+select test.login('tm_d1');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'the team member sees the customer assigned to them');
+select test.check((select handover_stage = 'TEAM_MEMBER' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'the team member sees the hand-over stage');
+select test.check((select (customer_handover_info((select id from pipeline where name = 'A')) -> 'clientAccount' ->> 'email') = 'client.a@example.com'
+                      and (customer_handover_info((select id from pipeline where name = 'A')) -> 'teamLead' ->> 'fullName') is not null), 'hand-over info carries the names and the client login e-mail');
+select test.must_fail($$select update_lead((select id from pipeline where name = 'A'), '{"name":"hijack"}')$$, 'the team member cannot edit the sales record', 'NOT_FOUND');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'HANDOVER_TO_TEAM_MEMBER' and recipient_id = test.id('tm_d1')), 'team member notified');
+select test.check((select count(*) = 3 from audit_logs where action in ('HANDOVER_TO_DEPARTMENT_HEAD', 'HANDOVER_TO_TEAM_LEAD', 'HANDOVER_TO_TEAM_MEMBER')
+                    and entity_id = (select id from pipeline where name = 'A')), 'every hand-over step is audited');
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

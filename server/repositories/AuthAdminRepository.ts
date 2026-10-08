@@ -46,6 +46,32 @@ export class AuthAdminRepository {
   }
 
   /**
+   * The client's panel login. `app_metadata.client_customer_id` (service key only)
+   * keeps the database from creating a CRM profile for it. The password is hashed
+   * by Supabase Auth and is neither stored nor returned by the CRM.
+   */
+  async createClientUser(input: { email: string; password: string; customerId: string; provisionedBy: string }): Promise<string> {
+    const { data, error } = await getServiceClient().auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      app_metadata: { client_customer_id: input.customerId, provisioned_by_consultant: input.provisionedBy }
+    });
+    if (error || !data.user) {
+      if (/already (been )?registered|exists/i.test(error?.message || '')) {
+        throw new AppError('CONFLICT', 'That e-mail already has a login. Use a different e-mail for the client.');
+      }
+      console.error('[api] auth.admin.createUser (client) failed', error?.message);
+      throw new AppError('INTERNAL', 'Could not create the client login.');
+    }
+    return data.user.id;
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    await getServiceClient().auth.admin.deleteUser(userId);
+  }
+
+  /**
    * Block (or unblock) sign-in and token refresh. Database access is already
    * cut by RLS the moment status leaves ACTIVE; this additionally stops the
    * session from being renewed.

@@ -14,6 +14,7 @@ import type {
   Department,
   DocumentUploadTicket,
   DocumentUrl,
+  HandoverStage,
   InboundLead,
   LeadStatus,
   OnboardingFilter,
@@ -69,6 +70,8 @@ export interface PipelineQuery {
   noFollowUp?: boolean;
   payment?: PaymentFilter;
   onboarding?: OnboardingFilter;
+  handover?: HandoverStage;
+  handoverMine?: 'TEAM_LEAD' | 'TEAM_MEMBER';
   review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED' | 'AWAITING_DOCUMENTS' | 'WAITING_ON_SALES';
   forwarded?: boolean;
   mine?: boolean;
@@ -86,6 +89,13 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
   recordPayment: (id: string, body: { amount: number; method?: PaymentMethod }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/payments`, body),
+  createClientAccount: (id: string, body: { email: string; password: string }) =>
+    api.post<{ email: string }>(`/pipeline/customers/${id}/client-account`, body),
+  sendToDepartmentHead: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/handover/department-head`, { note: note || null }),
+  passToTeamLead: (id: string, teamLeadId: string, note?: string | null) =>
+    api.post<null>(`/pipeline/customers/${id}/handover/team-lead`, { teamLeadId, note: note || null }),
+  assignToTeamMember: (id: string, memberId: string, note?: string | null) =>
+    api.post<null>(`/pipeline/customers/${id}/handover/team-member`, { memberId, note: note || null }),
   backOut: (id: string, reason?: string | null) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/back-out`, { reason: reason || null }),
   startOnboarding: (id: string, body: { amountReceived: number; paymentMethod: PaymentMethod; targetHandoverDate?: string | null }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/start-onboarding`, body),
