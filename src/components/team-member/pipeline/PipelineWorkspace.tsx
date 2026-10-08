@@ -24,8 +24,10 @@ export const PipelineWorkspace: React.FC<{
   startWithAdd?: boolean;
   /** Changes whenever the user re-selects a section in the sidebar. */
   resetKey?: number;
+  /** Support staff: only their own records, no inbound enquiries strip. */
+  ownOnly?: boolean;
   onNavigate: (section: PipelineSection) => void;
-}> = ({ section, counts, startWithAdd, resetKey, onNavigate }) => {
+}> = ({ section, counts, startWithAdd, resetKey, ownOnly, onNavigate }) => {
   const [page, setPage] = useState<Page>(startWithAdd ? { kind: 'add-lead' } : { kind: 'list' });
   const [pendingOpen, setPendingOpen] = useState<string | null>(null);
 
@@ -49,12 +51,13 @@ export const PipelineWorkspace: React.FC<{
       return <AddLeadView onCancel={() => setPage({ kind: 'list' })} onSaved={id => setPage({ kind: 'edit-lead', id })} />;
     if (page.kind === 'edit-lead')
       return <EditLeadView id={page.id} onBack={() => setPage({ kind: 'list' })} onMovedToPotential={() => onNavigate('potential')} />;
-    return <LeadsView counts={counts} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;
+    return <LeadsView counts={counts} showInbound={!ownOnly} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;
   }
   if (section === 'potential') {
     return (
       <PotentialView
         counts={counts}
+        ownOnly={ownOnly}
         onStarted={id => {
           setPendingOpen(id);
           onNavigate('onboarding');
@@ -63,5 +66,5 @@ export const PipelineWorkspace: React.FC<{
     );
   }
   if (page.kind === 'onboarding-customer') return <OnboardingCustomerView id={page.id} onBack={() => setPage({ kind: 'list' })} />;
-  return <OnboardingListView counts={counts} onOpen={id => setPage({ kind: 'onboarding-customer', id })} />;
+  return <OnboardingListView counts={counts} ownOnly={ownOnly} onOpen={id => setPage({ kind: 'onboarding-customer', id })} />;
 };

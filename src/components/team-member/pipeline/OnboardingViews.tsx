@@ -64,7 +64,7 @@ const onboardingState = (saved: number, total: number): OnboardingFilter =>
 // ---------------------------------------------------------------------------
 // 3 · Customer onboarding (list)
 // ---------------------------------------------------------------------------
-export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; onOpen: (id: string) => void }> = ({ counts, onOpen }) => {
+export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOnly?: boolean; onOpen: (id: string) => void }> = ({ counts, ownOnly, onOpen }) => {
   const { items: services, byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [service, setService] = useState('');
@@ -84,13 +84,13 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; onOpe
     setLoading(true);
     setError(null);
     pipelineApi
-      .list({ stage: 'ONBOARDING', page, pageSize, search: debounced || undefined, service: service || undefined, onboarding: filter || undefined, sort })
+      .list({ stage: 'ONBOARDING', mine: ownOnly || undefined, page, pageSize, search: debounced || undefined, service: service || undefined, onboarding: filter || undefined, sort })
       .then(
         r => seq === seqRef.current && setData(r),
         e => seq === seqRef.current && setError(errorMessage(e))
       )
       .finally(() => seq === seqRef.current && setLoading(false));
-  }, [page, pageSize, debounced, service, filter, sort]);
+  }, [page, pageSize, debounced, service, filter, sort, ownOnly]);
   useEffect(load, [load]);
   useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize]);
   usePipelineRealtime(load);

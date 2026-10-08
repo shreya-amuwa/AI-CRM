@@ -152,7 +152,7 @@ export class PipelineRepository {
     return unwrap(await this.db.rpc('customer_pipeline_counts')) as PipelineCounts;
   }
 
-  async list(q: PipelineListQuery): Promise<Paginated<PipelineCustomer>> {
+  async list(q: PipelineListQuery, actorId: string): Promise<Paginated<PipelineCustomer>> {
     let columns = BASE_COLUMNS;
     if (q.service) columns += ', service_filter:customer_services!inner(service_code)';
     const needsOnboarding = q.onboarding || q.review || q.forwarded;
@@ -161,6 +161,7 @@ export class PipelineRepository {
     }
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
+    if (q.mine) query = query.eq('owner_id', actorId);
     if (q.search) query = query.ilike('search_text', likePattern(q.search));
     if (q.service) query = query.eq('service_filter.service_code', q.service);
     if (q.source) query = query.eq('lead_source', q.source);

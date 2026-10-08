@@ -342,13 +342,15 @@ export function usePipelineRealtime(onChange: () => void) {
   const cb = useRef(onChange);
   cb.current = onChange;
   useEffect(() => {
-    const sb = getSupabase();
-    if (!sb) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const fire = () => {
       clearTimeout(timer);
       timer = setTimeout(() => cb.current(), 400);
     };
+    // Changes made in this tab (also covers projects where Realtime is off).
+    window.addEventListener('crm:pipeline-changed', fire);
+    const sb = getSupabase();
+    if (!sb) return () => window.removeEventListener('crm:pipeline-changed', fire);
     const channel = sb
       .channel(`pipeline-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, fire)
@@ -356,6 +358,7 @@ export function usePipelineRealtime(onChange: () => void) {
       .subscribe();
     return () => {
       clearTimeout(timer);
+      window.removeEventListener('crm:pipeline-changed', fire);
       void sb.removeChannel(channel);
     };
   }, []);

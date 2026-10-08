@@ -68,6 +68,7 @@ export interface PipelineQuery {
   onboarding?: OnboardingFilter;
   review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED';
   forwarded?: boolean;
+  mine?: boolean;
   sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
 }
 

@@ -41,9 +41,10 @@ const TABS: ('' | LeadStatus)[] = ['', 'NEW', 'CONTACTED', 'INTERESTED', 'READY_
 
 export const LeadsView: React.FC<{
   counts: PipelineCounts | null;
+  showInbound?: boolean;
   onAdd: () => void;
   onEdit: (id: string) => void;
-}> = ({ counts, onAdd, onEdit }) => {
+}> = ({ counts, showInbound = true, onAdd, onEdit }) => {
   const { items: services, byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [service, setService] = useState('');
@@ -110,7 +111,7 @@ export const LeadsView: React.FC<{
         </button>
       </div>
 
-      <InboundStrip onClaimed={id => onEdit(id)} />
+      {showInbound && <InboundStrip onClaimed={id => onEdit(id)} />}
 
       <Card className="overflow-hidden">
         <div className="p-4 space-y-3">
