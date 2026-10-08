@@ -19,6 +19,7 @@ import {
   Navigation,
   MapPin,
   UserPlus,
+  UserCheck,
   ClipboardList
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -29,6 +30,7 @@ import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 export type TeamLeadNav =
   | 'overview'
   | 'assigned-tasks'
+  | 'client-handovers'
   | 'team-members'
   | 'reps'
   | 'field-visits'
@@ -67,6 +69,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const navItems = [
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
     { id: 'assigned-tasks' as TeamLeadNav, label: 'Assigned Tasks', icon: ClipboardList },
+    { id: 'client-handovers' as TeamLeadNav, label: 'Client Hand-overs', icon: UserCheck },
     { id: 'team-members' as TeamLeadNav, label: 'Team Members & Access', icon: UserPlus },
     { id: 'reps' as TeamLeadNav, label: 'Team Reps (5)', icon: Users },
     {

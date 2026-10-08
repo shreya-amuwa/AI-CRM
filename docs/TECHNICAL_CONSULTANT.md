@@ -73,3 +73,21 @@ customer only after sales sends it (`customer_onboarding.forwarded_to_support_at
 Migration `20261008000000_technical_consultant_dashboard.sql`: the
 *awaiting documents* state, `onboarding_review_counts()`, `verify_all_onboarding_entries()`,
 and `onboarding_automation_runs` with `begin_/finish_onboarding_automation()`.
+
+## Client login and hand-over (migration `20261008000900_client_handover.sql`)
+1. **Client panel login.** After creating the client's panel in the internal platform, the
+   consultant creates the client's login on the customer page (*Client panel login*): the
+   e-mail and password the client will use in the mobile app (same as in the internal platform).
+   The password goes straight to Supabase Auth (hashed); the CRM never stores or returns it, so
+   it is shown once at creation (with *Copy*). A client login has **no CRM profile** and cannot
+   use the CRM API. `customer_client_accounts` only links the auth user to the customer.
+2. **Send to Department Head.** Enabled once every document/detail (and the WABA ID) is
+   authorized and the client login exists. The consultant's review closes; the customer shows
+   *Handed over* in their list.
+3. **Department Head** → *Client Hand-overs*: *To assign* → **Pass to Team Lead** (an active Team
+   Lead of the department; can be changed until it is assigned).
+4. **Team Lead** → *Client Hand-overs*: **Assign to member** (an active member of their own team).
+5. **Team Member** → *My Clients*: the verified details, files (view only) and the client login e-mail.
+Everyone in the chain is notified (bell); each step is audited. Recipients get **read** access
+only (checklist, files, owner); only the people named above can move the customer on.
+

@@ -589,6 +589,93 @@ check(r.json.data.total === 1, 'My Customers can be limited to onboarding/custom
 r = await api('b', 'GET', `/pipeline/customers?stage=ONBOARDING`);
 check(r.json.data.total === 0, 'member B sees no onboarding customers of A');
 
+// --- client login + hand-over: consultant → department head → team lead → team member ---
+const clientEmail = 'client.galaxy@example.com';
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: clientEmail, password: 'short' });
+check(r.status === 422, 'client password must be at least 10 characters', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: clientEmail, password: 'ClientPass#2026' });
+check(r.status === 404, 'sales cannot create the client login', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: 'dh@amuwa.com', password: 'ClientPass#2026' });
+check(r.status === 409, "a staff e-mail cannot be used for the client's login", r);
+r = await api('tc', 'POST', '/pipeline/customers/' + leadA + '/handover/department-head', {});
+check(r.status === 422 && /login first/.test(r.json.error.message), 'cannot send to the department head before the client login exists', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: clientEmail, password: 'ClientPass#2026' });
+check(r.status === 201 && r.json.data.email === clientEmail && !JSON.stringify(r.json).includes('ClientPass'), 'consultant creates the client login (no password in the response)', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: 'second@example.com', password: 'ClientPass#2026' });
+check(r.status === 409, 'only one client login per customer', r);
+const clientLogin = await fetch(`${process.env.GATEWAY_URL}/auth/v1/token?grant_type=password`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: clientEmail, password: 'ClientPass#2026' })
+});
+const clientSession = (await clientLogin.json()) as any;
+check(clientLogin.status === 200 && clientSession.access_token, 'the client can sign in with that e-mail and password (Supabase Auth)');
+tokens.set('client', clientSession.access_token);
+r = await api('client', 'GET', '/me');
+check(r.status === 401, 'a client login has no CRM profile and cannot use the CRM API', r);
+const { rows: clientProfiles } = await db.query(`select count(*)::int n from public.profiles where lower(email) = $1`, [clientEmail]);
+check(clientProfiles[0].n === 0, 'no CRM profile is created for the client login');
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+check(r.json.data.handover?.clientAccount?.email === clientEmail && r.json.data.handover.stage === 'CONSULTANT', 'the salesperson sees the client login e-mail', r);
+
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, {});
+check(r.status === 404, 'sales cannot send to the department head', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, { note: 'All verified' });
+check(r.status === 200, 'consultant sends the verified customer to the department head', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, {});
+check(r.status === 404, 'cannot send twice (the consultant review is closed)', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/return-to-sales`, { note: 'x' });
+check(r.status === 404, 'consultant cannot send it back after the hand-over', r);
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
+check(r.json.data.items.find((x: any) => x.id === leadA)?.onboarding.handoverStage === 'DEPARTMENT_HEAD', 'consultant list shows where the customer is now', r);
+
+r = await api('dh', 'GET', '/pipeline/customers?stage=ONBOARDING&handover=DEPARTMENT_HEAD');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'department head sees the customer to assign', r);
+r = await api('sa', 'POST', '/teams', { departmentId: wab.id, name: 'Delivery', division: 'GENERAL' });
+check(r.status === 201, 'delivery team created', r);
+const delivery = r.json.data.id;
+r = await api('dh', 'POST', '/users', { email: 'tl.delivery@amuwa.com', fullName: 'Delivery Lead', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: delivery });
+check(r.status === 201, 'department head creates a delivery team lead', r);
+const deliveryLead = r.json.data.id;
+tokens.set('tl2', tokenFor(deliveryLead));
+r = await api('tl2', 'POST', '/users', { email: 'tm.delivery@amuwa.com', fullName: 'Delivery Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: delivery });
+check(r.status === 201, 'delivery team lead creates a team member', r);
+const deliveryMember = r.json.data.id;
+tokens.set('tm2', tokenFor(deliveryMember));
+r = await api('tl2', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_LEAD`);
+check(r.json.data.total === 0, 'the team lead sees nothing before it is passed to them', r);
+r = await api('dh', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: deliveryMember });
+check(r.status === 422, 'department head must choose a team lead', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: deliveryLead });
+check(r.status === 404, 'only the department head can pass it to a team lead', r);
+r = await api('dh', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: deliveryLead, note: 'Start this week' });
+check(r.status === 200, 'department head passes the customer to a team lead', r);
+r = await api('tl2', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_LEAD`);
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'the team lead sees the customer passed to them', r);
+r = await api('th', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_LEAD&handoverMine=TEAM_LEAD`);
+check(r.json.data.total === 0, "another team lead (the owner's own) does not get it in their hand-over inbox", r);
+r = await api('tl2', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 200 && r.json.data.checklist.length > 0 && r.json.data.handover.stage === 'TEAM_LEAD' && r.json.data.handover.teamLead.fullName === 'Delivery Lead'
+  && r.json.data.owner?.fullName, 'the team lead opens the details and sees who is responsible', r);
+r = await api('tl2', 'POST', `/pipeline/customers/${leadA}/checklist/BRAND_COLOURS/review`, { decision: 'VERIFIED' });
+check(r.status === 404, 'the team lead cannot review items', r);
+r = await api('tm2', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 404, 'the team member cannot see it before it is assigned', r);
+r = await api('tl2', 'POST', `/pipeline/customers/${leadA}/handover/team-member`, { memberId: memberA });
+check(r.status === 422, 'the team lead must choose a member of their own team', r);
+r = await api('tl2', 'POST', `/pipeline/customers/${leadA}/handover/team-member`, { memberId: deliveryMember, note: 'Yours now' });
+check(r.status === 200, 'the team lead assigns the customer to a team member', r);
+r = await api('tm2', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_MEMBER`);
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'the team member sees the assigned customer', r);
+r = await api('tm2', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 200 && r.json.data.handover.teamMember.fullName === 'Delivery Member' && r.json.data.handover.clientAccount.email === clientEmail, 'the team member sees the client login e-mail', r);
+r = await api('tm2', 'PATCH', `/pipeline/leads/${leadA}`, { name: 'hijack' });
+check(r.status === 404 || r.status === 403 || r.status === 409, 'the team member cannot edit the sales record', r);
+r = await api('b', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 404, 'unrelated sales members still cannot see it', r);
+r = await api('sa', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_MEMBER`);
+check(r.json.data.total === 1, 'super admin sees the hand-over too', r);
+
 // --- inbound website/WhatsApp leads are claimed into the pipeline once ------------
 await db.query(`insert into public.crm_leads (id, name, phone, company, channel, department) values ('W-1', 'Web Visitor', '+91 90000 00000', 'Web Co', 'website', 'wabastore')`);
 r = await api('a', 'GET', '/pipeline/inbound');

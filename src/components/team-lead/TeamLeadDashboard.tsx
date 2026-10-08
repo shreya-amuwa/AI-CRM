@@ -16,6 +16,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
+import { HandoverBoard } from '../handover/HandoverBoard';
 import { useAuth } from '../../context/AuthContext';
 
 interface TeamLeadDashboardProps {
@@ -173,6 +174,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
 
       {/* VIEW: TASKS FROM THE DEPARTMENT HEAD → TEAM MEMBERS */}
       {activeNav === 'assigned-tasks' && <TeamLeadTasksView />}
+
+      {/* VIEW: VERIFIED CLIENTS PASSED BY THE DEPARTMENT HEAD → ASSIGN TO A TEAM MEMBER */}
+      {activeNav === 'client-handovers' && <HandoverBoard role="TEAM_HEAD" />}
 
       {/* VIEW: TEAM MEMBERS & ACCESS (team leads add members to their own team) */}
       {activeNav === 'team-members' && (

@@ -88,6 +88,19 @@ export const pipelineController = {
   updateLead: (async ctx => ok(await svc(ctx).pipeline.updateLead(ctx.params.id, ctx.req.body))) as Handler,
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
+  createClientAccount: (async ctx => ok(await svc(ctx).pipeline.createClientAccount(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
+  sendToDepartmentHead: (async ctx => {
+    await svc(ctx).pipeline.sendToDepartmentHead(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
+  passToTeamLead: (async ctx => {
+    await svc(ctx).pipeline.passToTeamLead(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
+  assignToTeamMember: (async ctx => {
+    await svc(ctx).pipeline.assignToTeamMember(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
   backOut: (async ctx => ok(await svc(ctx).pipeline.backOut(ctx.params.id, ctx.req.body))) as Handler,
   startOnboarding: (async ctx => ok(await svc(ctx).pipeline.startOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   updateOnboarding: (async ctx => ok(await svc(ctx).pipeline.updateOnboarding(ctx.params.id, ctx.req.body))) as Handler,

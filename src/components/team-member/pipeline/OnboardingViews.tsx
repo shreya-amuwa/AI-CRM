@@ -25,6 +25,7 @@ import {
   ActivityCard
 } from './LeadForms';
 import { PaymentDialog } from './PotentialView';
+import { HandoverBanner } from '../../support/consultant/HandoverPanel';
 import {
   ChecklistPanel,
   isDone,
@@ -345,6 +346,8 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           {mode === 'review' ? 'Onboarding verification' : 'Pipeline / Customer onboarding'} / <span aria-current="page">{c.company || c.name}</span>
         </nav>
       </div>
+
+      {mode === 'sales' && <HandoverBanner info={c.handover} audience="sales" />}
 
       <Card className="p-5 flex flex-col xl:flex-row gap-4 xl:items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">

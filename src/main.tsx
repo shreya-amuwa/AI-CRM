@@ -3,7 +3,10 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { CandidatePortal } from './components/portal/CandidatePortal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { installChunkReload } from './lib/chunkReload';
 import './index.css';
+
+installChunkReload();
 
 // Separate, unlocked URL for training candidates: http://localhost:3003/candidate
 // This bypasses staff login (AuthProvider) entirely and renders only the

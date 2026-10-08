@@ -258,6 +258,23 @@ export interface PipelineCustomer {
   onboarding: CustomerOnboarding | null;
 }
 
+/** Where a verified customer is in the hand-over: consultant → Department Head → Team Lead → Team Member. */
+export const HANDOVER_STAGES = ['CONSULTANT', 'DEPARTMENT_HEAD', 'TEAM_LEAD', 'TEAM_MEMBER'] as const;
+export type HandoverStage = (typeof HANDOVER_STAGES)[number];
+
+export interface HandoverInfo {
+  stage: HandoverStage;
+  toDepartmentHeadAt: string | null;
+  sentBy: string | null;
+  teamLead: { id: string; fullName: string } | null;
+  passedToTeamLeadAt: string | null;
+  teamMember: { id: string; fullName: string } | null;
+  assignedToMemberAt: string | null;
+  note: string | null;
+  /** The client's panel login (the password is never stored or returned). */
+  clientAccount: { email: string; createdAt: string } | null;
+}
+
 export interface CustomerOnboarding {
   stage: OnboardingStage;
   paymentMethod: PaymentMethod | null;
@@ -275,6 +292,12 @@ export interface CustomerOnboarding {
   /** Items the Technical Consultant fills in (e.g. WABA ID). */
   consultantItemsTotal: number;
   consultantItemsDone: number;
+  handoverStage: HandoverStage;
+  teamLeadId: string | null;
+  teamMemberId: string | null;
+  toDepartmentHeadAt: string | null;
+  passedToTeamLeadAt: string | null;
+  assignedToMemberAt: string | null;
 }
 
 export interface DocumentType {
@@ -354,6 +377,7 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
   documentTypes: DocumentType[];
   activities: CustomerActivity[];
   checklist: ChecklistItem[];
+  handover: HandoverInfo | null;
 }
 
 export interface PipelineCounts {
