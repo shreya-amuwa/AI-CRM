@@ -125,8 +125,13 @@ export async function authenticateRequest(
       console.error('[api] could not reach Supabase:', error.message);
       throw new AppError('SERVICE_UNAVAILABLE', 'The server could not reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY on the server.');
     } else {
-      console.error('[api] api_session failed', { status, code: error.code, message: error.message });
-      throw new AppError('INTERNAL');
+      // e.g. an earlier migration (rate limits) is missing in this project.
+      // Never block sign-in over the fast path: use the three-step path.
+      console.error('[api] api_session failed — using the slower sign-in path. Check that every migration is applied.', {
+        status,
+        code: error.code,
+        message: error.message
+      });
     }
   }
   const auth = await authenticate(authorizationHeader);
