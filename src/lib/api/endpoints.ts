@@ -142,6 +142,7 @@ export const usersApi = {
   assign: (id: string, body: { role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string }) => api.patch<Profile>(`/users/${id}`, body),
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
+  setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
   remove: (id: string) => api.delete<null>(`/users/${id}`)
 };
 

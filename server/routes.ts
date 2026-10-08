@@ -27,6 +27,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/users/:id', handler: users.get },
   { method: 'PATCH', path: '/users/:id', handler: users.assign, options: S },
   { method: 'POST', path: '/users/:id/status', handler: users.setStatus, options: S },
+  { method: 'POST', path: '/users/:id/technical-consultant', handler: users.setTechnicalConsultant, options: S },
   { method: 'DELETE', path: '/users/:id', handler: users.remove, options: S },
 
   { method: 'GET', path: '/approval-requests', handler: approvals.list },

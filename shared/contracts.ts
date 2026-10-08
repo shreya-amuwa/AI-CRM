@@ -60,6 +60,8 @@ export interface Profile {
   phone: string | null;
   position: string | null;
   role: Role;
+  /** Team member of a support team who opens the Technical Consultant dashboard. */
+  isTechnicalConsultant: boolean;
   status: AccountStatus;
   statusReason: string | null;
   departmentId: string | null;

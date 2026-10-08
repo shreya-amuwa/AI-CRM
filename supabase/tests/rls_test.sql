@@ -719,4 +719,33 @@ select test.check((select e ->> 'filledBy' = 'CONSULTANT' from jsonb_array_eleme
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'W'), 'WABA_ID', '123')$$, 'sales cannot fill in the WABA ID', 'not part of');
 select test.check((select consultant_items_total = 1 and consultant_items_done = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'W')),
   'consultant items tracked separately from sales progress');
+
+\echo '--- 16. Technical Consultant is its own choice (not every support member)'
+reset role;
+select test.create_auth_user('sup_plain', 'sup.plain@amuwa.com', '{"full_name":"Support Member"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support')));
+select test.create_auth_user('tc_new', 'tc.new@amuwa.com', '{"full_name":"New Consultant"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support'),
+                     'provisioned_technical_consultant', true));
+select test.must_fail($$select test.create_auth_user('tc_bad', 'tc.bad@amuwa.com', '{"full_name":"Bad"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales'),
+                     'provisioned_technical_consultant', true))$$, 'a sales team member cannot be a Technical Consultant', 'support team');
+select test.check((select not is_technical_consultant from profiles where id = test.id('sup_plain')), 'support team member is not a consultant by default');
+select test.check((select is_technical_consultant from profiles where id = test.id('tc_new')), 'staff created as Technical Consultant');
+set role authenticated;
+select test.login('sup_plain');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'plain support member does not see consultant customers');
+select test.must_fail($$select set_technical_consultant(test.id('sup_plain'), true)$$, 'members cannot make themselves consultants', 'FORBIDDEN|NOT_FOUND');
+select test.login('tc_new');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'Technical Consultant sees the forwarded customer');
+select test.check(test.rows($$update profiles set full_name = 'Renamed' where id = test.id('tc_new')$$) = 1
+                  and (select is_technical_consultant from profiles where id = test.id('tc_new')), 'own profile edits keep the consultant flag');
+select test.must_fail($$update profiles set is_technical_consultant = false where id = test.id('tc_new')$$, 'users cannot change the flag directly', 'permission denied');
+select test.login('dh_wab');
+select test.check((select is_technical_consultant from set_technical_consultant(test.id('sup_plain'), true)), 'department head makes a support member a consultant');
+select test.check((select not is_technical_consultant from set_technical_consultant(test.id('sup_plain'), false)), 'and back to team member');
+select test.must_fail($$select set_technical_consultant(test.id('tm_a'), true)$$, 'sales member cannot become a consultant', 'support team');
+select test.check((select not is_technical_consultant from assign_user(test.id('tc_new'), 'TEAM_MEMBER', null, test.team('wabastore', 'Sales'))),
+  'moving a consultant to a sales team clears the flag');
+reset role;
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='
