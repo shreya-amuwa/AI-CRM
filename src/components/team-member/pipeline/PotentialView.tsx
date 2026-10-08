@@ -48,7 +48,7 @@ function dueText(iso: string | null): { text: string; cls: string } {
   return { text: `In ${d} days`, cls: 'text-slate-500' };
 }
 
-export const PotentialView: React.FC<{ counts: PipelineCounts | null; onStarted: (id: string) => void }> = ({ counts, onStarted }) => {
+export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: boolean; onStarted: (id: string) => void }> = ({ counts, ownOnly, onStarted }) => {
   const { items: services, byCode } = useServiceCatalog();
   const [filter, setFilter] = useState<'' | PaymentFilter>('');
   const [search, setSearch] = useState('');
@@ -70,13 +70,13 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; onStarted:
     setLoading(true);
     setError(null);
     pipelineApi
-      .list({ stage: 'POTENTIAL', page, pageSize, search: debounced || undefined, service: service || undefined, payment: filter || undefined, sort })
+      .list({ stage: 'POTENTIAL', mine: ownOnly || undefined, page, pageSize, search: debounced || undefined, service: service || undefined, payment: filter || undefined, sort })
       .then(
         r => seq === seqRef.current && setData(r),
         e => seq === seqRef.current && setError(errorMessage(e))
       )
       .finally(() => seq === seqRef.current && setLoading(false));
-  }, [page, pageSize, debounced, service, filter, sort]);
+  }, [page, pageSize, debounced, service, filter, sort, ownOnly]);
   useEffect(load, [load]);
   useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize]);
   usePipelineRealtime(load);

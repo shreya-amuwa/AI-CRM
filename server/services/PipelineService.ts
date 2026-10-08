@@ -54,9 +54,9 @@ export class PipelineService {
     return this.repo.counts();
   }
 
-  async list(query: unknown): Promise<Paginated<PipelineCustomer>> {
+  async list(actor: Actor, query: unknown): Promise<Paginated<PipelineCustomer>> {
     const q = parse(pipelineListQuerySchema, query);
-    return this.repo.list(q);
+    return this.repo.list(q, actor.id);
   }
 
   async get(id: string): Promise<PipelineCustomerDetail> {

@@ -303,6 +303,8 @@ export const pipelineListQuerySchema = z.object({
   /** Technical Consultant queue: only customers forwarded to support. */
   review: z.enum(REVIEW_FILTERS).optional(),
   forwarded: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
+  /** Only records owned by the caller (e.g. a support member's own pipeline). */
+  mine: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   sort: z.enum(['newest', 'oldest', 'followUp', 'dueDate', 'amount', 'name']).default('newest')
 });
 export type PipelineListQuery = z.infer<typeof pipelineListQuerySchema>;
