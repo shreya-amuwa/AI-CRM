@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShoppingBag, MessageSquare, PhoneCall, Cpu, Layers, Sparkles, Star,
   ArrowRight, Plus, Lock, Unlock, X, AlertTriangle, GraduationCap, Users, FileText,
-  Trash2, RotateCcw, DollarSign, ShieldCheck
+  Trash2, RotateCcw, DollarSign, ShieldCheck, UserPlus
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -12,6 +12,7 @@ import { Department } from '../../types/crm';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
 import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
+import { AddStaffModal } from '../common/AddStaffModal';
 
 const getFallbackIcon = (iconName: string) => {
   switch (iconName) {
@@ -51,6 +52,7 @@ export const DepartmentSelector: React.FC = () => {
   const [lockTarget, setLockTarget] = useState<Department | null>(null);
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
   const pendingCount = usePendingApprovalsCount();
 
   const showNotice = (message: string) => {
@@ -99,6 +101,17 @@ export const DepartmentSelector: React.FC = () => {
             </span>
             <span>{isSuperAdmin ? 'Super Admin' : 'Staff'}: <strong className="text-slate-900">{user?.name}</strong></span>
           </div>
+
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsAddStaffOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Add Team Member</span>
+            </button>
+          )}
 
           {/* Access & Approvals Control for Super Admin & Admin */}
           {(isSuperAdmin || isAdminOrHR) && (
@@ -328,6 +341,8 @@ export const DepartmentSelector: React.FC = () => {
           }}
         />
       )}
+
+      {isAddStaffOpen && <AddStaffModal onClose={() => setIsAddStaffOpen(false)} />}
 
       {/* Staff Access & Approvals Modal */}
       {isAccessModalOpen && (

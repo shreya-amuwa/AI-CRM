@@ -35,6 +35,7 @@ const AccountsDepartmentPanel = lazy(() => import('./components/departments/acco
 const DepartmentAccountsBillingView = lazy(() => import('./components/departments/shared/DepartmentAccountsBillingView').then(m => ({ default: m.DepartmentAccountsBillingView })));
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
 const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
+const DepartmentHeadDashboard = lazy(() => import('./components/tasks/DepartmentHeadDashboard').then(m => ({ default: m.DepartmentHeadDashboard })));
 const TechnicalSupportDashboard = lazy(() => import('./components/support/TechnicalSupportDashboard').then(m => ({ default: m.TechnicalSupportDashboard })));
 const LeadsTable = lazy(() => import('./components/leads/LeadsTable').then(m => ({ default: m.LeadsTable })));
 const DepartmentDashboard = lazy(() => import('./components/dashboard/DepartmentDashboard').then(m => ({ default: m.DepartmentDashboard })));
@@ -52,6 +53,8 @@ const MainAppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
   const [route, setRoute] = useState(parseCurrentRoute());
+  // Department heads land on their task dashboard; the department hub is one click away.
+  const [deptHubOpen, setDeptHubOpen] = useState(false);
 
   // Listen for browser navigation (popstate)
   React.useEffect(() => {
@@ -164,6 +167,25 @@ const MainAppContent: React.FC = () => {
     return <TeamLeadDashboard currentUserId={user.id} userName={user.name} />;
   }
 
+  // Step 1.7: Department Head Dashboard (Assign / Reports / Daily Tasks)
+  if (user.role === 'admin' && !deptHubOpen) {
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
+        <DepartmentHeadDashboard onOpenHub={() => setDeptHubOpen(true)} />
+      </Suspense>
+    );
+  }
+  const backToDeptHead =
+    user.role === 'admin' ? (
+      <button
+        type="button"
+        onClick={() => setDeptHubOpen(false)}
+        className="fixed bottom-4 left-4 z-[70] px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-lg hover:bg-slate-800"
+      >
+        ← Department Head Dashboard
+      </button>
+    ) : null;
+
   // Determine active department and tab info
   let currentDeptId = activeDepartmentId || '';
   let currentDept = activeDepartment;
@@ -191,6 +213,7 @@ const MainAppContent: React.FC = () => {
       <div className="bg-slate-50 text-slate-900 min-h-screen">
         <DepartmentSelector />
         <SessionEvictionModal />
+        {backToDeptHead}
       </div>
     );
   }
@@ -400,6 +423,7 @@ const MainAppContent: React.FC = () => {
 
       {/* Session Eviction Modal */}
       <SessionEvictionModal />
+      {backToDeptHead}
     </div>
   );
 };

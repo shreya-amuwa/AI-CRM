@@ -14,7 +14,8 @@ import {
   Menu,
   X,
   Navigation,
-  ChevronDown
+  ChevronDown,
+  ClipboardList
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -28,6 +29,7 @@ export type TeamMemberNav =
   | 'customers'
   | 'deals'
   | 'tasks'
+  | 'work-tasks'
   | 'calendar'
   | 'invoices'
   | 'settings';
@@ -64,6 +66,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'field-visits' as TeamMemberNav, label: 'Field Visits (GPS)', icon: Navigation },
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
     { id: 'deals' as TeamMemberNav, label: 'Deals', icon: Handshake },
+    { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },

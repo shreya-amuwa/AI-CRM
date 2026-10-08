@@ -761,4 +761,45 @@ select test.must_fail($$select set_technical_consultant(test.id('tm_a'), true)$$
 select test.check((select not is_technical_consultant from assign_user(test.id('tc_new'), 'TEAM_MEMBER', null, test.team('wabastore', 'Sales'))),
   'moving a consultant to a sales team clears the flag');
 reset role;
+-- ---------------------------------------------------------------------------
+\echo '--- 17. Work tasks: department head → team lead → team member'
+-- ---------------------------------------------------------------------------
+create temp table wt (name text primary key, id uuid);
+grant all on wt to authenticated;
+set role authenticated;
+select test.login('dh_wab');
+insert into wt select 'T1', assign_task_to_team_lead(test.id('th_wab'), 'Call 50 inbound leads', 'Use the new script', 'HIGH', current_date);
+select test.check((select assignee_id = test.id('th_wab') and status = 'ASSIGNED' and parent_id is null from work_tasks where id = (select id from wt where name = 'T1')),
+  'department head assigns a task to a team lead');
+select test.must_fail($$select assign_task_to_team_lead(test.id('tm_a'), 'x', null, 'LOW', null)$$, 'department head cannot assign straight to a team member', 'team lead');
+select test.must_fail($$select assign_task_to_team_lead(test.id('th_wbx'), 'x', null, 'LOW', null)$$, 'department head cannot assign to another department', 'team lead');
+select test.login('th_wab');
+select test.must_fail($$select assign_task_to_team_lead(test.id('th_wab'), 'x', null, 'LOW', null)$$, 'team lead cannot create department tasks', 'FORBIDDEN');
+select test.must_fail($$select assign_task_to_members((select id from wt where name = 'T1'), array[test.id('tm_c')])$$, 'team lead cannot assign outside the team', 'not an active member');
+select test.check((select assign_task_to_members((select id from wt where name = 'T1'), array[test.id('tm_a')]) = 1), 'team lead assigns the same task to a team member');
+select test.must_fail($$select assign_task_to_members((select id from wt where name = 'T1'), array[test.id('tm_a')])$$, 'same member cannot get it twice', 'already have');
+insert into wt select 'T1a', id from work_tasks where parent_id = (select id from wt where name = 'T1') and assignee_id = test.id('tm_a');
+select test.check((select status = 'IN_PROGRESS' from work_tasks where id = (select id from wt where name = 'T1')), 'lead task moves to in progress once delegated');
+select test.login('tm_a');
+select test.check((select count(*) = 1 and bool_and(title = 'Call 50 inbound leads') from work_tasks), 'member sees only their own task');
+select test.must_fail($$select submit_task_update((select id from wt where name = 'T1'), 'COMPLETED', 100, null)$$, 'member cannot update the lead''s task', 'NOT_FOUND');
+select test.must_fail($$select submit_task_update((select id from wt where name = 'T1a'), 'NOT_COMPLETED', 20, '')$$, 'not completed needs a reason', 'why');
+select submit_task_update((select id from wt where name = 'T1a'), 'COMPLETED', 40, 'All 50 called, 12 interested');
+select test.check((select status = 'COMPLETED' and progress = 100 and completed_at is not null from work_tasks where id = (select id from wt where name = 'T1a')),
+  'member marks the task completed');
+select test.must_fail($$update work_tasks set status = 'COMPLETED'$$, 'tasks cannot be edited directly', 'permission denied');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from work_tasks), 'other department sees no tasks');
+select test.login('th_wab');
+select test.check((select count(*) = 2 from work_tasks), 'team lead sees their task and the member task');
+select test.check((select count(*) = 1 from work_task_updates where task_id = (select id from wt where name = 'T1a')), 'team lead sees the member''s update');
+select submit_task_update((select id from wt where name = 'T1'), 'COMPLETED', 100, 'Team finished the calls');
+select test.login('dh_wab');
+select test.check((select count(*) = 2 from work_tasks) and (select status = 'COMPLETED' from work_tasks where id = (select id from wt where name = 'T1')),
+  'department head sees the whole chain and the lead''s update');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'TASK_ASSIGNED' and recipient_id = test.id('tm_a')), 'member notified of the task');
+select test.check((select count(*) = 1 from notifications where type = 'TASK_UPDATE' and recipient_id = test.id('th_wab')), 'team lead notified of the member update');
+select test.check((select count(*) = 1 from notifications where type = 'TASK_UPDATE' and recipient_id = test.id('dh_wab')), 'department head notified of the lead update');
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='
