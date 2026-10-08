@@ -17,6 +17,7 @@ import { Lead, TeamMemberActivity, EndOfDayReport, FollowUpTask, Deal } from '..
 import { teamMemberStore } from '../../services/teamMemberStore';
 import { useAuth } from '../../context/AuthContext';
 import { TeamMemberLayout, TeamMemberNav } from './TeamMemberLayout';
+import { MemberTasksView } from '../tasks/MemberTasksView';
 import { MemberAnalyticsWidgets } from './MemberAnalyticsWidgets';
 import { MemberFollowUpsTable } from './MemberFollowUpsTable';
 import { MemberRightSidebar } from './MemberRightSidebar';
@@ -524,6 +525,8 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         {/* ========================================================================= */}
         {/* VIEW 3: TASKS & FOLLOW-UPS FULL VIEW */}
         {/* ========================================================================= */}
+        {activeNav === 'work-tasks' && <MemberTasksView />}
+
         {activeNav === 'tasks' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
