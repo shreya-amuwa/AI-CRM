@@ -52,12 +52,13 @@ import {
 // ---------------------------------------------------------------------------
 // Status helpers
 // ---------------------------------------------------------------------------
-type CardStatus = 'REVIEW_PENDING' | 'NEEDS_ATTENTION' | 'AUTHORIZED' | 'AWAITING';
+type CardStatus = 'REVIEW_PENDING' | 'NEEDS_ATTENTION' | 'AUTHORIZED' | 'AWAITING' | 'WAITING_ON_SALES';
 const STATUS_STYLE: Record<CardStatus, { label: string; cls: string }> = {
   REVIEW_PENDING: { label: 'Review pending', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   NEEDS_ATTENTION: { label: 'Needs attention', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
   AUTHORIZED: { label: 'Authorized', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  AWAITING: { label: 'Awaiting documents', cls: 'bg-slate-100 text-slate-600 border-slate-200' }
+  AWAITING: { label: 'Awaiting documents', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+  WAITING_ON_SALES: { label: 'Waiting for sales team', cls: 'bg-violet-50 text-violet-700 border-violet-200' }
 };
 
 /** Same rules as customer_onboarding.review_state; the consultant's own items (WABA ID) count too. */
@@ -65,6 +66,8 @@ function statusOf(o: PipelineCustomer['onboarding']): CardStatus {
   const total = o?.itemsTotal || 0;
   const verified = o?.itemsVerified || 0;
   const consultantPending = (o?.consultantItemsTotal || 0) > (o?.consultantItemsDone || 0);
+  // Sent back for re-verification: read-only until sales sends it again.
+  if (o?.returnedAt) return 'WAITING_ON_SALES';
   if ((o?.itemsRejected || 0) > 0) return 'NEEDS_ATTENTION';
   if (total > 0 && verified >= total) return consultantPending ? 'REVIEW_PENDING' : 'AUTHORIZED';
   if ((o?.itemsSaved || 0) > verified) return 'REVIEW_PENDING';
@@ -116,7 +119,8 @@ const TABS: { key: ReviewFilter | ''; label: string; countKey: keyof ReviewCount
   { key: '', label: 'All', countKey: 'all' },
   { key: 'TO_REVIEW', label: 'Review pending', countKey: 'TO_REVIEW' },
   { key: 'NEEDS_FIX', label: 'Needs attention', countKey: 'NEEDS_FIX' },
-  { key: 'VERIFIED', label: 'Authorized', countKey: 'VERIFIED' }
+  { key: 'VERIFIED', label: 'Authorized', countKey: 'VERIFIED' },
+  { key: 'WAITING_ON_SALES', label: 'Waiting for sales team', countKey: 'WAITING_ON_SALES' }
 ];
 const PAGE_SIZE = 12;
 
@@ -217,6 +221,11 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
                     </div>
                     <StatusPill status={statusOf(o)} />
                   </div>
+                  {o?.returnedAt && (
+                    <p className="mt-3 text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5">
+                      Sent back on {longDate(o.returnedAt)} · {o.itemsRejected} item{o.itemsRejected === 1 ? '' : 's'} with sales to fix
+                    </p>
+                  )}
                   <div className="mt-4">
                     <Chips codes={c.services} catalog={byCode} />
                   </div>
@@ -279,6 +288,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   const salesItems = c.checklist.filter(i => i.filledBy !== 'CONSULTANT');
   const pending = salesItems.filter(i => i.entry?.status === 'SAVED').length;
   const rejectedItems = c.checklist.filter(i => i.entry?.status === 'REJECTED');
+  /** Sent back for re-verification: visible here, read-only until sales sends it again. */
+  const waiting = !!c.onboarding?.returnedAt;
 
   const sendBack = async () => {
     setSendingBack(true);
@@ -356,6 +367,16 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
 
       {actionError && <ErrorBanner message={actionError} />}
 
+      {waiting && (
+        <div className="p-4 rounded-2xl border border-violet-200 bg-violet-50 text-sm text-violet-900" role="status">
+          <p className="font-bold">Waiting for sales team</p>
+          <p className="mt-0.5 text-xs">
+            Sent back to {c.owner?.fullName || 'the salesperson'} on {longDate(c.onboarding?.returnedAt)} for re-verification
+            {c.onboarding?.returnNote ? ` — “${c.onboarding.returnNote}”` : ''}. You can authorize again once they fix the items and send it back.
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-labelledby="docs-heading">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
@@ -371,6 +392,16 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
               </div>
             </div>
             <div className="flex flex-wrap justify-end gap-2">
+              {waiting ? (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-violet-300 bg-violet-50 text-violet-700 text-xs font-bold cursor-not-allowed"
+                >
+                  <Clock className="w-4 h-4" aria-hidden="true" /> Waiting for sales team
+                </button>
+              ) : (
+              <>
               <button
                 type="button"
                 onClick={() => setSendBackOpen(true)}
@@ -388,17 +419,21 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
               >
                 <ShieldCheck className="w-4 h-4" aria-hidden="true" /> {authorizingAll ? 'Authorizing…' : 'Authorize all'}
               </button>
+              </>
+              )}
             </div>
           </div>
           <p className="mt-3 text-[11px] text-slate-500">
-            {rejectedItems.length > 0
+            {waiting
+              ? `${rejectedItems.length} item${rejectedItems.length === 1 ? '' : 's'} with sales to fix. Each one changes to Pending review as soon as sales fixes it.`
+              : rejectedItems.length > 0
               ? `${rejectedItems.length} item${rejectedItems.length === 1 ? '' : 's'} marked Not authorized. Click "Send back for re-verification" to return this customer to the salesperson.`
               : 'Wrong, inappropriate or fake document? Mark it Not authorized with a reason, then send it back to the salesperson for re-verification.'}
           </p>
           {sendBackOpen && (
             <Dialog
               title="Send back to sales for re-verification"
-              description={`${c.company || c.name} goes back to ${c.owner?.fullName || 'the salesperson'} with these items to fix. It leaves your list until they send it again.`}
+              description={`${c.company || c.name} goes back to ${c.owner?.fullName || 'the salesperson'} with these items to fix. It stays in your list as "Waiting for sales team" until they send it again.`}
               onClose={() => !sendingBack && setSendBackOpen(false)}
             >
               <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
@@ -447,7 +482,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
               <p className="text-xs text-slate-500">Details only the technical team has, e.g. after creating the customer panel.</p>
               <ul className="mt-3 space-y-3">
                 {consultantItems.map(item => (
-                  <ConsultantItemRow key={item.code} item={item} customerId={c.id} onChanged={changed} />
+                  <ConsultantItemRow key={item.code} item={item} customerId={c.id} onChanged={changed} readOnly={waiting} />
                 ))}
               </ul>
             </div>
@@ -457,13 +492,13 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           ) : (
             <ul className="mt-4 space-y-3">
               {salesItems.map(item => (
-                <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} />
+                <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} readOnly={waiting} />
               ))}
             </ul>
           )}
         </section>
 
-        <AutomationsCard customerId={c.id} />
+        <AutomationsCard customerId={c.id} locked={waiting} />
       </div>
     </div>
   );
@@ -526,9 +561,15 @@ function fmtSize(bytes: number): string {
 }
 
 /** An item the consultant fills in (e.g. WABA ID): saved directly as authorized. */
-const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onChanged: () => void }> = ({ item, customerId, onChanged }) => {
+const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onChanged: () => void; readOnly?: boolean }> = ({
+  item,
+  customerId,
+  onChanged,
+  readOnly
+}) => {
   const [value, setValue] = useState(item.entry?.value || '');
-  const [editing, setEditing] = useState(!item.entry);
+  const [editingState, setEditing] = useState(!item.entry);
+  const editing = editingState && !readOnly;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputId = `consultant-${item.code}`;
@@ -577,10 +618,12 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
         </div>
       ) : (
         <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-sm font-mono text-slate-800 break-all">{item.entry?.value}</span>
-          <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700 shrink-0" aria-label={`Edit ${item.label}`}>
-            Edit
-          </button>
+          <span className="text-sm font-mono text-slate-800 break-all">{item.entry?.value || '—'}</span>
+          {!readOnly && (
+            <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700 shrink-0" aria-label={`Edit ${item.label}`}>
+              Edit
+            </button>
+          )}
         </div>
       )}
       {error && (
@@ -592,7 +635,12 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
   );
 };
 
-const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDetail; onChanged: () => void }> = ({ item, customer, onChanged }) => {
+const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDetail; onChanged: () => void; readOnly?: boolean }> = ({
+  item,
+  customer,
+  onChanged,
+  readOnly
+}) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
@@ -685,7 +733,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
         <div className="flex gap-2 ml-auto">
           <button
             type="button"
-            disabled={!entry || busy || state === 'REJECTED'}
+            disabled={readOnly || !entry || busy || state === 'REJECTED'}
             onClick={() => setRejecting(true)}
             className={`px-3.5 py-2 rounded-lg text-xs font-bold border transition-colors disabled:cursor-not-allowed ${
               state === 'REJECTED' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 disabled:opacity-40'
@@ -696,7 +744,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
           </button>
           <button
             type="button"
-            disabled={!entry || busy || state === 'VERIFIED' || state === 'REJECTED'}
+            disabled={readOnly || !entry || busy || state === 'VERIFIED' || state === 'REJECTED'}
             onClick={() => review('VERIFIED')}
             className={`px-3.5 py-2 rounded-lg text-xs font-bold border transition-colors disabled:cursor-not-allowed ${
               state === 'VERIFIED'
@@ -787,7 +835,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
             </button>
             <button
               type="button"
-              disabled={busy || state === 'REJECTED'}
+              disabled={readOnly || busy || state === 'REJECTED'}
               onClick={() => setRejecting(true)}
               className="px-3.5 py-2 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:border-rose-300 disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -795,7 +843,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
             </button>
             <button
               type="button"
-              disabled={busy || state === 'VERIFIED' || state === 'REJECTED'}
+              disabled={readOnly || busy || state === 'VERIFIED' || state === 'REJECTED'}
               onClick={() => review('VERIFIED')}
               className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -861,7 +909,7 @@ const AUTOMATION_UI: Record<AutomationCode, { title: string; desc: string; icon:
   }
 };
 
-const AutomationsCard: React.FC<{ customerId: string }> = ({ customerId }) => {
+const AutomationsCard: React.FC<{ customerId: string; locked?: boolean }> = ({ customerId, locked }) => {
   const [items, setItems] = useState<AutomationStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -892,7 +940,7 @@ const AutomationsCard: React.FC<{ customerId: string }> = ({ customerId }) => {
       ) : (
         <ul className="mt-4 space-y-3">
           {items?.map(a => (
-            <AutomationRow key={a.code} customerId={customerId} status={a} onDone={next => setItems(list => list?.map(x => (x.code === next.code ? next : x)) || null)} onRefresh={load} />
+            <AutomationRow key={a.code} customerId={customerId} status={a} locked={locked} onDone={next => setItems(list => list?.map(x => (x.code === next.code ? next : x)) || null)} onRefresh={load} />
           ))}
         </ul>
       )}
@@ -905,7 +953,8 @@ const AutomationRow: React.FC<{
   status: AutomationStatus;
   onDone: (s: AutomationStatus) => void;
   onRefresh: () => void;
-}> = ({ customerId, status, onDone, onRefresh }) => {
+  locked?: boolean;
+}> = ({ customerId, status, onDone, onRefresh, locked }) => {
   const ui = AUTOMATION_UI[status.code];
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -950,8 +999,8 @@ const AutomationRow: React.FC<{
           <button
             type="button"
             onClick={() => setConfirming(true)}
-            disabled={!status.connected}
-            title={status.connected ? undefined : 'Connect a Google Sheet to enable this automation'}
+            disabled={!status.connected || locked}
+            title={locked ? 'Waiting for sales team to fix the items sent back' : status.connected ? undefined : 'Connect a Google Sheet to enable this automation'}
             className={`sm:ml-auto self-end sm:self-auto inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${ui.btn}`}
             aria-label={`Trigger ${ui.title}`}
           >

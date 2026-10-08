@@ -486,7 +486,13 @@ check(r.status === 404, 'sales members cannot send back', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/return-to-sales`, { note: 'Please get the original certificate' });
 check(r.status === 200, 'consultant sends the customer back for re-verification', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
-check(r.status === 404, 'returned customer leaves the consultant queue', r);
+check(r.status === 200 && r.json.data.onboarding.returnedAt && r.json.data.checklist.length > 0, 'returned customer stays visible to the consultant', r);
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=WAITING_ON_SALES');
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant lists it under Waiting for sales team', r);
+r = await api('tc', 'GET', '/pipeline/review-counts');
+check(r.json.data.WAITING_ON_SALES === 1, 'waiting for sales team count', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/verify-all`);
+check(r.status === 404, 'consultant cannot authorize while waiting for sales', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=RETURNED');
 check(r.json.data.total === 1 && r.json.data.items[0].onboarding.returnedAt && r.json.data.items[0].onboarding.returnNote === 'Please get the original certificate',
   'salesperson sees it under Returned', r);

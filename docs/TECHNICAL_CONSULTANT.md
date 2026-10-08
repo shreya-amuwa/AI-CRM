@@ -22,9 +22,13 @@ Support team leads, department heads and the super admin may review too (databas
   **Authorize**, **Not authorized** (requires a reason) and **Authorize all**; and the
   **Automations** panel.
 - **Send back for re-verification** — after marking wrong, inappropriate or fake items as
-  *Not authorized*, this returns the customer to the salesperson (optional message). It leaves
-  the consultant's list; the salesperson sees it under **Returned by consultant** with every
-  item and reason, fixes them and clicks **Send again to Technical Consultant**.
+  *Not authorized*, this returns the customer to the salesperson (optional message). The
+  salesperson sees it under **Returned by consultant** with every item and reason, fixes them
+  and clicks **Send again to Technical Consultant**. Meanwhile it **stays in the consultant's
+  list** as **Waiting for sales team** (own tab and count; migration
+  `20261008000500_sent_back_visible_to_consultant.sql`): read-only, with a disabled *Waiting for
+  sales team* button in place of the review actions. Fixed items show as *Pending review* as
+  soon as sales fixes them; authorizing and automations unlock once sales sends it again.
 
 ## Automations (Email / WhatsApp / AI Calling)
 Each automation is a Google Sheet. **Trigger → Confirm** makes the API append one row

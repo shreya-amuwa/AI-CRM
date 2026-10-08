@@ -69,7 +69,7 @@ export interface PipelineQuery {
   noFollowUp?: boolean;
   payment?: PaymentFilter;
   onboarding?: OnboardingFilter;
-  review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED' | 'AWAITING_DOCUMENTS';
+  review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED' | 'AWAITING_DOCUMENTS' | 'WAITING_ON_SALES';
   forwarded?: boolean;
   mine?: boolean;
   sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
