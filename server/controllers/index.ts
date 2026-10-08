@@ -88,6 +88,7 @@ export const pipelineController = {
   updateLead: (async ctx => ok(await svc(ctx).pipeline.updateLead(ctx.params.id, ctx.req.body))) as Handler,
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
+  backOut: (async ctx => ok(await svc(ctx).pipeline.backOut(ctx.params.id, ctx.req.body))) as Handler,
   startOnboarding: (async ctx => ok(await svc(ctx).pipeline.startOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   updateOnboarding: (async ctx => ok(await svc(ctx).pipeline.updateOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,

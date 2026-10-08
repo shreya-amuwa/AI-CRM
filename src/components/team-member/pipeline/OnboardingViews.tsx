@@ -24,6 +24,7 @@ import {
 import {
   ActivityCard
 } from './LeadForms';
+import { PaymentDialog } from './PotentialView';
 import {
   ChecklistPanel,
   isDone,
@@ -56,7 +57,9 @@ const ONBOARDING_STATE: Record<OnboardingFilter, { label: string; tone: Tone }> 
   RETURNED: { label: 'Returned by consultant', tone: 'red' },
   COLLECTING: { label: 'Collecting', tone: 'indigo' },
   WAITING_ON_CLIENT: { label: 'Waiting on client', tone: 'orange' },
-  READY_FOR_HANDOVER: { label: 'Ready for handover', tone: 'green' }
+  READY_FOR_HANDOVER: { label: 'Ready for handover', tone: 'green' },
+  // First payment received, balance still due (a filter, not a card state).
+  GET_STARTED: { label: 'Get started', tone: 'orange' }
 };
 const onboardingState = (saved: number, total: number, returned = false): OnboardingFilter =>
   returned ? 'RETURNED' : saved >= total ? 'READY_FOR_HANDOVER' : saved === 0 ? 'WAITING_ON_CLIENT' : 'COLLECTING';
@@ -95,7 +98,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
   useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize]);
   usePipelineRealtime(load);
 
-  const tabs: ('' | OnboardingFilter)[] = ['', 'RETURNED', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER'];
+  const tabs: ('' | OnboardingFilter)[] = ['', 'RETURNED', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER', 'GET_STARTED'];
 
   return (
     <div className="space-y-5">
@@ -218,7 +221,11 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                   </div>
                   <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-100 mt-4 text-xs text-slate-500">
                     <span>
-                      Paid {money(c.amountReceived)} ·{' '}
+                      Paid {money(c.amountReceived)}
+                      {c.dealAmount && c.amountReceived < c.dealAmount ? (
+                        <span className="font-semibold text-orange-700"> · {money(c.dealAmount - c.amountReceived)} due</span>
+                      ) : null}{' '}
+                      ·{' '}
                       {c.onboarding?.forwardedToSupportAt ? (
                         <span className="font-semibold text-emerald-700">Sent to Technical Consultant</span>
                       ) : returned ? (
@@ -270,6 +277,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const [forwarding, setForwarding] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
   const [editingHandover, setEditingHandover] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const load = useCallback(() => {
     pipelineApi.get(id).then(
@@ -287,8 +295,10 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   if (!c) return <Spinner label="Loading onboarding…" />;
 
   // Items the Technical Consultant fills in (e.g. WABA ID) are not shown to sales.
-  const items = c.checklist.filter(i => i.filledBy !== 'CONSULTANT');
-  const salesView = { ...c, checklist: items };
+  const salesItems = c.checklist.filter(i => i.filledBy !== 'CONSULTANT');
+  const salesView = { ...c, checklist: salesItems };
+  // Optional items (e.g. Website URL) only count once they are filled in.
+  const items = salesItems.filter(i => !(i.optional && !i.entry));
   const savedTypes = items.filter(isDone);
   const missing = items.filter(i => !isDone(i));
   const verified = items.filter(i => i.entry?.status === 'VERIFIED');
@@ -350,7 +360,23 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           </div>
         </div>
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-          <InfoTile label="Payment" value={`${money(c.amountReceived)}${c.onboarding?.paymentMethod ? ` · ${PAYMENT_METHOD_LABEL[c.onboarding.paymentMethod]}` : ''}`} />
+          <div className="px-3 py-2 rounded-xl border border-slate-200">
+            <dt className="text-[11px] text-slate-500">Payment</dt>
+            <dd className="font-semibold text-slate-900 mt-0.5">
+              {money(c.amountReceived)}
+              {c.onboarding?.paymentMethod ? ` · ${PAYMENT_METHOD_LABEL[c.onboarding.paymentMethod]}` : ''}
+            </dd>
+            {c.dealAmount !== null && c.amountReceived < c.dealAmount && (
+              <dd className="text-[11px] text-orange-700 mt-0.5">
+                {money(c.dealAmount - c.amountReceived)} due of {money(c.dealAmount)}
+                {mode === 'sales' && c.lifecycleStage === 'ONBOARDING' && (
+                  <button type="button" className="ml-2 font-bold text-indigo-600 hover:text-indigo-700" onClick={() => setPaying(true)}>
+                    Record payment
+                  </button>
+                )}
+              </dd>
+            )}
+          </div>
           <InfoTile label="Sales owner" value={c.owner?.fullName || '—'} />
           <InfoTile label="Started" value={longDate(c.onboarding?.startedAt)} />
           <div className="px-3 py-2 rounded-xl border border-slate-200">
@@ -408,6 +434,17 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2 p-5">
           <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
+          {paying && (
+            <PaymentDialog
+              mode="part"
+              customer={c}
+              onClose={() => setPaying(false)}
+              onDone={() => {
+                setPaying(false);
+                changed();
+              }}
+            />
+          )}
         </Card>
 
         <div className="space-y-4">

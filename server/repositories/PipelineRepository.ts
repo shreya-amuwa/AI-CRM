@@ -218,7 +218,9 @@ export class PipelineRepository {
     if (q.payment === 'PAID') query = query.eq('fully_paid', true);
 
     // Derived states are generated columns on customer_onboarding.
-    if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);
+    // GET_STARTED: first payment received, balance still due (not an exclusive state).
+    if (q.onboarding === 'GET_STARTED') query = query.eq('fully_paid', false);
+    else if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);
     // Consultant queue: sent to them, or sent back and waiting for sales.
     if (q.forwarded || q.review) query = query.eq('onboarding_filter.with_consultant', true);
     if (q.review) query = query.eq('onboarding_filter.review_state', q.review);
@@ -279,6 +281,10 @@ export class PipelineRepository {
 
   async recordPayment(id: string, amount: number, method?: string): Promise<void> {
     unwrap(await this.db.rpc('record_customer_payment', { p_id: id, p_amount: amount, p_method: method ?? null }));
+  }
+
+  async backOut(id: string, reason: string | null): Promise<void> {
+    unwrap(await this.db.rpc('back_out_customer', { p_id: id, p_reason: reason }));
   }
 
   async startOnboarding(id: string, amountReceived: number, method: string, targetHandover?: string | null): Promise<void> {

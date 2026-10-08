@@ -319,21 +319,21 @@ export type PipelineListQuery = z.infer<typeof pipelineListQuerySchema>;
 
 export const moveToPotentialSchema = z
   .object({
-    dealAmount: z.coerce.number().positive('Enter the deal amount.').max(1e12),
+    dealAmount: z.coerce.number().positive('Enter the deal amount.').int('Enter the deal amount in whole rupees (no paise).').max(1e12),
     paymentDueDate: isoDate
   })
   .strict();
 
 export const recordPaymentSchema = z
   .object({
-    amount: z.coerce.number().positive('Enter the amount received.').max(1e12),
+    amount: z.coerce.number().positive('Enter the amount received.').int('Enter the amount received in whole rupees (no paise).').max(1e12),
     method: z.enum(PAYMENT_METHODS).optional()
   })
   .strict();
 
 export const startOnboardingSchema = z
   .object({
-    amountReceived: z.coerce.number().min(0).max(1e12).default(0),
+    amountReceived: z.coerce.number().min(0).int('Enter the amount received in whole rupees (no paise).').max(1e12).default(0),
     paymentMethod: z.enum(PAYMENT_METHODS),
     targetHandoverDate: isoDate.nullable().optional()
   })
@@ -363,6 +363,7 @@ export const checklistReviewSchema = z
   })
   .strict()
   .refine(v => v.decision === 'VERIFIED' || !!v.note, { message: 'Tell the sales team what needs fixing.', path: ['note'] });
+export const backOutSchema = z.object({ reason: z.string().trim().max(500).optional().nullable() }).strict();
 export const returnToSalesSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const checklistItemCodeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown item.');
 

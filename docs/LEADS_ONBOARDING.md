@@ -152,3 +152,20 @@ change sales data; every verification is audited.
 Apply the migration (`supabase db push` or the SQL editor). It creates the private bucket.
 `SUPABASE_SERVICE_ROLE_KEY` must be set on the server (Vercel) for uploads and signed URLs;
 it is never sent to the browser.
+
+### Sales flow fixes (migration `20261008000600_sales_flow_fixes.sql`)
+
+- **Whole rupees only.** The deal amount and every payment reject paise (`15000.99`) in the
+  form (no decimal point can be typed), the API (`422`) and the database functions.
+- **Customer backs out at Potential.** The *Customer backed out* button (Potential list) moves
+  the customer back to **Leads** (status *Interested*; the deal is cleared and the amount is
+  kept as the expected budget). Only possible while nothing has been received.
+- **First payment starts onboarding.** Recording the first (part) payment moves the customer
+  into Customer onboarding straight away; the balance is recorded later from the onboarding
+  page (*Record payment*). The onboarding list has a **Get started** tab (beside *Ready for
+  handover*) for customers whose balance is still due.
+- **Optional items.** `onboarding_items.is_optional`: an optional item (WhatsApp API's
+  *Website URL*) never blocks *Send to Technical Consultant*; it counts towards progress and
+  review once filled in. *Facebook Business Manager access* is now a details item (*Add details*).
+- Every card in *Documents & details* opens when clicked (edit dialog, file view, or details).
+

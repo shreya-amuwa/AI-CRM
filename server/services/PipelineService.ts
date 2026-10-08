@@ -21,6 +21,7 @@ import {
   onboardingUpdateSchema,
   pipelineListQuerySchema,
   recordPaymentSchema,
+  backOutSchema,
   returnToSalesSchema,
   startOnboardingSchema,
   uuidSchema
@@ -130,6 +131,13 @@ export class PipelineService {
     const customerId = parse(uuidSchema, id);
     const input = parse(recordPaymentSchema, body);
     await this.repo.recordPayment(customerId, input.amount, input.method);
+    return this.repo.get(customerId);
+  }
+
+  /** Customer backs out at Potential: back to Leads. */
+  async backOut(id: string, body: unknown): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.backOut(customerId, parse(backOutSchema, body ?? {}).reason ?? null);
     return this.repo.get(customerId);
   }
 
