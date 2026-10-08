@@ -15,6 +15,7 @@ import { teamLeadStore } from '../../services/teamLeadStore';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
+import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { useAuth } from '../../context/AuthContext';
 
 interface TeamLeadDashboardProps {
@@ -169,6 +170,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
           onAutoDistribute={handleAutoRoundRobin}
         />
       )}
+
+      {/* VIEW: TASKS FROM THE DEPARTMENT HEAD → TEAM MEMBERS */}
+      {activeNav === 'assigned-tasks' && <TeamLeadTasksView />}
 
       {/* VIEW: TEAM MEMBERS & ACCESS (team leads add members to their own team) */}
       {activeNav === 'team-members' && (

@@ -65,7 +65,7 @@ export function creatableRoles(role: Role | undefined): Exclude<Role, 'SUPER_ADM
 
 export const ROLE_LABELS: Record<Role, string> = {
   SUPER_ADMIN: 'Super Admin',
-  DEPARTMENT_HEAD: 'Department Head (Admin)',
+  DEPARTMENT_HEAD: 'Department Head',
   TEAM_HEAD: 'Team Lead',
   TEAM_MEMBER: 'Team Member'
 };
@@ -82,7 +82,7 @@ export function defaultDashboardLabel(
     case 'SUPER_ADMIN':
       return 'Super Admin Department Hub';
     case 'DEPARTMENT_HEAD':
-      return `Department Admin Dashboard${dept}`;
+      return `Department Head Dashboard${dept}`;
     case 'TEAM_HEAD':
       return `Team Lead Dashboard${dept}`;
     default:
