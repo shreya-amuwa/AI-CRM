@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { IndianRupee, Search } from 'lucide-react';
+import { IndianRupee, Search, Undo2 } from 'lucide-react';
 import type { Paginated, PaymentFilter, PaymentMethod, PipelineCounts, PipelineCustomer } from '../../../../shared/contracts';
 import { PAYMENT_METHODS } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
 import {
   Avatar,
+  blockDecimals,
   btn,
   Card,
   dayDiff,
@@ -66,6 +67,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState<PipelineCustomer | null>(null);
   const [paying, setPaying] = useState<PipelineCustomer | null>(null);
+  const [backingOut, setBackingOut] = useState<PipelineCustomer | null>(null);
   const debounced = useDebounced(search.trim());
   const seqRef = useRef(0);
 
@@ -287,10 +289,21 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                               type="button"
                               className={`${btn.secondary} px-2`}
                               onClick={() => setPaying(c)}
-                              aria-label={`Record a part payment for ${c.company || c.name}`}
-                              title="Record part payment"
+                              aria-label={`Record the first payment for ${c.company || c.name}`}
+                              title="Record first payment (starts onboarding)"
                             >
                               <IndianRupee className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {c.amountReceived === 0 && (
+                            <button
+                              type="button"
+                              className={`${btn.secondary} px-2`}
+                              onClick={() => setBackingOut(c)}
+                              aria-label={`Customer backed out: ${c.company || c.name}`}
+                              title="Customer backed out — move back to Leads"
+                            >
+                              <Undo2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
@@ -324,8 +337,21 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
           mode="part"
           customer={paying}
           onClose={() => setPaying(null)}
-          onDone={() => {
+          onDone={c => {
+            // The first payment starts onboarding.
             setPaying(null);
+            notifyPipelineChanged();
+            if (c.lifecycleStage === 'ONBOARDING') onStarted(c.id);
+            else load();
+          }}
+        />
+      )}
+      {backingOut && (
+        <BackOutDialog
+          customer={backingOut}
+          onClose={() => setBackingOut(null)}
+          onDone={() => {
+            setBackingOut(null);
             notifyPipelineChanged();
             load();
           }}
@@ -335,7 +361,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
   );
 };
 
-const PaymentDialog: React.FC<{
+export const PaymentDialog: React.FC<{
   mode: 'onboard' | 'part';
   customer: PipelineCustomer;
   onClose: () => void;
@@ -344,6 +370,7 @@ const PaymentDialog: React.FC<{
   const deal = customer.dealAmount || 0;
   const already = customer.amountReceived;
   const balance = Math.max(0, deal - already);
+  const firstPayment = customer.lifecycleStage === 'POTENTIAL';
   // Onboarding asks for the TOTAL received (prefilled with the deal amount); a
   // part payment asks for the amount received now.
   const [amount, setAmount] = useState(mode === 'onboard' ? String(deal || already) : '');
@@ -356,6 +383,7 @@ const PaymentDialog: React.FC<{
     e.preventDefault();
     const n = Number(amount || 0);
     if (!Number.isFinite(n) || n < 0) return setError('Enter the amount in rupees.');
+    if (!Number.isInteger(n)) return setError('Enter whole rupees only (no paise), e.g. 15000.');
     let receivedNow = n;
     if (mode === 'onboard') {
       if (n > deal) return setError(`The total received can't be more than the deal amount (${money(deal)}).`);
@@ -382,13 +410,13 @@ const PaymentDialog: React.FC<{
 
   return (
     <Dialog
-      title={mode === 'onboard' ? 'Confirm payment & start onboarding' : 'Record part payment'}
+      title={mode === 'onboard' ? 'Confirm payment & start onboarding' : firstPayment ? 'Record first payment & start onboarding' : 'Record payment'}
       description={`${customer.company || customer.name} · deal ${money(customer.dealAmount)} · ${money(customer.amountReceived)} received so far`}
       onClose={onClose}
     >
       <form onSubmit={submit} className="space-y-3" noValidate>
         <Field label={mode === 'onboard' ? 'Total amount received (₹)' : 'Amount received now (₹)'} required htmlFor="pay-amount">
-          <input id="pay-amount" type="number" min={0} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} />
+          <input id="pay-amount" type="number" min={0} step={1} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={blockDecimals} />
         </Field>
         <p className="text-[11px] text-slate-500 -mt-1">
           {mode === 'onboard'
@@ -417,7 +445,47 @@ const PaymentDialog: React.FC<{
             Cancel
           </button>
           <button type="submit" className={mode === 'onboard' ? btn.green : btn.primary} disabled={busy}>
-            {busy ? 'Saving…' : mode === 'onboard' ? 'Confirm & start onboarding' : 'Record payment'}
+            {busy ? 'Saving…' : mode === 'onboard' ? 'Confirm & start onboarding' : firstPayment ? 'Record & start onboarding' : 'Record payment'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+};
+
+const BackOutDialog: React.FC<{ customer: PipelineCustomer; onClose: () => void; onDone: () => void }> = ({ customer, onClose, onDone }) => {
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await pipelineApi.backOut(customer.id, reason.trim() || null);
+      onDone();
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      title="Customer backed out"
+      description={`${customer.company || customer.name} goes back to Leads (deal ${money(customer.dealAmount)} is cleared) so you can follow up again.`}
+      onClose={onClose}
+    >
+      <form onSubmit={submit} className="space-y-3" noValidate>
+        <Field label="Reason (optional)" htmlFor="back-out-reason">
+          <textarea id="back-out-reason" rows={2} maxLength={500} className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Found a cheaper option" />
+        </Field>
+        {error && <ErrorBanner message={error} />}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className={btn.danger} disabled={busy}>
+            {busy ? 'Moving…' : 'Move back to Leads'}
           </button>
         </div>
       </form>

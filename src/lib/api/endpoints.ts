@@ -86,6 +86,7 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
   recordPayment: (id: string, body: { amount: number; method?: PaymentMethod }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/payments`, body),
+  backOut: (id: string, reason?: string | null) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/back-out`, { reason: reason || null }),
   startOnboarding: (id: string, body: { amountReceived: number; paymentMethod: PaymentMethod; targetHandoverDate?: string | null }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/start-onboarding`, body),
   updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>

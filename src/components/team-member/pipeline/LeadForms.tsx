@@ -6,6 +6,7 @@ import { leadCreateSchema } from '../../../../shared/validation';
 import { ApiError, errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import {
+  blockDecimals,
   Avatar,
   Breadcrumb,
   btn,
@@ -640,6 +641,7 @@ const MoveToPotentialDialog: React.FC<{
     e.preventDefault();
     const n = Number(amount);
     if (!(n > 0)) return setError('Enter the deal amount.');
+    if (!Number.isInteger(n)) return setError('Enter whole rupees only (no paise), e.g. 15000.');
     if (!due) return setError('Choose the payment due date.');
     setBusy(true);
     setError(null);
@@ -654,7 +656,7 @@ const MoveToPotentialDialog: React.FC<{
     <Dialog title="Move to Potential" description={`${leadName} will move from Leads to Potential to collect payment.`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3" noValidate>
         <Field label="Deal amount (₹)" required htmlFor="move-amount">
-          <input id="move-amount" type="number" min={1} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} />
+          <input id="move-amount" type="number" min={1} step={1} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={blockDecimals} />
         </Field>
         <Field label="Payment due date" required htmlFor="move-due">
           <input id="move-due" type="date" min={todayIso()} className={inputCls} value={due} onChange={e => setDue(e.target.value)} />

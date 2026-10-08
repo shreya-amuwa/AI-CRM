@@ -68,6 +68,8 @@ const EXT_MIME: Record<string, UploadMimeType> = {
 };
 
 export const isDone = (i: ChecklistItem) => i.entry?.status === 'SAVED' || i.entry?.status === 'VERIFIED';
+/** Optional items (e.g. Website URL) only count towards progress once filled in. */
+export const counts = (i: ChecklistItem) => !(i.optional && !i.entry);
 
 function displayValue(item: ChecklistItem): string {
   const v = item.entry?.value || '';
@@ -103,8 +105,9 @@ export const ChecklistPanel: React.FC<{
   const items = customer.checklist;
   const groups = useMemo(() => groupItems(items, catalog), [items, catalog]);
   const forwarded = !!customer.onboarding?.forwardedToSupportAt;
+  const counted = items.filter(counts);
   const doneCount = items.filter(isDone).length;
-  const visible = (i: ChecklistItem) => (tab === 'all' ? true : tab === 'saved' ? isDone(i) : !isDone(i));
+  const visible = (i: ChecklistItem) => (tab === 'all' ? true : tab === 'saved' ? isDone(i) : !isDone(i) && counts(i));
 
   return (
     <div>
@@ -119,7 +122,7 @@ export const ChecklistPanel: React.FC<{
           {(
             [
               ['all', `All ${items.length}`],
-              ['pending', `Pending ${items.length - doneCount}`],
+              ['pending', `Pending ${counted.length - doneCount}`],
               ['saved', `Saved ${doneCount}`]
             ] as const
           ).map(([k, label]) => (
@@ -150,7 +153,7 @@ export const ChecklistPanel: React.FC<{
                 {g.title}
               </h3>
               <span className="text-xs text-slate-500">
-                {g.items.filter(isDone).length} of {g.items.length} saved
+                {g.items.filter(isDone).length} of {g.items.filter(counts).length} saved
               </span>
             </div>
             <ol className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -219,7 +222,7 @@ const ChecklistCard: React.FC<{
   const [phase, setPhase] = useState<null | 'checking' | 'uploading' | 'verifying'>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<null | 'edit' | 'reject'>(null);
+  const [dialog, setDialog] = useState<null | 'edit' | 'reject' | 'view'>(null);
   const [confirmDelete, setConfirmDelete] = useState<CustomerDocument | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -291,6 +294,17 @@ const ChecklistCard: React.FC<{
     }
   };
 
+  /** Clicking anywhere on the card (not on its own buttons) opens the item. */
+  const openCard = () => {
+    if (phase || busy) return;
+    if (isFile) {
+      if (currentDoc) void open(currentDoc, 'view');
+      else if (mode === 'sales') inputRef.current?.click();
+      return;
+    }
+    setDialog(mode === 'sales' ? 'edit' : 'view');
+  };
+
   const review = async (decision: 'VERIFIED' | 'REJECTED', note?: string) => {
     setBusy(true);
     setError(null);
@@ -330,7 +344,18 @@ const ChecklistCard: React.FC<{
 
   return (
     <li
-      className={`p-4 rounded-2xl border flex flex-col ${
+      tabIndex={0}
+      onClick={e => {
+        if ((e.target as HTMLElement).closest('button, a, input, textarea, select, label, [role="dialog"], .fixed')) return;
+        openCard();
+      }}
+      onKeyDown={e => {
+        if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          openCard();
+        }
+      }}
+      className={`cursor-pointer p-4 rounded-2xl border flex flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
         status === 'REJECTED'
           ? 'border-rose-200 bg-rose-50/40'
           : done
@@ -362,6 +387,7 @@ const ChecklistCard: React.FC<{
       <div className="mt-3 flex items-center gap-1.5">
         <h4 className="text-sm font-bold text-slate-900">{title}</h4>
         {item.code === 'IMPORTANT_DOCUMENTS' && <InfoTip text={item.hint} />}
+        {item.optional && <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">Optional</span>}
       </div>
       <p className="text-xs text-slate-500 mt-0.5 break-words whitespace-pre-line line-clamp-4">{subtitle}</p>
       {entry && !isFile && entry.savedBy && (
@@ -492,6 +518,21 @@ const ChecklistCard: React.FC<{
       )}
 
       {dialog === 'edit' && <EntryDialog item={item} customerId={customer.id} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); onChanged(); }} />}
+      {dialog === 'view' && (
+        <Dialog title={item.label} description={item.hint || undefined} onClose={() => setDialog(null)}>
+          <p className="text-sm text-slate-800 whitespace-pre-line break-words">{entry ? displayValue(item) || '—' : 'Not filled yet.'}</p>
+          {entry?.savedBy && (
+            <p className="text-[11px] text-slate-500">
+              {entry.savedBy} · {shortDate(entry.savedAt)}
+            </p>
+          )}
+          <div className="flex justify-end pt-1">
+            <button type="button" className={btn.secondary} onClick={() => setDialog(null)}>
+              Close
+            </button>
+          </div>
+        </Dialog>
+      )}
       {dialog === 'reject' && <RejectDialog label={item.label} busy={busy} error={error} onClose={() => setDialog(null)} onReject={note => review('REJECTED', note)} />}
       {confirmDelete && (
         <DeleteDialog

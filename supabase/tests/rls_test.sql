@@ -468,15 +468,38 @@ select test.check((select lifecycle_stage = 'POTENTIAL' and lead_status = 'READY
 select test.check((select count(*) = 1 from customers where company = 'Shree Ganesh Jewellers'), 'still exactly one customer row');
 select test.must_fail($$select update_lead((select id from pipeline where name = 'A'), '{"leadStatus":"NEW"}')$$, 'lead status frozen after leaving Leads', 'only change while');
 select test.must_fail($$select record_customer_payment((select id from pipeline where name = 'A'), 50000)$$, 'payment cannot exceed deal amount', 'exceed');
+select test.must_fail($$select record_customer_payment((select id from pipeline where name = 'A'), 100.50, 'UPI')$$, 'payments must be whole rupees', 'whole rupees');
+select test.must_fail($$select record_customer_payment((select id from pipeline where name = 'A'), 15000, null)$$, 'first payment needs a payment method', 'how the customer paid');
 select record_customer_payment((select id from pipeline where name = 'A'), 15000, 'UPI');
-select test.check((select amount_received = 15000 from customers where id = (select id from pipeline where name = 'A')), 'part payment recorded');
-select test.must_fail($$select start_customer_onboarding((select id from pipeline where name = 'A'), 0, null)$$, 'onboarding needs a payment method', 'how the customer paid');
-select start_customer_onboarding((select id from pipeline where name = 'A'), 27000, 'UPI', current_date + 10);
+select test.check((select lifecycle_stage = 'ONBOARDING' and amount_received = 15000 and not fully_paid from customers where id = (select id from pipeline where name = 'A')),
+  'the first (part) payment starts onboarding');
+select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'GET_STARTED')::int = 1), 'part-paid onboarding counted as Get started');
+select record_customer_payment((select id from pipeline where name = 'A'), 27000, 'UPI');
+select test.check((select amount_received = 42000 and fully_paid from customers where id = (select id from pipeline where name = 'A')), 'the balance is recorded while in onboarding');
+select test.must_fail($$select record_customer_payment((select id from pipeline where name = 'A'), 1, 'UPI')$$, 'balance payment cannot exceed the deal', 'exceed');
+select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'GET_STARTED')::int = 0), 'fully paid customer leaves Get started');
 select test.check((select lifecycle_stage = 'ONBOARDING' and amount_received = 42000 from customers where id = (select id from pipeline where name = 'A')),
   'POTENTIAL → ONBOARDING with full payment');
 select test.check((select stage = 'COLLECT_REQUIREMENTS' and payment_method = 'UPI' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'onboarding record created');
 select test.must_fail($$select start_customer_onboarding((select id from pipeline where name = 'A'), 1, 'UPI')$$, 'cannot start onboarding twice', 'CONFLICT');
+
+-- Whole rupees, and backing out of Potential returns the customer to Leads.
+insert into pipeline select 'C', create_lead('{"name":"Ravi Kumar","company":"Kumar Traders","phone":"+91 90000 33333","leadStatus":"READY_TO_BUY"}', array['AI_CALLING']);
+select test.must_fail($$select move_customer_to_potential((select id from pipeline where name = 'C'), 15000.99, current_date + 7)$$, 'deal amount must be whole rupees', 'whole rupees');
+select move_customer_to_potential((select id from pipeline where name = 'C'), 15000, current_date + 7);
+select test.must_fail($$select start_customer_onboarding((select id from pipeline where name = 'C'), 5000.5, 'UPI')$$, 'onboarding amount must be whole rupees', 'whole rupees');
+select test.must_fail($$select start_customer_onboarding((select id from pipeline where name = 'C'), 0, null)$$, 'onboarding needs a payment method', 'how the customer paid');
+select test.must_fail($$select back_out_customer((select id from pipeline where name = 'A'), null)$$, 'only potential customers can back out', 'CONFLICT');
+select back_out_customer((select id from pipeline where name = 'C'), 'Found a cheaper option');
+select test.check((select lifecycle_stage = 'LEAD' and lead_status = 'INTERESTED' and deal_amount is null and payment_due_date is null and expected_budget = 15000
+                   from customers where id = (select id from pipeline where name = 'C')), 'backed-out customer is a lead again');
+select test.check((select count(*) = 1 from customer_activities where type = 'BACKED_OUT' and note like '%cheaper%'), 'back-out logged');
+select update_lead((select id from pipeline where name = 'C'), '{"leadStatus":"CONTACTED"}');
+select test.check((select lead_status = 'CONTACTED' from customers where id = (select id from pipeline where name = 'C')), 'status editable again as a lead');
+select test.login('pending_d');
+select test.must_fail($$select back_out_customer((select id from pipeline where name = 'C'), null)$$, 'teammate cannot back out another member''s customer', 'NOT_FOUND');
+select test.login('tm_a');
 
 -- A second customer of the same salesperson (isolation of documents per customer)
 insert into pipeline select 'B', create_lead('{"name":"Sneha Pillai","company":"Pillai Skin Clinic","phone":"+91 90000 22222"}', array['AI_CALLING']);
@@ -717,7 +740,11 @@ select test.check((select public = false from storage.buckets where id = 'custom
 select test.login('tm_a');
 insert into pipeline select 'W', create_lead('{"name":"Wa Client","company":"WA Traders","phone":"+91 90000 77777","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
 select move_customer_to_potential((select id from pipeline where name = 'W'), 30000, current_date + 5);
-select record_customer_payment((select id from pipeline where name = 'W'), 30000, 'UPI');
+-- A legacy fully paid Potential customer (new payments start onboarding at once).
+reset role;
+update public.customers set amount_received = 30000 where id = (select id from pipeline where name = 'W');
+set role authenticated;
+select test.login('tm_a');
 select test.check((select fully_paid from customers where id = (select id from pipeline where name = 'W')), 'full payment marks the customer paid in full');
 select test.check((select (customer_pipeline_counts() -> 'potential' ->> 'PAID')::int = 1
                       and (customer_pipeline_counts() -> 'potential' ->> 'PART_PAID')::int = 0), 'paid in full is not counted as part paid');
@@ -732,6 +759,28 @@ select test.check((select e ->> 'filledBy' = 'CONSULTANT' from jsonb_array_eleme
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'W'), 'WABA_ID', '123')$$, 'sales cannot fill in the WABA ID', 'not part of');
 select test.check((select consultant_items_total = 1 and consultant_items_done = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'W')),
   'consultant items tracked separately from sales progress');
+
+-- Optional Website URL and the Facebook Business Manager details item.
+select test.check((select (e ->> 'optional')::boolean from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'W'))) e
+                    where e ->> 'code' = 'WA_WEBSITE_URL'), 'Website URL is offered as an optional item');
+select test.check((select e ->> 'kind' = 'DETAILS' from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'W'))) e
+                    where e ->> 'code' = 'FB_BUSINESS_MANAGER'), 'Facebook Business Manager access is a details item');
+reset role;
+select test.check((select items_total from customer_onboarding where customer_id = (select id from pipeline where name = 'W'))
+                   = (select count(*) from private.customer_items((select id from pipeline where name = 'W')))
+                   and not exists (select 1 from private.customer_items((select id from pipeline where name = 'W')) where code = 'WA_WEBSITE_URL'),
+  'an empty optional item is not counted and never blocks sending');
+set role authenticated;
+select test.login('tm_a');
+select save_onboarding_entry((select id from pipeline where name = 'W'), 'WA_WEBSITE_URL', 'https://wa-traders.example');
+reset role;
+select test.check((select items_total from customer_onboarding where customer_id = (select id from pipeline where name = 'W'))
+                   = (select count(*) from private.customer_items((select id from pipeline where name = 'W')))
+                   and exists (select 1 from private.customer_items((select id from pipeline where name = 'W')) where code = 'WA_WEBSITE_URL'),
+  'a filled optional item is counted and reviewed like the others');
+set role authenticated;
+select test.login('tm_a');
+
 
 \echo '--- 16. Technical Consultant is its own choice (not every support member)'
 reset role;

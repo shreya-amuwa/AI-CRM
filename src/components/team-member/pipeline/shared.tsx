@@ -398,3 +398,8 @@ export function useDebounced<T>(value: T, ms = 300): T {
   }, [value, ms]);
   return v;
 }
+
+/** Rupee fields take whole numbers only: keep '.', ',', 'e' and signs out of the box. */
+export const blockDecimals = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  if (['.', ',', 'e', 'E', '+', '-'].includes(e.key)) e.preventDefault();
+};

@@ -52,6 +52,7 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/pipeline/leads/:id', handler: pipeline.updateLead },
   { method: 'POST', path: '/pipeline/customers/:id/move-to-potential', handler: pipeline.moveToPotential },
   { method: 'POST', path: '/pipeline/customers/:id/payments', handler: pipeline.recordPayment, options: S },
+  { method: 'POST', path: '/pipeline/customers/:id/back-out', handler: pipeline.backOut },
   { method: 'POST', path: '/pipeline/customers/:id/start-onboarding', handler: pipeline.startOnboarding },
   { method: 'PATCH', path: '/pipeline/customers/:id/onboarding', handler: pipeline.updateOnboarding },
   { method: 'POST', path: '/pipeline/customers/:id/forward-to-support', handler: pipeline.forwardToSupport },

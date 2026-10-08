@@ -285,7 +285,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
     load();
   };
   const consultantItems = c.checklist.filter(i => i.filledBy === 'CONSULTANT');
-  const salesItems = c.checklist.filter(i => i.filledBy !== 'CONSULTANT');
+  // An optional item sales left empty (e.g. Website URL) is not something to review.
+  const salesItems = c.checklist.filter(i => i.filledBy !== 'CONSULTANT' && !(i.optional && !i.entry));
   const pending = salesItems.filter(i => i.entry?.status === 'SAVED').length;
   const rejectedItems = c.checklist.filter(i => i.entry?.status === 'REJECTED');
   /** Sent back for re-verification: visible here, read-only until sales sends it again. */

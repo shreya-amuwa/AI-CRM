@@ -289,13 +289,38 @@ r = await api('a', 'GET', '/pipeline/customers?stage=LEAD');
 check(r.json.data.total === 0, 'no duplicate left behind in Leads');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 60000 });
 check(r.status === 422, 'payment cannot exceed deal amount', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 10000.5, method: 'UPI' });
+check(r.status === 422 && /whole rupees/.test(r.json.error.message), 'payment must be whole rupees', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 10000 });
+check(r.status === 422, 'first payment needs a payment method', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 10000, method: 'UPI' });
-check(r.status === 200 && r.json.data.amountReceived === 10000, 'part payment recorded', r);
-r = await api('a', 'GET', '/pipeline/customers?stage=POTENTIAL&payment=PART_PAID');
-check(r.json.data.total === 1, 'payment filter (part paid)', r);
-r = await api('a', 'POST', `/pipeline/customers/${leadA}/start-onboarding`, { amountReceived: 5000, paymentMethod: 'UPI', targetHandoverDate: tomorrow });
+check(r.status === 200 && r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.amountReceived === 10000 && r.json.data.onboarding.paymentMethod === 'UPI',
+  'the first payment starts onboarding on the same record', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=GET_STARTED');
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'part-paid onboarding listed under Get started', r);
+r = await api('a', 'GET', '/pipeline/counts');
+check(r.json.data.onboarding.GET_STARTED === 1, 'Get started count', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 5000, method: 'UPI' });
 check(r.status === 200 && r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.amountReceived === 15000 && r.json.data.onboarding.mandatorySaved === 0,
-  'onboarding started on the same record', r);
+  'the balance is recorded while in onboarding', r);
+
+// --- whole rupees and backing out of Potential --------------------------------------
+r = await api('a', 'POST', '/pipeline/leads', { ...leadBody, name: 'Backout', company: 'Backout Co', phone: '+91 98200 33333', email: 'backout@example.com' });
+const leadBack = r.json.data?.id;
+check(r.status === 201 && leadBack, 'extra lead created', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadBack}/move-to-potential`, { dealAmount: 15000.99, paymentDueDate: tomorrow });
+check(r.status === 422 && /whole rupees/.test(r.json.error.message), 'deal amount must be whole rupees', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadBack}/move-to-potential`, { dealAmount: 15000, paymentDueDate: tomorrow });
+check(r.status === 200 && r.json.data.lifecycleStage === 'POTENTIAL', 'extra lead moved to Potential', r);
+r = await api('b', 'POST', `/pipeline/customers/${leadBack}/back-out`, { reason: 'x' });
+check(r.status === 404, "member B cannot back out A's customer", r);
+r = await api('a', 'POST', `/pipeline/customers/${leadBack}/back-out`, { reason: 'Found a cheaper option' });
+check(r.status === 200 && r.json.data.lifecycleStage === 'LEAD' && r.json.data.dealAmount === null && r.json.data.leadStatus === 'INTERESTED', 'customer who backs out returns to Leads', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD');
+check(r.json.data.items.some((x: any) => x.id === leadBack), 'backed-out customer listed under Leads', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadBack}/back-out`, {});
+check(r.status === 409, 'a lead cannot back out again', r);
+
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
 check(r.status === 422 || r.status === 409, 'cannot forward to support without mandatory documents', r);
 
