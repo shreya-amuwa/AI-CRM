@@ -200,7 +200,12 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                   </div>
                   <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-100 mt-4 text-xs text-slate-500">
                     <span>
-                      Paid {money(c.amountReceived)} · started {c.onboarding ? shortDate(c.onboarding.startedAt) : '—'}
+                      Paid {money(c.amountReceived)} ·{' '}
+                      {c.onboarding?.forwardedToSupportAt ? (
+                        <span className="font-semibold text-emerald-700">Sent to Technical Consultant</span>
+                      ) : (
+                        <span>Not sent yet</span>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -232,9 +237,9 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
 const STAGES: { key: OnboardingStage; label: string; hint: string }[] = [
   { key: 'SALES_CONSULTATION', label: 'Sales consultation', hint: 'Done when payment is confirmed' },
   { key: 'COLLECT_REQUIREMENTS', label: 'Collect requirements', hint: 'Mandatory documents' },
-  { key: 'SETUP', label: 'Setup & configuration', hint: 'Support team' },
+  { key: 'SETUP', label: 'Setup & configuration', hint: 'Technical Consultant' },
   { key: 'APPROVAL', label: 'Approval & testing', hint: 'Client sign-off' },
-  { key: 'HANDOVER', label: 'Client handover', hint: 'Forward to support' }
+  { key: 'HANDOVER', label: 'Client handover', hint: 'After verification' }
 ];
 
 export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; mode?: ChecklistMode }> = ({ id, onBack, mode = 'sales' }) => {
@@ -243,6 +248,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [forwarding, setForwarding] = useState(false);
+  const [confirmSend, setConfirmSend] = useState(false);
   const [editingHandover, setEditingHandover] = useState(false);
 
   const load = useCallback(() => {
@@ -280,6 +286,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
     setActionError(null);
     try {
       await pipelineApi.forwardToSupport(c.id);
+      setConfirmSend(false);
       notifyPipelineChanged();
       load();
     } catch (e) {
@@ -375,7 +382,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                 <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} />
                 {forwarded ? (
                   <>
-                    <div className="mt-3 text-sm font-bold text-emerald-700">Forwarded to the technical team</div>
+                    <div className="mt-3 text-sm font-bold text-emerald-700">Sent to the Technical Consultant</div>
                     <p className="text-xs text-slate-500">
                       on {longDate(c.onboarding?.forwardedToSupportAt)} · {verified.length} of {items.length} verified
                       {rejected.length ? ` · ${rejected.length} need fixing` : ''}
@@ -393,21 +400,52 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                   <button type="button" className={`${btn.primary} w-full py-2.5`} onClick={askOnWhatsApp} disabled={!phoneDigits || missing.length === 0}>
                     <MessageCircle className="w-4 h-4" /> Ask client on WhatsApp
                   </button>
-                  <button
-                    type="button"
-                    className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                      missing.length === 0 && !forwarded ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                    }`}
-                    disabled={missing.length > 0 || forwarded || forwarding}
-                    aria-describedby="forward-hint"
-                    onClick={forward}
-                  >
-                    {forwarding ? 'Forwarding…' : forwarded ? 'Forwarded to support team' : 'Forward to support team'}
-                  </button>
+                  {confirmSend && !forwarded ? (
+                    <div role="alertdialog" aria-labelledby="send-confirm-title" className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2">
+                      <div id="send-confirm-title" className="text-xs font-bold text-emerald-900">
+                        Send {c.company || c.name} to the Technical Consultant?
+                      </div>
+                      <p className="text-[11px] text-emerald-800">
+                        They will verify every document. After sending, current files can be replaced but not deleted.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="flex-1 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600"
+                          onClick={() => setConfirmSend(false)}
+                          disabled={forwarding}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="flex-1 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 disabled:opacity-60"
+                          onClick={forward}
+                          disabled={forwarding}
+                        >
+                          {forwarding ? 'Sending…' : 'Yes, send'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${
+                        missing.length === 0 && !forwarded ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                      }`}
+                      disabled={missing.length > 0 || forwarded}
+                      aria-describedby="forward-hint"
+                      onClick={() => setConfirmSend(true)}
+                    >
+                      {forwarded ? 'Sent to Technical Consultant' : 'Send to Technical Consultant'}
+                    </button>
+                  )}
                   <p id="forward-hint" className="text-[11px] text-slate-500">
                     {forwarded
-                      ? 'The technical team verifies each item. Fix anything sent back; current files can be replaced, not deleted.'
-                      : 'Unlocks when all items are saved'}
+                      ? 'The Technical Consultant verifies each item. Fix anything marked not authorized; current files can be replaced, not deleted.'
+                      : missing.length > 0
+                        ? 'Save every item above to unlock. The Technical Consultant only sees this customer after you send it.'
+                        : 'The Technical Consultant only sees this customer after you send it.'}
                   </p>
                 </div>
               </>

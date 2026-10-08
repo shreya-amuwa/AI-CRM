@@ -565,10 +565,14 @@ select test.check((select path like '%.png' from docs where name = 'A_logo'), 's
 select complete_document_upload((select id from docs where name = 'A_logo'), 3000);
 select test.check((select items_saved = 13 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 13 items saved');
 select test.login('tm_b');
-select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')),
-  'consultant sees onboarding customers of the department before forwarding');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')),
+  'consultant does not see a customer before sales sends it');
+select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$,
+  'consultant cannot authorize before the customer is sent', 'NOT_FOUND');
+select test.must_fail($$select verify_all_onboarding_entries((select id from pipeline where name = 'A'))$$,
+  'consultant cannot authorize all before the customer is sent', 'NOT_FOUND');
 select test.check((select count(*) = 0 from customers where lifecycle_stage in ('LEAD', 'POTENTIAL')), 'consultant never sees leads or potential customers');
-select test.check((select (onboarding_review_counts() ->> 'TO_REVIEW')::int >= 1), 'review counts include customers with saved items');
+select test.check((select (onboarding_review_counts() ->> 'all')::int = 0), 'review counts exclude customers not yet sent');
 select test.login('tm_a');
 select forward_onboarding_to_support((select id from pipeline where name = 'A'));
 select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
@@ -585,7 +589,8 @@ select test.must_fail($$select expire_stale_document_uploads()$$, 'only the serv
 \echo '--- 13b. Technical Consultant verification'
 select test.login('tm_b');
 select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'support sees the forwarded customer');
-select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'B')), 'support sees every onboarding customer of the department');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'B')), 'support does not see an onboarding customer that was not sent');
+select test.check((select (onboarding_review_counts() ->> 'TO_REVIEW')::int >= 1), 'review counts include the sent customer');
 select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_logo'), 'VIEW')), 'support can open the forwarded customer''s files');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Blue')$$, 'support cannot edit sales details', 'NOT_FOUND');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x.png', 'image/png', 10)$$, 'support cannot upload', 'NOT_FOUND');

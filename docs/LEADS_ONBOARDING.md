@@ -98,13 +98,14 @@ amount, choice. The catalogue is data (`onboarding_items`, `onboarding_item_serv
 items can be added or changed without code changes.
 
 Files accept the types each item allows (PDF, JPG/PNG/WEBP, CSV/Excel, MP3/WAV/M4A) and are
-checked by their content signature on the server, not by name. *Forward to support* unlocks
-only when every item is saved.
+checked by their content signature on the server, not by name. **Send to Technical Consultant**
+unlocks only when every item is saved and asks for confirmation.
 
 ### Technical Consultant verification
 
 Support-team members of the same department ("Technical Consultants") — plus department heads
-and the super admin — see a customer only after it is forwarded. In the Technical Support
+and the super admin — can review a customer only after the salesperson clicks
+**Send to Technical Consultant**. In the Technical Support
 dashboard, **Onboarding verification** lists forwarded customers (To verify / Sent back /
 Verified). Each item can be verified, or sent back with a note: the salesperson is notified,
 sees the note on the item, and fixing it (re-saving or re-uploading) sends it back for review.

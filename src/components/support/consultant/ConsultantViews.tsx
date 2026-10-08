@@ -189,7 +189,7 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
         <Spinner label="Loading customers…" />
       ) : data && data.items.length === 0 ? (
         <div className="py-14 text-center text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80">
-          {debounced || tab ? 'No customers match.' : 'No customers in onboarding yet. They appear here once sales confirms a payment.'}
+          {debounced || tab ? 'No customers match.' : 'No customers to verify yet. A customer appears here once the salesperson clicks Send to Technical Consultant.'}
         </div>
       ) : (
         <ul className={`grid grid-cols-1 lg:grid-cols-2 gap-4 ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
