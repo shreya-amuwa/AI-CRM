@@ -14,6 +14,8 @@ import {
   fmtWhen,
   isTicketOpen,
   loadCustomerActivities,
+  loadCustomerServices,
+  useServices,
   SEGMENT_LABELS,
   useCustomerStats,
   useSupportCustomers,
@@ -260,21 +262,43 @@ export const EditCustomerModal: React.FC<{
   people: import('../../lib/workTasks').Person[];
   onClose: () => void;
   onSaved: () => void;
-}> = ({ customer, people, onClose, onSaved }) => (
-  <Modal title={`Edit ${customer.name} · ${customer.code}`} onClose={onClose} wide>
-    <CustomerForm
-      initial={customerToInput(customer)}
-      people={people}
-      submitLabel="Save changes"
-      idPrefix="ec"
-      onCancel={onClose}
-      onSubmit={async input => {
-        await customerApi.update(customer.id, input);
-        onSaved();
-      }}
-    />
-  </Modal>
-);
+}> = ({ customer, people, onClose, onSaved }) => {
+  // The list rows only carry the primary service: load all of them before editing,
+  // so saving never drops a service the customer bought.
+  const [services, setServices] = useState<SupportCustomer['services'] | null>(customer.services.length ? customer.services : null);
+  useEffect(() => {
+    if (services) return;
+    let live = true;
+    loadCustomerServices(customer.id)
+      .catch(() => [])
+      .then(list => {
+        if (!live) return;
+        setServices(list.length ? list : customer.serviceCode ? [{ serviceCode: customer.serviceCode, serviceDetails: customer.serviceDetails }] : []);
+      });
+    return () => {
+      live = false;
+    };
+  }, [customer.id]);
+  return (
+    <Modal title={`Edit ${customer.name} · ${customer.code}`} onClose={onClose} wide>
+      {services ? (
+        <CustomerForm
+          initial={customerToInput({ ...customer, services })}
+          people={people}
+          submitLabel="Save changes"
+          idPrefix="ec"
+          onCancel={onClose}
+          onSubmit={async input => {
+            await customerApi.update(customer.id, input);
+            onSaved();
+          }}
+        />
+      ) : (
+        <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
+      )}
+    </Modal>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Customer profile
@@ -319,7 +343,11 @@ export const CustomerProfile: React.FC<{
         if (!data) return setState('missing');
         const { data: owner } = await supabase.from('profiles').select('full_name').eq('id', data.owner_id).maybeSingle();
         if (!live) return;
-        setCustomer(toCustomer(data, new Map([[data.owner_id, owner?.full_name ?? '']]), new Map()));
+        const services = await loadCustomerServices(customerId).catch(() => []);
+        if (!live) return;
+        const base = toCustomer(data, new Map([[data.owner_id, owner?.full_name ?? '']]), new Map());
+        // A customer from before multiple services has only its primary service.
+        setCustomer({ ...base, services: services.length ? services : base.serviceCode ? [{ serviceCode: base.serviceCode, serviceDetails: base.serviceDetails }] : [] });
         setState('ready');
       });
     loadCustomerActivities(customerId).then(a => live && setActivities(a), () => undefined);
@@ -328,6 +356,8 @@ export const CustomerProfile: React.FC<{
     };
   }, [customerId, tickets.tickets.length]);
 
+  const serviceList = useServices();
+  const serviceNames = new Map(serviceList.map(x => [x.code, x.name] as const));
   const myTickets = tickets.tickets.filter(t => t.customerId === customerId);
   const myTasks = tasks.tasks.filter(t => t.customerId === customerId);
   const myInvoices = invoices.filter(i => i.customerId === customerId);
@@ -388,7 +418,7 @@ export const CustomerProfile: React.FC<{
                   {[
                     ['Assigned to', customer.ownerId === profile?.id ? 'You' : customer.ownerName || 'Team member'],
                     ['Customer type', SEGMENT_LABELS[customer.segment]],
-                    ['Service / product', customer.service || '—'],
+                    ['Services / products', customer.services.length ? customer.services.map(x => serviceNames.get(x.serviceCode) || x.serviceCode).join(', ') : customer.service || '—'],
                     ['Channel', customer.channel && (CHANNELS as readonly string[]).includes(customer.channel) ? customer.channel : customer.channel || '—'],
                     ['Added', fmtDay(customer.createdAt)],
                     ['Last updated', fmtWhen(customer.updatedAt)]
@@ -400,17 +430,17 @@ export const CustomerProfile: React.FC<{
                   ))}
                 </dl>
               </div>
-              {isWhatsAppService(customer.serviceCode) && (
-                <div className="bg-white rounded-2xl border border-emerald-200 p-5 md:col-span-2">
+              {customer.services.filter(x => isWhatsAppService(x.serviceCode)).map(x => (
+                <div key={x.serviceCode} className="bg-white rounded-2xl border border-emerald-200 p-5 md:col-span-2">
                   <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-1.5">
-                    <MessageCircle className="w-4 h-4 text-emerald-600" aria-hidden="true" /> WhatsApp API
+                    <MessageCircle className="w-4 h-4 text-emerald-600" aria-hidden="true" /> {serviceNames.get(x.serviceCode) || 'WhatsApp API'}
                   </h2>
                   <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     {[
-                      ['Campaigns sent', (customer.serviceDetails.campaignsSent ?? 0).toLocaleString('en-IN')],
-                      ['Message package', (customer.serviceDetails.packageMessages ?? 0).toLocaleString('en-IN')],
-                      ['Messages sent', (customer.serviceDetails.messagesSent ?? 0).toLocaleString('en-IN')],
-                      ['Messages remaining', messagesRemaining(customer.serviceDetails).toLocaleString('en-IN')]
+                      ['Campaigns sent', (x.serviceDetails.campaignsSent ?? 0).toLocaleString('en-IN')],
+                      ['Message package', (x.serviceDetails.packageMessages ?? 0).toLocaleString('en-IN')],
+                      ['Messages sent', (x.serviceDetails.messagesSent ?? 0).toLocaleString('en-IN')],
+                      ['Messages remaining', messagesRemaining(x.serviceDetails).toLocaleString('en-IN')]
                     ].map(([k, v]) => (
                       <div key={k} className="rounded-xl bg-slate-50 p-3">
                         <dt className="text-slate-400">{k}</dt>
@@ -418,9 +448,9 @@ export const CustomerProfile: React.FC<{
                       </div>
                     ))}
                   </dl>
-                  {customer.serviceDetails.campaignNotes && <p className="text-xs text-slate-600 mt-3">Campaigns: {customer.serviceDetails.campaignNotes}</p>}
+                  {x.serviceDetails.campaignNotes && <p className="text-xs text-slate-600 mt-3">Campaigns: {x.serviceDetails.campaignNotes}</p>}
                 </div>
-              )}
+              ))}
               <div className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 mb-1">Query / requirement</h2>
