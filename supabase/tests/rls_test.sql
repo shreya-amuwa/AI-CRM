@@ -977,4 +977,161 @@ select test.check((select count(*) = 1 from notifications where type = 'HANDOVER
 select test.check((select count(*) = 3 from audit_logs where action in ('HANDOVER_TO_DEPARTMENT_HEAD', 'HANDOVER_TO_TEAM_LEAD', 'HANDOVER_TO_TEAM_MEMBER')
                     and entity_id = (select id from pipeline where name = 'A')), 'every hand-over step is audited');
 
+-- ---------------------------------------------------------------------------
+\echo '--- 19. Support team member dashboard: customers, tasks, tickets, invoices'
+-- ---------------------------------------------------------------------------
+reset role;
+select test.create_auth_user('sup_th', 'sup.lead@amuwa.com', '{"full_name":"Support Lead"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.team('wabastore', 'Support')));
+select test.create_auth_user('sup_b', 'sup.b@amuwa.com', '{"full_name":"Support B"}',
+  jsonb_build_object('provisioned_by', test.id('sup_th'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support')));
+
+select test.check((select default_dashboard = 'support-member' from profiles where id = test.id('sup_plain')), 'support member default dashboard is stored');
+select test.create_auth_user('tc_dash', 'tc.dash@amuwa.com', '{"full_name":"Dash Consultant"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support'),
+                     'provisioned_technical_consultant', true));
+select test.check((select default_dashboard = 'technical-consultant' from profiles where id = test.id('tc_dash')), 'consultant default dashboard is stored');
+select test.check((select default_dashboard = 'sales-member' from profiles where id = test.id('tc_new')), 'moving a member to the Sales team changes their dashboard');
+select test.check((select default_dashboard = 'sales-member' from profiles where id = test.id('tm_a')), 'sales member keeps the sales dashboard');
+select test.check((select default_dashboard = 'team-lead' from profiles where id = test.id('sup_th')), 'team lead default dashboard is stored');
+select test.check((select default_dashboard = 'department-head' from profiles where id = test.id('dh_wab')), 'department head default dashboard is stored');
+select test.check((select default_dashboard = 'super-admin' from profiles where id = test.id('sa')), 'super admin default dashboard is stored');
+
+-- A sales customer (post-sale) and a sales lead, owned by the sales member.
+set role authenticated;
+select test.login('tm_a');
+create temp table sc (name text primary key, id uuid);
+grant all on sc to authenticated;
+with i as (insert into customers (name, email, phone, company) values ('Sales Customer', 'sales.customer@acme.com', '+91 90000 11111', 'Acme') returning id)
+  insert into sc select 'cust', id from i;
+with i as (insert into customers (name, email, lifecycle_stage) values ('Sales Lead Only', 'lead.only@acme.com', 'LEAD') returning id)
+  insert into sc select 'lead', id from i;
+select test.login('tm_c');
+with i as (insert into customers (name, email) values ('Other Dept Customer', 'other@dept.com') returning id)
+  insert into sc select 'other', id from i;
+
+-- Support staff read post-sale customers of their department, never leads or other departments.
+select test.login('sup_plain');
+select test.check((select count(*) = 1 from customers where id = (select id from sc where name = 'cust')), 'support member sees post-sale customers of the department');
+select test.check((select count(*) = 0 from customers where id = (select id from sc where name = 'lead')), 'support member does not see sales leads');
+select test.check((select count(*) = 0 from customers where id = (select id from sc where name = 'other')), 'support member does not see other departments');
+select test.check((select test.rows($$update customers set notes = 'hacked' where id = (select id from sc where name = 'cust')$$) = 0), 'support member cannot edit customers they do not own');
+
+-- Add Customer
+insert into sc select 'mine', create_support_customer('Priya Nair', 'Nair Traders', '+91 98450 12345', 'Priya@Nair.com', 'RETAIL', 'ACTIVE',
+  'WhatsApp API', 'Wants template approval help', 'Phone', 'Referred', null);
+select test.check((select owner_id = test.id('sup_plain') and team_id = test.team('wabastore', 'Support') and customer_code ~ '^CUS-[0-9]{5}$'
+                     and email = 'priya@nair.com' and channel = 'Phone' and service_interest = 'WhatsApp API'
+                   from customers where id = (select id from sc where name = 'mine')), 'support customer is saved, owned by the member, with a customer code');
+select test.must_fail($$select create_support_customer('Priya Again', null, null, 'priya@nair.com', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
+  'duplicate e-mail is refused', 'already exists');
+select test.must_fail($$select create_support_customer('Priya Phone', null, '098450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
+  'duplicate phone number is refused', 'already exists');
+select test.must_fail($$select create_support_customer('Sales Dup', null, null, 'sales.customer@acme.com', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
+  'duplicate of a sales customer is refused', 'already exists');
+select test.must_fail($$select create_support_customer('Bad Mail', null, null, 'not-an-email', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'invalid e-mail is refused', 'valid e-mail');
+select test.must_fail($$select create_support_customer('Bad Phone', null, '123', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'short phone is refused', 'valid phone');
+select test.must_fail($$select create_support_customer('No Contact', null, null, null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'contact is required', 'phone number or an e-mail');
+select test.must_fail($$select create_support_customer('Not Mine', null, null, 'nm@x.com', 'RETAIL', 'ACTIVE', null, null, null, null, test.id('sup_b'))$$,
+  'member cannot assign customers to someone else', 'cannot assign');
+select test.login('sup_th');
+select test.check((select count(*) = 1 from customers where id = (select id from sc where name = 'mine')), 'team lead sees the member''s new customer');
+insert into sc select 'forb', create_support_customer('Lead Assigned', null, '+91 98450 55555', null, 'CORPORATE', 'PROSPECT', null, null, 'Email', null, test.id('sup_b'));
+select test.check((select owner_id = test.id('sup_b') from customers where id = (select id from sc where name = 'forb')), 'team lead assigns a new customer to a member');
+select test.must_fail($$select create_support_customer('Out Of Team', null, '+91 98450 66666', null, 'RETAIL', 'ACTIVE', null, null, null, null, test.id('tm_a'))$$,
+  'team lead cannot assign outside the team', 'cannot assign');
+select test.login('dh_wab');
+select test.check((select count(*) = 2 from customers where id in (select id from sc where name in ('mine', 'forb'))), 'department head sees support customers');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('sup_th')), 'team lead notified of the member''s new customer');
+select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ASSIGNED' and recipient_id = test.id('sup_b')), 'member notified of the assigned customer');
+
+-- Tickets
+create temp table st (name text primary key, id uuid);
+grant all on st to authenticated;
+set role authenticated;
+select test.login('sup_plain');
+insert into st select 'T', create_support_ticket((select id from sc where name = 'cust'), 'Cannot send templates', 'Templates stuck in review', 'TECHNICAL', 'HIGH');
+select test.check((select ticket_no ~ '^TKT-[0-9]{6}$' and status = 'OPEN' and assignee_id = test.id('sup_plain') and team_id = test.team('wabastore', 'Support')
+                     and customer_id = (select id from sc where name = 'cust') from support_tickets where id = (select id from st where name = 'T')),
+  'member opens a ticket for a customer, assigned to themselves');
+select test.must_fail($$select create_support_ticket((select id from sc where name = 'other'), 'Nope here', null, 'GENERAL', 'LOW')$$, 'no ticket for a customer outside the department', 'Customer not found');
+select test.must_fail($$select create_support_ticket((select id from sc where name = 'lead'), 'Nope lead', null, 'GENERAL', 'LOW')$$, 'no ticket for a sales lead', 'Customer not found');
+select test.must_fail($$select create_support_ticket((select id from sc where name = 'cust'), 'ab', null, 'GENERAL', 'LOW')$$, 'ticket needs a subject', 'subject');
+select test.must_fail($$select create_support_ticket((select id from sc where name = 'cust'), 'Hands off', null, 'GENERAL', 'LOW', test.id('sup_b'))$$, 'member cannot hand a ticket to someone else', 'cannot assign');
+select test.must_fail($$select update_support_ticket((select id from st where name = 'T'), 'RESOLVED', null, null)$$, 'resolving needs resolution notes', 'resolution notes');
+select update_support_ticket((select id from st where name = 'T'), 'IN_PROGRESS', 'Checking with Meta', null);
+select test.must_fail($$select update_support_ticket((select id from st where name = 'T'), 'IN_PROGRESS', null, null)$$, 'an update needs a change or a note', 'Change the status');
+select update_support_ticket((select id from st where name = 'T'), 'ESCALATED', 'Needs partner team', null);
+select test.check((select status = 'ESCALATED' and escalated_at is not null and escalated_by = test.id('sup_plain') from support_tickets where id = (select id from st where name = 'T')), 'member escalates a ticket');
+select test.must_fail($$update support_tickets set status = 'CLOSED'$$, 'tickets cannot be edited directly', 'permission denied');
+select test.login('sup_b');
+select test.check((select count(*) = 0 from support_tickets), 'another support member does not see the ticket');
+select test.login('sup_th');
+select test.check((select count(*) = 1 from support_tickets where id = (select id from st where name = 'T') and status = 'ESCALATED'), 'team lead sees the escalated ticket');
+select test.check((select count(*) = 3 from support_ticket_updates where ticket_id = (select id from st where name = 'T')), 'team lead sees the ticket history');
+select assign_support_ticket((select id from st where name = 'T'), test.id('sup_b'), 'Please take over');
+select test.must_fail($$select assign_support_ticket((select id from st where name = 'T'), test.id('tm_a'), null)$$, 'team lead cannot assign outside the team', 'active member');
+select update_support_ticket((select id from st where name = 'T'), 'IN_PROGRESS', 'Reassigned to Support B', null);
+select test.login('sup_b');
+select test.check((select count(*) = 1 from support_tickets where id = (select id from st where name = 'T') and assignee_id = test.id('sup_b')), 'reassigned member now sees the ticket');
+select update_support_ticket((select id from st where name = 'T'), 'RESOLVED', 'Template approved', 'Resubmitted the template, approved by Meta');
+select test.must_fail($$select update_support_ticket((select id from st where name = 'T'), 'CLOSED', null, null)$$, 'member cannot close a ticket', 'Only a team lead');
+select test.login('sup_th');
+select update_support_ticket((select id from st where name = 'T'), 'CLOSED', null, null);
+select test.check((select status = 'CLOSED' and resolved_at is not null and resolution_notes like 'Resubmitted%' from support_tickets where id = (select id from st where name = 'T')), 'team lead closes the resolved ticket');
+select test.login('dh_wab');
+select test.check((select count(*) = 1 from support_tickets) and (select count(*) = 7 from support_ticket_updates), 'department head sees tickets and full history');
+select test.login('tm_a');
+select test.check((select count(*) = 0 from support_tickets), 'sales member sees no support tickets');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from support_tickets), 'other department sees no support tickets');
+reset role;
+select test.check((select count(*) >= 1 from notifications where type = 'TICKET_ESCALATED' and recipient_id = test.id('sup_th')), 'team lead notified of the escalation');
+select test.check((select count(*) >= 1 from notifications where type = 'TICKET_ESCALATED' and recipient_id = test.id('dh_wab')), 'department head notified of the escalation');
+select test.check((select count(*) >= 1 from notifications where type = 'TICKET_ASSIGNED' and recipient_id = test.id('sup_b')), 'member notified of the assigned ticket');
+select test.check((select count(*) >= 1 from customer_activities where customer_id = (select id from sc where name = 'cust') and type = 'TICKET_OPENED'), 'ticket is recorded on the customer timeline');
+
+-- Tasks from the team lead
+create temp table sk (name text primary key, id uuid);
+grant all on sk to authenticated;
+set role authenticated;
+select test.login('sup_th');
+select test.check((select assign_team_task('Call back the customer', 'Confirm the template fix', 'HIGH', current_date + 2,
+  (select id from sc where name = 'cust'), array[test.id('sup_plain'), test.id('sup_b')]) = 2), 'team lead assigns a task to two members');
+select test.must_fail($$select assign_team_task('Outsider', null, 'LOW', null, null, array[test.id('tm_a')])$$, 'team lead cannot assign outside the team', 'not an active member');
+select test.must_fail($$select assign_team_task('No one', null, 'LOW', null, null, array[]::uuid[])$$, 'at least one member is needed', 'at least one');
+select test.login('sup_plain');
+insert into sk select 'mine', id from work_tasks where assignee_id = test.id('sup_plain') and title = 'Call back the customer';
+select test.check((select count(*) = 1 and bool_and(customer_id = (select id from sc where name = 'cust')) from work_tasks where title = 'Call back the customer'), 'member sees only their own task, linked to the customer');
+select test.must_fail($$select submit_task_update((select id from sk where name = 'mine'), 'BLOCKED', 10, '')$$, 'blocked needs a reason', 'blocking');
+select submit_task_update((select id from sk where name = 'mine'), 'BLOCKED', 10, 'Waiting for the customer to reply');
+select test.login('sup_th');
+select test.check((select status = 'BLOCKED' and progress = 10 from work_tasks where id = (select id from sk where name = 'mine')), 'team lead sees the blocked status');
+select test.check((select count(*) = 1 and bool_and(author_id = test.id('sup_plain')) from work_task_updates where task_id = (select id from sk where name = 'mine')), 'task history keeps who made the update');
+select test.login('tm_a');
+select test.check((select count(*) = 0 from work_tasks where title = 'Call back the customer'), 'sales member does not see support tasks');
+select test.login('dh_wab');
+select test.check((select count(*) = 2 from work_tasks where title = 'Call back the customer'), 'department head sees support tasks');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'TASK_UPDATE' and recipient_id = test.id('sup_th')), 'team lead notified of the blocked task');
+
+-- Invoices: linked to customers; support staff read, never write
+set role authenticated;
+select test.login('tm_a');
+insert into member_invoices (invoice_number, customer_name, amount, status) values ('INV-1001', 'Sales Customer', 11800, 'Pending');
+insert into member_invoices (invoice_number, customer_name, amount, status) values ('INV-1002', 'Unknown Person', 500, 'Pending');
+select test.check((select customer_id = (select id from sc where name = 'cust') from member_invoices where invoice_number = 'INV-1001'), 'invoice is linked to the customer by name');
+select test.check((select customer_id is null from member_invoices where invoice_number = 'INV-1002'), 'unmatched invoice stays unlinked');
+select test.login('sup_plain');
+select test.check((select count(*) = 1 and bool_and(invoice_number = 'INV-1001') from member_invoices), 'support member sees invoices of visible customers only');
+select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount) values ('INV-X', 'Priya Nair', 1)$$, 'support member cannot create invoices', 'row-level security');
+select test.check((select test.rows($$update member_invoices set status = 'Paid' where invoice_number = 'INV-1001'$$) = 0), 'support member cannot mark an invoice paid');
+select test.check((select test.rows($$delete from member_invoices where invoice_number = 'INV-1001'$$) = 0), 'support member cannot delete invoices');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from member_invoices), 'other departments see no invoices');
+select test.login('tm_a');
+select test.check((select count(*) = 2 from member_invoices), 'sales member still sees and keeps their own invoices');
+reset role;
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

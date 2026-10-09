@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'team-lead' | 'technical-support' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'technical-support' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -20,6 +20,16 @@ export const parseCurrentRoute = (): ParsedRoute => {
       path,
       type: 'team-member',
       paramId: tmMatch[1]
+    };
+  }
+
+  // 1a. /support-member/dashboard/:memberId[/:page]
+  const smMatch = path.match(/^\/support-member\/dashboard\/([^/]+)(?:\/[^/]+)?$/);
+  if (smMatch) {
+    return {
+      path,
+      type: 'support-member',
+      paramId: smMatch[1]
     };
   }
 
@@ -81,6 +91,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
       return '/technical-support/dashboard';
     case 'team-member':
       return `/team-member/dashboard/${user.id}`;
+    case 'support-member':
+      return `/support-member/dashboard/${user.id}`;
     case 'team-lead':
       return `/team-lead/dashboard/${user.id}`;
     case 'admin':
@@ -128,6 +140,17 @@ export const validateRouteAccess = (
     return { allowed: false, redirectTo: `/team-member/dashboard/${user.id}` };
   }
 
+  // If user is a Support team member:
+  if (user.role === 'support-member') {
+    if (route.type === 'support-member') {
+      if (route.paramId && route.paramId !== user.id) {
+        return { allowed: false, redirectTo: `/support-member/dashboard/${user.id}` };
+      }
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: `/support-member/dashboard/${user.id}` };
+  }
+
   // If user is team-lead:
   if (user.role === 'team-lead') {
     if (route.type === 'team-lead') {
@@ -141,7 +164,7 @@ export const validateRouteAccess = (
 
   // If user is admin:
   if (user.role === 'admin') {
-    if (route.type === 'team-member' || route.type === 'team-lead') {
+    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead') {
       return { allowed: false, redirectTo: `/admin/dashboard/${user.departmentId || 'wabastore'}` };
     }
     return { allowed: true };

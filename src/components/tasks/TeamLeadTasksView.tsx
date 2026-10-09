@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { summarize, useWorkTasks, workTasksApi, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
-import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
+import { summarize, useWorkTasks, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
+import { useCustomerOptions } from '../../lib/support';
+import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
 
 /**
  * Team Lead: tasks from the Department Head. Assign each one to team members,
@@ -12,6 +13,7 @@ export const TeamLeadTasksView: React.FC = () => {
   const { profile } = useAuth();
   const data = useWorkTasks();
   const mine = data.tasks.filter(t => t.parentId === null && t.assigneeId === profile?.id);
+  const direct = data.tasks.filter(t => t.parentId === null && t.assignedBy === profile?.id && t.assigneeId !== profile?.id);
   const s = summarize(mine);
 
   return (
@@ -27,9 +29,12 @@ export const TeamLeadTasksView: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Mini label="From Department Head" value={s.total} />
         <Mini label="Completed" value={s.completed} tone="text-emerald-700" />
-        <Mini label="In progress" value={s.inProgress + s.notStarted} tone="text-blue-700" />
+        <Mini label="In progress" value={s.open} tone="text-blue-700" />
         <Mini label="Overdue" value={s.overdue} tone="text-rose-700" />
       </div>
+      <AssignDirectForm data={data} />
+      <DirectTasks tasks={direct} data={data} />
+      <h2 className="text-sm font-bold text-slate-900 pt-2">From your Department Head</h2>
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
       ) : mine.length === 0 ? (
@@ -179,5 +184,152 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
         </div>
       </div>
     </article>
+  );
+};
+
+/** Team Lead → Team Members: your own task, optionally about a customer. */
+const AssignDirectForm: React.FC<{ data: WorkTaskData }> = ({ data }) => {
+  const { profile } = useAuth();
+  const customers = useCustomerOptions();
+  const team = data.people.filter(p => p.role === 'TEAM_MEMBER' && p.status === 'ACTIVE' && p.teamId === profile?.teamId);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
+  const [due, setDue] = useState('');
+  const [customerId, setCustomerId] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setNotice(null);
+    try {
+      const n = await workTasksApi.assignTeamTask({ title: title.trim(), description, priority, dueDate: due || null, customerId: customerId || null, memberIds: picked });
+      setNotice({ ok: true, text: `Task assigned to ${n} team member${n === 1 ? '' : 's'}.` });
+      setTitle('');
+      setDescription('');
+      setDue('');
+      setCustomerId('');
+      setPicked([]);
+      await data.reload();
+    } catch (err) {
+      setNotice({ ok: false, text: err instanceof Error ? err.message : 'Could not assign the task.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const field = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm';
+  return (
+    <form onSubmit={submit} className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3" aria-label="Assign a task to team members">
+      <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+        <UserPlus className="w-4 h-4 text-blue-600" aria-hidden="true" /> Assign a task to your team
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <label className="text-[11px] font-medium text-slate-600 md:col-span-2">
+          Task *
+          <input value={title} onChange={e => setTitle(e.target.value)} maxLength={200} required className={`${field} mt-1`} placeholder="e.g. Call back customers with open tickets" />
+        </label>
+        <label className="text-[11px] font-medium text-slate-600 md:col-span-2">
+          Details
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} maxLength={4000} className={`${field} mt-1`} />
+        </label>
+        <label className="text-[11px] font-medium text-slate-600">
+          Priority
+          <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className={`${field} mt-1`}>
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+          </select>
+        </label>
+        <label className="text-[11px] font-medium text-slate-600">
+          Due date
+          <input type="date" value={due} onChange={e => setDue(e.target.value)} className={`${field} mt-1`} />
+        </label>
+        <label className="text-[11px] font-medium text-slate-600 md:col-span-2">
+          Related customer (optional)
+          <select value={customerId} onChange={e => setCustomerId(e.target.value)} className={`${field} mt-1`}>
+            <option value="">No customer</option>
+            {customers.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.code}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <fieldset>
+        <legend className="text-[11px] font-medium text-slate-600 mb-1.5">Team members *</legend>
+        {team.length === 0 ? (
+          <p className="text-[11px] text-slate-400">Your team has no active members yet.</p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {team.map(p => {
+              const on = picked.includes(p.id);
+              return (
+                <label key={p.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer ${on ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-white border-slate-200 text-slate-700'}`}>
+                  <input type="checkbox" className="accent-blue-600" checked={on} onChange={() => setPicked(v => (on ? v.filter(x => x !== p.id) : [...v, p.id]))} />
+                  {p.fullName}
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </fieldset>
+      {notice && <p className={`text-xs ${notice.ok ? 'text-emerald-700' : 'text-rose-700'}`} role={notice.ok ? 'status' : 'alert'}>{notice.text}</p>}
+      <div className="flex justify-end">
+        <button type="submit" disabled={busy || picked.length === 0 || title.trim().length < 2} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50">
+          {busy ? 'Assigning…' : `Assign to ${picked.length || ''} member${picked.length === 1 ? '' : 's'}`}
+        </button>
+      </div>
+    </form>
+  );
+};
+
+/** Tasks the lead gave straight to members: who is doing what, and how far they are. */
+const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ tasks, data }) => {
+  if (tasks.length === 0) return null;
+  const s = summarize(tasks);
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5" aria-label="Tasks you assigned to team members">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 className="text-sm font-bold text-slate-900">Tasks you assigned ({tasks.length})</h2>
+        <span className="text-[11px] text-slate-500">
+          {s.completed} completed · {s.open} open{s.blocked ? ` · ${s.blocked} blocked` : ''}
+        </span>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {tasks.map(t => {
+          const updates = data.updates.filter(u => u.taskId === t.id);
+          return (
+            <li key={t.id} className="py-3 space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-800">{t.title}</span>
+                  <PriorityPill priority={t.priority} />
+                  <span className="text-xs text-slate-500">→ {nameOf(data.people, t.assigneeId)}</span>
+                </div>
+                <StatusPill status={t.status} />
+              </div>
+              <ProgressBar value={t.progress} label={`Progress of ${t.title}`} />
+              <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-500">
+                <span>Assigned {fmtDate(t.createdAt)}</span>
+                <DueLabel task={t} />
+                {t.lastUpdateNote && <span className="text-slate-600">“{t.lastUpdateNote}”</span>}
+              </div>
+              {updates.length > 0 && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-blue-700 font-semibold">History ({updates.length})</summary>
+                  <div className="mt-2">
+                    <UpdateTimeline updates={updates} people={data.people} />
+                  </div>
+                </details>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 };

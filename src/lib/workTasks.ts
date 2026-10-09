@@ -8,7 +8,7 @@ import { getSupabase } from '../services/supabaseClient';
  * tasks they may see, and the database functions enforce the hierarchy.
  */
 
-export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'NOT_COMPLETED';
+export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'NOT_COMPLETED' | 'BLOCKED';
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface WorkTask {
@@ -16,6 +16,7 @@ export interface WorkTask {
   departmentId: string;
   teamId: string | null;
   parentId: string | null;
+  customerId: string | null;
   title: string;
   description: string | null;
   priority: TaskPriority;
@@ -52,6 +53,7 @@ export interface Person {
 export interface TeamRef {
   id: string;
   name: string;
+  division: 'SALES' | 'SUPPORT' | 'GENERAL' | null;
 }
 
 const toTask = (r: any): WorkTask => ({
@@ -59,6 +61,7 @@ const toTask = (r: any): WorkTask => ({
   departmentId: r.department_id,
   teamId: r.team_id,
   parentId: r.parent_id,
+  customerId: r.customer_id ?? null,
   title: r.title,
   description: r.description,
   priority: r.priority,
@@ -109,6 +112,16 @@ export const workTasksApi = {
       p_priority: input.priority,
       p_due: input.dueDate || null
     }),
+  /** Team lead → team members directly (optionally about a customer). */
+  assignTeamTask: (input: { title: string; description?: string; priority: TaskPriority; dueDate?: string | null; customerId?: string | null; memberIds: string[] }) =>
+    rpc<number>('assign_team_task', {
+      p_title: input.title,
+      p_description: input.description || null,
+      p_priority: input.priority,
+      p_due: input.dueDate || null,
+      p_customer: input.customerId || null,
+      p_members: input.memberIds
+    }),
   assignToMembers: (taskId: string, memberIds: string[]) => rpc<number>('assign_task_to_members', { p_task: taskId, p_members: memberIds }),
   submitUpdate: (taskId: string, input: { status: TaskStatus; progress: number; note?: string }) =>
     rpc<void>('submit_task_update', { p_task: taskId, p_status: input.status, p_progress: input.progress, p_note: input.note || null })
@@ -144,7 +157,7 @@ export function useWorkTasks(): WorkTaskData {
       supabase.from('work_tasks').select('*').order('created_at', { ascending: false }).limit(1000),
       supabase.from('work_task_updates').select('*').order('created_at', { ascending: false }).limit(2000),
       supabase.from('profiles').select('id, full_name, role, team_id, department_id, status').order('full_name'),
-      supabase.from('teams').select('id, name')
+      supabase.from('teams').select('id, name, division')
     ]);
     const firstError = t.error || u.error || p.error || tm.error;
     if (firstError) setError(cleanError(firstError.message));
@@ -162,7 +175,7 @@ export function useWorkTasks(): WorkTaskData {
           status: r.status
         }))
       );
-    if (!tm.error) setTeams((tm.data || []).map((r: any) => ({ id: r.id, name: r.name })));
+    if (!tm.error) setTeams((tm.data || []).map((r: any) => ({ id: r.id, name: r.name, division: r.division ?? null })));
     setLoading(false);
   }, []);
 
@@ -205,6 +218,11 @@ export function summarize(list: WorkTask[]) {
   const inProgress = list.filter(t => t.status === 'IN_PROGRESS').length;
   const notStarted = list.filter(t => t.status === 'ASSIGNED').length;
   const notCompleted = list.filter(t => t.status === 'NOT_COMPLETED').length;
+  const blocked = list.filter(t => t.status === 'BLOCKED').length;
   const overdue = list.filter(isOverdue).length;
-  return { total, completed, inProgress, notStarted, notCompleted, overdue, pct: total ? Math.round((completed / total) * 100) : 0 };
+  return { total, completed, inProgress, notStarted, notCompleted, blocked, open: inProgress + notStarted + blocked, overdue, pct: total ? Math.round((completed / total) * 100) : 0 };
 }
+
+/** A task a team lead gave straight to a team member (no department-head task above it). */
+export const isDirectMemberTask = (t: WorkTask, people: Person[]) =>
+  t.parentId === null && people.find(p => p.id === t.assignedBy)?.role === 'TEAM_HEAD';
