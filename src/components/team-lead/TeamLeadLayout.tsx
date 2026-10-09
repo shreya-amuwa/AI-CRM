@@ -19,10 +19,7 @@ import {
   Navigation,
   MapPin,
   UserPlus,
-  UserCheck,
-  ClipboardList,
-  Headset,
-  Gauge
+  ClipboardList
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -30,12 +27,8 @@ import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 export type TeamLeadNav =
-  | 'tl-dashboard'
   | 'overview'
   | 'assigned-tasks'
-  | 'support-customers'
-  | 'support-tickets'
-  | 'client-handovers'
   | 'team-members'
   | 'reps'
   | 'field-visits'
@@ -45,9 +38,6 @@ export type TeamLeadNav =
   | 'sla'
   | 'analytics'
   | 'settings';
-
-/** Pages only a Support Team Lead has (never shown to a Sales Team Lead). */
-export const SUPPORT_ONLY_NAV: TeamLeadNav[] = ['tl-dashboard', 'support-customers', 'support-tickets', 'client-handovers'];
 
 interface TeamLeadLayoutProps {
   children: React.ReactNode;
@@ -74,20 +64,9 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const pendingApprovalsCount = usePendingApprovalsCount();
 
-  const isSupport = user?.profile?.team?.division === 'SUPPORT';
   const navItems = [
-    // Support Team Leads: the Team Leader dashboard and the client hand-over
-    // chain come first. Sales Team Leads keep their sales workspace only.
-    ...(isSupport ? [{ id: 'tl-dashboard' as TeamLeadNav, label: 'Dashboard', icon: Gauge }] : []),
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
     { id: 'assigned-tasks' as TeamLeadNav, label: 'Assigned Tasks', icon: ClipboardList },
-    ...(isSupport
-      ? [
-          { id: 'support-customers' as TeamLeadNav, label: 'Support Customers', icon: Users },
-          { id: 'support-tickets' as TeamLeadNav, label: 'Support Tickets', icon: Headset },
-          { id: 'client-handovers' as TeamLeadNav, label: 'Client Hand-overs', icon: UserCheck }
-        ]
-      : []),
     { id: 'team-members' as TeamLeadNav, label: 'Team Members & Access', icon: UserPlus },
     { id: 'reps' as TeamLeadNav, label: 'Team Reps (5)', icon: Users },
     {
