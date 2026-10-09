@@ -18,6 +18,7 @@ import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { SupportLeadCustomers, SupportLeadTickets } from '../support-member/SupportLeadViews';
 import { HandoverBoard } from '../handover/HandoverBoard';
+import { TeamLeaderDashboard } from './dashboard/TeamLeaderDashboard';
 import { useAuth } from '../../context/AuthContext';
 
 interface TeamLeadDashboardProps {
@@ -30,7 +31,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
   userName
 }) => {
   const { profile } = useAuth();
-  const [activeNav, setActiveNav] = useState<TeamLeadNav>('overview');
+  const [activeNav, setActiveNav] = useState<TeamLeadNav>('tl-dashboard');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Store data states
@@ -161,6 +162,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
       )}
+
+      {/* Team Leader dashboard: customers, assignments, tickets (database) */}
+      {activeNav === 'tl-dashboard' && <TeamLeaderDashboard />}
 
       {/* VIEW 1: OVERVIEW */}
       {activeNav === 'overview' && (

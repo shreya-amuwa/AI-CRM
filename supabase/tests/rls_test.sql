@@ -1205,4 +1205,99 @@ reset role;
 select test.check((select count(*) = 2 from notifications where type = 'INVOICE_REQUESTED' and recipient_id = test.id('tm_a')), 'customer owner notified of the invoice requests');
 select test.check((select count(*) = 2 from notifications where type = 'INVOICE_REQUESTED' and recipient_id = test.id('sup_th')), 'team lead notified of the invoice requests');
 
+
+\echo '--- 21. Team Leader dashboard: scope, assignment, tickets, protection'
+reset role;
+-- The Department Head passes customer B (onboarding) to the Delivery team lead (fixture for the DH step).
+update public.customer_onboarding set handover_stage = 'TEAM_LEAD', team_lead_id = test.id('th_gen'), passed_to_team_lead_at = now()
+ where customer_id = (select id from pipeline where name = 'B');
+-- A ticket raised by sales on customer A (handed to the Delivery lead earlier): not the lead's own team.
+insert into public.support_tickets (customer_id, department_id, team_id, subject, priority, status, assignee_id, created_by)
+values ((select id from pipeline where name = 'A'), test.dept('wabastore'), test.team('wabastore', 'Sales'),
+        'Cannot sign in to the panel', 'HIGH', 'OPEN', test.id('tm_a'), test.id('tm_a'));
+create temp table tl as select id, subject from public.support_tickets where subject = 'Cannot sign in to the panel';
+grant select on tl to authenticated;
+
+set role authenticated;
+select test.login('tm_d1');
+select test.must_fail($$select team_lead_dashboard()$$, 'a team member has no team lead dashboard', 'FORBIDDEN');
+select test.must_fail($$select team_lead_customers()$$, 'a team member cannot list the team lead scope', 'FORBIDDEN');
+
+select test.login('th_gen');
+select test.check((select (team_lead_dashboard() -> 'totals' ->> 'needsDecision')::int = 1), 'customer passed by the department head needs a decision');
+select test.check((select x ->> 'assignment' = 'DECISION' and (x ->> 'handedOver')::boolean
+                   from jsonb_array_elements(team_lead_customers(null, null, 'DECISION') -> 'items') x
+                   where x ->> 'id' = (select id from pipeline where name = 'B')::text), 'it is listed under Needs decision');
+select test.check((select x ->> 'assigneeName' = 'Delivery Member' and x ->> 'assignment' = 'TEAM'
+                   from jsonb_array_elements(team_lead_customers() -> 'items') x
+                   where x ->> 'id' = (select id from pipeline where name = 'A')::text), 'handed-over customer shows the member it was assigned to');
+
+-- Keep with me / assign to a team member (existing create_support_customer)
+insert into pipeline select 'K', create_support_customer('Kiran Kapoor', 'Kapoor Traders', '+91 98111 22333', 'kiran@kapoor.example',
+  'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, null);
+select test.check((select owner_id = test.id('th_gen') from customers where id = (select id from pipeline where name = 'K')), 'Keep with me: the lead owns the new customer');
+insert into pipeline select 'M', create_support_customer('Meera Shah', null, '+91 98111 44555', null,
+  'CORPORATE', 'PROSPECT', null, '{}'::jsonb, null, 'Phone', null, test.id('tm_d1'));
+select test.check((select owner_id = test.id('tm_d1') from customers where id = (select id from pipeline where name = 'M')), 'Assign to team member on creation');
+select test.must_fail($$select create_support_customer('Duplicate', null, '+91 98111 22333', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, null)$$,
+  'duplicate phone is refused', 'already exists');
+select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, test.id('tm_a'))$$,
+  'cannot create a customer for another team''s member', 'FORBIDDEN');
+select test.check((select (team_lead_dashboard() -> 'totals' ->> 'mine')::int = 1
+                     and (team_lead_dashboard() -> 'totals' ->> 'team')::int = 2
+                     and (team_lead_dashboard() -> 'totals' ->> 'customers')::int = 4), 'KPIs: 4 customers = 1 mine + 2 team + 1 needs decision');
+select test.check((select x ->> 'customers' = '2' from jsonb_array_elements(team_lead_dashboard() -> 'members') x
+                    where x ->> 'id' = test.id('tm_d1')::text), 'member workload: 2 customers');
+select test.check((select jsonb_array_length(team_lead_customers(null, null, 'MINE') -> 'items') = 1
+                      and (team_lead_customers(null, null, 'TEAM') ->> 'total')::int = 2
+                      and (team_lead_customers(null, null, null, test.id('tm_d1')) ->> 'total')::int = 2), 'assignment and member filters');
+select test.check((select (team_lead_customers('kapoor') ->> 'total')::int = 1 and (team_lead_customers(null, 'PROSPECT') ->> 'total')::int = 1),
+  'search and status filter run on the server');
+select test.check((select jsonb_array_length(team_lead_customers(null, null, null, null, 'name', 2, 1) -> 'items') = 1
+                      and (team_lead_customers(null, null, null, null, 'name', 2, 1) ->> 'total')::int = 4), 'pagination keeps the total');
+select test.must_fail($$select team_lead_customers(null, 'BOGUS')$$, 'unknown status filter refused', 'Unknown customer status');
+select test.must_fail($$select team_lead_customers(null, null, null, test.id('tm_a'))$$, 'cannot filter by a member of another team', 'member of your team');
+
+-- Reassignment
+select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('tm_d1'));
+select test.check((select owner_id = test.id('tm_d1') from customers where id = (select id from pipeline where name = 'K')), 'reassign a team customer to a member');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('tm_d1'))$$, 'no silent re-assignment to the same person', 'already assigned');
+select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('th_gen'));
+select test.check((select owner_id = test.id('th_gen') from customers where id = (select id from pipeline where name = 'K')), 'assign back to me');
+select team_lead_assign_customer((select id from pipeline where name = 'B'), test.id('th_gen'));
+select test.check((select handover_stage = 'TEAM_MEMBER' and team_member_id = test.id('th_gen') from customer_onboarding
+                    where customer_id = (select id from pipeline where name = 'B')), 'keep a handed-over customer myself');
+select test.check((select owner_id = test.id('tm_a') from customers where id = (select id from pipeline where name = 'B')), 'the sales owner of a handed-over customer is untouched');
+select test.check((select (team_lead_dashboard() -> 'totals' ->> 'needsDecision')::int = 0 and (team_lead_dashboard() -> 'totals' ->> 'mine')::int = 2),
+  'KPIs follow the decision');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('tm_a'))$$, 'cannot assign to another team''s member', 'member of your team');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('th_wab'))$$, 'cannot hand to another team lead', 'member of your team');
+select test.check((select count(*) = 3 from customer_activities where customer_id = (select id from pipeline where name = 'K')
+                    and type in ('CUSTOMER_CREATED', 'CUSTOMER_REASSIGNED')), 'creation and reassignments are in the activity log');
+
+-- Tickets
+select create_support_ticket((select id from pipeline where name = 'M'), 'Needs a new template', 'details', 'SERVICE_REQUEST', 'LOW', test.id('tm_d1'));
+select test.check((select (team_lead_tickets() ->> 'total')::int = 2), 'tickets of handed-over and team customers are listed');
+select test.check((select (x ->> 'manageable')::boolean = false from jsonb_array_elements(team_lead_tickets() -> 'items') x
+                    where x ->> 'subject' = 'Cannot sign in to the panel'), 'a ticket of another team is view-only');
+select test.check((select count(*) = 1 from support_tickets where subject = 'Cannot sign in to the panel'), 'the lead can read that ticket (RLS)');
+select test.must_fail($$select update_support_ticket((select id from tl), 'CLOSED', 'closing', 'done')$$, 'viewing a ticket does not allow closing it', 'NOT_FOUND');
+select test.check((select (team_lead_tickets(null, 'OPEN_ONLY', 'HIGH') ->> 'total')::int = 1
+                      and (team_lead_tickets(null, 'ALL', null, null, test.id('tm_d1')) ->> 'total')::int = 1
+                      and (team_lead_tickets('template') ->> 'total')::int = 1), 'ticket filters and search');
+select test.check((select (team_lead_dashboard() -> 'totals' ->> 'openTickets')::int = 2 and (team_lead_dashboard() -> 'totals' ->> 'urgentTickets')::int = 1),
+  'open / high-priority ticket counts');
+select test.check((select jsonb_array_length(team_lead_dashboard() -> 'activity') > 0), 'recent activity comes from the activity log');
+
+-- Other team leads
+select test.login('th_wbx');
+select test.check((select (team_lead_customers('kapoor') ->> 'total')::int = 0 and (team_lead_tickets(null, 'ALL') ->> 'total')::int = 0),
+  'another department''s lead sees none of it');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('th_wbx'))$$, 'another lead cannot reassign it', 'NOT_FOUND');
+select test.check((select count(*) = 0 from support_tickets where subject = 'Needs a new template'), 'another lead cannot read the tickets');
+select test.login('th_wab');
+select test.check((select (team_lead_customers('kapoor') ->> 'total')::int = 0), 'a lead of another team in the same department does not see it');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'M'), test.id('th_wab'))$$, 'nor reassign it', 'NOT_FOUND');
+reset role;
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

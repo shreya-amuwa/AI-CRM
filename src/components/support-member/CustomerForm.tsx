@@ -75,10 +75,13 @@ interface CustomerFormProps {
   onSubmit: (input: CustomerInput) => Promise<void>;
   onCancel: () => void;
   idPrefix?: string;
+  /** Wording of the assignee field (defaults to the Support wording). */
+  assigneeLabel?: string;
+  assigneeHint?: string;
 }
 
 /** The customer fields, validated here and again by the database. */
-export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, submitLabel, onSubmit, onCancel, idPrefix = 'cf' }) => {
+export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, submitLabel, onSubmit, onCancel, idPrefix = 'cf', assigneeLabel, assigneeHint }) => {
   const { profile } = useAuth();
   const services = useServices();
   const isLead = profile?.role === 'TEAM_HEAD' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'SUPER_ADMIN';
@@ -224,9 +227,9 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FormField
-          label="Assigned support team member"
+          label={assigneeLabel || 'Assigned support team member'}
           htmlFor={id('assignee')}
-          hint={isLead ? 'Choose who will look after this customer.' : 'Your customers are assigned to you.'}
+          hint={assigneeHint || (isLead ? 'Choose who will look after this customer.' : 'Your customers are assigned to you.')}
         >
           <select id={id('assignee')} value={form.assigneeId || ''} onChange={e => set('assigneeId', e.target.value)} disabled={!isLead} className={inputClass}>
             {assigneeOptions.map(p => (
