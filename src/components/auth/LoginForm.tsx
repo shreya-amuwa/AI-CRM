@@ -185,43 +185,7 @@ export const LoginForm: React.FC = () => {
         {/* Main Card Container */}
         <div className="w-full max-w-[480px] bg-white/95 backdrop-blur-xl p-5 sm:p-7 rounded-3xl shadow-2xl shadow-blue-900/10 border border-white/90 hover:border-blue-300/80 transition-all duration-300 relative z-10">
           
-          {/* Top Side-by-Side Sign In & Sign Up Tab Bar (Prompt Requirement) */}
-          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl mb-4 border border-slate-200/80 shadow-inner">
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(false);
-                setLoginError('');
-                setRegError('');
-              }}
-              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                !isSignUp
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
-              }`}
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Sign In</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsSignUp(true);
-                setLoginError('');
-                setRegError('');
-              }}
-              className={`py-2 px-3 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                isSignUp
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
-              }`}
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Sign Up</span>
-            </button>
-          </div>
-
+          {/* Accounts are created by managers (Team Members & Access); there is no self sign-up. */}
           {/* Header Title & Subtitle */}
           <div className="text-center mb-4">
             <h2 className="text-xl sm:text-2xl font-bold font-heading text-[#0F172A] tracking-tight">
@@ -432,7 +396,7 @@ export const LoginForm: React.FC = () => {
                       onClick={() => setShowRegPassword(!showRegPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
-                      {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showRegPassword ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -460,7 +424,7 @@ export const LoginForm: React.FC = () => {
                       onClick={() => setShowRegConfirmPassword(!showRegConfirmPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
-                      {showRegConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showRegConfirmPassword ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                 </div>
@@ -575,7 +539,7 @@ export const LoginForm: React.FC = () => {
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
@@ -610,21 +574,7 @@ export const LoginForm: React.FC = () => {
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </button>
 
-                {/* Toggle to Sign Up */}
-                <div className="text-center pt-1.5">
-                  <span className="text-xs text-slate-500">Need an account? </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSignUp(true);
-                      setLoginError('');
-                      setRegError('');
-                    }}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-700 hover:underline transition-colors"
-                  >
-                    Sign Up &rarr;
-                  </button>
-                </div>
+                <p className="text-center pt-1.5 text-xs text-slate-500">Need an account? Ask your Team Lead or Department Head to add you.</p>
               </form>
 
             </div>

@@ -156,7 +156,7 @@ export const ClientLoginCard: React.FC<{
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700"
                   aria-label={show ? 'Hide password' : 'Show password'}
                 >
-                  {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {show ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               </div>
               <button

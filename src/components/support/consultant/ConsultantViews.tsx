@@ -595,8 +595,10 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputId = `consultant-${item.code}`;
+  const isWaba = item.code === 'WABA_ID';
   const save = async () => {
     if (!value.trim()) return setError('Enter a value.');
+    if (isWaba && !/^[0-9]{12,20}$/.test(value.replace(/\s/g, ''))) return setError('WABA ID must be numbers only, at least 12 digits.');
     setBusy(true);
     setError(null);
     try {
@@ -628,7 +630,19 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
       {item.hint && <p className="text-xs text-slate-500 mt-0.5">{item.hint}</p>}
       {editing ? (
         <div className="mt-2 flex gap-2">
-          <input id={inputId} className={`${inputCls} py-2`} value={value} onChange={e => setValue(e.target.value)} maxLength={200} />
+          <input
+            id={inputId}
+            className={`${inputCls} py-2`}
+            value={value}
+            onChange={e => {
+              setError(null);
+              setValue(isWaba ? e.target.value.replace(/[^0-9]/g, '') : e.target.value);
+            }}
+            maxLength={isWaba ? 20 : 200}
+            inputMode={isWaba ? 'numeric' : undefined}
+            placeholder={isWaba ? 'At least 12 digits' : undefined}
+            aria-describedby={isWaba ? `${inputId}-rule` : undefined}
+          />
           <button type="button" onClick={save} disabled={busy} className="px-3.5 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 shrink-0">
             {busy ? 'Saving…' : 'Save'}
           </button>
@@ -638,7 +652,13 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
             </button>
           )}
         </div>
-      ) : (
+      ) : null}
+      {editing && isWaba && (
+        <p id={`${inputId}-rule`} className="text-[11px] text-slate-500 mt-1">
+          Numbers only, at least 12 digits ({value.length} entered).
+        </p>
+      )}
+      {!editing && (
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-sm font-mono text-slate-800 break-all">{item.entry?.value || '—'}</span>
           {!readOnly && (

@@ -18,8 +18,6 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
-import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
-import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import {
   isDirectMemberTask,
@@ -48,8 +46,6 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
   const [nav, setNav] = useState<Nav>('assign');
   const [mobileOpen, setMobileOpen] = useState(false);
   const data = useWorkTasks();
-  const [accessOpen, setAccessOpen] = useState(false);
-  const pendingApprovals = usePendingApprovalsCount();
 
   const items: { id: Nav; label: string; icon: React.ElementType }[] = [
     { id: 'assign', label: 'Assign', icon: ClipboardList },
@@ -139,19 +135,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl text-slate-500" aria-label="Open menu">
             <Menu className="w-5 h-5" />
           </button>
-          <button
-            type="button"
-            onClick={() => setAccessOpen(true)}
-            className="ml-auto mr-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            aria-label={`Staff approvals${pendingApprovals > 0 ? ` (${pendingApprovals} pending)` : ''}`}
-          >
-            <ShieldCheck className="w-4 h-4 text-blue-600" aria-hidden="true" />
-            <span className="hidden sm:inline">Staff Approvals</span>
-            {pendingApprovals > 0 && (
-              <span className="min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">{pendingApprovals}</span>
-            )}
-          </button>
-          <div className="pl-3 border-l border-slate-200">
+          <div className="ml-auto pl-3 border-l border-slate-200">
             <div className="text-xs font-bold text-slate-900 leading-none">{user?.name}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">Department Head</div>
           </div>
@@ -170,7 +154,6 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}
         </main>
       </div>
-      {accessOpen && <UserAccessManagementModal isOpen={accessOpen} onClose={() => setAccessOpen(false)} />}
     </div>
   );
 };

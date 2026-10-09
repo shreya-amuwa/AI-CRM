@@ -6,8 +6,6 @@ import { AmuwaLogo } from '../common/AmuwaLogo';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
-import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
-import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { TeamLeaderDashboard } from '../team-lead/dashboard/TeamLeaderDashboard';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
@@ -79,13 +77,11 @@ const LeadInvoices: React.FC = () => {
 export const SupportLeadDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
-  const pendingApprovals = usePendingApprovalsCount();
   const userId = user?.id || profile?.id || '';
   const [page, setPage] = useState<SupportLeadPage>(() => parseSupportLeadPage(window.location.pathname));
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
-  const [accessOpen, setAccessOpen] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
   const userRef = useRef<HTMLDivElement>(null);
 
@@ -187,18 +183,6 @@ export const SupportLeadDashboard: React.FC = () => {
             {teamName ? ` · ${teamName}` : ''}
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => setAccessOpen(true)}
-              className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              aria-label={`Staff approvals${pendingApprovals > 0 ? ` (${pendingApprovals} pending)` : ''}`}
-            >
-              <ShieldCheck className="w-4 h-4 text-blue-600" aria-hidden="true" />
-              <span className="hidden sm:inline">Staff Approvals</span>
-              {pendingApprovals > 0 && (
-                <span className="min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">{pendingApprovals}</span>
-              )}
-            </button>
             <div className="relative" ref={bellRef}>
               <button
                 type="button"
@@ -285,7 +269,6 @@ export const SupportLeadDashboard: React.FC = () => {
         </main>
       </div>
 
-      {accessOpen && <UserAccessManagementModal isOpen={accessOpen} onClose={() => setAccessOpen(false)} />}
     </div>
   );
 };

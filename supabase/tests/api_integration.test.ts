@@ -102,7 +102,10 @@ check(r.status === 403, 'a department head cannot make a department head', r);
 r = await api('dh', 'PATCH', `/users/${promoId}`, { role: 'TEAM_HEAD', teamId: sales.id });
 check(r.status === 200 && r.json.data.role === 'TEAM_HEAD' && r.json.data.defaultDashboard === 'sales-lead', 'department head makes a team member a team lead', r);
 r = await api('sa', 'PATCH', `/users/${promoId}`, { role: 'DEPARTMENT_HEAD', departmentId: wab.id });
-check(r.status === 200 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.defaultDashboard === 'department-head', 'super admin makes a team lead a department head', r);
+check(r.status === 409 && /already has a Department Head/.test(r.json.error.message), 'only one department head per department', r);
+const headless = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'digitree');
+r = await api('sa', 'PATCH', `/users/${promoId}`, { role: 'DEPARTMENT_HEAD', departmentId: headless.id });
+check(r.status === 200 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.defaultDashboard === 'department-head', 'super admin makes a team lead the head of a department without one', r);
 
 r = await api('a', 'POST', '/users', { email: 'x@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
 check(r.status === 403 && r.json.error.code === 'FORBIDDEN', 'team member cannot create users', r);
@@ -246,10 +249,11 @@ r = await api('sa', 'POST', '/departments', { name: 'New Unit', description: 'x'
 check(r.status === 201 && r.json.data.slug === 'new-unit', 'super admin creates department', r);
 r = await api('dh', 'POST', '/teams', { departmentId: wab.id, name: 'Enterprise', division: 'SALES' });
 check(r.status === 201, 'department head creates team');
-r = await api('dh', 'DELETE', `/users/${pendingId}`);
-check(r.status === 403, 'department head cannot delete users');
-r = await api('sa', 'DELETE', `/users/${memberA}`);
-check(r.status === 409, 'cannot delete user who owns customers', r);
+r = await api('a', 'DELETE', `/users/${pendingId}`);
+check(r.status === 403, 'a team member cannot remove users', r);
+const superAdminId = (await api('sa', 'GET', '/me')).json.data.id;
+r = await api('dh', 'DELETE', `/users/${superAdminId}`);
+check(r.status === 403, 'a department head cannot remove the super admin', r);
 r = await api('sa', 'DELETE', `/users/${pendingId}`);
 check(r.status === 200, 'super admin deletes user', r);
 r = await api('sa', 'GET', '/nope');

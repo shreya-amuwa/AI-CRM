@@ -4,8 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { sessionManager } from '../../services/sessionManager';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { getSupabaseConfig } from '../../services/supabaseClient';
-import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
-import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
@@ -14,13 +12,10 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
   const { activeDepartment, user, logout } = useAuth();
   const supabaseConfig = getSupabaseConfig();
-  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-  const pendingCount = usePendingApprovalsCount();
 
   if (!activeDepartment) return null;
 
   const activeSessions = sessionManager.getDepartmentSessions(activeDepartment.id);
-  const canManageAccess = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'hr' || user?.role === 'team-lead';
 
   return (
     <>
@@ -87,24 +82,6 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
             )}
           </div>
 
-          {/* Access & Approvals Control Button (Super Admin / Admin / Dept Head / Team Lead) */}
-          {canManageAccess && (
-            <button
-              type="button"
-              onClick={() => setIsAccessModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs relative"
-              title="Staff Access & Approvals Control"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="hidden md:inline">Access & Approvals</span>
-              {pendingCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-          )}
-
           {/* User Profile & Logout */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
             <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center font-mono shadow-xs">
@@ -130,13 +107,6 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
         </div>
       </header>
 
-      {/* Staff Access & Approvals Modal */}
-      {isAccessModalOpen && (
-        <UserAccessManagementModal
-          isOpen={isAccessModalOpen}
-          onClose={() => setIsAccessModalOpen(false)}
-        />
-      )}
     </>
   );
 };

@@ -10,8 +10,6 @@ import { useTabs } from '../../context/TabContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { Department } from '../../types/crm';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
-import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
-import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 import { AddStaffModal } from '../common/AddStaffModal';
 
 const getFallbackIcon = (iconName: string) => {
@@ -51,9 +49,7 @@ export const DepartmentSelector: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [lockTarget, setLockTarget] = useState<Department | null>(null);
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
-  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
-  const pendingCount = usePendingApprovalsCount();
 
   const showNotice = (message: string) => {
     setLockedNotice(message);
@@ -113,23 +109,6 @@ export const DepartmentSelector: React.FC = () => {
             </button>
           )}
 
-          {/* Access & Approvals Control for Super Admin & Admin */}
-          {(isSuperAdmin || isAdminOrHR) && (
-            <button
-              type="button"
-              onClick={() => setIsAccessModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs backdrop-blur-md"
-              title="Staff Access & Approvals Control"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Access & Approvals</span>
-              {pendingCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
-                  {pendingCount}
-                </span>
-              )}
-            </button>
-          )}
 
           <button
             onClick={logout}
@@ -344,13 +323,6 @@ export const DepartmentSelector: React.FC = () => {
 
       {isAddStaffOpen && <AddStaffModal onClose={() => setIsAddStaffOpen(false)} />}
 
-      {/* Staff Access & Approvals Modal */}
-      {isAccessModalOpen && (
-        <UserAccessManagementModal
-          isOpen={isAccessModalOpen}
-          onClose={() => setIsAccessModalOpen(false)}
-        />
-      )}
     </div>
   );
 };
