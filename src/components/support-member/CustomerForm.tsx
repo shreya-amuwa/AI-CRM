@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { Person } from '../../lib/workTasks';
 import {
@@ -10,6 +10,7 @@ import {
   SEGMENT_LABELS,
   useServices,
   type CustomerInput,
+  type CustomerServiceEntry,
   type CustomerSegmentValue,
   type CustomerStatusValue,
   type SupportCustomer,
@@ -26,8 +27,7 @@ export const emptyCustomerInput = (assigneeId?: string): CustomerInput => ({
   email: '',
   segment: 'RETAIL',
   status: 'ACTIVE',
-  serviceCode: '',
-  serviceDetails: {},
+  services: [],
   requirement: '',
   channel: 'Phone',
   notes: '',
@@ -41,15 +41,21 @@ export const customerToInput = (c: SupportCustomer): CustomerInput => ({
   email: c.email || '',
   segment: c.segment,
   status: c.status,
-  serviceCode: c.serviceCode || '',
-  serviceDetails: c.serviceDetails || {},
+  services: c.services.map(x => ({ serviceCode: x.serviceCode, serviceDetails: { ...x.serviceDetails } })),
   requirement: c.requirement || '',
   channel: c.channel || 'Phone',
   notes: c.notes || '',
   assigneeId: c.ownerId
 });
 
-type Errors = Partial<Record<'name' | 'contact' | 'email' | 'phone' | 'whatsapp', string>>;
+type Errors = Partial<Record<'name' | 'contact' | 'email' | 'phone' | 'whatsapp' | 'service', string>>;
+
+function validateWhatsApp(code: string, d: WhatsAppDetails): string | undefined {
+  if (!isWhatsAppService(code)) return undefined;
+  if ([d.campaignsSent, d.packageMessages, d.messagesSent].some(n => n !== undefined && (n < 0 || !Number.isInteger(n)))) return 'Use whole numbers of 0 or more.';
+  if ((d.messagesSent || 0) > (d.packageMessages || 0)) return 'Messages sent cannot be more than the message package.';
+  return undefined;
+}
 
 function validate(f: CustomerInput): Errors {
   const e: Errors = {};
@@ -58,12 +64,6 @@ function validate(f: CustomerInput): Errors {
   if (f.email.trim() && !EMAIL_RE.test(f.email.trim())) e.email = 'Enter a valid e-mail address.';
   if (f.phone.trim() && (!/^[0-9+()\-\s.]{5,25}$/.test(f.phone.trim()) || f.phone.replace(/\D/g, '').length < 7))
     e.phone = 'Enter a valid phone number (at least 7 digits).';
-  if (isWhatsAppService(f.serviceCode)) {
-    const d = f.serviceDetails;
-    if ([d.campaignsSent, d.packageMessages, d.messagesSent].some(n => n !== undefined && (n < 0 || !Number.isInteger(n))))
-      e.whatsapp = 'Use whole numbers of 0 or more.';
-    else if ((d.messagesSent || 0) > (d.packageMessages || 0)) e.whatsapp = 'Messages sent cannot be more than the message package.';
-  }
   return e;
 }
 
@@ -89,20 +89,49 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
     p => (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.status === 'ACTIVE' && (profile?.role === 'TEAM_HEAD' ? p.teamId === profile?.teamId : true)
   );
   const [form, setForm] = useState<CustomerInput>(initial);
+  // The service being filled in; "Add service" moves it into form.services and opens the next one.
+  const [draftCode, setDraftCode] = useState('');
+  const [draftDetails, setDraftDetails] = useState<WhatsAppDetails>({});
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const set = <K extends keyof CustomerInput>(k: K, v: CustomerInput[K]) => setForm(f => ({ ...f, [k]: v }));
   const setWa = (k: keyof WhatsAppDetails, v: string) => {
-    setErrors(e => ({ ...e, whatsapp: undefined }));
-    setForm(f => ({
-      ...f,
-      serviceDetails: { ...f.serviceDetails, [k]: k === 'campaignNotes' ? v : v === '' ? undefined : Number(v) }
-    }));
+    setErrors(e => ({ ...e, whatsapp: undefined, service: undefined }));
+    setDraftDetails(d => ({ ...d, [k]: k === 'campaignNotes' ? v : v === '' ? undefined : Number(v) }));
   };
+  const serviceName = (code: string) => services.find(x => x.code === code)?.name || code;
+  const added = form.services;
+  /** Moves the service being filled in to the list. Returns the new list, or null when it is invalid. */
+  const addDraft = (): CustomerServiceEntry[] | null => {
+    if (!draftCode) return added;
+    const problem = validateWhatsApp(draftCode, draftDetails);
+    if (problem) {
+      setErrors(e => ({ ...e, whatsapp: problem }));
+      return null;
+    }
+    const next = [...added, { serviceCode: draftCode, serviceDetails: isWhatsAppService(draftCode) ? draftDetails : {} }];
+    setForm(f => ({ ...f, services: next }));
+    setDraftCode('');
+    setDraftDetails({});
+    setErrors(e => ({ ...e, whatsapp: undefined, service: undefined }));
+    return next;
+  };
+  const editAdded = (code: string) => {
+    const entry = added.find(x => x.serviceCode === code);
+    if (!entry) return;
+    // Anything half-filled goes back into the list first.
+    const kept = added.filter(x => x.serviceCode !== code);
+    const pending = draftCode ? [...kept, { serviceCode: draftCode, serviceDetails: isWhatsAppService(draftCode) ? draftDetails : {} }] : kept;
+    setForm(f => ({ ...f, services: pending }));
+    setDraftCode(entry.serviceCode);
+    setDraftDetails({ ...entry.serviceDetails });
+  };
+  const removeAdded = (code: string) => setForm(f => ({ ...f, services: f.services.filter(x => x.serviceCode !== code) }));
   const id = (k: string) => `${idPrefix}-${k}`;
   const categories = [...new Set(services.map(s => s.category))];
-  const wa = form.serviceDetails;
+  const taken = new Set(form.services.map(x => x.serviceCode));
+  const wa = draftDetails;
   const assigneeOptions = isLead ? team : [{ id: profile?.id || '', fullName: profile?.fullName || 'Me' }];
   // When editing someone else's customer, keep the current owner selectable.
   if (form.assigneeId && !assigneeOptions.some(p => p.id === form.assigneeId)) {
@@ -114,11 +143,17 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
     ev.preventDefault();
     setServerError(null);
     const e = validate(form);
+    // A service picked but not yet added is added automatically.
+    const list = addDraft();
+    if (list === null) {
+      setErrors({ ...e, whatsapp: validateWhatsApp(draftCode, draftDetails) });
+      return;
+    }
     setErrors(e);
     if (Object.keys(e).length) return;
     setSaving(true);
     try {
-      await onSubmit(form);
+      await onSubmit({ ...form, services: list });
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Could not save the customer.');
       setSaving(false);
@@ -158,20 +193,30 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
             ))}
           </select>
         </FormField>
-        <FormField label="Service or product" htmlFor={id('service')}>
-          <select id={id('service')} value={form.serviceCode} onChange={e => set('serviceCode', e.target.value)} className={inputClass}>
-            <option value="">Choose a service</option>
-            {categories.map(cat => (
-              <optgroup key={cat} label={cat}>
-                {services
-                  .filter(s => s.category === cat)
-                  .map(s => (
+        <FormField label={added.length ? 'Add another service or product' : 'Service or product'} htmlFor={id('service')} error={errors.service}>
+          <select
+            id={id('service')}
+            value={draftCode}
+            onChange={e => {
+              setDraftCode(e.target.value);
+              setDraftDetails({});
+              setErrors(er => ({ ...er, whatsapp: undefined }));
+            }}
+            className={inputClass}
+          >
+            <option value="">{added.length ? 'Choose another service' : 'Choose a service'}</option>
+            {categories.map(cat => {
+              const opts = services.filter(s => s.category === cat && !taken.has(s.code));
+              return opts.length ? (
+                <optgroup key={cat} label={cat}>
+                  {opts.map(s => (
                     <option key={s.code} value={s.code}>
                       {s.name}
                     </option>
                   ))}
-              </optgroup>
-            ))}
+                </optgroup>
+              ) : null;
+            })}
           </select>
         </FormField>
         <FormField label="Communication channel" htmlFor={id('channel')}>
@@ -185,10 +230,10 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
         </FormField>
       </div>
 
-      {isWhatsAppService(form.serviceCode) && (
+      {isWhatsAppService(draftCode) && (
         <fieldset className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4 space-y-4" aria-label="WhatsApp API details">
           <legend className="px-1 text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-            <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" /> WhatsApp API details
+            <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" /> {serviceName(draftCode)} details
           </legend>
           <div>
             <div className="text-xs font-bold text-slate-800 mb-2">Campaigns</div>
@@ -223,6 +268,47 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
             </p>
           )}
         </fieldset>
+      )}
+
+      {draftCode && (
+        <div className="flex justify-end -mt-2">
+          <button
+            type="button"
+            onClick={() => addDraft()}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" /> Add {serviceName(draftCode)}
+          </button>
+        </div>
+      )}
+
+      {added.length > 0 && (
+        <section aria-label="Services added" className="rounded-xl border border-slate-200 bg-white">
+          <h3 className="px-4 py-2.5 text-xs font-bold text-slate-800 border-b border-slate-100">Services added ({added.length})</h3>
+          <ul className="divide-y divide-slate-100">
+            {added.map(x => (
+              <li key={x.serviceCode} className="px-4 py-2.5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-900 truncate">{serviceName(x.serviceCode)}</div>
+                  {isWhatsAppService(x.serviceCode) && (
+                    <div className="text-[11px] text-slate-500">
+                      {(x.serviceDetails.campaignsSent ?? 0).toLocaleString('en-IN')} campaigns · package {(x.serviceDetails.packageMessages ?? 0).toLocaleString('en-IN')} · sent{' '}
+                      {(x.serviceDetails.messagesSent ?? 0).toLocaleString('en-IN')} · {messagesRemaining(x.serviceDetails).toLocaleString('en-IN')} left
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button type="button" onClick={() => editAdded(x.serviceCode)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Edit ${serviceName(x.serviceCode)}`}>
+                    <Pencil className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                  <button type="button" onClick={() => removeAdded(x.serviceCode)} className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50" aria-label={`Remove ${serviceName(x.serviceCode)}`}>
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

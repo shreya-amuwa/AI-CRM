@@ -44,8 +44,11 @@ export interface SupportCustomer {
   ownerId: string;
   ownerName: string | null;
   teamId: string;
+  /** Primary (first) service, kept for older screens. */
   serviceCode: string | null;
   serviceDetails: WhatsAppDetails;
+  /** Every service the customer bought, each with its own details. */
+  services: CustomerServiceEntry[];
   channel: string | null;
   service: string | null;
   requirement: string | null;
@@ -77,6 +80,12 @@ export interface WhatsAppDetails {
 }
 export const isWhatsAppService = (code: string | null | undefined) => !!code && code.startsWith('WHATSAPP_API');
 export const messagesRemaining = (d: WhatsAppDetails) => Math.max(0, (d.packageMessages || 0) - (d.messagesSent || 0));
+
+/** One service of a customer with its own form data (WhatsApp API: campaigns and message package). */
+export interface CustomerServiceEntry {
+  serviceCode: string;
+  serviceDetails: WhatsAppDetails;
+}
 
 export interface ServiceOption {
   code: string;
@@ -115,6 +124,7 @@ export const toCustomer = (r: any, owners: Map<string, string>, last: Map<string
   teamId: r.team_id,
   serviceCode: r.service_code ?? null,
   serviceDetails: r.service_details || {},
+  services: [],
   channel: r.channel,
   service: r.service_interest,
   requirement: r.requirement,
@@ -286,8 +296,7 @@ export interface CustomerInput {
   email: string;
   segment: CustomerSegmentValue;
   status: CustomerStatusValue;
-  serviceCode: string;
-  serviceDetails: WhatsAppDetails;
+  services: CustomerServiceEntry[];
   requirement: string;
   channel: string;
   notes: string;
@@ -301,13 +310,18 @@ const customerArgs = (i: CustomerInput) => ({
   p_email: i.email,
   p_segment: i.segment,
   p_status: i.status,
-  p_service_code: i.serviceCode || null,
-  p_service_details: isWhatsAppService(i.serviceCode) ? i.serviceDetails : {},
+  p_services: i.services.map(x => ({ serviceCode: x.serviceCode, serviceDetails: isWhatsAppService(x.serviceCode) ? x.serviceDetails : {} })),
   p_requirement: i.requirement,
   p_channel: i.channel,
   p_notes: i.notes,
   p_assignee: i.assigneeId || null
 });
+
+/** The services of one customer (customer_services), first-added first. */
+export async function loadCustomerServices(customerId: string): Promise<CustomerServiceEntry[]> {
+  const { data } = await db().from('customer_services').select('service_code, details, created_at').eq('customer_id', customerId).order('created_at');
+  return (data || []).map((r: any) => ({ serviceCode: r.service_code, serviceDetails: r.details || {} }));
+}
 
 export const customerApi = {
   create: (i: CustomerInput) => rpc<string>('create_support_customer', customerArgs(i)),

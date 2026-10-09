@@ -1021,34 +1021,33 @@ select test.check((select count(*) = 0 from customers where id = (select id from
 select test.check((select test.rows($$update customers set notes = 'hacked' where id = (select id from sc where name = 'cust')$$) = 0), 'support member cannot edit customers they do not own');
 
 -- Add Customer
-insert into sc select 'mine', create_support_customer('Priya Nair', 'Nair Traders', '+91 98450 12345', 'Priya@Nair.com', 'RETAIL', 'ACTIVE',
-  'WHATSAPP_API_BLUE_TICK', '{"campaignsSent": 3, "packageMessages": 10000, "messagesSent": 2500}', 'Wants template approval help', 'Phone', 'Referred', null);
+insert into sc select 'mine', create_support_customer('Priya Nair', 'Nair Traders', '+91 98450 12345', 'Priya@Nair.com', 'RETAIL', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'WHATSAPP_API_BLUE_TICK', 'serviceDetails', coalesce(('{"campaignsSent": 3, "packageMessages": 10000, "messagesSent": 2500}')::jsonb, '{}'::jsonb))), 'Wants template approval help', 'Phone', 'Referred', null);
 select test.check((select owner_id = test.id('sup_plain') and team_id = test.team('wabastore', 'Support') and customer_code ~ '^CUS-[0-9]{5}$'
                      and email = 'priya@nair.com' and channel = 'Phone' and service_code = 'WHATSAPP_API_BLUE_TICK' and service_interest = 'WhatsApp API + Blue Tick'
                      and (service_details ->> 'messagesSent')::int = 2500
                    from customers where id = (select id from sc where name = 'mine')), 'support customer is saved, owned by the member, with a customer code');
-select test.must_fail($$select create_support_customer('Priya Again', null, null, 'priya@nair.com', 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select create_support_customer('Priya Again', null, null, 'priya@nair.com', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'duplicate e-mail is refused', 'already exists');
-select test.must_fail($$select create_support_customer('Priya Phone', null, '098450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select create_support_customer('Priya Phone', null, '098450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'duplicate phone number is refused', 'already exists');
-select test.must_fail($$select create_support_customer('Sales Dup', null, null, 'sales.customer@acme.com', 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select create_support_customer('Sales Dup', null, null, 'sales.customer@acme.com', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'duplicate of a sales customer is refused', 'already exists');
-select test.must_fail($$select create_support_customer('Bad Mail', null, null, 'not-an-email', 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$, 'invalid e-mail is refused', 'valid e-mail');
-select test.must_fail($$select create_support_customer('Bad Phone', null, '123', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$, 'short phone is refused', 'valid phone');
-select test.must_fail($$select create_support_customer('No Contact', null, null, null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$, 'contact is required', 'phone number or an e-mail');
-select test.must_fail($$select create_support_customer('Not Mine', null, null, 'nm@x.com', 'RETAIL', 'ACTIVE', null, null, null, null, null, test.id('sup_b'))$$,
+select test.must_fail($$select create_support_customer('Bad Mail', null, null, 'not-an-email', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'invalid e-mail is refused', 'valid e-mail');
+select test.must_fail($$select create_support_customer('Bad Phone', null, '123', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'short phone is refused', 'valid phone');
+select test.must_fail($$select create_support_customer('No Contact', null, null, null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'contact is required', 'phone number or an e-mail');
+select test.must_fail($$select create_support_customer('Not Mine', null, null, 'nm@x.com', 'RETAIL', 'ACTIVE', null, null, null, null, test.id('sup_b'))$$,
   'member cannot assign customers to someone else', 'cannot assign');
 select test.login('sup_th');
 select test.check((select count(*) = 1 from customers where id = (select id from sc where name = 'mine')), 'team lead sees the member''s new customer');
-insert into sc select 'forb', create_support_customer('Lead Assigned', null, '+91 98450 55555', null, 'CORPORATE', 'PROSPECT', null, null, null, 'Email', null, test.id('sup_b'));
+insert into sc select 'forb', create_support_customer('Lead Assigned', null, '+91 98450 55555', null, 'CORPORATE', 'PROSPECT', null, null, 'Email', null, test.id('sup_b'));
 select test.check((select owner_id = test.id('sup_b') from customers where id = (select id from sc where name = 'forb')), 'team lead assigns a new customer to a member');
-select test.must_fail($$select create_support_customer('Out Of Team', null, '+91 98450 66666', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, test.id('tm_a'))$$,
+select test.must_fail($$select create_support_customer('Out Of Team', null, '+91 98450 66666', null, 'RETAIL', 'ACTIVE', null, null, null, null, test.id('tm_a'))$$,
   'team lead cannot assign outside the team', 'Support team');
 select test.login('tm_a');
-select test.must_fail($$select create_support_customer('Sales Made', null, '+91 98450 77777', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select create_support_customer('Sales Made', null, '+91 98450 77777', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'a Sales member cannot add Support customers', 'Only the Support team');
 select test.login('th_wab');
-select test.must_fail($$select create_support_customer('Sales Lead Made', null, '+91 98450 77778', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select create_support_customer('Sales Lead Made', null, '+91 98450 77778', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'a Sales team lead cannot add Support customers', 'Only the Support team');
 select test.login('dh_wab');
 select test.check((select count(*) = 2 from customers where id in (select id from sc where name in ('mine', 'forb'))), 'department head sees support customers');
@@ -1149,40 +1148,59 @@ reset role;
 -- ---------------------------------------------------------------------------
 set role authenticated;
 select test.login('sup_plain');
-select test.must_fail($$select create_support_customer('Bad Service', null, '+91 90000 77777', null, 'RETAIL', 'ACTIVE', 'NOT_A_SERVICE', null, null, null, null, null)$$,
+select test.must_fail($$select create_support_customer('Bad Service', null, '+91 90000 77777', null, 'RETAIL', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'NOT_A_SERVICE')), null, null, null, null)$$,
   'service must come from the catalog', 'from the list');
-select test.must_fail($$select create_support_customer('Over Sent', null, '+91 90000 77778', null, 'RETAIL', 'ACTIVE', 'WHATSAPP_API_BLUE_TICK',
-  '{"packageMessages": 100, "messagesSent": 101}', null, null, null, null)$$, 'messages sent cannot exceed the package', 'cannot be more');
-select test.must_fail($$select create_support_customer('Neg', null, '+91 90000 77779', null, 'RETAIL', 'ACTIVE', 'WHATSAPP_API_BLUE_TICK',
-  '{"campaignsSent": -1}', null, null, null, null)$$, 'negative campaigns are refused', 'negative');
-insert into sc select 'ai', create_support_customer('Ravi AI', null, '+91 90000 77780', null, 'RETAIL', 'ACTIVE', 'AI_CALLING',
-  '{"packageMessages": 5}', null, null, null, null);
+select test.must_fail($$select create_support_customer('Over Sent', null, '+91 90000 77778', null, 'RETAIL', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'WHATSAPP_API_BLUE_TICK', 'serviceDetails', coalesce(('{"packageMessages": 100, "messagesSent": 101}')::jsonb, '{}'::jsonb))), null, null, null, null)$$, 'messages sent cannot exceed the package', 'cannot be more');
+select test.must_fail($$select create_support_customer('Neg', null, '+91 90000 77779', null, 'RETAIL', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'WHATSAPP_API_BLUE_TICK', 'serviceDetails', coalesce(('{"campaignsSent": -1}')::jsonb, '{}'::jsonb))), null, null, null, null)$$, 'negative campaigns are refused', 'negative');
+insert into sc select 'ai', create_support_customer('Ravi AI', null, '+91 90000 77780', null, 'RETAIL', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'AI_CALLING', 'serviceDetails', coalesce(('{"packageMessages": 5}')::jsonb, '{}'::jsonb))), null, null, null, null);
 select test.check((select service_details = '{}'::jsonb from customers where id = (select id from sc where name = 'ai')), 'WhatsApp fields are only kept for WhatsApp API');
 
+-- Many services on one customer
+insert into sc select 'multi', create_support_customer('Maya Multi', null, '+91 90000 77790', null, 'RETAIL', 'ACTIVE',
+  '[{"serviceCode":"WHATSAPP_API_BLUE_TICK","serviceDetails":{"campaignsSent":3,"packageMessages":5000,"messagesSent":1000}},{"serviceCode":"AI_CALLING","serviceDetails":{}}]'::jsonb,
+  null, null, null, null);
+select test.check((select count(*) = 2 from customer_services where customer_id = (select id from sc where name = 'multi')), 'a customer can be created with two services');
+select test.check((select service_code = 'WHATSAPP_API_BLUE_TICK' and (service_details ->> 'packageMessages')::int = 5000 from customers where id = (select id from sc where name = 'multi')),
+  'the first service stays the primary one on the customer');
+select test.check((select (details ->> 'messagesSent')::int = 1000 from customer_services where customer_id = (select id from sc where name = 'multi') and service_code = 'WHATSAPP_API_BLUE_TICK')
+                  and (select details = '{}'::jsonb from customer_services where customer_id = (select id from sc where name = 'multi') and service_code = 'AI_CALLING'),
+  'each service keeps its own details');
+select test.must_fail($$select create_support_customer('Dup Svc', null, '+91 90000 77791', null, 'RETAIL', 'ACTIVE',
+  '[{"serviceCode":"AI_CALLING"},{"serviceCode":"AI_CALLING"}]'::jsonb, null, null, null, null)$$, 'the same service cannot be added twice', 'more than once');
+select test.must_fail($$select create_support_customer('Bad Svc 2', null, '+91 90000 77792', null, 'RETAIL', 'ACTIVE',
+  '[{"serviceCode":"AI_CALLING"},{"serviceCode":"NOT_A_SERVICE"}]'::jsonb, null, null, null, null)$$, 'every service must exist', 'Choose a service');
+select test.must_fail($$select create_support_customer('Over Sent 2', null, '+91 90000 77793', null, 'RETAIL', 'ACTIVE',
+  '[{"serviceCode":"AI_CALLING"},{"serviceCode":"WHATSAPP_API_BLUE_TICK","serviceDetails":{"packageMessages":5,"messagesSent":9}}]'::jsonb, null, null, null, null)$$,
+  'each service is validated on its own', 'more than the message package');
+select update_support_customer((select id from sc where name = 'multi'), 'Maya Multi', null, '+91 90000 77790', null, 'RETAIL', 'ACTIVE',
+  '[{"serviceCode":"AI_CALLING"},{"serviceCode":"BRANDING_PERSONAL_BRANDING"}]'::jsonb, null, null, null, null);
+select test.check((select array_agg(service_code order by service_code) = array['AI_CALLING','BRANDING_PERSONAL_BRANDING'] from customer_services where customer_id = (select id from sc where name = 'multi')),
+  'editing replaces the list: one removed, one added');
+select test.check((select service_code = 'AI_CALLING' from customers where id = (select id from sc where name = 'multi')), 'the primary service follows the list');
+select update_support_customer((select id from sc where name = 'multi'), 'Maya Multi', 'Multi Co', '+91 90000 77790', null, 'RETAIL', 'ACTIVE', null, null, null, null, null);
+select test.check((select count(*) = 2 from customer_services where customer_id = (select id from sc where name = 'multi'))
+                  and (select company = 'Multi Co' from customers where id = (select id from sc where name = 'multi')), 'no service list sent: services stay as they are');
+
 -- Edit
-select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', 'Nair Traders LLP', '+91 98450 12345', 'priya@nair.com',
-  'CORPORATE', 'ACTIVE', 'WHATSAPP_API_BLUE_TICK', '{"campaignsSent": 5, "packageMessages": 10000, "messagesSent": 4000, "campaignNotes": "Diwali offer"}',
-  'Template approval', 'WhatsApp', 'Updated', null);
+select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', 'Nair Traders LLP', '+91 98450 12345', 'priya@nair.com', 'CORPORATE', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'WHATSAPP_API_BLUE_TICK', 'serviceDetails', coalesce(('{"campaignsSent": 5, "packageMessages": 10000, "messagesSent": 4000, "campaignNotes": "Diwali offer"}')::jsonb, '{}'::jsonb))), 'Template approval', 'WhatsApp', 'Updated', null);
 select test.check((select company = 'Nair Traders LLP' and segment = 'CORPORATE' and channel = 'WhatsApp'
                      and (service_details ->> 'campaignsSent')::int = 5 and service_details ->> 'campaignNotes' = 'Diwali offer'
                    from customers where id = (select id from sc where name = 'mine')), 'member edits their customer');
-select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', null, null, 'sales.customer@acme.com',
-  'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$, 'edit cannot create a duplicate', 'already exists');
-select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', null, null, 'bad', 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', null, null, 'sales.customer@acme.com', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$, 'edit cannot create a duplicate', 'already exists');
+select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', null, null, 'bad', 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'edit validates the e-mail', 'valid e-mail');
-select test.must_fail($$select update_support_customer((select id from sc where name = 'cust'), 'Hijack', null, '+91 90000 11111', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select update_support_customer((select id from sc where name = 'cust'), 'Hijack', null, '+91 90000 11111', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'member cannot edit a customer they only see', 'Only the assigned');
-select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', null, '+91 98450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, test.id('sup_b'))$$,
+select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', null, '+91 98450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, test.id('sup_b'))$$,
   'member cannot reassign a customer', 'cannot assign');
 select test.login('sup_b');
-select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'X', null, '+91 98450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'X', null, '+91 98450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'another member cannot edit it', 'Only the assigned');
 select test.login('sup_th');
-select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', 'Nair Traders LLP', '+91 98450 12345', 'priya@nair.com',
-  'CORPORATE', 'ACTIVE', 'WHATSAPP_API_BLUE_TICK', '{"campaignsSent": 5, "packageMessages": 10000, "messagesSent": 4000}', null, 'WhatsApp', null, test.id('sup_b'));
+select update_support_customer((select id from sc where name = 'mine'), 'Priya Nair', 'Nair Traders LLP', '+91 98450 12345', 'priya@nair.com', 'CORPORATE', 'ACTIVE', jsonb_build_array(jsonb_build_object('serviceCode', 'WHATSAPP_API_BLUE_TICK', 'serviceDetails', coalesce(('{"campaignsSent": 5, "packageMessages": 10000, "messagesSent": 4000}')::jsonb, '{}'::jsonb))), null, 'WhatsApp', null, test.id('sup_b'));
 select test.check((select owner_id = test.id('sup_b') from customers where id = (select id from sc where name = 'mine')), 'team lead edits and reassigns the customer');
 select test.login('tm_c');
-select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'X', null, '+91 98450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+select test.must_fail($$select update_support_customer((select id from sc where name = 'mine'), 'X', null, '+91 98450 12345', null, 'RETAIL', 'ACTIVE', null, null, null, null, null)$$,
   'other department cannot edit', 'Customer not found');
 select test.check((select test.rows($$update customers set name = 'x' where id = (select id from sc where name = 'mine')$$) = 0), 'other department cannot edit directly either');
 
@@ -1247,17 +1265,15 @@ select test.check((select x ->> 'assigneeName' = 'Delivery Member' and x ->> 'as
                    where x ->> 'id' = (select id from pipeline where name = 'A')::text), 'handed-over customer shows the member it was assigned to');
 
 -- Keep with me / assign to a team member (existing create_support_customer)
-insert into pipeline select 'K', create_support_customer('Kiran Kapoor', 'Kapoor Traders', '+91 98111 22333', 'kiran@kapoor.example',
-  'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, null);
+insert into pipeline select 'K', create_support_customer('Kiran Kapoor', 'Kapoor Traders', '+91 98111 22333', 'kiran@kapoor.example', 'RETAIL', 'ACTIVE', null, null, 'Phone', null, null);
 select test.check((select owner_id = test.id('th_gen') from customers where id = (select id from pipeline where name = 'K')), 'Keep with me: the lead owns the new customer');
-insert into pipeline select 'M', create_support_customer('Meera Shah', null, '+91 98111 44555', null,
-  'CORPORATE', 'PROSPECT', null, '{}'::jsonb, null, 'Phone', null, test.id('tm_d1'));
+insert into pipeline select 'M', create_support_customer('Meera Shah', null, '+91 98111 44555', null, 'CORPORATE', 'PROSPECT', null, null, 'Phone', null, test.id('tm_d1'));
 select test.check((select owner_id = test.id('tm_d1') from customers where id = (select id from pipeline where name = 'M')), 'Assign to team member on creation');
-select test.must_fail($$select create_support_customer('Duplicate', null, '+91 98111 22333', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, null)$$,
+select test.must_fail($$select create_support_customer('Duplicate', null, '+91 98111 22333', null, 'RETAIL', 'ACTIVE', null, null, 'Phone', null, null)$$,
   'duplicate phone is refused', 'already exists');
-select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, test.id('tm_a'))$$,
+select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, null, 'Phone', null, test.id('tm_a'))$$,
   'cannot create a customer for a Sales member', 'Support team');
-select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, test.id('sup_b'))$$,
+select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, null, 'Phone', null, test.id('sup_b'))$$,
   'cannot create a customer for another Support team''s member', 'FORBIDDEN');
 select test.check((select (team_lead_dashboard() -> 'totals' ->> 'mine')::int = 1
                      and (team_lead_dashboard() -> 'totals' ->> 'team')::int = 2
