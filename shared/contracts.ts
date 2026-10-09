@@ -13,6 +13,22 @@ export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 export const TEAM_DIVISIONS = ['SALES', 'SUPPORT', 'GENERAL'] as const;
 export type TeamDivision = (typeof TEAM_DIVISIONS)[number];
 
+/**
+ * The dashboard a user opens, stored in profiles.default_dashboard and kept in
+ * step with role + team division by the database (one value per department role).
+ */
+export type DefaultDashboard =
+  | 'super-admin'
+  | 'department-head'
+  | 'hr-head'
+  | 'sales-lead'
+  | 'support-lead'
+  | 'team-lead'
+  | 'sales-member'
+  | 'support-member'
+  | 'technical-consultant'
+  | 'team-member';
+
 export const CUSTOMER_SEGMENTS = ['RETAIL', 'WHOLESALE', 'CORPORATE', 'OTHER'] as const;
 export type CustomerSegment = (typeof CUSTOMER_SEGMENTS)[number];
 
@@ -62,6 +78,8 @@ export interface Profile {
   role: Role;
   /** Team member of a support team who opens the Technical Consultant dashboard. */
   isTechnicalConsultant: boolean;
+  /** Stored default dashboard (resolved by the database from role + team division). */
+  defaultDashboard?: DefaultDashboard | null;
   status: AccountStatus;
   statusReason: string | null;
   departmentId: string | null;

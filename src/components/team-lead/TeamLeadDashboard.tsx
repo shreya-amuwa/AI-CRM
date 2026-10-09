@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  SUPPORT_ONLY_NAV,
   TeamLeadLayout,
   TeamLeadNav
 } from './TeamLeadLayout';
@@ -17,9 +16,6 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
-import { SupportLeadCustomers, SupportLeadTickets } from '../support-member/SupportLeadViews';
-import { HandoverBoard } from '../handover/HandoverBoard';
-import { TeamLeaderDashboard } from './dashboard/TeamLeaderDashboard';
 import { useAuth } from '../../context/AuthContext';
 
 interface TeamLeadDashboardProps {
@@ -32,20 +28,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
   userName
 }) => {
   const { profile } = useAuth();
-  // Support Team Leads open the Team Leader dashboard; Sales Team Leads keep the
-  // Pod Command Center they always had. The two workspaces are not mixed.
-  const isSupportLead = profile?.team?.division === 'SUPPORT';
-  const [activeNav, setActiveNav] = useState<TeamLeadNav>(isSupportLead ? 'tl-dashboard' : 'overview');
-  const division = profile?.team?.division;
-  const defaulted = useRef(!!division);
-  useEffect(() => {
-    // The profile can arrive after the first render: pick the default once it does.
-    if (!defaulted.current && division) {
-      defaulted.current = true;
-      setActiveNav(division === 'SUPPORT' ? 'tl-dashboard' : 'overview');
-    }
-    if (division && division !== 'SUPPORT' && SUPPORT_ONLY_NAV.includes(activeNav)) setActiveNav('overview');
-  }, [division, activeNav]);
+  // Sales (and other non-Support) Team Leads. Support Team Leads have their own
+  // dashboard (SupportLeadDashboard) on its own route.
+  const [activeNav, setActiveNav] = useState<TeamLeadNav>('overview');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Store data states
@@ -177,9 +162,6 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
         </div>
       )}
 
-      {/* Team Leader dashboard: customers, assignments, tickets (database) */}
-      {activeNav === 'tl-dashboard' && <TeamLeaderDashboard />}
-
       {/* VIEW 1: OVERVIEW */}
       {activeNav === 'overview' && (
         <LeadOverviewTab
@@ -193,17 +175,12 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
 
       {/* VIEW: TASKS FROM THE DEPARTMENT HEAD → TEAM MEMBERS */}
       {activeNav === 'assigned-tasks' && <TeamLeadTasksView />}
-      {activeNav === 'support-customers' && <SupportLeadCustomers />}
-      {activeNav === 'support-tickets' && <SupportLeadTickets />}
-
-      {/* VIEW: VERIFIED CLIENTS PASSED BY THE DEPARTMENT HEAD → ASSIGN TO A TEAM MEMBER */}
-      {activeNav === 'client-handovers' && <HandoverBoard role="TEAM_HEAD" />}
 
       {/* VIEW: TEAM MEMBERS & ACCESS (team leads add members to their own team) */}
       {activeNav === 'team-members' && (
         <StaffManagementPanel
           departmentSlug={profile?.department?.slug || ''}
-          subDept={profile?.team?.division === 'SUPPORT' ? 'support' : profile?.team?.division === 'SALES' ? 'sales' : null}
+          subDept={profile?.team?.division === 'SALES' ? 'sales' : null}
         />
       )}
 

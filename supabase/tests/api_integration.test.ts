@@ -83,6 +83,8 @@ r = await api('dh', 'POST', '/users', { email: 'th@amuwa.com', fullName: 'Team H
 check(r.status === 201 && r.json.data.team.name === 'Sales', 'department head creates team head', r);
 tokens.set('th', tokenFor(r.json.data.id));
 const salesTeamLeadId = r.json.data.id;
+r = await api('th', 'GET', '/me');
+check(r.status === 200 && r.json.data.defaultDashboard === 'sales-lead', 'a Sales team lead resolves to the Sales Team Lead dashboard', r);
 
 r = await api('th', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Member A', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
 check(r.status === 201, 'team head creates team member', r);
@@ -640,6 +642,8 @@ r = await api('dh', 'POST', '/users', { email: 'tl.delivery@amuwa.com', fullName
 check(r.status === 201, 'department head creates a delivery team lead', r);
 const deliveryLead = r.json.data.id;
 tokens.set('tl2', tokenFor(deliveryLead));
+r = await api('tl2', 'GET', '/me');
+check(r.status === 200 && r.json.data.defaultDashboard === 'support-lead', 'a Support team lead resolves to the Support Team Lead dashboard', r);
 r = await api('tl2', 'POST', '/users', { email: 'tm.delivery@amuwa.com', fullName: 'Delivery Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: delivery });
 check(r.status === 201, 'delivery team lead creates a team member', r);
 const deliveryMember = r.json.data.id;

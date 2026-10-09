@@ -995,7 +995,8 @@ select test.create_auth_user('tc_dash', 'tc.dash@amuwa.com', '{"full_name":"Dash
 select test.check((select default_dashboard = 'technical-consultant' from profiles where id = test.id('tc_dash')), 'consultant default dashboard is stored');
 select test.check((select default_dashboard = 'sales-member' from profiles where id = test.id('tc_new')), 'moving a member to the Sales team changes their dashboard');
 select test.check((select default_dashboard = 'sales-member' from profiles where id = test.id('tm_a')), 'sales member keeps the sales dashboard');
-select test.check((select default_dashboard = 'team-lead' from profiles where id = test.id('sup_th')), 'team lead default dashboard is stored');
+select test.check((select default_dashboard = 'support-lead' from profiles where id = test.id('sup_th')), 'Support team lead opens the Support Team Lead dashboard');
+select test.check((select default_dashboard = 'sales-lead' from profiles where id = test.id('th_wab')), 'Sales team lead opens the Sales Team Lead dashboard');
 select test.check((select default_dashboard = 'department-head' from profiles where id = test.id('dh_wab')), 'department head default dashboard is stored');
 select test.check((select default_dashboard = 'super-admin' from profiles where id = test.id('sa')), 'super admin default dashboard is stored');
 
@@ -1042,7 +1043,13 @@ select test.check((select count(*) = 1 from customers where id = (select id from
 insert into sc select 'forb', create_support_customer('Lead Assigned', null, '+91 98450 55555', null, 'CORPORATE', 'PROSPECT', null, null, null, 'Email', null, test.id('sup_b'));
 select test.check((select owner_id = test.id('sup_b') from customers where id = (select id from sc where name = 'forb')), 'team lead assigns a new customer to a member');
 select test.must_fail($$select create_support_customer('Out Of Team', null, '+91 98450 66666', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, test.id('tm_a'))$$,
-  'team lead cannot assign outside the team', 'cannot assign');
+  'team lead cannot assign outside the team', 'Support team');
+select test.login('tm_a');
+select test.must_fail($$select create_support_customer('Sales Made', null, '+91 98450 77777', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+  'a Sales member cannot add Support customers', 'Only the Support team');
+select test.login('th_wab');
+select test.must_fail($$select create_support_customer('Sales Lead Made', null, '+91 98450 77778', null, 'RETAIL', 'ACTIVE', null, null, null, null, null, null)$$,
+  'a Sales team lead cannot add Support customers', 'Only the Support team');
 select test.login('dh_wab');
 select test.check((select count(*) = 2 from customers where id in (select id from sc where name in ('mine', 'forb'))), 'department head sees support customers');
 reset role;
@@ -1213,10 +1220,11 @@ reset role;
 -- The Department Head passes customer B (onboarding) to the Delivery team lead (fixture for the DH step).
 update public.customer_onboarding set handover_stage = 'TEAM_LEAD', team_lead_id = test.id('th_gen'), passed_to_team_lead_at = now()
  where customer_id = (select id from pipeline where name = 'B');
--- A ticket raised by sales on customer A (handed to the Delivery lead earlier): not the lead's own team.
+-- A ticket raised by another Support team on customer A (handed to the Delivery lead earlier): not the lead's own team.
+select test.login('sup_plain');
 insert into public.support_tickets (customer_id, department_id, team_id, subject, priority, status, assignee_id, created_by)
-values ((select id from pipeline where name = 'A'), test.dept('wabastore'), test.team('wabastore', 'Sales'),
-        'Cannot sign in to the panel', 'HIGH', 'OPEN', test.id('tm_a'), test.id('tm_a'));
+values ((select id from pipeline where name = 'A'), test.dept('wabastore'), test.team('wabastore', 'Support'),
+        'Cannot sign in to the panel', 'HIGH', 'OPEN', test.id('sup_plain'), test.id('sup_plain'));
 create temp table tl as select id, subject from public.support_tickets where subject = 'Cannot sign in to the panel';
 grant select on tl to authenticated;
 
@@ -1248,7 +1256,9 @@ select test.check((select owner_id = test.id('tm_d1') from customers where id = 
 select test.must_fail($$select create_support_customer('Duplicate', null, '+91 98111 22333', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, null)$$,
   'duplicate phone is refused', 'already exists');
 select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, test.id('tm_a'))$$,
-  'cannot create a customer for another team''s member', 'FORBIDDEN');
+  'cannot create a customer for a Sales member', 'Support team');
+select test.must_fail($$select create_support_customer('Elsewhere', null, '+91 98222 00000', null, 'RETAIL', 'ACTIVE', null, '{}'::jsonb, null, 'Phone', null, test.id('sup_b'))$$,
+  'cannot create a customer for another Support team''s member', 'FORBIDDEN');
 select test.check((select (team_lead_dashboard() -> 'totals' ->> 'mine')::int = 1
                      and (team_lead_dashboard() -> 'totals' ->> 'team')::int = 2
                      and (team_lead_dashboard() -> 'totals' ->> 'customers')::int = 4), 'KPIs: 4 customers = 1 mine + 2 team + 1 needs decision');
@@ -1306,6 +1316,42 @@ select test.check((select not exists (select 1 from jsonb_array_elements(team_le
                                         where x ->> 'subject' = 'Needs a new template')), 'nor its tickets');
 select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'M'), test.id('sup_th'))$$, 'nor reassign it', 'NOT_FOUND');
 select test.must_fail($$select assign_to_team_member((select id from pipeline where name = 'B'), test.id('sup_th'), null)$$, 'nor take over a client handed to another lead', 'NOT_FOUND');
+\echo '--- 22. Sales and Support Team Leads stay separate'
+select test.login('sup_th');
+select assign_team_task('Support only task', 'Check the WhatsApp template', 'MEDIUM', current_date + 1, null, array[test.id('sup_plain')]);
+select test.login('sup_plain');
+select test.check((select count(*) = 1 from work_tasks where title = 'Support only task' and assignee_id = test.id('sup_plain')),
+  'the task appears in the Support member''s list');
+select test.login('th_wab');
+select test.check((select count(*) = 0 from work_tasks where title = 'Support only task'), 'the Support task is not in the Sales Team Lead''s tasks');
+select test.check((select count(*) = 0 from support_tickets), 'a Sales Team Lead reads no support tickets');
+select test.check((select count(*) = 0 from support_ticket_updates), 'nor their history');
+select test.must_fail($$select assign_team_task('Cross', null, 'LOW', null, null, array[test.id('sup_plain')])$$,
+  'a Sales Team Lead cannot give tasks to Support members', 'not an active member');
+select test.login('tm_a');
+select test.check((select count(*) = 0 from work_tasks where title = 'Support only task'), 'nor in a Sales member''s tasks');
+select test.check((select count(*) = 0 from support_tickets), 'a Sales member reads no support tickets');
+select test.must_fail($$select create_support_ticket((select id from pipeline where name = 'A'), 'Sales ticket', null, 'GENERAL', 'LOW')$$,
+  'a Sales member cannot raise support tickets', 'Only the Support team');
+select test.login('sup_th');
+select test.must_fail($$select assign_support_ticket((select id from st where name = 'T'), test.id('tm_a'), null)$$,
+  'a support ticket cannot be handed to Sales', 'active member');
+select test.check((select count(*) >= 1 from support_tickets where id = (select id from st where name = 'T')), 'the Support Team Lead still reads the team''s tickets');
+select test.login('dh_wab');
+select test.check((select count(*) >= 1 from support_tickets), 'the Department Head keeps the department''s tickets');
+reset role;
+update profiles set team_id = test.team('wabastore', 'Support') where id = test.id('th_wab');
+select test.check((select default_dashboard = 'support-lead' from profiles where id = test.id('th_wab')), 'a lead moved from Sales to Support gets the Support dashboard');
+set role authenticated;
+select test.login('th_wab');
+select test.check((select count(*) = 0 from work_tasks w where w.team_id = test.team('wabastore', 'Sales')
+                      and test.id('th_wab') not in (w.assignee_id, w.assigned_by)), 'and no longer reads the Sales team''s tasks (only their own)');
+select test.check((select count(*) > 0 from work_tasks where title = 'Support only task'), 'but now reads the Support team''s tasks');
+reset role;
+update profiles set team_id = test.team('wabastore', 'Sales') where id = test.id('th_wab');
+select test.check((select default_dashboard = 'sales-lead' from profiles where id = test.id('th_wab'))
+                  and (select default_dashboard = 'support-lead' from profiles where id = test.id('sup_th')),
+  'moving one lead back leaves the other department''s lead untouched');
 reset role;
 
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

@@ -17,7 +17,9 @@ export function toAuthUser(profile: Profile): AuthUser {
       role = departmentSlug === 'hr' ? 'hr' : 'admin';
       break;
     case 'TEAM_HEAD':
-      role = 'team-lead';
+      // Department decides the dashboard: Support Team Leads have their own
+      // dashboard; Sales (and other) Team Leads keep the Sales Team Lead one.
+      role = isSupportLead(profile) ? 'support-lead' : 'team-lead';
       break;
     default:
       // Technical Consultants open the client-onboarding dashboard; other Support
@@ -36,6 +38,18 @@ export function toAuthUser(profile: Profile): AuthUser {
     position: profile.position || undefined,
     profile
   };
+}
+
+/**
+ * A Team Lead of a Support team. The stored default dashboard (resolved by the
+ * database from role + team division) wins; the team division is the fallback.
+ */
+export function isSupportLead(p: Pick<Profile, 'role' | 'team' | 'defaultDashboard'>): boolean {
+  if (p.role !== 'TEAM_HEAD') return false;
+  if (p.defaultDashboard === 'support-lead') return true;
+  if (p.defaultDashboard === 'sales-lead') return false;
+  // Older stored value ('team-lead', before the per-department mapping) or none.
+  return p.team?.division === 'SUPPORT';
 }
 
 /** A team member of a Support team who is not a Technical Consultant. */
@@ -90,6 +104,8 @@ export function defaultDashboardLabel(
     case 'DEPARTMENT_HEAD':
       return `Department Head Dashboard${dept}`;
     case 'TEAM_HEAD':
+      if (division === 'SUPPORT') return `Support Team Lead Dashboard${dept}`;
+      if (division === 'SALES') return `Sales Team Lead Dashboard${dept}`;
       return `Team Lead Dashboard${dept}`;
     default:
       if (technicalConsultant && division === 'SUPPORT') return `Technical Consultant Dashboard${dept}`;

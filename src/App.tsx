@@ -35,6 +35,7 @@ const EduTrainingPanel = lazy(() => import('./components/departments/edutraining
 const AccountsDepartmentPanel = lazy(() => import('./components/departments/accounts/AccountsDepartmentPanel').then(m => ({ default: m.AccountsDepartmentPanel })));
 const DepartmentAccountsBillingView = lazy(() => import('./components/departments/shared/DepartmentAccountsBillingView').then(m => ({ default: m.DepartmentAccountsBillingView })));
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
+const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
 const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
 const DepartmentHeadDashboard = lazy(() => import('./components/tasks/DepartmentHeadDashboard').then(m => ({ default: m.DepartmentHeadDashboard })));
 const TechnicalSupportDashboard = lazy(() => import('./components/support/TechnicalSupportDashboard').then(m => ({ default: m.TechnicalSupportDashboard })));
@@ -68,6 +69,9 @@ const MainAppContent: React.FC = () => {
 
   // Role-based route guard and URL sync
   React.useEffect(() => {
+    // Wait for the session to be restored: redirecting before that sends every
+    // refresh to /login and loses the page the user was on.
+    if (authLoading) return;
     if (!user) {
       if (route.type !== 'login') {
         navigateTo('/login');
@@ -102,6 +106,13 @@ const MainAppContent: React.FC = () => {
         navigateTo(base);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'support-lead') {
+      // /support-lead/dashboard/:id and its pages (…/tickets, …/tasks) stay where they are.
+      const base = `/support-lead/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(base);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'team-lead') {
       const target = `/team-lead/dashboard/${user.id}`;
       if (window.location.pathname !== target) {
@@ -118,11 +129,11 @@ const MainAppContent: React.FC = () => {
       }
     }
     // departments.length: department list arrives asynchronously from the API.
-  }, [user, route.path, activeDepartmentId, departments.length]);
+  }, [authLoading, user, route.path, activeDepartmentId, departments.length]);
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'technical-support') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'technical-support') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -178,7 +189,16 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // Step 1.6: Dedicated Team Lead Dashboard
+  // Step 1.58: Dedicated Support Team Lead Dashboard (Support teams only; own route and sidebar)
+  if (user.role === 'support-lead') {
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
+        <SupportLeadDashboard />
+      </Suspense>
+    );
+  }
+
+  // Step 1.6: Dedicated (Sales) Team Lead Dashboard
   // Team leads supervise a pod of team members, distribute leads, and review EOD reports
   if (user.role === 'team-lead') {
     return <TeamLeadDashboard currentUserId={user.id} userName={user.name} />;

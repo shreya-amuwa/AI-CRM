@@ -3,7 +3,7 @@ import type { Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, status, status_reason,
+const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, default_dashboard, status, status_reason,
   department_id, team_id, approved_at, created_at,
   department:departments!profiles_department_id_fkey(id, slug, name),
   team:teams!profiles_team_in_department(id, name, division)`;
@@ -18,6 +18,7 @@ export function mapProfile(row: any): Profile {
     position: row.position,
     role: row.role,
     isTechnicalConsultant: !!row.is_technical_consultant,
+    defaultDashboard: row.default_dashboard ?? null,
     status: row.status,
     statusReason: row.status_reason,
     departmentId: row.department_id,
