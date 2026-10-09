@@ -43,6 +43,9 @@ export interface SupportCustomer {
   status: CustomerStatusValue;
   ownerId: string;
   ownerName: string | null;
+  teamId: string;
+  serviceCode: string | null;
+  serviceDetails: WhatsAppDetails;
   channel: string | null;
   service: string | null;
   requirement: string | null;
@@ -65,10 +68,40 @@ export const CUSTOMER_STATUS_LABELS: Record<CustomerStatusValue, string> = {
 };
 export const CHANNELS = ['Phone', 'WhatsApp', 'Email', 'Walk-in', 'Website', 'Other'] as const;
 
-const CUSTOMER_COLUMNS =
-  'id, customer_code, name, company, email, phone, segment, status, owner_id, channel, service_interest, requirement, notes, created_at, updated_at';
+/** Extra details kept for a WhatsApp API customer (empty for other services). */
+export interface WhatsAppDetails {
+  campaignsSent?: number;
+  campaignNotes?: string;
+  packageMessages?: number;
+  messagesSent?: number;
+}
+export const isWhatsAppService = (code: string | null | undefined) => !!code && code.startsWith('WHATSAPP_API');
+export const messagesRemaining = (d: WhatsAppDetails) => Math.max(0, (d.packageMessages || 0) - (d.messagesSent || 0));
 
-const toCustomer = (r: any, owners: Map<string, string>, last: Map<string, string>): SupportCustomer => ({
+export interface ServiceOption {
+  code: string;
+  name: string;
+  category: string;
+}
+
+/** Services catalog (crm_services), for the service / product dropdown. */
+export function useServices() {
+  const [services, setServices] = useState<ServiceOption[]>([]);
+  useEffect(() => {
+    db()
+      .from('crm_services')
+      .select('code, name, category')
+      .eq('is_active', true)
+      .order('sort_order')
+      .then(({ data }) => setServices((data || []).map((r: any) => ({ code: r.code, name: r.name, category: r.category }))));
+  }, []);
+  return services;
+}
+
+const CUSTOMER_COLUMNS =
+  'id, customer_code, name, company, email, phone, segment, status, owner_id, team_id, channel, service_code, service_interest, service_details, requirement, notes, created_at, updated_at';
+
+export const toCustomer = (r: any, owners: Map<string, string>, last: Map<string, string>): SupportCustomer => ({
   id: r.id,
   code: r.customer_code,
   name: r.name,
@@ -79,6 +112,9 @@ const toCustomer = (r: any, owners: Map<string, string>, last: Map<string, strin
   status: r.status,
   ownerId: r.owner_id,
   ownerName: owners.get(r.owner_id) ?? null,
+  teamId: r.team_id,
+  serviceCode: r.service_code ?? null,
+  serviceDetails: r.service_details || {},
   channel: r.channel,
   service: r.service_interest,
   requirement: r.requirement,
@@ -243,35 +279,39 @@ export async function loadCustomerActivities(customerId: string): Promise<Custom
   return (data || []).map((a: any) => ({ id: a.id, type: a.type, note: a.note, actorName: names.get(a.actor_id) ?? null, occurredAt: a.occurred_at }));
 }
 
-export interface NewCustomerInput {
+export interface CustomerInput {
   name: string;
   company: string;
   phone: string;
   email: string;
   segment: CustomerSegmentValue;
   status: CustomerStatusValue;
-  service: string;
+  serviceCode: string;
+  serviceDetails: WhatsAppDetails;
   requirement: string;
   channel: string;
   notes: string;
   assigneeId?: string;
 }
 
+const customerArgs = (i: CustomerInput) => ({
+  p_name: i.name,
+  p_company: i.company,
+  p_phone: i.phone,
+  p_email: i.email,
+  p_segment: i.segment,
+  p_status: i.status,
+  p_service_code: i.serviceCode || null,
+  p_service_details: isWhatsAppService(i.serviceCode) ? i.serviceDetails : {},
+  p_requirement: i.requirement,
+  p_channel: i.channel,
+  p_notes: i.notes,
+  p_assignee: i.assigneeId || null
+});
+
 export const customerApi = {
-  create: (i: NewCustomerInput) =>
-    rpc<string>('create_support_customer', {
-      p_name: i.name,
-      p_company: i.company,
-      p_phone: i.phone,
-      p_email: i.email,
-      p_segment: i.segment,
-      p_status: i.status,
-      p_service: i.service,
-      p_requirement: i.requirement,
-      p_channel: i.channel,
-      p_notes: i.notes,
-      p_assignee: i.assigneeId || null
-    })
+  create: (i: CustomerInput) => rpc<string>('create_support_customer', customerArgs(i)),
+  update: (customerId: string, i: CustomerInput) => rpc<void>('update_support_customer', { p_customer: customerId, ...customerArgs(i) })
 };
 
 // ---------------------------------------------------------------------------
@@ -514,6 +554,79 @@ export function useSupportInvoices() {
   useRealtime('member_invoices', () => void load());
   return { invoices, loading, error, reload: load };
 }
+
+// ---------------------------------------------------------------------------
+// Invoice requests (Support asks Sales / Accounts to raise an invoice)
+// ---------------------------------------------------------------------------
+export interface InvoiceRequest {
+  id: string;
+  customerId: string;
+  customerName: string;
+  customerCode: string;
+  requestedBy: string | null;
+  requestedByName: string | null;
+  fromMonth: string;
+  toMonth: string;
+  note: string | null;
+  status: 'REQUESTED' | 'RAISED' | 'CANCELLED';
+  createdAt: string;
+}
+
+export function useInvoiceRequests() {
+  const [requests, setRequests] = useState<InvoiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const { data, error: err } = await db().from('invoice_requests').select('*').order('created_at', { ascending: false }).limit(500);
+      if (err) throw new Error(cleanDbError(err.message));
+      const rows = data || [];
+      const cust = new Map<string, { name: string; code: string }>();
+      const ids = [...new Set(rows.map((r: any) => r.customer_id))];
+      if (ids.length) {
+        const { data: cs } = await db().from('customers').select('id, name, customer_code').in('id', ids);
+        (cs || []).forEach((c: any) => cust.set(c.id, { name: c.name, code: c.customer_code }));
+      }
+      const names = await ownerNames(rows.map((r: any) => r.requested_by).filter(Boolean));
+      setRequests(
+        rows.map((r: any) => ({
+          id: r.id,
+          customerId: r.customer_id,
+          customerName: cust.get(r.customer_id)?.name ?? 'Customer',
+          customerCode: cust.get(r.customer_id)?.code ?? '',
+          requestedBy: r.requested_by,
+          requestedByName: names.get(r.requested_by) ?? null,
+          fromMonth: r.from_month,
+          toMonth: r.to_month,
+          note: r.note,
+          status: r.status,
+          createdAt: r.created_at
+        }))
+      );
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load invoice requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useRealtime('invoice_requests', () => void load());
+  return { requests, loading, error, reload: load };
+}
+
+export const invoiceRequestApi = {
+  /** from / to as "YYYY-MM" (month inputs). */
+  create: (i: { customerId: string; fromMonth: string; toMonth: string; note?: string }) =>
+    rpc<string>('request_invoice', { p_customer: i.customerId, p_from: `${i.fromMonth}-01`, p_to: `${i.toMonth}-01`, p_note: i.note || null })
+};
+
+export const fmtMonth = (d: string) => {
+  const date = new Date(`${d.slice(0, 7)}-01T00:00:00`);
+  return Number.isNaN(date.getTime()) ? d : date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+};
 
 // ---------------------------------------------------------------------------
 // Realtime

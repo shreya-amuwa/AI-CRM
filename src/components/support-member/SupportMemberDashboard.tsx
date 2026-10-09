@@ -41,6 +41,7 @@ export const SupportMemberDashboard: React.FC = () => {
   const userId = user?.id || profile?.id || '';
   const [page, setPage] = useState<SupportPage>(() => parseSupportPage(window.location.pathname));
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
@@ -78,6 +79,7 @@ export const SupportMemberDashboard: React.FC = () => {
 
   const go = (next: SupportPage) => {
     setProfileId(null);
+    setNotice(null);
     setMenuOpen(false);
     setPage(next);
     navigateTo(next === 'customers' ? SUPPORT_BASE(userId) : `${SUPPORT_BASE(userId)}/${next}`);
@@ -239,16 +241,16 @@ export const SupportMemberDashboard: React.FC = () => {
               onBack={() => setProfileId(null)}
             />
           ) : page === 'customers' ? (
-            <CustomersPage mode="member" tickets={tickets} tasks={tasks} onOpenCustomer={openCustomer} onAddCustomer={() => go('add-customer')} />
+            <CustomersPage mode="member" tickets={tickets} tasks={tasks} notice={notice} onOpenCustomer={openCustomer} onAddCustomer={() => go('add-customer')} />
           ) : page === 'tasks' ? (
             <TasksPage tasks={tasks} onOpenCustomer={openCustomer} />
           ) : page === 'add-customer' ? (
             <AddCustomerPage
               people={tasks.people}
               onCancel={() => go('customers')}
-              onCreated={id => {
+              onCreated={name => {
                 go('customers');
-                openCustomer(id);
+                setNotice(`${name} was added to your customers.`);
               }}
             />
           ) : page === 'tickets' ? (
