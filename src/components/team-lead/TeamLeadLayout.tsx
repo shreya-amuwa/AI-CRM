@@ -21,7 +21,8 @@ import {
   UserPlus,
   UserCheck,
   ClipboardList,
-  Headset
+  Headset,
+  Gauge
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -29,6 +30,7 @@ import { usePendingApprovalsCount } from '../../hooks/usePendingApprovalsCount';
 import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 
 export type TeamLeadNav =
+  | 'tl-dashboard'
   | 'overview'
   | 'assigned-tasks'
   | 'support-customers'
@@ -70,6 +72,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const pendingApprovalsCount = usePendingApprovalsCount();
 
   const navItems = [
+    { id: 'tl-dashboard' as TeamLeadNav, label: 'Dashboard', icon: Gauge },
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
     { id: 'assigned-tasks' as TeamLeadNav, label: 'Assigned Tasks', icon: ClipboardList },
     ...(user?.profile?.team?.division === 'SUPPORT'
@@ -406,7 +409,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
         )}
 
         {/* MAIN CONTENT WORKSPACE */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             {children}
           </div>

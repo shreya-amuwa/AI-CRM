@@ -441,18 +441,20 @@ const KIND_TEXT: Record<string, string> = {
   NOTE: 'added a note'
 };
 
-const TicketDetail: React.FC<{
+export const TicketDetail: React.FC<{
   ticket: SupportTicket;
   data: TicketData;
   people: Person[];
   manager: boolean;
   onClose: () => void;
   onOpenCustomer?: (customerId: string) => void;
-}> = ({ ticket, data, people, manager, onClose, onOpenCustomer }) => {
+  /** View only (e.g. a team lead reading another team's ticket on one of their customers). */
+  readOnly?: boolean;
+}> = ({ ticket, data, people, manager, onClose, onOpenCustomer, readOnly = false }) => {
   const { profile } = useAuth();
   const history = data.updates.filter(u => u.ticketId === ticket.id);
-  const canManage = manager || profile?.role === 'TEAM_HEAD' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'SUPER_ADMIN';
-  const canAct = canManage || ticket.assigneeId === profile?.id;
+  const canManage = !readOnly && (manager || profile?.role === 'TEAM_HEAD' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'SUPER_ADMIN');
+  const canAct = !readOnly && (canManage || ticket.assigneeId === profile?.id);
   const [status, setStatus] = useState<TicketStatus>(ticket.status);
   useEffect(() => setStatus(ticket.status), [ticket.status]);
   const [note, setNote] = useState('');

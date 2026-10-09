@@ -375,7 +375,7 @@ export interface TicketUpdateRow {
   createdAt: string;
 }
 
-const toTicket = (r: any, cust: Map<string, { name: string; code: string }>): SupportTicket => ({
+export const toTicket = (r: any, cust: Map<string, { name: string; code: string }>): SupportTicket => ({
   id: r.id,
   ticketNo: r.ticket_no,
   customerId: r.customer_id,
