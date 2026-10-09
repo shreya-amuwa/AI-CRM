@@ -17,11 +17,19 @@ export function toAuthUser(profile: Profile): AuthUser {
       role = departmentSlug === 'hr' ? 'hr' : 'admin';
       break;
     case 'TEAM_HEAD':
+      if (isAccountsStaff(profile)) {
+        role = 'accounts-staff';
+        break;
+      }
       // Department decides the dashboard: Support Team Leads have their own
       // dashboard; Sales (and other) Team Leads keep the Sales Team Lead one.
       role = isSupportLead(profile) ? 'support-lead' : 'team-lead';
       break;
     default:
+      if (isAccountsStaff(profile)) {
+        role = 'accounts-staff';
+        break;
+      }
       // Technical Consultants open the client-onboarding dashboard; other Support
       // team members open the Support dashboard; everyone else the team member
       // dashboard (Sales and other teams).
@@ -38,6 +46,11 @@ export function toAuthUser(profile: Profile): AuthUser {
     position: profile.position || undefined,
     profile
   };
+}
+
+/** Team members and leads of the Accounts department confirm payments sent by Sales. */
+export function isAccountsStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
+  return (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.department?.slug === 'accounts';
 }
 
 /**

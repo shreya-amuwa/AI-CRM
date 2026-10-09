@@ -104,6 +104,11 @@ export const pipelineController = {
   backOut: (async ctx => ok(await svc(ctx).pipeline.backOut(ctx.params.id, ctx.req.body))) as Handler,
   startOnboarding: (async ctx => ok(await svc(ctx).pipeline.startOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   updateOnboarding: (async ctx => ok(await svc(ctx).pipeline.updateOnboarding(ctx.params.id, ctx.req.body))) as Handler,
+  accountsConfirmations: (async ctx => ok(await svc(ctx).pipeline.accountsConfirmations(ctx.req.query))) as Handler,
+  confirmAccountsPayment: (async ctx => {
+    await svc(ctx).pipeline.confirmAccountsPayment(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
   forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,
   returnToSales: (async ctx => {
     await svc(ctx).pipeline.returnToSales(ctx.params.id, ctx.req.body);

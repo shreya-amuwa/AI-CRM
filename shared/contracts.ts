@@ -23,6 +23,7 @@ export type DefaultDashboard =
   | 'hr-head'
   | 'sales-lead'
   | 'support-lead'
+  | 'accounts-staff'
   | 'team-lead'
   | 'sales-member'
   | 'support-member'
@@ -293,8 +294,38 @@ export interface HandoverInfo {
   clientAccount: { email: string; createdAt: string } | null;
 }
 
+/** One customer in the Accounts confirmation queue: business details and the amount to confirm. */
+export interface AccountsConfirmation {
+  id: string;
+  code: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  segment: string;
+  notes: string | null;
+  department: string | null;
+  salesperson: string | null;
+  services: string[];
+  dealAmount: number | null;
+  amountReceived: number;
+  balance: number;
+  paymentMethod: string | null;
+  paymentDueDate: string | null;
+  sentAt: string;
+  sentBy: string | null;
+  confirmedAt: string | null;
+  confirmedBy: string | null;
+  note: string | null;
+  sentToConsultantAt: string | null;
+}
+
 export interface CustomerOnboarding {
   stage: OnboardingStage;
+  /** Sales sent the customer to Accounts to confirm the amount. */
+  sentToAccountsAt: string | null;
+  /** Accounts confirmed the amount; the customer then goes to the Technical Consultant. */
+  accountsConfirmedAt: string | null;
   paymentMethod: PaymentMethod | null;
   startedAt: string;
   targetHandoverDate: string | null;

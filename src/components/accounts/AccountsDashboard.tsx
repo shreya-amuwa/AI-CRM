@@ -1,0 +1,126 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Bell, LogOut, Menu, ReceiptIndianRupee, X } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
+import { AmuwaLogo } from '../common/AmuwaLogo';
+import { AccountsConfirmations } from './AccountsConfirmations';
+
+/**
+ * Accounts department staff (members and leads): confirm the amount of the
+ * customers Sales sends, which then go to the Technical Consultant.
+ */
+export const AccountsDashboard: React.FC = () => {
+  const { user, profile, logout } = useAuth();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  const displayName = profile?.fullName || user?.name || 'Accounts';
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex text-slate-900 antialiased">
+      {menuOpen && <div className="fixed inset-0 bg-slate-900/40 z-40 lg:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+      <aside
+        className={`fixed lg:sticky top-0 left-0 h-screen w-64 bg-white border-r border-slate-200/80 z-50 flex flex-col justify-between p-4 transition-transform ${
+          menuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+        aria-label="Accounts navigation"
+      >
+        <div className="space-y-6">
+          <div className="flex items-center justify-between px-2 pt-1">
+            <div className="flex items-center gap-2.5">
+              <AmuwaLogo size="sm" />
+              <div className="leading-tight">
+                <span className="block text-sm font-bold text-slate-900">Amuwa Accounts</span>
+                <span className="block text-[11px] text-slate-500 font-medium">{profile?.department?.name || 'Accounts Department'}</span>
+              </div>
+            </div>
+            <button onClick={() => setMenuOpen(false)} className="lg:hidden p-1.5 text-slate-400 rounded-lg" aria-label="Close menu">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <nav className="space-y-1" aria-label="Accounts pages">
+            <button
+              type="button"
+              aria-current="page"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left bg-blue-50 text-blue-700"
+            >
+              <ReceiptIndianRupee className="w-[18px] h-[18px] shrink-0 text-blue-600" aria-hidden="true" />
+              Payment confirmations
+            </button>
+          </nav>
+        </div>
+        <button type="button" onClick={() => void logout()} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-rose-600 hover:bg-rose-50">
+          <LogOut className="w-[18px] h-[18px]" aria-hidden="true" /> Sign out
+        </button>
+      </aside>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="h-16 bg-white border-b border-slate-200/80 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
+          <button onClick={() => setMenuOpen(true)} className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100" aria-label="Open menu">
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="hidden lg:block text-xs text-slate-400">{profile?.department?.name || 'Accounts Department'}</div>
+          <div className="flex items-center gap-3 sm:gap-5">
+            <div className="relative" ref={bellRef}>
+              <button
+                type="button"
+                onClick={() => setBellOpen(o => !o)}
+                aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ''}`}
+                aria-expanded={bellOpen}
+                className="relative p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              {bellOpen && (
+                <div className="absolute right-0 mt-2 w-[22rem] max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border border-slate-100 p-4 z-50 text-sm">
+                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                    <span className="font-bold text-slate-900">Notifications</span>
+                    {unreadCount > 0 && (
+                      <button type="button" onClick={() => markAllAsRead()} className="text-xs text-blue-600 font-semibold">
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
+                    {notifications.length === 0 ? (
+                      <p className="py-8 text-center text-xs text-slate-400">You're all caught up.</p>
+                    ) : (
+                      notifications.map(n => (
+                        <button key={n.id} type="button" onClick={() => !n.isRead && markAsRead(n.id)} className={`w-full text-left py-3 px-1 ${n.isRead ? '' : 'bg-blue-50/40'} hover:bg-slate-50`}>
+                          <div className="font-semibold text-slate-800 text-xs">{n.title}</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">{n.message}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="pl-3 border-l border-slate-200 text-left">
+              <div className="text-xs font-bold text-slate-900 leading-none">{displayName}</div>
+              <div className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5">Accounts</div>
+            </div>
+          </div>
+        </header>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
+          <AccountsConfirmations />
+        </main>
+      </div>
+    </div>
+  );
+};

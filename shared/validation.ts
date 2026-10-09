@@ -388,6 +388,14 @@ export const clientAccountSchema = z
   })
   .strict();
 
+export const accountsQuerySchema = z
+  .object({
+    status: z.enum(['PENDING', 'CONFIRMED']).default('PENDING'),
+    search: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20)
+  })
+  .strict();
 export const handoverNoteSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const passToTeamLeadSchema = z.object({ teamLeadId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const assignToMemberSchema = z.object({ memberId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();

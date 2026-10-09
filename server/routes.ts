@@ -60,6 +60,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/start-onboarding', handler: pipeline.startOnboarding },
   { method: 'PATCH', path: '/pipeline/customers/:id/onboarding', handler: pipeline.updateOnboarding },
   { method: 'POST', path: '/pipeline/customers/:id/forward-to-support', handler: pipeline.forwardToSupport },
+  { method: 'GET', path: '/pipeline/accounts/confirmations', handler: pipeline.accountsConfirmations },
+  { method: 'POST', path: '/pipeline/customers/:id/accounts/confirm', handler: pipeline.confirmAccountsPayment, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/return-to-sales', handler: pipeline.returnToSales },
   { method: 'PATCH', path: '/pipeline/customers/:id/checklist/:item', handler: pipeline.saveChecklistItem },
   { method: 'POST', path: '/pipeline/customers/:id/checklist/verify-all', handler: pipeline.verifyAll },

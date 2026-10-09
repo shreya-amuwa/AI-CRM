@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  AccountsConfirmation,
   ChecklistItem,
   ReviewCounts,
   CustomerActivity,
@@ -20,7 +21,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
+  onboarding:customer_onboarding(stage, sent_to_accounts_at, accounts_confirmed_at, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
     handover_stage, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
 
@@ -67,6 +68,8 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
     onboarding: o
       ? {
           stage: o.stage,
+          sentToAccountsAt: o.sent_to_accounts_at ?? null,
+          accountsConfirmedAt: o.accounts_confirmed_at ?? null,
           paymentMethod: o.payment_method,
           startedAt: o.started_at,
           targetHandoverDate: o.target_handover_date,
@@ -334,6 +337,16 @@ export class PipelineRepository {
 
   async returnToSales(id: string, note: string | null): Promise<void> {
     unwrap(await this.db.rpc('return_onboarding_to_sales', { p_customer: id, p_note: note }));
+  }
+
+  async accountsConfirmations(q: { status: string; search?: string; page: number; pageSize: number }): Promise<Paginated<AccountsConfirmation>> {
+    return unwrap(
+      await this.db.rpc('accounts_confirmations', { p_status: q.status, p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })
+    ) as Paginated<AccountsConfirmation>;
+  }
+
+  async confirmAccountsPayment(id: string, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('confirm_accounts_payment', { p_customer: id, p_note: note }));
   }
 
   async forwardToSupport(id: string): Promise<void> {
