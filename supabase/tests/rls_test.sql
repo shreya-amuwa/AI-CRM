@@ -908,7 +908,8 @@ begin
   insert into test.users values ('client_a', v);
 end $$;
 select test.check((select count(*) = 0 from profiles where id = test.id('client_a')), 'a client login never gets a CRM profile');
-insert into teams (department_id, name, division) values (test.dept('wabastore'), 'Delivery', 'GENERAL');
+-- A second Support team: the hand-over chain (DH -> Support TL -> Support TM) is Support only.
+insert into teams (department_id, name, division) values (test.dept('wabastore'), 'Delivery', 'SUPPORT');
 select test.create_auth_user('th_gen', 'delivery.lead@amuwa.com', '{"full_name":"Delivery Lead"}',
   jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.team('wabastore', 'Delivery')));
 select test.create_auth_user('tm_d1', 'delivery.member@amuwa.com', '{"full_name":"Delivery Member"}',
@@ -949,8 +950,9 @@ select test.login('tm_s2');
 select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'an unrelated team member does not see the customer');
 select test.login('dh_wab');
 select test.check((select handover_stage = 'DEPARTMENT_HEAD' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'department head sees the hand-over');
-select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('tm_a'), null)$$, 'department head must pick a team lead', 'active Team Lead');
-select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_wbx'), null)$$, 'team lead of another department is refused', 'active Team Lead');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('tm_a'), null)$$, 'department head must pick a team lead', 'Support Team Lead');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_wbx'), null)$$, 'team lead of another department is refused', 'Support Team Lead');
+select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_wab'), null)$$, 'a Sales team lead is not part of the hand-over chain', 'Support Team Lead');
 select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_gen'), 'Please start onboarding the client');
 select test.check((select handover_stage = 'TEAM_LEAD' and team_lead_id = test.id('th_gen') from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'passed to the team lead');
 select test.login('th_wbx');
@@ -1222,6 +1224,10 @@ set role authenticated;
 select test.login('tm_d1');
 select test.must_fail($$select team_lead_dashboard()$$, 'a team member has no team lead dashboard', 'FORBIDDEN');
 select test.must_fail($$select team_lead_customers()$$, 'a team member cannot list the team lead scope', 'FORBIDDEN');
+select test.login('th_wab');
+select test.must_fail($$select team_lead_dashboard()$$, 'a Sales team lead keeps the sales workspace: no support dashboard', 'FORBIDDEN');
+select test.must_fail($$select team_lead_tickets()$$, 'a Sales team lead cannot list support tickets here', 'FORBIDDEN');
+select test.check((select not private.in_team_lead_scope(id) from pipeline where name = 'A'), 'a Sales team lead is outside the support scope');
 
 select test.login('th_gen');
 select test.check((select (team_lead_dashboard() -> 'totals' ->> 'needsDecision')::int = 1), 'customer passed by the department head needs a decision');
@@ -1291,13 +1297,15 @@ select test.check((select jsonb_array_length(team_lead_dashboard() -> 'activity'
 
 -- Other team leads
 select test.login('th_wbx');
-select test.check((select (team_lead_customers('kapoor') ->> 'total')::int = 0 and (team_lead_tickets(null, 'ALL') ->> 'total')::int = 0),
-  'another department''s lead sees none of it');
-select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('th_wbx'))$$, 'another lead cannot reassign it', 'NOT_FOUND');
+select test.must_fail($$select team_lead_customers('kapoor')$$, 'a Sales lead of another department has no support dashboard', 'FORBIDDEN');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'K'), test.id('th_wbx'))$$, 'another lead cannot reassign it', 'FORBIDDEN');
 select test.check((select count(*) = 0 from support_tickets where subject = 'Needs a new template'), 'another lead cannot read the tickets');
-select test.login('th_wab');
-select test.check((select (team_lead_customers('kapoor') ->> 'total')::int = 0), 'a lead of another team in the same department does not see it');
-select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'M'), test.id('th_wab'))$$, 'nor reassign it', 'NOT_FOUND');
+select test.login('sup_th');
+select test.check((select (team_lead_customers('kapoor') ->> 'total')::int = 0), 'a Support lead of another team in the same department does not see the customer');
+select test.check((select not exists (select 1 from jsonb_array_elements(team_lead_tickets('template', 'ALL') -> 'items') x
+                                        where x ->> 'subject' = 'Needs a new template')), 'nor its tickets');
+select test.must_fail($$select team_lead_assign_customer((select id from pipeline where name = 'M'), test.id('sup_th'))$$, 'nor reassign it', 'NOT_FOUND');
+select test.must_fail($$select assign_to_team_member((select id from pipeline where name = 'B'), test.id('sup_th'), null)$$, 'nor take over a client handed to another lead', 'NOT_FOUND');
 reset role;
 
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

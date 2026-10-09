@@ -1,7 +1,26 @@
-# Team Leader dashboard
+# Team Leader dashboard (Support)
 
-The first page a Team Lead sees (sidebar **Dashboard**). Everything comes from the database
-through functions in `20261009100000_team_leader_dashboard.sql`; nothing is mocked.
+The first page a **Support** Team Lead sees (sidebar **Dashboard**). Everything comes from the database
+through functions in `20261009100000_team_leader_dashboard.sql` (made Support-only by
+`20261009200000_support_team_lead_only.sql`); nothing is mocked.
+
+## Support only — Sales is not mixed in
+
+| | Support Team Lead | Sales Team Lead |
+|---|---|---|
+| Default page | **Dashboard** (this page) | **Pod Command Center** (unchanged) |
+| Support Customers / Support Tickets / Client Hand-overs | yes | not shown |
+| `team_lead_*` functions | yes | `FORBIDDEN` |
+
+The client hand-over chain is Support only:
+
+**Technical Consultant → Department Head → Support Team Lead → Support Team Member**
+
+* `pass_to_team_lead` accepts only an active Team Lead of a **SUPPORT** team of the department
+  (the Department Head's dialog lists only those).
+* The Support Team Lead keeps the client or assigns it to a member of their own Support team
+  (`assign_to_team_member` / `team_lead_assign_customer`).
+* The Support Team Member sees the client under **My Clients** in the Support dashboard.
 
 ## Scope (who the lead manages)
 - **Team customers** — `customers.team_id` = the lead's team (the owner is the lead or one of

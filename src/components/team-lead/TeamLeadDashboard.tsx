@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  SUPPORT_ONLY_NAV,
   TeamLeadLayout,
   TeamLeadNav
 } from './TeamLeadLayout';
@@ -31,7 +32,20 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
   userName
 }) => {
   const { profile } = useAuth();
-  const [activeNav, setActiveNav] = useState<TeamLeadNav>('tl-dashboard');
+  // Support Team Leads open the Team Leader dashboard; Sales Team Leads keep the
+  // Pod Command Center they always had. The two workspaces are not mixed.
+  const isSupportLead = profile?.team?.division === 'SUPPORT';
+  const [activeNav, setActiveNav] = useState<TeamLeadNav>(isSupportLead ? 'tl-dashboard' : 'overview');
+  const division = profile?.team?.division;
+  const defaulted = useRef(!!division);
+  useEffect(() => {
+    // The profile can arrive after the first render: pick the default once it does.
+    if (!defaulted.current && division) {
+      defaulted.current = true;
+      setActiveNav(division === 'SUPPORT' ? 'tl-dashboard' : 'overview');
+    }
+    if (division && division !== 'SUPPORT' && SUPPORT_ONLY_NAV.includes(activeNav)) setActiveNav('overview');
+  }, [division, activeNav]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Store data states

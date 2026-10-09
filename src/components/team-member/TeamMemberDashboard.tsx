@@ -19,7 +19,6 @@ import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { TeamMemberLayout, TeamMemberNav } from './TeamMemberLayout';
 import { MemberTasksView } from '../tasks/MemberTasksView';
-import { HandoverBoard } from '../handover/HandoverBoard';
 import { MemberAnalyticsWidgets } from './MemberAnalyticsWidgets';
 import { MemberFollowUpsTable } from './MemberFollowUpsTable';
 import { MemberRightSidebar } from './MemberRightSidebar';
@@ -530,7 +529,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         {activeNav === 'work-tasks' && <MemberTasksView />}
 
         {/* Verified clients the Team Lead assigned to this member */}
-        {activeNav === 'my-clients' && <HandoverBoard role="TEAM_MEMBER" />}
 
         {activeNav === 'tasks' && (
           <div className="space-y-6">

@@ -46,6 +46,9 @@ export type TeamLeadNav =
   | 'analytics'
   | 'settings';
 
+/** Pages only a Support Team Lead has (never shown to a Sales Team Lead). */
+export const SUPPORT_ONLY_NAV: TeamLeadNav[] = ['tl-dashboard', 'support-customers', 'support-tickets', 'client-handovers'];
+
 interface TeamLeadLayoutProps {
   children: React.ReactNode;
   activeNav: TeamLeadNav;
@@ -71,17 +74,20 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const pendingApprovalsCount = usePendingApprovalsCount();
 
+  const isSupport = user?.profile?.team?.division === 'SUPPORT';
   const navItems = [
-    { id: 'tl-dashboard' as TeamLeadNav, label: 'Dashboard', icon: Gauge },
+    // Support Team Leads: the Team Leader dashboard and the client hand-over
+    // chain come first. Sales Team Leads keep their sales workspace only.
+    ...(isSupport ? [{ id: 'tl-dashboard' as TeamLeadNav, label: 'Dashboard', icon: Gauge }] : []),
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
     { id: 'assigned-tasks' as TeamLeadNav, label: 'Assigned Tasks', icon: ClipboardList },
-    ...(user?.profile?.team?.division === 'SUPPORT'
+    ...(isSupport
       ? [
           { id: 'support-customers' as TeamLeadNav, label: 'Support Customers', icon: Users },
-          { id: 'support-tickets' as TeamLeadNav, label: 'Support Tickets', icon: Headset }
+          { id: 'support-tickets' as TeamLeadNav, label: 'Support Tickets', icon: Headset },
+          { id: 'client-handovers' as TeamLeadNav, label: 'Client Hand-overs', icon: UserCheck }
         ]
       : []),
-    { id: 'client-handovers' as TeamLeadNav, label: 'Client Hand-overs', icon: UserCheck },
     { id: 'team-members' as TeamLeadNav, label: 'Team Members & Access', icon: UserPlus },
     { id: 'reps' as TeamLeadNav, label: 'Team Reps (5)', icon: Users },
     {
