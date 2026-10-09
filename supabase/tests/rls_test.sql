@@ -352,10 +352,11 @@ select test.check((select count(*) = 0 from notifications where type = 'ANNOUNCE
 \echo '--- 9. Deletion'
 -- ---------------------------------------------------------------------------
 set role authenticated;
-select test.login('dh_wab');
-select test.must_fail($$select delete_user(test.id('pending_d'))$$, 'department head cannot hard-delete', 'FORBIDDEN');
+select test.login('th_wbx');
+select test.must_fail($$select delete_user(test.id('tm_a'))$$, 'a team lead cannot remove someone outside their team', 'FORBIDDEN');
+select test.login('tm_a');
+select test.must_fail($$select delete_user(test.id('tm_b'))$$, 'a team member cannot remove anyone', 'FORBIDDEN');
 select test.login('sa');
-select test.must_fail($$select delete_user(test.id('tm_a'))$$, 'cannot delete a user who owns customers', 'CONFLICT');
 select test.must_fail($$select delete_user(test.id('sa'))$$, 'super admin cannot delete self', 'FORBIDDEN');
 select delete_user(test.id('pending_e'));
 reset role;
@@ -862,11 +863,11 @@ begin
   insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
   values (v, 'late.head@amuwa.com', '{"full_name":"Late Head"}', '{"provider":"email","providers":["email"]}');
   update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object(
-    'provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('wabastore'))
+    'provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('digitree'))
   where id = v;
   insert into test.users values ('late_head', v);
 end $$;
-select test.check((select role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' and department_id = test.dept('wabastore') and team_id is null
+select test.check((select role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' and department_id = test.dept('digitree') and team_id is null
                      from profiles where id = test.id('late_head')), 'late app_metadata: department head provisioned');
 select test.check((select count(*) = 0 from approval_requests where subject_user_id = test.id('late_head')), 'late app_metadata: no account request');
 
@@ -1369,5 +1370,52 @@ select test.check((select default_dashboard = 'sales-lead' from profiles where i
                   and (select default_dashboard = 'support-lead' from profiles where id = test.id('sup_th')),
   'moving one lead back leaves the other department''s lead untouched');
 reset role;
+
+-- ---------------------------------------------------------------------------
+\echo '--- 21. One Department Head per department, removal down the hierarchy, WABA ID'
+-- ---------------------------------------------------------------------------
+reset role;
+select test.must_fail($$select test.create_auth_user('dh_wab2', 'dh.wab2@amuwa.com', '{"full_name":"Second Head"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('wabastore')))$$,
+  'a second Department Head cannot be created', 'already has a Department Head');
+set role authenticated;
+select test.login('sa');
+select test.must_fail($$select assert_can_create_user('DEPARTMENT_HEAD', test.dept('wabastore'), null)$$, 'the pre-check names the existing head', 'DH Wabastore');
+select test.check(assert_can_create_user('DEPARTMENT_HEAD', test.dept('hr'), null), 'a department without a head can get one');
+select test.must_fail($$select assign_user(test.id('th_wab'), 'DEPARTMENT_HEAD', test.dept('wabastore'), null)$$, 'a team lead cannot be promoted into a department that has a head', 'already has a Department Head');
+select test.check(test.rows($$update profiles set full_name = 'DH Wabastore' where id = test.id('dh_wab')$$) >= 0, 'editing the existing head still works');
+
+-- Removal: a team lead removes a member of their team; customers move to the lead.
+reset role;
+select test.create_auth_user('rm_lead', 'rm.lead@amuwa.com', '{"full_name":"Removal Lead"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.team('wabastore', 'Support')));
+select test.create_auth_user('rm_member', 'rm.member@amuwa.com', '{"full_name":"Removal Member"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support')));
+set role authenticated;
+select test.login('rm_member');
+create temp table rmc (id uuid);
+grant all on rmc to authenticated;
+insert into rmc select create_support_customer('Owned By Removed', null, '+91 93333 44444', null, 'RETAIL', 'ACTIVE', null, null, null, null, null);
+select test.login('rm_lead');
+select delete_user(test.id('rm_member'));
+reset role;
+select test.check((select count(*) = 0 from profiles where id = test.id('rm_member')), 'team lead removes a member of their team');
+select test.check((select owner_id = test.id('rm_lead') from customers where id = (select id from rmc)), 'the removed member''s customers move to the team lead');
+select test.check((select count(*) = 1 from audit_logs where action = 'USER_REMOVED' and actor_id = test.id('rm_lead')), 'removal is audited');
+set role authenticated;
+select test.login('rm_lead');
+select test.must_fail($$select delete_user(test.id('dh_wab'))$$, 'a team lead cannot remove their department head', 'FORBIDDEN');
+select test.login('dh_wab');
+select delete_user(test.id('rm_lead'));
+reset role;
+select test.check((select count(*) = 0 from profiles where id = test.id('rm_lead')), 'department head removes a team lead of their department');
+
+-- WABA ID
+select test.must_fail($$insert into customer_onboarding_entries (customer_id, item_code, value, status) values ((select id from rmc), 'WABA_ID', '12345', 'VERIFIED')$$,
+  'a short WABA ID is refused', 'at least 12 digits');
+select test.must_fail($$insert into customer_onboarding_entries (customer_id, item_code, value, status) values ((select id from rmc), 'WABA_ID', '1234567890AB', 'VERIFIED')$$,
+  'letters in a WABA ID are refused', 'numbers only');
+insert into customer_onboarding_entries (customer_id, item_code, value, status) values ((select id from rmc), 'WABA_ID', '1234 5678 9012', 'VERIFIED');
+select test.check((select value = '123456789012' from customer_onboarding_entries where customer_id = (select id from rmc) and item_code = 'WABA_ID'), 'a 12-digit WABA ID is saved (spaces removed)');
 
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

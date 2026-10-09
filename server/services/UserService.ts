@@ -9,7 +9,7 @@ import {
   uuidSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
-import { assertCanAssignRole, assertManager, assertSuperAdmin } from '../authz/policies.js';
+import { assertCanAssignRole, assertManager } from '../authz/policies.js';
 import { parse } from '../http/validate.js';
 import { AppError } from '../http/errors.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
@@ -80,8 +80,9 @@ export class UserService {
     return this.profiles.findById(userId);
   }
 
+  /** Removal follows the hierarchy; delete_user() enforces who may remove whom. */
   async delete(actor: Actor, id: string): Promise<void> {
-    assertSuperAdmin(actor);
+    assertManager(actor);
     await this.profiles.delete(parse(uuidSchema, id));
   }
 }

@@ -290,16 +290,20 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   children
 }) => {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers often pass a new onClose on every render; keep the latest in a ref so
+  // the focus effect runs once (on open) and typing never moves focus back.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       previous?.focus?.();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="pl-dialog-title" className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-4">

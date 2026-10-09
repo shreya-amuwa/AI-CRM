@@ -293,7 +293,7 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pick) return setError(toLead ? 'Choose a Support Team Lead.' : 'Choose a Team Member.');
+    if (!pick) return setError(toLead ? 'Choose a Support Team Lead.' : 'Choose a Team Member or yourself.');
     setBusy(true);
     setError(null);
     try {
@@ -308,14 +308,15 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
 
   return (
     <Dialog
-      title={toLead ? 'Pass to a Support Team Lead' : 'Assign to a Team Member'}
+      title={toLead ? 'Pass to a Support Team Lead' : 'Assign to a Team Member or yourself'}
       description={`${customer.company || customer.name} — ${toLead ? 'the Team Lead then assigns it to a member of their team.' : 'the Team Member can then see the client and its details.'}`}
       onClose={() => !busy && onClose()}
     >
       <form onSubmit={submit} className="space-y-3" noValidate>
-        <Field label={toLead ? 'Support Team Lead' : 'Team Member'} required htmlFor="handover-pick">
+        <Field label={toLead ? 'Support Team Lead' : 'Assign to'} required htmlFor="handover-pick">
           <select id="handover-pick" className={selectCls} value={pick} onChange={e => setPick(e.target.value)} disabled={!options}>
             <option value="">{options ? 'Choose…' : 'Loading…'}</option>
+            {!toLead && options && profile && <option value={profile.id}>Me ({profile.fullName}) — keep this client</option>}
             {options?.map(p => (
               <option key={p.id} value={p.id}>
                 {p.fullName}
@@ -324,7 +325,7 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
             ))}
           </select>
         </Field>
-        {options && options.length === 0 && (
+        {options && options.length === 0 && toLead && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
             {toLead ? 'This department has no active Support Team Lead yet. Create one in Team Members & Access.' : 'Your team has no active Team Member yet.'}
           </p>
