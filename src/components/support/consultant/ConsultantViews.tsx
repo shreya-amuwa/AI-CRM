@@ -10,20 +10,13 @@ import {
   Eye,
   FileText,
   IndianRupee,
-  Mail,
-  MessageCircle,
-  PhoneCall,
   RotateCcw,
   Search,
   ShieldCheck,
-  FileSpreadsheet,
   User,
   XCircle,
-  Zap
 } from 'lucide-react';
 import type {
-  AutomationCode,
-  AutomationStatus,
   ChecklistItem,
   CustomerDocument,
   Paginated,
@@ -519,7 +512,6 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
 
         <div className="space-y-5">
           <ClientLoginCard customerId={c.id} defaultEmail={c.email} account={c.handover?.clientAccount} locked={waiting || handedOver} onChanged={changed} />
-          <AutomationsCard customerId={c.id} locked={locked} />
         </div>
       </div>
     </div>
@@ -921,151 +913,5 @@ const RejectDialog: React.FC<{ label: string; busy: boolean; onClose: () => void
         </button>
       </div>
     </Dialog>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Automations
-// ---------------------------------------------------------------------------
-const AUTOMATION_UI: Record<AutomationCode, { title: string; desc: string; icon: React.ReactNode; tile: string; btn: string }> = {
-  EMAIL: {
-    title: 'Email Automation',
-    desc: 'Send the onboarding email sequence to the customer.',
-    icon: <Mail className="w-5 h-5" />,
-    tile: 'bg-blue-50 text-blue-600',
-    btn: 'bg-blue-600 hover:bg-blue-700'
-  },
-  WHATSAPP: {
-    title: 'WhatsApp Automation',
-    desc: 'Send onboarding messages on WhatsApp.',
-    icon: <MessageCircle className="w-5 h-5" />,
-    tile: 'bg-emerald-50 text-emerald-600',
-    btn: 'bg-emerald-600 hover:bg-emerald-700'
-  },
-  AI_CALLING: {
-    title: 'AI Calling',
-    desc: 'Place an AI onboarding call to the customer.',
-    icon: <PhoneCall className="w-5 h-5" />,
-    tile: 'bg-violet-50 text-violet-600',
-    btn: 'bg-violet-600 hover:bg-violet-700'
-  }
-};
-
-const AutomationsCard: React.FC<{ customerId: string; locked?: boolean }> = ({ customerId, locked }) => {
-  const [items, setItems] = useState<AutomationStatus[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const load = useCallback(() => {
-    pipelineApi.automations(customerId).then(setItems, e => setError(errorMessage(e)));
-  }, [customerId]);
-  useEffect(load, [load]);
-
-  return (
-    <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-labelledby="automations-heading">
-      <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-        <IconTile className="w-9 h-9 bg-amber-50 text-amber-500">
-          <Zap className="w-4 h-4" />
-        </IconTile>
-        <div>
-          <h2 id="automations-heading" className="font-bold text-slate-900">
-            Automations
-          </h2>
-          <p className="text-xs text-slate-500">Each automation runs from its connected Google Sheet</p>
-        </div>
-      </div>
-      {error && (
-        <div className="mt-4">
-          <ErrorBanner message={error} onRetry={load} />
-        </div>
-      )}
-      {!items && !error ? (
-        <Spinner label="Loading automations…" />
-      ) : (
-        <ul className="mt-4 space-y-3">
-          {items?.map(a => (
-            <AutomationRow key={a.code} customerId={customerId} status={a} locked={locked} onDone={next => setItems(list => list?.map(x => (x.code === next.code ? next : x)) || null)} onRefresh={load} />
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-};
-
-const AutomationRow: React.FC<{
-  customerId: string;
-  status: AutomationStatus;
-  onDone: (s: AutomationStatus) => void;
-  onRefresh: () => void;
-  locked?: boolean;
-}> = ({ customerId, status, onDone, onRefresh, locked }) => {
-  const ui = AUTOMATION_UI[status.code];
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const run = status.lastRun;
-
-  const trigger = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      onDone(await pipelineApi.triggerAutomation(customerId, status.code));
-      setConfirming(false);
-    } catch (e) {
-      setError(errorMessage(e));
-      setConfirming(false);
-      onRefresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <li className="p-4 rounded-xl border border-slate-200">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <IconTile className={`w-10 h-10 ${ui.tile}`}>{ui.icon}</IconTile>
-          <div className="min-w-0">
-            <h3 className="text-sm font-bold text-slate-900">{ui.title}</h3>
-            <p className="text-xs text-slate-500">{ui.desc}</p>
-          </div>
-        </div>
-        {confirming ? (
-          <div className="flex gap-2 sm:ml-auto self-end sm:self-auto">
-            <button type="button" onClick={() => setConfirming(false)} disabled={busy} className="px-3 py-2 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-700">
-              Cancel
-            </button>
-            <button type="button" onClick={trigger} disabled={busy} className="px-3 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-              {busy ? 'Running…' : 'Confirm'}
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setConfirming(true)}
-            disabled={!status.connected || locked}
-            title={locked ? 'Waiting for sales team to fix the items sent back' : status.connected ? undefined : 'Connect a Google Sheet to enable this automation'}
-            className={`sm:ml-auto self-end sm:self-auto inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${ui.btn}`}
-            aria-label={`Trigger ${ui.title}`}
-          >
-            <Zap className="w-4 h-4" aria-hidden="true" /> Trigger
-          </button>
-        )}
-      </div>
-      {error && (
-        <div className="mt-3">
-          <ErrorBanner message={error} />
-        </div>
-      )}
-      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-        <span className={`inline-flex items-center gap-1.5 ${status.connected ? 'text-emerald-700' : 'text-slate-400'}`}>
-          <FileSpreadsheet className="w-3.5 h-3.5" aria-hidden="true" />
-          {status.connected ? 'Google Sheet connected' : 'Google Sheet not connected'}
-        </span>
-        <span className={run?.status === 'FAILED' ? 'text-rose-600' : 'text-slate-400'}>
-          {run
-            ? `${run.status === 'SENT' ? 'Sent' : run.status === 'FAILED' ? 'Failed' : 'Running'} · ${fmtDateTime(run.triggeredAt)}${run.triggeredBy ? ` · ${run.triggeredBy}` : ''}`
-            : 'Never run'}
-        </span>
-      </div>
-    </li>
   );
 };
