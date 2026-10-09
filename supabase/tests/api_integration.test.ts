@@ -82,6 +82,7 @@ tokens.set('dh', tokenFor(r.json.data.id));
 r = await api('dh', 'POST', '/users', { email: 'th@amuwa.com', fullName: 'Team Head', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: sales.id });
 check(r.status === 201 && r.json.data.team.name === 'Sales', 'department head creates team head', r);
 tokens.set('th', tokenFor(r.json.data.id));
+const salesTeamLeadId = r.json.data.id;
 
 r = await api('th', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Member A', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
 check(r.status === 201, 'team head creates team member', r);
@@ -631,7 +632,8 @@ check(r.json.data.items.find((x: any) => x.id === leadA)?.onboarding.handoverSta
 
 r = await api('dh', 'GET', '/pipeline/customers?stage=ONBOARDING&handover=DEPARTMENT_HEAD');
 check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'department head sees the customer to assign', r);
-r = await api('sa', 'POST', '/teams', { departmentId: wab.id, name: 'Delivery', division: 'GENERAL' });
+// The hand-over chain is Support only: DH -> Support Team Lead -> Support Team Member.
+r = await api('sa', 'POST', '/teams', { departmentId: wab.id, name: 'Delivery', division: 'SUPPORT' });
 check(r.status === 201, 'delivery team created', r);
 const delivery = r.json.data.id;
 r = await api('dh', 'POST', '/users', { email: 'tl.delivery@amuwa.com', fullName: 'Delivery Lead', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: delivery });
@@ -646,6 +648,8 @@ r = await api('tl2', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_
 check(r.json.data.total === 0, 'the team lead sees nothing before it is passed to them', r);
 r = await api('dh', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: deliveryMember });
 check(r.status === 422, 'department head must choose a team lead', r);
+r = await api('dh', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: salesTeamLeadId });
+check(r.status === 422, 'a Sales team lead is not part of the hand-over chain', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: deliveryLead });
 check(r.status === 404, 'only the department head can pass it to a team lead', r);
 r = await api('dh', 'POST', `/pipeline/customers/${leadA}/handover/team-lead`, { teamLeadId: deliveryLead, note: 'Start this week' });

@@ -69,7 +69,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
     { id: 'deals' as TeamMemberNav, label: 'Deals', icon: Handshake },
     { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
-    { id: 'my-clients' as TeamMemberNav, label: 'My Clients', icon: UserCheck },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },

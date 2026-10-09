@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, ClipboardList, FileText, Headset, LayoutDashboard, LogOut, Menu, UserPlus, X } from 'lucide-react';
+import { Bell, ClipboardList, FileText, Headset, LayoutDashboard, LogOut, Menu, UserCheck, UserPlus, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -11,12 +11,15 @@ import { TasksPage } from './TasksPage';
 import { AddCustomerPage } from './AddCustomerPage';
 import { TicketsPage } from './TicketsPage';
 import { InvoicesPage } from './InvoicesPage';
+import { HandoverBoard } from '../handover/HandoverBoard';
 
-export type SupportPage = 'customers' | 'tasks' | 'add-customer' | 'tickets' | 'invoices';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices';
 
-/** Sidebar order is fixed: Dashboard, Assigned Tasks, Add Customer, Tickets, Invoices. */
+/** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, Tickets, Invoices. */
 const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'customers', label: 'Dashboard — Existing Customers', icon: LayoutDashboard },
+  // Clients handed over Technical Consultant -> Department Head -> Support Team Lead -> me.
+  { id: 'my-clients', label: 'My Clients', icon: UserCheck },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
   { id: 'tickets', label: 'Tickets', icon: Headset },
@@ -242,6 +245,8 @@ export const SupportMemberDashboard: React.FC = () => {
             />
           ) : page === 'customers' ? (
             <CustomersPage mode="member" tickets={tickets} tasks={tasks} notice={notice} onOpenCustomer={openCustomer} onAddCustomer={() => go('add-customer')} />
+          ) : page === 'my-clients' ? (
+            <HandoverBoard role="TEAM_MEMBER" />
           ) : page === 'tasks' ? (
             <TasksPage tasks={tasks} onOpenCustomer={openCustomer} />
           ) : page === 'add-customer' ? (

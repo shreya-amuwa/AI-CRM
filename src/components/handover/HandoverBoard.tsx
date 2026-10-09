@@ -51,12 +51,12 @@ const TABS: Record<BoardRole, { key: HandoverStage; label: string }[]> = {
 const COPY: Record<BoardRole, { title: string; subtitle: string; empty: string }> = {
   DEPARTMENT_HEAD: {
     title: 'Client hand-overs',
-    subtitle: 'Customers the Technical Consultant has verified. Pass each one to a Team Lead of your department.',
+    subtitle: 'Customers the Technical Consultant has verified. Pass each one to a Support Team Lead of your department.',
     empty: 'No verified customers yet. They appear here once the Technical Consultant sends them to you.'
   },
   TEAM_HEAD: {
     title: 'Client hand-overs',
-    subtitle: 'Customers your Department Head passed to you. Assign each one to a member of your team.',
+    subtitle: 'Customers your Department Head passed to you. Keep each one or assign it to a member of your Support team.',
     empty: 'Nothing has been passed to you yet.'
   },
   TEAM_MEMBER: {
@@ -285,14 +285,15 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
           : { role: 'TEAM_MEMBER', status: 'ACTIVE', teamId: profile?.teamId || undefined, pageSize: 100 }
       )
       .then(
-        r => setOptions(r.items.filter(p => (toLead ? p.role === 'TEAM_HEAD' : p.role === 'TEAM_MEMBER' && p.teamId === profile?.teamId))),
+        // The hand-over chain is Support only: Support Team Leads, then members of my team.
+        r => setOptions(r.items.filter(p => (toLead ? p.role === 'TEAM_HEAD' && p.team?.division === 'SUPPORT' : p.role === 'TEAM_MEMBER' && p.teamId === profile?.teamId))),
         e => setError(errorMessage(e))
       );
   }, [toLead, profile?.departmentId, profile?.teamId]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pick) return setError(toLead ? 'Choose a Team Lead.' : 'Choose a Team Member.');
+    if (!pick) return setError(toLead ? 'Choose a Support Team Lead.' : 'Choose a Team Member.');
     setBusy(true);
     setError(null);
     try {
@@ -307,12 +308,12 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
 
   return (
     <Dialog
-      title={toLead ? 'Pass to a Team Lead' : 'Assign to a Team Member'}
+      title={toLead ? 'Pass to a Support Team Lead' : 'Assign to a Team Member'}
       description={`${customer.company || customer.name} — ${toLead ? 'the Team Lead then assigns it to a member of their team.' : 'the Team Member can then see the client and its details.'}`}
       onClose={() => !busy && onClose()}
     >
       <form onSubmit={submit} className="space-y-3" noValidate>
-        <Field label={toLead ? 'Team Lead' : 'Team Member'} required htmlFor="handover-pick">
+        <Field label={toLead ? 'Support Team Lead' : 'Team Member'} required htmlFor="handover-pick">
           <select id="handover-pick" className={selectCls} value={pick} onChange={e => setPick(e.target.value)} disabled={!options}>
             <option value="">{options ? 'Choose…' : 'Loading…'}</option>
             {options?.map(p => (
@@ -325,7 +326,7 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
         </Field>
         {options && options.length === 0 && (
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-            {toLead ? 'This department has no active Team Lead yet. Create one in Team Members & Access.' : 'Your team has no active Team Member yet.'}
+            {toLead ? 'This department has no active Support Team Lead yet. Create one in Team Members & Access.' : 'Your team has no active Team Member yet.'}
           </p>
         )}
         <Field label="Note (optional)" htmlFor="handover-note">
