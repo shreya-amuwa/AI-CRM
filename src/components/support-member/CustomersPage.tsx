@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, ClipboardList, Headset, Plus, Search, UserCheck, UserPlus, Users } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Headset, MessageCircle, Pencil, Plus, Search, UserCheck, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { WorkTaskData } from '../../lib/workTasks';
 import {
   CHANNELS,
+  customerApi,
   CUSTOMER_STATUS_LABELS,
+  isWhatsAppService,
+  messagesRemaining,
+  toCustomer,
   fmtDay,
   fmtMoney,
   fmtWhen,
@@ -26,6 +30,7 @@ import {
   inputClass,
   KpiCard,
   Loading,
+  Modal,
   outstandingOf,
   PageHeader,
   Pager,
@@ -34,6 +39,7 @@ import {
   TicketStatusPill
 } from './SupportParts';
 import { NewTicketModal } from './TicketsPage';
+import { CustomerForm, customerToInput } from './CustomerForm';
 import { DueLabel, PriorityPill, ProgressBar, StatusPill } from '../tasks/TaskParts';
 import { getSupabase } from '../../services/supabaseClient';
 
@@ -46,17 +52,25 @@ interface CustomersPageProps {
   tasks: WorkTaskData;
   onOpenCustomer: (id: string) => void;
   onAddCustomer?: () => void;
+  /** e.g. "Neha Verma was added." after Add Customer. */
+  notice?: string | null;
 }
 
 /** Dashboard — Existing Customers (the landing page) and the supervisor's customer list. */
-export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer }) => {
+export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer, notice }) => {
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<CustomerStatusValue | 'ALL'>('ALL');
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const [page, setPage] = useState(1);
   const list = useSupportCustomers({ search, status, scope, page, pageSize: PAGE_SIZE }, profile?.id);
-  const { stats, recent } = useCustomerStats(profile?.id);
+  const { stats } = useCustomerStats(profile?.id);
+  const [editing, setEditing] = useState<SupportCustomer | null>(null);
+  const canEdit = (c: SupportCustomer) =>
+    c.ownerId === profile?.id ||
+    profile?.role === 'SUPER_ADMIN' ||
+    profile?.role === 'DEPARTMENT_HEAD' ||
+    (profile?.role === 'TEAM_HEAD' && c.teamId === profile?.teamId);
 
   const myOpenTickets = tickets.tickets.filter(t => (mode === 'member' ? t.assigneeId === profile?.id : true) && isTicketOpen(t.status)).length;
   const myPendingTasks = tasks.tasks.filter(t => t.assigneeId === profile?.id && t.status !== 'COMPLETED' && t.status !== 'NOT_COMPLETED').length;
@@ -93,8 +107,13 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tas
         <KpiCard label="Pending tasks" value={myPendingTasks} icon={ClipboardList} tone="text-amber-700" />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
-        <div className="xl:col-span-3 bg-white rounded-2xl border border-slate-200/80">
+      {notice && (
+        <p className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold" role="status">
+          {notice}
+        </p>
+      )}
+      <div>
+        <div className="bg-white rounded-2xl border border-slate-200/80">
           <div className="p-4 flex flex-col lg:flex-row gap-3 border-b border-slate-100">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
@@ -172,6 +191,7 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tas
                     <th className="py-2.5 px-3 font-semibold">Status</th>
                     <th className="py-2.5 px-3 font-semibold">Assigned to</th>
                     <th className="py-2.5 px-3 font-semibold">Last interaction</th>
+                    <th className="py-2.5 px-4 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -193,6 +213,22 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tas
                       </td>
                       <td className="py-3 px-3 text-xs text-slate-600">{c.ownerId === profile?.id ? 'You' : c.ownerName || 'Team member'}</td>
                       <td className="py-3 px-3 text-xs text-slate-500 whitespace-nowrap">{fmtWhen(c.lastInteractionAt || c.updatedAt)}</td>
+                      <td className="py-3 px-4 text-right" onClick={e => e.stopPropagation()}>
+                        {canEdit(c) ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditing(c)}
+                            aria-label={`Edit ${c.name}`}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => onOpenCustomer(c.id)} className="text-xs font-semibold text-blue-700 hover:underline">
+                            View
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -202,29 +238,43 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tas
           <Pager page={page} pageSize={PAGE_SIZE} total={list.total} onPage={setPage} />
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-4 self-start">
-          <h2 className="text-sm font-bold text-slate-900 mb-3">Recently added or updated</h2>
-          {recent.length === 0 ? (
-            <p className="text-xs text-slate-400">Nothing yet.</p>
-          ) : (
-            <ul className="space-y-3">
-              {recent.map(c => (
-                <li key={c.id}>
-                  <button type="button" onClick={() => onOpenCustomer(c.id)} className="text-left w-full group">
-                    <div className="text-sm font-semibold text-slate-800 group-hover:text-blue-700">{c.name}</div>
-                    <div className="text-[11px] text-slate-400">
-                      {c.company || 'No company'} · {fmtWhen(c.updatedAt)}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </div>
+      {editing && (
+        <EditCustomerModal
+          customer={editing}
+          people={tasks.people}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void list.reload();
+          }}
+        />
+      )}
     </div>
   );
 };
+
+/** Edit a customer's details (the assigned member, their team lead or the department head). */
+export const EditCustomerModal: React.FC<{
+  customer: SupportCustomer;
+  people: import('../../lib/workTasks').Person[];
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ customer, people, onClose, onSaved }) => (
+  <Modal title={`Edit ${customer.name} · ${customer.code}`} onClose={onClose} wide>
+    <CustomerForm
+      initial={customerToInput(customer)}
+      people={people}
+      submitLabel="Save changes"
+      idPrefix="ec"
+      onCancel={onClose}
+      onSubmit={async input => {
+        await customerApi.update(customer.id, input);
+        onSaved();
+      }}
+    />
+  </Modal>
+);
 
 // ---------------------------------------------------------------------------
 // Customer profile
@@ -269,25 +319,7 @@ export const CustomerProfile: React.FC<{
         if (!data) return setState('missing');
         const { data: owner } = await supabase.from('profiles').select('full_name').eq('id', data.owner_id).maybeSingle();
         if (!live) return;
-        setCustomer({
-          id: data.id,
-          code: data.customer_code,
-          name: data.name,
-          company: data.company,
-          email: data.email,
-          phone: data.phone,
-          segment: data.segment,
-          status: data.status,
-          ownerId: data.owner_id,
-          ownerName: owner?.full_name ?? null,
-          channel: data.channel,
-          service: data.service_interest,
-          requirement: data.requirement,
-          notes: data.notes,
-          createdAt: data.created_at,
-          updatedAt: data.updated_at,
-          lastInteractionAt: null
-        });
+        setCustomer(toCustomer(data, new Map([[data.owner_id, owner?.full_name ?? '']]), new Map()));
         setState('ready');
       });
     loadCustomerActivities(customerId).then(a => live && setActivities(a), () => undefined);
@@ -368,6 +400,27 @@ export const CustomerProfile: React.FC<{
                   ))}
                 </dl>
               </div>
+              {isWhatsAppService(customer.serviceCode) && (
+                <div className="bg-white rounded-2xl border border-emerald-200 p-5 md:col-span-2">
+                  <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-1.5">
+                    <MessageCircle className="w-4 h-4 text-emerald-600" aria-hidden="true" /> WhatsApp API
+                  </h2>
+                  <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    {[
+                      ['Campaigns sent', (customer.serviceDetails.campaignsSent ?? 0).toLocaleString('en-IN')],
+                      ['Message package', (customer.serviceDetails.packageMessages ?? 0).toLocaleString('en-IN')],
+                      ['Messages sent', (customer.serviceDetails.messagesSent ?? 0).toLocaleString('en-IN')],
+                      ['Messages remaining', messagesRemaining(customer.serviceDetails).toLocaleString('en-IN')]
+                    ].map(([k, v]) => (
+                      <div key={k} className="rounded-xl bg-slate-50 p-3">
+                        <dt className="text-slate-400">{k}</dt>
+                        <dd className="text-lg font-bold text-slate-900 mt-0.5">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {customer.serviceDetails.campaignNotes && <p className="text-xs text-slate-600 mt-3">Campaigns: {customer.serviceDetails.campaignNotes}</p>}
+                </div>
+              )}
               <div className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3">
                 <div>
                   <h2 className="text-sm font-bold text-slate-900 mb-1">Query / requirement</h2>

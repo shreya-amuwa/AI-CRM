@@ -98,7 +98,7 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
             : 'Monitor, assign and escalate your support team’s tickets.'
         }
         action={
-          profile?.role !== 'DEPARTMENT_HEAD' && (
+          mode === 'manager' && profile?.role !== 'DEPARTMENT_HEAD' && (
             <button
               type="button"
               onClick={() => setCreating(true)}
@@ -111,6 +111,10 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
       />
       {data.error && <ErrorBanner message={data.error} onRetry={() => void data.reload()} />}
 
+      {mode === 'member' ? (
+        <TicketBoard tickets={tickets} loading={data.loading} people={people} onOpen={setOpenId} />
+      ) : (
+        <>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <KpiCard label="Open" value={count('OPEN')} tone="text-blue-700" />
         <KpiCard label="In progress" value={count('IN_PROGRESS') + count('WAITING_CUSTOMER')} tone="text-indigo-700" hint={`${count('WAITING_CUSTOMER')} waiting for customer`} />
@@ -229,6 +233,9 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
         )}
         <Pager page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
       </div>
+
+        </>
+      )}
 
       {mode === 'manager' && byMember.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5">
@@ -642,5 +649,79 @@ const TicketDetail: React.FC<{
         </div>
       </div>
     </Modal>
+  );
+};
+
+/** Member view: three columns — Pending, Waiting for customer reply, Complete. */
+const BOARD: { id: string; title: string; statuses: TicketStatus[]; tone: string }[] = [
+  { id: 'pending', title: 'Pending', statuses: ['OPEN', 'IN_PROGRESS', 'ESCALATED'], tone: 'border-t-blue-500' },
+  { id: 'waiting', title: 'Waiting for customer reply', statuses: ['WAITING_CUSTOMER'], tone: 'border-t-amber-500' },
+  { id: 'complete', title: 'Complete', statuses: ['RESOLVED', 'CLOSED'], tone: 'border-t-emerald-500' }
+];
+
+const TicketBoard: React.FC<{ tickets: SupportTicket[]; loading: boolean; people: Person[]; onOpen: (id: string) => void }> = ({ tickets, loading, onOpen }) => {
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const shown = tickets.filter(t => !q || [t.ticketNo, t.subject, t.customerName, t.customerCode].some(v => v.toLowerCase().includes(q)));
+  if (loading) return <Loading label="Loading tickets…" />;
+  return (
+    <div className="space-y-4">
+      <div className="relative max-w-md">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search ticket ID, subject or customer"
+          aria-label="Search tickets"
+          className={`${inputClass} pl-9`}
+        />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        {BOARD.map(col => {
+          const list = shown
+            .filter(t => col.statuses.includes(t.status))
+            .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || b.updatedAt.localeCompare(a.updatedAt));
+          return (
+            <section key={col.id} className={`bg-slate-100/70 rounded-2xl border border-slate-200 border-t-4 ${col.tone}`} aria-label={col.title}>
+              <header className="flex items-center justify-between px-4 py-3">
+                <h2 className="text-sm font-bold text-slate-900">{col.title}</h2>
+                <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 rounded-full px-2 py-0.5">{list.length}</span>
+              </header>
+              <div className="px-3 pb-3 space-y-2.5 max-h-[70vh] overflow-y-auto">
+                {list.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">No tickets here.</p>
+                ) : (
+                  list.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onOpen(t.id)}
+                      className="w-full text-left bg-white rounded-xl border border-slate-200 p-3 hover:border-blue-300 hover:shadow-sm transition"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] font-bold text-blue-700">{t.ticketNo}</span>
+                        <TicketPriorityPill priority={t.priority} />
+                      </div>
+                      <div className="text-sm font-semibold text-slate-800 mt-1.5 line-clamp-2">{t.subject}</div>
+                      <div className="text-[11px] text-slate-500 mt-1">
+                        {t.customerName} · <span className="font-mono">{t.customerCode}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 mt-2">
+                        <TicketStatusPill status={t.status} />
+                        <span className="text-[10px] text-slate-400">{fmtWhen(t.updatedAt)}</span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+      {tickets.length === 0 && (
+        <p className="text-xs text-slate-500 text-center">No tickets assigned to you yet. Tickets your team lead assigns, or that you open from a customer’s profile, appear here.</p>
+      )}
+    </div>
   );
 };

@@ -5,6 +5,7 @@ import { isTicketOpen, useCustomerStats, useSupportInvoices, useTickets } from '
 import { getSupabase } from '../../services/supabaseClient';
 import { CustomerProfile } from './CustomersPage';
 import { TicketsPage } from './TicketsPage';
+import { InvoiceRequests } from './InvoiceRequests';
 import { KpiCard, PageHeader } from './SupportParts';
 
 /**
@@ -137,6 +138,7 @@ export const SupportDeskPage: React.FC = () => {
       </div>
 
       <TicketsPage mode="manager" data={tickets} people={tasks.people} onOpenCustomer={setCustomerId} />
+      <InvoiceRequests canRequest={false} onOpenCustomer={setCustomerId} />
     </div>
   );
 };

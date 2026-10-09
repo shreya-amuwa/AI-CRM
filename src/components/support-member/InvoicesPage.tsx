@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { fmtDay, fmtMoney, type SupportInvoice } from '../../lib/support';
+import { InvoiceRequests } from './InvoiceRequests';
 import { Empty, ErrorBanner, inputClass, KpiCard, Loading, Modal, outstandingOf, PageHeader, Pager, PaymentPill, paymentStatus } from './SupportParts';
 
 const PAGE_SIZE = 10;
@@ -40,7 +41,10 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
         <KpiCard label="Outstanding" value={fmtMoney(outstanding)} tone="text-amber-700" />
       </div>
 
+      <InvoiceRequests onOpenCustomer={onOpenCustomer} />
+
       <div className="bg-white rounded-2xl border border-slate-200/80">
+        <div className="px-4 pt-4 text-sm font-bold text-slate-900">Invoices</div>
         <div className="p-4 flex flex-col sm:flex-row gap-3 border-b border-slate-100">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
