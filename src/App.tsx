@@ -21,6 +21,7 @@ import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole 
 
 // Dashboards and department panels are loaded on demand, so signing in only
 // downloads the code for the screen the user actually opens.
+const SupportMemberDashboard = lazy(() => import('./components/support-member/SupportMemberDashboard').then(m => ({ default: m.SupportMemberDashboard })));
 const StaffManagementPanel = lazy(() => import('./components/common/StaffManagementPanel').then(m => ({ default: m.StaffManagementPanel })));
 const AmuwaHqPanel = lazy(() => import('./components/departments/amuwa/AmuwaHqPanel').then(m => ({ default: m.AmuwaHqPanel })));
 const AmuwaSettingsPanel = lazy(() => import('./components/departments/amuwa/AmuwaSettingsPanel').then(m => ({ default: m.AmuwaSettingsPanel })));
@@ -94,6 +95,13 @@ const MainAppContent: React.FC = () => {
         navigateTo(target);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'support-member') {
+      // /support-member/dashboard/:id and its pages (…/tasks, …/tickets) stay where they are.
+      const base = `/support-member/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(base);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'team-lead') {
       const target = `/team-lead/dashboard/${user.id}`;
       if (window.location.pathname !== target) {
@@ -114,7 +122,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'team-lead' && user.role !== 'technical-support') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'technical-support') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -159,6 +167,15 @@ const MainAppContent: React.FC = () => {
   // Team members are strictly isolated: no department hub, no admin header, no admin sidebar
   if (user.role === 'team-member') {
     return <TeamMemberDashboard currentUserId={user.id} userName={user.name} />;
+  }
+
+  // Step 1.55: Dedicated Support Team Member Dashboard (Support teams only)
+  if (user.role === 'support-member') {
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
+        <SupportMemberDashboard />
+      </Suspense>
+    );
   }
 
   // Step 1.6: Dedicated Team Lead Dashboard

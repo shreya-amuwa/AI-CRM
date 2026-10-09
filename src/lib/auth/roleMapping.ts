@@ -20,9 +20,10 @@ export function toAuthUser(profile: Profile): AuthUser {
       role = 'team-lead';
       break;
     default:
-      // Only Technical Consultants open the client-onboarding dashboard; other
-      // support team members get the normal team member dashboard.
-      role = isTechnicalConsultant(profile) ? 'technical-support' : 'team-member';
+      // Technical Consultants open the client-onboarding dashboard; other Support
+      // team members open the Support dashboard; everyone else the team member
+      // dashboard (Sales and other teams).
+      role = isTechnicalConsultant(profile) ? 'technical-support' : isSupportMember(profile) ? 'support-member' : 'team-member';
   }
   return {
     id: profile.id,
@@ -35,6 +36,11 @@ export function toAuthUser(profile: Profile): AuthUser {
     position: profile.position || undefined,
     profile
   };
+}
+
+/** A team member of a Support team who is not a Technical Consultant. */
+export function isSupportMember(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): boolean {
+  return p.role === 'TEAM_MEMBER' && p.team?.division === 'SUPPORT' && !isTechnicalConsultant(p);
 }
 
 /** A support team member created (or marked) as Technical Consultant. */

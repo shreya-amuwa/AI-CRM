@@ -3,10 +3,11 @@ import { AlertTriangle, CalendarDays, Send } from 'lucide-react';
 import { isOverdue, type Person, type TaskPriority, type TaskStatus, type WorkTask, type WorkTaskUpdate } from '../../lib/workTasks';
 
 export const STATUS_UI: Record<TaskStatus, { label: string; cls: string }> = {
-  ASSIGNED: { label: 'Not started', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
+  ASSIGNED: { label: 'Pending', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
   IN_PROGRESS: { label: 'In progress', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   COMPLETED: { label: 'Completed', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  NOT_COMPLETED: { label: 'Not completed', cls: 'bg-rose-50 text-rose-700 border-rose-200' }
+  NOT_COMPLETED: { label: 'Not completed', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+  BLOCKED: { label: 'Blocked', cls: 'bg-amber-50 text-amber-800 border-amber-200' }
 };
 
 const PRIORITY_UI: Record<TaskPriority, string> = {
@@ -102,6 +103,7 @@ export const UpdateForm: React.FC<{
           >
             <option value="IN_PROGRESS">In progress</option>
             <option value="COMPLETED">Completed</option>
+            <option value="BLOCKED">Blocked</option>
             <option value="NOT_COMPLETED">Not completed</option>
           </select>
         </label>
@@ -121,14 +123,14 @@ export const UpdateForm: React.FC<{
         </label>
       </div>
       <label className="block text-[11px] font-medium text-slate-600" htmlFor={`${id}-note`}>
-        {status === 'NOT_COMPLETED' ? 'Why could it not be completed? *' : 'Note (optional)'}
+        {status === 'NOT_COMPLETED' ? 'Why could it not be completed? *' : status === 'BLOCKED' ? 'What is blocking it? *' : 'Note (optional)'}
         <textarea
           id={`${id}-note`}
           rows={2}
           maxLength={2000}
           value={note}
           onChange={e => setNote(e.target.value)}
-          required={status === 'NOT_COMPLETED'}
+          required={status === 'NOT_COMPLETED' || status === 'BLOCKED'}
           placeholder="What was done, what is pending…"
           className="mt-1 w-full px-2.5 py-2 rounded-lg border border-slate-200 bg-white text-xs"
         />

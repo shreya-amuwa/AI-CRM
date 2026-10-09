@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   ChevronDown,
   ClipboardList,
+  Headset,
   HelpCircle,
   LogOut,
   Menu,
@@ -14,7 +15,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
+import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import {
+  isDirectMemberTask,
   localDateKey,
   summarize,
   useWorkTasks,
@@ -26,7 +29,7 @@ import {
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 
-type Nav = 'assign' | 'reports' | 'daily' | 'clients';
+type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients';
 
 /**
  * Department Head dashboard.
@@ -45,6 +48,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
     { id: 'assign', label: 'Assign', icon: ClipboardList },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
+    { id: 'support', label: 'Support Desk', icon: Headset },
     { id: 'clients', label: 'Client Hand-overs', icon: UserCheck }
   ];
 
@@ -141,6 +145,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'assign' && <AssignPage data={data} />}
           {nav === 'reports' && <ReportsPage data={data} />}
           {nav === 'daily' && <DailyPage data={data} />}
+          {nav === 'support' && <SupportDeskPage />}
           {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
         </main>
       </div>
@@ -356,8 +361,8 @@ const ReportsPage: React.FC<{ data: WorkTaskData }> = ({ data }) => {
     return d.toISOString();
   }, [range]);
   const inRange = data.tasks.filter(t => !since || t.createdAt >= since);
-  const leadTasks = inRange.filter(t => t.parentId === null);
-  const memberTasks = inRange.filter(t => t.parentId !== null);
+  const leadTasks = inRange.filter(t => t.parentId === null && !isDirectMemberTask(t, data.people));
+  const memberTasks = inRange.filter(t => t.parentId !== null || isDirectMemberTask(t, data.people));
   const s = summarize(leadTasks);
   const m = summarize(memberTasks);
 
@@ -391,7 +396,7 @@ const ReportsPage: React.FC<{ data: WorkTaskData }> = ({ data }) => {
         <Stat label="Tasks assigned" value={s.total} />
         <Stat label="Completed" value={s.completed} tone="text-emerald-700" />
         <Stat label="In progress" value={s.inProgress} tone="text-blue-700" />
-        <Stat label="Not started" value={s.notStarted} />
+        <Stat label="Pending" value={s.notStarted} />
         <Stat label="Not completed" value={s.notCompleted + s.overdue} tone="text-rose-700" hint={`${s.overdue} overdue`} />
         <Stat label="Completion" value={`${s.pct}%`} tone="text-emerald-700" />
       </div>
@@ -435,7 +440,7 @@ const ReportTable: React.FC<{ title: string; rows: (ReturnType<typeof summarize>
                 <td className="py-2 pr-3 font-semibold text-slate-800">{nameOf(people, r.id)}</td>
                 <td className="py-2 px-2 text-right">{r.total}</td>
                 <td className="py-2 px-2 text-right text-emerald-700 font-semibold">{r.completed}</td>
-                <td className="py-2 px-2 text-right">{r.inProgress + r.notStarted}</td>
+                <td className="py-2 px-2 text-right">{r.open}</td>
                 <td className="py-2 px-2 text-right text-rose-700">{r.notCompleted}</td>
                 <td className="py-2 px-2 text-right text-rose-700">{r.overdue}</td>
                 <td className="py-2 pl-3">
@@ -478,7 +483,7 @@ const DailyPage: React.FC<{ data: WorkTaskData }> = ({ data }) => {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Stat label={`Due on ${fmtDate(day)}`} value={s.total} />
         <Stat label="Completed" value={s.completed} tone="text-emerald-700" />
-        <Stat label="Still open" value={s.inProgress + s.notStarted} tone="text-blue-700" />
+        <Stat label="Still open" value={s.open} tone="text-blue-700" />
         <Stat label="Not completed" value={s.notCompleted} tone="text-rose-700" />
         <Stat label="Completed that day (any due date)" value={completedThatDay.length} tone="text-emerald-700" />
       </div>
@@ -502,7 +507,7 @@ const DailyPage: React.FC<{ data: WorkTaskData }> = ({ data }) => {
                   <div className="min-w-0">
                     <div className="font-semibold text-slate-800">{t.title}</div>
                     <div className="text-slate-500">
-                      {nameOf(data.people, t.assigneeId)} · {t.parentId ? 'Team member' : 'Team lead'} · {t.progress}%
+                      {nameOf(data.people, t.assigneeId)} · {t.parentId || isDirectMemberTask(t, data.people) ? 'Team member' : 'Team lead'} · {t.progress}%
                     </div>
                   </div>
                   <StatusPill status={t.status} />

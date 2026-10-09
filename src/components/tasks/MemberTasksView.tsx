@@ -21,7 +21,7 @@ export const MemberTasksView: React.FC = () => {
         {[
           { label: 'Assigned to me', value: s.total, tone: 'text-slate-900' },
           { label: 'Completed', value: s.completed, tone: 'text-emerald-700' },
-          { label: 'Open', value: s.inProgress + s.notStarted, tone: 'text-blue-700' },
+          { label: 'Open', value: s.open, tone: 'text-blue-700' },
           { label: 'Overdue', value: s.overdue, tone: 'text-rose-700' }
         ].map(k => (
           <div key={k.label} className="bg-white rounded-2xl border border-slate-200/80 p-4">

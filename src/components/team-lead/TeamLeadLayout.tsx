@@ -20,7 +20,8 @@ import {
   MapPin,
   UserPlus,
   UserCheck,
-  ClipboardList
+  ClipboardList,
+  Headset
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -30,6 +31,8 @@ import { UserAccessManagementModal } from '../common/UserAccessManagementModal';
 export type TeamLeadNav =
   | 'overview'
   | 'assigned-tasks'
+  | 'support-customers'
+  | 'support-tickets'
   | 'client-handovers'
   | 'team-members'
   | 'reps'
@@ -69,6 +72,12 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const navItems = [
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
     { id: 'assigned-tasks' as TeamLeadNav, label: 'Assigned Tasks', icon: ClipboardList },
+    ...(user?.profile?.team?.division === 'SUPPORT'
+      ? [
+          { id: 'support-customers' as TeamLeadNav, label: 'Support Customers', icon: Users },
+          { id: 'support-tickets' as TeamLeadNav, label: 'Support Tickets', icon: Headset }
+        ]
+      : []),
     { id: 'client-handovers' as TeamLeadNav, label: 'Client Hand-overs', icon: UserCheck },
     { id: 'team-members' as TeamLeadNav, label: 'Team Members & Access', icon: UserPlus },
     { id: 'reps' as TeamLeadNav, label: 'Team Reps (5)', icon: Users },
