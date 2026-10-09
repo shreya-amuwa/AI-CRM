@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
-  RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound
+  RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle
 } from 'lucide-react';
 import type { Profile, Role, Team, TeamDivision } from '../../../shared/contracts';
 import { userCreateSchema } from '../../../shared/validation';
@@ -20,6 +20,8 @@ import {
  *   Super Admin      → Department Head, Team Lead, Team Member
  *   Department Head  → Team Lead, Team Member (own department)
  *   Team Lead        → Team Member (own team)
+ * Promotion follows the same chain: the Department Head makes a Team Member a
+ * Team Lead; only the Super Admin makes a Team Lead a Department Head.
  * The UI only offers allowed roles; the API and database enforce the same
  * rules independently (POST /api/v1/users → assert_can_create_user + the
  * provisioning trigger), so a manipulated request is still rejected.
@@ -202,6 +204,31 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     } catch (err) {
       setActionNotice({ text: errorMessage(err), ok: false });
     }
+  };
+
+  /**
+   * Promotion. A Department Head (or Super Admin) makes a Team Member a Team Lead
+   * of their current team; only the Super Admin makes a Team Lead a Department Head.
+   * The server re-checks the hierarchy (PATCH /users/:id → assign_user).
+   */
+  const promote = async (member: Profile, to: 'TEAM_HEAD' | 'DEPARTMENT_HEAD') => {
+    const label = to === 'TEAM_HEAD' ? 'Team Lead' : 'Department Head';
+    if (!window.confirm(`Make ${member.fullName} a ${label}? Their dashboard and access change to match.`)) return;
+    setActionNotice(null);
+    try {
+      if (to === 'TEAM_HEAD' && isTechnicalConsultant(member)) await usersApi.setTechnicalConsultant(member.id, false);
+      await usersApi.assign(
+        member.id,
+        to === 'TEAM_HEAD'
+          ? { role: 'TEAM_HEAD', teamId: member.teamId || undefined }
+          : { role: 'DEPARTMENT_HEAD', departmentId: member.departmentId || undefined }
+      );
+      setActionNotice({ text: `${member.fullName} is now a ${label}.`, ok: true });
+      await loadMembers();
+    } catch (err) {
+      setActionNotice({ text: errorMessage(err), ok: false });
+    }
+    setTimeout(() => setActionNotice(null), 6000);
   };
 
   const changeStatus = async (member: Profile, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED') => {
@@ -426,6 +453,26 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             aria-label={`${isTechnicalConsultant(m) ? 'Make team member' : 'Make Technical Consultant'}: ${m.fullName}`}
                           >
                             {isTechnicalConsultant(m) ? 'Make team member' : 'Make Technical Consultant'}
+                          </button>
+                        )}
+                        {m.role === 'TEAM_MEMBER' && m.teamId && allowedRoles.includes('TEAM_HEAD') && m.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => void promote(m, 'TEAM_HEAD')}
+                            className="mt-1 ml-2 inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"
+                            aria-label={`Make Team Lead: ${m.fullName}`}
+                          >
+                            <ArrowUpCircle className="w-3 h-3" aria-hidden="true" /> Make Team Lead
+                          </button>
+                        )}
+                        {m.role === 'TEAM_HEAD' && profile.role === 'SUPER_ADMIN' && m.departmentId && m.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => void promote(m, 'DEPARTMENT_HEAD')}
+                            className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600 hover:text-violet-700"
+                            aria-label={`Make Department Head: ${m.fullName}`}
+                          >
+                            <ArrowUpCircle className="w-3 h-3" aria-hidden="true" /> Make Department Head
                           </button>
                         )}
                       </td>
