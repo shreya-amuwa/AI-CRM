@@ -36,6 +36,7 @@ const AccountsDepartmentPanel = lazy(() => import('./components/departments/acco
 const DepartmentAccountsBillingView = lazy(() => import('./components/departments/shared/DepartmentAccountsBillingView').then(m => ({ default: m.DepartmentAccountsBillingView })));
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
+const AccountsDashboard = lazy(() => import('./components/accounts/AccountsDashboard').then(m => ({ default: m.AccountsDashboard })));
 const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
 const DepartmentHeadDashboard = lazy(() => import('./components/tasks/DepartmentHeadDashboard').then(m => ({ default: m.DepartmentHeadDashboard })));
 const TechnicalSupportDashboard = lazy(() => import('./components/support/TechnicalSupportDashboard').then(m => ({ default: m.TechnicalSupportDashboard })));
@@ -113,6 +114,12 @@ const MainAppContent: React.FC = () => {
         navigateTo(base);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'accounts-staff') {
+      const target = `/accounts/dashboard/${user.id}`;
+      if (window.location.pathname !== target) {
+        navigateTo(target);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'team-lead') {
       const target = `/team-lead/dashboard/${user.id}`;
       if (window.location.pathname !== target) {
@@ -133,7 +140,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'technical-support') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -194,6 +201,15 @@ const MainAppContent: React.FC = () => {
     return (
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
         <SupportLeadDashboard />
+      </Suspense>
+    );
+  }
+
+  // Step 1.59: Accounts department staff confirm the amount Sales sends
+  if (user.role === 'accounts-staff') {
+    return (
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
+        <AccountsDashboard />
       </Suspense>
     );
   }

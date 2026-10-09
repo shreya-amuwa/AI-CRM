@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ClipboardList,
   Headset,
+  ReceiptIndianRupee,
   ShieldCheck,
   UserPlus,
   HelpCircle,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
+import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import {
@@ -32,7 +34,7 @@ import {
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 
-type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team';
+type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments';
 
 /**
  * Department Head dashboard.
@@ -43,7 +45,7 @@ type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team';
  */
 export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ onOpenHub }) => {
   const { user, profile, logout } = useAuth();
-  const [nav, setNav] = useState<Nav>('assign');
+  const [nav, setNav] = useState<Nav>(profile?.department?.slug === 'accounts' ? 'payments' : 'assign');
   const [mobileOpen, setMobileOpen] = useState(false);
   const data = useWorkTasks();
 
@@ -55,6 +57,8 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
     { id: 'clients', label: 'Client Hand-overs', icon: UserCheck },
     { id: 'team', label: 'Team Members & Access', icon: UserPlus }
   ];
+  // The Accounts Department Head also confirms the amount of customers Sales sends.
+  if (profile?.department?.slug === 'accounts') items.unshift({ id: 'payments', label: 'Payment confirmations', icon: ReceiptIndianRupee });
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex font-sans antialiased">
@@ -151,6 +155,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'daily' && <DailyPage data={data} />}
           {nav === 'support' && <SupportDeskPage />}
           {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
+          {nav === 'payments' && <AccountsConfirmations />}
           {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}
         </main>
       </div>

@@ -229,6 +229,8 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                       ·{' '}
                       {c.onboarding?.forwardedToSupportAt ? (
                         <span className="font-semibold text-emerald-700">Sent to Technical Consultant</span>
+                      ) : c.onboarding?.sentToAccountsAt && !c.onboarding?.accountsConfirmedAt ? (
+                        <span className="font-semibold text-amber-700">With Accounts · awaiting confirmation</span>
                       ) : returned ? (
                         <span className="font-semibold text-rose-700">Returned {shortDate(c.onboarding!.returnedAt!)}</span>
                       ) : (
@@ -308,6 +310,10 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const pct = items.length ? Math.round(((mode === 'review' ? verified.length : savedTypes.length) / items.length) * 100) : 0;
   const forwarded = !!c.onboarding?.forwardedToSupportAt;
   const returned = !forwarded && !!c.onboarding?.returnedAt;
+  // Sent to Accounts and waiting for them to confirm the amount.
+  const withAccounts = !forwarded && !!c.onboarding?.sentToAccountsAt && !c.onboarding?.accountsConfirmedAt;
+  // After Accounts confirmed, a re-send after a return goes straight to the consultant.
+  const toAccounts = !c.onboarding?.accountsConfirmedAt;
   const stageIndex = STAGES.findIndex(s => s.key === (c.onboarding?.stage === 'COMPLETED' ? 'HANDOVER' : c.onboarding?.stage));
   const phoneDigits = (c.whatsapp || c.phone || '').replace(/\D/g, '');
   const changed = () => {
@@ -479,6 +485,13 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                       {rejected.length ? ` · ${rejected.length} need fixing` : ''}
                     </p>
                   </>
+                ) : withAccounts ? (
+                  <>
+                    <div className="mt-3 text-sm font-bold text-amber-700">With Accounts · awaiting confirmation</div>
+                    <p className="text-xs text-slate-500">
+                      Sent on {longDate(c.onboarding?.sentToAccountsAt)}. Accounts confirms the amount, then the customer goes to the Technical Consultant.
+                    </p>
+                  </>
                 ) : (
                   <>
                     <div className="mt-3 text-sm font-bold text-slate-900">
@@ -491,13 +504,15 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                   <button type="button" className={`${btn.primary} w-full py-2.5`} onClick={askOnWhatsApp} disabled={!phoneDigits || missing.length === 0}>
                     <MessageCircle className="w-4 h-4" /> Ask client on WhatsApp
                   </button>
-                  {confirmSend && !forwarded ? (
+                  {confirmSend && !forwarded && !withAccounts ? (
                     <div role="alertdialog" aria-labelledby="send-confirm-title" className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2">
                       <div id="send-confirm-title" className="text-xs font-bold text-emerald-900">
-                        Send {c.company || c.name} {returned ? 'back ' : ''}to the Technical Consultant?
+                        Send {c.company || c.name} {returned && !toAccounts ? 'back ' : ''}to {toAccounts ? 'Accounts' : 'the Technical Consultant'}?
                       </div>
                       <p className="text-[11px] text-emerald-800">
-                        They will verify every document. After sending, current files can be replaced but not deleted.
+                        {toAccounts
+                          ? 'Accounts checks the business details and confirms the amount. Then it goes to the Technical Consultant to verify the documents.'
+                          : 'They will verify every document. After sending, current files can be replaced but not deleted.'}
                       </p>
                       <div className="flex gap-2">
                         <button
@@ -522,21 +537,25 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                     <button
                       type="button"
                       className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                        missing.length === 0 && !forwarded ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                        missing.length === 0 && !forwarded && !withAccounts ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
                       }`}
-                      disabled={missing.length > 0 || forwarded}
+                      disabled={missing.length > 0 || forwarded || withAccounts}
                       aria-describedby="forward-hint"
                       onClick={() => setConfirmSend(true)}
                     >
-                      {forwarded ? 'Sent to Technical Consultant' : returned ? 'Send again to Technical Consultant' : 'Send to Technical Consultant'}
+                      {forwarded ? 'Sent to Technical Consultant' : withAccounts ? 'Sent to Accounts' : returned && !toAccounts ? 'Send again to Technical Consultant' : 'Send to Accounts'}
                     </button>
                   )}
                   <p id="forward-hint" className="text-[11px] text-slate-500">
                     {forwarded
                       ? 'The Technical Consultant verifies each item. Fix anything marked not authorized; current files can be replaced, not deleted.'
-                      : missing.length > 0
-                        ? 'Save every item above to unlock. The Technical Consultant only sees this customer after you send it.'
-                        : 'The Technical Consultant only sees this customer after you send it.'}
+                      : withAccounts
+                        ? 'Accounts is confirming the amount. You will be notified, and the customer then goes to the Technical Consultant.'
+                        : missing.length > 0
+                          ? `Save every item above to unlock. ${toAccounts ? 'Accounts confirms the amount first, then the Technical Consultant gets the customer.' : 'The Technical Consultant only sees this customer after you send it.'}`
+                          : toAccounts
+                            ? 'Accounts confirms the amount first, then the Technical Consultant gets the customer.'
+                            : 'The Technical Consultant only sees this customer after you send it.'}
                   </p>
                 </div>
               </>

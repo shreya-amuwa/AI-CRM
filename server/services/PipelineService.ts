@@ -1,4 +1,5 @@
 import type {
+  AccountsConfirmation,
   CustomerDocument,
   DocumentUploadTicket,
   DocumentUrl,
@@ -11,6 +12,7 @@ import type {
   ServiceCatalogItem
 } from '../../shared/contracts.js';
 import {
+  accountsQuerySchema,
   checklistItemCodeSchema,
   checklistReviewSchema,
   checklistSaveSchema,
@@ -198,6 +200,16 @@ export class PipelineService {
   async returnToSales(id: string, body: unknown): Promise<void> {
     const input = parse(returnToSalesSchema, body ?? {});
     await this.repo.returnToSales(parse(uuidSchema, id), input.note || null);
+  }
+
+  /** Accounts: customers sent for amount confirmation (pending or confirmed). */
+  async accountsConfirmations(query: unknown): Promise<Paginated<AccountsConfirmation>> {
+    return this.repo.accountsConfirmations(parse(accountsQuerySchema, query ?? {}));
+  }
+
+  /** Accounts confirms the amount; the database then sends the customer to the Technical Consultant. */
+  async confirmAccountsPayment(id: string, body: unknown): Promise<void> {
+    await this.repo.confirmAccountsPayment(parse(uuidSchema, id), parse(handoverNoteSchema, body ?? {}).note ?? null);
   }
 
   async forwardToSupport(id: string): Promise<PipelineCustomer> {

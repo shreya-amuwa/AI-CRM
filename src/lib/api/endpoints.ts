@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  AccountsConfirmation,
   ApprovalRequest,
   AuditLog,
   Customer,
@@ -102,6 +103,9 @@ export const pipelineApi = {
   updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
+  accountsConfirmations: (q: { status?: 'PENDING' | 'CONFIRMED'; search?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<Paginated<AccountsConfirmation>>('/pipeline/accounts/confirmations', { ...q }),
+  confirmAccountsPayment: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/confirm`, { note: note || null }),
   returnToSales: (id: string, note: string | null) => api.post<null>(`/pipeline/customers/${id}/return-to-sales`, { note }),
   inbound: () => api.get<InboundLead[]>('/pipeline/inbound'),
   claimInbound: (leadId: string) => api.post<PipelineCustomer>(`/pipeline/inbound/${encodeURIComponent(leadId)}/claim`),

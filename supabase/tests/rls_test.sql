@@ -90,6 +90,12 @@ select test.create_auth_user('th_wbx', 'th.wbx@amuwa.com', '{"full_name":"TH Wha
   jsonb_build_object('provisioned_by', test.id('dh_wbx'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.team('whatsbox', 'Sales')));
 select test.create_auth_user('tm_c', 'c@amuwa.com', '{"full_name":"Member C"}',
   jsonb_build_object('provisioned_by', test.id('th_wbx'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('whatsbox', 'Sales')));
+-- Accounts department: confirms the amount before the Technical Consultant gets a customer.
+select test.create_auth_user('dh_acc', 'dh.acc@amuwa.com', '{"full_name":"DH Accounts"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('accounts')));
+select test.create_auth_user('acc_m', 'acc.m@amuwa.com', '{"full_name":"Accounts Member"}',
+  jsonb_build_object('provisioned_by', test.id('dh_acc'), 'provisioned_role', 'TEAM_MEMBER',
+                     'provisioned_team_id', (select t.id from teams t where t.department_id = test.dept('accounts') order by t.created_at limit 1)));
 select test.check((select team_id = test.team('wabastore', 'Sales') and department_id = test.dept('wabastore') from profiles where id = test.id('tm_a')),
   'provisioned member gets team + derived department');
 
@@ -599,6 +605,27 @@ select test.check((select count(*) = 0 from customers where lifecycle_stage in (
 select test.check((select (onboarding_review_counts() ->> 'all')::int = 0), 'review counts exclude customers not yet sent');
 select test.login('tm_a');
 select forward_onboarding_to_support((select id from pipeline where name = 'A'));
+select test.check((select sent_to_accounts_at is not null and accounts_confirmed_at is null and forwarded_to_support_at is null and stage <> 'SETUP'
+                     from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'sales sends to Accounts first: the Technical Consultant does not have it yet');
+select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$, 'cannot send to Accounts twice', 'Already sent to Accounts');
+select test.must_fail($$select confirm_accounts_payment((select id from pipeline where name = 'A'), null)$$, 'a salesperson cannot confirm the amount', 'Only the Accounts department');
+select test.must_fail($$select accounts_confirmations()$$, 'a salesperson cannot read the Accounts queue', 'Only the Accounts department');
+select test.login('tm_b');
+select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')), 'the Technical Consultant does not see it before Accounts confirms');
+select test.login('acc_m');
+select test.check((select (accounts_confirmations('PENDING') ->> 'total')::int = 1
+                     and accounts_confirmations('PENDING') -> 'items' -> 0 ->> 'id' = (select id::text from pipeline where name = 'A')
+                     and (accounts_confirmations('PENDING') -> 'items' -> 0 ->> 'dealAmount') is not null
+                     and accounts_confirmations('PENDING') -> 'items' -> 0 ->> 'name' is not null), 'Accounts sees the customer with its business details and amount');
+select test.check((select (accounts_confirmations('CONFIRMED') ->> 'total')::int = 0), 'nothing confirmed yet');
+select test.must_fail($$select confirm_accounts_payment(gen_random_uuid(), null)$$, 'unknown customer', 'Customer not found');
+select confirm_accounts_payment((select id from pipeline where name = 'A'), 'Received in the bank');
+select test.must_fail($$select confirm_accounts_payment((select id from pipeline where name = 'A'), null)$$, 'cannot confirm twice', 'already confirmed');
+select test.check((select (accounts_confirmations('CONFIRMED') ->> 'total')::int = 1 and (accounts_confirmations('PENDING') ->> 'total')::int = 0), 'the customer moves to Confirmed');
+select test.login('tm_b');
+select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'after Accounts confirms, the Technical Consultant sees the customer');
+select test.login('tm_a');
 select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
                    and (select mandatory_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'B')),
   'onboarding progress tracks saved mandatory documents per customer');

@@ -471,8 +471,37 @@ check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 
 
 r = await api('b', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 404, "member B cannot delete A's document", r);
+// Accounts confirms the amount before the Technical Consultant gets the customer.
+const accountsDept = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'accounts');
+r = await api('sa', 'POST', '/users', { email: 'dh.acc@amuwa.com', fullName: 'Accounts Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: accountsDept.id });
+check(r.status === 201, 'super admin creates the Accounts department head', r);
+tokens.set('accdh', tokenFor(r.json.data.id));
+const accTeam = (await api('sa', 'GET', `/teams?departmentId=${accountsDept.id}`)).json.data[0].id;
+r = await api('accdh', 'POST', '/users', { email: 'acc.m@amuwa.com', fullName: 'Accounts Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: accTeam });
+check(r.status === 201 && r.json.data.defaultDashboard === 'accounts-staff', 'an Accounts member resolves to the Accounts dashboard', r);
+tokens.set('accm', tokenFor(r.json.data.id));
+
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
-check(r.status === 200 && r.json.data.onboarding.forwardedToSupportAt && r.json.data.onboarding.stage === 'SETUP', 'forwarded to support once documents are in', r);
+check(r.status === 200 && !r.json.data.onboarding.forwardedToSupportAt && r.json.data.onboarding.sentToAccountsAt && !r.json.data.onboarding.accountsConfirmedAt && r.json.data.onboarding.stage !== 'SETUP',
+  'sales sends to Accounts first (not yet to the Technical Consultant)', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
+check(r.status === 409, 'cannot send to Accounts twice', r);
+r = await api('a', 'GET', '/pipeline/accounts/confirmations');
+check(r.status === 403, 'a salesperson cannot read the Accounts queue', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/accounts/confirm`, {});
+check(r.status === 403, 'a salesperson cannot confirm the amount', r);
+r = await api('accm', 'GET', '/pipeline/accounts/confirmations?status=PENDING');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === leadA && r.json.data.items[0].dealAmount > 0 && r.json.data.items[0].services.length > 0,
+  'Accounts sees the customer with business details and the amount', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/confirm`, { note: 'Received' });
+check(r.status === 200, 'Accounts confirms the amount', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/confirm`, {});
+check(r.status === 409, 'cannot confirm twice', r);
+r = await api('accm', 'GET', '/pipeline/accounts/confirmations?status=CONFIRMED');
+check(r.json.data.total === 1 && r.json.data.items[0].sentToConsultantAt, 'the customer is listed as confirmed and sent on', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+check(r.status === 200 && r.json.data.onboarding.forwardedToSupportAt && r.json.data.onboarding.stage === 'SETUP' && r.json.data.onboarding.accountsConfirmedAt,
+  'after confirmation the customer is with the Technical Consultant', r);
 r = await api('a', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 409, 'current documents are locked after forwarding', r);
 r = await api('a', 'DELETE', `/documents/${invoiceV1}`);
