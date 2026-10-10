@@ -529,6 +529,12 @@ select test.must_fail($$select begin_document_upload((select id from pipeline wh
   'file size limit enforced', 'smaller than');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'PASSPORT', 'x.pdf', 'application/pdf', 1000)$$,
   'unknown document type rejected', 'Unknown document type');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'big.pdf', 'application/pdf', 20481)$$,
+  'an invoice over 20 KB is refused', '20 KB');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'big.pdf', 'application/pdf', 512001)$$,
+  'any other document over 500 KB is refused', '500 KB');
+select test.check((select max_size_bytes = 20480 from document_types where code = 'INVOICE')
+                  and (select bool_and(max_size_bytes = 512000) from document_types where code <> 'INVOICE'), 'limits: invoice 20 KB, every other document 500 KB');
 insert into docs select 'A_inv1', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'invoice-oct.pdf', 'application/pdf', 1200);
 select test.check((select path = format('customers/%s/invoices/%s.pdf', (select id from pipeline where name = 'A'), id) from docs where name = 'A_inv1'),
   'storage path = customers/<customer_id>/invoices/<document_id>.pdf (no PII)');

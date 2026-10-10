@@ -377,7 +377,7 @@ export const documentUploadSchema = z
     documentType: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown document type.'),
     fileName: trimmed(255).min(1),
     mimeType: z.enum(UPLOAD_MIME_TYPES, { errorMap: () => ({ message: 'This file type is not accepted.' }) }),
-    sizeBytes: z.coerce.number().int().positive().max(52428800)
+    sizeBytes: z.coerce.number().int().positive().max(512000)
   })
   .strict();
 
@@ -394,8 +394,7 @@ export const accountsQuerySchema = z
     search: z.string().trim().max(100).optional(),
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20)
-  })
-  .strict();
+  });
 export const handoverNoteSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const passToTeamLeadSchema = z.object({ teamLeadId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const assignToMemberSchema = z.object({ memberId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();

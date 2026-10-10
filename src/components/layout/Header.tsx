@@ -64,7 +64,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
         {/* Right Side Tools */}
         <div className="flex items-center gap-2.5">
           
-          {/* Cloud Connection Status Badge */}
+          {/* Cloud Connection Status Badge (not shown in the Accounts department) */}
+          {activeDepartment.id !== 'accounts' && (
           <div
             className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-1.5 shadow-xs ${
               supabaseConfig.isConfigured
@@ -81,6 +82,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             )}
           </div>
+          )}
 
           {/* User Profile & Logout */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200">

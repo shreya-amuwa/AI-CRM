@@ -353,6 +353,10 @@ const begin = (who: string, customer: string, documentType: string, fileName = '
 
 r = await begin('a', leadA, 'INVOICE', 'x.png', { mimeType: 'image/png' });
 check(r.status === 422, 'non-PDF declared type rejected', r);
+r = await begin('a', leadA, 'INVOICE', 'big.pdf', { sizeBytes: 21 * 1024 });
+check(r.status === 422, 'an invoice over 20 KB is refused', r);
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'big.pdf', { sizeBytes: 501 * 1024 });
+check(r.status === 422, 'any other document over 500 KB is refused', r);
 r = await begin('a', leadA, 'INVOICE', 'big.pdf', { sizeBytes: 30 * 1024 * 1024 });
 check(r.status === 422, 'oversize file rejected before upload', r);
 r = await begin('b', leadA, 'INVOICE');
@@ -490,6 +494,8 @@ r = await api('a', 'GET', '/pipeline/accounts/confirmations');
 check(r.status === 403, 'a salesperson cannot read the Accounts queue', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/accounts/confirm`, {});
 check(r.status === 403, 'a salesperson cannot confirm the amount', r);
+r = await api('accm', 'GET', '/pipeline/accounts/confirmations?status=PENDING&path=pipeline%2Faccounts%2Fconfirmations');
+check(r.status === 200, 'the host\'s extra "path" query key is ignored', r);
 r = await api('accm', 'GET', '/pipeline/accounts/confirmations?status=PENDING');
 check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === leadA && r.json.data.items[0].dealAmount > 0 && r.json.data.items[0].services.length > 0,
   'Accounts sees the customer with business details and the amount', r);
