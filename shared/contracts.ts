@@ -322,6 +322,12 @@ export interface AccountsConfirmation {
 
 export interface CustomerOnboarding {
   stage: OnboardingStage;
+  /** The Technical Consultant pressed "Send for onboarding" (before that the customer is in their Customers panel). */
+  consultantStartedAt: string | null;
+  /** Contract received (set by the Technical Consultant). */
+  contractSigned: boolean;
+  /** Add-on services: a catalog service (code) or one typed by hand. */
+  addons: { code?: string; name: string }[];
   /** Sales sent the customer to Accounts to confirm the amount. */
   sentToAccountsAt: string | null;
   /** Accounts confirmed the amount; the customer then goes to the Technical Consultant. */
@@ -410,7 +416,8 @@ export interface ChecklistItem {
 
 export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED', 'AWAITING_DOCUMENTS', 'WAITING_ON_SALES'] as const;
 export type ReviewFilter = (typeof REVIEW_FILTERS)[number];
-export type ReviewCounts = Record<'all' | ReviewFilter, number>;
+/** `newCustomers`: customers still in the consultant's Customers panel (not yet sent for onboarding). */
+export type ReviewCounts = Record<'all' | ReviewFilter | 'newCustomers', number>;
 
 export const AUTOMATIONS = ['EMAIL', 'WHATSAPP', 'AI_CALLING'] as const;
 export type AutomationCode = (typeof AUTOMATIONS)[number];

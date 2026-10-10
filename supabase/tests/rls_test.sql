@@ -631,6 +631,27 @@ select test.must_fail($$select confirm_accounts_payment((select id from pipeline
 select test.check((select (accounts_confirmations('CONFIRMED') ->> 'total')::int = 1 and (accounts_confirmations('PENDING') ->> 'total')::int = 0), 'the customer moves to Confirmed');
 select test.login('tm_b');
 select test.check((select count(*) = 1 from customers where id = (select id from pipeline where name = 'A')), 'after Accounts confirms, the Technical Consultant sees the customer');
+-- Technical Consultant "Customers" panel (before Onboarding Customers)
+select test.check((select (onboarding_review_counts() ->> 'newCustomers')::int = 1 and (onboarding_review_counts() ->> 'all')::int = 0),
+  'the customer is in the Customers panel, not yet in Onboarding Customers');
+select consultant_set_contract((select id from pipeline where name = 'A'), true);
+select test.check((select contract_signed from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'contract set to Yes');
+select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"AI_CALLING"},{"name":"Custom setup  call"},{"name":"custom setup call"},{"code":"AI_CALLING"}]'::jsonb);
+select test.check((select jsonb_array_length(addons) = 2 and addons -> 0 ->> 'name' = 'AI Calling' and addons -> 0 ->> 'code' = 'AI_CALLING' and addons -> 1 ->> 'name' = 'Custom setup call' and not (addons -> 1 ? 'code')
+                     from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-ons: a catalog service and a manual one, duplicates dropped');
+select test.must_fail($$select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"NOT_A_SERVICE"}]'::jsonb)$$, 'an unknown catalog add-on is refused', 'Choose an add-on');
+select test.must_fail($$select consultant_set_addons((select id from pipeline where name = 'A'), '[{"name":"x"}]'::jsonb)$$, 'a one-letter manual add-on is refused', 'at least 2');
+select consultant_update_customer((select id from pipeline where name = 'A'), 'Siddhesh Shah', 'Galaxy Jewellers Pvt', '+91 98200 11111', null);
+select test.check((select name = 'Siddhesh Shah' and company = 'Galaxy Jewellers Pvt' from customers where id = (select id from pipeline where name = 'A')), 'the consultant can correct the contact details');
+select test.must_fail($$select consultant_update_customer((select id from pipeline where name = 'A'), 'X', null, null, null)$$, 'name and a contact are required', 'Enter');
+select test.login('tm_a');
+select test.must_fail($$select consultant_set_contract((select id from pipeline where name = 'A'), false)$$, 'a salesperson cannot change the contract', 'Customer not found');
+select test.must_fail($$select consultant_start_onboarding((select id from pipeline where name = 'A'))$$, 'a salesperson cannot send for onboarding', 'Customer not found');
+select test.login('tm_b');
+select consultant_start_onboarding((select id from pipeline where name = 'A'));
+select test.must_fail($$select consultant_start_onboarding((select id from pipeline where name = 'A'))$$, 'cannot send for onboarding twice', 'already in onboarding');
+select test.check((select (onboarding_review_counts() ->> 'newCustomers')::int = 0 and (onboarding_review_counts() ->> 'all')::int = 1),
+  'after "Send for onboarding" the customer is in Onboarding Customers');
 select test.login('tm_a');
 select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
                    and (select mandatory_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'B')),

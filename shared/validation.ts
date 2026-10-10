@@ -316,6 +316,8 @@ export const pipelineListQuerySchema = z.object({
   /** Only customers handed to the caller as Team Lead / as Team Member. */
   handoverMine: z.enum(['TEAM_LEAD', 'TEAM_MEMBER']).optional(),
   forwarded: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
+  /** Technical Consultant Customers panel: sent to them, not yet sent for onboarding. */
+  intake: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   /** Only records owned by the caller (e.g. a support member's own pipeline). */
   mine: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   sort: z.enum(['newest', 'oldest', 'followUp', 'dueDate', 'amount', 'name']).default('newest')
@@ -395,6 +397,22 @@ export const accountsQuerySchema = z
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20)
   });
+export const consultantContractSchema = z.object({ signed: z.boolean() }).strict();
+export const consultantAddonsSchema = z
+  .object({
+    addons: z
+      .array(z.object({ code: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).optional(), name: trimmed(120).optional() }).strict())
+      .max(25)
+  })
+  .strict();
+export const consultantDetailsSchema = z
+  .object({
+    name: trimmed(200).min(2, 'Enter the customer\'s name.'),
+    company: trimmed(200).optional().nullable(),
+    phone: trimmed(25).optional().nullable(),
+    email: trimmed(254).optional().nullable()
+  })
+  .strict();
 export const handoverNoteSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const passToTeamLeadSchema = z.object({ teamLeadId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const assignToMemberSchema = z.object({ memberId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();

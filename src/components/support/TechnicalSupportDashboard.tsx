@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
-import { ConsultantLayout } from './consultant/ConsultantLayout';
+import { ConsultantLayout, type ConsultantPage } from './consultant/ConsultantLayout';
+import { ConsultantIntake } from './consultant/ConsultantIntake';
 import { ConsultantCustomerDetail, ConsultantCustomerList } from './consultant/ConsultantViews';
 
 interface TechnicalSupportDashboardProps {
@@ -21,6 +22,7 @@ interface TechnicalSupportDashboardProps {
 export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps> = ({ userName = 'Technical Consultant', onLogout }) => {
   const { logout } = useAuth();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [page, setPage] = useState<ConsultantPage>('customers');
   const [counts, setCounts] = useState<ReviewCounts | null>(null);
   const loadCounts = useCallback(() => {
     pipelineApi.reviewCounts().then(setCounts, err => console.warn('[consultant] counts failed', errorMessage(err)));
@@ -32,10 +34,22 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
     <ConsultantLayout
       userName={userName}
       count={counts?.all}
-      onNavigateHome={() => setOpenId(null)}
+      newCount={counts?.newCustomers}
+      page={page}
+      onSelectPage={p => {
+        setPage(p);
+        setOpenId(null);
+      }}
       onSignOut={() => (onLogout ? onLogout() : logout())}
     >
-      {openId ? (
+      {page === 'customers' ? (
+        <ConsultantIntake
+          onSent={() => {
+            loadCounts();
+          }}
+          onGoToOnboarding={() => setPage('onboarding')}
+        />
+      ) : openId ? (
         <ConsultantCustomerDetail id={openId} onBack={() => setOpenId(null)} />
       ) : (
         <ConsultantCustomerList counts={counts} onOpen={setOpenId} />

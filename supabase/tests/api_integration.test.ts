@@ -542,6 +542,25 @@ r = await api('sa', 'POST', `/users/${supportMember}/technical-consultant`, { va
 check(r.status === 200 && r.json.data.isTechnicalConsultant === true, 'super admin switches a support member to Technical Consultant', r);
 r = await api('sa', 'POST', `/users/${supportMember}/technical-consultant`, { value: false });
 check(r.status === 200 && r.json.data.isTechnicalConsultant === false, 'and back to team member', r);
+// New customers wait in the consultant's Customers panel until "Send for onboarding".
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
+check(r.status === 200 && r.json.data.total === 0, 'Onboarding Customers is empty until the consultant sends the customer for onboarding', r);
+r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&intake=true');
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA && r.json.data.items[0].onboarding.consultantStartedAt === null, 'the consultant\'s Customers panel lists the confirmed customer', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/contract`, { signed: true });
+check(r.status === 200 && r.json.data.onboarding.contractSigned === true, 'consultant sets Contract to Yes', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/addons`, { addons: [{ code: 'AI_CALLING' }, { name: 'Custom setup call' }] });
+check(r.status === 200 && r.json.data.onboarding.addons.length === 2 && r.json.data.onboarding.addons[1].name === 'Custom setup call', 'consultant adds a catalog add-on and a manual one', r);
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/consultant/details`, { name: 'Siddhesh', company: 'Galaxy Jewellers', phone: '+91 98200 11111' });
+check(r.status === 200, 'consultant edits the contact details', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/consultant/contract`, { signed: false });
+check(r.status === 404, 'a salesperson cannot change the contract', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/consultant/start-onboarding`);
+check(r.status === 404, 'a salesperson cannot send for onboarding', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/start-onboarding`);
+check(r.status === 200 && r.json.data.onboarding.consultantStartedAt, 'consultant sends the customer for onboarding', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/start-onboarding`);
+check(r.status === 409, 'cannot send for onboarding twice', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
 check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant sees forwarded customers of their department', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);

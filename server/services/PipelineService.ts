@@ -13,6 +13,9 @@ import type {
 } from '../../shared/contracts.js';
 import {
   accountsQuerySchema,
+  consultantAddonsSchema,
+  consultantContractSchema,
+  consultantDetailsSchema,
   checklistItemCodeSchema,
   checklistReviewSchema,
   checklistSaveSchema,
@@ -210,6 +213,31 @@ export class PipelineService {
   /** Accounts confirms the amount; the database then sends the customer to the Technical Consultant. */
   async confirmAccountsPayment(id: string, body: unknown): Promise<void> {
     await this.repo.confirmAccountsPayment(parse(uuidSchema, id), parse(handoverNoteSchema, body ?? {}).note ?? null);
+  }
+
+  /** Technical Consultant's Customers panel: contract yes/no, add-ons, details, "Send for onboarding". */
+  async consultantSetContract(id: string, body: unknown): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.consultantSetContract(customerId, parse(consultantContractSchema, body).signed);
+    return this.repo.get(customerId);
+  }
+
+  async consultantSetAddons(id: string, body: unknown): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.consultantSetAddons(customerId, parse(consultantAddonsSchema, body).addons);
+    return this.repo.get(customerId);
+  }
+
+  async consultantUpdateCustomer(id: string, body: unknown): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.consultantUpdateCustomer(customerId, parse(consultantDetailsSchema, body));
+    return this.repo.get(customerId);
+  }
+
+  async consultantStartOnboarding(id: string): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.consultantStartOnboarding(customerId);
+    return this.repo.get(customerId);
   }
 
   async forwardToSupport(id: string): Promise<PipelineCustomer> {
