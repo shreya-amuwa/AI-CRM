@@ -91,3 +91,39 @@ and `onboarding_automation_runs` with `begin_/finish_onboarding_automation()`.
 Everyone in the chain is notified (bell); each step is audited. Recipients get **read** access
 only (checklist, files, owner); only the people named above can move the customer on.
 
+
+
+## Customers, Add-ons Services and consultation notes
+
+Migration: `supabase/migrations/20261014000100_tc_notes_addons.sql` (safe to re-run).
+
+**Customers panel.** The old "Contract" column is labelled **Contacted** (the stored value
+`customer_onboarding.contract_signed` is unchanged). Additional services is a Yes / No question
+(`customer_onboarding.addons_required`, null = not answered). Yes shows the service picker (built from
+the service catalogue). Answering No keeps any saved selection (it is only ignored) and asks first.
+A customer opens read-only; details change only after an explicit Edit, with Save / Cancel. A save made
+from a stale form is refused (`consultant_update_customer(..., p_expected)`).
+
+**Send to Add-ons.** With Yes and at least one add-on the button reads "Send to Add-ons"
+(`consultant_send_to_addons`, once per customer). "Send for onboarding" is refused by the database
+while add-ons are selected but not sent. The customer then leaves Customers and is listed under
+**Add-ons Services** (same customer record, no copy). From there the TC changes the services, collects
+and verifies the add-on documents and can still send the customer for onboarding.
+
+**Add-on documents.** The checklist is built from the same `onboarding_items` /
+`onboarding_item_services` as normal onboarding, for the add-on service codes only
+(`customer_addon_checklist`). Entries and uploads use the same tables and the same upload, size and
+type rules; a document is collected once. The TC may save / upload / replace only items of the add-on
+services of a customer sent to Add-ons (`private.can_collect_addon_item`); normal onboarding items stay
+with Sales. Progress (`addon_items_*`) is kept by triggers. Nothing is marked verified automatically.
+
+**Consultation notes.** `consultant_notes` is append-only history (add, edit by the author only; the
+earlier text of an edit is kept in the audit log). The TC of the department writes; the TC, the
+Department Head of the department and the Super Admin (CEO) read. Sales and the other roles cannot.
+The Department Head sees the notes on the client detail page; the CEO has read access through the API
+(`GET /pipeline/customers/:id/consultant/notes`) and the same data functions; no Super Admin screen
+shows customer notes yet.
+
+**Live updates.** Pipeline screens reload when rows change (Realtime on customers, documents,
+onboarding and checklist entries), when the tab is focused again, after any change made in the tab,
+and every 30 seconds while the tab is visible (this also covers a dropped Realtime connection).

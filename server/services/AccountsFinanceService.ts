@@ -15,6 +15,10 @@ import type { AccountsFinanceRepository } from '../repositories/AccountsFinanceR
 export class AccountsFinanceService {
   constructor(private readonly repo: AccountsFinanceRepository) {}
 
+  departments(): Promise<{ id: string; name: string; slug: string }[]> {
+    return this.repo.departments();
+  }
+
   summary(query: unknown): Promise<FinanceSummary> {
     return this.repo.summary(parse(financeSummaryQuerySchema, query ?? {}));
   }

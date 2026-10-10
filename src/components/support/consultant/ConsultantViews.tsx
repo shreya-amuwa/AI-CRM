@@ -42,6 +42,7 @@ import {
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
+import { ConsultationNotes } from './ConsultationNotes';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -389,7 +390,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+      <div className="space-y-5">
+        {/* Documents use the full width of the page; the client login sits at the very end. */}
         <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-labelledby="docs-heading">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
@@ -502,7 +504,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           {salesItems.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">No documents requested for this customer.</p>
           ) : (
-            <ul className="mt-4 space-y-3">
+            <ul className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 items-start">
               {salesItems.map(item => (
                 <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} readOnly={locked} />
               ))}
@@ -510,9 +512,31 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           )}
         </section>
 
-        <div className="space-y-5">
-          <ClientLoginCard customerId={c.id} defaultEmail={c.email} account={c.handover?.clientAccount} locked={waiting || handedOver} onChanged={changed} />
-        </div>
+        {(c.onboarding?.addons.length ?? 0) > 0 && (
+          <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-labelledby="addons-heading">
+            <h2 id="addons-heading" className="font-bold text-slate-900">
+              Add-on services
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {c.onboarding?.addons.map((a, i) => (
+                <span key={`${a.code || a.name}-${i}`} className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-semibold">
+                  {a.name}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {c.onboarding?.addonsSubmittedAt
+                ? `Sent to Add-ons Services on ${longDate(c.onboarding.addonsSubmittedAt)}: ${c.onboarding.addonItemsSaved} of ${c.onboarding.addonItemsTotal} add-on items collected, ${c.onboarding.addonItemsVerified} verified. Manage them under Add-ons Services.`
+                : c.onboarding?.addonsRequired
+                  ? 'Selected, not yet sent to Add-ons Services.'
+                  : 'Saved, not used (the answer to additional services is No).'}
+            </p>
+          </section>
+        )}
+
+        <ConsultationNotes customerId={c.id} canWrite services={c.services} />
+
+        <ClientLoginCard customerId={c.id} defaultEmail={c.email} account={c.handover?.clientAccount} locked={waiting || handedOver} onChanged={changed} />
       </div>
     </div>
   );

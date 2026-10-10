@@ -7,6 +7,7 @@ import { rowOpen } from '../../lib/rowClick';
 import { AccountsPaymentPanel } from '../accounts/AccountsPaymentPanel';
 import { Empty, ErrorBanner, inputClass, Loading, Modal, PageHeader, Pager } from '../support-member/SupportParts';
 import { Badge, FollowUpBadge, fmtDate, fmtDateTime, MoneyTiles, PaymentHistory, PaymentStatusBadge, rupees } from './PaymentBits';
+import { usePipelineRealtime } from '../team-member/pipeline/shared';
 
 const PAGE_SIZE = 10;
 
@@ -154,6 +155,7 @@ export const PartPaymentsView: React.FC<{ mode: 'sales' | 'accounts'; onOpenOnbo
       .finally(() => n === seq.current && setLoading(false));
   }, [status, debounced, salesperson, accountsOwner, followUp, from, to, sort, page, accounts]);
   useEffect(load, [load]);
+  usePipelineRealtime(load);
   useEffect(() => setPage(1), [status, debounced, salesperson, accountsOwner, followUp, from, to, sort]);
 
   const hasFilters = !!(debounced || salesperson || accountsOwner || followUp || from || to);

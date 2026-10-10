@@ -7,6 +7,8 @@ import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { ConsultantLayout, type ConsultantPage } from './consultant/ConsultantLayout';
 import { ConsultantIntake } from './consultant/ConsultantIntake';
 import { ConsultantCustomerDetail, ConsultantCustomerList } from './consultant/ConsultantViews';
+import { ConsultantAddons } from './consultant/ConsultantAddons';
+import { NotificationsPage } from '../notifications/NotificationsPage';
 
 interface TechnicalSupportDashboardProps {
   currentUserId?: string;
@@ -35,6 +37,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
       userName={userName}
       count={counts?.all}
       newCount={counts?.newCustomers}
+      addonsCount={counts?.addons}
       page={page}
       onSelectPage={p => {
         setPage(p);
@@ -48,7 +51,12 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
             loadCounts();
           }}
           onGoToOnboarding={() => setPage('onboarding')}
+          onGoToAddons={() => setPage('addons')}
         />
+      ) : page === 'addons' ? (
+        <ConsultantAddons onCountsChanged={loadCounts} onGoToOnboarding={() => setPage('onboarding')} />
+      ) : page === 'notifications' ? (
+        <NotificationsPage />
       ) : openId ? (
         <ConsultantCustomerDetail id={openId} onBack={() => setOpenId(null)} />
       ) : (

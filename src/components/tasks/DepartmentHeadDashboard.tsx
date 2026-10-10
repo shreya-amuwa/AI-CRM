@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BarChart3,
+  Bell,
   Building2,
   CalendarCheck,
   ChevronDown,
@@ -21,6 +22,8 @@ import { HandoverBoard } from '../handover/HandoverBoard';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
+import { NotificationsPage } from '../notifications/NotificationsPage';
+import { AmuwaLogo } from '../common/AmuwaLogo';
 import {
   isDirectMemberTask,
   localDateKey,
@@ -34,7 +37,7 @@ import {
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 
-type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments';
+type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments' | 'notifications';
 
 /**
  * Department Head dashboard.
@@ -55,7 +58,8 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
     { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
     { id: 'support', label: 'Support Desk', icon: Headset },
     { id: 'clients', label: 'Client Hand-overs', icon: UserCheck },
-    { id: 'team', label: 'Team Members & Access', icon: UserPlus }
+    { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+    { id: 'notifications', label: 'Notification Center', icon: Bell }
   ];
   // The Accounts Department Head also confirms the amount of customers Sales sends.
   if (profile?.department?.slug === 'accounts') items.unshift({ id: 'payments', label: 'Payment confirmations', icon: ReceiptIndianRupee });
@@ -72,11 +76,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
         <div className="space-y-6">
           <div className="flex items-center justify-between px-2 pt-1">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white">
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              </div>
+              <AmuwaLogo size="sm" />
               <div className="leading-tight">
                 <span className="block text-sm font-bold text-slate-900">Amuwa</span>
                 <span className="block text-[11px] text-slate-500 font-medium -mt-0.5">{profile?.department?.name || 'Department'}</span>
@@ -156,6 +156,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'support' && <SupportDeskPage />}
           {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
           {nav === 'payments' && <AccountsConfirmations />}
+          {nav === 'notifications' && <NotificationsPage />}
           {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}
         </main>
       </div>

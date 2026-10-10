@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { HelpCircle, LogOut, Menu, UserPlus, Users, X } from 'lucide-react';
+import { Bell, HelpCircle, LogOut, Menu, PackagePlus, UserPlus, Users, X } from 'lucide-react';
+import { useNotifications } from '../../../context/NotificationContext';
+import { AmuwaLogo } from '../../common/AmuwaLogo';
 
-export type ConsultantPage = 'customers' | 'onboarding';
+export type ConsultantPage = 'customers' | 'addons' | 'onboarding' | 'notifications';
 
 /** Shell of the Technical Consultant dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{
@@ -9,12 +11,15 @@ export const ConsultantLayout: React.FC<{
   count?: number;
   /** Customers waiting in the Customers panel. */
   newCount?: number;
+  /** Customers in Add-ons Services. */
+  addonsCount?: number;
   page: ConsultantPage;
   onSelectPage: (page: ConsultantPage) => void;
   onSignOut: () => void;
   children: React.ReactNode;
-}> = ({ userName, count, newCount, page, onSelectPage, onSignOut, children }) => {
+}> = ({ userName, count, newCount, addonsCount, page, onSelectPage, onSignOut, children }) => {
   const [open, setOpen] = useState(false);
+  const { unreadCount } = useNotifications();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
@@ -35,11 +40,7 @@ export const ConsultantLayout: React.FC<{
         <div className="space-y-6">
           <div className="flex items-center justify-between px-2 pt-1">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white shadow-xs" aria-hidden="true">
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              </div>
+              <AmuwaLogo size="sm" />
               <div className="leading-tight">
                 <span className="block text-sm font-bold tracking-tight text-slate-900">Amuwa</span>
                 <span className="block text-[11px] text-slate-500 font-medium -mt-0.5">Technical Consulting</span>
@@ -53,7 +54,9 @@ export const ConsultantLayout: React.FC<{
             {(
               [
                 ['customers', 'Customers', Users, newCount],
-                ['onboarding', 'Onboarding Customers', UserPlus, count]
+                ['addons', 'Add-ons Services', PackagePlus, addonsCount],
+                ['onboarding', 'Onboarding Customers', UserPlus, count],
+                ['notifications', 'Notification Center', Bell, unreadCount > 0 ? unreadCount : undefined]
               ] as const
             ).map(([id, label, Icon, n]) => (
               <button

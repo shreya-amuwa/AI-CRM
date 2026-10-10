@@ -35,7 +35,8 @@ export type TeamLeadNav =
   | 'eod'
   | 'sla'
   | 'analytics'
-  | 'settings';
+  | 'settings'
+  | 'notifications';
 
 interface TeamLeadLayoutProps {
   children: React.ReactNode;
@@ -95,7 +96,8 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
       badgeColor: 'bg-rose-500 text-white'
     },
     { id: 'analytics' as TeamLeadNav, label: 'Analytics & Leaderboard', icon: BarChart3 },
-    { id: 'settings' as TeamLeadNav, label: 'Pod Targets & Rules', icon: Settings }
+    { id: 'settings' as TeamLeadNav, label: 'Pod Targets & Rules', icon: Settings },
+    { id: 'notifications' as TeamLeadNav, label: 'Notification Center', icon: Bell }
   ];
 
   return (

@@ -1,6 +1,6 @@
 import { rowOpen } from '../../../lib/rowClick';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, Pencil, Plus, Search, Send, X } from 'lucide-react';
+import { ArrowRight, Pencil, Search, Send } from 'lucide-react';
 import type { Paginated, PipelineCustomer } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
@@ -17,27 +17,27 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
+import { AddonSelector, type Addon } from './AddonSelector';
+import { ConsultationNotes } from './ConsultationNotes';
 
 const PAGE_SIZE = 10;
-const OTHER = '__OTHER__';
-
-type Addon = { code?: string; name: string };
 
 /**
- * Technical Consultant: "Customers" panel. Customers Accounts confirmed arrive
- * here as a table: business, services, Contract yes/no, add-ons, Edit and
- * "Send for onboarding". Sending moves the customer to Onboarding Customers.
- * Every change is saved straight to the database and re-checked there.
+ * Technical Consultant: "Customers" panel. Customers Accounts confirmed arrive here as a table:
+ * business, services, Contacted yes/no, the add-ons question and the send button. A customer opens
+ * read-only; details change only after an explicit Edit. "Send for onboarding" moves the customer to
+ * Onboarding Customers; when add-ons are needed the button is "Send to Add-ons" and moves the customer
+ * to Add-ons Services instead. Every change is saved straight to the database and re-checked there.
  */
-export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: () => void }> = ({ onSent, onGoToOnboarding }) => {
+export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: () => void; onGoToAddons: () => void }> = ({ onSent, onGoToOnboarding, onGoToAddons }) => {
   const { items: catalog, byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<PipelineCustomer> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState<PipelineCustomer | null>(null);
+  const [notice, setNotice] = useState<{ text: string; to: 'onboarding' | 'addons' } | null>(null);
+  const [open, setOpen] = useState<{ id: string; edit: boolean } | null>(null);
   const debounced = useDebounced(search.trim());
   const seq = useRef(0);
 
@@ -58,6 +58,7 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
 
   /** Replace one row with the server's fresh copy. */
   const patchRow = (c: PipelineCustomer) => setData(d => (d ? { ...d, items: d.items.map(i => (i.id === c.id ? c : i)) } : d));
+  const openCustomer = open && data?.items.find(i => i.id === open.id);
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -65,7 +66,7 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
         <div>
           <h1 className="text-2xl sm:text-[28px] font-bold text-slate-900">Customers</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Customers confirmed by Accounts. Note the contract and any add-ons, then send each one for onboarding.
+            Customers confirmed by Accounts. Note whether you contacted them and whether they need add-ons, then send each one on.
           </p>
         </div>
         <label className="relative w-full md:w-72 shrink-0">
@@ -83,9 +84,9 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
 
       {notice && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" role="status">
-          <span>{notice}</span>
-          <button type="button" onClick={onGoToOnboarding} className="inline-flex items-center gap-1 font-bold text-emerald-900 hover:underline">
-            Open Onboarding Customers <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+          <span>{notice.text}</span>
+          <button type="button" onClick={notice.to === 'addons' ? onGoToAddons : onGoToOnboarding} className="inline-flex items-center gap-1 font-bold text-emerald-900 hover:underline">
+            {notice.to === 'addons' ? 'Open Add-ons Services' : 'Open Onboarding Customers'} <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
       )}
@@ -103,13 +104,13 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[56rem]">
+            <table className="w-full text-sm min-w-[60rem]">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100 bg-slate-50/60">
                   <th scope="col" className="px-5 py-3 font-semibold">Name &amp; business</th>
                   <th scope="col" className="px-3 py-3 font-semibold">Services</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Contract</th>
-                  <th scope="col" className="px-3 py-3 font-semibold w-72">Add-ons</th>
+                  <th scope="col" className="px-3 py-3 font-semibold">Contacted</th>
+                  <th scope="col" className="px-3 py-3 font-semibold w-80">Add-ons</th>
                   <th scope="col" className="px-5 py-3 font-semibold text-right">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -123,9 +124,9 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
                     catalog={catalog}
                     serviceName={code => byCode.get(code)?.name || code}
                     onChanged={patchRow}
-                    onEdit={() => setEditing(c)}
-                    onSent={name => {
-                      setNotice(`${name} was sent for onboarding.`);
+                    onOpen={edit => setOpen({ id: c.id, edit })}
+                    onSent={(name, to) => {
+                      setNotice({ text: to === 'addons' ? `${name} was sent to Add-ons Services.` : `${name} was sent for onboarding.`, to });
                       notifyPipelineChanged();
                       onSent();
                       load();
@@ -143,14 +144,14 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
         </div>
       )}
 
-      {editing && (
-        <EditDialog
-          customer={editing}
-          onClose={() => setEditing(null)}
-          onSaved={c => {
-            patchRow(c);
-            setEditing(null);
-          }}
+      {open && openCustomer && (
+        <CustomerDetailsDialog
+          key={open.id}
+          customer={openCustomer}
+          startEditing={open.edit}
+          serviceName={code => byCode.get(code)?.name || code}
+          onChanged={patchRow}
+          onClose={() => setOpen(null)}
         />
       )}
     </div>
@@ -165,15 +166,18 @@ const IntakeRow: React.FC<{
   catalog: { code: string; name: string; category: string }[];
   serviceName: (code: string) => string;
   onChanged: (c: PipelineCustomer) => void;
-  onEdit: () => void;
-  onSent: (name: string) => void;
-}> = ({ customer: c, catalog, serviceName, onChanged, onEdit, onSent }) => {
+  onOpen: (edit: boolean) => void;
+  onSent: (name: string, to: 'onboarding' | 'addons') => void;
+}> = ({ customer: c, catalog, serviceName, onChanged, onOpen, onSent }) => {
   const [busy, setBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
-  const [typing, setTyping] = useState(false);
-  const [typed, setTyped] = useState('');
+  const [confirmNo, setConfirmNo] = useState(false);
   const addons: Addon[] = c.onboarding?.addons || [];
+  // The radio moves at once; if the database refuses, it goes back (the saved answer is the truth).
+  const [shown, setShown] = useState<boolean | null | undefined>(undefined);
+  const required = shown !== undefined ? shown : (c.onboarding?.addonsRequired ?? null);
   const label = c.company || c.name;
+  const toAddons = required === true;
 
   const run = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
@@ -188,36 +192,29 @@ const IntakeRow: React.FC<{
     }
   };
 
-  const saveAddons = async (next: Addon[]) => {
-    const fresh = await run(() => pipelineApi.consultantSetAddons(c.id, next.map(a => (a.code ? { code: a.code } : { name: a.name }))));
-    if (fresh) onChanged(fresh);
-  };
   const setContract = async (signed: boolean) => {
     const fresh = await run(() => pipelineApi.consultantSetContract(c.id, signed));
     if (fresh) onChanged(fresh);
   };
-
-  const pick = (value: string) => {
-    if (!value) return;
-    if (value === OTHER) {
-      setTyping(true);
-      return;
-    }
-    void saveAddons([...addons, { code: value, name: serviceName(value) }]);
+  const setRequired = async (value: boolean) => {
+    setShown(value);
+    const fresh = await run(() => pipelineApi.consultantSetAddonsRequired(c.id, value));
+    if (fresh) onChanged(fresh);
+    setShown(undefined);
   };
-  const addTyped = async () => {
-    const name = typed.trim();
-    if (name.length < 2) return setRowError('Type the add-on name (at least 2 characters).');
-    await saveAddons([...addons, { name }]);
-    setTyped('');
-    setTyping(false);
+  const answer = (value: boolean) => {
+    if (value === required) return;
+    // Answering No keeps the saved selection (it is only ignored); say so before changing it.
+    if (!value && addons.length > 0) return setConfirmNo(true);
+    void setRequired(value);
   };
-
-  const taken = new Set(addons.filter(a => a.code).map(a => a.code));
-  const categories = [...new Set(catalog.map(s => s.category))];
+  const send = async () => {
+    const done = await run(() => (toAddons ? pipelineApi.consultantSendToAddons(c.id) : pipelineApi.consultantStartOnboarding(c.id)));
+    if (done) onSent(label, toAddons ? 'addons' : 'onboarding');
+  };
 
   return (
-    <tr {...rowOpen(onEdit)} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50 focus-visible:bg-blue-50/50 focus-visible:outline-none">
+    <tr {...rowOpen(() => onOpen(false))} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50 focus-visible:bg-blue-50/50 focus-visible:outline-none">
       <td className="px-5 py-4">
         <div className="font-bold text-slate-900">{c.name}</div>
         <div className="text-xs text-slate-500">{c.company || 'No business name'}</div>
@@ -238,7 +235,7 @@ const IntakeRow: React.FC<{
       </td>
       <td className="px-3 py-4">
         <select
-          aria-label={`Contract for ${label}`}
+          aria-label={`Contacted: ${label}`}
           value={c.onboarding?.contractSigned ? 'yes' : 'no'}
           onChange={e => void setContract(e.target.value === 'yes')}
           disabled={busy}
@@ -251,76 +248,30 @@ const IntakeRow: React.FC<{
         </select>
       </td>
       <td className="px-3 py-4">
-        {addons.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5 mb-2" aria-label={`Add-ons of ${label}`}>
-            {addons.map((a, i) => (
-              <li key={`${a.code || a.name}-${i}`} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-semibold">
-                {a.name}
-                {!a.code && <span className="text-indigo-400 font-normal">(manual)</span>}
-                <button
-                  type="button"
-                  onClick={() => void saveAddons(addons.filter((_, j) => j !== i))}
-                  disabled={busy}
-                  className="p-0.5 rounded hover:bg-indigo-100"
-                  aria-label={`Remove add-on ${a.name} from ${label}`}
-                >
-                  <X className="w-3 h-3" aria-hidden="true" />
-                </button>
-              </li>
+        <fieldset disabled={busy} className="min-w-0">
+          <legend className="text-[11px] font-semibold text-slate-600 mb-1.5">Does the customer require any additional services?</legend>
+          <div className="flex items-center gap-5 mb-2">
+            {([true, false] as const).map(v => (
+              <label key={String(v)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name={`addons-required-${c.id}`}
+                  checked={required === v}
+                  onChange={() => answer(v)}
+                  className="w-3.5 h-3.5 accent-indigo-600"
+                  aria-label={`${v ? 'Yes' : 'No'}: additional services for ${label}`}
+                />
+                {v ? 'Yes' : 'No'}
+              </label>
             ))}
-          </ul>
-        )}
-        {typing ? (
-          <div className="flex items-center gap-1.5">
-            <input
-              value={typed}
-              onChange={e => setTyped(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && void addTyped()}
-              maxLength={120}
-              placeholder="Type the add-on"
-              aria-label={`Add-on name for ${label}`}
-              className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs"
-              autoFocus
-            />
-            <button type="button" onClick={() => void addTyped()} disabled={busy} className={btn.green} aria-label={`Add typed add-on to ${label}`}>
-              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTyping(false);
-                setTyped('');
-              }}
-              className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
-              aria-label="Cancel typing an add-on"
-            >
-              <X className="w-4 h-4" aria-hidden="true" />
-            </button>
           </div>
-        ) : (
-          <select
-            aria-label={`Add an add-on to ${label}`}
-            value=""
-            onChange={e => pick(e.target.value)}
-            disabled={busy}
-            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-600"
-          >
-            <option value="">Add a service…</option>
-            {categories.map(cat => {
-              const opts = catalog.filter(s => s.category === cat && !taken.has(s.code));
-              return opts.length ? (
-                <optgroup key={cat} label={cat}>
-                  {opts.map(s => (
-                    <option key={s.code} value={s.code}>
-                      {s.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null;
-            })}
-            <option value={OTHER}>Other - type manually…</option>
-          </select>
-        )}
+          {required === true && <AddonSelector customerId={c.id} label={label} addons={addons} catalog={catalog} disabled={busy} onChanged={onChanged} />}
+          {required === false && addons.length > 0 && (
+            <p className="text-[11px] text-slate-500">
+              {addons.length} saved add-on{addons.length === 1 ? ' is' : 's are'} kept but not used while No is selected.
+            </p>
+          )}
+        </fieldset>
         {rowError && (
           <p className="text-[11px] text-rose-700 mt-1.5" role="alert">
             {rowError}
@@ -329,79 +280,189 @@ const IntakeRow: React.FC<{
       </td>
       <td className="px-5 py-4 text-right whitespace-nowrap">
         <div className="inline-flex items-center gap-2">
-          <button type="button" onClick={onEdit} className={btn.secondary} aria-label={`Edit ${label}`}>
+          <button type="button" onClick={() => onOpen(true)} className={btn.secondary} aria-label={`Edit ${label}`}>
             <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
           </button>
           <button
             type="button"
-            disabled={busy}
-            onClick={async () => {
-              const done = await run(() => pipelineApi.consultantStartOnboarding(c.id));
-              if (done) onSent(label);
-            }}
+            disabled={busy || (toAddons && addons.length === 0)}
+            title={toAddons && addons.length === 0 ? 'Select at least one add-on service first' : undefined}
+            onClick={() => void send()}
             className={btn.primary}
-            aria-label={`Send ${label} for onboarding`}
+            aria-label={toAddons ? `Send ${label} to Add-ons` : `Send ${label} for onboarding`}
           >
-            <Send className="w-3.5 h-3.5" aria-hidden="true" /> Send for onboarding
+            <Send className="w-3.5 h-3.5" aria-hidden="true" /> {toAddons ? 'Send to Add-ons' : 'Send for onboarding'}
           </button>
         </div>
       </td>
+      {confirmNo && (
+        <td className="p-0" data-no-row-click>
+          <Dialog
+            title="Switch to No?"
+            description={`${label} has ${addons.length} add-on${addons.length === 1 ? '' : 's'} selected. They stay saved, but are not used or sent anywhere while the answer is No. You can switch back to Yes any time before sending to Add-ons.`}
+            onClose={() => setConfirmNo(false)}
+          >
+            <div className="flex justify-end gap-2">
+              <button type="button" className={btn.secondary} onClick={() => setConfirmNo(false)}>
+                Keep Yes
+              </button>
+              <button
+                type="button"
+                className={btn.primary}
+                onClick={() => {
+                  setConfirmNo(false);
+                  void setRequired(false);
+                }}
+              >
+                Switch to No
+              </button>
+            </div>
+          </Dialog>
+        </td>
+      )}
     </tr>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Edit
+// Customer details: read-only until Edit is clicked
 // ---------------------------------------------------------------------------
-const EditDialog: React.FC<{ customer: PipelineCustomer; onClose: () => void; onSaved: (c: PipelineCustomer) => void }> = ({ customer, onClose, onSaved }) => {
+const Row: React.FC<{ k: string; v: React.ReactNode }> = ({ k, v }) => (
+  <div>
+    <dt className="text-[11px] font-medium text-slate-500">{k}</dt>
+    <dd className="text-sm text-slate-900 break-words">{v || <span className="text-slate-400">-</span>}</dd>
+  </div>
+);
+
+const CustomerDetailsDialog: React.FC<{
+  customer: PipelineCustomer;
+  startEditing: boolean;
+  serviceName: (code: string) => string;
+  onChanged: (c: PipelineCustomer) => void;
+  onClose: () => void;
+}> = ({ customer, startEditing, serviceName, onChanged, onClose }) => {
+  const [editing, setEditing] = useState(startEditing);
+  const [saved, setSaved] = useState(false);
   const [name, setName] = useState(customer.name);
   const [company, setCompany] = useState(customer.company || '');
   const [phone, setPhone] = useState(customer.phone || '');
   const [email, setEmail] = useState(customer.email || '');
+  // The version the form was opened on: a save from a stale form is refused by the database.
+  const [loadedAt, setLoadedAt] = useState(customer.updatedAt);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const label = customer.company || customer.name;
+  const addons = customer.onboarding?.addons || [];
+  const required = customer.onboarding?.addonsRequired ?? null;
+
+  const resetForm = () => {
+    setName(customer.name);
+    setCompany(customer.company || '');
+    setPhone(customer.phone || '');
+    setEmail(customer.email || '');
+    setLoadedAt(customer.updatedAt);
+    setError(null);
+  };
+  const beginEdit = () => {
+    resetForm();
+    setSaved(false);
+    setEditing(true);
+  };
+  const cancel = () => {
+    resetForm();
+    setEditing(false);
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      onSaved(await pipelineApi.consultantUpdateCustomer(customer.id, { name, company: company || null, phone: phone || null, email: email || null }));
+      const fresh = await pipelineApi.consultantUpdateCustomer(customer.id, {
+        name,
+        company: company || null,
+        phone: phone || null,
+        email: email || null,
+        expectedUpdatedAt: loadedAt
+      });
+      onChanged(fresh);
+      setLoadedAt(fresh.updatedAt);
+      setEditing(false);
+      setSaved(true);
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Dialog title={`Edit ${customer.company || customer.name}`} description="Correct the contact details before onboarding starts." onClose={onClose}>
-      <form onSubmit={submit} className="space-y-3" aria-label="Edit customer">
-        <Field label="Customer name" htmlFor="ci-name" required>
-          <input id="ci-name" value={name} onChange={e => setName(e.target.value)} className={inputCls} maxLength={200} />
-        </Field>
-        <Field label="Business name" htmlFor="ci-company">
-          <input id="ci-company" value={company} onChange={e => setCompany(e.target.value)} className={inputCls} maxLength={200} />
-        </Field>
-        <Field label="Phone" htmlFor="ci-phone">
-          <input id="ci-phone" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} maxLength={25} />
-        </Field>
-        <Field label="E-mail" htmlFor="ci-email">
-          <input id="ci-email" type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} maxLength={254} />
-        </Field>
-        {error && (
-          <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2" role="alert">
-            {error}
+    <Dialog title={label} description="Customer details" onClose={onClose} wide>
+      <section aria-label="Customer details" className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-slate-900">Details</h3>
+          {!editing && (
+            <button type="button" onClick={beginEdit} className={btn.secondary} aria-label={`Edit ${label}`}>
+              <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
+            </button>
+          )}
+        </div>
+        {saved && !editing && (
+          <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+            Details saved.
           </p>
         )}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} className={btn.secondary}>
-            Cancel
-          </button>
-          <button type="submit" disabled={busy} className={btn.primary}>
-            {busy ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
-      </form>
+        {editing ? (
+          <form onSubmit={submit} className="space-y-3" aria-label="Edit customer">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Customer name" htmlFor="ci-name" required>
+                <input id="ci-name" value={name} onChange={e => setName(e.target.value)} className={inputCls} maxLength={200} />
+              </Field>
+              <Field label="Business name" htmlFor="ci-company">
+                <input id="ci-company" value={company} onChange={e => setCompany(e.target.value)} className={inputCls} maxLength={200} />
+              </Field>
+              <Field label="Phone" htmlFor="ci-phone">
+                <input id="ci-phone" value={phone} onChange={e => setPhone(e.target.value)} className={inputCls} maxLength={25} />
+              </Field>
+              <Field label="E-mail" htmlFor="ci-email">
+                <input id="ci-email" type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} maxLength={254} />
+              </Field>
+            </div>
+            {error && (
+              <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={cancel} className={btn.secondary} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" disabled={busy} className={btn.primary}>
+                {busy ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 p-4 rounded-xl bg-slate-50/70 border border-slate-100">
+            <Row k="Customer name" v={customer.name} />
+            <Row k="Business name" v={customer.company} />
+            <Row k="Phone" v={customer.phone} />
+            <Row k="E-mail" v={customer.email} />
+            <Row k="Services" v={customer.services.length ? customer.services.map(serviceName).join(', ') : null} />
+            <Row k="Contacted" v={customer.onboarding?.contractSigned ? 'Yes' : 'No'} />
+            <Row
+              k="Additional services"
+              v={required === null ? 'Not answered yet' : required ? `Yes${addons.length ? `: ${addons.map(a => a.name).join(', ')}` : ''}` : 'No'}
+            />
+          </dl>
+        )}
+      </section>
+      <ConsultationNotes customerId={customer.id} canWrite services={customer.services} />
+      <div className="flex justify-end">
+        <button type="button" onClick={onClose} className={btn.secondary}>
+          Close
+        </button>
+      </div>
     </Dialog>
   );
 };

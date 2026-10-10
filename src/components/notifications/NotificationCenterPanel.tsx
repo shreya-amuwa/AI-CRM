@@ -6,6 +6,9 @@ import {
 } from 'lucide-react';
 import { useNotifications, AppNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
+import { Pager } from '../support-member/SupportParts';
+
+const PAGE_SIZE = 10;
 
 interface NotificationCenterPanelProps {
   subDept?: 'sales' | 'support' | 'education_training' | 'product_training' | null;
@@ -95,6 +98,13 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
   });
 
   const unreadCount = userNotifications.filter(n => !n.isRead).length;
+
+  // Ten per page; searching or filtering starts again from the first page.
+  const [page, setPage] = useState(1);
+  React.useEffect(() => setPage(1), [filterTarget, searchQuery]);
+  const lastPage = Math.max(1, Math.ceil(filteredNotifications.length / PAGE_SIZE));
+  const shownPage = Math.min(page, lastPage);
+  const pageItems = filteredNotifications.slice((shownPage - 1) * PAGE_SIZE, shownPage * PAGE_SIZE);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -187,7 +197,7 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
             <p className="font-mono text-xs">No notifications dispatch for {userDeptTitle}.</p>
           </div>
         ) : (
-          filteredNotifications.map(n => (
+          pageItems.map(n => (
             <div
               key={n.id}
               onClick={() => markAsRead(n.id)}
@@ -245,6 +255,9 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
             </div>
           ))
         )}
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden empty:hidden">
+          <Pager page={shownPage} pageSize={PAGE_SIZE} total={filteredNotifications.length} onPage={setPage} />
+        </div>
       </div>
 
       {/* CREATE & BROADCAST MESSAGE MODAL WITH SPECIFIC SUB-DEPARTMENT TARGETS */}

@@ -270,27 +270,35 @@ select test.must_fail($$select customer_payment_overview((select id from pt wher
 select accounts_record_payment((select id from pt where name = 'L3'), 'PART', 10000, 'CASH', null, null, null, false);
 select test.must_fail($$select accounts_return_to_leads((select id from pt where name = 'L3'), 'Changed mind')$$, 'cannot return with a payment still pending', 'pending payments');
 select accounts_verify_payment((select (p ->> 'id')::uuid from jsonb_array_elements(customer_payment_overview((select id from pt where name = 'L3')) -> 'payments') p limit 1), null);
+select test.must_fail($$select accounts_return_to_leads((select id from pt where name = 'L3'), 'Changed mind')$$, 'Return to Leads is refused once a payment is verified', 'already verified');
+select test.admin_check($Q$select (select lifecycle_stage = 'LEAD' and payment_workflow = 'PENDING_PAYMENT_CONFIRMATION' from customers where id = (select id from pt where name = 'L3'))$Q$, 'the refused return changed nothing');
+-- A verified payment that is reversed no longer counts, so a return is possible again (decided from the persisted rows).
+select test.login('dh_acc');
+create temp table rev3 (id uuid);
+grant all on rev3 to authenticated;
+insert into rev3 select (p ->> 'id')::uuid from jsonb_array_elements(customer_payment_overview((select id from pt where name = 'L3')) -> 'payments') p limit 1;
+select accounts_reverse_payment((select id from rev3), 'Customer asked for a refund');
+select test.login('acc_m');
 select accounts_return_to_leads((select id from pt where name = 'L3'), 'Customer decided not to proceed');
 select test.admin_check($Q$select (select lifecycle_stage = 'LEAD' and payment_workflow = 'RETURNED_FROM_ACCOUNTS' and lead_status = 'INTERESTED' from customers where id = (select id from pt where name = 'L3'))$Q$, 'backed off: the same lead is back in Leads');
 select test.admin_check($Q$select (select status = 'RETURNED' and resolution_note = 'Customer decided not to proceed' and resolved_by = test.id('acc_m') from payment_requests where customer_id = (select id from pt where name = 'L3'))$Q$, 'return reason, who and when are recorded');
-select test.admin_check($Q$select (select count(*) = 1 and bool_and(status = 'VERIFIED') from customer_payments where customer_id = (select id from pt where name = 'L3'))$Q$, 'the verified payment is preserved');
+select test.admin_check($Q$select (select count(*) = 1 and bool_and(status = 'REVERSED') from customer_payments where customer_id = (select id from pt where name = 'L3'))$Q$, 'the (reversed) payment is preserved, not deleted');
 select test.check((select (accounts_payment_requests('RETURNED') ->> 'total')::int = 1), 'Accounts lists it under Returned');
 select test.admin_check($Q$select (select count(*) = 1 from customer_activities where customer_id = (select id from pt where name = 'L3') and type = 'RETURNED_FROM_ACCOUNTS')$Q$, 'the return is in the activity log');
 select test.admin_check($Q$select (select count(*) = 1 from audit_logs where action = 'PAYMENT_RETURNED_TO_LEADS' and entity_id = (select id from pt where name = 'L3'))$Q$, 'the return is audited');
-select test.check((select (part_payments_list(p_status => 'RETURNED', p_search => 'nair') ->> 'total')::int = 1 and (part_payments_list(p_status => 'PARTIAL', p_search => 'nair') ->> 'total')::int = 0), 'Accounts can see the returned customer with money on record (refund handling), not in the active balance list');
+select test.check((select (part_payments_list(p_status => 'RETURNED', p_search => 'nair') ->> 'total')::int = 0 and (part_payments_list(p_status => 'PARTIAL', p_search => 'nair') ->> 'total')::int = 0), 'the reversed payment leaves no money on record: not in the refund list nor the active balance list');
 select test.login('tm_a');
 select test.check((select (customer_pipeline_counts() -> 'leads' ->> 'RETURNED')::int = 1 and (customer_pipeline_counts() -> 'leads' ->> 'WITH_ACCOUNTS')::int = 0), 'Sales sees the lead under Returned from Accounts');
 select test.check((select jsonb_array_length(customer_conversations((select id from pt where name = 'L3'))) = 2), 'conversation history is intact');
 select test.check((select customer_payment_overview((select id from pt where name = 'L3')) -> 'request' ->> 'resolutionNote' = 'Customer decided not to proceed'), 'Sales can read the return reason');
 select update_lead((select id from pt where name = 'L3'), '{"leadStatus":"READY_TO_BUY"}');
-select test.must_fail($$select send_lead_to_accounts((select id from pt where name = 'L3'), 5000, null)$$, 'a re-submission cannot be below what is already received', 'cannot be less');
 select send_lead_to_accounts((select id from pt where name = 'L3'), 30000, 'Back again');
 select test.admin_check($Q$select (select count(*) = 2 and count(*) filter (where status = 'PENDING') = 1 from payment_requests where customer_id = (select id from pt where name = 'L3'))$Q$, 'a new submission is a new request; history kept');
 select test.check((select count(*) = 1 from customers where company = 'Nair Bakers'), 'no duplicate customer');
 select test.login('acc_m');
-select accounts_record_payment((select id from pt where name = 'L3'), 'FULL', 20000, 'CASH', null, null, null, true);
+select accounts_record_payment((select id from pt where name = 'L3'), 'FULL', 30000, 'CASH', null, null, null, true);
 select accounts_confirm_and_return((select id from pt where name = 'L3'), null);
-select test.admin_check($Q$select (select lifecycle_stage = 'ONBOARDING' and payment_status = 'FULLY_PAID' and amount_verified = 30000 from customers where id = (select id from pt where name = 'L3'))$Q$, 'the second round counts the earlier verified payment: fully paid, now in onboarding');
+select test.admin_check($Q$select (select lifecycle_stage = 'ONBOARDING' and payment_status = 'FULLY_PAID' and amount_verified = 30000 from customers where id = (select id from pt where name = 'L3'))$Q$, 'the second round settles the amount: fully paid, now in onboarding');
 select test.admin_check($Q$select (select not get_started from customer_onboarding where customer_id = (select id from pt where name = 'L3'))$Q$, 'fully paid but documents not verified: not Get started');
 
 -- Legacy path: the Sales-recorded payment is pending until Accounts verifies it.
@@ -377,6 +385,13 @@ select test.check((select jsonb_array_length(accounts_finance_trend() -> 'months
 select test.admin_check($Q$select (select (m ->> 'income')::numeric from jsonb_array_elements(accounts_finance_trend() -> 'months') m order by m ->> 'month' desc limit 1)
   = (select coalesce(sum(amount), 0) from customer_payments where status = 'VERIFIED' and date_trunc('month', paid_at) = date_trunc('month', now()))$Q$, 'this month''s income in the trend equals the verified payments of this month');
 select test.check((select accounts_finance_trend() -> 'expenseCategories' -> 0 ->> 'category' is not null), 'top expense categories come from the expenses');
+select test.check((select jsonb_array_length(accounts_finance_departments()) = (select count(*) from departments where generates_revenue)
+                     and not exists (select 1 from jsonb_array_elements(accounts_finance_departments()) d where d ->> 'slug' in ('accounts', 'edutraining', 'hr'))
+                     and exists (select 1 from jsonb_array_elements(accounts_finance_departments()) d where d ->> 'slug' = 'wabastore')),
+  'the revenue departments leave out Accounts, Education & Training and HR');
+select test.login('tm_a');
+select test.must_fail($$select accounts_finance_departments()$$, 'Sales cannot list the finance departments', 'Accounts');
+select test.login('dh_acc');
 select test.must_fail($$select * from department_expenses$$, 'expenses cannot be read directly', 'permission denied');
 
 reset role;

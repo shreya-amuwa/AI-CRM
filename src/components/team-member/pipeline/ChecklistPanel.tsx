@@ -23,7 +23,8 @@ import { documentsApi, pipelineApi } from '../../../lib/api/endpoints';
 import { requireSupabase } from '../../../services/supabaseClient';
 import { btn, categoryDot, Dialog, ErrorBanner, inputCls, money, Pill, shortDate } from './shared';
 
-export type ChecklistMode = 'sales' | 'review';
+/** 'addon': the Technical Consultant collects the add-on documents and verifies them (both actions). */
+export type ChecklistMode = 'sales' | 'review' | 'addon';
 
 const KIND_LABEL: Record<ChecklistItem['kind'], string> = {
   DETAILS: 'DETAILS',
@@ -115,7 +116,7 @@ export const ChecklistPanel: React.FC<{
         <div>
           <h2 className="text-sm font-bold text-slate-900">Documents &amp; details</h2>
           <p className="text-xs text-slate-500">
-            {mode === 'review' ? 'Verify each item, or send it back with a note' : 'Checklist built from the services sold'}
+            {mode !== 'sales' ? 'Verify each item, or send it back with a note' : 'Checklist built from the services sold'}
           </p>
         </div>
         <div role="tablist" aria-label="Show items" className="flex p-1 rounded-xl bg-slate-100 text-xs font-semibold">
@@ -231,6 +232,8 @@ const ChecklistCard: React.FC<{
   const isFile = item.kind === 'FILE';
   const currentDoc = isFile ? customer.documents.find(d => d.documentType === item.code && d.status === 'UPLOADED') || null : null;
   const history = isFile ? customer.documents.filter(d => d.documentType === item.code && d.status === 'SUPERSEDED') : [];
+  const collects = mode === 'sales' || mode === 'addon';
+  const reviews = mode === 'review' || mode === 'addon';
   const allowed = item.allowedMimeTypes || ['application/pdf'];
   const maxSize = fmtSize(item.maxSizeBytes || 512000);
   const typesText = allowed.map(m => MIME_LABEL[m] || m).join(', ');
@@ -299,10 +302,10 @@ const ChecklistCard: React.FC<{
     if (phase || busy) return;
     if (isFile) {
       if (currentDoc) void open(currentDoc, 'view');
-      else if (mode === 'sales') inputRef.current?.click();
+      else if (collects) inputRef.current?.click();
       return;
     }
-    setDialog(mode === 'sales' ? 'edit' : 'view');
+    setDialog(collects ? 'edit' : 'view');
   };
 
   const review = async (decision: 'VERIFIED' | 'REJECTED', note?: string) => {
@@ -326,7 +329,7 @@ const ChecklistCard: React.FC<{
     ) : status === 'REJECTED' ? (
       <Pill tone="red">Needs fix</Pill>
     ) : status === 'SAVED' ? (
-      <Pill tone={mode === 'review' ? 'indigo' : 'green'}>{mode === 'review' ? 'To review' : 'Saved'}</Pill>
+      <Pill tone={reviews ? 'indigo' : 'green'}>{reviews ? 'To review' : 'Saved'}</Pill>
     ) : (
       <Pill tone="orange">Pending</Pill>
     );
@@ -338,7 +341,7 @@ const ChecklistCard: React.FC<{
       return `${currentDoc.originalFileName} · ${fmtSize(currentDoc.sizeBytes)} · ${shortDate(currentDoc.uploadedAt)}${currentDoc.uploadedBy ? ` · ${currentDoc.uploadedBy.fullName}` : ''}`;
     }
     if (entry && !isFile) return displayValue(item);
-    if (isFile) return mode === 'sales' ? `${typesText}, up to ${maxSize}. Drop the file here or upload.` : 'Not uploaded yet';
+    if (isFile) return collects ? `${typesText}, up to ${maxSize}. Drop the file here or upload.` : 'Not uploaded yet';
     return item.hint || 'Not filled yet';
   })();
 
@@ -363,13 +366,13 @@ const ChecklistCard: React.FC<{
             : 'border-dashed border-indigo-200 bg-indigo-50/30'
       } ${dragging ? 'ring-2 ring-indigo-400' : ''}`}
       onDragOver={e => {
-        if (!isFile || mode !== 'sales' || phase) return;
+        if (!isFile || !collects || phase) return;
         e.preventDefault();
         setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={e => {
-        if (!isFile || mode !== 'sales') return;
+        if (!isFile || !collects) return;
         e.preventDefault();
         setDragging(false);
         const files = e.dataTransfer.files;
@@ -445,7 +448,7 @@ const ChecklistCard: React.FC<{
                   </button>
                 </>
               )}
-              {mode === 'sales' && isFile && (
+              {collects && isFile && (
                 <>
                   <button
                     type="button"
@@ -462,18 +465,18 @@ const ChecklistCard: React.FC<{
                   )}
                 </>
               )}
-              {mode === 'sales' && !isFile && (
+              {collects && !isFile && (
                 <button type="button" className={entry ? btn.secondary : btn.primary} onClick={() => setDialog('edit')} aria-label={`${entry ? 'Edit' : ACTION_LABEL[item.kind]} - ${item.label}`}>
                   {entry ? 'Edit' : ACTION_LABEL[item.kind]}
                 </button>
               )}
               {/* A sent-back item waits for sales to fix it before it can be verified. */}
-              {mode === 'review' && entry && status === 'SAVED' && (
+              {reviews && entry && status === 'SAVED' && (
                 <button type="button" className={btn.green} disabled={busy} onClick={() => review('VERIFIED')} aria-label={`Verify ${item.label}`}>
                   <Check className="w-3.5 h-3.5" /> Verify
                 </button>
               )}
-              {mode === 'review' && entry && status !== 'REJECTED' && (
+              {reviews && entry && status !== 'REJECTED' && (
                 <button type="button" className={btn.danger} disabled={busy} onClick={() => setDialog('reject')} aria-label={`Send back ${item.label}`}>
                   <XCircle className="w-3.5 h-3.5" /> Send back
                 </button>
@@ -504,7 +507,7 @@ const ChecklistCard: React.FC<{
                     <button type="button" className="underline" onClick={() => open(d, 'view')}>
                       View
                     </button>
-                    {mode === 'sales' && (
+                    {collects && (
                       <button type="button" className="underline text-rose-700" onClick={() => setConfirmDelete(d)}>
                         Delete
                       </button>

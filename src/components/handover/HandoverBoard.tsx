@@ -33,6 +33,7 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../team-member/pipeline/shared';
+import { ConsultationNotes } from '../support/consultant/ConsultationNotes';
 
 type BoardRole = 'DEPARTMENT_HEAD' | 'TEAM_HEAD' | 'TEAM_MEMBER';
 
@@ -426,16 +427,18 @@ const HandoverDetail: React.FC<{
         )}
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        <Card className="p-5 lg:col-span-2">
+      <div className="space-y-5">
+        <Card className="p-5">
           <h2 className="text-sm font-bold text-slate-900">Verified documents &amp; details</h2>
           <p className="text-xs text-slate-500 mb-3">Collected by sales and authorized by the Technical Consultant. View only.</p>
-          <ul className="space-y-2">
+          <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-start">
             {items.map(item => (
               <ReadOnlyItem key={item.code} item={item} customer={c} />
             ))}
           </ul>
         </Card>
+        {/* The Technical Consultant's notes are for the Department Head (and the CEO); not for the team below. */}
+        {role === 'DEPARTMENT_HEAD' && <ConsultationNotes customerId={c.id} canWrite={false} services={c.services} />}
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-2">
             <KeyRound className="w-4 h-4 text-blue-600" aria-hidden="true" />

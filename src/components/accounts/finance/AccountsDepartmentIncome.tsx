@@ -4,11 +4,11 @@ import { errorMessage } from '../../../lib/api/client';
 import { financeApi } from '../../../lib/api/endpoints';
 import { Empty, ErrorBanner, inputClass, Loading, PageHeader } from '../../support-member/SupportParts';
 import { money, SummaryCards, useFinanceRefresh } from './FinanceBits';
-import { useDepartments } from './AccountsIncome';
+import { useRevenueDepartments } from './AccountsIncome';
 
 /** Department Income: income and expenses of one department, picked from the real department records. */
 export const AccountsDepartmentIncome: React.FC = () => {
-  const departments = useDepartments();
+  const departments = useRevenueDepartments();
   const [department, setDepartment] = useState('');
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export const AccountsDepartmentIncome: React.FC = () => {
             </option>
           ))}
         </select>
-        {departments.length === 0 && <p className="mt-2 text-[11px] text-slate-500">No departments found.</p>}
+        {departments.length === 0 && <p className="mt-2 text-[11px] text-slate-500">No revenue departments found.</p>}
       </div>
 
       {error && <ErrorBanner message={error} onRetry={load} />}

@@ -52,7 +52,17 @@ The Account Dashboard (`/accounts/dashboard/:id`, Accounts staff) is separate fr
 the summary cards; no component, route, permission or data is shared.
 
 Sidebar: Account Overview, Income, Confirmation, Part Payment, Department Income, Expenses,
-Overall Analytics, Notification Center. Invoice and Quotation are not part of this dashboard.
+Notification Center. Invoice and Quotation are not part of this dashboard. The Account Overview
+shows the three company totals and the 12-month income vs expenses chart (there is no separate
+analytics page and no department breakdown).
+
+Income and Department Income list only departments with `departments.generates_revenue`
+(Accounts, Education & Training and HR are set to false by `20261013000100_accounts_revenue_departments.sql`;
+the flag is data, so it can be changed later). `accounts_finance_departments()` serves that list.
+
+**Return to Leads** (`accounts_return_to_leads`) is refused once any payment of the customer is
+VERIFIED. It is decided from the persisted payment rows; reversing the verified payment (team lead or
+head) makes a return possible again. The button is disabled in the UI for the same reason.
 
 ### Where the figures come from
 

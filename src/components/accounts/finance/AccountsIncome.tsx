@@ -17,6 +17,15 @@ export const useDepartments = () => {
   return items;
 };
 
+/** Departments that earn revenue (Accounts, Education & Training and HR are left out). */
+export const useRevenueDepartments = () => {
+  const [items, setItems] = useState<{ id: string; name: string; slug: string }[]>([]);
+  useEffect(() => {
+    financeApi.departments().then(setItems, () => setItems([]));
+  }, []);
+  return items;
+};
+
 const useDebounced = <T,>(value: T, ms = 300): T => {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -28,7 +37,7 @@ const useDebounced = <T,>(value: T, ms = 300): T => {
 
 /** The verified payments (the income records), newest first. `fixedDepartment` hides the department filter. */
 export const IncomeList: React.FC<{ fixedDepartment?: string; refreshKey?: number }> = ({ fixedDepartment, refreshKey = 0 }) => {
-  const departments = useDepartments();
+  const departments = useRevenueDepartments();
   const [search, setSearch] = useState('');
   const [department, setDepartment] = useState('');
   const [from, setFrom] = useState('');

@@ -11,9 +11,10 @@ import { TasksPage } from './TasksPage';
 import { AddCustomerPage } from './AddCustomerPage';
 import { TicketsPage } from './TicketsPage';
 import { InvoicesPage } from './InvoicesPage';
+import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HandoverBoard } from '../handover/HandoverBoard';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications';
 
 /** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, Tickets, Invoices. */
 const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
@@ -23,7 +24,8 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
   { id: 'tickets', label: 'Tickets', icon: Headset },
-  { id: 'invoices', label: 'Invoices', icon: FileText }
+  { id: 'invoices', label: 'Invoices', icon: FileText },
+  { id: 'notifications', label: 'Notification Center', icon: Bell }
 ];
 
 export const SUPPORT_BASE = (userId: string) => `/support-member/dashboard/${userId}`;
@@ -260,6 +262,8 @@ export const SupportMemberDashboard: React.FC = () => {
             />
           ) : page === 'tickets' ? (
             <TicketsPage mode="member" data={tickets} people={tasks.people} onOpenCustomer={openCustomer} />
+          ) : page === 'notifications' ? (
+            <NotificationsPage />
           ) : (
             <InvoicesPage data={invoices} onOpenCustomer={openCustomer} />
           )}
