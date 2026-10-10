@@ -167,6 +167,7 @@ export const pipelineController = {
 
 export const accountsFinanceController = {
   summary: (async ctx => ok(await svc(ctx).finance.summary(ctx.req.query))) as Handler,
+  departments: (async ctx => ok(await svc(ctx).finance.byDepartment())) as Handler,
   income: (async ctx => ok(await svc(ctx).finance.income(ctx.req.query))) as Handler,
   expenses: (async ctx => ok(await svc(ctx).finance.expenses(ctx.req.query))) as Handler,
   addExpense: (async ctx => ok(await svc(ctx).finance.addExpense(ctx.req.body), 201)) as Handler,

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BarChart3, Bell, Building2, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
+import { Bell, Building2, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -11,14 +11,13 @@ import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
-import { AccountsAnalytics } from './finance/AccountsAnalytics';
 import { AccountsNotifications } from './finance/AccountsNotifications';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'part-payments' | 'department-income' | 'expenses' | 'analytics' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
- * payment confirmation, part-payment follow-ups, department income, expenses, analytics.
+ * payment confirmation, part-payment follow-ups, department income and expenses.
  */
 export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
@@ -74,7 +73,6 @@ export const AccountsDashboard: React.FC = () => {
                 ['part-payments', 'Part Payment', Wallet, counts?.followUpsDue ?? 0],
                 ['department-income', 'Department Income', Building2, 0],
                 ['expenses', 'Expenses', WalletCards, 0],
-                ['analytics', 'Overall Analytics', BarChart3, 0],
                 ['notifications', 'Notification Center', Bell, unreadCount]
               ] as const
             ).map(([key, label, Icon, n]) => (
@@ -160,7 +158,6 @@ export const AccountsDashboard: React.FC = () => {
           {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
           {page === 'department-income' && <AccountsDepartmentIncome />}
           {page === 'expenses' && <AccountsExpenses />}
-          {page === 'analytics' && <AccountsAnalytics />}
           {page === 'notifications' && <AccountsNotifications />}
         </main>
       </div>
