@@ -229,7 +229,11 @@ export const AccountsPaymentPanel: React.FC<{
     (o: PaymentOverview, changed = true) => {
       setOverview(o);
       onLoaded?.(o);
-      if (changed) onChanged?.(o);
+      if (changed) {
+        onChanged?.(o);
+        // verified / reversed payments change the finance totals
+        window.dispatchEvent(new CustomEvent('crm:pipeline-changed'));
+      }
     },
     [onChanged, onLoaded]
   );

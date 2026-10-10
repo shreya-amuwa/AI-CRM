@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, LogOut, Menu, ReceiptIndianRupee, Wallet, X } from 'lucide-react';
+import { BarChart3, Bell, Building2, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -7,19 +7,25 @@ import { PartPaymentsView } from '../payments/PartPaymentsView';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { AccountsConfirmations } from './AccountsConfirmations';
+import { AccountsOverview } from './finance/AccountsOverview';
+import { AccountsIncome } from './finance/AccountsIncome';
+import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
+import { AccountsExpenses } from './finance/AccountsExpenses';
+import { AccountsAnalytics } from './finance/AccountsAnalytics';
+import { AccountsNotifications } from './finance/AccountsNotifications';
 
-type Page = 'confirmations' | 'part-payments';
+type Page = 'overview' | 'income' | 'confirmations' | 'part-payments' | 'department-income' | 'expenses' | 'analytics' | 'notifications';
 
 /**
- * Accounts department staff (members and leads): confirm the payment of the
- * customers Sales sends, and follow up the balance of part-paid customers.
+ * Accounts department staff (members and leads): company finance overview, income,
+ * payment confirmation, part-payment follow-ups, department income, expenses, analytics.
  */
 export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
-  const [page, setPage] = useState<Page>('confirmations');
+  const [page, setPage] = useState<Page>('overview');
   const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const refreshCounts = () => {
@@ -62,8 +68,14 @@ export const AccountsDashboard: React.FC = () => {
           <nav className="space-y-1" aria-label="Accounts pages">
             {(
               [
-                ['confirmations', 'Payment confirmations', ReceiptIndianRupee, (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0)],
-                ['part-payments', 'Part payments', Wallet, counts?.followUpsDue ?? 0]
+                ['overview', 'Account Overview', LayoutDashboard, 0],
+                ['income', 'Income', TrendingUp, 0],
+                ['confirmations', 'Confirmation', ReceiptIndianRupee, (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0)],
+                ['part-payments', 'Part Payment', Wallet, counts?.followUpsDue ?? 0],
+                ['department-income', 'Department Income', Building2, 0],
+                ['expenses', 'Expenses', WalletCards, 0],
+                ['analytics', 'Overall Analytics', BarChart3, 0],
+                ['notifications', 'Notification Center', Bell, unreadCount]
               ] as const
             ).map(([key, label, Icon, n]) => (
               <button
@@ -142,7 +154,14 @@ export const AccountsDashboard: React.FC = () => {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
-          {page === 'confirmations' ? <AccountsConfirmations onCountsChanged={refreshCounts} /> : <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
+          {page === 'overview' && <AccountsOverview />}
+          {page === 'income' && <AccountsIncome />}
+          {page === 'confirmations' && <AccountsConfirmations onCountsChanged={refreshCounts} />}
+          {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
+          {page === 'department-income' && <AccountsDepartmentIncome />}
+          {page === 'expenses' && <AccountsExpenses />}
+          {page === 'analytics' && <AccountsAnalytics />}
+          {page === 'notifications' && <AccountsNotifications />}
         </main>
       </div>
     </div>

@@ -44,3 +44,42 @@ no accountant notes); Accounts sees the same customers as balance follow-ups wit
 (`customers.accounts_owner_id`), dated follow-up notes (`payment_followups`, never mixed into Sales conversations)
 and follow-up status (follow-up required / contacted / awaiting payment / fully paid). A customer leaves the active
 list when the balance reaches zero; the payments and notes stay under **Fully paid**.
+
+## Account Dashboard: finance pages
+
+The Account Dashboard (`/accounts/dashboard/:id`, Accounts staff) is separate from the Superadmin
+**Account Department** panel (`/admin/dashboard/accounts`). The two share only the visual style of
+the summary cards; no component, route, permission or data is shared.
+
+Sidebar: Account Overview, Income, Confirmation, Part Payment, Department Income, Expenses,
+Overall Analytics, Notification Center. Invoice and Quotation are not part of this dashboard.
+
+### Where the figures come from
+
+| Figure | Source |
+| --- | --- |
+| Income | `customer_payments` rows with status `VERIFIED` (the ledger), attributed to a department through `customers.department_id` |
+| Expenses | `department_expenses` (new table), `department_id` is null for company-wide expenses |
+| Net | income minus all recorded expenses (paid and pending; the pending part is shown next to the figure) |
+
+The Superadmin panel's own numbers come from a browser-side demo store and are deliberately not used.
+
+All reads and writes go through SECURITY DEFINER functions that require active Accounts staff
+(or the Super Admin): `accounts_finance_summary`, `accounts_income_list`, `accounts_expenses_list`,
+`accounts_add_expense`, `accounts_update_expense`, `accounts_delete_expense`,
+`accounts_import_expenses`, `accounts_finance_trend`. The table itself has no direct grants.
+A staff member edits or deletes only the expenses they added; an Accounts team lead or head
+can change any. Add, edit and delete are written to the audit log.
+
+API: `GET /accounts/finance/{summary,income,expenses,trend}`, `POST /accounts/finance/expenses`,
+`PATCH` and `DELETE /accounts/finance/expenses/:id`, `POST /accounts/finance/expenses/import`.
+
+### Google Sheets (not connected)
+
+No sheet, credential or endpoint is configured. Expenses live in the database. Each expense has a
+`source` (`MANUAL`, `GOOGLE_SHEET`, `IMPORT`) and an optional `external_id`; the manager-only
+`accounts_import_expenses(rows, source)` upserts by `(source, external_id)` in one transaction, so a
+future sheet sync can load rows repeatedly without duplicates. The sync itself still has to be built
+once the sheet is shared.
+
+Apply `supabase/migrations/20261012000100_accounts_finance.sql` (safe to re-run).

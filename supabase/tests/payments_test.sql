@@ -309,5 +309,76 @@ select test.check((select (accounts_payment_counts() ->> 'onboardingPending')::i
 select confirm_accounts_payment((select id from pt where name = 'L4'), null);
 select test.admin_check($Q$select (select amount_verified = 8000 and payment_status = 'PARTIALLY_PAID' from customers where id = (select id from pt where name = 'L4'))$Q$, 'the existing Accounts confirmation also verifies the recorded payment');
 select test.admin_check($Q$select (select payment_verified from customer_onboarding where customer_id = (select id from pt where name = 'L4'))$Q$, 'and flags the onboarding payment as verified');
+
+-- ---------------------------------------------------------------------------
+\echo '--- 26. Accounts finance: income, expenses, department totals, analytics'
+-- ---------------------------------------------------------------------------
+create temp table fx (name text primary key, id uuid);
+grant all on fx to authenticated;
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select accounts_finance_summary()$$, 'Sales cannot read finance totals', 'Only the Accounts department');
+select test.must_fail($$select accounts_add_expense(current_date, 'x', null, 'Rent', 100, 'PAID', null)$$, 'Sales cannot add an expense', 'Only the Accounts department');
+select test.must_fail($$select accounts_income_list()$$, 'Sales cannot read the income list', 'Only the Accounts department');
+select test.must_fail($$select accounts_finance_trend()$$, 'Sales cannot read analytics', 'Only the Accounts department');
+
+select test.login('acc_m');
+select test.check((select (accounts_finance_summary() ->> 'expenses')::numeric = 0 and (accounts_finance_summary() ->> 'expenseCount')::int = 0), 'no expenses yet: the total is 0, nothing invented');
+insert into fx select 'rent', accounts_add_expense(current_date, '  Office rent  ', test.dept('wabastore'), 'Rent', 1200.50, 'PAID', 'October');
+insert into fx select 'ads', accounts_add_expense(current_date, 'Facebook ads', null, 'Marketing', 800, 'PENDING', null);
+insert into fx select 'sw', accounts_add_expense(current_date, 'Tools', test.dept('whatsbox'), 'Software', 300, 'PAID', null);
+select test.admin_check($Q$select (accounts_finance_summary() ->> 'expenses')::numeric = 2300.50 and (accounts_finance_summary() ->> 'expensesPending')::numeric = 800
+  and (accounts_finance_summary() ->> 'expensesPaid')::numeric = 1500.50$Q$, 'company totals: all expenses, with the pending part reported separately');
+select test.admin_check($Q$select (accounts_finance_summary() ->> 'income')::numeric = (select coalesce(sum(amount), 0) from customer_payments where status = 'VERIFIED')
+  and (accounts_finance_summary() ->> 'net')::numeric = (accounts_finance_summary() ->> 'income')::numeric - 2300.50$Q$, 'income is exactly the verified payments; net = income - expenses');
+select test.admin_check($Q$select (accounts_finance_summary(test.dept('wabastore')) ->> 'expenses')::numeric = 1200.50
+  and (accounts_finance_summary(test.dept('whatsbox')) ->> 'expenses')::numeric = 300
+  and (accounts_finance_summary(test.dept('digitree')) ->> 'expenses')::numeric = 0$Q$, 'a department shows only its own expenses (company-wide ones are not attributed to it)');
+select test.admin_check($Q$select (accounts_finance_summary(test.dept('wabastore')) ->> 'income')::numeric
+  = (select coalesce(sum(p.amount), 0) from customer_payments p join customers c on c.id = p.customer_id where p.status = 'VERIFIED' and c.department_id = test.dept('wabastore'))
+  and (accounts_finance_summary(test.dept('whatsbox')) ->> 'income')::numeric = 0$Q$, 'department income comes from that department''s customers only');
+select test.must_fail($$select accounts_add_expense(current_date, 'x', null, 'Rent', -5, 'PAID', null)$$, 'a negative amount is refused', 'Enter the amount');
+select test.must_fail($$select accounts_add_expense(current_date, '   ', null, 'Rent', 5, 'PAID', null)$$, 'a description is required', 'Describe the expense');
+select test.must_fail($$select accounts_add_expense(current_date, 'x', null, '', 5, 'PAID', null)$$, 'a category is required', 'category');
+select test.must_fail($$select accounts_add_expense(current_date, 'x', gen_random_uuid(), 'Rent', 5, 'PAID', null)$$, 'an unknown department is refused', 'department from the list');
+select test.must_fail($$select accounts_add_expense(current_date, 'x', null, 'Rent', 5.555, 'PAID', null)$$, 'more than 2 decimals is refused', '2 decimal');
+select test.must_fail($$select accounts_add_expense(current_date, 'x', null, 'Rent', 5, 'MAYBE', null)$$, 'status must be paid or pending', 'paid or pending');
+select test.check((select (accounts_expenses_list() ->> 'total')::int = 3 and accounts_expenses_list() -> 'items' -> 0 ->> 'description' is not null), 'the list shows the three expenses');
+select test.check((select (accounts_expenses_list(p_search => 'rent') ->> 'total')::int = 1 and (accounts_expenses_list(p_status => 'PENDING') ->> 'total')::int = 1
+  and (accounts_expenses_list(p_department => test.dept('wabastore')) ->> 'total')::int = 1 and (accounts_expenses_list(p_company_wide => true) ->> 'total')::int = 1
+  and (accounts_expenses_list(p_category => 'software') ->> 'total')::int = 1), 'search, status, department, company-wide and category filters');
+select test.check((select accounts_expenses_list() -> 'categories' @> '["Marketing","Rent","Software"]'::jsonb), 'categories are suggested from existing records');
+select test.check((select bool_and((i ->> 'canChange')::boolean) from jsonb_array_elements(accounts_expenses_list() -> 'items') i), 'the creator can change their expenses');
+select accounts_update_expense((select id from fx where name = 'ads'), current_date, 'Facebook ads (paid)', null, 'Marketing', 800, 'PAID', null);
+select test.check((select (accounts_finance_summary() ->> 'expensesPending')::numeric = 0), 'marking an expense paid updates the totals');
+select test.login('acc_m2');
+select test.must_fail($$select accounts_update_expense((select id from fx where name = 'rent'), current_date, 'hijack', null, 'Rent', 1, 'PAID', null)$$, 'another accountant cannot change it', 'only change expenses you added');
+select test.must_fail($$select accounts_delete_expense((select id from fx where name = 'rent'))$$, 'nor delete it', 'only delete expenses you added');
+select test.must_fail($$select accounts_import_expenses('[{"externalId":"a"}]'::jsonb, 'GOOGLE_SHEET')$$, 'a member cannot import', 'team lead or head');
+select test.login('dh_acc');
+select accounts_update_expense((select id from fx where name = 'sw'), current_date, 'Tools (annual)', test.dept('whatsbox'), 'Software', 360, 'PAID', null);
+select test.admin_check($Q$select (accounts_finance_summary(test.dept('whatsbox')) ->> 'expenses')::numeric = 360$Q$, 'an Accounts head can correct any expense');
+select test.must_fail($$select accounts_import_expenses('[{"externalId":"r1","date":"2026-10-02","description":"Courier","departmentSlug":"nope","category":"Logistics","amount":150}]'::jsonb, 'GOOGLE_SHEET')$$, 'an unknown department in an import is refused', 'unknown department');
+select test.must_fail($$select accounts_import_expenses('[{"externalId":"r1","date":"2026-10-02","description":"Courier","category":"Logistics","amount":150},{"externalId":"r2","date":"bad","description":"x","category":"y","amount":5}]'::jsonb, 'GOOGLE_SHEET')$$, 'a bad row refuses the whole import', 'Row 2');
+select test.admin_check($Q$select not exists (select 1 from department_expenses where external_id = 'r1')$Q$, 'the failed import left nothing behind');
+select test.check((select accounts_import_expenses('[{"externalId":"r1","date":"2026-10-02","description":"Courier","departmentSlug":"wabastore","category":"Logistics","amount":150},{"externalId":"r2","date":"2026-10-03","description":"Stationery","category":"Office","amount":75.25,"status":"PENDING"}]'::jsonb, 'GOOGLE_SHEET') = '{"inserted":2,"updated":0}'::jsonb), 'an import adds the rows');
+select test.check((select accounts_import_expenses('[{"externalId":"r1","date":"2026-10-02","description":"Courier (revised)","departmentSlug":"wabastore","category":"Logistics","amount":175}]'::jsonb, 'GOOGLE_SHEET') = '{"inserted":0,"updated":1}'::jsonb), 'importing the same external id again updates, never duplicates');
+select test.admin_check($Q$select (select count(*) from department_expenses where external_id = 'r1') = 1 and (select amount from department_expenses where external_id = 'r1') = 175$Q$, 'one row per external id');
+select accounts_delete_expense((select id from fx where name = 'ads'));
+select test.check((select (accounts_expenses_list() ->> 'total')::int = 4), 'an expense is deleted by an Accounts head');
+select test.admin_check($Q$select (select count(*) from audit_logs where action in ('EXPENSE_ADDED', 'EXPENSE_EDITED', 'EXPENSE_DELETED', 'EXPENSES_IMPORTED')) >= 8$Q$, 'expense changes are audited');
+
+-- Income list + analytics (real records only)
+select test.admin_check($Q$select (accounts_income_list() ->> 'total')::int = (select count(*) from customer_payments where status = 'VERIFIED')
+  and (accounts_income_list() ->> 'sum')::numeric = (select sum(amount) from customer_payments where status = 'VERIFIED')$Q$, 'the income list is exactly the verified payments');
+select test.check((select (accounts_income_list(p_search => 'UTR-0001') ->> 'total')::int = 1 and accounts_income_list(p_search => 'UTR-0001') -> 'items' -> 0 ->> 'customer' = 'Desai Clinic'), 'income search by payment reference finds the customer');
+select test.check((select (accounts_income_list(p_department => test.dept('whatsbox')) ->> 'total')::int = 0), 'income filtered by another department is empty');
+select test.check((select jsonb_array_length(accounts_finance_trend() -> 'months') = 12 and jsonb_array_length(accounts_finance_trend(3) -> 'months') = 3), 'analytics returns one row per month');
+select test.admin_check($Q$select (select (m ->> 'income')::numeric from jsonb_array_elements(accounts_finance_trend() -> 'months') m order by m ->> 'month' desc limit 1)
+  = (select coalesce(sum(amount), 0) from customer_payments where status = 'VERIFIED' and date_trunc('month', paid_at) = date_trunc('month', now()))$Q$, 'this month''s income in the trend equals the verified payments of this month');
+select test.check((select accounts_finance_trend() -> 'expenseCategories' -> 0 ->> 'category' is not null), 'top expense categories come from the expenses');
+select test.must_fail($$select * from department_expenses$$, 'expenses cannot be read directly', 'permission denied');
+
 reset role;
 \echo '=== ALL PAYMENT WORKFLOW TESTS PASSED ==='
+

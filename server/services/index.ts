@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { AccountsFinanceRepository } from '../repositories/AccountsFinanceRepository.js';
 import { ApprovalRepository } from '../repositories/ApprovalRepository.js';
 import { AuditRepository } from '../repositories/AuditRepository.js';
 import { CustomerRepository } from '../repositories/CustomerRepository.js';
@@ -7,6 +8,7 @@ import { OrganizationRepository } from '../repositories/OrganizationRepository.j
 import { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
+import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { ApprovalService } from './ApprovalService.js';
 import { AuditService } from './AuditService.js';
 import { CustomerService } from './CustomerService.js';
@@ -26,7 +28,8 @@ export function createServices(db: SupabaseClient) {
     organization: new OrganizationService(new OrganizationRepository(db)),
     audit: new AuditService(new AuditRepository(db)),
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
-    automations: new AutomationService(new PipelineRepository(db))
+    automations: new AutomationService(new PipelineRepository(db)),
+    finance: new AccountsFinanceService(new AccountsFinanceRepository(db))
   };
 }
 export type Services = ReturnType<typeof createServices>;

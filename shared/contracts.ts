@@ -653,3 +653,66 @@ export interface DocumentUrl {
   expiresInSeconds: number;
   fileName: string;
 }
+
+// ---------------------------------------------------------------------------
+// Accounts finance (real records only: verified payments and department_expenses)
+// ---------------------------------------------------------------------------
+export interface FinanceSummary {
+  income: number;
+  incomeCount: number;
+  expenses: number;
+  expensesPaid: number;
+  expensesPending: number;
+  expenseCount: number;
+  /** income - expenses */
+  net: number;
+}
+
+export interface IncomeRow {
+  id: string;
+  paidAt: string;
+  amount: number;
+  type: PaymentType;
+  method: PaymentMethod | null;
+  reference: string | null;
+  customerId: string;
+  customerCode: string;
+  customer: string;
+  contact: string;
+  departmentId: string | null;
+  department: string | null;
+  verifiedBy: string | null;
+}
+export interface IncomePage extends Paginated<IncomeRow> {
+  /** Total of every verified payment matching the filters (not only this page). */
+  sum: number;
+}
+
+export type ExpenseStatus = 'PAID' | 'PENDING';
+export type ExpenseSource = 'MANUAL' | 'GOOGLE_SHEET' | 'IMPORT';
+export interface ExpenseRow {
+  id: string;
+  date: string;
+  description: string;
+  /** null = company-wide */
+  departmentId: string | null;
+  department: string | null;
+  category: string;
+  amount: number;
+  status: ExpenseStatus;
+  notes: string | null;
+  source: ExpenseSource;
+  createdBy: string | null;
+  canChange: boolean;
+}
+export interface ExpensesPage extends Paginated<ExpenseRow> {
+  sum: number;
+  pending: number;
+  categories: string[];
+}
+
+export interface FinanceTrend {
+  months: { month: string; income: number; expenses: number; net: number }[];
+  expenseCategories: { category: string; amount: number }[];
+  firstRecordAt: string | null;
+}
