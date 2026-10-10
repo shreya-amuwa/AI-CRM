@@ -20,6 +20,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { useNotifications } from '../../context/NotificationContext';
+import { AmuwaLogo } from '../common/AmuwaLogo';
 
 export type TeamMemberNav =
   | 'home'
@@ -35,7 +36,8 @@ export type TeamMemberNav =
   | 'my-clients'
   | 'calendar'
   | 'invoices'
-  | 'settings';
+  | 'settings'
+  | 'notifications';
 
 interface TeamMemberLayoutProps {
   children: React.ReactNode;
@@ -74,7 +76,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
-    { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings }
+    { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
+    { id: 'notifications' as TeamMemberNav, label: 'Notification Center', icon: Bell }
   ];
 
   const [currentNav, setCurrentNav] = useState<TeamMemberNav>(activeNav || 'leads');
@@ -137,11 +140,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {/* Logo */}
           <div className="flex items-center justify-between px-2 pt-1">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center text-white font-bold shadow-xs">
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              </div>
+              <AmuwaLogo size="sm" />
               <div className="leading-tight">
                 <span className="block text-sm font-bold tracking-tight text-slate-900">Amuwa</span>
                 <span className="block text-[11px] text-slate-500 font-medium -mt-0.5">Corporation</span>

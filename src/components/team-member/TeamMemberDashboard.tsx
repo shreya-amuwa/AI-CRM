@@ -10,8 +10,7 @@ import {
   MessageSquare,
   Handshake,
   Send,
-  Sparkles,
-  Activity
+  Sparkles
 } from 'lucide-react';
 import { Lead, TeamMemberActivity, EndOfDayReport, FollowUpTask, Deal } from '../../types/crm';
 import { teamMemberStore } from '../../services/teamMemberStore';
@@ -22,6 +21,7 @@ import { MemberTasksView } from '../tasks/MemberTasksView';
 import { MemberAnalyticsWidgets } from './MemberAnalyticsWidgets';
 import { MemberFollowUpsTable } from './MemberFollowUpsTable';
 import { MemberRightSidebar } from './MemberRightSidebar';
+import { HomeClock } from './HomeClock';
 import { MemberCustomersDashboard } from './MemberCustomersDashboard';
 import { MemberDealsDashboard } from './MemberDealsDashboard';
 import { MemberCalendarDashboard } from './MemberCalendarDashboard';
@@ -30,6 +30,7 @@ import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
 import { usePipelineCounts } from './pipeline/shared';
+import { NotificationsPage } from '../notifications/NotificationsPage';
 
 interface TeamMemberDashboardProps {
   currentUserId: string;
@@ -58,17 +59,9 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   const [leads, setLeads] = useState<Lead[]>([]);
   const [activities, setActivities] = useState<TeamMemberActivity[]>([]);
   const [followUps, setFollowUps] = useState<FollowUpTask[]>([]);
-  const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
   const [kpis, setKpis] = useState(() => teamMemberStore.getDashboardKpis(currentUserId));
   const [target, setTarget] = useState(() => teamMemberStore.getMemberTarget(currentUserId));
   const [eodReport, setEodReport] = useState<EndOfDayReport | null>(null);
-
-  // Current calendar month, e.g. "Oct 1, 2026 – Oct 31, 2026"
-  const dateRange = (() => {
-    const now = new Date();
-    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    return `${fmt(new Date(now.getFullYear(), now.getMonth(), 1))} – ${fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0))}`;
-  })();
 
   // Modals & Forms
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -109,7 +102,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     const assigned = teamMemberStore.getAssignedLeads(currentUserId);
     const acts = teamMemberStore.getTodayActivities(currentUserId);
     const tasks = teamMemberStore.getFollowUps(currentUserId);
-    const updates = teamMemberStore.getRecentUpdates();
     const dashboardKpis = teamMemberStore.getDashboardKpis(currentUserId);
     const memberTarget = teamMemberStore.getMemberTarget(currentUserId);
     const eod = teamMemberStore.getTodayEndOfDayReport(currentUserId);
@@ -117,7 +109,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
     setLeads(assigned);
     setActivities(acts);
     setFollowUps(tasks);
-    setRecentUpdates(updates);
     setKpis(dashboardKpis);
     setTarget(memberTarget);
     setEodReport(eod);
@@ -327,37 +318,19 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* VIEW 1: HOME SECTION (PIPELINE EMPTIED, LEAD SOURCE, CONVERSION RATE, NEW UPDATES) */}
+        {/* VIEW 1: HOME - greeting + clock, four numbers, lead sources, target, today */}
         {/* ========================================================================= */}
         {activeNav === 'home' && (
           <div className="space-y-6">
-            {/* HERO GREETING & DATE RANGE */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">
-                  {getGreeting()}
-                </h1>
-                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Welcome to your command center. Here's your overview, lead acquisition sources, and conversion progress.
-                </p>
+                <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">{getGreeting()}</h1>
+                <p className="text-sm text-slate-500 mt-0.5">Here is where your leads stand today.</p>
               </div>
-
-              {/* Date Filter Dropdown */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition-colors cursor-pointer"
-                >
-                  <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{dateRange}</span>
-                  <svg className="w-3.5 h-3.5 text-slate-400 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-              </div>
+              <HomeClock />
             </div>
 
-            {/* TOP 4 METRIC KPI CARDS (computed from the member's own records) */}
+            {/* The member's own numbers */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
                 { label: 'Total Leads', value: kpis.totalLeads, note: `${kpis.newLeadsThisWeek} new in last 7 days`, icon: Users, tone: 'bg-blue-50 text-blue-600' },
@@ -381,121 +354,14 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
               })}
             </div>
 
-            {/* MAIN HOME GRID: LEAD SOURCE, CONVERSION RATE & NEW UPDATES ON HOME SECTION */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              
-              {/* LEFT & CENTER HOME CONTENT (8 cols) */}
-              <div className="lg:col-span-8 space-y-6">
-                
-                {/* 1. LEAD SOURCE & CONVERSION RATE CARDS */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <MemberAnalyticsWidgets
-                    leadSources={leadSources}
-                    conversionRate={kpis.conversionRate}
-                    convertedCount={kpis.convertedLeads}
-                    totalLeads={kpis.totalLeads}
-                  />
-
-                  {/* 2. RECENT / NEW UPDATES PANEL ON HOME SECTION */}
-                  <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between mb-3.5 pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
-                            <Activity className="w-4 h-4" />
-                          </div>
-                          <h3 className="text-xs font-bold font-heading text-slate-900">New Updates</h3>
-                        </div>
-                        <span className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 cursor-pointer">
-                          View All
-                        </span>
-                      </div>
-
-                      <div className="space-y-3.5">
-                        {recentUpdates.length === 0 && (
-                          <p className="text-xs text-slate-400 py-6 text-center">No updates yet.</p>
-                        )}
-                        {recentUpdates.map((update) => (
-                          <div key={update.id} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors">
-                            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5">
-                              {update.type === 'lead' ? '🎯' : update.type === 'deal' ? '🤝' : '📄'}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-semibold text-slate-800 leading-tight">
-                                {update.title}
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-mono mt-1">
-                                {update.timeAgo}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* 3. TASKS & FOLLOW-UPS PREVIEW */}
-                <div className="pt-2">
-                  <MemberFollowUpsTable
-                    followUps={followUps}
-                    onCall={(task) => {
-                      setSelectedLead(leadForTask(task));
-                      setActionModalType('call');
-                    }}
-                    onOpenMessage={(task) => {
-                      setSelectedLead(leadForTask(task));
-                      setActionModalType('message');
-                    }}
-                    onViewDetails={(task) => {
-                      alert(`Follow-up Details:\n${task.leadName} (${task.company})\nTime: ${task.dateTimeStr}\nNotes: ${task.notes}`);
-                    }}
-                    onToggleComplete={(taskId) => {
-                      void run(() => teamMemberStore.toggleFollowUpStatus(taskId), 'Follow-up status updated');
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* RIGHT SIDEBAR ON HOME (4 cols) */}
-              <div className="lg:col-span-4">
-                <MemberRightSidebar
-                  userName={userName}
-                  userRole={memberTitle(user)}
-                  target={target}
-                  activities={activities}
-                  recentUpdates={recentUpdates}
-                  onAddLead={() => {
-                    setActiveNavState('leads');
-                    setOpenAddLead(true);
-                  }}
-                  onLogCall={() => {
-                    if (leads.length > 0) {
-                      setSelectedLead(leads[0]);
-                      setActionModalType('call');
-                    } else {
-                      alert('No leads available to call.');
-                    }
-                  }}
-                  onSendWhatsApp={() => {
-                    if (leads.length > 0) {
-                      setSelectedLead(leads[0]);
-                      setActionModalType('message');
-                    } else {
-                      alert('No leads available to message.');
-                    }
-                  }}
-                  onCreateDeal={() => {
-                    if (leads.length > 0) {
-                      setDealForm(prev => ({ ...prev, leadId: leads[0].id, company: leads[0].company || '' }));
-                    }
-                    setActionModalType('createDeal');
-                  }}
-                  onOpenEndOfDay={() => setIsEodModalOpen(true)}
-                  isDayCompleted={!!eodReport}
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              <MemberAnalyticsWidgets
+                leadSources={leadSources}
+                conversionRate={kpis.conversionRate}
+                convertedCount={kpis.convertedLeads}
+                totalLeads={kpis.totalLeads}
+              />
+              <MemberRightSidebar userName={userName} userRole={memberTitle(user)} target={target} activities={activities} />
             </div>
           </div>
         )}
@@ -608,6 +474,8 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             userName={userName}
           />
         )}
+
+        {activeNav === 'notifications' && <NotificationsPage />}
 
         {/* ========================================================================= */}
         {/* MODALS */}

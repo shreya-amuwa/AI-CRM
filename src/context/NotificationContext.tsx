@@ -98,7 +98,7 @@ function toAppNotification(n: Notification): AppNotification {
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { profile } = useAuth();

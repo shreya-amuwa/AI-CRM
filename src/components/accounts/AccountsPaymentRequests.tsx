@@ -6,6 +6,7 @@ import { errorMessage } from '../../lib/api/client';
 import { Empty, ErrorBanner, inputClass, Loading, Modal } from '../support-member/SupportParts';
 import { fmtDate, fmtDateTime, PaymentStatusBadge, rupees } from '../payments/PaymentBits';
 import { AccountsPaymentPanel, ReasonDialog } from './AccountsPaymentPanel';
+import { usePipelineRealtime } from '../team-member/pipeline/shared';
 
 type Tab = 'PENDING' | 'CONFIRMED' | 'RETURNED';
 
@@ -28,7 +29,8 @@ const RequestDetail: React.FC<{
   const [backOpen, setBackOpen] = useState(false);
   const pending = item.status === 'PENDING';
   const name = item.company || item.name;
-  const canConfirm = pending && (overview?.verified ?? 0) > 0;
+  const hasVerified = (overview?.verified ?? 0) > 0;
+  const canConfirm = pending && hasVerified;
 
   return (
     <section aria-label={`Details of ${name}`} className={bare ? '' : 'bg-white rounded-2xl border border-slate-200/80'}>
@@ -104,7 +106,9 @@ const RequestDetail: React.FC<{
             <button
               type="button"
               onClick={() => setBackOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 bg-white text-rose-700 text-sm font-bold hover:bg-rose-50"
+              disabled={hasVerified}
+              title={hasVerified ? 'A payment is already verified. Confirm and return the customer to Sales instead.' : undefined}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 bg-white text-rose-700 text-sm font-bold hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
             >
               <Undo2 className="w-4 h-4" aria-hidden="true" /> Customer Backed Off - Return to Leads
             </button>
@@ -117,6 +121,11 @@ const RequestDetail: React.FC<{
               <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Confirm Payment &amp; Return to Sales
             </button>
           </div>
+          {hasVerified && (
+            <p className="text-[11px] text-slate-500 sm:text-left">
+              Return to Leads is not available once a payment is verified. If the verification was a mistake, a team lead or head can reverse the payment first.
+            </p>
+          )}
           <p className="text-[11px] text-slate-500 sm:text-right">
             {canConfirm
               ? 'The customer moves to Sales → Customer onboarding. A balance still due stays with you under Part payments.'
@@ -204,6 +213,8 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
   useEffect(() => {
     void load();
   }, [load]);
+  // New customers from Sales, verified payments and confirmations appear without a refresh.
+  usePipelineRealtime(() => void load());
 
   const selected = items.find(i => i.requestId === selectedId) || null;
   const resolved = (message: string) => {

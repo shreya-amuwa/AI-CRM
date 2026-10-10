@@ -15,8 +15,9 @@ import { CustomerProfile } from '../support-member/CustomersPage';
 import { TicketsPage } from '../support-member/TicketsPage';
 import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
+import { NotificationsPage } from '../notifications/NotificationsPage';
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team';
+export type SupportLeadPage = 'dashboard' | 'customers' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -29,7 +30,8 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'handovers', label: 'Client Hand-overs', icon: UserCheck },
-  { id: 'team', label: 'Team Members & Access', icon: UserPlus }
+  { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+  { id: 'notifications', label: 'Notification Center', icon: Bell }
 ];
 
 export const SUPPORT_LEAD_BASE = (userId: string) => `/support-lead/dashboard/${userId}`;
@@ -265,6 +267,7 @@ export const SupportLeadDashboard: React.FC = () => {
           {page === 'tickets' && <LeadTickets />}
           {page === 'invoices' && <LeadInvoices />}
           {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}
+          {page === 'notifications' && <NotificationsPage />}
           {page === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept="support" />}
         </main>
       </div>

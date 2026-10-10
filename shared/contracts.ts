@@ -333,6 +333,17 @@ export interface CustomerOnboarding {
   contractSigned: boolean;
   /** Add-on services: a catalog service (code) or one typed by hand. */
   addons: { code?: string; name: string }[];
+  /** Yes / No: does the customer need add-on services? null = not answered yet. */
+  addonsRequired: boolean | null;
+  /** "Send to Add-ons" pressed: the customer is in the Add-ons Services section. */
+  addonsSubmittedAt: string | null;
+  addonsSubmittedBy: string | null;
+  addonsSubmittedByName: string | null;
+  /** Add-on document checklist progress (same states as the main checklist). */
+  addonItemsTotal: number;
+  addonItemsSaved: number;
+  addonItemsVerified: number;
+  addonItemsRejected: number;
   /** Sales sent the customer to Accounts to confirm the amount. */
   sentToAccountsAt: string | null;
   /** Accounts confirmed the amount; the customer then goes to the Technical Consultant. */
@@ -426,7 +437,19 @@ export interface ChecklistItem {
 export const REVIEW_FILTERS = ['TO_REVIEW', 'NEEDS_FIX', 'VERIFIED', 'AWAITING_DOCUMENTS', 'WAITING_ON_SALES'] as const;
 export type ReviewFilter = (typeof REVIEW_FILTERS)[number];
 /** `newCustomers`: customers still in the consultant's Customers panel (not yet sent for onboarding). */
-export type ReviewCounts = Record<'all' | ReviewFilter | 'newCustomers', number>;
+export type ReviewCounts = Record<'all' | ReviewFilter | 'newCustomers' | 'addons', number>;
+
+/** One consultation note written by the Technical Consultant. */
+export interface ConsultantNote {
+  id: string;
+  body: string;
+  serviceCode: string | null;
+  author: { id: string; fullName: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  /** The caller wrote it and may still edit it. */
+  canEdit: boolean;
+}
 
 export const AUTOMATIONS = ['EMAIL', 'WHATSAPP', 'AI_CALLING'] as const;
 export type AutomationCode = (typeof AUTOMATIONS)[number];
@@ -666,6 +689,18 @@ export interface FinanceSummary {
   expenseCount: number;
   /** income - expenses */
   net: number;
+}
+
+/** One department's earnings and expenses (Account Dashboard, Department Income). */
+export interface DepartmentFinance {
+  departmentId: string;
+  name: string;
+  slug: string;
+  income: number;
+  incomeCount: number;
+  expenses: number;
+  expenseCount: number;
+  expensesPending: number;
 }
 
 export interface IncomeRow {

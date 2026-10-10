@@ -5,7 +5,10 @@
 import type {
   AccountsConfirmation,
   AccountsPaymentCounts,
+  ChecklistItem,
+  ConsultantNote,
   ExpensesPage,
+  DepartmentFinance,
   FinanceSummary,
   FinanceTrend,
   IncomePage,
@@ -115,6 +118,8 @@ export interface PipelineQuery {
   forwarded?: boolean;
   /** Technical Consultant Customers panel (not yet sent for onboarding). */
   intake?: boolean;
+  /** Technical Consultant Add-ons Services section. */
+  addons?: boolean;
   mine?: boolean;
   sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
 }
@@ -145,8 +150,17 @@ export const pipelineApi = {
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
   consultantSetContract: (id: string, signed: boolean) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/contract`, { signed }),
   consultantSetAddons: (id: string, addons: { code?: string; name?: string }[]) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/addons`, { addons }),
-  consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null }) =>
+  consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null; expectedUpdatedAt?: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/consultant/details`, body),
+  consultantSetAddonsRequired: (id: string, required: boolean) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/addons-required`, { required }),
+  consultantSendToAddons: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/send-to-addons`),
+  addonChecklist: (id: string) => api.get<ChecklistItem[]>(`/pipeline/customers/${id}/addon-checklist`),
+  consultantNotes: (id: string) => api.get<ConsultantNote[]>(`/pipeline/customers/${id}/consultant/notes`),
+  consultantAddNote: (id: string, body: { body: string; serviceCode?: string | null }) =>
+    api.post<ConsultantNote[]>(`/pipeline/customers/${id}/consultant/notes`, body),
+  consultantUpdateNote: (id: string, noteId: string, body: string) =>
+    api.patch<ConsultantNote[]>(`/pipeline/customers/${id}/consultant/notes/${noteId}`, { body }),
   consultantStartOnboarding: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/start-onboarding`),
   conversations: (id: string) => api.get<Conversation[]>(`/pipeline/customers/${id}/conversations`),
   addConversation: (id: string, note: string) => api.post<Conversation[]>(`/pipeline/customers/${id}/conversations`, { note }),
@@ -205,6 +219,8 @@ export interface ExpenseParams {
 
 export const financeApi = {
   summary: (q: { departmentId?: string; from?: string; to?: string } = {}) => api.get<FinanceSummary>('/accounts/finance/summary', { ...q }),
+  /** Earnings and expenses of each revenue department (Accounts, Education & Training and HR are left out). */
+  departments: () => api.get<DepartmentFinance[]>('/accounts/finance/departments'),
   income: (q: { search?: string; departmentId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     api.get<IncomePage>('/accounts/finance/income', { ...q }),
   expenses: (q: ExpenseParams = {}) => api.get<ExpensesPage>('/accounts/finance/expenses', { ...q }),

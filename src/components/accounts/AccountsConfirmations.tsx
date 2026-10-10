@@ -6,6 +6,7 @@ import { errorMessage } from '../../lib/api/client';
 import { fmtDay, fmtMoney, fmtWhen } from '../../lib/support';
 import { Empty, ErrorBanner, inputClass, Loading, Modal, PageHeader } from '../support-member/SupportParts';
 import { AccountsPaymentRequests } from './AccountsPaymentRequests';
+import { usePipelineRealtime } from '../team-member/pipeline/shared';
 
 type Tab = 'PENDING' | 'CONFIRMED';
 
@@ -182,6 +183,7 @@ const OnboardingConfirmations: React.FC<{
   useEffect(() => {
     void load();
   }, [load]);
+  usePipelineRealtime(() => void load());
   useEffect(() => {
     setNote('');
     setActionError(null);

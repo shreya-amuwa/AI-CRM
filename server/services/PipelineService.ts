@@ -1,6 +1,8 @@
 import type {
   AccountsConfirmation,
   AccountsPaymentCounts,
+  ChecklistItem,
+  ConsultantNote,
   Conversation,
   PartPaymentsPage,
   PaymentOverview,
@@ -31,6 +33,9 @@ import {
   paymentRequestsQuerySchema,
   sendToAccountsSchema,
   consultantAddonsSchema,
+  consultantAddonsRequiredSchema,
+  consultantNoteSchema,
+  consultantNoteUpdateSchema,
   consultantContractSchema,
   consultantDetailsSchema,
   checklistItemCodeSchema,
@@ -254,6 +259,41 @@ export class PipelineService {
     const customerId = parse(uuidSchema, id);
     await this.repo.consultantUpdateCustomer(customerId, parse(consultantDetailsSchema, body));
     return this.repo.get(customerId);
+  }
+
+  /** Yes / No: the customer needs add-on services (saved selections are kept when answering No). */
+  async consultantSetAddonsRequired(id: string, body: unknown): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.consultantSetAddonsRequired(customerId, parse(consultantAddonsRequiredSchema, body).required);
+    return this.repo.get(customerId);
+  }
+
+  /** "Send to Add-ons": once, only when Yes is answered and at least one add-on is selected. */
+  async consultantSendToAddons(id: string): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.consultantSendToAddons(customerId);
+    return this.repo.get(customerId);
+  }
+
+  addonChecklist(id: string): Promise<ChecklistItem[]> {
+    return this.repo.addonChecklist(parse(uuidSchema, id));
+  }
+
+  notesList(id: string): Promise<ConsultantNote[]> {
+    return this.repo.notesList(parse(uuidSchema, id));
+  }
+
+  async noteAdd(id: string, body: unknown): Promise<ConsultantNote[]> {
+    const customerId = parse(uuidSchema, id);
+    const b = parse(consultantNoteSchema, body);
+    await this.repo.noteAdd(customerId, b.body, b.serviceCode ?? null);
+    return this.repo.notesList(customerId);
+  }
+
+  async noteUpdate(customerId: string, noteId: string, body: unknown): Promise<ConsultantNote[]> {
+    const cid = parse(uuidSchema, customerId);
+    await this.repo.noteUpdate(parse(uuidSchema, noteId), parse(consultantNoteUpdateSchema, body).body);
+    return this.repo.notesList(cid);
   }
 
   async consultantStartOnboarding(id: string): Promise<PipelineCustomer> {

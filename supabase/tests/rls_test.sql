@@ -646,6 +646,70 @@ select test.must_fail($$select consultant_set_addons((select id from pipeline wh
 select consultant_update_customer((select id from pipeline where name = 'A'), 'Siddhesh Shah', 'Galaxy Jewellers Pvt', '+91 98200 11111', null);
 select test.check((select name = 'Siddhesh Shah' and company = 'Galaxy Jewellers Pvt' from customers where id = (select id from pipeline where name = 'A')), 'the consultant can correct the contact details');
 select test.must_fail($$select consultant_update_customer((select id from pipeline where name = 'A'), 'X', null, null, null)$$, 'name and a contact are required', 'Enter');
+
+-- Technical Consultant: consultation notes
+select test.check((select (onboarding_review_counts() ->> 'addons')::int = 0), 'no customer in Add-ons Services yet');
+select consultant_add_note((select id from pipeline where name = 'A'), 'Customer wants the WhatsApp API; the price is a concern.', 'AI_CALLING');
+select pg_sleep(0.02);
+select consultant_add_note((select id from pipeline where name = 'A'), 'Second call: agreed to proceed after a discount.');
+select test.check((select jsonb_array_length(consultant_notes_list((select id from pipeline where name = 'A'))) = 2
+                     and consultant_notes_list((select id from pipeline where name = 'A')) -> 0 ->> 'body' = 'Second call: agreed to proceed after a discount.'
+                     and consultant_notes_list((select id from pipeline where name = 'A')) -> 1 ->> 'body' like 'Customer wants the WhatsApp API%'
+                     and consultant_notes_list((select id from pipeline where name = 'A')) -> 1 ->> 'serviceCode' = 'AI_CALLING'
+                     and consultant_notes_list((select id from pipeline where name = 'A')) -> 1 -> 'author' ->> 'fullName' = 'Member B'
+                     and consultant_notes_list((select id from pipeline where name = 'A')) -> 0 ->> 'canEdit' = 'true'),
+  'notes: newest first, the earlier note kept, author and service shown');
+select test.must_fail($$select consultant_add_note((select id from pipeline where name = 'A'), '   ')$$, 'an empty note is refused', 'Write the note first');
+select test.must_fail($$select consultant_add_note((select id from pipeline where name = 'A'), 'x', 'NOT_A_SERVICE')$$, 'an unknown service reference is refused', 'Unknown service');
+select consultant_update_note((consultant_notes_list((select id from pipeline where name = 'A')) -> 0 ->> 'id')::uuid, 'Second call: agreed to proceed after a 10% discount.');
+select test.check((select consultant_notes_list((select id from pipeline where name = 'A')) -> 0 ->> 'body' = 'Second call: agreed to proceed after a 10% discount.' and jsonb_array_length(consultant_notes_list((select id from pipeline where name = 'A'))) = 2), 'the author can edit a note; no note is lost');
+select test.login('tm_a');
+select test.must_fail($$select consultant_notes_list((select id from pipeline where name = 'A'))$$, 'the salesperson cannot read consultation notes', 'Customer not found');
+select test.must_fail($$select consultant_add_note((select id from pipeline where name = 'A'), 'sneaky')$$, 'a salesperson cannot write notes', 'Customer not found');
+select test.login('dh_wab');
+select test.check((select jsonb_array_length(consultant_notes_list((select id from pipeline where name = 'A'))) = 2), 'the Department Head can read the notes');
+select test.must_fail($$select consultant_add_note((select id from pipeline where name = 'A'), 'from the head')$$, 'but not write them', 'Customer not found');
+select test.must_fail($$select consultant_update_note((consultant_notes_list((select id from pipeline where name = 'A')) -> 0 ->> 'id')::uuid, 'rewrite')$$, 'nor edit them', 'Note not found');
+select test.login('sa');
+select test.check((select jsonb_array_length(consultant_notes_list((select id from pipeline where name = 'A'))) = 2), 'the Super Admin (CEO) can read the notes');
+select test.login('dh_wbx');
+select test.must_fail($$select consultant_notes_list((select id from pipeline where name = 'A'))$$, 'another department''s head cannot read them', 'Customer not found');
+select test.login('sa');
+select test.check((select count(*) = 2 from audit_logs where action in ('CONSULTANT_NOTE_ADDED')) and (select count(*) = 1 from audit_logs where action = 'CONSULTANT_NOTE_EDITED' and metadata ->> 'previous' like 'Second call: agreed to proceed after a discount.'), 'notes are audited, the previous text of an edit is kept');
+select test.login('tm_b');
+
+-- Technical Consultant: Add-ons Services
+select test.must_fail($$select consultant_send_to_addons((select id from pipeline where name = 'A'))$$, 'cannot send to Add-ons before answering Yes', 'Answer Yes');
+select consultant_set_addons_required((select id from pipeline where name = 'A'), true);
+select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"GBP_SETUP"},{"code":"AI_CALLING"},{"name":"Custom setup call"}]'::jsonb);
+select test.must_fail($$select consultant_start_onboarding((select id from pipeline where name = 'A'))$$, 'Send for onboarding is refused while add-ons are selected', 'Send to Add-ons');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_BUSINESS_ROLE', 'Receptionist')$$, 'add-on details cannot be collected before Send to Add-ons', 'Customer not found');
+select test.login('tm_a');
+select test.must_fail($$select consultant_send_to_addons((select id from pipeline where name = 'A'))$$, 'a salesperson cannot send to Add-ons', 'Customer not found');
+select test.must_fail($$select consultant_set_addons_required((select id from pipeline where name = 'A'), false)$$, 'nor change the answer', 'Customer not found');
+select test.login('tm_b');
+select consultant_send_to_addons((select id from pipeline where name = 'A'));
+select test.check((select addons_submitted_at is not null and addons_submitted_by = test.id('tm_b') and addons_required from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'the customer is sent to Add-ons Services');
+select test.check((select (onboarding_review_counts() ->> 'newCustomers')::int = 0 and (onboarding_review_counts() ->> 'addons')::int = 1 and (onboarding_review_counts() ->> 'all')::int = 0), 'it leaves the Customers panel and is counted under Add-ons Services, not yet in onboarding');
+select test.must_fail($$select consultant_send_to_addons((select id from pipeline where name = 'A'))$$, 'cannot be sent twice', 'already sent');
+select test.must_fail($$select consultant_set_addons_required((select id from pipeline where name = 'A'), false)$$, 'cannot be switched back to No after submission', 'already sent');
+select test.check((select jsonb_array_length(customer_addon_checklist((select id from pipeline where name = 'A'))) = 7
+                     and not exists (select 1 from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' not in ('GBP_NO_EXISTING','GBP_LISTING_DETAILS','GBP_PHOTOS','AI_CALL_BUSINESS_ROLE','AI_CALL_CUSTOMER_NUMBER','AI_CALL_SCRIPT','AI_CALL_PLAN'))
+                     and (select e ->> 'serviceCode' from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' = 'GBP_PHOTOS') = 'GBP_SETUP'),
+  'each add-on service lists its own required documents');
+select test.check((select not exists (select 1 from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' in ('GBP_PHOTOS','AI_CALL_BUSINESS_ROLE'))), 'the normal onboarding checklist is unchanged by add-ons');
+select test.check((select addon_items_total = 7 and addon_items_saved = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-on progress starts at 0 of 7');
+select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_BUSINESS_ROLE', 'Receptionist');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_PLAN', 'not an option')$$, 'a value outside the options is refused', 'Choose one');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'META_AD_BUDGET', '1')$$, 'the TC cannot overwrite a normal onboarding item', 'Customer not found');
+insert into docs select 'A_gbp', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'shop.png', 'image/png', 3000);
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 1000)$$, 'the TC cannot upload a document that is not an add-on item', 'Customer not found');
+select complete_document_upload((select id from docs where name = 'A_gbp'), 3000);
+select test.check((select addon_items_total = 7 and addon_items_saved = 2 and addon_items_verified = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'saved details and the uploaded document count towards the add-on progress');
+select review_onboarding_entry((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'VERIFIED', null);
+select test.check((select addon_items_verified = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'verification of an add-on item is tracked');
+select test.check((select count(*) = 1 from customer_documents where customer_id = (select id from pipeline where name = 'A') and document_type = 'GBP_PHOTOS' and status = 'UPLOADED' and uploaded_by = test.id('tm_b')), 'the document is stored once, with who uploaded it');
+
 select test.login('tm_a');
 select test.must_fail($$select consultant_set_contract((select id from pipeline where name = 'A'), false)$$, 'a salesperson cannot change the contract', 'Customer not found');
 select test.must_fail($$select consultant_start_onboarding((select id from pipeline where name = 'A'))$$, 'a salesperson cannot send for onboarding', 'Customer not found');
@@ -703,7 +767,8 @@ select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_
 select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_DELETED'), 'deletion audited');
 select test.check((select count(*) = 0 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'a single Not authorized does not notify on its own');
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_VERIFIED' and recipient_id = test.id('tm_a')), 'owner notified when everything is verified');
-select test.check((select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
+-- 2 single verifications: one add-on item (Add-ons Services test above) and the one verified here.
+select test.check((select count(*) = 2 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
                    and (select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEMS_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
 
 \echo '--- 13c. Onboarding automations'

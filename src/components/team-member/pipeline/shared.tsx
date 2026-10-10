@@ -283,10 +283,11 @@ export const Pager: React.FC<{
 };
 
 /** Accessible modal dialog: focus moves in, Escape closes, focus returns. */
-export const Dialog: React.FC<{ title: string; description?: string; onClose: () => void; children: React.ReactNode }> = ({
+export const Dialog: React.FC<{ title: string; description?: string; onClose: () => void; wide?: boolean; children: React.ReactNode }> = ({
   title,
   description,
   onClose,
+  wide,
   children
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -306,7 +307,7 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   }, []);
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="pl-dialog-title" className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-4">
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="pl-dialog-title" className={`w-full ${wide ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
         <div>
           <h2 id="pl-dialog-title" className="text-base font-bold text-slate-900">
             {title}
@@ -339,8 +340,12 @@ export function useServiceCatalog() {
 }
 
 /**
- * Calls `onChange` (debounced) when pipeline rows this user can see change in
- * the database - keeps counts and lists fresh across tabs and teammates.
+ * Keeps a pipeline screen current without a manual refresh. `onChange` (debounced) runs when
+ *  - rows this user can see change in the database (Realtime, RLS-filtered),
+ *  - something changes in this tab (the 'crm:pipeline-changed' event),
+ *  - the tab becomes visible or the window gets focus again, and
+ *  - every 30 seconds while the tab is visible (covers projects where Realtime is off or dropped).
+ * Several triggers close together become one reload.
  */
 export function usePipelineRealtime(onChange: () => void) {
   const cb = useRef(onChange);
@@ -351,19 +356,27 @@ export function usePipelineRealtime(onChange: () => void) {
       clearTimeout(timer);
       timer = setTimeout(() => cb.current(), 400);
     };
+    const whenVisible = () => document.visibilityState === 'visible' && fire();
     // Changes made in this tab (also covers projects where Realtime is off).
     window.addEventListener('crm:pipeline-changed', fire);
+    window.addEventListener('focus', whenVisible);
+    document.addEventListener('visibilitychange', whenVisible);
+    const poll = setInterval(whenVisible, 30000);
     const sb = getSupabase();
-    if (!sb) return () => window.removeEventListener('crm:pipeline-changed', fire);
     const channel = sb
-      .channel(`pipeline-${Math.random().toString(36).slice(2)}`)
+      ?.channel(`pipeline-${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, fire)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_documents' }, fire)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_onboarding' }, fire)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_onboarding_entries' }, fire)
       .subscribe();
     return () => {
       clearTimeout(timer);
+      clearInterval(poll);
       window.removeEventListener('crm:pipeline-changed', fire);
-      void sb.removeChannel(channel);
+      window.removeEventListener('focus', whenVisible);
+      document.removeEventListener('visibilitychange', whenVisible);
+      if (sb && channel) void sb.removeChannel(channel);
     };
   }, []);
 }

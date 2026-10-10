@@ -137,6 +137,12 @@ export const pipelineController = {
     return ok(null);
   }) as Handler,
   consultantSetContract: (async ctx => ok(await svc(ctx).pipeline.consultantSetContract(ctx.params.id, ctx.req.body))) as Handler,
+  consultantSetAddonsRequired: (async ctx => ok(await svc(ctx).pipeline.consultantSetAddonsRequired(ctx.params.id, ctx.req.body))) as Handler,
+  consultantSendToAddons: (async ctx => ok(await svc(ctx).pipeline.consultantSendToAddons(ctx.params.id))) as Handler,
+  addonChecklist: (async ctx => ok(await svc(ctx).pipeline.addonChecklist(ctx.params.id))) as Handler,
+  notesList: (async ctx => ok(await svc(ctx).pipeline.notesList(ctx.params.id))) as Handler,
+  noteAdd: (async ctx => ok(await svc(ctx).pipeline.noteAdd(ctx.params.id, ctx.req.body), 201)) as Handler,
+  noteUpdate: (async ctx => ok(await svc(ctx).pipeline.noteUpdate(ctx.params.id, ctx.params.noteId, ctx.req.body))) as Handler,
   consultantSetAddons: (async ctx => ok(await svc(ctx).pipeline.consultantSetAddons(ctx.params.id, ctx.req.body))) as Handler,
   consultantUpdateCustomer: (async ctx => ok(await svc(ctx).pipeline.consultantUpdateCustomer(ctx.params.id, ctx.req.body))) as Handler,
   consultantStartOnboarding: (async ctx => ok(await svc(ctx).pipeline.consultantStartOnboarding(ctx.params.id))) as Handler,
@@ -167,6 +173,7 @@ export const pipelineController = {
 
 export const accountsFinanceController = {
   summary: (async ctx => ok(await svc(ctx).finance.summary(ctx.req.query))) as Handler,
+  departments: (async ctx => ok(await svc(ctx).finance.byDepartment())) as Handler,
   income: (async ctx => ok(await svc(ctx).finance.income(ctx.req.query))) as Handler,
   expenses: (async ctx => ok(await svc(ctx).finance.expenses(ctx.req.query))) as Handler,
   addExpense: (async ctx => ok(await svc(ctx).finance.addExpense(ctx.req.body), 201)) as Handler,

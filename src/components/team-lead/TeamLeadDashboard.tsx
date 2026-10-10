@@ -16,6 +16,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
+import { NotificationsPage } from '../notifications/NotificationsPage';
 import { useAuth } from '../../context/AuthContext';
 
 interface TeamLeadDashboardProps {
@@ -264,6 +265,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({
           showToast={showToast}
         />
       )}
+      {activeNav === 'notifications' && <NotificationsPage />}
     </TeamLeadLayout>
   );
 };
