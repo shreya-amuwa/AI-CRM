@@ -1,0 +1,46 @@
+# Conversations, Sales → Accounts payments, Part Payments
+
+Migrations: `20261011000100_lead_conversations.sql`, `20261011000200_payments_accounts_workflow.sql`
+(additive and safe to re-run). Tests: `supabase/tests/payments_test.sql`, the "conversations, Sales → Accounts"
+block in `supabase/tests/api_integration.test.ts`.
+
+## Lead conversations
+* `lead_conversations`: one row per conversation. The newest is the **Last conversation**; nothing is overwritten
+  when a new one is added, and an edit changes only that row. The note typed when a lead is created becomes the
+  first conversation (`source = LEAD_NOTE`, one per customer, so re-runs never duplicate it).
+* Why the note used to disappear: `create_lead` stored it in `customers.notes`, but the lead details page never read
+  that column. `customers.notes` is untouched; existing notes were back-filled as the first conversation.
+* Edit: the author, or a team head / department head / super admin who may work on the customer.
+
+## Workflow
+```
+Sales: Leads ── Send to Accounts ──► customers.payment_workflow = PENDING_PAYMENT_CONFIRMATION (lead is locked)
+Accounts: records the payment (part / full), verifies it
+   ├─ Confirm Payment & Return to Sales ─► lifecycle_stage = ONBOARDING (same customer), PAYMENT_CONFIRMED
+   └─ Customer Backed Off ───────────────► back to Leads, RETURNED_FROM_ACCOUNTS (reason kept)
+```
+Every transition is a database function that re-checks the caller's role and the current state, writes the
+activity log + audit log and notifies the other side in one transaction. A second submission is refused (partial
+unique index on open requests). Each submission is a row in `payment_requests` (history is kept).
+
+## Money
+* `customer_payments` is the only source of money: `PENDING → VERIFIED | REJECTED`, `VERIFIED → REVERSED`.
+  Only Accounts can verify, reject, edit or (managers only) reverse. A transaction reference is unique per customer.
+* `customers.amount_received` = pending + verified (what Sales has always seen); `customers.amount_verified` =
+  verified only. `customers.payment_status` is generated: `NO_PAYMENT`, `PENDING_VERIFICATION`, `PARTIALLY_PAID`,
+  `FULLY_PAID`. Outstanding balance = agreed amount − verified payments.
+* Payments Sales records on the old Potential / Onboarding screens are written to the ledger as **pending** and are
+  verified by Accounts (the existing "confirm the amount" also verifies them).
+
+## Get Started
+`customer_onboarding.get_started` is a generated column: all required checklist items **verified** AND a verified
+part/full payment AND the customer came through Accounts AND not sent back by the consultant. It is recalculated by
+the database whenever a document review, a payment or the hand-over changes, and the Onboarding "Get started" tab,
+its count and the customer page all read it.
+
+## Part Payments
+`part_payments_list()`: customers with a verified part payment. Sales sees the customers it may work on (read-only,
+no accountant notes); Accounts sees the same customers as balance follow-ups with the responsible accountant
+(`customers.accounts_owner_id`), dated follow-up notes (`payment_followups`, never mixed into Sales conversations)
+and follow-up status (follow-up required / contacted / awaiting payment / fully paid). A customer leaves the active
+list when the balance reaches zero; the payments and notes stay under **Fully paid**.

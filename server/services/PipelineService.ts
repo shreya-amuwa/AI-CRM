@@ -1,5 +1,10 @@
 import type {
   AccountsConfirmation,
+  AccountsPaymentCounts,
+  Conversation,
+  PartPaymentsPage,
+  PaymentOverview,
+  PaymentRequestItem,
   CustomerDocument,
   DocumentUploadTicket,
   DocumentUrl,
@@ -12,7 +17,19 @@ import type {
   ServiceCatalogItem
 } from '../../shared/contracts.js';
 import {
+  accountsBackOffSchema,
+  accountsConfirmReturnSchema,
   accountsQuerySchema,
+  accountsRecordPaymentSchema,
+  accountsUpdatePaymentSchema,
+  assignPaymentOwnerSchema,
+  conversationSchema,
+  partPaymentsQuerySchema,
+  paymentDecisionSchema,
+  paymentFollowUpSchema,
+  paymentReasonSchema,
+  paymentRequestsQuerySchema,
+  sendToAccountsSchema,
   consultantAddonsSchema,
   consultantContractSchema,
   consultantDetailsSchema,
@@ -85,10 +102,15 @@ export class PipelineService {
   async get(id: string): Promise<PipelineCustomerDetail> {
     const customerId = parse(uuidSchema, id);
     const customer = await this.repo.get(customerId);
-    const [documents, documentTypes, activities, checklist] = await Promise.all([
+    const [documents, documentTypes, activities, conversations, checklist] = await Promise.all([
       this.repo.documents(customerId),
       this.repo.documentTypes(),
       this.repo.activities(customerId),
+      // Sales conversations are for the people who work the lead; the consultant and hand-over roles get an empty list.
+      this.repo.conversations(customerId).catch(e => {
+        if (e instanceof AppError && e.code === 'NOT_FOUND') return [];
+        throw e;
+      }),
       customer.lifecycleStage === 'ONBOARDING' || customer.lifecycleStage === 'CUSTOMER'
         ? this.repo.checklist(customerId)
         : Promise.resolve([])
@@ -97,7 +119,7 @@ export class PipelineService {
     const owner = customer.owner ?? (await this.repo.ownerSummary(customerId));
     const handover =
       customer.lifecycleStage === 'ONBOARDING' || customer.lifecycleStage === 'CUSTOMER' ? await this.repo.handoverInfo(customerId) : null;
-    return { ...customer, owner, documents, documentTypes, activities, checklist, handover };
+    return { ...customer, owner, documents, documentTypes, activities, conversations, checklist, handover };
   }
 
   /** Sales saves a detail / yes-no / approval / access / amount / choice item. */
@@ -339,5 +361,101 @@ export class PipelineService {
   private async discard(documentId: string, bucket: string): Promise<void> {
     const path = await this.repo.failUpload(documentId);
     if (path) await this.storage.remove(bucket, [path]);
+  }
+  // -------------------------------------------------------------------------
+  // Conversations (Sales)
+  // -------------------------------------------------------------------------
+  conversations(id: string): Promise<Conversation[]> {
+    return this.repo.conversations(parse(uuidSchema, id));
+  }
+
+  async addConversation(id: string, body: unknown): Promise<Conversation[]> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.addConversation(customerId, parse(conversationSchema, body).note);
+    return this.repo.conversations(customerId);
+  }
+
+  async updateConversation(id: string, body: unknown): Promise<void> {
+    await this.repo.updateConversation(parse(uuidSchema, id), parse(conversationSchema, body).note);
+  }
+
+  // -------------------------------------------------------------------------
+  // Sales → Accounts payment confirmation. Every check is repeated by the database.
+  // -------------------------------------------------------------------------
+  async sendToAccounts(id: string, body: unknown): Promise<PipelineCustomer> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(sendToAccountsSchema, body);
+    await this.repo.sendToAccounts(customerId, input.amount, input.note ?? null);
+    return this.repo.get(customerId);
+  }
+
+  paymentOverview(id: string): Promise<PaymentOverview> {
+    return this.repo.paymentOverview(parse(uuidSchema, id));
+  }
+
+  paymentRequests(query: unknown): Promise<Paginated<PaymentRequestItem>> {
+    return this.repo.paymentRequests(parse(paymentRequestsQuerySchema, query ?? {}));
+  }
+
+  accountsCounts(): Promise<AccountsPaymentCounts> {
+    return this.repo.accountsCounts();
+  }
+
+  accountsTeam(): Promise<{ id: string; fullName: string; role: string }[]> {
+    return this.repo.accountsTeam();
+  }
+
+  async recordAccountsPayment(id: string, body: unknown): Promise<PaymentOverview> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(accountsRecordPaymentSchema, body);
+    await this.repo.recordAccountsPayment(customerId, input);
+    return this.repo.paymentOverview(customerId);
+  }
+
+  async updateAccountsPayment(paymentId: string, customerId: string, body: unknown): Promise<PaymentOverview> {
+    await this.repo.updateAccountsPayment(parse(uuidSchema, paymentId), parse(accountsUpdatePaymentSchema, body));
+    return this.repo.paymentOverview(parse(uuidSchema, customerId));
+  }
+
+  async verifyAccountsPayment(paymentId: string, customerId: string, body: unknown): Promise<PaymentOverview> {
+    await this.repo.verifyAccountsPayment(parse(uuidSchema, paymentId), parse(paymentDecisionSchema, body ?? {}).note ?? null);
+    return this.repo.paymentOverview(parse(uuidSchema, customerId));
+  }
+
+  async rejectAccountsPayment(paymentId: string, customerId: string, body: unknown): Promise<PaymentOverview> {
+    await this.repo.rejectAccountsPayment(parse(uuidSchema, paymentId), parse(paymentReasonSchema, body).reason);
+    return this.repo.paymentOverview(parse(uuidSchema, customerId));
+  }
+
+  async reverseAccountsPayment(paymentId: string, customerId: string, body: unknown): Promise<PaymentOverview> {
+    await this.repo.reverseAccountsPayment(parse(uuidSchema, paymentId), parse(paymentReasonSchema, body).reason);
+    return this.repo.paymentOverview(parse(uuidSchema, customerId));
+  }
+
+  /** "Confirm payment & return to Sales": the customer moves to Customer onboarding. */
+  async confirmAndReturn(id: string, body: unknown): Promise<void> {
+    await this.repo.confirmAndReturn(parse(uuidSchema, id), parse(accountsConfirmReturnSchema, body ?? {}).note ?? null);
+  }
+
+  /** "Customer backed off": the customer returns to My Leads → Leads. */
+  async returnToLeads(id: string, body: unknown): Promise<void> {
+    await this.repo.returnToLeads(parse(uuidSchema, id), parse(accountsBackOffSchema, body ?? {}).reason ?? null);
+  }
+
+  async assignPaymentOwner(id: string, body: unknown): Promise<PaymentOverview> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.assignPaymentOwner(customerId, parse(assignPaymentOwnerSchema, body).ownerId);
+    return this.repo.paymentOverview(customerId);
+  }
+
+  async addPaymentFollowUp(id: string, body: unknown): Promise<PaymentOverview> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(paymentFollowUpSchema, body);
+    await this.repo.addPaymentFollowUp(customerId, input.outcome, input.note, input.nextFollowUpAt ?? null);
+    return this.repo.paymentOverview(customerId);
+  }
+
+  partPayments(query: unknown): Promise<PartPaymentsPage> {
+    return this.repo.partPayments(parse(partPaymentsQuerySchema, query ?? {}));
   }
 }

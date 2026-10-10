@@ -4,8 +4,9 @@ import { AddLeadView, EditLeadView } from './LeadForms';
 import { LeadsView } from './LeadsView';
 import { OnboardingCustomerView, OnboardingListView } from './OnboardingViews';
 import { PotentialView } from './PotentialView';
+import { PartPaymentsView } from '../../payments/PartPaymentsView';
 
-export type PipelineSection = 'leads' | 'potential' | 'onboarding';
+export type PipelineSection = 'leads' | 'potential' | 'onboarding' | 'part-payments';
 
 type Page =
   | { kind: 'list' }
@@ -59,6 +60,17 @@ export const PipelineWorkspace: React.FC<{
         counts={counts}
         ownOnly={ownOnly}
         onStarted={id => {
+          setPendingOpen(id);
+          onNavigate('onboarding');
+        }}
+      />
+    );
+  }
+  if (section === 'part-payments') {
+    return (
+      <PartPaymentsView
+        mode="sales"
+        onOpenOnboarding={id => {
           setPendingOpen(id);
           onNavigate('onboarding');
         }}

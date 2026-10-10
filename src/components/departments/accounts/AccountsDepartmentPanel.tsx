@@ -14,6 +14,7 @@ import { ExpenseView } from './ExpenseView';
 import { InvoiceView } from './InvoiceView';
 import { InvoicePdfModal } from './InvoicePdfModal';
 import { AccountsConfirmations } from '../../accounts/AccountsConfirmations';
+import { PartPaymentsView } from '../../payments/PartPaymentsView';
 
 interface AccountsDepartmentPanelProps {
   activeTab?: ActiveTab;
@@ -76,6 +77,8 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
 
   // Customers Sales sent to Accounts: business name list, details in a pop-up with the Confirm button.
   if (activeTab === 'confirmations') return <AccountsConfirmations layout="popup" />;
+  // Part-paid customers: the accountant follows up the balance.
+  if (activeTab === 'part_payments') return <PartPaymentsView mode="accounts" />;
 
   return (
     <div className="space-y-6 animate-fade-in font-sans">

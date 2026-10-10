@@ -480,11 +480,13 @@ select test.must_fail($$select record_customer_payment((select id from pipeline 
 select record_customer_payment((select id from pipeline where name = 'A'), 15000, 'UPI');
 select test.check((select lifecycle_stage = 'ONBOARDING' and amount_received = 15000 and not fully_paid from customers where id = (select id from pipeline where name = 'A')),
   'the first (part) payment starts onboarding');
-select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'GET_STARTED')::int = 1), 'part-paid onboarding counted as Get started');
+select test.check((select amount_verified = 0 and payment_status = 'PENDING_VERIFICATION' from customers where id = (select id from pipeline where name = 'A')),
+  'a payment Sales records is pending until Accounts verifies it');
+select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'GET_STARTED')::int = 0), 'an unverified payment does not qualify for Get started');
 select record_customer_payment((select id from pipeline where name = 'A'), 27000, 'UPI');
 select test.check((select amount_received = 42000 and fully_paid from customers where id = (select id from pipeline where name = 'A')), 'the balance is recorded while in onboarding');
 select test.must_fail($$select record_customer_payment((select id from pipeline where name = 'A'), 1, 'UPI')$$, 'balance payment cannot exceed the deal', 'exceed');
-select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'GET_STARTED')::int = 0), 'fully paid customer leaves Get started');
+select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'GET_STARTED')::int = 0), 'recorded-but-unverified money never qualifies for Get started');
 select test.check((select lifecycle_stage = 'ONBOARDING' and amount_received = 42000 from customers where id = (select id from pipeline where name = 'A')),
   'POTENTIAL → ONBOARDING with full payment');
 select test.check((select stage = 'COLLECT_REQUIREMENTS' and payment_method = 'UPI' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),

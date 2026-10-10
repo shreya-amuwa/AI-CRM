@@ -1,7 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AccountsConfirmation,
+  AccountsPaymentCounts,
   ChecklistItem,
+  Conversation,
+  PartPaymentsPage,
+  PaymentOverview,
+  PaymentRequestItem,
   ReviewCounts,
   CustomerActivity,
   CustomerDocument,
@@ -13,15 +18,15 @@ import type {
   PipelineCustomer,
   ServiceCatalogItem
 } from '../../shared/contracts.js';
-import type { LeadCreateInput, LeadUpdateInput, PipelineListQuery } from '../../shared/validation.js';
+import type { LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
 import { likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
 const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, whatsapp, email, city, business_category,
-  lead_source, notes, next_follow_up_at, expected_budget, deal_amount, amount_received, payment_due_date,
+  lead_source, notes, next_follow_up_at, expected_budget, deal_amount, amount_received, amount_verified, payment_status, payment_workflow, payment_due_date,
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, sent_to_accounts_at, accounts_confirmed_at, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
+  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
     handover_stage, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
 
@@ -56,6 +61,9 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
     expectedBudget: num(r.expected_budget),
     dealAmount: num(r.deal_amount),
     amountReceived: Number(r.amount_received ?? 0),
+    amountVerified: Number(r.amount_verified ?? 0),
+    paymentStatus: r.payment_status ?? 'NO_PAYMENT',
+    paymentWorkflow: r.payment_workflow ?? 'NONE',
     paymentDueDate: r.payment_due_date,
     services: (r.services || []).map((s: any) => s.service_code),
     owner: r.owner ? { id: r.owner.id, fullName: r.owner.full_name } : null,
@@ -74,6 +82,8 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           sentToAccountsAt: o.sent_to_accounts_at ?? null,
           accountsConfirmedAt: o.accounts_confirmed_at ?? null,
           paymentMethod: o.payment_method,
+          paymentVerified: !!o.payment_verified,
+          getStarted: !!o.get_started,
           startedAt: o.started_at,
           targetHandoverDate: o.target_handover_date,
           forwardedToSupportAt: o.forwarded_to_support_at,
@@ -211,7 +221,7 @@ export class PipelineRepository {
     if (q.service) columns += ', service_filter:customer_services!inner(service_code)';
     const needsOnboarding = q.onboarding || q.review || q.forwarded || q.intake || q.handover || q.handoverMine;
     if (needsOnboarding) {
-      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, with_consultant, consultant_started_at, handover_stage, team_lead_id, team_member_id)';
+      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, get_started, with_consultant, consultant_started_at, handover_stage, team_lead_id, team_member_id)';
     }
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
@@ -231,9 +241,18 @@ export class PipelineRepository {
     if (q.payment === 'OVERDUE') query = query.eq('fully_paid', false).lt('payment_due_date', today);
     if (q.payment === 'PAID') query = query.eq('fully_paid', true);
 
+    // Leads with Accounts for payment confirmation are not worked on in Leads; Accounts may also have returned some.
+    if (q.stage === 'LEAD') {
+      if (q.accounts === 'WITH_ACCOUNTS') query = query.eq('payment_workflow', 'PENDING_PAYMENT_CONFIRMATION');
+      else {
+        query = query.neq('payment_workflow', 'PENDING_PAYMENT_CONFIRMATION');
+        if (q.accounts === 'RETURNED') query = query.eq('payment_workflow', 'RETURNED_FROM_ACCOUNTS');
+      }
+    }
+
     // Derived states are generated columns on customer_onboarding.
-    // GET_STARTED: first payment received, balance still due (not an exclusive state).
-    if (q.onboarding === 'GET_STARTED') query = query.eq('fully_paid', false);
+    // GET_STARTED: documents verified + a verified part/full payment + through Accounts (calculated by the database).
+    if (q.onboarding === 'GET_STARTED') query = query.eq('onboarding_filter.get_started', true);
     else if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);
     // Consultant queue: sent to them, or sent back and waiting for sales.
     if (q.forwarded || q.review) query = query.eq('onboarding_filter.with_consultant', true);
@@ -454,5 +473,126 @@ export class PipelineRepository {
 
   async deleteDocument(documentId: string): Promise<string> {
     return unwrap(await this.db.rpc('delete_customer_document', { p_document: documentId })) as string;
+  }
+  // -------------------------------------------------------------------------
+  // Conversations
+  // -------------------------------------------------------------------------
+  async conversations(customerId: string): Promise<Conversation[]> {
+    return (unwrap(await this.db.rpc('customer_conversations', { p_customer: customerId })) as Conversation[] | null) ?? [];
+  }
+
+  async addConversation(customerId: string, note: string): Promise<void> {
+    unwrap(await this.db.rpc('add_lead_conversation', { p_customer: customerId, p_note: note }));
+  }
+
+  async updateConversation(id: string, note: string): Promise<void> {
+    unwrap(await this.db.rpc('update_lead_conversation', { p_id: id, p_note: note }));
+  }
+
+  // -------------------------------------------------------------------------
+  // Sales → Accounts payment workflow
+  // -------------------------------------------------------------------------
+  async sendToAccounts(customerId: string, amount: number, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('send_lead_to_accounts', { p_customer: customerId, p_amount: amount, p_note: note }));
+  }
+
+  async paymentOverview(customerId: string): Promise<PaymentOverview> {
+    return unwrap(await this.db.rpc('customer_payment_overview', { p_customer: customerId })) as PaymentOverview;
+  }
+
+  async paymentRequests(q: { status: string; search?: string; page: number; pageSize: number }): Promise<Paginated<PaymentRequestItem>> {
+    return unwrap(
+      await this.db.rpc('accounts_payment_requests', { p_status: q.status, p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })
+    ) as Paginated<PaymentRequestItem>;
+  }
+
+  async accountsCounts(): Promise<AccountsPaymentCounts> {
+    return unwrap(await this.db.rpc('accounts_payment_counts')) as AccountsPaymentCounts;
+  }
+
+  async accountsTeam(): Promise<{ id: string; fullName: string; role: string }[]> {
+    return (unwrap(await this.db.rpc('accounts_team_members')) as { id: string; fullName: string; role: string }[] | null) ?? [];
+  }
+
+  async recordAccountsPayment(
+    customerId: string,
+    p: { type: string; amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null; verify: boolean }
+  ): Promise<string> {
+    return unwrap(
+      await this.db.rpc('accounts_record_payment', {
+        p_customer: customerId,
+        p_type: p.type,
+        p_amount: p.amount,
+        p_method: p.method,
+        p_reference: p.reference ?? null,
+        p_paid_at: p.paidAt ?? null,
+        p_note: p.note ?? null,
+        p_verify: p.verify
+      })
+    ) as string;
+  }
+
+  async updateAccountsPayment(
+    paymentId: string,
+    p: { type: string; amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null }
+  ): Promise<void> {
+    unwrap(
+      await this.db.rpc('accounts_update_payment', {
+        p_payment: paymentId,
+        p_type: p.type,
+        p_amount: p.amount,
+        p_method: p.method,
+        p_reference: p.reference ?? null,
+        p_paid_at: p.paidAt ?? null,
+        p_note: p.note ?? null
+      })
+    );
+  }
+
+  async verifyAccountsPayment(paymentId: string, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('accounts_verify_payment', { p_payment: paymentId, p_note: note }));
+  }
+
+  async rejectAccountsPayment(paymentId: string, reason: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_reject_payment', { p_payment: paymentId, p_reason: reason }));
+  }
+
+  async reverseAccountsPayment(paymentId: string, reason: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_reverse_payment', { p_payment: paymentId, p_reason: reason }));
+  }
+
+  async confirmAndReturn(customerId: string, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('accounts_confirm_and_return', { p_customer: customerId, p_note: note }));
+  }
+
+  async returnToLeads(customerId: string, reason: string | null): Promise<void> {
+    unwrap(await this.db.rpc('accounts_return_to_leads', { p_customer: customerId, p_reason: reason }));
+  }
+
+  async assignPaymentOwner(customerId: string, ownerId: string | null): Promise<void> {
+    unwrap(await this.db.rpc('assign_payment_owner', { p_customer: customerId, p_owner: ownerId }));
+  }
+
+  async addPaymentFollowUp(customerId: string, outcome: string, note: string, nextFollowUpAt: string | null): Promise<string> {
+    return unwrap(
+      await this.db.rpc('add_payment_followup', { p_customer: customerId, p_outcome: outcome, p_note: note, p_next_follow_up_at: nextFollowUpAt })
+    ) as string;
+  }
+
+  async partPayments(q: PartPaymentsQuery): Promise<PartPaymentsPage> {
+    return unwrap(
+      await this.db.rpc('part_payments_list', {
+        p_status: q.status,
+        p_search: q.search ?? null,
+        p_salesperson: q.salesperson ?? null,
+        p_accounts_owner: q.accountsOwner ?? null,
+        p_from: q.from ?? null,
+        p_to: q.to ?? null,
+        p_followup: q.followUp ?? null,
+        p_sort: q.sort,
+        p_page: q.page,
+        p_page_size: q.pageSize
+      })
+    ) as PartPaymentsPage;
   }
 }

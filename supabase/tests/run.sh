@@ -14,3 +14,5 @@ for f in supabase/migrations/*.sql; do
 done
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/rls_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/payments_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

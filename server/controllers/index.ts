@@ -105,6 +105,33 @@ export const pipelineController = {
   startOnboarding: (async ctx => ok(await svc(ctx).pipeline.startOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   updateOnboarding: (async ctx => ok(await svc(ctx).pipeline.updateOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   accountsConfirmations: (async ctx => ok(await svc(ctx).pipeline.accountsConfirmations(ctx.req.query))) as Handler,
+  conversations: (async ctx => ok(await svc(ctx).pipeline.conversations(ctx.params.id))) as Handler,
+  addConversation: (async ctx => ok(await svc(ctx).pipeline.addConversation(ctx.params.id, ctx.req.body), 201)) as Handler,
+  updateConversation: (async ctx => {
+    await svc(ctx).pipeline.updateConversation(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
+  sendToAccounts: (async ctx => ok(await svc(ctx).pipeline.sendToAccounts(ctx.params.id, ctx.req.body))) as Handler,
+  paymentOverview: (async ctx => ok(await svc(ctx).pipeline.paymentOverview(ctx.params.id))) as Handler,
+  paymentRequests: (async ctx => ok(await svc(ctx).pipeline.paymentRequests(ctx.req.query))) as Handler,
+  accountsCounts: (async ctx => ok(await svc(ctx).pipeline.accountsCounts())) as Handler,
+  accountsTeam: (async ctx => ok(await svc(ctx).pipeline.accountsTeam())) as Handler,
+  recordAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.recordAccountsPayment(ctx.params.id, ctx.req.body), 201)) as Handler,
+  updateAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.updateAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
+  verifyAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.verifyAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
+  rejectAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.rejectAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
+  reverseAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.reverseAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
+  confirmAndReturn: (async ctx => {
+    await svc(ctx).pipeline.confirmAndReturn(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
+  returnToLeads: (async ctx => {
+    await svc(ctx).pipeline.returnToLeads(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
+  assignPaymentOwner: (async ctx => ok(await svc(ctx).pipeline.assignPaymentOwner(ctx.params.id, ctx.req.body))) as Handler,
+  addPaymentFollowUp: (async ctx => ok(await svc(ctx).pipeline.addPaymentFollowUp(ctx.params.id, ctx.req.body), 201)) as Handler,
+  partPayments: (async ctx => ok(await svc(ctx).pipeline.partPayments(ctx.req.query))) as Handler,
   confirmAccountsPayment: (async ctx => {
     await svc(ctx).pipeline.confirmAccountsPayment(ctx.params.id, ctx.req.body);
     return ok(null);

@@ -264,7 +264,12 @@ export interface PipelineCustomer {
   nextFollowUpAt: string | null;
   expectedBudget: number | null;
   dealAmount: number | null;
+  /** Money recorded (pending + verified). */
   amountReceived: number;
+  /** Money Accounts has verified. Only this counts as received. */
+  amountVerified: number;
+  paymentStatus: PaymentStatus;
+  paymentWorkflow: PaymentWorkflow;
   paymentDueDate: string | null;
   services: string[];
   owner: ProfileSummary | null;
@@ -333,6 +338,10 @@ export interface CustomerOnboarding {
   /** Accounts confirmed the amount; the customer then goes to the Technical Consultant. */
   accountsConfirmedAt: string | null;
   paymentMethod: PaymentMethod | null;
+  /** A part or full payment has been verified by Accounts. */
+  paymentVerified: boolean;
+  /** Documents verified + verified payment + through Accounts (calculated by the database). */
+  getStarted: boolean;
   startedAt: string;
   targetHandoverDate: string | null;
   forwardedToSupportAt: string | null;
@@ -432,15 +441,193 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
   documents: CustomerDocument[];
   documentTypes: DocumentType[];
   activities: CustomerActivity[];
+  /** Conversations with the customer, newest first (the first one is the "Last conversation"). */
+  conversations: Conversation[];
   checklist: ChecklistItem[];
   handover: HandoverInfo | null;
 }
 
+/** Leads tabs beyond the status ones: with Accounts for payment confirmation / returned by Accounts. */
+export type LeadAccountsFilter = 'WITH_ACCOUNTS' | 'RETURNED';
+
 export interface PipelineCounts {
-  leads: Record<'all' | LeadStatus, number>;
+  leads: Record<'all' | LeadStatus | LeadAccountsFilter, number>;
   potential: Record<'all' | PaymentFilter, number>;
   onboarding: Record<'all' | OnboardingFilter, number>;
+  /** Customers with a verified part payment and a balance still to collect. */
+  partPayments: number;
   mandatoryDocuments: number;
+}
+
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+export interface Conversation {
+  id: string;
+  note: string;
+  /** LEAD_NOTE: the note typed when the lead was created. */
+  source: 'MANUAL' | 'LEAD_NOTE';
+  occurredAt: string;
+  editedAt: string | null;
+  author: { id: string; fullName: string } | null;
+  canEdit: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Payments (Sales → Accounts), kept separate from onboarding status
+// ---------------------------------------------------------------------------
+export const PAYMENT_STATUSES = ['NO_PAYMENT', 'PENDING_VERIFICATION', 'PARTIALLY_PAID', 'FULLY_PAID'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+export const PAYMENT_WORKFLOWS = ['NONE', 'PENDING_PAYMENT_CONFIRMATION', 'RETURNED_FROM_ACCOUNTS', 'PAYMENT_CONFIRMED'] as const;
+export type PaymentWorkflow = (typeof PAYMENT_WORKFLOWS)[number];
+export const PAYMENT_TYPES = ['PART', 'FULL'] as const;
+export type PaymentType = (typeof PAYMENT_TYPES)[number];
+export type LedgerPaymentStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'REVERSED';
+export const FOLLOWUP_OUTCOMES = ['CONTACTED', 'AWAITING_PAYMENT', 'NO_RESPONSE', 'OTHER'] as const;
+export type FollowUpOutcome = (typeof FOLLOWUP_OUTCOMES)[number];
+export type FollowUpStatus = 'FOLLOW_UP_REQUIRED' | 'CONTACTED' | 'AWAITING_PAYMENT' | 'FULLY_PAID';
+
+export interface LedgerPayment {
+  id: string;
+  type: PaymentType;
+  amount: number;
+  method: PaymentMethod | null;
+  reference: string | null;
+  paidAt: string;
+  status: LedgerPaymentStatus;
+  /** ACCOUNTS: recorded by Accounts · SALES: recorded by Sales (pending until verified) · LEGACY: from before payments were tracked one by one. */
+  source: 'ACCOUNTS' | 'SALES' | 'LEGACY';
+  note: string | null;
+  statusReason: string | null;
+  recordedBy: string | null;
+  recordedAt: string;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+}
+
+export interface PaymentFollowUp {
+  id: string;
+  outcome: FollowUpOutcome;
+  note: string;
+  contactedAt: string;
+  nextFollowUpAt: string | null;
+  author: string | null;
+}
+
+export interface PaymentRequestSummary {
+  id: string;
+  status: 'PENDING' | 'CONFIRMED' | 'RETURNED';
+  agreedAmount: number;
+  salesNote: string | null;
+  requestedAt: string;
+  requestedBy: string | null;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolutionNote: string | null;
+}
+
+/** Everything about one customer's money. `followUps` is null unless the caller is in Accounts. */
+export interface PaymentOverview {
+  customerId: string;
+  workflow: PaymentWorkflow;
+  dealAmount: number | null;
+  recorded: number;
+  verified: number;
+  pending: number;
+  balance: number;
+  paymentStatus: PaymentStatus;
+  accountsOwner: { id: string; fullName: string } | null;
+  payments: LedgerPayment[];
+  request: PaymentRequestSummary | null;
+  followUps: PaymentFollowUp[] | null;
+  isAccounts: boolean;
+}
+
+/** One Sales submission in the Accounts queue. */
+export interface PaymentRequestItem {
+  requestId: string;
+  id: string;
+  code: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  city: string | null;
+  notes: string | null;
+  salesperson: string | null;
+  services: string[];
+  lastConversation: { note: string; at: string } | null;
+  status: 'PENDING' | 'CONFIRMED' | 'RETURNED';
+  agreedAmount: number;
+  salesNote: string | null;
+  sentAt: string;
+  sentBy: string | null;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolutionNote: string | null;
+  amountVerified: number;
+  amountRecorded: number;
+  balance: number;
+  paymentStatus: PaymentStatus;
+  stage: LifecycleStage;
+}
+
+export interface AccountsPaymentCounts {
+  requestsPending: number;
+  onboardingPending: number;
+  paymentsToVerify: number;
+  partPaymentsActive: number;
+  followUpsDue: number;
+}
+
+/** A customer with a verified part payment (Sales: Part payments · Accounts: pending-balance follow-ups). */
+export interface PartPaymentItem {
+  id: string;
+  code: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  stage: LifecycleStage;
+  onboarding: { stage: OnboardingStage; state: string; getStarted: boolean; paymentVerified: boolean } | null;
+  services: string[];
+  dealAmount: number | null;
+  amountVerified: number;
+  pendingAmount: number;
+  balance: number;
+  paymentStatus: PaymentStatus;
+  lastPaymentAt: string | null;
+  lastPaymentAmount: number | null;
+  verifiedPayments: number;
+  verifiedBy: string | null;
+  salesperson: { id: string; fullName: string } | null;
+  accountsOwner: { id: string; fullName: string } | null;
+  /** Accounts only. */
+  followUp: { status: FollowUpStatus; lastAt: string | null; nextAt: string | null; count: number } | null;
+}
+
+export type PartPaymentStatusFilter = 'PARTIAL' | 'PAID' | 'RETURNED' | 'ALL';
+
+/** A page of part-payment customers plus the people available in the Salesperson / Accountant filters. */
+export interface PartPaymentsPage extends Paginated<PartPaymentItem> {
+  salespeople: { id: string; fullName: string }[];
+  accountants: { id: string; fullName: string }[];
+}
+
+/** What is still missing before a customer can enter Get Started (calculated by the database; shown by the UI). */
+export function getStartedBlockers(o: Pick<CustomerOnboarding, 'itemsTotal' | 'itemsSaved' | 'itemsVerified' | 'paymentVerified' | 'accountsConfirmedAt' | 'returnedAt'>): (
+  | 'DOCUMENTS_MISSING'
+  | 'DOCUMENTS_UNVERIFIED'
+  | 'PAYMENT_UNVERIFIED'
+  | 'WITH_CONSULTANT_FIX'
+)[] {
+  const out: ReturnType<typeof getStartedBlockers> = [];
+  if (o.itemsSaved < o.itemsTotal) out.push('DOCUMENTS_MISSING');
+  else if (o.itemsVerified < o.itemsTotal) out.push('DOCUMENTS_UNVERIFIED');
+  if (!o.paymentVerified || !o.accountsConfirmedAt) out.push('PAYMENT_UNVERIFIED');
+  if (o.returnedAt) out.push('WITH_CONSULTANT_FIX');
+  return out;
 }
 
 export interface InboundLead {

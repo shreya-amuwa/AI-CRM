@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type {
   OnboardingFilter,
+  PaymentOverview,
   OnboardingStage,
   Paginated,
   PipelineCounts,
@@ -25,6 +26,8 @@ import {
   ActivityCard
 } from './LeadForms';
 import { PaymentDialog } from './PotentialView';
+import { MoneyTiles, PaymentHistory, PaymentStatusBadge } from '../../payments/PaymentBits';
+import { getStartedBlockers } from '../../../../shared/contracts';
 import { HandoverBanner } from '../../support/consultant/HandoverPanel';
 import {
   ChecklistPanel,
@@ -106,7 +109,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
       <div>
         <p className="text-xs text-slate-500">Pipeline / Customer onboarding</p>
         <h1 className="text-2xl font-bold text-slate-900 mt-1">Customer onboarding</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Paid customers waiting for documents. Open a customer to run their onboarding.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Customers whose payment Accounts has confirmed. Open a customer to collect their documents and run their onboarding.</p>
       </div>
 
       <Card className="p-4 flex flex-col lg:flex-row gap-2">
@@ -168,7 +171,11 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
         <Spinner label="Loading onboarding customers…" />
       ) : data && data.items.length === 0 ? (
         <Card className="py-12 text-center text-sm text-slate-500">
-          {filter || debounced || service ? 'No customers match these filters.' : 'No customers in onboarding yet. Confirm a payment in Potential to start.'}
+          {filter === 'GET_STARTED'
+            ? 'No customer is ready to get started yet. A customer appears here once every document is verified and Accounts has verified a part or full payment.'
+            : filter || debounced || service
+              ? 'No customers match these filters.'
+              : 'No customers in onboarding yet. Customers arrive here when Accounts confirms their payment.'}
         </Card>
       ) : (
         <ul className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
@@ -196,6 +203,10 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                   <div className="mt-3">
                     <ServiceChips codes={c.services} catalog={byCode} max={3} />
                   </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <PaymentStatusBadge status={c.paymentStatus} />
+                    {c.onboarding?.getStarted ? <Pill tone="green">Get started</Pill> : <GetStartedHint o={c.onboarding} />}
+                  </div>
                   {returned && (
                     <div className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800" role="note">
                       <div className="font-bold">
@@ -222,7 +233,8 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                   </div>
                   <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-100 mt-4 text-xs text-slate-500">
                     <span>
-                      Paid {money(c.amountReceived)}
+                      Verified {money(c.amountVerified)}
+                      {c.amountReceived > c.amountVerified ? <span className="text-amber-700"> (+{money(c.amountReceived - c.amountVerified)} pending)</span> : null}
                       {c.dealAmount && c.amountReceived < c.dealAmount ? (
                         <span className="font-semibold text-orange-700"> · {money(c.dealAmount - c.amountReceived)} due</span>
                       ) : null}{' '}
@@ -281,6 +293,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const [confirmSend, setConfirmSend] = useState(false);
   const [editingHandover, setEditingHandover] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [overview, setOverview] = useState<PaymentOverview | null>(null);
 
   const load = useCallback(() => {
     pipelineApi.get(id).then(
@@ -290,7 +303,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
       },
       e => setError(errorMessage(e))
     );
-  }, [id]);
+    // Payments live in the ledger; Sales reads them (never the Accounts follow-up notes).
+    if (mode === 'sales') pipelineApi.paymentOverview(id).then(setOverview, () => setOverview(null));
+  }, [id, mode]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
 
@@ -372,9 +387,13 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           <div className="px-3 py-2 rounded-xl border border-slate-200">
             <dt className="text-[11px] text-slate-500">Payment</dt>
             <dd className="font-semibold text-slate-900 mt-0.5">
-              {money(c.amountReceived)}
+              {money(c.amountVerified)} verified
               {c.onboarding?.paymentMethod ? ` · ${PAYMENT_METHOD_LABEL[c.onboarding.paymentMethod]}` : ''}
             </dd>
+            <dd className="mt-1">
+              <PaymentStatusBadge status={c.paymentStatus} />
+            </dd>
+            {c.amountReceived > c.amountVerified && <dd className="text-[11px] text-amber-700 mt-0.5">{money(c.amountReceived - c.amountVerified)} pending verification</dd>}
             {c.dealAmount !== null && c.amountReceived < c.dealAmount && (
               <dd className="text-[11px] text-orange-700 mt-0.5">
                 {money(c.dealAmount - c.amountReceived)} due of {money(c.dealAmount)}
@@ -543,7 +562,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                       aria-describedby="forward-hint"
                       onClick={() => setConfirmSend(true)}
                     >
-                      {forwarded ? 'Sent to Technical Consultant' : withAccounts ? 'Sent to Accounts' : returned && !toAccounts ? 'Send again to Technical Consultant' : 'Send to Accounts'}
+                      {forwarded ? 'Sent to Technical Consultant' : withAccounts ? 'Sent to Accounts' : toAccounts ? 'Send to Accounts' : returned ? 'Send again to Technical Consultant' : 'Send to Technical Consultant'}
                     </button>
                   )}
                   <p id="forward-hint" className="text-[11px] text-slate-500">
@@ -561,6 +580,18 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
               </>
             )}
           </Card>
+
+          {mode === 'sales' && <GetStartedCard o={c.onboarding} />}
+          {mode === 'sales' && overview && (
+            <Card className="p-5 space-y-3">
+              <h2 className="text-sm font-bold text-slate-900">Payments</h2>
+              <MoneyTiles deal={overview.dealAmount} verified={overview.verified} pending={overview.pending} balance={overview.balance} />
+              <PaymentHistory payments={overview.payments} />
+              {overview.balance > 0 && overview.verified > 0 && (
+                <p className="text-[11px] text-slate-500">Accounts follows up the remaining balance. Onboarding continues meanwhile.</p>
+              )}
+            </Card>
+          )}
 
           <Card className="p-5">
             <h2 className="text-sm font-bold text-slate-900 mb-3">Onboarding stage</h2>
@@ -596,6 +627,63 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
         </div>
       </div>
     </div>
+  );
+};
+
+/** One line on a card: what is still missing before the customer can get started. */
+const GetStartedHint: React.FC<{ o: PipelineCustomer['onboarding'] }> = ({ o }) => {
+  if (!o) return null;
+  const blockers = getStartedBlockers(o);
+  const text = blockers.includes('WITH_CONSULTANT_FIX')
+    ? 'Fix the returned items'
+    : blockers.includes('DOCUMENTS_MISSING')
+      ? 'Awaiting documents'
+      : blockers.includes('DOCUMENTS_UNVERIFIED')
+        ? 'Awaiting document verification'
+        : blockers.includes('PAYMENT_UNVERIFIED')
+          ? 'Awaiting payment confirmation'
+          : '';
+  return text ? <span className="text-[11px] text-slate-500">{text}</span> : null;
+};
+
+/** The three things that make a customer ready to get started, and which are done. */
+const GetStartedCard: React.FC<{ o: PipelineCustomer['onboarding'] }> = ({ o }) => {
+  if (!o) return null;
+  const blockers = getStartedBlockers(o);
+  const rows: { label: string; detail: string; done: boolean }[] = [
+    { label: 'Documents collected', detail: `${o.itemsSaved} of ${o.itemsTotal} saved`, done: o.itemsTotal > 0 && o.itemsSaved >= o.itemsTotal },
+    { label: 'Documents verified', detail: `${o.itemsVerified} of ${o.itemsTotal} verified${o.itemsRejected ? ` · ${o.itemsRejected} need fixing` : ''}`, done: o.itemsTotal > 0 && o.itemsVerified >= o.itemsTotal },
+    { label: 'Payment verified by Accounts', detail: o.paymentVerified ? 'Part or full payment verified' : 'Waiting for Accounts to verify a payment', done: o.paymentVerified && !!o.accountsConfirmedAt }
+  ];
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-bold text-slate-900">Get started</h2>
+        {o.getStarted ? <Pill tone="green">Ready</Pill> : <Pill tone="orange">Not yet</Pill>}
+      </div>
+      <ul className="mt-3 space-y-2" aria-label="Get started requirements">
+        {rows.map(r => (
+          <li key={r.label} className="flex items-start gap-2 text-xs">
+            <span className={`mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${r.done ? 'bg-emerald-600 text-white' : 'border border-slate-300 text-transparent'}`} aria-hidden="true">
+              <Check className="w-3 h-3" />
+            </span>
+            <span>
+              <span className={`font-semibold ${r.done ? 'text-slate-900' : 'text-slate-700'}`}>{r.label}</span>
+              <span className="block text-[11px] text-slate-500">{r.detail}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-[11px] text-slate-500">
+        {o.getStarted
+          ? 'Everything is in place. Continue the onboarding below.'
+          : blockers.includes('DOCUMENTS_MISSING')
+            ? 'Still awaiting documents.'
+            : blockers.includes('DOCUMENTS_UNVERIFIED')
+              ? 'Documents are saved and awaiting verification by the Technical Consultant.'
+              : 'Awaiting payment confirmation from Accounts.'}
+      </p>
+    </Card>
   );
 };
 

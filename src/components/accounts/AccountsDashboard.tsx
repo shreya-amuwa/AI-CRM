@@ -1,20 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, LogOut, Menu, ReceiptIndianRupee, X } from 'lucide-react';
+import { Bell, LogOut, Menu, ReceiptIndianRupee, Wallet, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { pipelineApi } from '../../lib/api/endpoints';
+import type { AccountsPaymentCounts } from '../../../shared/contracts';
+import { PartPaymentsView } from '../payments/PartPaymentsView';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { AccountsConfirmations } from './AccountsConfirmations';
 
+type Page = 'confirmations' | 'part-payments';
+
 /**
- * Accounts department staff (members and leads): confirm the amount of the
- * customers Sales sends, which then go to the Technical Consultant.
+ * Accounts department staff (members and leads): confirm the payment of the
+ * customers Sales sends, and follow up the balance of part-paid customers.
  */
 export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [menuOpen, setMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  const [page, setPage] = useState<Page>('confirmations');
+  const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);
   const bellRef = useRef<HTMLDivElement>(null);
+  const refreshCounts = () => {
+    pipelineApi.accountsCounts().then(setCounts, () => setCounts(null));
+  };
+  useEffect(refreshCounts, []);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -49,14 +60,27 @@ export const AccountsDashboard: React.FC = () => {
             </button>
           </div>
           <nav className="space-y-1" aria-label="Accounts pages">
-            <button
-              type="button"
-              aria-current="page"
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left bg-blue-50 text-blue-700"
-            >
-              <ReceiptIndianRupee className="w-[18px] h-[18px] shrink-0 text-blue-600" aria-hidden="true" />
-              Payment confirmations
-            </button>
+            {(
+              [
+                ['confirmations', 'Payment confirmations', ReceiptIndianRupee, (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0)],
+                ['part-payments', 'Part payments', Wallet, counts?.followUpsDue ?? 0]
+              ] as const
+            ).map(([key, label, Icon, n]) => (
+              <button
+                key={key}
+                type="button"
+                aria-current={page === key ? 'page' : undefined}
+                onClick={() => {
+                  setPage(key);
+                  setMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left ${page === key ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50'}`}
+              >
+                <Icon className={`w-[18px] h-[18px] shrink-0 ${page === key ? 'text-blue-600' : 'text-slate-400'}`} aria-hidden="true" />
+                <span className="flex-1">{label}</span>
+                {n > 0 && <span className="min-w-[20px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold text-center">{n}</span>}
+              </button>
+            ))}
           </nav>
         </div>
         <button type="button" onClick={() => void logout()} className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-rose-600 hover:bg-rose-50">
@@ -118,7 +142,7 @@ export const AccountsDashboard: React.FC = () => {
           </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
-          <AccountsConfirmations />
+          {page === 'confirmations' ? <AccountsConfirmations onCountsChanged={refreshCounts} /> : <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
         </main>
       </div>
     </div>
