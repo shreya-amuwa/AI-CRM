@@ -17,6 +17,7 @@ export type ActiveTab =
   | 'hr_ops'
   | 'hrStaff'
   | 'accounts'
+  | 'confirmations'
   | 'income'
   | 'expense'
   | 'invoice'
@@ -133,6 +134,8 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
   // Master Accounts Department (Side panel with Income, Expense, Invoice)
   accounts: [
     { id: 'dashboard', label: 'Accounts Overview', icon: LayoutDashboard },
+    // Customers Sales sent to Accounts: business details, then Confirm.
+    { id: 'confirmations' as ActiveTab, label: 'Confirmations', icon: CheckCircle2 },
     { id: 'income', label: 'Department Income', icon: TrendingUp },
     { id: 'expense', label: 'Expenses', icon: Receipt },
     { id: 'invoice', label: 'Invoices & Quotations', icon: FileText },
@@ -265,7 +268,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Managers get "Team Members & Access" directly under the dashboard entry.
   const canManageStaff = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'hr' || user?.role === 'team-lead';
   const navItems = canManageStaff
-    ? [baseNavItems[0], { id: 'staff_access' as ActiveTab, label: 'Team Members & Access', icon: UserCheck }, ...baseNavItems.slice(1)]
+    ? [
+        ...baseNavItems.slice(0, baseNavItems[1]?.id === 'confirmations' ? 2 : 1),
+        { id: 'staff_access' as ActiveTab, label: 'Team Members & Access', icon: UserCheck },
+        ...baseNavItems.slice(baseNavItems[1]?.id === 'confirmations' ? 2 : 1)
+      ]
     : baseNavItems;
   const deptTitle = activeDepartment?.name || 'Department';
 
