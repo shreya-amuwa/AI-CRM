@@ -232,7 +232,7 @@ const ChecklistCard: React.FC<{
   const currentDoc = isFile ? customer.documents.find(d => d.documentType === item.code && d.status === 'UPLOADED') || null : null;
   const history = isFile ? customer.documents.filter(d => d.documentType === item.code && d.status === 'SUPERSEDED') : [];
   const allowed = item.allowedMimeTypes || ['application/pdf'];
-  const maxMb = Math.round((item.maxSizeBytes || 10485760) / 1048576);
+  const maxSize = fmtSize(item.maxSizeBytes || 512000);
   const typesText = allowed.map(m => MIME_LABEL[m] || m).join(', ');
   const accept = allowed.flatMap(m => [m, ...Object.entries(EXT_MIME).filter(([, v]) => v === m).map(([e]) => `.${e}`)]).join(',');
 
@@ -242,7 +242,7 @@ const ChecklistCard: React.FC<{
     const mime = (allowed.includes(file.type) ? file.type : EXT_MIME[ext]) as UploadMimeType | undefined;
     if (!mime || !allowed.includes(mime)) return setError(`Accepted: ${typesText}. Upload a single file.`);
     if (file.size === 0) return setError('This file is empty.');
-    if (file.size > (item.maxSizeBytes || 0)) return setError(`The file is larger than ${maxMb} MB. Please compress it and try again.`);
+    if (file.size > (item.maxSizeBytes || 0)) return setError(`The file is larger than ${maxSize}. Please compress it and try again.`);
     setPhase('checking');
     if (!(await looksLike(file, mime))) {
       setPhase(null);
@@ -338,7 +338,7 @@ const ChecklistCard: React.FC<{
       return `${currentDoc.originalFileName} · ${fmtSize(currentDoc.sizeBytes)} · ${shortDate(currentDoc.uploadedAt)}${currentDoc.uploadedBy ? ` · ${currentDoc.uploadedBy.fullName}` : ''}`;
     }
     if (entry && !isFile) return displayValue(item);
-    if (isFile) return mode === 'sales' ? `${typesText}, up to ${maxMb} MB. Drop the file here or upload.` : 'Not uploaded yet';
+    if (isFile) return mode === 'sales' ? `${typesText}, up to ${maxSize}. Drop the file here or upload.` : 'Not uploaded yet';
     return item.hint || 'Not filled yet';
   })();
 
