@@ -40,7 +40,7 @@ export async function authenticate(authorizationHeader: string | undefined): Pro
     // and must not be reported to the user as an expired session.
     if (status === 401 || status === 403 || (!error && !data.user)) {
       console.warn('[api] token rejected by Supabase Auth:', error?.message,
-        '— if this happens right after signing in, SUPABASE_URL / SUPABASE_ANON_KEY on the server',
+        '- if this happens right after signing in, SUPABASE_URL / SUPABASE_ANON_KEY on the server',
         'probably belong to a different project than VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY.');
       throw new AppError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
     }
@@ -117,7 +117,7 @@ export async function authenticateRequest(
       };
     }
     if (error.code === 'PGRST202') {
-      console.warn('[api] api_session() not found — apply migration 20261007000400_api_session.sql for faster requests.');
+      console.warn('[api] api_session() not found - apply migration 20261007000400_api_session.sql for faster requests.');
       sessionFunctionMissing = true;
     } else if (status === 401 || /jwt|jws|token/i.test(error.message) || error.message?.startsWith('UNAUTHENTICATED')) {
       throw new AppError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
@@ -127,7 +127,7 @@ export async function authenticateRequest(
     } else {
       // e.g. an earlier migration (rate limits) is missing in this project.
       // Never block sign-in over the fast path: use the three-step path.
-      console.error('[api] api_session failed — using the slower sign-in path. Check that every migration is applied.', {
+      console.error('[api] api_session failed - using the slower sign-in path. Check that every migration is applied.', {
         status,
         code: error.code,
         message: error.message

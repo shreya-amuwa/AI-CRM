@@ -1,4 +1,4 @@
-# AI CRM — Backend Architecture, Supabase Schema & RBAC
+# AI CRM - Backend Architecture, Supabase Schema & RBAC
 
 This document is the Phase 1 (audit) and Phase 2 (architecture) output for moving the
 AI CRM from browser `localStorage` to Supabase PostgreSQL as the single source of truth.
@@ -24,7 +24,7 @@ intentionally left for follow-up phases.
   `userApprovalStore`, which stored **plain-text passwords in `localStorage`**.
 * `AuthContext.loginWithEmail(email, password, role)` accepted a **client-supplied role** and
   wrote the resulting user object (including `role`) to `localStorage['unified_crm_user']`.
-  On reload the role was read back from `localStorage` — editing that key in DevTools grants
+  On reload the role was read back from `localStorage` - editing that key in DevTools grants
   Super Admin.
 * `loginWithGoogle(email)` created an **admin** user for *any* email with no verification.
 * Route guards (`validateRouteAccess`) and every permission check ran only in React.
@@ -41,7 +41,7 @@ or database enforcement existed.
 `NotificationContext` held notifications in React state seeded from a hard-coded array;
 nothing persisted. "Privacy" filtering (`getNotificationsForUser`) ran client-side, so every
 browser received every notification. Sign-up "notified" approvers by pushing to this
-in-memory list — the approver never saw it unless they were in the same tab.
+in-memory list - the approver never saw it unless they were in the same tab.
 
 ## 2. Current data flow
 
@@ -63,8 +63,8 @@ customer added on one laptop did not exist anywhere else.
 | `amuwa_crm_team_member_customers_v3` | teamMemberStore | customers | ❌ → `customers` (one-time import offered) |
 | `unified_crm_departments_v3` | DepartmentContext | departments, lock state | ❌ → `departments` |
 | *(React state)* | NotificationContext | notifications | ❌ → `notifications` |
-| `amuwa_supabase_url`, `amuwa_supabase_anon_key` | supabaseClient | user-overridable Supabase endpoint | ❌ removed — config comes from env only |
-| `amuwa_crm_team_member_{leads,activities,followups,reports,recent_updates,invoices,events,deals}_v3` | teamMemberStore | pipeline data | ⚠️ business data — **follow-up phase** (§12) |
+| `amuwa_supabase_url`, `amuwa_supabase_anon_key` | supabaseClient | user-overridable Supabase endpoint | ❌ removed - config comes from env only |
+| `amuwa_crm_team_member_{leads,activities,followups,reports,recent_updates,invoices,events,deals}_v3` | teamMemberStore | pipeline data | ⚠️ business data - **follow-up phase** (§12) |
 | `tl_*` (5 keys) | teamLeadStore | team-lead pod data | ⚠️ follow-up phase |
 | `unified_crm_leads` | LeadStoreContext | lead cache (crm_leads is in Supabase) | ⚠️ follow-up phase |
 | `amuwa_crm_attendance_records_v6`, `…latest_member_login_v6` | attendanceStore | HR attendance | ⚠️ follow-up (table `hr_attendance` exists) |
@@ -95,7 +95,7 @@ Design principles:
 
 * **The database is the final authority.** Every rule (hierarchy, status, ownership, role
   elevation) is enforced by RLS, column grants, triggers or workflow functions. The API
-  repeats checks only to return friendly errors early — bypassing the API and calling
+  repeats checks only to return friendly errors early - bypassing the API and calling
   PostgREST directly with a stolen token gains nothing.
 * **Status is re-checked on every query.** RLS helpers require `status = 'ACTIVE'` from the
   `profiles` table (not from the JWT), so revocation takes effect on the very next request.
@@ -134,18 +134,18 @@ crm_settings (key/value)
 
 Deliberate omissions (not "blindly" creating tables):
 
-* **`roles` / `permissions` tables** — the hierarchy is fixed and permissions are
+* **`roles` / `permissions` tables** - the hierarchy is fixed and permissions are
   *relationship-based* (same team / same department), not a flat role→permission matrix.
   They are encoded once, in versioned SQL helper functions (`private.can_manage_profile`,
   `private.can_assign_role`, …) that both RLS and workflow functions call. A matrix table
   would add an indirection every policy must join without expressing the relationships.
-* **`team_memberships`** — the business rule is one team per user, so `profiles.team_id`
+* **`team_memberships`** - the business rule is one team per user, so `profiles.team_id`
   is the membership. If multi-team membership is ever needed, introduce the join table and
-  change `private.current_team_id()` — policies are written against the helpers, not the column.
-* **`customer_assignments`** — ownership is `customers.owner_id`; history of reassignment is
+  change `private.current_team_id()` - policies are written against the helpers, not the column.
+* **`customer_assignments`** - ownership is `customers.owner_id`; history of reassignment is
   in `audit_logs` (`CUSTOMER_REASSIGNED`). Shared ownership can be added later as a join table
   plus one extra branch in `private.can_access_customer`.
-* **`organizations`** — the CRM is single-tenant (Amuwa group, business units = departments).
+* **`organizations`** - the CRM is single-tenant (Amuwa group, business units = departments).
   Everything hangs off `departments`, so multi-tenancy later means one `organization_id`
   column on `departments`/`profiles` and one predicate in the helpers.
 
@@ -160,11 +160,11 @@ Statuses (`account_status`): `PENDING`, `ACTIVE`, `SUSPENDED`, `REVOKED`, `REJEC
 | SUPER_ADMIN | all | everyone except other Super Admins and self | DEPARTMENT_HEAD, TEAM_HEAD, TEAM_MEMBER anywhere | all |
 | DEPARTMENT_HEAD | own department | TEAM_HEAD / TEAM_MEMBER in own department | TEAM_HEAD, TEAM_MEMBER in own department | own department |
 | TEAM_HEAD | own team (+ own department head) | TEAM_MEMBER in own team | TEAM_MEMBER in own team | own team |
-| TEAM_MEMBER | own team | — | — | own (`owner_id = self`) |
+| TEAM_MEMBER | own team | - | - | own (`owner_id = self`) |
 
 Allowed status transitions (enforced by trigger, applies even to service role):
 `PENDING→ACTIVE|REJECTED`, `ACTIVE→SUSPENDED|REVOKED`, `SUSPENDED→ACTIVE|REVOKED`,
-`REVOKED→ACTIVE`. Nobody can change their **own** role, status, department or team —
+`REVOKED→ACTIVE`. Nobody can change their **own** role, status, department or team -
 `profiles` has column-level `UPDATE` grants only on `full_name`, `avatar_url`, `phone`,
 `position`; everything else goes through workflow functions that check the hierarchy.
 
@@ -231,12 +231,12 @@ New types need no migration (`type` is validated as UPPER_SNAKE text).
 * RLS **enabled** on every application table (not FORCEd: SECURITY DEFINER helpers run as the table owner). No `USING (true)` anywhere.
 * Helper functions in a non-exposed `private` schema, `SECURITY DEFINER`, `STABLE`,
   `search_path = ''`: `current_profile_id()`, `current_role()`, `current_department_id()`,
-  `current_team_id()` — all return NULL unless the caller's profile is ACTIVE, so every
+  `current_team_id()` - all return NULL unless the caller's profile is ACTIVE, so every
   policy that uses them automatically denies pending/suspended/revoked users.
 * Policies call `(select private.fn())` so Postgres evaluates them once per statement.
 * Writes to sensitive columns go through `SECURITY DEFINER` workflow functions
   (`approve_registration`, `reject_registration`, `set_user_status`, `assign_user`,
-  `broadcast_announcement`) — never through direct `UPDATE` grants.
+  `broadcast_announcement`) - never through direct `UPDATE` grants.
 * `audit_logs` and `notifications` have no INSERT grant for `authenticated`.
 * Legacy tables (`crm_leads`, `hr_*`, `blueprint_requirements`) lose their public policies:
   `crm_leads`/`blueprint_requirements` require an active user; `hr_*` require Super Admin or
@@ -289,19 +289,19 @@ leaked verbatim.
 
 ## 12. Migration strategy from Local Storage
 
-1. **Auth/users** — plain-text passwords in `amuwa_user_registrations_v2` cannot be migrated
+1. **Auth/users** - plain-text passwords in `amuwa_user_registrations_v2` cannot be migrated
    safely, and the hard-coded demo accounts are not real people. The store is **purged on
    load**. Real staff are provisioned by their managers (`POST /users`) or self-register and
    are approved. The first Super Admin is created with `scripts/bootstrap-super-admin.mjs`.
-2. **Departments** — the 11 official departments are seeded by migration with their legacy
+2. **Departments** - the 11 official departments are seeded by migration with their legacy
    slugs, so existing URLs and department panels keep working. Sales/Support teams are
    seeded for the business units that have those divisions.
-3. **Customers** — on first login, if `amuwa_crm_team_member_customers_v3` contains rows
+3. **Customers** - on first login, if `amuwa_crm_team_member_customers_v3` contains rows
    owned by the legacy id of this user (or unowned), the dashboard offers
    "Import N customers from this browser". Import goes through `POST /customers/import`
    (same validation + RLS, duplicates skipped). The local key is removed only after the
    server confirms.
-4. **Notifications** — legacy ones were in-memory demo data; nothing to migrate.
+4. **Notifications** - legacy ones were in-memory demo data; nothing to migrate.
 5. **Follow-up phases** (same pattern: table + RLS + repository/service + hook): leads/pipeline
    (`crm_leads` + `teamMemberStore` leads/deals/follow-ups), invoices & accounts, HR
    attendance/employees, team-lead pod data, technical-support tickets, field visits, AIQR.
@@ -311,18 +311,18 @@ leaked verbatim.
 
 | # | Risk | Severity | Status |
 |---|---|---|---|
-| 1 | **Database password hard-coded in `run_migration.cjs`** (committed) | Critical | File removed. **Password must be rotated in Supabase** — it remains in git history. |
-| 2 | All tables world-readable/writable via anon key (`USING (true)`) — includes HR salaries | Critical | Replaced by scoped policies (migration `…_harden_legacy_tables`). |
+| 1 | **Database password hard-coded in `run_migration.cjs`** (committed) | Critical | File removed. **Password must be rotated in Supabase** - it remains in git history. |
+| 2 | All tables world-readable/writable via anon key (`USING (true)`) - includes HR salaries | Critical | Replaced by scoped policies (migration `…_harden_legacy_tables`). |
 | 3 | Client-side auth; role stored in `localStorage`; fake Google login grants admin | Critical | Replaced by Supabase Auth + DB profiles. |
 | 4 | Plain-text passwords in `localStorage` and in the JS bundle (demo creds) | High | Removed; legacy store purged. |
 | 5 | Anon key hard-coded as fallback; users could repoint the app to another Supabase project via `localStorage` | Medium | Env-only config. |
 | 6 | `.env` and `CREDENTIALS.md` were committed then deleted (history keeps them). `.env` held the anon key; `CREDENTIALS.md` held demo passwords | Medium | Demo credentials no longer work (auth is real). Consider rotating the anon/JWT secret if the project was ever relied on with open policies. |
-| 7 | Webhooks fall back to the anon key when the service key is missing | Medium | Fallback removed; webhook returns 500 if misconfigured. Webhook endpoints are still unauthenticated — add a shared secret (`WEBHOOK_SECRET`) in the follow-up. |
+| 7 | Webhooks fall back to the anon key when the service key is missing | Medium | Fallback removed; webhook returns 500 if misconfigured. Webhook endpoints are still unauthenticated - add a shared secret (`WEBHOOK_SECRET`) in the follow-up. |
 | 8 | `api/proxy.ts` is an open proxy (SSRF / abuse) | Medium | Not changed in this pass (used by lead fetchers); recommended: allow-list hosts + require auth. |
 | 9 | Public storage buckets `blueprint-files`, `amuwa-docs` | Low-Med | Unchanged; recommend private buckets + signed URLs. |
 | 10 | Per-department "unlock" passwords hard-coded in `DepartmentAccessForm` / `DepartmentUnlockModal` | High | Removed. Department access now follows the user's database profile. |
 | 11 | Unreachable AIQR module (`src/components/aiqr`, `AiqrAuthContext`) contains a hard-coded passcode | Low | Not imported anywhere and tree-shaken from the bundle; delete or migrate when AIQR is revived. |
-| 12 | Customer KPIs, pagination and CSV import on the customer dashboard were static mock UI | — | Replaced by `customer_summary()` (RLS-scoped aggregates), server pagination and a real import of legacy browser data. |
+| 12 | Customer KPIs, pagination and CSV import on the customer dashboard were static mock UI | - | Replaced by `customer_summary()` (RLS-scoped aggregates), server pagination and a real import of legacy browser data. |
 
 ## 14. Verification performed
 

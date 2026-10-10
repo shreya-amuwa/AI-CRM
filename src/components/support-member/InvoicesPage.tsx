@@ -116,12 +116,12 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
                       <div className="text-slate-400">Due {fmtDay(i.dueDate)}</div>
                     </td>
                     <td className="py-3 px-3 text-right font-semibold">{fmtMoney(i.amount)}</td>
-                    <td className="py-3 px-3 text-right text-xs text-slate-500">{i.taxAmount !== null ? fmtMoney(i.taxAmount) : '—'}</td>
+                    <td className="py-3 px-3 text-right text-xs text-slate-500">{i.taxAmount !== null ? fmtMoney(i.taxAmount) : '-'}</td>
                     <td className="py-3 px-3">
                       <PaymentPill invoice={i} />
                     </td>
                     <td className="py-3 px-3 text-right text-xs">{fmtMoney(outstandingOf(i))}</td>
-                    <td className="py-3 px-3 text-xs text-slate-600 max-w-[12rem] truncate">{i.service || '—'}</td>
+                    <td className="py-3 px-3 text-xs text-slate-600 max-w-[12rem] truncate">{i.service || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -161,7 +161,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
               </div>
               <div>
                 <dt className="text-slate-400">Tax / GST</dt>
-                <dd className="font-semibold mt-0.5">{open.taxAmount !== null ? fmtMoney(open.taxAmount) : '—'}</dd>
+                <dd className="font-semibold mt-0.5">{open.taxAmount !== null ? fmtMoney(open.taxAmount) : '-'}</dd>
               </div>
               <div>
                 <dt className="text-slate-400">Outstanding</dt>

@@ -42,9 +42,9 @@ export const ProgressBar: React.FC<{ value: number; label?: string }> = ({ value
 );
 
 export const fmtDate = (d: string | null) =>
-  d ? new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  d ? new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 export const fmtDateTime = (d: string | null) =>
-  d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—';
+  d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '-';
 
 export const DueLabel: React.FC<{ task: WorkTask }> = ({ task }) =>
   task.dueDate ? (

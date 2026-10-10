@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Reference data: the official departments (legacy slugs preserved so the
 -- existing URLs and department panels keep working) and their teams.
--- Idempotent. No users are seeded — see scripts/bootstrap-super-admin.mjs.
+-- Idempotent. No users are seeded - see scripts/bootstrap-super-admin.mjs.
 -- =============================================================================
 
 insert into public.departments (slug, name, description, icon_name, accent_color, logo_url) values

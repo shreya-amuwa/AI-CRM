@@ -2,8 +2,8 @@
 -- Technical Consultant dashboard.
 --
 --  * Consultants (support-team members of the department), department heads
---    and the super admin see every customer in ONBOARDING — including those
---    still waiting for documents — and can authorize items as soon as sales
+--    and the super admin see every customer in ONBOARDING - including those
+--    still waiting for documents - and can authorize items as soon as sales
 --    saves them (previously only after "Forward to support").
 --  * Four review states for the list: AWAITING_DOCUMENTS, TO_REVIEW,
 --    NEEDS_FIX, VERIFIED (authorized).

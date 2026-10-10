@@ -158,7 +158,7 @@ begin
          deal_amount = null, amount_received = 0, payment_due_date = null
    where id = p_id;
   perform private.log_customer_activity(p_id, 'BACKED_OUT',
-    'Backed out at Potential — moved back to Leads' || coalesce(' · ' || v_reason, ''));
+    'Backed out at Potential - moved back to Leads' || coalesce(' · ' || v_reason, ''));
   perform private.write_audit('CUSTOMER_STAGE_CHANGED', 'customer', p_id, v.department_id, v.team_id,
     jsonb_build_object('from', 'POTENTIAL', 'to', 'LEAD', 'reason', v_reason, 'deal_amount', v.deal_amount));
 end $$;
@@ -209,7 +209,7 @@ grant execute on function public.customer_pipeline_counts() to authenticated;
 alter table public.onboarding_items add column if not exists is_optional boolean not null default false;
 
 insert into public.onboarding_items (code, section, label, hint, kind, options, always_required, sort_order, is_optional) values
-  ('WA_WEBSITE_URL', 'SERVICE', 'Website URL', 'Optional — the business website, if they have one', 'DETAILS', null, false, 115, true)
+  ('WA_WEBSITE_URL', 'SERVICE', 'Website URL', 'Optional - the business website, if they have one', 'DETAILS', null, false, 115, true)
 on conflict (code) do update set label = excluded.label, hint = excluded.hint, kind = excluded.kind,
   sort_order = excluded.sort_order, is_optional = true, is_active = true;
 insert into public.onboarding_item_services (item_code, service_code) values ('WA_WEBSITE_URL', 'WHATSAPP_API_BLUE_TICK')
@@ -217,7 +217,7 @@ on conflict do nothing;
 
 -- Facebook Business Manager access is collected as details ("Add details").
 update public.onboarding_items set kind = 'DETAILS',
-  hint = 'Partner access granted — add the Business Manager ID and any details'
+  hint = 'Partner access granted - add the Business Manager ID and any details'
  where code = 'FB_BUSINESS_MANAGER';
 
 -- Required items, plus optional items once they have been filled in (so they

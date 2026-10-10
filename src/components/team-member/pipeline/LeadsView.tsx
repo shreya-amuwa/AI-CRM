@@ -4,6 +4,7 @@ import type { InboundLead, LeadAccountsFilter, LeadStatus, Paginated, PipelineCo
 import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { WorkflowBadge } from '../../payments/PaymentBits';
 import { errorMessage } from '../../../lib/api/client';
+import { rowOpen } from '../../../lib/rowClick';
 import { pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
 import {
   Avatar,
@@ -214,7 +215,7 @@ export const LeadsView: React.FC<{
                 data?.items.map(l => {
                   const f = formatFollowUp(l.nextFollowUpAt);
                   return (
-                    <tr key={l.id} className={`hover:bg-slate-50/60 ${loading ? 'opacity-60' : ''}`}>
+                    <tr key={l.id} {...rowOpen(() => onEdit(l.id))} className={`hover:bg-slate-50/60 focus-visible:bg-indigo-50/50 focus-visible:outline-none ${loading ? 'opacity-60' : ''}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <Avatar name={l.name} />
@@ -228,7 +229,7 @@ export const LeadsView: React.FC<{
                       <td className="px-4 py-3">
                         <ServiceChips codes={l.services} catalog={byCode} />
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-700">{l.leadSource || '—'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-700">{l.leadSource || '-'}</td>
                       <td className={`px-4 py-3 text-xs whitespace-nowrap ${f.urgent ? 'text-rose-700 font-bold' : 'text-slate-700'}`}>{f.text}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col items-start gap-1">
@@ -283,7 +284,7 @@ const InboundStrip: React.FC<{ onClaimed: (customerId: string) => void }> = ({ o
     <Card className="p-4">
       <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
         <Inbox className="w-4 h-4 text-indigo-600" /> New enquiries ({items.length})
-        <span className="text-xs font-normal text-slate-500">From your website and WhatsApp — take one to add it to your leads.</span>
+        <span className="text-xs font-normal text-slate-500">From your website and WhatsApp - take one to add it to your leads.</span>
       </div>
       {error && (
         <div className="mt-2">

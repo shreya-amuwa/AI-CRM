@@ -672,9 +672,9 @@ export function useRealtime(table: string, onChange: () => void) {
 // ---------------------------------------------------------------------------
 export const fmtMoney = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 export const fmtWhen = (d: string | null) =>
-  d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  d ? new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-';
 export const fmtDay = (d: string | null) => {
-  if (!d) return '—';
+  if (!d) return '-';
   const date = new Date(d.length === 10 ? `${d}T00:00:00` : d);
   return Number.isNaN(date.getTime()) ? d : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 };

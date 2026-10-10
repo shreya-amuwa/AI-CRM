@@ -43,9 +43,9 @@ The client hand-over chain is Support only:
 * The Support Team Member sees the client under **My Clients** in the Support dashboard.
 
 ## Scope (who the lead manages)
-- **Team customers** — `customers.team_id` = the lead's team (the owner is the lead or one of
+- **Team customers** - `customers.team_id` = the lead's team (the owner is the lead or one of
   their members; `team_id` follows the owner, existing rule).
-- **Customers passed by the Department Head** — `customer_onboarding.team_lead_id` = the lead
+- **Customers passed by the Department Head** - `customer_onboarding.team_lead_id` = the lead
   (the hand-over from `20261008000900_client_handover.sql`).
 
 Each customer appears once. Its **assignee** is `owner_id` for team customers and
@@ -53,18 +53,18 @@ Each customer appears once. Its **assignee** is `owner_id` for team customers an
 still at stage `TEAM_LEAD` **needs a decision**. No new ownership fields were added.
 
 ## Sections
-- **Header** — greeting, team, **Add Customer**; the bell is the layout's notifications.
-- **KPIs** — Total, My customers, Team customers, Open tickets (+ high priority / escalated).
+- **Header** - greeting, team, **Add Customer**; the bell is the layout's notifications.
+- **KPIs** - Total, My customers, Team customers, Open tickets (+ high priority / escalated).
   Clicking a card filters the table below.
-- **Customer assignment** — handled by me / by members / needs decision.
-- **Team workload** — per active member: customers, open tickets, high priority; links filter
+- **Customer assignment** - handled by me / by members / needs decision.
+- **Team workload** - per active member: customers, open tickets, high priority; links filter
   customers or tickets by that member.
-- **Needs attention** — decisions to make and open high-priority / escalated tickets.
-- **Recent activity** — the latest `customer_activities` of the scope.
-- **Customers** — server-side search (name, company, e-mail, phone, customer ID), status,
+- **Needs attention** - decisions to make and open high-priority / escalated tickets.
+- **Recent activity** - the latest `customer_activities` of the scope.
+- **Customers** - server-side search (name, company, e-mail, phone, customer ID), status,
   assignment, member, sort, paging; **Change / Assign** (keep with me or a member of my team);
   click a name for the existing customer profile.
-- **Tickets** — tickets of every customer in scope plus the team's own; status, priority,
+- **Tickets** - tickets of every customer in scope plus the team's own; status, priority,
   assignee, search, paging; rows open the existing ticket detail. Tickets of another team on a
   customer in scope are **view only** (editing still follows `update_support_ticket`).
 

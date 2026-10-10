@@ -15,7 +15,7 @@
 --  * on_auth_user_created still runs on INSERT, but only when the row already
 --    carries bootstrap / provisioning data.
 --  * on_auth_user_created_deferred runs at COMMIT (after Supabase has written
---    app_metadata) and handles everything else — provisioned staff and real
+--    app_metadata) and handles everything else - provisioned staff and real
 --    self-registrations alike.
 --  * The Technical Consultant flag is applied inside the same function, so the
 --    separate on_auth_user_created_technical_consultant trigger is dropped.

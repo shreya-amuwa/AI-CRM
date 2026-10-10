@@ -2,7 +2,7 @@
 -- "Send to Technical Consultant".
 --
 -- Sales collects the customer's details and documents first. The Technical
--- Consultant sees the customer — and can authorize items or run automations —
+-- Consultant sees the customer - and can authorize items or run automations -
 -- only after the salesperson clicks "Send to Technical Consultant"
 -- (customer_onboarding.forwarded_to_support_at). This restores the hand-off
 -- that 20261008000000 had removed (department-wide visibility before sending).

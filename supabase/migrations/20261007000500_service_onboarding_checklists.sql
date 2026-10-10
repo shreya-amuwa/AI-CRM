@@ -66,11 +66,11 @@ insert into public.onboarding_items (code, section, label, hint, kind, options, 
   ('GST_CERTIFICATE', 'BUSINESS_BASICS', 'GST certificate', 'PDF or photo of the GST certificate', 'FILE', null, false, 30),
   ('UDYAM_CERTIFICATE', 'BUSINESS_BASICS', 'Udyam certificate', 'PDF or photo of the Udyam registration', 'FILE', null, false, 40),
   -- 1. WhatsApp API + Blue Tick
-  ('FB_BUSINESS_MANAGER', 'SERVICE', 'Facebook Business Manager access', 'Partner access granted — note the BM ID', 'ACCESS', null, false, 110),
+  ('FB_BUSINESS_MANAGER', 'SERVICE', 'Facebook Business Manager access', 'Partner access granted - note the BM ID', 'ACCESS', null, false, 110),
   ('WA_API_NUMBER', 'SERVICE', 'Number to register for WhatsApp API', 'The mobile number that will become the API number', 'DETAILS', null, false, 120),
   ('WA_NUMBER_NOT_ON_APP', 'SERVICE', 'Number is not active on the WhatsApp app', 'It must be removed from the WhatsApp / WhatsApp Business app', 'YES_NO', null, false, 130),
   ('WABA_ID', 'SERVICE', 'WABA ID', 'WhatsApp Business Account ID', 'DETAILS', null, false, 140),
-  ('WA_PRICING_APPROVED', 'SERVICE', 'Current pricing approved by client', 'The Raksha Bandhan offer price has ended — confirm current pricing', 'APPROVAL', null, false, 150),
+  ('WA_PRICING_APPROVED', 'SERVICE', 'Current pricing approved by client', 'The Raksha Bandhan offer price has ended - confirm current pricing', 'APPROVAL', null, false, 150),
   -- 2. RCS
   ('RCS_DOMAIN_NAME', 'SERVICE', 'Domain name', 'e.g. brand.com', 'DETAILS', null, false, 210),
   ('RCS_BRAND_NAME', 'SERVICE', 'Brand name', 'As it should appear to recipients', 'DETAILS', null, false, 220),
@@ -486,7 +486,7 @@ begin
   select * into o from public.customer_onboarding where customer_id = p_customer;
   if p_decision = 'REJECTED' then
     perform private.notify(v.owner_id, 'ONBOARDING_ITEM_REJECTED', format('Needs fixing: %s', coalesce(v.company, v.name)),
-      format('%s — %s', i.label, v_note), 'customer', p_customer, '{}'::jsonb, 'urgent');
+      format('%s - %s', i.label, v_note), 'customer', p_customer, '{}'::jsonb, 'urgent');
   elsif o.items_total > 0 and o.items_verified = o.items_total then
     perform private.notify(v.owner_id, 'ONBOARDING_VERIFIED', format('Onboarding verified: %s', coalesce(v.company, v.name)),
       'All documents and details were verified by the technical team.', 'customer', p_customer);

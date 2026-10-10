@@ -122,7 +122,7 @@ export const ClientLoginCard: React.FC<{
           </dl>
           {justCreated && (
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2" role="status">
-              <p className="font-semibold">Save the password now — it is not stored and cannot be shown again.</p>
+              <p className="font-semibold">Save the password now - it is not stored and cannot be shown again.</p>
               <p className="font-mono break-all">{justCreated.password}</p>
               <button type="button" onClick={copy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white font-bold">
                 <Copy className="w-3.5 h-3.5" aria-hidden="true" /> {copied ? 'Copied' : 'Copy e-mail & password'}

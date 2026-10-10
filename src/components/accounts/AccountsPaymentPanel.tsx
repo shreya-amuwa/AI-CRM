@@ -425,7 +425,7 @@ const FollowUpSection: React.FC<{ customerId: string; overview: PaymentOverview;
   return (
     <section aria-labelledby="followup-heading" className="space-y-3">
       <h3 id="followup-heading" className="text-xs font-bold text-slate-800">
-        Payment follow-up notes <span className="font-normal text-slate-500">(Accounts only — not shown to Sales)</span>
+        Payment follow-up notes <span className="font-normal text-slate-500">(Accounts only - not shown to Sales)</span>
       </h3>
       <form onSubmit={submit} className="rounded-xl border border-slate-200 p-3 space-y-3" noValidate>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

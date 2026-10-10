@@ -738,7 +738,7 @@ function onEdit(e) {
 
                     {/* 5. Amount */}
                     <td className="py-3.5 px-5 text-right font-mono font-bold text-rose-700 text-sm whitespace-nowrap">
-                      {exp.amount > 0 ? formatCurrency(exp.amount) : '—'}
+                      {exp.amount > 0 ? formatCurrency(exp.amount) : '-'}
                     </td>
 
                     {/* 6. Payment Mode */}

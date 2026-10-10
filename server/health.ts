@@ -2,7 +2,7 @@ import { getEnv } from './config/env.js';
 import { getAnonClient } from './db/supabase.js';
 
 /**
- * GET /api/v1/health — unauthenticated deployment check. Reports whether the
+ * GET /api/v1/health - unauthenticated deployment check. Reports whether the
  * server is configured and can reach the database; never returns secrets.
  */
 export async function healthCheck() {

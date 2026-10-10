@@ -23,7 +23,7 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
 
   const { user, activeDepartment, activeDepartmentId } = useAuth();
 
-  // Never fall back to another department's key/name — if no department is
+  // Never fall back to another department's key/name - if no department is
   // actually active, use safe, department-neutral placeholders instead.
   const currentDeptKey = subDept && activeDepartmentId
     ? `${activeDepartmentId}_${subDept}`

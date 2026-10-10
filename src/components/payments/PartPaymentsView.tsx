@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, Search } from 'lucide-react';
+import { ArrowRight, ChevronRight, Search } from 'lucide-react';
 import type { PartPaymentItem, PartPaymentStatusFilter, PartPaymentsPage, PaymentOverview } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi, type PartPaymentsParams } from '../../lib/api/endpoints';
+import { rowOpen } from '../../lib/rowClick';
 import { AccountsPaymentPanel } from '../accounts/AccountsPaymentPanel';
 import { Empty, ErrorBanner, inputClass, Loading, Modal, PageHeader, Pager } from '../support-member/SupportParts';
 import { Badge, FollowUpBadge, fmtDate, fmtDateTime, MoneyTiles, PaymentHistory, PaymentStatusBadge, rupees } from './PaymentBits';
@@ -34,7 +35,7 @@ const useDebounced = <T,>(value: T, ms = 300): T => {
 
 const onboardingBadge = (c: PartPaymentItem) => {
   if (c.stage === 'LEAD' || c.stage === 'LOST') return <Badge tone="red">Back in Leads</Badge>;
-  if (!c.onboarding) return <Badge tone="slate">—</Badge>;
+  if (!c.onboarding) return <Badge tone="slate">-</Badge>;
   if (c.onboarding.getStarted) return <Badge tone="green">Get started</Badge>;
   return <Badge tone="slate">{ONBOARDING_LABEL[c.onboarding.state] ?? 'Onboarding'}</Badge>;
 };
@@ -85,7 +86,7 @@ const Detail: React.FC<{ item: PartPaymentItem; mode: 'sales' | 'accounts'; onCh
     <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
       <div>
         <dt className="text-[11px] text-slate-400">Salesperson</dt>
-        <dd className="font-semibold text-slate-900">{item.salesperson?.fullName ?? '—'}</dd>
+        <dd className="font-semibold text-slate-900">{item.salesperson?.fullName ?? '-'}</dd>
       </div>
       <div>
         <dt className="text-[11px] text-slate-400">Accountant</dt>
@@ -93,11 +94,11 @@ const Detail: React.FC<{ item: PartPaymentItem; mode: 'sales' | 'accounts'; onCh
       </div>
       <div>
         <dt className="text-[11px] text-slate-400">Last verified payment</dt>
-        <dd className="font-semibold text-slate-900">{item.lastPaymentAt ? `${rupees(item.lastPaymentAmount)} · ${fmtDate(item.lastPaymentAt)}` : '—'}</dd>
+        <dd className="font-semibold text-slate-900">{item.lastPaymentAt ? `${rupees(item.lastPaymentAmount)} · ${fmtDate(item.lastPaymentAt)}` : '-'}</dd>
       </div>
       <div>
         <dt className="text-[11px] text-slate-400">Verified by</dt>
-        <dd className="font-semibold text-slate-900">{item.verifiedBy ?? '—'}</dd>
+        <dd className="font-semibold text-slate-900">{item.verifiedBy ?? '-'}</dd>
       </div>
     </dl>
     {mode === 'accounts' ? <AccountsPaymentPanel customerId={item.id} followUps readOnly={item.stage === 'LEAD' || item.stage === 'LOST'} onChanged={onChanged} onLoaded={setLive} /> : <SalesPaymentSummary customerId={item.id} />}
@@ -248,80 +249,66 @@ export const PartPaymentsView: React.FC<{ mode: 'sales' | 'accounts'; onOpenOnbo
         />
       ) : (
         <div className={`bg-white rounded-2xl border border-slate-200/80 overflow-hidden ${loading ? 'opacity-60' : ''}`} aria-busy={loading}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm min-w-[980px]">
-              <thead className="text-[11px] text-slate-500 bg-slate-50/60">
-                <tr>
-                  <th scope="col" className="px-4 py-2.5 font-medium">Customer</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">Services</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium text-right">Agreed</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium text-right">Verified</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium text-right">Balance</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">Last payment</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">Payment</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">Onboarding</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">{accounts ? 'Accountant · follow-up' : 'Salesperson'}</th>
-                  <th scope="col" className="px-4 py-2.5 font-medium sr-only">Open</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data?.items.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-50/60 align-top">
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-900 text-[13px]">{c.company || c.name}</div>
-                      <div className="text-xs text-slate-500">
-                        {c.company ? `${c.name} · ` : ''}
-                        {c.code}
-                      </div>
-                      {c.phone && <div className="text-[11px] text-slate-400">{c.phone}</div>}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-700 max-w-[11rem]">{c.services.join(', ') || '—'}</td>
-                    <td className="px-4 py-3 text-xs text-slate-700 text-right whitespace-nowrap">{rupees(c.dealAmount)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-900 font-semibold text-right whitespace-nowrap">
-                      {rupees(c.amountVerified)}
-                      {c.pendingAmount > 0 && <div className="text-[11px] font-normal text-amber-700">+{rupees(c.pendingAmount)} pending</div>}
-                    </td>
-                    <td className={`px-4 py-3 text-xs font-bold text-right whitespace-nowrap ${c.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(c.balance)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
-                      {c.lastPaymentAt ? (
-                        <>
-                          {rupees(c.lastPaymentAmount)}
-                          <div className="text-[11px] text-slate-500">{fmtDate(c.lastPaymentAt)}</div>
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <PaymentStatusBadge status={c.paymentStatus} />
-                    </td>
-                    <td className="px-4 py-3">{onboardingBadge(c)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-700">
-                      {accounts ? (
-                        <div className="space-y-1">
-                          <div>{c.accountsOwner?.fullName ?? <span className="text-slate-400">Not assigned</span>}</div>
-                          {c.followUp && <FollowUpBadge status={c.followUp.status} />}
-                          {c.followUp?.nextAt && c.followUp.status !== 'FULLY_PAID' && <div className="text-[11px] text-slate-500">Next {fmtDateTime(c.followUp.nextAt)}</div>}
-                        </div>
-                      ) : (
-                        c.salesperson?.fullName ?? '—'
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => setOpen(c)}
-                        className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800"
-                        aria-label={`Open payments of ${c.company || c.name}`}
-                      >
-                        Open <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="hidden lg:grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.5fr)_1.25rem] gap-4 px-5 py-2.5 bg-slate-50/70 text-[11px] font-medium text-slate-500" aria-hidden="true">
+            <span>Customer</span>
+            <span>Amount</span>
+            <span>Last payment</span>
+            <span>Status</span>
+            <span>{accounts ? 'Accountant and follow-up' : 'Salesperson'}</span>
+            <span />
           </div>
+          <ul className="divide-y divide-slate-100" aria-label="Part payments">
+            {data?.items.map(c => (
+              <li
+                key={c.id}
+                {...rowOpen(() => setOpen(c))}
+                aria-label={`Open payments of ${c.company || c.name}`}
+                className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1.5fr)_1.25rem] gap-2 lg:gap-4 items-center px-5 py-3.5 hover:bg-slate-50 focus-visible:bg-blue-50/50 focus-visible:outline-none"
+              >
+                <div className="min-w-0">
+                  <div className="font-semibold text-slate-900 text-[13px] truncate">{c.company || c.name}</div>
+                  <div className="text-xs text-slate-500 truncate">
+                    {c.company ? `${c.name} · ` : ''}
+                    {c.phone || c.email || ''}
+                  </div>
+                  <div className="text-[11px] text-slate-400 truncate">{c.services.join(', ') || 'No services'}</div>
+                </div>
+                <div className="text-xs">
+                  <div className="text-slate-900 font-semibold">
+                    {rupees(c.amountVerified)} <span className="font-normal text-slate-500">of {rupees(c.dealAmount)}</span>
+                  </div>
+                  <div className={`font-bold ${c.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>Balance {rupees(c.balance)}</div>
+                  {c.pendingAmount > 0 && <div className="text-[11px] text-amber-700">+{rupees(c.pendingAmount)} pending</div>}
+                </div>
+                <div className="text-xs text-slate-700">
+                  {c.lastPaymentAt ? (
+                    <>
+                      {rupees(c.lastPaymentAmount)}
+                      <div className="text-[11px] text-slate-500">{fmtDate(c.lastPaymentAt)}</div>
+                    </>
+                  ) : (
+                    '-'
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <PaymentStatusBadge status={c.paymentStatus} />
+                  {onboardingBadge(c)}
+                </div>
+                <div className="text-xs text-slate-700">
+                  {accounts ? (
+                    <div className="space-y-1">
+                      <div>{c.accountsOwner?.fullName ?? <span className="text-slate-400">Not assigned</span>}</div>
+                      {c.followUp && <FollowUpBadge status={c.followUp.status} />}
+                      {c.followUp?.nextAt && c.followUp.status !== 'FULLY_PAID' && <div className="text-[11px] text-slate-500">Next {fmtDateTime(c.followUp.nextAt)}</div>}
+                    </div>
+                  ) : (
+                    c.salesperson?.fullName ?? '-'
+                  )}
+                </div>
+                <ChevronRight className="hidden lg:block w-4 h-4 text-slate-300" aria-hidden="true" />
+              </li>
+            ))}
+          </ul>
           {data && <Pager page={page} pageSize={PAGE_SIZE} total={data.total} onPage={setPage} />}
         </div>
       )}

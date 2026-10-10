@@ -17,7 +17,7 @@ export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' 
 
 /** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, Tickets, Invoices. */
 const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
-  { id: 'customers', label: 'Dashboard — Existing Customers', icon: LayoutDashboard },
+  { id: 'customers', label: 'Dashboard - Existing Customers', icon: LayoutDashboard },
   // Clients handed over Technical Consultant -> Department Head -> Support Team Lead -> me.
   { id: 'my-clients', label: 'My Clients', icon: UserCheck },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },

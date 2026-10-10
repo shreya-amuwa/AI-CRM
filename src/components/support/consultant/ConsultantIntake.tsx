@@ -1,3 +1,4 @@
+import { rowOpen } from '../../../lib/rowClick';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Pencil, Plus, Search, Send, X } from 'lucide-react';
 import type { Paginated, PipelineCustomer } from '../../../../shared/contracts';
@@ -216,7 +217,7 @@ const IntakeRow: React.FC<{
   const categories = [...new Set(catalog.map(s => s.category))];
 
   return (
-    <tr className="border-b border-slate-50 last:border-0 align-top">
+    <tr {...rowOpen(onEdit)} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50 focus-visible:bg-blue-50/50 focus-visible:outline-none">
       <td className="px-5 py-4">
         <div className="font-bold text-slate-900">{c.name}</div>
         <div className="text-xs text-slate-500">{c.company || 'No business name'}</div>
@@ -224,7 +225,7 @@ const IntakeRow: React.FC<{
       </td>
       <td className="px-3 py-4">
         {c.services.length === 0 ? (
-          <span className="text-xs text-slate-400">—</span>
+          <span className="text-xs text-slate-400">-</span>
         ) : (
           <ul className="flex flex-wrap gap-1.5" aria-label={`Services of ${label}`}>
             {c.services.map(code => (
@@ -317,7 +318,7 @@ const IntakeRow: React.FC<{
                 </optgroup>
               ) : null;
             })}
-            <option value={OTHER}>Other — type manually…</option>
+            <option value={OTHER}>Other - type manually…</option>
           </select>
         )}
         {rowError && (

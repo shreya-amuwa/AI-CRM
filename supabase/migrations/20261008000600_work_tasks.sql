@@ -208,7 +208,7 @@ begin
   perform private.notify(t.assigned_by, 'TASK_UPDATE',
     format('%s: %s', me.full_name, case p_status when 'COMPLETED' then 'completed' when 'NOT_COMPLETED' then 'could not complete'
                                       else format('%s%% done', v_progress) end),
-    format('%s%s', t.title, coalesce(' — ' || v_note, '')), 'work_task', t.id,
+    format('%s%s', t.title, coalesce(' - ' || v_note, '')), 'work_task', t.id,
     '{}'::jsonb, case when p_status = 'NOT_COMPLETED' then 'urgent' else 'normal' end);
 end $$;
 

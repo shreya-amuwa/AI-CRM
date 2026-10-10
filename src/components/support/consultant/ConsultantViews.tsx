@@ -351,7 +351,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
         </div>
         <dl className="mt-5 pt-5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <Info icon={<User className="w-4 h-4" />} label="Customer Name" value={c.name} sub={c.phone} />
-          <Info icon={<Building2 className="w-4 h-4" />} label="Business Name" value={c.company || '—'} sub={c.email} />
+          <Info icon={<Building2 className="w-4 h-4" />} label="Business Name" value={c.company || '-'} sub={c.email} />
           <div className="flex gap-3">
             <InfoIcon>
               <Briefcase className="w-4 h-4" />
@@ -384,7 +384,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           <p className="font-bold">Waiting for sales team</p>
           <p className="mt-0.5 text-xs">
             Sent back to {c.owner?.fullName || 'the salesperson'} on {longDate(c.onboarding?.returnedAt)} for re-verification
-            {c.onboarding?.returnNote ? ` — “${c.onboarding.returnNote}”` : ''}. You can authorize again once they fix the items and send it back.
+            {c.onboarding?.returnNote ? ` - “${c.onboarding.returnNote}”` : ''}. You can authorize again once they fix the items and send it back.
           </p>
         </div>
       )}
@@ -452,7 +452,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
                 {rejectedItems.map(i => (
                   <li key={i.code} className="p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-900">
                     <strong>{i.label}</strong>
-                    {i.entry?.reviewNote ? ` — ${i.entry.reviewNote}` : ''}
+                    {i.entry?.reviewNote ? ` - ${i.entry.reviewNote}` : ''}
                   </li>
                 ))}
               </ul>
@@ -561,7 +561,7 @@ const KIND_LABEL: Record<ChecklistItem['kind'], string> = {
 };
 
 function formatEntryValue(item: ChecklistItem, value: string | null): string {
-  if (value == null || value === '') return '—';
+  if (value == null || value === '') return '-';
   if (item.kind === 'AMOUNT') return money(Number(value));
   if (value === 'YES') return 'Yes';
   if (value === 'NO') return 'No';
@@ -652,7 +652,7 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
       )}
       {!editing && (
         <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-sm font-mono text-slate-800 break-all">{item.entry?.value || '—'}</span>
+          <span className="text-sm font-mono text-slate-800 break-all">{item.entry?.value || '-'}</span>
           {!readOnly && (
             <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700 shrink-0" aria-label={`Edit ${item.label}`}>
               Edit

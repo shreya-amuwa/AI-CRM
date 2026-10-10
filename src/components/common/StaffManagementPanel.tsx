@@ -14,7 +14,7 @@ import {
 } from '../../lib/auth/roleMapping';
 
 /**
- * Team Members & Access — create staff accounts and manage their access.
+ * Team Members & Access - create staff accounts and manage their access.
  *
  * Who can create whom follows the hierarchy:
  *   Super Admin      → Department Head, Team Lead, Team Member
@@ -315,7 +315,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           <div>
             <h2 className="text-xl font-bold font-heading text-slate-900">Team Members & Access</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> — you can create:{' '}
+              {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - you can create:{' '}
               {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[r])).join(', ')}
             </p>
           </div>

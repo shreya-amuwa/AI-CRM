@@ -391,7 +391,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     setTimeout(() => setWebhookSuccessMsg(null), 4000);
   }, [wabastoreLeads, deleteLead, clearDuplicateAnomaly]);
 
-  // Webhook listener operates in pure push mode — no automatic fake timer
+  // Webhook listener operates in pure push mode - no automatic fake timer
 
   // Unconditionally evaluate filtered leads at the top level to adhere strictly to React Rules of Hooks
   const filteredActivityLeads = React.useMemo(() => {
@@ -1493,7 +1493,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                                 <span className="truncate max-w-[150px]">{lead.email}</span>
                               </a>
                             ) : (
-                              <span className="text-slate-300 font-mono">—</span>
+                              <span className="text-slate-300 font-mono">-</span>
                             )}
                           </td>
 
@@ -1762,10 +1762,10 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                       const storeOrg = lead.rawPayload?.store || lead.rawPayload?.organization || lead.rawPayload?.company || lead.location || 'Wabastore Client';
                       const subOrg = (lead.rawPayload?.organization && lead.rawPayload?.organization !== storeOrg) ? lead.rawPayload.organization : null;
                       
-                      const rawPhone = (lead.contact && lead.contact !== 'No Phone' && lead.contact !== '—')
+                      const rawPhone = (lead.contact && lead.contact !== 'No Phone' && lead.contact !== '-')
                         ? lead.contact
                         : (lead.rawPayload?.number || lead.rawPayload?.phone || lead.rawPayload?.recipient_phone || lead.rawPayload?.mobile || '');
-                      const displayPhone = rawPhone ? String(rawPhone) : '—';
+                      const displayPhone = rawPhone ? String(rawPhone) : '-';
                       const cleanPhone = String(displayPhone).replace(/[^0-9]/g, '');
 
                       const displayName = (lead.name && lead.name !== 'Inbound Lead' && lead.name !== 'Lead')
@@ -1782,7 +1782,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                         lead.rawPayload?.rcs_message ||
                         lead.rawPayload?.action_taken ||
                         (lead.notes && lead.notes !== 'Inbound Webhook Lead' && lead.notes !== 'Real-time Inbound Event' && lead.notes !== 'Inbound Webhook' ? lead.notes : null) ||
-                        '—';
+                        '-';
 
                       if (isRcs) {
                         return (
@@ -1802,7 +1802,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
                             {/* 2. Number */}
                             <td className="p-3.5 font-mono text-slate-800">
-                              {cleanPhone && displayPhone !== '—' ? (
+                              {cleanPhone && displayPhone !== '-' ? (
                                 <div className="flex items-center gap-1.5">
                                   <Phone className="w-3.5 h-3.5 text-slate-400" />
                                   <span className="font-semibold">{displayPhone}</span>
@@ -1817,7 +1817,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                                   </a>
                                 </div>
                               ) : (
-                                <span className="text-slate-400 italic text-[11px]">—</span>
+                                <span className="text-slate-400 italic text-[11px]">-</span>
                               )}
                             </td>
 
@@ -1887,7 +1887,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                                 </a>
                               </div>
                             ) : (
-                              <span className="text-slate-400 font-mono italic text-[11px]">—</span>
+                              <span className="text-slate-400 font-mono italic text-[11px]">-</span>
                             )}
                           </td>
 
@@ -1899,7 +1899,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                                 <span className="truncate max-w-[150px]">{lead.email}</span>
                               </a>
                             ) : (
-                              <span className="text-slate-300 font-mono">—</span>
+                              <span className="text-slate-300 font-mono">-</span>
                             )}
                           </td>
 
@@ -1909,7 +1909,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                               <Building2 className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
                               <div>
                                 <strong className="text-slate-800 block text-xs font-semibold">
-                                  {storeOrg !== 'Wabastore Client' ? storeOrg : '—'}
+                                  {storeOrg !== 'Wabastore Client' ? storeOrg : '-'}
                                 </strong>
                                 {subOrg && (
                                   <span className="text-[10px] text-slate-400 font-mono block">{subOrg}</span>

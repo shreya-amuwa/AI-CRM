@@ -38,10 +38,10 @@ type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'pa
 
 /**
  * Department Head dashboard.
- *   Assign      — give a task to a Team Lead; see how the lead split it
+ *   Assign      - give a task to a Team Lead; see how the lead split it
  *                 across team members and every update that came back.
- *   Reports     — how much work is completed / not, per team lead and member.
- *   Daily Tasks — what was due on a day and how much of it is completed.
+ *   Reports     - how much work is completed / not, per team lead and member.
+ *   Daily Tasks - what was due on a day and how much of it is completed.
  */
 export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ onOpenHub }) => {
   const { user, profile, logout } = useAuth();
@@ -230,7 +230,7 @@ const AssignPage: React.FC<{ data: WorkTaskData }> = ({ data }) => {
               {leads.map(l => (
                 <option key={l.id} value={l.id}>
                   {l.fullName}
-                  {l.teamId ? ` — ${data.teams.find(t => t.id === l.teamId)?.name || 'Team'}` : ''}
+                  {l.teamId ? ` - ${data.teams.find(t => t.id === l.teamId)?.name || 'Team'}` : ''}
                 </option>
               ))}
             </select>

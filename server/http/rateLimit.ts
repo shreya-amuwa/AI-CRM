@@ -2,7 +2,7 @@
  * Rate limiting.
  *
  * Two layers:
- *  1. Per-IP, in memory, BEFORE authentication — cheap protection against
+ *  1. Per-IP, in memory, BEFORE authentication - cheap protection against
  *     floods of anonymous/invalid requests. Per serverless instance, so it is
  *     a coarse first line, not an exact quota.
  *  2. Per-user quotas AFTER authentication, stored in Postgres

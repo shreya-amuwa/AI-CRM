@@ -31,17 +31,17 @@ request), so the same code could later run as a long-lived Node server.
 
 Middleware order for every request (`server/app.ts`):
 
-1. `requestId` — `X-Request-Id` on every response, included in every log line
-2. access log — one JSON line per request (`level, method, path, status, ms, userId`)
+1. `requestId` - `X-Request-Id` on every response, included in every log line
+2. access log - one JSON line per request (`level, method, path, status, ms, userId`)
 3. `secureHeaders` + `Cache-Control: no-store`
-4. `cors` — only origins in `API_ALLOWED_ORIGINS` (same-origin needs none)
-5. `bodyLimit` — 1 MB
-6. **rate limit, layer 1** — per IP, in memory (flood guard before any auth work)
-7. **authenticate** — verify token, load profile, require ACTIVE
-8. **rate limit, layer 2** — per user, counters in Postgres (shared by all instances)
+4. `cors` - only origins in `API_ALLOWED_ORIGINS` (same-origin needs none)
+5. `bodyLimit` - 1 MB
+6. **rate limit, layer 1** - per IP, in memory (flood guard before any auth work)
+7. **authenticate** - verify token, load profile, require ACTIVE
+8. **rate limit, layer 2** - per user, counters in Postgres (shared by all instances)
 9. controller → service → repository
 
-## Life of a request — "Authorize & Activate"
+## Life of a request - "Authorize & Activate"
 
 1. **UI** (`UserAccessManagementModal`) calls `approvalsApi.approve(id, { teamId })`
    (`src/lib/api/endpoints.ts`). `src/lib/api/client.ts` attaches the Supabase
@@ -59,7 +59,7 @@ Middleware order for every request (`server/app.ts`):
    **with the caller's token**, so the database knows who is acting.
 7. **Database** (`approve_registration`): checks the hierarchy
    (`private.can_manage_profile`, `actor_can_assign_role`), sets the user
-   ACTIVE in the chosen team, closes the request — all in one transaction.
+   ACTIVE in the chosen team, closes the request - all in one transaction.
    Triggers then write `USER_APPROVED` to `audit_logs` and notify the user.
 8. The response returns as `{ "success": true, "data": … }`; errors as
    `{ "success": false, "error": { "code", "message" } }` with a proper HTTP status.
@@ -68,9 +68,9 @@ Middleware order for every request (`server/app.ts`):
 
 | Layer | What it enforces | Can it be bypassed? |
 |---|---|---|
-| UI | Hides buttons/roles the user may not use | Yes — cosmetic only |
+| UI | Hides buttons/roles the user may not use | Yes - cosmetic only |
 | API (`authz/policies.ts`) | Early, friendly permission errors | Calling PostgREST directly skips it… |
-| **Database (RLS + functions + triggers)** | The actual rules: who sees/changes what, status machine, audit | **No** — applies to every path |
+| **Database (RLS + functions + triggers)** | The actual rules: who sees/changes what, status machine, audit | **No** - applies to every path |
 
 Because the API forwards the user's own token, even API bugs cannot read or
 change data the user isn't allowed to. The **service-role key** (which bypasses
@@ -88,7 +88,7 @@ confirmed the caller may do it.
 
 Exceeding a limit returns **429** `{ code: "RATE_LIMITED" }` with `Retry-After`;
 successful responses carry `RateLimit-Limit / -Remaining / -Reset`. Counters live
-in `private.rate_limit_counters` via `rate_limit_consume()` (service role only —
+in `private.rate_limit_counters` via `rate_limit_consume()` (service role only -
 clients can't read or reset them). If the counter store is unreachable the API
 fails open to the in-memory limiter and logs an error; authorization is still
 enforced by the database.
@@ -100,9 +100,9 @@ Dashboard → Authentication → Rate Limits (tune "sign-ups / sign-ins per hour
 
 `.github/workflows/ci.yml` runs on every push and pull request:
 
-* **build** — `npm run typecheck`, `npm run build`, and secret scans (no JWT or
+* **build** - `npm run typecheck`, `npm run build`, and secret scans (no JWT or
   service-role reference in the bundle, no committed `.env`, no hard-coded keys).
-* **database** — Postgres 16 service + PostgREST: `npm run test:db`
+* **database** - Postgres 16 service + PostgREST: `npm run test:db`
   (RLS for every role) and `npm run test:api` (HTTP → PostgREST → Postgres,
   including rate limits).
 

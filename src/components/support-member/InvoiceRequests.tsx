@@ -135,8 +135,8 @@ export const InvoiceRequests: React.FC<{ canRequest?: boolean; onOpenCustomer?: 
                   </td>
                   <td className="py-3 px-3 text-xs text-slate-700 whitespace-nowrap">{fmtMonth(r.fromMonth)}</td>
                   <td className="py-3 px-3 text-xs text-slate-700 whitespace-nowrap">{fmtMonth(r.toMonth)}</td>
-                  <td className="py-3 px-3 text-xs text-slate-600 max-w-[16rem]">{r.note || '—'}</td>
-                  <td className="py-3 px-3 text-xs text-slate-600">{r.requestedByName || '—'}</td>
+                  <td className="py-3 px-3 text-xs text-slate-600 max-w-[16rem]">{r.note || '-'}</td>
+                  <td className="py-3 px-3 text-xs text-slate-600">{r.requestedByName || '-'}</td>
                   <td className="py-3 px-3 text-xs text-slate-500 whitespace-nowrap">{fmtWhen(r.createdAt)}</td>
                   <td className="py-3 px-5">
                     <span className={`inline-flex px-2 py-0.5 rounded-full border text-[11px] font-semibold ${STATUS_CLS[r.status]}`}>{STATUS_LABEL[r.status]}</span>

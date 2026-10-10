@@ -857,7 +857,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-slate-400 text-xs font-mono">— (Field / Web)</span>
+                                <span className="text-slate-400 text-xs font-mono">- (Field / Web)</span>
                               )}
                             </td>
 
@@ -872,7 +872,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-slate-400 text-xs font-mono">— (Pending CRM)</span>
+                                <span className="text-slate-400 text-xs font-mono">- (Pending CRM)</span>
                               )}
                             </td>
 

@@ -6,7 +6,7 @@ import { AddCustomerPage } from './AddCustomerPage';
 import { TicketsPage } from './TicketsPage';
 import { InvoiceRequests } from './InvoiceRequests';
 
-/** Team Lead (Support team): the team's tickets — assign, reassign, monitor, escalate. */
+/** Team Lead (Support team): the team's tickets - assign, reassign, monitor, escalate. */
 export const SupportLeadTickets: React.FC = () => {
   const tickets = useTickets();
   const tasks = useWorkTasks();

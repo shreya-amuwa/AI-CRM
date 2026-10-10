@@ -1,7 +1,7 @@
 -- =============================================================================
--- Team member workspace. Everything a sales executive works with — leads,
+-- Team member workspace. Everything a sales executive works with - leads,
 -- follow-ups, activity log, deals, calendar, end-of-day reports, invoices and
--- field visits — lives here instead of in each browser's localStorage, so the
+-- field visits - lives here instead of in each browser's localStorage, so the
 -- same account sees the same data on every device. Realtime is enabled so an
 -- open dashboard updates when another device changes something.
 --

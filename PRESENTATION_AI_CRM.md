@@ -27,7 +27,7 @@
   - Clean, distraction-free sans-serif UI built for speed, high contrast, and accessibility.
 
 #### 🗣️ Word-for-Word Speaking Script:
-> *"Good morning everyone. We all know the daily pain of juggling multiple disconnected tools—checking WhatsApp chats on our phones, updating Excel sheets, logging calls in telephony, and following up on support tickets in emails. Leads were slipping through the cracks, and tracking our team's daily numbers took hours of manual work.*
+> *"Good morning everyone. We all know the daily pain of juggling multiple disconnected tools-checking WhatsApp chats on our phones, updating Excel sheets, logging calls in telephony, and following up on support tickets in emails. Leads were slipping through the cracks, and tracking our team's daily numbers took hours of manual work.*
 >
 > *That is why we built this unified Operating System for our company. It brings our entire sales pipeline, our Meta WhatsApp commerce engine, and our customer support operations under one roof. It is designed specifically around how our office works every single day."*
 
@@ -62,7 +62,7 @@
 #### 📌 Slide Content (Bullet Points for PPT):
 - **10-Source Automated Inbound Ingestion**:
   - Captures inquiries from **WhatsApp API, Meta Ads, D Talk Calls, Website Forms, AI Calling, RCS, Partner Referrals, BDMs, Cold Calls, and 3rd-Party APIs**.
-  - Normalized in under **150ms** with HMAC-SHA256 signature verification—**zero manual data entry**.
+  - Normalized in under **150ms** with HMAC-SHA256 signature verification-**zero manual data entry**.
 - **WabaStore Official Meta Commerce Capabilities**:
   - **Live Inventory & Catalog Sync**: Direct sync of product SKUs and prices into WhatsApp native catalogs.
   - **Interactive Message Templates**: Carousels, quick-reply CTAs, and automated Razorpay/Cashfree payment links.

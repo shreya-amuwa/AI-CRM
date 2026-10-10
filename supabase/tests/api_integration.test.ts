@@ -872,7 +872,7 @@ await api('a', 'POST', `/pipeline/customers/${backLead}/send-to-accounts`, { amo
 r = await api('a', 'POST', `/pipeline/customers/${backLead}/accounts/back-off`, { reason: 'x' });
 check(r.status === 403, 'Sales cannot use the Accounts back-off action', r);
 r = await api('accm', 'POST', `/pipeline/customers/${backLead}/accounts/back-off`, { reason: 'Customer will not proceed' });
-check(r.status === 200, 'Customer backed off — return to Leads', r);
+check(r.status === 200, 'Customer backed off - return to Leads', r);
 r = await api('accm', 'POST', `/pipeline/customers/${backLead}/accounts/back-off`, {});
 check(r.status === 409, 'cannot return twice', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&accounts=RETURNED');

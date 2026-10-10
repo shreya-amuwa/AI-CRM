@@ -31,7 +31,7 @@ export function toViewCustomer(c: CustomerDto): Customer {
     status: STATUS_LABELS[c.status],
     lastOrderDate: c.lastOrderDate
       ? new Date(`${c.lastOrderDate}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : '—',
+      : '-',
     lastOrderAmount: c.lastOrderAmount ?? 0,
     totalSpent: c.totalSpent,
     orderCount: c.orderCount,
