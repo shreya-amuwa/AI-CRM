@@ -17,6 +17,7 @@ import type {
   FollowUpOutcome,
   LeadAccountsFilter,
   PartPaymentItem,
+  PartPaymentsPage,
   PartPaymentStatusFilter,
   PaymentOverview,
   PaymentRequestItem,
@@ -149,7 +150,7 @@ export const pipelineApi = {
   sendToAccounts: (id: string, body: { amount: number; note?: string | null }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/send-to-accounts`, { amount: body.amount, note: body.note || null }),
   paymentOverview: (id: string) => api.get<PaymentOverview>(`/pipeline/customers/${id}/payment-overview`),
-  partPayments: (q: PartPaymentsParams = {}) => api.get<Paginated<PartPaymentItem>>('/pipeline/part-payments', { ...q }),
+  partPayments: (q: PartPaymentsParams = {}) => api.get<PartPaymentsPage>('/pipeline/part-payments', { ...q }),
   paymentRequests: (q: { status?: 'PENDING' | 'CONFIRMED' | 'RETURNED'; search?: string; page?: number; pageSize?: number } = {}) =>
     api.get<Paginated<PaymentRequestItem>>('/pipeline/accounts/payment-requests', { ...q }),
   accountsCounts: () => api.get<AccountsPaymentCounts>('/pipeline/accounts/counts'),

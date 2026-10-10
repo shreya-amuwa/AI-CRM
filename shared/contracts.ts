@@ -609,6 +609,12 @@ export interface PartPaymentItem {
 
 export type PartPaymentStatusFilter = 'PARTIAL' | 'PAID' | 'RETURNED' | 'ALL';
 
+/** A page of part-payment customers plus the people available in the Salesperson / Accountant filters. */
+export interface PartPaymentsPage extends Paginated<PartPaymentItem> {
+  salespeople: { id: string; fullName: string }[];
+  accountants: { id: string; fullName: string }[];
+}
+
 /** What is still missing before a customer can enter Get Started (calculated by the database; shown by the UI). */
 export function getStartedBlockers(o: Pick<CustomerOnboarding, 'itemsTotal' | 'itemsSaved' | 'itemsVerified' | 'paymentVerified' | 'accountsConfirmedAt' | 'returnedAt'>): (
   | 'DOCUMENTS_MISSING'

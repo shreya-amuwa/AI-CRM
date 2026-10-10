@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Inbox, Pencil, Plus, Search } from 'lucide-react';
-import type { InboundLead, LeadStatus, Paginated, PipelineCounts, PipelineCustomer } from '../../../../shared/contracts';
+import type { InboundLead, LeadAccountsFilter, LeadStatus, Paginated, PipelineCounts, PipelineCustomer } from '../../../../shared/contracts';
+import { LEAD_STATUSES } from '../../../../shared/contracts';
+import { WorkflowBadge } from '../../payments/PaymentBits';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
 import {
@@ -37,7 +39,9 @@ function followUpRange(f: FollowUpFilter): Pick<PipelineQuery, 'followUpFrom' | 
   return { followUpFrom: today.toISOString(), followUpTo: new Date(today.getTime() + 7 * 86400000).toISOString() };
 }
 
-const TABS: ('' | LeadStatus)[] = ['', 'NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY'];
+type Tab = '' | LeadStatus | LeadAccountsFilter;
+const TABS: Tab[] = ['', 'NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY', 'RETURNED', 'WITH_ACCOUNTS'];
+const TAB_LABEL = (t: Tab) => (t === 'WITH_ACCOUNTS' ? 'With Accounts' : t === 'RETURNED' ? 'Returned from Accounts' : t ? LEAD_STATUS_LABEL[t] : 'All');
 
 export const LeadsView: React.FC<{
   counts: PipelineCounts | null;
@@ -50,7 +54,7 @@ export const LeadsView: React.FC<{
   const [service, setService] = useState('');
   const [source, setSource] = useState('');
   const [followUp, setFollowUp] = useState<FollowUpFilter>('');
-  const [status, setStatus] = useState<'' | LeadStatus>('');
+  const [status, setStatus] = useState<Tab>('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<PipelineCustomer> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +75,8 @@ export const LeadsView: React.FC<{
         search: debounced || undefined,
         service: service || undefined,
         source: source || undefined,
-        leadStatus: status || undefined,
+        leadStatus: (LEAD_STATUSES as readonly string[]).includes(status) ? (status as LeadStatus) : undefined,
+        accounts: status === 'WITH_ACCOUNTS' || status === 'RETURNED' ? status : undefined,
         sort: followUp ? 'followUp' : 'newest',
         ...followUpRange(followUp)
       })
@@ -166,7 +171,7 @@ export const LeadsView: React.FC<{
                     active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
-                  {t ? LEAD_STATUS_LABEL[t] : 'All'} {n !== null && <span className={active ? 'text-slate-300' : 'text-slate-400'}>{n}</span>}
+                  {TAB_LABEL(t)} {n !== null && <span className={active ? 'text-slate-300' : 'text-slate-400'}>{n}</span>}
                 </button>
               );
             })}
@@ -226,11 +231,14 @@ export const LeadsView: React.FC<{
                       <td className="px-4 py-3 text-xs text-slate-700">{l.leadSource || '—'}</td>
                       <td className={`px-4 py-3 text-xs whitespace-nowrap ${f.urgent ? 'text-rose-700 font-bold' : 'text-slate-700'}`}>{f.text}</td>
                       <td className="px-4 py-3">
-                        <Pill tone={LEAD_STATUS_TONE[l.leadStatus]}>{LEAD_STATUS_LABEL[l.leadStatus]}</Pill>
+                        <div className="flex flex-col items-start gap-1">
+                          <Pill tone={LEAD_STATUS_TONE[l.leadStatus]}>{LEAD_STATUS_LABEL[l.leadStatus]}</Pill>
+                          <WorkflowBadge workflow={l.paymentWorkflow} />
+                        </div>
                       </td>
                       <td className="px-4 py-3">
-                        <button type="button" className={btn.secondary} onClick={() => onEdit(l.id)} aria-label={`Edit lead ${l.name}`}>
-                          <Pencil className="w-3.5 h-3.5" /> Edit
+                        <button type="button" className={btn.secondary} onClick={() => onEdit(l.id)} aria-label={`${l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'} lead ${l.name}`}>
+                          <Pencil className="w-3.5 h-3.5" /> {l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'}
                         </button>
                       </td>
                     </tr>

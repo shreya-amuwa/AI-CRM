@@ -2,7 +2,7 @@ import type {
   AccountsConfirmation,
   AccountsPaymentCounts,
   Conversation,
-  PartPaymentItem,
+  PartPaymentsPage,
   PaymentOverview,
   PaymentRequestItem,
   CustomerDocument,
@@ -455,7 +455,7 @@ export class PipelineService {
     return this.repo.paymentOverview(customerId);
   }
 
-  partPayments(query: unknown): Promise<Paginated<PartPaymentItem>> {
+  partPayments(query: unknown): Promise<PartPaymentsPage> {
     return this.repo.partPayments(parse(partPaymentsQuerySchema, query ?? {}));
   }
 }

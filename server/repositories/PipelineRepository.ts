@@ -4,7 +4,7 @@ import type {
   AccountsPaymentCounts,
   ChecklistItem,
   Conversation,
-  PartPaymentItem,
+  PartPaymentsPage,
   PaymentOverview,
   PaymentRequestItem,
   ReviewCounts,
@@ -579,7 +579,7 @@ export class PipelineRepository {
     ) as string;
   }
 
-  async partPayments(q: PartPaymentsQuery): Promise<Paginated<PartPaymentItem>> {
+  async partPayments(q: PartPaymentsQuery): Promise<PartPaymentsPage> {
     return unwrap(
       await this.db.rpc('part_payments_list', {
         p_status: q.status,
@@ -593,6 +593,6 @@ export class PipelineRepository {
         p_page: q.page,
         p_page_size: q.pageSize
       })
-    ) as Paginated<PartPaymentItem>;
+    ) as PartPaymentsPage;
   }
 }

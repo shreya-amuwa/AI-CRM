@@ -26,6 +26,7 @@ export type TeamMemberNav =
   | 'leads'
   | 'potential'
   | 'onboarding'
+  | 'part-payments'
   | 'field-visits'
   | 'customers'
   | 'deals'
@@ -41,15 +42,16 @@ interface TeamMemberLayoutProps {
   activeNav?: TeamMemberNav;
   onSelectNav?: (nav: TeamMemberNav) => void;
   /** Live counts for the My Leads sub-tree (from the database). */
-  pipelineCounts?: { leads: number; potential: number; onboarding: number; returned?: number } | null;
+  pipelineCounts?: { leads: number; potential: number; onboarding: number; partPayments?: number; returned?: number } | null;
 }
 
-const PIPELINE_CHILDREN: { id: TeamMemberNav; label: string; step: number; badge: string; activeBadge: string; countKey: 'leads' | 'potential' | 'onboarding' }[] = [
+const PIPELINE_CHILDREN: { id: TeamMemberNav; label: string; step: number; badge: string; activeBadge: string; countKey: 'leads' | 'potential' | 'onboarding' | 'partPayments' }[] = [
   { id: 'leads', label: 'Leads', step: 1, badge: 'bg-indigo-50 text-indigo-700', activeBadge: 'bg-indigo-600 text-white', countKey: 'leads' },
   { id: 'potential', label: 'Potential', step: 2, badge: 'bg-orange-50 text-orange-700', activeBadge: 'bg-orange-700 text-white', countKey: 'potential' },
-  { id: 'onboarding', label: 'Customer onboarding', step: 3, badge: 'bg-emerald-50 text-emerald-700', activeBadge: 'bg-emerald-700 text-white', countKey: 'onboarding' }
+  { id: 'onboarding', label: 'Customer onboarding', step: 3, badge: 'bg-emerald-50 text-emerald-700', activeBadge: 'bg-emerald-700 text-white', countKey: 'onboarding' },
+  { id: 'part-payments', label: 'Part payments', step: 4, badge: 'bg-blue-50 text-blue-700', activeBadge: 'bg-blue-700 text-white', countKey: 'partPayments' }
 ];
-const isPipelineNav = (n: TeamMemberNav) => n === 'leads' || n === 'potential' || n === 'onboarding';
+const isPipelineNav = (n: TeamMemberNav) => n === 'leads' || n === 'potential' || n === 'onboarding' || n === 'part-payments';
 
 export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   children,

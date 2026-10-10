@@ -311,6 +311,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
               leads: pipelineCounts.leads.all,
               potential: pipelineCounts.potential.all,
               onboarding: pipelineCounts.onboarding.all,
+              partPayments: pipelineCounts.partPayments ?? 0,
               returned: pipelineCounts.onboarding.RETURNED ?? 0
             }
           : null
@@ -502,7 +503,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         {/* ========================================================================= */}
         {/* VIEW 2: MY LEADS SECTION (MY LEADS PIPELINE IN ROW MANNER) */}
         {/* ========================================================================= */}
-        {(activeNav === 'leads' || activeNav === 'potential' || activeNav === 'onboarding') && (
+        {(activeNav === 'leads' || activeNav === 'potential' || activeNav === 'onboarding' || activeNav === 'part-payments') && (
           <PipelineWorkspace
             section={activeNav}
             counts={pipelineCounts}

@@ -5,6 +5,7 @@ import { pipelineApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
 import { fmtDay, fmtMoney, fmtWhen } from '../../lib/support';
 import { Empty, ErrorBanner, inputClass, Loading, Modal, PageHeader } from '../support-member/SupportParts';
+import { AccountsPaymentRequests } from './AccountsPaymentRequests';
 
 type Tab = 'PENDING' | 'CONFIRMED';
 
@@ -138,10 +139,11 @@ const ConfirmationDetail: React.FC<DetailProps> = ({ selected, note, onNote, bus
  * the Technical Consultant for onboarding. Every call is checked by the
  * database (Accounts staff only).
  */
-export const AccountsConfirmations: React.FC<{
+const OnboardingConfirmations: React.FC<{
   /** 'split': list on the left, details on the right. 'popup': list of businesses; details open in a pop-up. */
   layout?: 'split' | 'popup';
-}> = ({ layout = 'split' }) => {
+  onCountsChanged?: () => void;
+}> = ({ layout = 'split', onCountsChanged }) => {
   const [tab, setTab] = useState<Tab>('PENDING');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
@@ -198,6 +200,7 @@ export const AccountsConfirmations: React.FC<{
       setNotice(`${selected.company || selected.name} confirmed and sent to the Technical Consultant.`);
       setNote('');
       if (layout === 'popup') setSelectedId(null);
+      onCountsChanged?.();
       await load();
     } catch (e) {
       setActionError(errorMessage(e));
@@ -208,8 +211,6 @@ export const AccountsConfirmations: React.FC<{
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Payment confirmations" subtitle="Customers Sales sent to Accounts. Check the business details and the amount, then confirm. Confirmed customers go to the Technical Consultant for onboarding." />
-
       <div className="flex flex-wrap items-center gap-3">
         <div role="tablist" aria-label="Confirmation status" className="flex p-1 rounded-xl bg-slate-100 text-xs font-semibold">
           {(
@@ -291,6 +292,57 @@ export const AccountsConfirmations: React.FC<{
             <ConfirmationDetail selected={selected} note={note} onNote={setNote} busy={busy} actionError={actionError} onConfirm={() => void confirm()} />
           )}
         </div>
+      )}
+    </div>
+  );
+};
+
+
+/**
+ * Accounts → Payment confirmations. Two queues, both answered by Accounts:
+ *  - New customers: leads Sales sent for payment. Record and verify the payment, then return the customer to Sales
+ *    onboarding, or back to Leads if they back off.
+ *  - Onboarding amount checks: customers Sales onboarded themselves and sent to Accounts to confirm the amount
+ *    before the Technical Consultant gets them.
+ */
+export const AccountsConfirmations: React.FC<{ layout?: 'split' | 'popup'; onCountsChanged?: () => void }> = ({ layout = 'split', onCountsChanged }) => {
+  const [kind, setKind] = useState<'REQUESTS' | 'ONBOARDING'>('REQUESTS');
+  const [counts, setCounts] = useState<{ requestsPending: number; onboardingPending: number } | null>(null);
+  const refreshCounts = useCallback(() => {
+    pipelineApi.accountsCounts().then(setCounts, () => setCounts(null));
+    onCountsChanged?.();
+  }, [onCountsChanged]);
+  // Open on whichever queue has something waiting (new customers first).
+  useEffect(() => {
+    pipelineApi.accountsCounts().then(c => {
+      setCounts(c);
+      if (c.requestsPending === 0 && c.onboardingPending > 0) setKind('ONBOARDING');
+    }, () => setCounts(null));
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Payment confirmations"
+        subtitle="Customers Sales sent to Accounts. Record and verify the payment, then return the customer to Sales for onboarding — or back to Leads if they back off."
+      />
+      <div role="tablist" aria-label="Confirmation queue" className="flex flex-wrap p-1 rounded-xl bg-slate-100 text-xs font-semibold self-start w-fit">
+        {(
+          [
+            ['REQUESTS', 'New customers', counts?.requestsPending],
+            ['ONBOARDING', 'Onboarding amount checks', counts?.onboardingPending]
+          ] as const
+        ).map(([k, label, n]) => (
+          <button key={k} role="tab" type="button" aria-selected={kind === k} onClick={() => setKind(k)} className={`px-3.5 py-1.5 rounded-lg ${kind === k ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}>
+            {label}
+            {typeof n === 'number' && n > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px]">{n}</span>}
+          </button>
+        ))}
+      </div>
+      {kind === 'REQUESTS' ? (
+        <AccountsPaymentRequests layout={layout} onCountsChanged={refreshCounts} />
+      ) : (
+        <OnboardingConfirmations layout={layout} onCountsChanged={refreshCounts} />
       )}
     </div>
   );

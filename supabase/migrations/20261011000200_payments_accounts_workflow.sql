@@ -998,7 +998,10 @@ begin
     'followUpsDue', (select count(*) from public.customers c
                       where c.payment_status = 'PARTIALLY_PAID' and c.lifecycle_stage in ('ONBOARDING', 'CUSTOMER')
                         and exists (select 1 from public.customer_payments p where p.customer_id = c.id and p.status = 'VERIFIED' and p.payment_type = 'PART')
-                        and coalesce((select f.next_follow_up_at from public.payment_followups f where f.customer_id = c.id order by f.contacted_at desc limit 1), now()) <= now()));
+                        and not exists (
+                          select 1 from (select f.outcome, f.next_follow_up_at from public.payment_followups f
+                                          where f.customer_id = c.id order by f.contacted_at desc limit 1) last
+                           where last.outcome <> 'NO_RESPONSE' and (last.next_follow_up_at is null or last.next_follow_up_at > now()))));
 end $$;
 revoke all on function public.accounts_payment_counts() from public, anon;
 grant execute on function public.accounts_payment_counts() to authenticated;
@@ -1020,6 +1023,8 @@ declare
   v_size integer := least(greatest(coalesce(p_page_size, 20), 1), 100);
   v_total integer;
   v_items jsonb;
+  v_salespeople jsonb;
+  v_accountants jsonb;
 begin
   if v_status not in ('PARTIAL', 'PAID', 'RETURNED', 'ALL') then
     raise exception 'VALIDATION_ERROR: Unknown status.' using errcode = 'P0001';
@@ -1031,14 +1036,14 @@ begin
     raise exception 'VALIDATION_ERROR: Unknown follow-up status.' using errcode = 'P0001';
   end if;
 
-  with base as (
+  with base0 as (
     select c.id, c.customer_code, c.name, c.company, c.phone, c.email, c.lifecycle_stage, c.deal_amount, c.amount_verified,
            c.amount_received, c.payment_status, c.owner_id, c.accounts_owner_id,
            greatest(coalesce(c.deal_amount, 0) - c.amount_verified, 0) as balance,
            pp.last_paid_at, pp.last_amount, pp.n_verified, pp.last_verified_by, pp.pending_amount,
            f.next_at, f.last_at, f.last_outcome, f.n_followups,
            case when c.payment_status = 'FULLY_PAID' then 'FULLY_PAID'
-                when f.last_outcome is null or coalesce(f.next_at, now()) <= now() or f.last_outcome = 'NO_RESPONSE' then 'FOLLOW_UP_REQUIRED'
+                when f.last_outcome is null or f.last_outcome = 'NO_RESPONSE' or (f.next_at is not null and f.next_at <= now()) then 'FOLLOW_UP_REQUIRED'
                 when f.last_outcome = 'AWAITING_PAYMENT' then 'AWAITING_PAYMENT'
                 else 'CONTACTED' end as followup_status
       from public.customers c
@@ -1059,10 +1064,12 @@ begin
      where pp.has_part
        and (v_accounts or private.can_access_customer(c.id))
        and (v_term is null or c.search_text ilike '%' || v_term || '%' or lower(coalesce(c.customer_code, '')) like '%' || v_term || '%')
-       and (p_salesperson is null or c.owner_id = p_salesperson)
-       and (p_accounts_owner is null or c.accounts_owner_id = p_accounts_owner)
        and (p_from is null or pp.last_paid_at >= p_from::timestamptz)
        and (p_to is null or pp.last_paid_at < (p_to + 1)::timestamptz)
+  ), base as (
+    select * from base0 b0
+     where (p_salesperson is null or b0.owner_id = p_salesperson)
+       and (p_accounts_owner is null or b0.accounts_owner_id = p_accounts_owner)
   ), filtered as (
     select * from base b
      where case v_status
@@ -1072,8 +1079,14 @@ begin
              else true end
        and (p_followup is null or not v_accounts or b.followup_status = p_followup)
   )
-  select (select count(*) from filtered), coalesce(jsonb_agg(row_json order by ord), '[]'::jsonb)
-    into v_total, v_items
+  select (select count(*) from filtered), coalesce(jsonb_agg(row_json order by ord), '[]'::jsonb),
+         -- Options for the Salesperson / Accountant filters: everyone with a part-paid customer in scope.
+         (select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'fullName', x.name) order by x.name), '[]'::jsonb)
+            from (select distinct b.owner_id as id, (select full_name from public.profiles where id = b.owner_id) as name from base0 b) x),
+         (select coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'fullName', x.name) order by x.name), '[]'::jsonb)
+            from (select distinct b.accounts_owner_id as id, (select full_name from public.profiles where id = b.accounts_owner_id) as name
+                    from base0 b where b.accounts_owner_id is not null) x)
+    into v_total, v_items, v_salespeople, v_accountants
     from (
       select row_number() over (
                order by (case when v_sort = 'recent' then f.last_paid_at end) desc nulls last,
@@ -1107,7 +1120,8 @@ begin
                limit v_size offset (v_page - 1) * v_size) f
     ) page;
 
-  return jsonb_build_object('items', v_items, 'total', coalesce(v_total, 0), 'page', v_page, 'pageSize', v_size);
+  return jsonb_build_object('items', v_items, 'total', coalesce(v_total, 0), 'page', v_page, 'pageSize', v_size,
+    'salespeople', coalesce(v_salespeople, '[]'::jsonb), 'accountants', case when v_accounts then coalesce(v_accountants, '[]'::jsonb) else '[]'::jsonb end);
 end $$;
 revoke all on function public.part_payments_list(text, text, uuid, uuid, date, date, text, text, integer, integer) from public, anon;
 grant execute on function public.part_payments_list(text, text, uuid, uuid, date, date, text, text, integer, integer) to authenticated;

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Building2, Check, Clock, MapPin, MessageCircle, Phone } from 'lucide-react';
-import type { LeadStatus, PipelineCustomerDetail, ServiceCatalogItem } from '../../../../shared/contracts';
+import { ArrowLeft, ArrowRight, Building2, Check, Clock, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
+import type { Conversation, LeadStatus, PaymentOverview, PipelineCustomerDetail, ServiceCatalogItem } from '../../../../shared/contracts';
 import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { leadCreateSchema } from '../../../../shared/validation';
 import { ApiError, errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
+import { fmtDate, PaymentHistory, rupees, WorkflowBadge } from '../../payments/PaymentBits';
+import { ConversationSection } from './LeadConversations';
 import {
   blockDecimals,
   Avatar,
@@ -61,7 +63,8 @@ const ServicePicker: React.FC<{
   onChange: (v: string[]) => void;
   variant: 'grid' | 'chips';
   error?: string;
-}> = ({ services, value, onChange, variant, error }) => {
+  disabled?: boolean;
+}> = ({ services, value, onChange, variant, error, disabled }) => {
   const groups = useMemo(() => {
     const m = new Map<string, ServiceCatalogItem[]>();
     for (const s of services) m.set(s.category, [...(m.get(s.category) || []), s]);
@@ -81,8 +84,9 @@ const ServicePicker: React.FC<{
               type="button"
               role="checkbox"
               aria-checked={on}
+              disabled={disabled}
               onClick={() => toggle(s.code)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
+              className={`disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                 on ? 'border-indigo-300 bg-indigo-50 text-indigo-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
               }`}
             >
@@ -343,9 +347,13 @@ export const EditLeadView: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [overview, setOverview] = useState<PaymentOverview | null>(null);
 
   const hydrate = (l: PipelineCustomerDetail) => {
     setLead(l);
+    setConversations(l.conversations);
     setForm({
       name: l.name,
       company: l.company || '',
@@ -363,6 +371,19 @@ export const EditLeadView: React.FC<{
     pipelineApi.get(id).then(hydrate, err => setLoadError(errorMessage(err)));
   };
   useEffect(load, [id]);
+  /** Refresh only the activity list (a conversation was saved) without touching what is being edited. */
+  const refreshActivities = () => {
+    void pipelineApi.get(id).then(l => setLead(cur => (cur ? { ...cur, activities: l.activities } : cur)), () => undefined);
+  };
+  // Where the lead is in the Accounts workflow (the request, who sent it, any reason it came back).
+  useEffect(() => {
+    if (!lead || lead.paymentWorkflow === 'NONE') return setOverview(null);
+    let live = true;
+    pipelineApi.paymentOverview(id).then(o => live && setOverview(o), () => live && setOverview(null));
+    return () => {
+      live = false;
+    };
+  }, [id, lead?.paymentWorkflow]);
   useEffect(() => {
     if (!notice) return;
     const t = setTimeout(() => setNotice(null), 3000);
@@ -432,23 +453,24 @@ export const EditLeadView: React.FC<{
   const phoneDigits = (lead.whatsapp || lead.phone || '').replace(/\D/g, '');
   const statusIndex = LEAD_STATUSES.indexOf(status);
   const firstName = lead.name.split(' ')[0];
+  /** With Accounts for payment confirmation: Sales cannot change the lead until Accounts answers. */
+  const locked = lead.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION';
 
-  const detailRow = (label: string, key: keyof typeof form, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
-    <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] items-center gap-2 py-2.5 border-b border-slate-100 last:border-0">
-      <label htmlFor={`edit-${key}`} className="text-xs text-slate-500">
+  const detailField = (label: string, key: keyof typeof form, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <div>
+      <label htmlFor={`edit-${key}`} className="block text-xs font-medium text-slate-500 mb-1">
         {label}
       </label>
-      <div>
-        <input
-          id={`edit-${key}`}
-          className={`${inputCls} bg-slate-50 border-transparent focus:bg-white ${errors[key] ? 'border-rose-400' : ''}`}
-          value={form[key]}
-          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          aria-invalid={!!errors[key]}
-          {...props}
-        />
-        {errors[key] && <p className="mt-1 text-[11px] text-rose-600">{errors[key]}</p>}
-      </div>
+      <input
+        id={`edit-${key}`}
+        className={`${inputCls} bg-slate-50 border-transparent focus:bg-white ${errors[key] ? 'border-rose-400' : ''}`}
+        value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        aria-invalid={!!errors[key]}
+        disabled={locked}
+        {...props}
+      />
+      {errors[key] && <p className="mt-1 text-[11px] text-rose-600">{errors[key]}</p>}
     </div>
   );
 
@@ -458,14 +480,16 @@ export const EditLeadView: React.FC<{
         <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900">
           <ArrowLeft className="w-3.5 h-3.5" /> Back to leads
         </button>
-        <div className="flex gap-2">
-          <button type="button" className={btn.secondary} onClick={() => hydrate(lead)} disabled={saving}>
-            Cancel
-          </button>
-          <button type="button" className={btn.primary} onClick={onSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save changes'}
-          </button>
-        </div>
+        {!locked && (
+          <div className="flex gap-2">
+            <button type="button" className={btn.secondary} onClick={() => hydrate(lead)} disabled={saving}>
+              Cancel
+            </button>
+            <button type="button" className={btn.primary} onClick={onSave} disabled={saving}>
+              {saving ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        )}
       </div>
       {error && <ErrorBanner message={error} />}
       {notice && !error && (
@@ -474,6 +498,7 @@ export const EditLeadView: React.FC<{
         </p>
       )}
 
+      {/* 1 · Lead header and the actions available on this lead */}
       <Card className="overflow-hidden">
         <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
@@ -484,6 +509,7 @@ export const EditLeadView: React.FC<{
                 <Pill tone={status === 'READY_TO_BUY' ? 'green' : status === 'INTERESTED' ? 'orange' : status === 'CONTACTED' ? 'indigo' : 'slate'}>
                   {LEAD_STATUS_LABEL[status]}
                 </Pill>
+                <WorkflowBadge workflow={lead.paymentWorkflow} />
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-500">
                 <span className="inline-flex items-center gap-1">
@@ -504,7 +530,7 @@ export const EditLeadView: React.FC<{
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {lead.phone && (
               <a className={btn.secondary} href={`tel:${lead.phone.replace(/\s/g, '')}`}>
                 <Phone className="w-3.5 h-3.5" /> Call
@@ -521,7 +547,7 @@ export const EditLeadView: React.FC<{
         <div className="px-5 pb-5 border-t border-slate-100 pt-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900">Where is this lead?</h2>
-            <span className="text-xs text-slate-500">Tap a step to change the status</span>
+            <span className="text-xs text-slate-500">{locked ? 'With Accounts — locked until they answer' : 'Tap a step to change the status'}</span>
           </div>
           <ol className="mt-4 grid grid-cols-4 relative" aria-label="Lead status">
             <div className="absolute top-4 left-[12.5%] right-[12.5%] h-0.5 bg-slate-200" aria-hidden="true">
@@ -535,9 +561,10 @@ export const EditLeadView: React.FC<{
                   <button
                     type="button"
                     onClick={() => setStatus(s)}
+                    disabled={locked}
                     aria-pressed={current}
                     aria-label={`${LEAD_STATUS_LABEL[s]} — ${LEAD_STATUS_HINT[s]}`}
-                    className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 ${
+                    className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${
                       done || current ? 'bg-emerald-700 text-white' : 'bg-white border-2 border-slate-200 text-slate-400 hover:border-emerald-400'
                     } ${current ? 'ring-4 ring-emerald-100' : ''}`}
                   >
@@ -549,61 +576,87 @@ export const EditLeadView: React.FC<{
               );
             })}
           </ol>
-          {status === 'READY_TO_BUY' && (
-            <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-emerald-800 text-white">
+          {status === 'READY_TO_BUY' && !locked && (
+            <div className="mt-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-xl bg-emerald-800 text-white">
               <div>
                 <div className="text-sm font-bold">{firstName} is ready to buy</div>
-                <div className="text-xs text-emerald-100">Saving moves this customer out of Leads and into the Potential section to collect payment.</div>
+                <div className="text-xs text-emerald-100">Send them to Accounts to confirm the payment. Accounts then returns them to Customer onboarding.</div>
               </div>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-emerald-800 text-xs font-bold hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                onClick={() => setMoveOpen(true)}
-                disabled={saving}
-              >
-                Save &amp; move to Potential <ArrowRight className="w-3.5 h-3.5" />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-emerald-800 text-xs font-bold hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  onClick={() => setSendOpen(true)}
+                  disabled={saving}
+                >
+                  <Send className="w-3.5 h-3.5" aria-hidden="true" /> Send to Accounts
+                </button>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-emerald-300/60 text-white text-xs font-bold hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  onClick={() => setMoveOpen(true)}
+                  disabled={saving}
+                >
+                  Save &amp; move to Potential <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+          {status !== 'READY_TO_BUY' && !locked && (
+            <div className="mt-4 flex justify-end">
+              <button type="button" className={btn.secondary} onClick={() => setSendOpen(true)} disabled={saving}>
+                <Send className="w-3.5 h-3.5" aria-hidden="true" /> Send to Accounts
               </button>
             </div>
           )}
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <Card className="p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-1">Customer details</h2>
-            {detailRow('Contact person', 'name')}
-            {detailRow('Business name', 'company')}
-            {detailRow('Mobile', 'phone', { type: 'tel' })}
-            {detailRow('Email', 'email', { type: 'email' })}
-            {detailRow('City', 'city')}
-            <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] items-center gap-2 py-2.5 border-b border-slate-100">
-              <label htmlFor="edit-leadSource" className="text-xs text-slate-500">
-                Lead source
-              </label>
-              <select
-                id="edit-leadSource"
-                className={`${inputCls} bg-slate-50 border-transparent`}
-                value={form.leadSource}
-                onChange={e => setForm(f => ({ ...f, leadSource: e.target.value }))}
-              >
-                {[...new Set([form.leadSource, ...LEAD_SOURCES])].filter(Boolean).map(s => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            {detailRow('Next follow-up', 'nextFollowUpAt', { type: 'datetime-local' })}
-          </Card>
-          <Card className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-bold text-slate-900">Services interested in</h2>
-              <span className="text-xs text-slate-500">{selected.length} selected</span>
-            </div>
-            <ServicePicker services={services} value={selected} onChange={setSelected} variant="chips" error={errors.services} />
-          </Card>
+      {lead.paymentWorkflow !== 'NONE' && lead.paymentWorkflow !== 'PAYMENT_CONFIRMED' && <AccountsStateCard workflow={lead.paymentWorkflow} overview={overview} />}
+
+      {/* 2 · Customer details — full width */}
+      <Card className="p-5">
+        <h2 className="text-sm font-bold text-slate-900 mb-4">Customer details</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
+          {detailField('Contact person', 'name')}
+          {detailField('Business name', 'company')}
+          {detailField('Mobile', 'phone', { type: 'tel' })}
+          {detailField('Email', 'email', { type: 'email' })}
+          {detailField('City', 'city')}
+          <div>
+            <label htmlFor="edit-leadSource" className="block text-xs font-medium text-slate-500 mb-1">
+              Lead source
+            </label>
+            <select
+              id="edit-leadSource"
+              className={`${inputCls} bg-slate-50 border-transparent`}
+              value={form.leadSource}
+              disabled={locked}
+              onChange={e => setForm(f => ({ ...f, leadSource: e.target.value }))}
+            >
+              {[...new Set([form.leadSource, ...LEAD_SOURCES])].filter(Boolean).map(s => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          {detailField('Next follow-up', 'nextFollowUpAt', { type: 'datetime-local' })}
         </div>
-        <ActivityCard activities={lead.activities} />
-      </div>
+      </Card>
+
+      {/* 3 · Services interested in — full width */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-slate-900">Services interested in</h2>
+          <span className="text-xs text-slate-500">{selected.length} selected</span>
+        </div>
+        <ServicePicker services={services} value={selected} onChange={setSelected} variant="chips" error={errors.services} disabled={locked} />
+      </Card>
+
+      {/* 4 + 5 · Last conversation and the conversation history */}
+      <ConversationSection customerId={id} conversations={conversations} onChange={setConversations} onSaved={refreshActivities} />
+
+      {/* 6 · Last activities — full width, at the bottom */}
+      <ActivityCard activities={lead.activities} title="Last activities" />
 
       {moveOpen && (
         <MoveToPotentialDialog
@@ -620,7 +673,109 @@ export const EditLeadView: React.FC<{
           }}
         />
       )}
+      {sendOpen && (
+        <SendToAccountsDialog
+          leadName={lead.company || lead.name}
+          defaultAmount={lead.dealAmount ?? lead.expectedBudget}
+          hasServices={selected.length > 0}
+          onClose={() => setSendOpen(false)}
+          onConfirm={async (amount, note) => {
+            // Persist pending edits first; the database then re-checks everything.
+            if (!(await save())) return false;
+            await pipelineApi.sendToAccounts(id, { amount, note });
+            notifyPipelineChanged();
+            hydrate(await pipelineApi.get(id));
+            setSendOpen(false);
+            setNotice('Sent to Accounts. You will be notified when they confirm the payment or return the customer.');
+            return true;
+          }}
+        />
+      )}
     </div>
+  );
+};
+
+/** Where the lead is in the Accounts workflow: waiting, or returned with the reason. */
+const AccountsStateCard: React.FC<{ workflow: 'PENDING_PAYMENT_CONFIRMATION' | 'RETURNED_FROM_ACCOUNTS' | string; overview: PaymentOverview | null }> = ({ workflow, overview }) => {
+  const pending = workflow === 'PENDING_PAYMENT_CONFIRMATION';
+  const req = overview?.request ?? null;
+  return (
+    <section
+      role="status"
+      aria-label={pending ? 'With Accounts' : 'Returned from Accounts'}
+      className={`rounded-2xl border p-5 ${pending ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}
+    >
+      <h2 className="text-sm font-bold">{pending ? 'With Accounts — payment confirmation pending' : 'Returned from Accounts'}</h2>
+      {pending ? (
+        <p className="mt-1 text-xs">
+          {req ? `Sent by ${req.requestedBy ?? 'Sales'} on ${fmtDate(req.requestedAt)} · agreed ${rupees(req.agreedAmount)}. ` : ''}
+          Accounts will confirm the payment and return this customer to Customer onboarding, or send them back here if they back off. The lead is locked until then.
+        </p>
+      ) : (
+        <p className="mt-1 text-xs">
+          {req?.resolutionNote ? <>“{req.resolutionNote}” — </> : ''}
+          {req ? `returned by ${req.resolvedBy ?? 'Accounts'} on ${fmtDate(req.resolvedAt)}. ` : ''}
+          Follow up with the customer, then send to Accounts again when they are ready.
+        </p>
+      )}
+      {overview && overview.payments.length > 0 && (
+        <div className="mt-3 bg-white/70 rounded-xl p-3 text-slate-800">
+          {!pending && overview.verified > 0 && (
+            <p className="text-xs font-semibold mb-2">{rupees(overview.verified)} was already received and verified. Accounts handles any refund or cancellation.</p>
+          )}
+          <PaymentHistory payments={overview.payments} />
+        </div>
+      )}
+    </section>
+  );
+};
+
+const SendToAccountsDialog: React.FC<{
+  leadName: string;
+  defaultAmount: number | null;
+  hasServices: boolean;
+  onClose: () => void;
+  onConfirm: (amount: number, note: string | null) => Promise<boolean>;
+}> = ({ leadName, defaultAmount, hasServices, onClose, onConfirm }) => {
+  const [amount, setAmount] = useState(defaultAmount ? String(defaultAmount) : '');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const n = Number(amount);
+    if (!hasServices) return setError('Select at least one service first.');
+    if (!(n > 0)) return setError('Enter the agreed amount.');
+    if (!Number.isInteger(n)) return setError('Enter whole rupees only (no paise), e.g. 15000.');
+    setBusy(true);
+    setError(null);
+    try {
+      if (!(await onConfirm(n, note.trim() || null))) setBusy(false);
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog title="Send to Accounts" description={`${leadName} goes to Accounts to confirm the payment. They return the customer to Customer onboarding once the payment is verified, or back here if the customer backs off.`} onClose={() => !busy && onClose()}>
+      <form onSubmit={submit} className="space-y-3" noValidate>
+        <Field label="Agreed amount (₹)" required htmlFor="accounts-amount">
+          <input id="accounts-amount" type="number" min={1} step={1} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={blockDecimals} />
+        </Field>
+        <Field label="Note for Accounts (optional)" htmlFor="accounts-note">
+          <textarea id="accounts-note" rows={2} maxLength={1000} className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Customer will pay half today by UPI" />
+        </Field>
+        {error && <ErrorBanner message={error} />}
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className={btn.green} disabled={busy}>
+            {busy ? 'Sending…' : 'Send to Accounts'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 };
 
@@ -689,9 +844,9 @@ const activityTitle = (type: string) =>
         .replace(/_/g, ' ')
         .replace(/^\w/, c => c.toUpperCase());
 
-export const ActivityCard: React.FC<{ activities: PipelineCustomerDetail['activities']; footer?: React.ReactNode }> = ({ activities, footer }) => (
+export const ActivityCard: React.FC<{ activities: PipelineCustomerDetail['activities']; footer?: React.ReactNode; title?: string }> = ({ activities, footer, title = 'Activity' }) => (
   <Card className="p-5 h-fit">
-    <h2 className="text-sm font-bold text-slate-900 mb-3">Activity</h2>
+    <h2 className="text-sm font-bold text-slate-900 mb-3">{title}</h2>
     {activities.length === 0 ? (
       <p className="text-xs text-slate-500">No activity yet.</p>
     ) : (

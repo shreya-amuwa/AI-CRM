@@ -7,7 +7,7 @@ import {
   Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus,
   Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign,
   Handshake, Filter, Award, FileText,  LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork,
-  Navigation, TrendingUp, Receipt
+  Navigation, TrendingUp, Receipt, Wallet
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -18,6 +18,7 @@ export type ActiveTab =
   | 'hrStaff'
   | 'accounts'
   | 'confirmations'
+  | 'part_payments'
   | 'income'
   | 'expense'
   | 'invoice'
@@ -136,6 +137,8 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
     { id: 'dashboard', label: 'Accounts Overview', icon: LayoutDashboard },
     // Customers Sales sent to Accounts: business details, then Confirm.
     { id: 'confirmations' as ActiveTab, label: 'Confirmations', icon: CheckCircle2 },
+    // Customers who paid part of the amount: balance follow-ups.
+    { id: 'part_payments' as ActiveTab, label: 'Part Payments', icon: Wallet },
     { id: 'income', label: 'Department Income', icon: TrendingUp },
     { id: 'expense', label: 'Expenses', icon: Receipt },
     { id: 'invoice', label: 'Invoices & Quotations', icon: FileText },
@@ -267,11 +270,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const baseNavItems = DEPARTMENT_NAV_MAP[key] || GENERIC_DEPARTMENT_NAV;
   // Managers get "Team Members & Access" directly under the dashboard entry.
   const canManageStaff = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'hr' || user?.role === 'team-lead';
+  // Anchored entries stay together under the dashboard (e.g. Accounts: Confirmations, Part Payments).
+  const anchored = baseNavItems[1]?.id === 'confirmations' ? (baseNavItems[2]?.id === 'part_payments' ? 3 : 2) : 1;
   const navItems = canManageStaff
     ? [
-        ...baseNavItems.slice(0, baseNavItems[1]?.id === 'confirmations' ? 2 : 1),
+        ...baseNavItems.slice(0, anchored),
         { id: 'staff_access' as ActiveTab, label: 'Team Members & Access', icon: UserCheck },
-        ...baseNavItems.slice(baseNavItems[1]?.id === 'confirmations' ? 2 : 1)
+        ...baseNavItems.slice(anchored)
       ]
     : baseNavItems;
   const deptTitle = activeDepartment?.name || 'Department';

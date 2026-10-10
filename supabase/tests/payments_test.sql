@@ -205,9 +205,12 @@ select test.check((select part_payments_list() -> 'items' -> 0 -> 'followUp' ->>
                      and (part_payments_list() -> 'items' -> 0 -> 'followUp' ->> 'count')::int = 1
                      and (accounts_payment_counts() ->> 'followUpsDue')::int = 0), 'after a follow-up the status is Awaiting payment and it is no longer due');
 select test.check((select (part_payments_list(p_followup => 'AWAITING_PAYMENT') ->> 'total')::int = 1 and (part_payments_list(p_followup => 'FOLLOW_UP_REQUIRED') ->> 'total')::int = 0), 'follow-up status filter');
+-- A follow-up without a next date still counts as followed up (Awaiting payment), not "required" again.
+select add_payment_followup((select id from pt where name = 'L2'), 'AWAITING_PAYMENT', 'Customer said they will pay soon.', null);
+select test.check((select part_payments_list() -> 'items' -> 0 -> 'followUp' ->> 'status' = 'AWAITING_PAYMENT' and (accounts_payment_counts() ->> 'followUpsDue')::int = 0), 'a follow-up with no next date keeps the status and is not due again');
 select test.must_fail($$select add_payment_followup((select id from pt where name = 'L2'), 'CONTACTED', '', null)$$, 'a follow-up needs a note', 'Write a note');
 select test.must_fail($$select add_payment_followup((select id from pt where name = 'L2'), 'BOGUS', 'x', null)$$, 'outcome must be valid', 'outcome');
-select test.check((select jsonb_array_length(customer_payment_overview((select id from pt where name = 'L2')) -> 'followUps') = 1), 'Accounts sees the follow-up notes');
+select test.check((select jsonb_array_length(customer_payment_overview((select id from pt where name = 'L2')) -> 'followUps') = 2), 'Accounts sees the follow-up notes');
 select test.admin_check($Q$select (select count(*) = 2 from lead_conversations where customer_id = (select id from pt where name = 'L2'))$Q$, 'follow-up notes are not mixed into the Sales conversations');
 select test.login('acc_m2');
 select test.must_fail($$select add_payment_followup((select id from pt where name = 'L2'), 'CONTACTED', 'trying', null)$$, 'another accountant cannot follow up a customer assigned to someone else', 'assigned to another');
@@ -218,7 +221,7 @@ select test.admin_check($Q$select (select accounts_owner_id = test.id('acc_m2') 
 select test.must_fail($$select assign_payment_owner((select id from pt where name = 'L2'), test.id('tm_a'))$$, 'only Accounts staff can be assigned', 'Accounts team member');
 select test.login('acc_m2');
 select add_payment_followup((select id from pt where name = 'L2'), 'CONTACTED', 'Took over; customer confirmed.', null);
-select test.check((select jsonb_array_length(customer_payment_overview((select id from pt where name = 'L2')) -> 'followUps') = 2), 'the new accountant adds follow-up notes');
+select test.check((select jsonb_array_length(customer_payment_overview((select id from pt where name = 'L2')) -> 'followUps') = 3), 'the new accountant adds follow-up notes');
 
 -- Another part payment, then the full settlement.
 select accounts_record_payment((select id from pt where name = 'L2'), 'PART', 10000, 'BANK_TRANSFER', 'NEFT-22', null, null, false);
