@@ -4,6 +4,7 @@
  */
 import type {
   AccountsConfirmation,
+  AccountsPaymentCounts,
   ApprovalRequest,
   AuditLog,
   Customer,
@@ -12,6 +13,14 @@ import type {
   CustomerStatus,
   CustomerDocument,
   CustomerSummary,
+  Conversation,
+  FollowUpOutcome,
+  LeadAccountsFilter,
+  PartPaymentItem,
+  PartPaymentStatusFilter,
+  PaymentOverview,
+  PaymentRequestItem,
+  PaymentType,
   Department,
   DocumentUploadTicket,
   DocumentUrl,
@@ -58,6 +67,28 @@ export interface CustomerQuery {
   lifecycle?: string;
 }
 
+export interface AccountsPaymentInput {
+  type: PaymentType;
+  amount: number;
+  method: PaymentMethod;
+  reference?: string | null;
+  paidAt?: string | null;
+  note?: string | null;
+}
+
+export interface PartPaymentsParams {
+  status?: PartPaymentStatusFilter;
+  search?: string;
+  salesperson?: string;
+  accountsOwner?: string;
+  from?: string;
+  to?: string;
+  followUp?: 'FOLLOW_UP_REQUIRED' | 'CONTACTED' | 'AWAITING_PAYMENT' | 'FULLY_PAID';
+  sort?: 'recent' | 'balance' | 'name' | 'followUp';
+  page?: number;
+  pageSize?: number;
+}
+
 export interface PipelineQuery {
   stage: PipelineStage;
   page?: number;
@@ -70,6 +101,8 @@ export interface PipelineQuery {
   followUpTo?: string;
   noFollowUp?: boolean;
   payment?: PaymentFilter;
+  /** Leads tabs: with Accounts for payment confirmation / returned by Accounts. */
+  accounts?: LeadAccountsFilter;
   onboarding?: OnboardingFilter;
   handover?: HandoverStage;
   handoverMine?: 'TEAM_LEAD' | 'TEAM_MEMBER';
@@ -110,6 +143,31 @@ export const pipelineApi = {
   consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/consultant/details`, body),
   consultantStartOnboarding: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/start-onboarding`),
+  conversations: (id: string) => api.get<Conversation[]>(`/pipeline/customers/${id}/conversations`),
+  addConversation: (id: string, note: string) => api.post<Conversation[]>(`/pipeline/customers/${id}/conversations`, { note }),
+  updateConversation: (conversationId: string, note: string) => api.patch<null>(`/pipeline/conversations/${conversationId}`, { note }),
+  sendToAccounts: (id: string, body: { amount: number; note?: string | null }) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/send-to-accounts`, { amount: body.amount, note: body.note || null }),
+  paymentOverview: (id: string) => api.get<PaymentOverview>(`/pipeline/customers/${id}/payment-overview`),
+  partPayments: (q: PartPaymentsParams = {}) => api.get<Paginated<PartPaymentItem>>('/pipeline/part-payments', { ...q }),
+  paymentRequests: (q: { status?: 'PENDING' | 'CONFIRMED' | 'RETURNED'; search?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<Paginated<PaymentRequestItem>>('/pipeline/accounts/payment-requests', { ...q }),
+  accountsCounts: () => api.get<AccountsPaymentCounts>('/pipeline/accounts/counts'),
+  accountsTeam: () => api.get<{ id: string; fullName: string; role: string }[]>('/pipeline/accounts/team'),
+  recordAccountsPayment: (id: string, body: AccountsPaymentInput & { verify: boolean }) =>
+    api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments`, body),
+  updateAccountsPayment: (id: string, paymentId: string, body: AccountsPaymentInput) =>
+    api.patch<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}`, body),
+  verifyAccountsPayment: (id: string, paymentId: string) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/verify`, {}),
+  rejectAccountsPayment: (id: string, paymentId: string, reason: string) =>
+    api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/reject`, { reason }),
+  reverseAccountsPayment: (id: string, paymentId: string, reason: string) =>
+    api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/reverse`, { reason }),
+  confirmPaymentAndReturn: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/payment-confirmed`, { note: note || null }),
+  customerBackedOff: (id: string, reason?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/back-off`, { reason: reason || null }),
+  assignPaymentOwner: (id: string, ownerId: string | null) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/owner`, { ownerId }),
+  addPaymentFollowUp: (id: string, body: { outcome: FollowUpOutcome; note: string; nextFollowUpAt?: string | null }) =>
+    api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/followups`, { ...body, nextFollowUpAt: body.nextFollowUpAt || null }),
   accountsConfirmations: (q: { status?: 'PENDING' | 'CONFIRMED'; search?: string; page?: number; pageSize?: number } = {}) =>
     api.get<Paginated<AccountsConfirmation>>('/pipeline/accounts/confirmations', { ...q }),
   confirmAccountsPayment: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/confirm`, { note: note || null }),

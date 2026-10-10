@@ -317,9 +317,12 @@ r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 10
 check(r.status === 200 && r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.amountReceived === 10000 && r.json.data.onboarding.paymentMethod === 'UPI',
   'the first payment starts onboarding on the same record', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=GET_STARTED');
-check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'part-paid onboarding listed under Get started', r);
+check(r.json.data.total === 0, 'a payment Sales recorded is unverified: not under Get started', r);
 r = await api('a', 'GET', '/pipeline/counts');
-check(r.json.data.onboarding.GET_STARTED === 1, 'Get started count', r);
+check(r.json.data.onboarding.GET_STARTED === 0, 'Get started count follows verified payments only', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+check(r.json.data.amountReceived === 10000 && r.json.data.amountVerified === 0 && r.json.data.paymentStatus === 'PENDING_VERIFICATION' && r.json.data.onboarding.paymentVerified === false,
+  'recorded money is pending until Accounts verifies it', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/payments`, { amount: 5000, method: 'UPI' });
 check(r.status === 200 && r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.amountReceived === 15000 && r.json.data.onboarding.mandatorySaved === 0,
   'the balance is recorded while in onboarding', r);
@@ -766,6 +769,120 @@ check(r.status === 409, 'second claim → 409 (no duplicate customers)', r);
 r = await api('b', 'GET', '/pipeline/inbound');
 check(!r.json.data.some((l: any) => l.id === 'W-1'), 'claimed lead leaves the inbound list');
 void leadB;
+
+
+// --- conversations, Sales → Accounts payment workflow, Part Payments ---------
+r = await api('a', 'POST', '/pipeline/leads', { name: 'Neelam Rao', company: 'Rao Textiles', phone: '+91 97000 11111', leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Asked about AI calling on the first visit.' });
+check(r.status === 201, 'lead created with a note', r);
+const payLead = r.json.data.id;
+r = await api('a', 'GET', `/pipeline/customers/${payLead}`);
+check(r.status === 200 && r.json.data.conversations.length === 1 && r.json.data.conversations[0].source === 'LEAD_NOTE'
+  && r.json.data.conversations[0].note === 'Asked about AI calling on the first visit.' && r.json.data.conversations[0].author?.fullName === 'Member A' && r.json.data.conversations[0].canEdit,
+  'the note typed while creating the lead comes back as the Last conversation', r.json.data.conversations);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/conversations`, { note: '   ' });
+check(r.status === 422, 'an empty conversation is rejected by validation', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/conversations`, { note: 'Sent the quotation on WhatsApp.' });
+check(r.status === 201 && r.json.data.length === 2 && r.json.data[0].note === 'Sent the quotation on WhatsApp.' && r.json.data[1].source === 'LEAD_NOTE', 'a new conversation is first; the earlier one stays', r);
+const firstConv = r.json.data[1].id;
+r = await api('a', 'PATCH', `/pipeline/conversations/${firstConv}`, { note: 'Asked about AI calling and WhatsApp API on the first visit.' });
+check(r.status === 200, 'the author edits one conversation', r);
+r = await api('a', 'GET', `/pipeline/customers/${payLead}/conversations`);
+check(r.json.data.length === 2 && r.json.data[0].note === 'Sent the quotation on WhatsApp.' && r.json.data[1].note.includes('WhatsApp API') && r.json.data[1].editedAt, 'only that conversation changed', r.json.data);
+r = await api('b', 'PATCH', `/pipeline/conversations/${firstConv}`, { note: 'hijack' });
+check(r.status === 404, "another salesperson cannot edit someone else's conversation", r);
+r = await api('b', 'POST', `/pipeline/customers/${payLead}/conversations`, { note: 'hijack' });
+check(r.status === 404, "another salesperson cannot add to someone else's lead", r);
+
+r = await api('b', 'POST', `/pipeline/customers/${payLead}/send-to-accounts`, { amount: 40000 });
+check(r.status === 404, 'another salesperson cannot send this lead to Accounts', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/send-to-accounts`, { amount: 0 });
+check(r.status === 422, 'an agreed amount is required', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/send-to-accounts`, { amount: 40000, note: 'Agreed on the call' });
+check(r.status === 200 && r.json.data.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' && r.json.data.dealAmount === 40000 && r.json.data.id === payLead, 'Send to Accounts: same lead, pending payment confirmation', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/send-to-accounts`, { amount: 40000 });
+check(r.status === 409, 'a second submission is refused', r);
+r = await api('a', 'PATCH', `/pipeline/leads/${payLead}`, { city: 'Pune' });
+check(r.status === 409, 'a lead with Accounts cannot be edited', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&pageSize=100');
+check(!r.json.data.items.some((i: any) => i.id === payLead), 'Leads no longer lists it while it is with Accounts');
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&accounts=WITH_ACCOUNTS&path=pipeline%2Fcustomers');
+check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === payLead, 'the With Accounts tab lists it', r);
+r = await api('a', 'GET', '/pipeline/accounts/payment-requests');
+check(r.status === 403, 'Sales cannot read the Accounts queue', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 10000, method: 'CASH', verify: true });
+check(r.status === 403, 'Sales cannot record a payment', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/accounts/payment-confirmed`, {});
+check(r.status === 403, 'Sales cannot confirm payment', r);
+
+r = await api('accm', 'GET', '/pipeline/accounts/payment-requests?status=PENDING&path=pipeline%2Faccounts%2Fpayment-requests');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === payLead && r.json.data.items[0].agreedAmount === 40000 && r.json.data.items[0].salesperson === 'Member A',
+  'Accounts sees the submission with the amount and salesperson', r);
+r = await api('accm', 'GET', '/pipeline/accounts/counts');
+check(r.status === 200 && r.json.data.requestsPending === 1, 'Accounts counters', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payment-confirmed`, {});
+check(r.status === 422, 'cannot confirm before a payment is verified', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 15000, method: 'UPI', verify: false });
+check(r.status === 422, 'a UPI payment needs a reference (validation)', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 15000, method: 'UPI', reference: 'UTR-API-1', verify: false });
+check(r.status === 201 && r.json.data.pending === 15000 && r.json.data.verified === 0 && r.json.data.paymentStatus === 'PENDING_VERIFICATION' && r.json.data.payments[0].status === 'PENDING', 'a pending payment is not money received', r);
+const apiPay1 = r.json.data.payments[0].id;
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 15000, method: 'UPI', reference: 'utr-api-1', verify: false });
+check(r.status === 409, 'the same reference cannot be recorded twice', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments/${apiPay1}/verify`, {});
+check(r.status === 200 && r.json.data.verified === 15000 && r.json.data.balance === 25000 && r.json.data.paymentStatus === 'PARTIALLY_PAID' && r.json.data.payments.length === 1, 'verifying updates the totals without adding a payment', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments/${apiPay1}/verify`, {});
+check(r.status === 409, 'cannot verify twice', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payment-confirmed`, { note: 'UPI received' });
+check(r.status === 200, 'Confirm payment & return to Sales', r);
+r = await api('a', 'GET', `/pipeline/customers/${payLead}`);
+check(r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.paymentWorkflow === 'PAYMENT_CONFIRMED' && r.json.data.onboarding.paymentVerified === true && r.json.data.onboarding.getStarted === false
+  && r.json.data.conversations.length === 2 && r.json.data.amountVerified === 15000 && r.json.data.paymentStatus === 'PARTIALLY_PAID',
+  'the same customer is in onboarding: payment verified, not Get started, conversations kept', r.json.data.onboarding);
+r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=GET_STARTED&pageSize=100');
+check(!r.json.data.items.some((i: any) => i.id === payLead), 'not under Get started: documents are not verified');
+r = await api('a', 'GET', '/pipeline/part-payments?search=rao&path=pipeline%2Fpart-payments');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === payLead && r.json.data.items[0].balance === 25000 && r.json.data.items[0].followUp === null, 'Sales Part payments: the customer with its balance, no accountant notes', r);
+r = await api('b', 'GET', '/pipeline/part-payments?search=rao');
+check(r.status === 200 && !r.json.data.items.some((i: any) => i.id === payLead), 'another salesperson does not see it');
+r = await api('b', 'GET', `/pipeline/customers/${payLead}/payment-overview`);
+check(r.status === 404, "nor its payment overview", r);
+r = await api('accm', 'GET', '/pipeline/part-payments?search=rao&sort=balance&from=2020-01-01');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].followUp.status === 'FOLLOW_UP_REQUIRED' && r.json.data.items[0].accountsOwner.fullName, 'Accounts sees the same customer as a follow-up', r);
+r = await api('accm', 'GET', '/pipeline/part-payments?status=bogus');
+check(r.status === 422, 'an unknown status is rejected', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/followups`, { outcome: 'AWAITING_PAYMENT', note: 'Will pay on the 20th.', nextFollowUpAt: new Date(Date.now() + 5 * 864e5).toISOString() });
+check(r.status === 201 && r.json.data.followUps.length === 1, 'the accountant records a follow-up', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/followups`, { outcome: 'CONTACTED', note: '' });
+check(r.status === 422, 'a follow-up needs a note', r);
+r = await api('a', 'GET', `/pipeline/customers/${payLead}/payment-overview`);
+check(r.status === 200 && r.json.data.followUps === null && r.json.data.payments.length === 1, 'Sales sees the payments but never the follow-up notes', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/accounts/followups`, { outcome: 'CONTACTED', note: 'x' });
+check(r.status === 403, 'Sales cannot add follow-ups', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'FULL', amount: 25000, method: 'BANK_TRANSFER', reference: 'NEFT-API-2', verify: true });
+check(r.status === 201 && r.json.data.verified === 40000 && r.json.data.balance === 0 && r.json.data.paymentStatus === 'FULLY_PAID' && r.json.data.payments.length === 2, 'the full payment settles the balance; history kept', r);
+r = await api('accm', 'GET', '/pipeline/part-payments?status=PARTIAL&search=rao');
+check(r.json.data.total === 0, 'fully paid: removed from the active follow-up list', r);
+r = await api('accm', 'GET', '/pipeline/part-payments?status=PAID&search=rao');
+check(r.json.data.total === 1 && r.json.data.items[0].followUp.status === 'FULLY_PAID', 'and kept under Paid', r);
+
+// Customer backs off at Accounts.
+r = await api('a', 'POST', '/pipeline/leads', { name: 'Omkar Bhat', company: 'Bhat Stores', phone: '+91 97000 22222', leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Wants to buy.' });
+const backLead = r.json.data.id;
+await api('a', 'POST', `/pipeline/customers/${backLead}/send-to-accounts`, { amount: 20000 });
+r = await api('a', 'POST', `/pipeline/customers/${backLead}/accounts/back-off`, { reason: 'x' });
+check(r.status === 403, 'Sales cannot use the Accounts back-off action', r);
+r = await api('accm', 'POST', `/pipeline/customers/${backLead}/accounts/back-off`, { reason: 'Customer will not proceed' });
+check(r.status === 200, 'Customer backed off — return to Leads', r);
+r = await api('accm', 'POST', `/pipeline/customers/${backLead}/accounts/back-off`, {});
+check(r.status === 409, 'cannot return twice', r);
+r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&accounts=RETURNED');
+check(r.json.data.items.length === 1 && r.json.data.items[0].id === backLead && r.json.data.items[0].paymentWorkflow === 'RETURNED_FROM_ACCOUNTS', 'the lead is back in Leads, marked as returned', r);
+r = await api('a', 'GET', `/pipeline/customers/${backLead}/payment-overview`);
+check(r.json.data.request.status === 'RETURNED' && r.json.data.request.resolutionNote === 'Customer will not proceed', 'Sales can read the return reason', r);
+r = await api('a', 'GET', `/pipeline/customers/${backLead}`);
+check(r.json.data.conversations.length === 1 && r.json.data.lifecycleStage === 'LEAD', 'conversation history intact, still the same lead', r);
+r = await api('a', 'GET', '/pipeline/counts');
+check(r.json.data.leads.RETURNED === 1 && typeof r.json.data.partPayments === 'number', 'counts include Returned and Part payments', r.json.data);
 
 // --- rate limiting (shared Postgres counters) + response headers -------------
 let limited: Response | null = null;

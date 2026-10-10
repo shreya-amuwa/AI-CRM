@@ -11,6 +11,8 @@ import {
   REVIEW_FILTERS,
   PAYMENT_FILTERS,
   PAYMENT_METHODS,
+  PAYMENT_TYPES,
+  FOLLOWUP_OUTCOMES,
   PIPELINE_STAGES,
   APPROVAL_STATUSES,
   CUSTOMER_SEGMENTS,
@@ -308,6 +310,8 @@ export const pipelineListQuerySchema = z.object({
   followUpTo: datetime.optional(),
   noFollowUp: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   payment: z.enum(PAYMENT_FILTERS).optional(),
+  /** Leads tabs: with Accounts for payment confirmation / returned by Accounts. */
+  accounts: z.enum(['WITH_ACCOUNTS', 'RETURNED']).optional(),
   onboarding: z.enum(ONBOARDING_FILTERS).optional(),
   /** Technical Consultant queue: customers sent to support (or sent back and waiting for sales). */
   review: z.enum(REVIEW_FILTERS).optional(),
@@ -416,3 +420,62 @@ export const consultantDetailsSchema = z
 export const handoverNoteSchema = z.object({ note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const passToTeamLeadSchema = z.object({ teamLeadId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();
 export const assignToMemberSchema = z.object({ memberId: uuidSchema, note: z.string().trim().max(1000).optional().nullable() }).strict();
+
+
+// ---------------------------------------------------------------------------
+// Conversations, Sales → Accounts payments, Part Payments
+// ---------------------------------------------------------------------------
+export const conversationSchema = z.object({ note: trimmed(5000).min(1, 'Write what was discussed.') }).strict();
+
+const wholeRupees = (message: string) => z.coerce.number().positive(message).int('Enter the amount in whole rupees (no paise).').max(1e12);
+
+export const sendToAccountsSchema = z
+  .object({ amount: wholeRupees('Enter the agreed amount.'), note: optionalText(1000) })
+  .strict();
+
+const paymentFields = {
+  type: z.enum(PAYMENT_TYPES, { errorMap: () => ({ message: 'Choose part payment or full payment.' }) }),
+  amount: wholeRupees('Enter the amount received.'),
+  method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Select the payment method.' }) }),
+  reference: optionalText(120),
+  paidAt: z.preprocess(v => (v === '' ? null : v), datetime.nullable().optional()),
+  note: optionalText(1000)
+};
+export const accountsRecordPaymentSchema = z
+  .object({ ...paymentFields, verify: z.boolean().default(false) })
+  .strict()
+  .refine(v => ['CASH', 'OTHER'].includes(v.method) || !!v.reference, { message: 'Enter the transaction / reference number.', path: ['reference'] });
+export const accountsUpdatePaymentSchema = z.object(paymentFields).strict();
+export const paymentDecisionSchema = z.object({ note: optionalText(500) }).strict();
+export const paymentReasonSchema = z.object({ reason: trimmed(500).min(1, 'Give the reason.') }).strict();
+export const accountsConfirmReturnSchema = z.object({ note: optionalText(1000) }).strict();
+export const accountsBackOffSchema = z.object({ reason: optionalText(1000) }).strict();
+export const assignPaymentOwnerSchema = z.object({ ownerId: uuidSchema.nullable() }).strict();
+export const paymentFollowUpSchema = z
+  .object({
+    outcome: z.enum(FOLLOWUP_OUTCOMES, { errorMap: () => ({ message: 'Choose the outcome of the follow-up.' }) }),
+    note: trimmed(2000).min(1, 'Write a note about the follow-up.'),
+    nextFollowUpAt: z.preprocess(v => (v === '' ? null : v), datetime.nullable().optional())
+  })
+  .strict();
+
+export const paymentRequestsQuerySchema = z.object({
+  status: z.enum(['PENDING', 'CONFIRMED', 'RETURNED']).default('PENDING'),
+  search: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const partPaymentsQuerySchema = z.object({
+  status: z.enum(['PARTIAL', 'PAID', 'RETURNED', 'ALL']).default('PARTIAL'),
+  search: z.string().trim().max(100).optional(),
+  salesperson: uuidSchema.optional(),
+  accountsOwner: uuidSchema.optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  followUp: z.enum(['FOLLOW_UP_REQUIRED', 'CONTACTED', 'AWAITING_PAYMENT', 'FULLY_PAID']).optional(),
+  sort: z.enum(['recent', 'balance', 'name', 'followUp']).default('recent'),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+export type PartPaymentsQuery = z.infer<typeof partPaymentsQuerySchema>;
