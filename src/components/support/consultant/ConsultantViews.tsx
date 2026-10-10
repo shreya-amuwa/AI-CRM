@@ -427,11 +427,9 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
                 type="button"
                 onClick={authorizeAll}
                 disabled={pending === 0 || authorizingAll}
-                title={pending === 0 ? 'Nothing is waiting to be authorized' : undefined}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <ShieldCheck className="w-4 h-4" aria-hidden="true" />{' '}
-                {authorizingAll ? 'Authorizing…' : pending === 0 && statusOf(c.onboarding) === 'AUTHORIZED' ? 'All authorized' : 'Authorize all'}
+                <ShieldCheck className="w-4 h-4" aria-hidden="true" /> {authorizingAll ? 'Authorizing…' : 'Authorize all'}
               </button>
               </>
               )}
