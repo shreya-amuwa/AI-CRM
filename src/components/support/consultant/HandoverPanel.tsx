@@ -213,16 +213,23 @@ export const SendToDepartmentHead: React.FC<{
 
   return (
     <>
-      <button
-        type="button"
-        disabled={!ready}
-        title={ready ? undefined : reason}
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        <Send className="w-4 h-4" aria-hidden="true" /> Send to Department Head
-      </button>
-      {!ready && <span className="sr-only">{reason}</span>}
+      <div className="flex flex-col items-end gap-1">
+        <button
+          type="button"
+          disabled={!ready}
+          title={ready ? undefined : reason}
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Send className="w-4 h-4" aria-hidden="true" /> Send to Department Head
+        </button>
+        {/* Say why it is greyed out, where the consultant looks (a hover tooltip is easy to miss). */}
+        {!ready && (
+          <span className="text-[11px] font-semibold text-amber-700" data-testid="send-reason">
+            {reason}
+          </span>
+        )}
+      </div>
       {open && (
         <Dialog
           title="Send to Department Head"
