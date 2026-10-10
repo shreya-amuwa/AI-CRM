@@ -109,6 +109,10 @@ export const pipelineController = {
     await svc(ctx).pipeline.confirmAccountsPayment(ctx.params.id, ctx.req.body);
     return ok(null);
   }) as Handler,
+  consultantSetContract: (async ctx => ok(await svc(ctx).pipeline.consultantSetContract(ctx.params.id, ctx.req.body))) as Handler,
+  consultantSetAddons: (async ctx => ok(await svc(ctx).pipeline.consultantSetAddons(ctx.params.id, ctx.req.body))) as Handler,
+  consultantUpdateCustomer: (async ctx => ok(await svc(ctx).pipeline.consultantUpdateCustomer(ctx.params.id, ctx.req.body))) as Handler,
+  consultantStartOnboarding: (async ctx => ok(await svc(ctx).pipeline.consultantStartOnboarding(ctx.params.id))) as Handler,
   forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,
   returnToSales: (async ctx => {
     await svc(ctx).pipeline.returnToSales(ctx.params.id, ctx.req.body);

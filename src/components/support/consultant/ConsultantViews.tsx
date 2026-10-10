@@ -137,7 +137,7 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
     setLoading(true);
     setError(null);
     pipelineApi
-      .list({ stage: 'ONBOARDING', review: tab || undefined, search: debounced || undefined, page, pageSize: PAGE_SIZE, sort: 'newest' })
+      .list({ stage: 'ONBOARDING', forwarded: true, review: tab || undefined, search: debounced || undefined, page, pageSize: PAGE_SIZE, sort: 'newest' })
       .then(
         r => n === seq.current && setData(r),
         e => n === seq.current && setError(errorMessage(e))

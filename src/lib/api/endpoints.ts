@@ -75,6 +75,8 @@ export interface PipelineQuery {
   handoverMine?: 'TEAM_LEAD' | 'TEAM_MEMBER';
   review?: 'TO_REVIEW' | 'NEEDS_FIX' | 'VERIFIED' | 'AWAITING_DOCUMENTS' | 'WAITING_ON_SALES';
   forwarded?: boolean;
+  /** Technical Consultant Customers panel (not yet sent for onboarding). */
+  intake?: boolean;
   mine?: boolean;
   sort?: 'newest' | 'oldest' | 'followUp' | 'dueDate' | 'amount' | 'name';
 }
@@ -103,6 +105,11 @@ export const pipelineApi = {
   updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
+  consultantSetContract: (id: string, signed: boolean) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/contract`, { signed }),
+  consultantSetAddons: (id: string, addons: { code?: string; name?: string }[]) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/addons`, { addons }),
+  consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null }) =>
+    api.patch<PipelineCustomer>(`/pipeline/customers/${id}/consultant/details`, body),
+  consultantStartOnboarding: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/start-onboarding`),
   accountsConfirmations: (q: { status?: 'PENDING' | 'CONFIRMED'; search?: string; page?: number; pageSize?: number } = {}) =>
     api.get<Paginated<AccountsConfirmation>>('/pipeline/accounts/confirmations', { ...q }),
   confirmAccountsPayment: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/confirm`, { note: note || null }),

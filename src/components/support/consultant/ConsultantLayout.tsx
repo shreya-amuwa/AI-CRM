@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { HelpCircle, LogOut, Menu, UserPlus, X } from 'lucide-react';
+import { HelpCircle, LogOut, Menu, UserPlus, Users, X } from 'lucide-react';
+
+export type ConsultantPage = 'customers' | 'onboarding';
 
 /** Shell of the Technical Consultant dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{
   userName: string;
   count?: number;
-  onNavigateHome: () => void;
+  /** Customers waiting in the Customers panel. */
+  newCount?: number;
+  page: ConsultantPage;
+  onSelectPage: (page: ConsultantPage) => void;
   onSignOut: () => void;
   children: React.ReactNode;
-}> = ({ userName, count, onNavigateHome, onSignOut, children }) => {
+}> = ({ userName, count, newCount, page, onSelectPage, onSignOut, children }) => {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -44,20 +49,32 @@ export const ConsultantLayout: React.FC<{
               <X className="w-5 h-5" />
             </button>
           </div>
-          <nav>
-            <button
-              type="button"
-              onClick={() => {
-                onNavigateHome();
-                setOpen(false);
-              }}
-              aria-current="page"
-              className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold bg-blue-50 text-blue-600 text-left"
-            >
-              <UserPlus className="w-4 h-4" aria-hidden="true" />
-              <span className="flex-1 leading-tight">Onboarding Customers</span>
-              {count !== undefined && <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[11px] font-bold">{count}</span>}
-            </button>
+          <nav className="space-y-1" aria-label="Technical Consultant pages">
+            {(
+              [
+                ['customers', 'Customers', Users, newCount],
+                ['onboarding', 'Onboarding Customers', UserPlus, count]
+              ] as const
+            ).map(([id, label, Icon, n]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  onSelectPage(id);
+                  setOpen(false);
+                }}
+                aria-current={page === id ? 'page' : undefined}
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-semibold text-left ${
+                  page === id ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <Icon className="w-4 h-4" aria-hidden="true" />
+                <span className="flex-1 leading-tight">{label}</span>
+                {n !== undefined && (
+                  <span className={`px-1.5 py-0.5 rounded-md text-[11px] font-bold ${page === id ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{n}</span>
+                )}
+              </button>
+            ))}
           </nav>
         </div>
         <div className="space-y-2 pt-4 border-t border-slate-100">

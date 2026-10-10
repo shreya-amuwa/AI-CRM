@@ -21,7 +21,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, sent_to_accounts_at, accounts_confirmed_at, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
+  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, sent_to_accounts_at, accounts_confirmed_at, payment_method, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
     handover_stage, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
 
@@ -68,6 +68,9 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
     onboarding: o
       ? {
           stage: o.stage,
+          consultantStartedAt: o.consultant_started_at ?? null,
+          contractSigned: !!o.contract_signed,
+          addons: Array.isArray(o.addons) ? o.addons : [],
           sentToAccountsAt: o.sent_to_accounts_at ?? null,
           accountsConfirmedAt: o.accounts_confirmed_at ?? null,
           paymentMethod: o.payment_method,
@@ -206,9 +209,9 @@ export class PipelineRepository {
   async list(q: PipelineListQuery, actorId: string): Promise<Paginated<PipelineCustomer>> {
     let columns = BASE_COLUMNS;
     if (q.service) columns += ', service_filter:customer_services!inner(service_code)';
-    const needsOnboarding = q.onboarding || q.review || q.forwarded || q.handover || q.handoverMine;
+    const needsOnboarding = q.onboarding || q.review || q.forwarded || q.intake || q.handover || q.handoverMine;
     if (needsOnboarding) {
-      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, with_consultant, handover_stage, team_lead_id, team_member_id)';
+      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, with_consultant, consultant_started_at, handover_stage, team_lead_id, team_member_id)';
     }
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
@@ -234,6 +237,9 @@ export class PipelineRepository {
     else if (q.onboarding) query = query.eq('onboarding_filter.onboarding_state', q.onboarding);
     // Consultant queue: sent to them, or sent back and waiting for sales.
     if (q.forwarded || q.review) query = query.eq('onboarding_filter.with_consultant', true);
+    // Onboarding Customers = the consultant pressed "Send for onboarding"; Customers panel (intake) = not yet.
+    if (q.intake) query = query.eq('onboarding_filter.with_consultant', true).is('onboarding_filter.consultant_started_at', null);
+    else if (q.forwarded || q.review) query = query.not('onboarding_filter.consultant_started_at', 'is', null);
     if (q.review) query = query.eq('onboarding_filter.review_state', q.review);
     if (q.handover) query = query.eq('onboarding_filter.handover_stage', q.handover);
     if (q.handoverMine) query = query.eq(q.handoverMine === 'TEAM_LEAD' ? 'onboarding_filter.team_lead_id' : 'onboarding_filter.team_member_id', actorId);
@@ -347,6 +353,22 @@ export class PipelineRepository {
 
   async confirmAccountsPayment(id: string, note: string | null): Promise<void> {
     unwrap(await this.db.rpc('confirm_accounts_payment', { p_customer: id, p_note: note }));
+  }
+
+  async consultantSetContract(id: string, signed: boolean): Promise<void> {
+    unwrap(await this.db.rpc('consultant_set_contract', { p_customer: id, p_signed: signed }));
+  }
+
+  async consultantSetAddons(id: string, addons: { code?: string; name?: string }[]): Promise<{ code?: string; name: string }[]> {
+    return unwrap(await this.db.rpc('consultant_set_addons', { p_customer: id, p_addons: addons })) as { code?: string; name: string }[];
+  }
+
+  async consultantUpdateCustomer(id: string, d: { name: string; company?: string | null; phone?: string | null; email?: string | null }): Promise<void> {
+    unwrap(await this.db.rpc('consultant_update_customer', { p_customer: id, p_name: d.name, p_company: d.company ?? null, p_phone: d.phone ?? null, p_email: d.email ?? null }));
+  }
+
+  async consultantStartOnboarding(id: string): Promise<void> {
+    unwrap(await this.db.rpc('consultant_start_onboarding', { p_customer: id }));
   }
 
   async forwardToSupport(id: string): Promise<void> {
