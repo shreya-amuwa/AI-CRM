@@ -13,6 +13,7 @@ import { IncomeView } from './IncomeView';
 import { ExpenseView } from './ExpenseView';
 import { InvoiceView } from './InvoiceView';
 import { InvoicePdfModal } from './InvoicePdfModal';
+import { AccountsConfirmations } from '../../accounts/AccountsConfirmations';
 
 interface AccountsDepartmentPanelProps {
   activeTab?: ActiveTab;
@@ -72,6 +73,9 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
     setSelectedDeptForInvoice(deptId);
     setInternalTab('invoice');
   };
+
+  // Customers Sales sent to Accounts: business name list, details in a pop-up with the Confirm button.
+  if (activeTab === 'confirmations') return <AccountsConfirmations layout="popup" />;
 
   return (
     <div className="space-y-6 animate-fade-in font-sans">
