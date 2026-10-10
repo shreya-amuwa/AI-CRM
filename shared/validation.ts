@@ -479,3 +479,65 @@ export const partPaymentsQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20)
 });
 export type PartPaymentsQuery = z.infer<typeof partPaymentsQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Accounts finance
+// ---------------------------------------------------------------------------
+const money2 = z.coerce.number().positive('Enter the amount.').max(1e12).refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Use at most 2 decimal places.');
+
+export const expenseSchema = z
+  .object({
+    date: isoDate,
+    description: trimmed(300).min(1, 'Describe the expense.'),
+    departmentId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
+    category: trimmed(80).min(1, 'Enter the category.'),
+    amount: money2,
+    status: z.enum(['PAID', 'PENDING']).default('PAID'),
+    notes: optionalText(1000)
+  })
+  .strict();
+export type ExpenseInput = z.infer<typeof expenseSchema>;
+
+export const financeSummaryQuerySchema = z.object({ departmentId: uuidSchema.optional(), from: isoDate.optional(), to: isoDate.optional() });
+export const incomeQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  departmentId: uuidSchema.optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+export const expensesQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  departmentId: uuidSchema.optional(),
+  companyWide: booleanParam.optional(),
+  category: z.string().trim().max(80).optional(),
+  status: z.enum(['PAID', 'PENDING']).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+export const trendQuerySchema = z.object({ months: z.coerce.number().int().min(1).max(36).default(12) });
+export const expenseImportSchema = z
+  .object({
+    source: z.enum(['GOOGLE_SHEET', 'IMPORT']).default('IMPORT'),
+    rows: z
+      .array(
+        z
+          .object({
+            externalId: trimmed(200).min(1),
+            date: isoDate,
+            description: trimmed(300).min(1),
+            departmentSlug: trimmed(80).optional().nullable(),
+            category: trimmed(80).min(1),
+            amount: money2,
+            status: z.enum(['PAID', 'PENDING']).optional(),
+            notes: optionalText(1000)
+          })
+          .strict()
+      )
+      .min(1)
+      .max(1000)
+  })
+  .strict();

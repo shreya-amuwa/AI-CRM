@@ -884,6 +884,52 @@ check(r.json.data.conversations.length === 1 && r.json.data.lifecycleStage === '
 r = await api('a', 'GET', '/pipeline/counts');
 check(r.json.data.leads.RETURNED === 1 && typeof r.json.data.partPayments === 'number', 'counts include Returned and Part payments', r.json.data);
 
+
+// --- Accounts finance (income from verified payments, expenses, analytics) -----------------
+const { rows: [verifiedSum] } = await db.query(`select coalesce(sum(amount), 0)::float as s, count(*)::int as n from customer_payments where status = 'VERIFIED'`);
+const { rows: [wabIncome] } = await db.query(`select coalesce(sum(p.amount), 0)::float as s from customer_payments p join customers c on c.id = p.customer_id where p.status = 'VERIFIED' and c.department_id = $1`, [wab.id]);
+r = await api('a', 'GET', '/accounts/finance/summary');
+check(r.status === 403, 'Sales cannot read the finance totals', r);
+r = await api('a', 'POST', '/accounts/finance/expenses', { date: '2026-10-05', description: 'x', category: 'Rent', amount: 100 });
+check(r.status === 403, 'Sales cannot add an expense', r);
+r = await api('accm', 'GET', '/accounts/finance/summary?path=accounts%2Ffinance%2Fsummary');
+check(r.status === 200 && r.json.data.income === verifiedSum.s && r.json.data.expenses === 0 && r.json.data.net === verifiedSum.s, 'the summary is exactly the verified payments; no expenses yet means 0', r);
+r = await api('accm', 'POST', '/accounts/finance/expenses', { date: '2026-10-05', description: 'Office rent', departmentId: wab.id, category: 'Rent', amount: 1200.5, status: 'PAID', notes: 'October' });
+check(r.status === 201 && r.json.data.id, 'Accounts adds an expense', r);
+const expId = r.json.data.id;
+r = await api('accm', 'POST', '/accounts/finance/expenses', { date: '2026-10-06', description: 'Ads', category: 'Marketing', amount: 800, status: 'PENDING' });
+check(r.status === 201, 'a company-wide expense (no department) is allowed', r);
+r = await api('accm', 'POST', '/accounts/finance/expenses', { date: '2026-10-06', description: 'Bad', category: 'Rent', amount: -5 });
+check(r.status === 422, 'a negative amount is rejected', r);
+r = await api('accm', 'POST', '/accounts/finance/expenses', { date: '2026-10-06', description: 'Bad', category: 'Rent', amount: 5.555 });
+check(r.status === 422, 'more than two decimals is rejected', r);
+r = await api('accm', 'GET', '/accounts/finance/summary');
+check(r.json.data.expenses === 2000.5 && r.json.data.expensesPending === 800 && r.json.data.net === verifiedSum.s - 2000.5, 'totals follow the new expenses: net = income - expenses', r);
+r = await api('accm', 'GET', `/accounts/finance/summary?departmentId=${wab.id}`);
+check(r.json.data.expenses === 1200.5 && r.json.data.income === wabIncome.s, 'a department shows only its own income and expenses', r);
+r = await api('accm', 'GET', `/accounts/finance/summary?departmentId=${wbx.id}`);
+check(r.json.data.expenses === 0 && r.json.data.income === 0, 'another department has no records: zero, not the company total', r);
+r = await api('accm', 'GET', '/accounts/finance/expenses?status=PENDING&path=accounts%2Ffinance%2Fexpenses');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].description === 'Ads' && r.json.data.categories.includes('Rent'), 'the expense list filters by status', r);
+r = await api('accm', 'PATCH', `/accounts/finance/expenses/${expId}`, { date: '2026-10-05', description: 'Office rent (Oct)', departmentId: wab.id, category: 'Rent', amount: 1300, status: 'PAID' });
+check(r.status === 200, 'the creator edits their expense', r);
+r = await api('accdh', 'PATCH', `/accounts/finance/expenses/${expId}`, { date: '2026-10-05', description: 'Office rent (Oct)', departmentId: wab.id, category: 'Rent', amount: 1250, status: 'PAID' });
+check(r.status === 200, 'an Accounts head corrects any expense', r);
+r = await api('a', 'DELETE', `/accounts/finance/expenses/${expId}`);
+check(r.status === 403, 'Sales cannot delete an expense', r);
+r = await api('accm', 'POST', '/accounts/finance/expenses/import', { source: 'GOOGLE_SHEET', rows: [{ externalId: 'row-1', date: '2026-10-02', description: 'Courier', category: 'Logistics', amount: 150 }] });
+check(r.status === 403, 'a member cannot import expenses', r);
+r = await api('accdh', 'POST', '/accounts/finance/expenses/import', { source: 'GOOGLE_SHEET', rows: [{ externalId: 'row-1', date: '2026-10-02', description: 'Courier', departmentSlug: 'wabastore', category: 'Logistics', amount: 150 }] });
+check(r.status === 200 && r.json.data.inserted === 1, 'an Accounts head imports rows (ready for a sheet export)', r);
+r = await api('accdh', 'POST', '/accounts/finance/expenses/import', { source: 'GOOGLE_SHEET', rows: [{ externalId: 'row-1', date: '2026-10-02', description: 'Courier', departmentSlug: 'wabastore', category: 'Logistics', amount: 175 }] });
+check(r.status === 200 && r.json.data.updated === 1 && r.json.data.inserted === 0, 'importing the same external id updates, never duplicates', r);
+r = await api('accm', 'GET', '/accounts/finance/income?search=UTR-API-1');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].customer === 'Rao Textiles', 'income lists the verified payment with its customer', r);
+r = await api('accm', 'GET', '/accounts/finance/income');
+check(r.json.data.total === verifiedSum.n && r.json.data.sum === verifiedSum.s, 'the income list is exactly the verified payments', r);
+r = await api('accm', 'GET', '/accounts/finance/trend?months=6');
+check(r.status === 200 && r.json.data.months.length === 6 && r.json.data.expenseCategories.length >= 2, 'analytics: one row per month and the biggest expense categories', r);
+
 // --- rate limiting (shared Postgres counters) + response headers -------------
 let limited: Response | null = null;
 for (let i = 0; i < 4 && !limited; i++) {

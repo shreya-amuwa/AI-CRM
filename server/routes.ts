@@ -1,4 +1,5 @@
 import {
+  accountsFinanceController as finance,
   approvalsController as approvals,
   auditController as audit,
   customersController as customers,
@@ -94,6 +95,15 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/automations/:automation', handler: pipeline.triggerAutomation, options: S },
   { method: 'GET', path: '/pipeline/inbound', handler: pipeline.inbound },
   { method: 'POST', path: '/pipeline/inbound/:leadId/claim', handler: pipeline.claimInbound },
+
+  { method: 'GET', path: '/accounts/finance/summary', handler: finance.summary },
+  { method: 'GET', path: '/accounts/finance/income', handler: finance.income },
+  { method: 'GET', path: '/accounts/finance/expenses', handler: finance.expenses },
+  { method: 'POST', path: '/accounts/finance/expenses', handler: finance.addExpense, options: S },
+  { method: 'POST', path: '/accounts/finance/expenses/import', handler: finance.importExpenses, options: S },
+  { method: 'PATCH', path: '/accounts/finance/expenses/:id', handler: finance.updateExpense, options: S },
+  { method: 'DELETE', path: '/accounts/finance/expenses/:id', handler: finance.deleteExpense, options: S },
+  { method: 'GET', path: '/accounts/finance/trend', handler: finance.trend },
 
   { method: 'POST', path: '/pipeline/customers/:id/documents', handler: documents.beginUpload },
   { method: 'POST', path: '/documents/:id/complete', handler: documents.complete },

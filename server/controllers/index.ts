@@ -165,6 +165,23 @@ export const pipelineController = {
   }) as Handler
 };
 
+export const accountsFinanceController = {
+  summary: (async ctx => ok(await svc(ctx).finance.summary(ctx.req.query))) as Handler,
+  income: (async ctx => ok(await svc(ctx).finance.income(ctx.req.query))) as Handler,
+  expenses: (async ctx => ok(await svc(ctx).finance.expenses(ctx.req.query))) as Handler,
+  addExpense: (async ctx => ok(await svc(ctx).finance.addExpense(ctx.req.body), 201)) as Handler,
+  updateExpense: (async ctx => {
+    await svc(ctx).finance.updateExpense(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler,
+  deleteExpense: (async ctx => {
+    await svc(ctx).finance.deleteExpense(ctx.params.id);
+    return ok(null);
+  }) as Handler,
+  importExpenses: (async ctx => ok(await svc(ctx).finance.importExpenses(ctx.req.body))) as Handler,
+  trend: (async ctx => ok(await svc(ctx).finance.trend(ctx.req.query))) as Handler
+};
+
 export const documentsController = {
   beginUpload: (async ctx => ok(await svc(ctx).pipeline.beginUpload(ctx.params.id, ctx.req.body), 201)) as Handler,
   complete: (async ctx => ok(await svc(ctx).pipeline.completeUpload(ctx.params.id))) as Handler,

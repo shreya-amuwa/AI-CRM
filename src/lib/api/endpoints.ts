@@ -5,6 +5,10 @@
 import type {
   AccountsConfirmation,
   AccountsPaymentCounts,
+  ExpensesPage,
+  FinanceSummary,
+  FinanceTrend,
+  IncomePage,
   ApprovalRequest,
   AuditLog,
   Customer,
@@ -49,7 +53,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -185,6 +189,29 @@ export const pipelineApi = {
   triggerAutomation: (id: string, code: AutomationCode) => api.post<AutomationStatus>(`/pipeline/customers/${id}/automations/${code}`),
   reviewChecklistItem: (id: string, item: string, body: { decision: 'VERIFIED' | 'REJECTED'; note?: string | null }) =>
     api.post<null>(`/pipeline/customers/${id}/checklist/${item}/review`, body)
+};
+
+export interface ExpenseParams {
+  search?: string;
+  departmentId?: string;
+  companyWide?: boolean;
+  category?: string;
+  status?: 'PAID' | 'PENDING';
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export const financeApi = {
+  summary: (q: { departmentId?: string; from?: string; to?: string } = {}) => api.get<FinanceSummary>('/accounts/finance/summary', { ...q }),
+  income: (q: { search?: string; departmentId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<IncomePage>('/accounts/finance/income', { ...q }),
+  expenses: (q: ExpenseParams = {}) => api.get<ExpensesPage>('/accounts/finance/expenses', { ...q }),
+  addExpense: (body: ExpenseInput) => api.post<{ id: string }>('/accounts/finance/expenses', body),
+  updateExpense: (id: string, body: ExpenseInput) => api.patch<null>(`/accounts/finance/expenses/${id}`, body),
+  deleteExpense: (id: string) => api.delete<null>(`/accounts/finance/expenses/${id}`),
+  trend: (months = 12) => api.get<FinanceTrend>('/accounts/finance/trend', { months })
 };
 
 export const documentsApi = {
