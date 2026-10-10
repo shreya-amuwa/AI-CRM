@@ -961,6 +961,17 @@ r = await api('accm', 'GET', `/accounts/finance/summary?departmentId=${wab.id}`)
 check(r.json.data.expenses === 1200.5 && r.json.data.income === wabIncome.s, 'a department shows only its own income and expenses', r);
 r = await api('accm', 'GET', `/accounts/finance/summary?departmentId=${wbx.id}`);
 check(r.json.data.expenses === 0 && r.json.data.income === 0, 'another department has no records: zero, not the company total', r);
+r = await api('accm', 'GET', '/accounts/finance/departments');
+check(
+  r.status === 200 &&
+    r.json.data.find((d: any) => d.departmentId === wab.id)?.expenses === 1200.5 &&
+    r.json.data.find((d: any) => d.departmentId === wab.id)?.income === wabIncome.s &&
+    r.json.data.find((d: any) => d.departmentId === wbx.id)?.expenses === 0,
+  'Department Income: one box per department with its own earnings and expenses',
+  r
+);
+r = await api('a', 'GET', '/accounts/finance/departments');
+check(r.status === 403, 'non-Accounts staff cannot read department totals', r);
 r = await api('accm', 'GET', '/accounts/finance/expenses?status=PENDING&path=accounts%2Ffinance%2Fexpenses');
 check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].description === 'Ads' && r.json.data.categories.includes('Rent'), 'the expense list filters by status', r);
 r = await api('accm', 'PATCH', `/accounts/finance/expenses/${expId}`, { date: '2026-10-05', description: 'Office rent (Oct)', departmentId: wab.id, category: 'Rent', amount: 1300, status: 'PAID' });

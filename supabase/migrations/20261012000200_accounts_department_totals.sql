@@ -1,17 +1,11 @@
--- Accounts Dashboard: which departments earn revenue.
--- Accounts, Education & Training and HR do not sell to customers, so the Income and Department Income
--- views list only departments flagged generates_revenue. The flag is data (not code), so it can be
--- changed per department later without a release. Additive and safe to re-run.
--- Runs after 20261012000200_accounts_department_totals.sql and narrows accounts_finance_by_department()
--- (one box per department, same rules as accounts_finance_summary) to those departments.
-
-alter table public.departments add column if not exists generates_revenue boolean not null default true;
-
-update public.departments set generates_revenue = false where slug in ('accounts', 'edutraining', 'hr');
-
--- An earlier draft of this file created a separate list function; the department boxes replace it.
-drop function if exists public.accounts_finance_departments();
-
+-- =============================================================================
+-- Department Income (Account Dashboard): earnings and expenses of EVERY
+-- department in one call, using the same rules as accounts_finance_summary():
+--   earnings = verified customer payments of the department's customers
+--   expenses = department_expenses booked to the department (paid + pending)
+-- Company-wide expenses (no department) are not given to any department.
+-- Accounts staff only. Read-only, additive.
+-- =============================================================================
 create or replace function public.accounts_finance_by_department()
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -34,8 +28,7 @@ begin
                       sum(e.amount) filter (where e.payment_status = 'PENDING') pending
                  from public.department_expenses e
                 where e.department_id is not null
-                group by e.department_id) x on x.department_id = d.id
-   where d.generates_revenue;
+                group by e.department_id) x on x.department_id = d.id;
   return v;
 end $$;
 revoke all on function public.accounts_finance_by_department() from public, anon;

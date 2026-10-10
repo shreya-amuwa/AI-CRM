@@ -102,8 +102,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/pipeline/inbound', handler: pipeline.inbound },
   { method: 'POST', path: '/pipeline/inbound/:leadId/claim', handler: pipeline.claimInbound },
 
-  { method: 'GET', path: '/accounts/finance/departments', handler: finance.departments },
   { method: 'GET', path: '/accounts/finance/summary', handler: finance.summary },
+  { method: 'GET', path: '/accounts/finance/departments', handler: finance.departments },
   { method: 'GET', path: '/accounts/finance/income', handler: finance.income },
   { method: 'GET', path: '/accounts/finance/expenses', handler: finance.expenses },
   { method: 'POST', path: '/accounts/finance/expenses', handler: finance.addExpense, options: S },

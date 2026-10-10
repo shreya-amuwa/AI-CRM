@@ -52,13 +52,20 @@ The Account Dashboard (`/accounts/dashboard/:id`, Accounts staff) is separate fr
 the summary cards; no component, route, permission or data is shared.
 
 Sidebar: Account Overview, Income, Confirmation, Part Payment, Department Income, Expenses,
-Notification Center. Invoice and Quotation are not part of this dashboard. The Account Overview
-shows the three company totals and the 12-month income vs expenses chart (there is no separate
-analytics page and no department breakdown).
+Notification Center. Invoice and Quotation are not part of this dashboard.
 
-Income and Department Income list only departments with `departments.generates_revenue`
-(Accounts, Education & Training and HR are set to false by `20261013000100_accounts_revenue_departments.sql`;
-the flag is data, so it can be changed later). `accounts_finance_departments()` serves that list.
+- **Account Overview**: the three company-wide cards (Total Gross Income, Total Expenses, Total Net
+  Earnings) and, below them, the company-wide trends that used to be on the separate Overall
+  Analytics page: income this month vs last month, income vs expenses for the last 12 months and
+  monthly net earnings. No department breakdown and no expenses-by-category ("where the money goes")
+  section. With no records it shows zero values and an empty state.
+- **Department Income**: one box per revenue department (generated from `departments`), with that
+  department's earnings on the left and expenses on the right (`accounts_finance_by_department`).
+  No margins, invoices or quotations. Company-wide expenses (no department) are counted only in
+  Account Overview.
+- Income and Department Income list only departments with `departments.generates_revenue`
+  (Accounts, Education & Training and HR are set to false by
+  `20261013000100_accounts_revenue_departments.sql`; the flag is data, so it can be changed later).
 
 **Return to Leads** (`accounts_return_to_leads`) is refused once any payment of the customer is
 VERIFIED. It is decided from the persisted payment rows; reversing the verified payment (team lead or
@@ -77,11 +84,11 @@ The Superadmin panel's own numbers come from a browser-side demo store and are d
 All reads and writes go through SECURITY DEFINER functions that require active Accounts staff
 (or the Super Admin): `accounts_finance_summary`, `accounts_income_list`, `accounts_expenses_list`,
 `accounts_add_expense`, `accounts_update_expense`, `accounts_delete_expense`,
-`accounts_import_expenses`, `accounts_finance_trend`. The table itself has no direct grants.
+`accounts_import_expenses`, `accounts_finance_trend`, `accounts_finance_by_department`. The table itself has no direct grants.
 A staff member edits or deletes only the expenses they added; an Accounts team lead or head
 can change any. Add, edit and delete are written to the audit log.
 
-API: `GET /accounts/finance/{summary,income,expenses,trend}`, `POST /accounts/finance/expenses`,
+API: `GET /accounts/finance/{summary,departments,income,expenses,trend}`, `POST /accounts/finance/expenses`,
 `PATCH` and `DELETE /accounts/finance/expenses/:id`, `POST /accounts/finance/expenses/import`.
 
 ### Google Sheets (not connected)

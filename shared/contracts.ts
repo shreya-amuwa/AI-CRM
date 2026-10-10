@@ -691,6 +691,18 @@ export interface FinanceSummary {
   net: number;
 }
 
+/** One department's earnings and expenses (Account Dashboard, Department Income). */
+export interface DepartmentFinance {
+  departmentId: string;
+  name: string;
+  slug: string;
+  income: number;
+  incomeCount: number;
+  expenses: number;
+  expenseCount: number;
+  expensesPending: number;
+}
+
 export interface IncomeRow {
   id: string;
   paidAt: string;

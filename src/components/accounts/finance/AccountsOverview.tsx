@@ -5,6 +5,7 @@ import { financeApi } from '../../../lib/api/endpoints';
 import { ErrorBanner, Loading, PageHeader } from '../../support-member/SupportParts';
 import { money, SummaryCards, useFinanceRefresh } from './FinanceBits';
 
+const pct = (cur: number, prev: number) => (prev === 0 ? null : Math.round(((cur - prev) / Math.abs(prev)) * 100));
 const monthLabel = (m: string) => new Date(`${m.slice(0, 7)}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
 
 /**
@@ -33,6 +34,9 @@ export const AccountsOverview: React.FC = () => {
   const empty = summary && summary.incomeCount === 0 && summary.expenseCount === 0;
   const months = trend?.months ?? [];
   const max = Math.max(1, ...months.flatMap(m => [m.income, m.expenses]));
+  const cur = months[months.length - 1];
+  const prev = months[months.length - 2];
+  const incomeChange = cur && prev ? pct(cur.income, prev.income) : null;
 
   return (
     <div className="space-y-6">
@@ -55,6 +59,10 @@ export const AccountsOverview: React.FC = () => {
           ) : (
             trend && (
               <>
+                <p className="text-xs text-slate-500" data-testid="income-change">
+                  Income this month: <strong className="text-slate-800">{money(cur?.income ?? 0)}</strong>
+                  {incomeChange === null ? ' (no previous month to compare)' : ` (${incomeChange >= 0 ? '+' : ''}${incomeChange}% vs last month)`}
+                </p>
                 <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-label="Monthly income and expenses">
                   <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
                     <h2 className="text-sm font-bold text-slate-900">Income vs expenses, last 12 months</h2>

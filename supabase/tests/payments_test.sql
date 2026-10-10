@@ -326,6 +326,7 @@ grant all on fx to authenticated;
 set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select accounts_finance_summary()$$, 'Sales cannot read finance totals', 'Only the Accounts department');
+select test.must_fail($$select accounts_finance_by_department()$$, 'Sales cannot read department totals', 'Only the Accounts department');
 select test.must_fail($$select accounts_add_expense(current_date, 'x', null, 'Rent', 100, 'PAID', null)$$, 'Sales cannot add an expense', 'Only the Accounts department');
 select test.must_fail($$select accounts_income_list()$$, 'Sales cannot read the income list', 'Only the Accounts department');
 select test.must_fail($$select accounts_finance_trend()$$, 'Sales cannot read analytics', 'Only the Accounts department');
@@ -345,6 +346,15 @@ select test.admin_check($Q$select (accounts_finance_summary(test.dept('wabastore
 select test.admin_check($Q$select (accounts_finance_summary(test.dept('wabastore')) ->> 'income')::numeric
   = (select coalesce(sum(p.amount), 0) from customer_payments p join customers c on c.id = p.customer_id where p.status = 'VERIFIED' and c.department_id = test.dept('wabastore'))
   and (accounts_finance_summary(test.dept('whatsbox')) ->> 'income')::numeric = 0$Q$, 'department income comes from that department''s customers only');
+select test.admin_check($Q$select jsonb_array_length(accounts_finance_by_department()) = (select count(*) from departments where generates_revenue)$Q$,
+  'Department Income has one box per revenue department in the CRM');
+select test.admin_check($Q$select bool_and((e ->> 'income')::numeric = (accounts_finance_summary((e ->> 'departmentId')::uuid) ->> 'income')::numeric
+                                 and (e ->> 'expenses')::numeric = (accounts_finance_summary((e ->> 'departmentId')::uuid) ->> 'expenses')::numeric)
+                         from jsonb_array_elements(accounts_finance_by_department()) e$Q$,
+  'every department box matches that department''s own totals');
+select test.admin_check($Q$select (select (e ->> 'expenses')::numeric from jsonb_array_elements(accounts_finance_by_department()) e where e ->> 'slug' = 'wabastore') = 1200.50
+  and (select (e ->> 'expenses')::numeric from jsonb_array_elements(accounts_finance_by_department()) e where e ->> 'slug' = 'digitree') = 0$Q$,
+  'department boxes keep expenses separate; company-wide expenses are not given to any department');
 select test.must_fail($$select accounts_add_expense(current_date, 'x', null, 'Rent', -5, 'PAID', null)$$, 'a negative amount is refused', 'Enter the amount');
 select test.must_fail($$select accounts_add_expense(current_date, '   ', null, 'Rent', 5, 'PAID', null)$$, 'a description is required', 'Describe the expense');
 select test.must_fail($$select accounts_add_expense(current_date, 'x', null, '', 5, 'PAID', null)$$, 'a category is required', 'category');
@@ -385,13 +395,9 @@ select test.check((select jsonb_array_length(accounts_finance_trend() -> 'months
 select test.admin_check($Q$select (select (m ->> 'income')::numeric from jsonb_array_elements(accounts_finance_trend() -> 'months') m order by m ->> 'month' desc limit 1)
   = (select coalesce(sum(amount), 0) from customer_payments where status = 'VERIFIED' and date_trunc('month', paid_at) = date_trunc('month', now()))$Q$, 'this month''s income in the trend equals the verified payments of this month');
 select test.check((select accounts_finance_trend() -> 'expenseCategories' -> 0 ->> 'category' is not null), 'top expense categories come from the expenses');
-select test.check((select jsonb_array_length(accounts_finance_departments()) = (select count(*) from departments where generates_revenue)
-                     and not exists (select 1 from jsonb_array_elements(accounts_finance_departments()) d where d ->> 'slug' in ('accounts', 'edutraining', 'hr'))
-                     and exists (select 1 from jsonb_array_elements(accounts_finance_departments()) d where d ->> 'slug' = 'wabastore')),
-  'the revenue departments leave out Accounts, Education & Training and HR');
-select test.login('tm_a');
-select test.must_fail($$select accounts_finance_departments()$$, 'Sales cannot list the finance departments', 'Accounts');
-select test.login('dh_acc');
+select test.check((select not exists (select 1 from jsonb_array_elements(accounts_finance_by_department()) d where d ->> 'slug' in ('accounts', 'edutraining', 'hr'))
+                     and exists (select 1 from jsonb_array_elements(accounts_finance_by_department()) d where d ->> 'slug' = 'wabastore')),
+  'the department boxes leave out Accounts, Education & Training and HR');
 select test.must_fail($$select * from department_expenses$$, 'expenses cannot be read directly', 'permission denied');
 
 reset role;

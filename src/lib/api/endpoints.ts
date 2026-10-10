@@ -8,6 +8,7 @@ import type {
   ChecklistItem,
   ConsultantNote,
   ExpensesPage,
+  DepartmentFinance,
   FinanceSummary,
   FinanceTrend,
   IncomePage,
@@ -217,9 +218,9 @@ export interface ExpenseParams {
 }
 
 export const financeApi = {
-  /** Departments that earn revenue (the Accounts Dashboard lists only these for income). */
-  departments: () => api.get<{ id: string; name: string; slug: string }[]>('/accounts/finance/departments'),
   summary: (q: { departmentId?: string; from?: string; to?: string } = {}) => api.get<FinanceSummary>('/accounts/finance/summary', { ...q }),
+  /** Earnings and expenses of each revenue department (Accounts, Education & Training and HR are left out). */
+  departments: () => api.get<DepartmentFinance[]>('/accounts/finance/departments'),
   income: (q: { search?: string; departmentId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     api.get<IncomePage>('/accounts/finance/income', { ...q }),
   expenses: (q: ExpenseParams = {}) => api.get<ExpensesPage>('/accounts/finance/expenses', { ...q }),

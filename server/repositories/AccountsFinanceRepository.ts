@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ExpensesPage, FinanceSummary, FinanceTrend, IncomePage } from '../../shared/contracts.js';
+import type { DepartmentFinance, ExpensesPage, FinanceSummary, FinanceTrend, IncomePage } from '../../shared/contracts.js';
 import type { ExpenseInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
@@ -7,12 +7,12 @@ import { unwrap } from './base.js';
 export class AccountsFinanceRepository {
   constructor(private readonly db: SupabaseClient) {}
 
-  async departments(): Promise<{ id: string; name: string; slug: string }[]> {
-    return unwrap(await this.db.rpc('accounts_finance_departments')) as { id: string; name: string; slug: string }[];
-  }
-
   async summary(q: { departmentId?: string; from?: string; to?: string }): Promise<FinanceSummary> {
     return unwrap(await this.db.rpc('accounts_finance_summary', { p_department: q.departmentId ?? null, p_from: q.from ?? null, p_to: q.to ?? null })) as FinanceSummary;
+  }
+
+  async byDepartment(): Promise<DepartmentFinance[]> {
+    return unwrap(await this.db.rpc('accounts_finance_by_department')) as DepartmentFinance[];
   }
 
   async income(q: { search?: string; departmentId?: string; from?: string; to?: string; page: number; pageSize: number }): Promise<IncomePage> {

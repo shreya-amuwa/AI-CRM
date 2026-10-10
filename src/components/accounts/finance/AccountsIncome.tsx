@@ -21,7 +21,10 @@ export const useDepartments = () => {
 export const useRevenueDepartments = () => {
   const [items, setItems] = useState<{ id: string; name: string; slug: string }[]>([]);
   useEffect(() => {
-    financeApi.departments().then(setItems, () => setItems([]));
+    financeApi.departments().then(
+      r => setItems(r.map(d => ({ id: d.departmentId, name: d.name, slug: d.slug }))),
+      () => setItems([])
+    );
   }, []);
   return items;
 };
