@@ -234,7 +234,7 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
 
 // Generic navigation used by any department that doesn't have a bespoke,
 // hand-curated nav config below (i.e. every dynamically created department).
-// This must NEVER be a copy of another department's nav (e.g. amuwa) —
+// This must NEVER be a copy of another department's nav (e.g. amuwa) -
 // only routes that the generic DepartmentDashboard/LeadsTable/Notifications
 // panels actually support for an arbitrary department.
 const GENERIC_DEPARTMENT_NAV: { id: ActiveTab; label: string; icon: any }[] = [
@@ -263,7 +263,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const unreadCount = getUnreadCountForUser(key, subDept || null);
   // Only departments with a hand-built entry in DEPARTMENT_NAV_MAP get that
-  // bespoke nav. Every other department — including all newly created ones —
+  // bespoke nav. Every other department - including all newly created ones -
   // gets the generic nav. It must never fall back to another department's
   // (e.g. amuwa's) nav items, since those route to that department's own
   // dedicated panels.

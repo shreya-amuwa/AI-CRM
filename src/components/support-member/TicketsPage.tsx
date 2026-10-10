@@ -654,7 +654,7 @@ export const TicketDetail: React.FC<{
   );
 };
 
-/** Member view: three columns — Pending, Waiting for customer reply, Complete. */
+/** Member view: three columns - Pending, Waiting for customer reply, Complete. */
 const BOARD: { id: string; title: string; statuses: TicketStatus[]; tone: string }[] = [
   { id: 'pending', title: 'Pending', statuses: ['OPEN', 'IN_PROGRESS', 'ESCALATED'], tone: 'border-t-blue-500' },
   { id: 'waiting', title: 'Waiting for customer reply', statuses: ['WAITING_CUSTOMER'], tone: 'border-t-amber-500' },

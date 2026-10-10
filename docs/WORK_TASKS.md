@@ -11,12 +11,12 @@
 Everyone is notified (bell) when a task is assigned to them or an update comes back.
 
 ## Department Head dashboard
-- **Assign** — new task form + every task given to team leads, with each member's status,
+- **Assign** - new task form + every task given to team leads, with each member's status,
   progress and the team lead's updates.
-- **Reports** — assigned / completed / in progress / not started / not completed / overdue and
+- **Reports** - assigned / completed / in progress / not started / not completed / overdue and
   completion %, by team lead and by team member (all time, last 30 days, last 7 days).
-- **Daily Tasks** — tasks due on a chosen day, how many are completed, and the updates sent that day.
-- **Department Hub** — the existing department panel (a button brings you back).
+- **Daily Tasks** - tasks due on a chosen day, how many are completed, and the updates sent that day.
+- **Department Hub** - the existing department panel (a button brings you back).
 
 ## Creating a Department Head
 Super Admin Dashboard → **Add Team Member** → choose the department → Role **Department Head**.

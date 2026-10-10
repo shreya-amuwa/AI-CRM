@@ -3,7 +3,7 @@ import type { AuthUser } from '../../types/crm';
 
 /**
  * Maps the database profile to the legacy `AuthUser` shape the existing
- * dashboards route on. Used for NAVIGATION ONLY — every permission is
+ * dashboards route on. Used for NAVIGATION ONLY - every permission is
  * enforced by the API and database from the profile itself.
  */
 export function toAuthUser(profile: Profile): AuthUser {

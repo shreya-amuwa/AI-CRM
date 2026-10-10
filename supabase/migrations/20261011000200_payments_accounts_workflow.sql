@@ -379,7 +379,7 @@ begin
           nullif(p_method, ''), 'PENDING', 'SALES', (select private.my_id()));
   perform private.sync_payment_totals(p_id);
   perform private.log_customer_activity(p_id, 'PAYMENT_RECEIVED',
-    format('₹%s recorded%s — waiting for Accounts to verify', p_amount, coalesce(' via ' || p_method, '')));
+    format('₹%s recorded%s - waiting for Accounts to verify', p_amount, coalesce(' via ' || p_method, '')));
   perform private.write_audit('PAYMENT_RECORDED', 'customer', p_id, v.department_id, v.team_id,
     jsonb_build_object('amount', p_amount, 'method', p_method, 'total_received', v.amount_received + p_amount));
   perform private.notify_accounts('PAYMENT_TO_VERIFY', format('Verify payment: %s', coalesce(v.company, v.name)),
@@ -772,7 +772,7 @@ begin
 
   perform private.log_customer_activity(p_customer, 'PAYMENT_CONFIRMED',
     format('Payment confirmed by Accounts (%s verified of %s)', private.rupees(v.amount_verified), private.rupees(v.deal_amount)) || coalesce(' · ' || v_note, ''));
-  perform private.log_customer_activity(p_customer, 'MOVED_TO_ONBOARDING', 'Returned to Sales — now in Customer onboarding');
+  perform private.log_customer_activity(p_customer, 'MOVED_TO_ONBOARDING', 'Returned to Sales - now in Customer onboarding');
   perform private.write_audit('PAYMENT_CONFIRMED_RETURNED', 'customer', p_customer, v.department_id, v.team_id,
     jsonb_build_object('request_id', r.id, 'verified', v.amount_verified, 'agreed', v.deal_amount, 'note', v_note));
   perform private.notify(v.owner_id, 'PAYMENT_CONFIRMED', format('Payment confirmed: %s', coalesce(v.company, v.name)),
@@ -803,12 +803,12 @@ begin
      set payment_workflow = 'RETURNED_FROM_ACCOUNTS', lead_status = 'INTERESTED', next_follow_up_at = coalesce(next_follow_up_at, now())
    where id = p_customer;
   perform private.log_customer_activity(p_customer, 'RETURNED_FROM_ACCOUNTS',
-    'Customer backed off at Accounts — returned to Leads' || coalesce(' · ' || v_reason, ''));
+    'Customer backed off at Accounts - returned to Leads' || coalesce(' · ' || v_reason, ''));
   perform private.write_audit('PAYMENT_RETURNED_TO_LEADS', 'customer', p_customer, v.department_id, v.team_id,
     jsonb_build_object('request_id', r.id, 'reason', v_reason, 'verified', v.amount_verified));
   perform private.notify(v.owner_id, 'RETURNED_FROM_ACCOUNTS', format('Returned from Accounts: %s', coalesce(v.company, v.name)),
     coalesce(v_reason, 'The customer backed off. Please follow up.') ||
-    case when v.amount_verified > 0 then format(' %s was already received and verified — Accounts will handle any refund.', private.rupees(v.amount_verified)) else '' end,
+    case when v.amount_verified > 0 then format(' %s was already received and verified - Accounts will handle any refund.', private.rupees(v.amount_verified)) else '' end,
     'customer', p_customer);
 end $$;
 revoke all on function public.accounts_return_to_leads(uuid, text) from public, anon;

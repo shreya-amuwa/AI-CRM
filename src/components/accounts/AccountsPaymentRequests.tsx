@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, Building2, CheckCircle2, MessageSquare, Phone, Search, Undo2 } from 'lucide-react';
+import { BadgeCheck, Building2, CheckCircle2, ChevronRight, MessageSquare, Phone, Search, Undo2 } from 'lucide-react';
 import type { PaymentOverview, PaymentRequestItem } from '../../../shared/contracts';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
@@ -12,7 +12,7 @@ type Tab = 'PENDING' | 'CONFIRMED' | 'RETURNED';
 const Row: React.FC<{ k: string; v: React.ReactNode }> = ({ k, v }) => (
   <div>
     <dt className="text-[11px] text-slate-400">{k}</dt>
-    <dd className="text-sm font-semibold text-slate-900 mt-0.5 break-words">{v || '—'}</dd>
+    <dd className="text-sm font-semibold text-slate-900 mt-0.5 break-words">{v || '-'}</dd>
   </div>
 );
 
@@ -49,7 +49,7 @@ const RequestDetail: React.FC<{
           )}
           {item.status === 'RETURNED' && (
             <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2.5 py-1">
-              <Undo2 className="w-3.5 h-3.5" aria-hidden="true" /> Backed off — returned to Leads
+              <Undo2 className="w-3.5 h-3.5" aria-hidden="true" /> Backed off - returned to Leads
             </span>
           )}
         </div>
@@ -106,7 +106,7 @@ const RequestDetail: React.FC<{
               onClick={() => setBackOpen(true)}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-rose-200 bg-white text-rose-700 text-sm font-bold hover:bg-rose-50"
             >
-              <Undo2 className="w-4 h-4" aria-hidden="true" /> Customer Backed Off — Return to Leads
+              <Undo2 className="w-4 h-4" aria-hidden="true" /> Customer Backed Off - Return to Leads
             </button>
             <button
               type="button"
@@ -165,7 +165,8 @@ const RequestDetail: React.FC<{
  * verify it, then confirm (the customer returns to Customer onboarding) or
  * return the customer to Leads if they back off.
  */
-export const AccountsPaymentRequests: React.FC<{ layout?: 'split' | 'popup'; onCountsChanged?: () => void }> = ({ layout = 'split', onCountsChanged }) => {
+/** The customers are a full-width list; a customer opens in a pop-up (never a side panel). */
+export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }> = ({ onCountsChanged }) => {
   const [tab, setTab] = useState<Tab>('PENDING');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
@@ -193,13 +194,13 @@ export const AccountsPaymentRequests: React.FC<{ layout?: 'split' | 'popup'; onC
       setItems(page.items);
       setTotal(page.total);
       setPendingTotal(pending.total);
-      setSelectedId(cur => (cur && page.items.some(i => i.requestId === cur) ? cur : layout === 'split' ? page.items[0]?.requestId ?? null : null));
+      setSelectedId(cur => (cur && page.items.some(i => i.requestId === cur) ? cur : null));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [tab, term, layout]);
+  }, [tab, term]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -207,7 +208,7 @@ export const AccountsPaymentRequests: React.FC<{ layout?: 'split' | 'popup'; onC
   const selected = items.find(i => i.requestId === selectedId) || null;
   const resolved = (message: string) => {
     setNotice(message);
-    if (layout === 'popup') setSelectedId(null);
+    setSelectedId(null);
     onCountsChanged?.();
     void load();
   };
@@ -260,44 +261,56 @@ export const AccountsPaymentRequests: React.FC<{ layout?: 'split' | 'popup'; onC
           hint={tab === 'PENDING' ? 'When Sales sends a lead to Accounts it appears here.' : 'They are listed here once you have handled them.'}
         />
       ) : (
-        <div className={layout === 'split' ? 'grid grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)] gap-5 items-start' : ''}>
-          <ul className={layout === 'split' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'} aria-label="Customers">
+        <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
+          <div className="hidden md:grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_1.5rem] gap-4 px-5 py-2.5 bg-slate-50/70 text-[11px] font-medium text-slate-500" aria-hidden="true">
+            <span>Customer</span>
+            <span>Services</span>
+            <span>Agreed</span>
+            <span>Payment</span>
+            <span>{tab === 'PENDING' ? 'Sent' : 'Handled'}</span>
+            <span />
+          </div>
+          <ul className="divide-y divide-slate-100" aria-label="Customers">
             {items.map(i => (
               <li key={i.requestId}>
                 <button
                   type="button"
                   onClick={() => setSelectedId(i.requestId)}
-                  aria-current={i.requestId === selectedId ? 'true' : undefined}
-                  className={`w-full text-left rounded-xl border p-3 transition-colors ${i.requestId === selectedId ? 'border-blue-400 bg-blue-50/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                  className="w-full text-left grid grid-cols-1 md:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_1.5rem] gap-1 md:gap-4 items-center px-5 py-3.5 hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-blue-50/60"
                 >
-                  <div className="text-sm font-bold text-slate-900 truncate">{i.company || i.name}</div>
-                  <div className="text-[11px] text-slate-500 truncate">
-                    {i.company ? `${i.name} · ` : ''}
-                    {i.code}
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-slate-800">{rupees(i.agreedAmount)}</span>
-                    <span className="text-slate-400">{fmtDate(tab === 'PENDING' ? i.sentAt : i.resolvedAt)}</span>
-                  </div>
-                  {i.amountRecorded > 0 && (
-                    <div className="mt-1 text-[11px] text-slate-500">
-                      Verified {rupees(i.amountVerified)}
-                      {i.amountRecorded > i.amountVerified ? ` · ${rupees(i.amountRecorded - i.amountVerified)} pending` : ''}
-                    </div>
-                  )}
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-slate-900 truncate">{i.company || i.name}</span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      {i.company ? `${i.name} · ` : ''}
+                      {i.phone || i.email || 'No contact'}
+                    </span>
+                  </span>
+                  <span className="text-xs text-slate-700 truncate">{i.services.join(', ') || '-'}</span>
+                  <span className="text-sm font-semibold text-slate-900">{rupees(i.agreedAmount)}</span>
+                  <span className="text-xs text-slate-600">
+                    {i.amountRecorded > 0 ? (
+                      <>
+                        Verified {rupees(i.amountVerified)}
+                        {i.amountRecorded > i.amountVerified ? <span className="block text-amber-700">{rupees(i.amountRecorded - i.amountVerified)} pending</span> : null}
+                      </>
+                    ) : (
+                      <span className="text-slate-400">No payment yet</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-slate-500">{fmtDate(tab === 'PENDING' ? i.sentAt : i.resolvedAt)}</span>
+                  <ChevronRight className="hidden md:block w-4 h-4 text-slate-300" aria-hidden="true" />
                 </button>
               </li>
             ))}
-            {total > items.length && <li className="text-[11px] text-slate-400 text-center">Showing {items.length} of {total}. Search to narrow down.</li>}
           </ul>
-
-          {selected && layout === 'popup' && (
-            <Modal title={selected.company || selected.name} onClose={() => setSelectedId(null)} wide>
-              <RequestDetail key={selected.requestId} bare item={selected} onChanged={() => void load()} onResolved={resolved} />
-            </Modal>
-          )}
-          {selected && layout === 'split' && <RequestDetail key={selected.requestId} item={selected} onChanged={() => void load()} onResolved={resolved} />}
+          {total > items.length && <p className="px-5 py-2 text-[11px] text-slate-400 text-center border-t border-slate-100">Showing {items.length} of {total}. Search to narrow down.</p>}
         </div>
+      )}
+
+      {selected && (
+        <Modal title={selected.company || selected.name} onClose={() => setSelectedId(null)} wide>
+          <RequestDetail key={selected.requestId} bare item={selected} onChanged={() => void load()} onResolved={resolved} />
+        </Modal>
       )}
     </div>
   );

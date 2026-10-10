@@ -208,7 +208,7 @@ export const EduTrainingPanel: React.FC<EduTrainingPanelProps> = ({
     </button>
   );
 
-  // STEP 2A: EDUCATION TRAINING (CANDIDATE) — moved over exactly as-is from Amuwa Corporation
+  // STEP 2A: EDUCATION TRAINING (CANDIDATE) - moved over exactly as-is from Amuwa Corporation
   if (subDept === 'education_training') {
     // The "Candidate Training" nav tab shows the full moved panel. Any other
     // tab (e.g. the default "Dashboard" tab) shows a light summary screen,
@@ -250,7 +250,7 @@ export const EduTrainingPanel: React.FC<EduTrainingPanelProps> = ({
           </h3>
           <p className="text-xs font-mono text-slate-500 max-w-md mx-auto">
             Open the "Candidate Training" tab in the sidebar to view day 1 / day 2 / day 3
-            progress, evaluations and trainer feedback — the exact same panel that used to
+            progress, evaluations and trainer feedback - the exact same panel that used to
             live under Amuwa Corporation.
           </p>
         </div>
@@ -258,7 +258,7 @@ export const EduTrainingPanel: React.FC<EduTrainingPanelProps> = ({
     );
   }
 
-  // STEP 2B: PRODUCT TRAINING (CLIENT) — new workspace
+  // STEP 2B: PRODUCT TRAINING (CLIENT) - new workspace
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white border border-slate-200 shadow-sm">
@@ -288,7 +288,7 @@ export const EduTrainingPanel: React.FC<EduTrainingPanelProps> = ({
         </h3>
         <p className="text-xs font-mono text-slate-500 max-w-md mx-auto">
           This is a fresh workspace for scheduling and tracking product training sessions
-          with clients — no data was moved here. Tell me what it should track (sessions,
+          with clients - no data was moved here. Tell me what it should track (sessions,
           client roster, materials, completion status, etc.) and I'll build it out.
         </p>
       </div>

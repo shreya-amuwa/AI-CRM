@@ -7,11 +7,11 @@
 -- "Send for onboarding". Only then does the customer move to the existing
 -- Onboarding Customers panel (document review, authorization, hand-over).
 --
---  * customer_onboarding.consultant_started_at  — set by "Send for onboarding"
+--  * customer_onboarding.consultant_started_at  - set by "Send for onboarding"
 --    (existing customers are backfilled: they stay in Onboarding Customers)
 --  * customer_onboarding.contract_signed, .addons
 --  * consultant_set_contract / consultant_set_addons / consultant_update_customer
---    / consultant_start_onboarding — consultant-only, through
+--    / consultant_start_onboarding - consultant-only, through
 --    private.can_review_onboarding (support department, customer sent to them)
 --  * onboarding_review_counts: 'all' and the tab counts now exclude customers
 --    still in the Customers panel; 'newCustomers' counts them

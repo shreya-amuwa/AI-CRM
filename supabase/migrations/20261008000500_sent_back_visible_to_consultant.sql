@@ -7,8 +7,8 @@
 -- consultant can open it, see the items and reasons and view files, but can
 -- authorize / reject / run automations again only once sales sends it back.
 --
---  * customer_onboarding.with_consultant — sent, or sent back and waiting
---  * private.can_view_onboarding_review — read access (list, checklist,
+--  * customer_onboarding.with_consultant - sent, or sent back and waiting
+--  * private.can_view_onboarding_review - read access (list, checklist,
 --    files, owner name); private.can_review_onboarding (actions) unchanged
 --  * review_state gains WAITING_ON_SALES; onboarding_review_counts counts it
 -- Additive / idempotent. Peer functions (forward / return / review) unchanged.

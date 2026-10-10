@@ -58,7 +58,7 @@ interface CustomersPageProps {
   notice?: string | null;
 }
 
-/** Dashboard — Existing Customers (the landing page) and the supervisor's customer list. */
+/** Dashboard - Existing Customers (the landing page) and the supervisor's customer list. */
 export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer, notice }) => {
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
@@ -206,10 +206,10 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tas
                         <div className="text-[11px] text-slate-400 font-mono">{c.code}</div>
                       </td>
                       <td className="py-3 px-3 text-xs text-slate-600">
-                        <div>{c.phone || '—'}</div>
+                        <div>{c.phone || '-'}</div>
                         <div className="text-slate-400">{c.email || ''}</div>
                       </td>
-                      <td className="py-3 px-3 text-xs text-slate-600">{c.company || '—'}</td>
+                      <td className="py-3 px-3 text-xs text-slate-600">{c.company || '-'}</td>
                       <td className="py-3 px-3">
                         <CustomerStatusPill status={c.status} />
                       </td>
@@ -418,8 +418,8 @@ export const CustomerProfile: React.FC<{
                   {[
                     ['Assigned to', customer.ownerId === profile?.id ? 'You' : customer.ownerName || 'Team member'],
                     ['Customer type', SEGMENT_LABELS[customer.segment]],
-                    ['Services / products', customer.services.length ? customer.services.map(x => serviceNames.get(x.serviceCode) || x.serviceCode).join(', ') : customer.service || '—'],
-                    ['Channel', customer.channel && (CHANNELS as readonly string[]).includes(customer.channel) ? customer.channel : customer.channel || '—'],
+                    ['Services / products', customer.services.length ? customer.services.map(x => serviceNames.get(x.serviceCode) || x.serviceCode).join(', ') : customer.service || '-'],
+                    ['Channel', customer.channel && (CHANNELS as readonly string[]).includes(customer.channel) ? customer.channel : customer.channel || '-'],
                     ['Added', fmtDay(customer.createdAt)],
                     ['Last updated', fmtWhen(customer.updatedAt)]
                   ].map(([k, v]) => (

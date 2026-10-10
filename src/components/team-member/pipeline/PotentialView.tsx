@@ -4,6 +4,8 @@ import type { Paginated, PaymentFilter, PaymentMethod, PipelineCounts, PipelineC
 import { PAYMENT_METHODS } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
+import { rowOpen } from '../../../lib/rowClick';
+import { CustomerQuickView } from './CustomerQuickView';
 import {
   Avatar,
   blockDecimals,
@@ -67,6 +69,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState<PipelineCustomer | null>(null);
   const [paying, setPaying] = useState<PipelineCustomer | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [backingOut, setBackingOut] = useState<PipelineCustomer | null>(null);
   const debounced = useDebounced(search.trim());
   const seqRef = useRef(0);
@@ -124,7 +127,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                 <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
                 {c.label}
               </div>
-              <div className="text-2xl font-bold text-slate-900 mt-1">{n === null ? '—' : n.toLocaleString('en-IN')}</div>
+              <div className="text-2xl font-bold text-slate-900 mt-1">{n === null ? '-' : n.toLocaleString('en-IN')}</div>
               <div className="text-[11px] text-slate-500">{c.hint}</div>
             </button>
           );
@@ -222,7 +225,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                   const pct = c.dealAmount ? Math.min(100, Math.round((c.amountReceived / c.dealAmount) * 100)) : 0;
                   const fresh = dayDiff(c.stageChangedAt) === 0 && Date.now() - new Date(c.stageChangedAt).getTime() < 10 * 60000;
                   return (
-                    <tr key={c.id} className={`${fresh ? 'bg-emerald-50/60' : 'hover:bg-slate-50/60'} ${loading ? 'opacity-60' : ''}`}>
+                    <tr key={c.id} {...rowOpen(() => setViewing(c.id))} className={`${fresh ? 'bg-emerald-50/60' : 'hover:bg-slate-50/60'} focus-visible:bg-indigo-50/50 focus-visible:outline-none ${loading ? 'opacity-60' : ''}`}>
                       <td className="px-4 py-3">
                         <input
                           type="checkbox"
@@ -301,7 +304,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                               className={`${btn.secondary} px-2`}
                               onClick={() => setBackingOut(c)}
                               aria-label={`Customer backed out: ${c.company || c.name}`}
-                              title="Customer backed out — move back to Leads"
+                              title="Customer backed out - move back to Leads"
                             >
                               <Undo2 className="w-3.5 h-3.5" />
                             </button>
@@ -332,6 +335,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
           }}
         />
       )}
+      {viewing && <CustomerQuickView id={viewing} onClose={() => setViewing(null)} />}
       {paying && (
         <PaymentDialog
           mode="part"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Eye, RotateCcw, Search } from 'lucide-react';
 import { fmtWhen, TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS, type TicketPriority, type TicketStatus } from '../../../lib/support';
+import { rowOpen } from '../../../lib/rowClick';
 import { teamLeadApi, useServerList, type TicketQuery, type TlMemberLoad, type TlTicket } from '../../../lib/teamLead';
 import { Empty, ErrorBanner, inputClass, Loading, Pager, TicketPriorityPill, TicketStatusPill } from '../../support-member/SupportParts';
 
@@ -145,7 +146,7 @@ export const TlTicketsSection: React.FC<{
               {list.data?.items.map(t => {
                 const urgent = t.priority === 'URGENT' || t.priority === 'HIGH' || t.status === 'ESCALATED';
                 return (
-                  <tr key={t.id} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50">
+                  <tr key={t.id} {...rowOpen(() => onOpenTicket(t))} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50 focus-visible:bg-blue-50/50 focus-visible:outline-none">
                     <td className={`px-5 py-3 ${urgent ? 'border-l-2 border-l-rose-300' : ''}`}>
                       <div className="font-mono text-[11px] text-slate-400">{t.ticketNo}</div>
                       <div className="font-semibold text-slate-900">{t.subject}</div>

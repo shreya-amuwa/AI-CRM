@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, Building2, CheckCircle2, IndianRupee, Phone, Search } from 'lucide-react';
+import { BadgeCheck, Building2, CheckCircle2, ChevronRight, IndianRupee, Phone, Search } from 'lucide-react';
 import type { AccountsConfirmation } from '../../../shared/contracts';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
@@ -12,7 +12,7 @@ type Tab = 'PENDING' | 'CONFIRMED';
 const Row: React.FC<{ k: string; v: React.ReactNode }> = ({ k, v }) => (
   <div>
     <dt className="text-[11px] text-slate-400">{k}</dt>
-    <dd className="text-sm font-semibold text-slate-900 mt-0.5 break-words">{v || '—'}</dd>
+    <dd className="text-sm font-semibold text-slate-900 mt-0.5 break-words">{v || '-'}</dd>
   </div>
 );
 
@@ -72,10 +72,10 @@ const ConfirmationDetail: React.FC<DetailProps> = ({ selected, note, onNote, bus
                   <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(
                       [
-                        ['Deal amount', selected.dealAmount !== null ? fmtMoney(selected.dealAmount) : '—'],
+                        ['Deal amount', selected.dealAmount !== null ? fmtMoney(selected.dealAmount) : '-'],
                         ['Amount received', fmtMoney(selected.amountReceived)],
                         ['Balance', fmtMoney(selected.balance)],
-                        ['Payment method', (selected.paymentMethod && METHOD_LABELS[selected.paymentMethod]) || '—']
+                        ['Payment method', (selected.paymentMethod && METHOD_LABELS[selected.paymentMethod]) || '-']
                       ] as const
                     ).map(([k, v]) => (
                       <div key={k} className="rounded-xl bg-slate-50 p-3">
@@ -135,15 +135,13 @@ const ConfirmationDetail: React.FC<DetailProps> = ({ selected, note, onNote, bus
 
 /**
  * Accounts: customers Sales sent for payment confirmation. Pick one, check the
- * business details and the amount, press Confirm — the customer then goes to
+ * business details and the amount, press Confirm - the customer then goes to
  * the Technical Consultant for onboarding. Every call is checked by the
  * database (Accounts staff only).
  */
 const OnboardingConfirmations: React.FC<{
-  /** 'split': list on the left, details on the right. 'popup': list of businesses; details open in a pop-up. */
-  layout?: 'split' | 'popup';
   onCountsChanged?: () => void;
-}> = ({ layout = 'split', onCountsChanged }) => {
+}> = ({ onCountsChanged }) => {
   const [tab, setTab] = useState<Tab>('PENDING');
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
@@ -174,13 +172,13 @@ const OnboardingConfirmations: React.FC<{
       setItems(page.items);
       setTotal(page.total);
       setPendingTotal(pending.total);
-      setSelectedId(cur => (cur && page.items.some(i => i.id === cur) ? cur : layout === 'split' ? page.items[0]?.id ?? null : null));
+      setSelectedId(cur => (cur && page.items.some(i => i.id === cur) ? cur : null));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [tab, term, layout]);
+  }, [tab, term]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -199,7 +197,7 @@ const OnboardingConfirmations: React.FC<{
       await pipelineApi.confirmAccountsPayment(selected.id, note);
       setNotice(`${selected.company || selected.name} confirmed and sent to the Technical Consultant.`);
       setNote('');
-      if (layout === 'popup') setSelectedId(null);
+      setSelectedId(null);
       onCountsChanged?.();
       await load();
     } catch (e) {
@@ -256,42 +254,43 @@ const OnboardingConfirmations: React.FC<{
           hint={tab === 'PENDING' ? 'When Sales sends a customer to Accounts it appears here.' : 'Customers you confirm are listed here.'}
         />
       ) : (
-        <div className={layout === 'split' ? 'grid grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)] gap-5 items-start' : ''}>
-          <ul className={layout === 'split' ? 'space-y-2' : 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3'} aria-label="Customers">
+        <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
+          <div className="hidden md:grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_1.5rem] gap-4 px-5 py-2.5 bg-slate-50/70 text-[11px] font-medium text-slate-500" aria-hidden="true">
+            <span>Customer</span>
+            <span>Amount</span>
+            <span>{tab === 'PENDING' ? 'Sent' : 'Confirmed'}</span>
+            <span />
+          </div>
+          <ul className="divide-y divide-slate-100" aria-label="Customers">
             {items.map(i => (
               <li key={i.id}>
                 <button
                   type="button"
                   onClick={() => setSelectedId(i.id)}
-                  aria-current={i.id === selectedId ? 'true' : undefined}
-                  className={`w-full text-left rounded-xl border p-3 transition-colors ${
-                    i.id === selectedId ? 'border-blue-400 bg-blue-50/60' : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
+                  className="w-full text-left grid grid-cols-1 md:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_1.5rem] gap-1 md:gap-4 items-center px-5 py-3.5 hover:bg-slate-50 focus-visible:outline-none focus-visible:bg-blue-50/60"
                 >
-                  <div className="text-sm font-bold text-slate-900 truncate">{i.company || i.name}</div>
-                  <div className="text-[11px] text-slate-500 truncate">
-                    {i.company ? `${i.name} · ` : ''}
-                    {i.code}
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between text-[11px]">
-                    <span className="font-semibold text-slate-800">{i.dealAmount !== null ? fmtMoney(i.dealAmount) : '—'}</span>
-                    <span className="text-slate-400">{fmtDay(tab === 'PENDING' ? i.sentAt : i.confirmedAt)}</span>
-                  </div>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-slate-900 truncate">{i.company || i.name}</span>
+                    <span className="block text-[11px] text-slate-500 truncate">
+                      {i.company ? `${i.name} · ` : ''}
+                      {i.phone || i.email || 'No contact'}
+                    </span>
+                  </span>
+                  <span className="text-sm font-semibold text-slate-900">{i.dealAmount !== null ? fmtMoney(i.dealAmount) : '-'}</span>
+                  <span className="text-xs text-slate-500">{fmtDay(tab === 'PENDING' ? i.sentAt : i.confirmedAt)}</span>
+                  <ChevronRight className="hidden md:block w-4 h-4 text-slate-300" aria-hidden="true" />
                 </button>
               </li>
             ))}
-            {total > items.length && <li className="text-[11px] text-slate-400 text-center">Showing {items.length} of {total}. Search to narrow down.</li>}
           </ul>
-
-          {selected && layout === 'popup' && (
-            <Modal title={selected.company || selected.name} onClose={() => setSelectedId(null)} wide>
-              <ConfirmationDetail bare selected={selected} note={note} onNote={setNote} busy={busy} actionError={actionError} onConfirm={() => void confirm()} />
-            </Modal>
-          )}
-          {selected && layout === 'split' && (
-            <ConfirmationDetail selected={selected} note={note} onNote={setNote} busy={busy} actionError={actionError} onConfirm={() => void confirm()} />
-          )}
+          {total > items.length && <p className="px-5 py-2 text-[11px] text-slate-400 text-center border-t border-slate-100">Showing {items.length} of {total}. Search to narrow down.</p>}
         </div>
+      )}
+
+      {selected && (
+        <Modal title={selected.company || selected.name} onClose={() => setSelectedId(null)} wide>
+          <ConfirmationDetail bare selected={selected} note={note} onNote={setNote} busy={busy} actionError={actionError} onConfirm={() => void confirm()} />
+        </Modal>
       )}
     </div>
   );
@@ -305,7 +304,7 @@ const OnboardingConfirmations: React.FC<{
  *  - Onboarding amount checks: customers Sales onboarded themselves and sent to Accounts to confirm the amount
  *    before the Technical Consultant gets them.
  */
-export const AccountsConfirmations: React.FC<{ layout?: 'split' | 'popup'; onCountsChanged?: () => void }> = ({ layout = 'split', onCountsChanged }) => {
+export const AccountsConfirmations: React.FC<{ onCountsChanged?: () => void }> = ({ onCountsChanged }) => {
   const [kind, setKind] = useState<'REQUESTS' | 'ONBOARDING'>('REQUESTS');
   const [counts, setCounts] = useState<{ requestsPending: number; onboardingPending: number } | null>(null);
   const refreshCounts = useCallback(() => {
@@ -324,7 +323,7 @@ export const AccountsConfirmations: React.FC<{ layout?: 'split' | 'popup'; onCou
     <div className="space-y-5">
       <PageHeader
         title="Payment confirmations"
-        subtitle="Customers Sales sent to Accounts. Record and verify the payment, then return the customer to Sales for onboarding — or back to Leads if they back off."
+        subtitle="Customers Sales sent to Accounts. Record and verify the payment, then return the customer to Sales for onboarding - or back to Leads if they back off."
       />
       <div role="tablist" aria-label="Confirmation queue" className="flex flex-wrap p-1 rounded-xl bg-slate-100 text-xs font-semibold self-start w-fit">
         {(
@@ -340,9 +339,9 @@ export const AccountsConfirmations: React.FC<{ layout?: 'split' | 'popup'; onCou
         ))}
       </div>
       {kind === 'REQUESTS' ? (
-        <AccountsPaymentRequests layout={layout} onCountsChanged={refreshCounts} />
+        <AccountsPaymentRequests onCountsChanged={refreshCounts} />
       ) : (
-        <OnboardingConfirmations layout={layout} onCountsChanged={refreshCounts} />
+        <OnboardingConfirmations onCountsChanged={refreshCounts} />
       )}
     </div>
   );

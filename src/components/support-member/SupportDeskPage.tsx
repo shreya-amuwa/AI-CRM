@@ -9,7 +9,7 @@ import { InvoiceRequests } from './InvoiceRequests';
 import { KpiCard, PageHeader } from './SupportParts';
 
 /**
- * Department Head: how the Support team is doing — customers, tickets, pending
+ * Department Head: how the Support team is doing - customers, tickets, pending
  * issues, escalations, task completion and each member's activity.
  */
 export const SupportDeskPage: React.FC = () => {

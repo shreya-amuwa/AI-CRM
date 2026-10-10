@@ -64,7 +64,7 @@ export const LoginForm: React.FC = () => {
   }, [isSignUp, regOptions.length]);
 
   // --------------------------------------------------------------------------
-  // SIGN IN — Supabase Auth; role & account status are read from the database
+  // SIGN IN - Supabase Auth; role & account status are read from the database
   // --------------------------------------------------------------------------
   const handleSignInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +81,7 @@ export const LoginForm: React.FC = () => {
   };
 
   // --------------------------------------------------------------------------
-  // SIGN UP — creates a PENDING account; the database routes the approval
+  // SIGN UP - creates a PENDING account; the database routes the approval
   // request and notifications to the right Team Head / Department Head.
   // --------------------------------------------------------------------------
   const handleSignUpSubmit = async (e: React.FormEvent) => {

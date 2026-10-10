@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RotateCcw, Search, UserCog } from 'lucide-react';
 import { CUSTOMER_STATUS_LABELS, fmtWhen, type CustomerStatusValue } from '../../../lib/support';
+import { rowOpen } from '../../../lib/rowClick';
 import { teamLeadApi, useServerList, type Assignment, type CustomerQuery, type TlCustomer, type TlMemberLoad } from '../../../lib/teamLead';
 import { CustomerStatusPill, Empty, ErrorBanner, inputClass, Loading, Modal, Pager } from '../../support-member/SupportParts';
 
@@ -75,7 +76,7 @@ export const TlCustomersSection: React.FC<{
             <h2 id="tl-customers-heading" className="text-base font-bold text-slate-900">
               Customers
             </h2>
-            <p className="text-xs text-slate-500">Everyone you manage — your own customers and your team's.</p>
+            <p className="text-xs text-slate-500">Everyone you manage - your own customers and your team's.</p>
           </div>
           {list.data && <span className="text-xs text-slate-500">{list.data.total} customer{list.data.total === 1 ? '' : 's'}</span>}
         </div>
@@ -171,7 +172,7 @@ export const TlCustomersSection: React.FC<{
             </thead>
             <tbody>
               {list.data?.items.map(c => (
-                <tr key={c.id} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50">
+                <tr key={c.id} {...rowOpen(() => onOpenCustomer(c))} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50 focus-visible:bg-blue-50/50 focus-visible:outline-none">
                   <td className="px-5 py-3">
                     <button type="button" onClick={() => onOpenCustomer(c)} className="text-left group" aria-label={`Open ${c.name}`}>
                       <div className="font-semibold text-slate-900 group-hover:text-blue-700">{c.name}</div>
@@ -182,7 +183,7 @@ export const TlCustomersSection: React.FC<{
                     </button>
                   </td>
                   <td className="px-3 py-3 text-xs text-slate-600 hidden md:table-cell">
-                    <div className="break-all">{c.email || '—'}</div>
+                    <div className="break-all">{c.email || '-'}</div>
                     <div>{c.phone || ''}</div>
                   </td>
                   <td className="px-3 py-3">
@@ -196,7 +197,7 @@ export const TlCustomersSection: React.FC<{
                     <span className={c.openTickets ? 'font-semibold text-slate-900' : 'text-slate-500'}>{c.openTickets} open</span>
                     <div className="text-[11px] text-slate-400">{c.totalTickets} total</div>
                   </td>
-                  <td className="px-3 py-3 text-xs text-slate-500 hidden lg:table-cell whitespace-nowrap">{c.lastActivityAt ? fmtWhen(c.lastActivityAt) : '—'}</td>
+                  <td className="px-3 py-3 text-xs text-slate-500 hidden lg:table-cell whitespace-nowrap">{c.lastActivityAt ? fmtWhen(c.lastActivityAt) : '-'}</td>
                   <td className="px-5 py-3 text-right whitespace-nowrap">
                     <button
                       type="button"

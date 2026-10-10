@@ -1,6 +1,6 @@
 # Supabase Setup, Deployment & Testing
 
-## 0. Before anything else — rotate leaked credentials
+## 0. Before anything else - rotate leaked credentials
 
 The previous `run_migration.cjs` committed the **Postgres database password** for
 the Supabase project. The file is removed, but it remains in git history.
@@ -18,7 +18,7 @@ Copy `.env.example` to `.env.local` (git-ignored) and fill in:
 |---|---|---|
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Browser bundle (Auth + Realtime) | Public by design |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | API (`server/`), verifies tokens, runs queries as the caller | Public |
-| `SUPABASE_SERVICE_ROLE_KEY` | API only: Auth admin (create/ban users) and inbound webhooks | **Secret — server only** |
+| `SUPABASE_SERVICE_ROLE_KEY` | API only: Auth admin (create/ban users) and inbound webhooks | **Secret - server only** |
 | `API_ALLOWED_ORIGINS` | Optional CORS allow-list for `/api/v1` | No |
 
 On Vercel set the same variables in Project → Settings → Environment Variables.

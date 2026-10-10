@@ -10,18 +10,18 @@ the normal team member dashboard. An existing support member can be switched wit
 Support team leads, department heads and the super admin may review too (database rules).
 
 ## What it shows
-- **Onboarding Customers** — customers of the consultant's department that the salesperson
+- **Onboarding Customers** - customers of the consultant's department that the salesperson
   has sent with **Send to Technical Consultant** (on the customer's onboarding page, unlocked
   once every checklist item is saved). Nothing is visible before sending. Tabs *All / Review pending /
   Needs attention / Authorized* and the number of authorized items (`x/y docs authorized`).
   Status: *Awaiting documents* → nothing to review yet; *Review pending* → items saved by
   sales wait for review; *Needs attention* → an item was marked not authorized;
   *Authorized* → every item authorized.
-- **Customer page** — customer, business, services and amount; every document and detail
+- **Customer page** - customer, business, services and amount; every document and detail
   the salesperson collected (from the service checklist) with **View document**,
   **Authorize**, **Not authorized** (requires a reason) and **Authorize all**; and the
   **Automations** panel.
-- **Send back for re-verification** — after marking wrong, inappropriate or fake items as
+- **Send back for re-verification** - after marking wrong, inappropriate or fake items as
   *Not authorized*, this returns the customer to the salesperson (optional message). The
   salesperson sees it under **Returned by consultant** with every item and reason, fixes them
   and clicks **Send again to Technical Consultant**. Meanwhile it **stays in the consultant's
@@ -34,7 +34,7 @@ Support team leads, department heads and the super admin may review too (databas
 Each automation is a Google Sheet. **Trigger → Confirm** makes the API append one row
 (customer, phone, WhatsApp, e-mail, business, services, amount) to that sheet; the sheet's
 own automation then sends the email / WhatsApp message / AI call. Every run is stored in
-`onboarding_automation_runs` and shown as *Sent* or *Failed* — a run is only shown as sent
+`onboarding_automation_runs` and shown as *Sent* or *Failed* - a run is only shown as sent
 when the sheet confirms it. The same automation can't be triggered twice within a minute.
 
 ### Connect a sheet
@@ -60,9 +60,9 @@ when the sheet confirms it. The same automation can't be triggered twice within 
    Copy the web app URL (`https://script.google.com/macros/s/…/exec`).
 3. In Vercel → Settings → Environment Variables add (server only, never `VITE_`):
    - `AUTOMATION_EMAIL_WEBHOOK_URL`, `AUTOMATION_WHATSAPP_WEBHOOK_URL`,
-     `AUTOMATION_AI_CALLING_WEBHOOK_URL` — one URL per sheet (leave unset to show
+     `AUTOMATION_AI_CALLING_WEBHOOK_URL` - one URL per sheet (leave unset to show
      "Google Sheet not connected");
-   - `AUTOMATION_WEBHOOK_SECRET` — the same secret as in the script.
+   - `AUTOMATION_WEBHOOK_SECRET` - the same secret as in the script.
 4. Redeploy. The automation's button becomes active.
 
 ## Database

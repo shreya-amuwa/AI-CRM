@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
+import { rowOpen } from '../../lib/rowClick';
 import { documentsApi, pipelineApi, usersApi } from '../../lib/api/endpoints';
 import {
   Avatar,
@@ -195,7 +196,7 @@ export const HandoverBoard: React.FC<{ role: BoardRole }> = ({ role }) => {
             const member = c.onboarding?.teamMemberId ? people.get(c.onboarding.teamMemberId) : null;
             const canAct = (role === 'DEPARTMENT_HEAD' && (stage === 'DEPARTMENT_HEAD' || stage === 'TEAM_LEAD')) || (role === 'TEAM_HEAD' && (stage === 'TEAM_LEAD' || stage === 'TEAM_MEMBER') && c.onboarding?.teamLeadId === profile?.id);
             return (
-              <li key={c.id}>
+              <li key={c.id} {...rowOpen(() => setOpenId(c.id))} className="rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 hover:[&>div]:shadow-md transition">
                 <Card className="p-4 h-full flex flex-col">
                   <div className="flex items-start gap-3">
                     <Avatar name={c.company || c.name} />
@@ -213,8 +214,8 @@ export const HandoverBoard: React.FC<{ role: BoardRole }> = ({ role }) => {
                   </div>
                   <div className="mt-3 text-xs text-slate-600 space-y-0.5">
                     {c.onboarding?.toDepartmentHeadAt && <div>Verified {longDate(c.onboarding.toDepartmentHeadAt)}</div>}
-                    {stage !== 'DEPARTMENT_HEAD' && <div>Team Lead: {lead || '—'}</div>}
-                    {stage === 'TEAM_MEMBER' && <div>Team Member: {member || '—'}</div>}
+                    {stage !== 'DEPARTMENT_HEAD' && <div>Team Lead: {lead || '-'}</div>}
+                    {stage === 'TEAM_MEMBER' && <div>Team Member: {member || '-'}</div>}
                   </div>
                   <div className="mt-auto pt-4 flex items-center justify-between gap-2 border-t border-slate-100 mt-4">
                     <span className="font-bold text-slate-900 text-sm">{money(c.dealAmount)}</span>
@@ -309,14 +310,14 @@ const AssignDialog: React.FC<{ role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD'; customer: 
   return (
     <Dialog
       title={toLead ? 'Pass to a Support Team Lead' : 'Assign to a Team Member or yourself'}
-      description={`${customer.company || customer.name} — ${toLead ? 'the Team Lead then assigns it to a member of their team.' : 'the Team Member can then see the client and its details.'}`}
+      description={`${customer.company || customer.name} - ${toLead ? 'the Team Lead then assigns it to a member of their team.' : 'the Team Member can then see the client and its details.'}`}
       onClose={() => !busy && onClose()}
     >
       <form onSubmit={submit} className="space-y-3" noValidate>
         <Field label={toLead ? 'Support Team Lead' : 'Assign to'} required htmlFor="handover-pick">
           <select id="handover-pick" className={selectCls} value={pick} onChange={e => setPick(e.target.value)} disabled={!options}>
             <option value="">{options ? 'Choose…' : 'Loading…'}</option>
-            {!toLead && options && profile && <option value={profile.id}>Me ({profile.fullName}) — keep this client</option>}
+            {!toLead && options && profile && <option value={profile.id}>Me ({profile.fullName}) - keep this client</option>}
             {options?.map(p => (
               <option key={p.id} value={p.id}>
                 {p.fullName}
@@ -414,9 +415,9 @@ const HandoverDetail: React.FC<{
         </div>
         <dl className="mt-5 pt-4 border-t border-slate-100 grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
           <Tile label="Deal amount" value={money(c.dealAmount)} />
-          <Tile label="Sales owner" value={c.owner?.fullName || '—'} />
-          <Tile label="Team Lead" value={h?.teamLead?.fullName || '—'} />
-          <Tile label="Team Member" value={h?.teamMember?.fullName || '—'} />
+          <Tile label="Sales owner" value={c.owner?.fullName || '-'} />
+          <Tile label="Team Lead" value={h?.teamLead?.fullName || '-'} />
+          <Tile label="Team Member" value={h?.teamMember?.fullName || '-'} />
         </dl>
         {h?.note && (
           <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
@@ -472,7 +473,7 @@ const ReadOnlyItem: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDe
   const [error, setError] = useState<string | null>(null);
   const entry = item.entry;
   const doc: CustomerDocument | null = item.kind === 'FILE' ? customer.documents.find(d => d.id === entry?.documentId) || null : null;
-  const value = !entry ? 'Not provided' : item.kind === 'FILE' ? doc?.originalFileName || 'File' : item.kind === 'YES_NO' ? (entry.value === 'YES' ? 'Yes' : 'No') : item.kind === 'AMOUNT' ? money(Number(entry.value)) : entry.value || '—';
+  const value = !entry ? 'Not provided' : item.kind === 'FILE' ? doc?.originalFileName || 'File' : item.kind === 'YES_NO' ? (entry.value === 'YES' ? 'Yes' : 'No') : item.kind === 'AMOUNT' ? money(Number(entry.value)) : entry.value || '-';
   const view = async () => {
     if (!doc) return;
     setError(null);

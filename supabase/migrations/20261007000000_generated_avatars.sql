@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI-generated avatars. Every profile — new or existing — carries a generated
+-- AI-generated avatars. Every profile - new or existing - carries a generated
 -- illustrated avatar instead of a personal photo or stock image.
 --
 --   * private.generated_avatar_url(seed) builds the deterministic avatar URL

@@ -547,7 +547,7 @@ export const EditLeadView: React.FC<{
         <div className="px-5 pb-5 border-t border-slate-100 pt-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900">Where is this lead?</h2>
-            <span className="text-xs text-slate-500">{locked ? 'With Accounts — locked until they answer' : 'Tap a step to change the status'}</span>
+            <span className="text-xs text-slate-500">{locked ? 'With Accounts - locked until they answer' : 'Tap a step to change the status'}</span>
           </div>
           <ol className="mt-4 grid grid-cols-4 relative" aria-label="Lead status">
             <div className="absolute top-4 left-[12.5%] right-[12.5%] h-0.5 bg-slate-200" aria-hidden="true">
@@ -563,7 +563,7 @@ export const EditLeadView: React.FC<{
                     onClick={() => setStatus(s)}
                     disabled={locked}
                     aria-pressed={current}
-                    aria-label={`${LEAD_STATUS_LABEL[s]} — ${LEAD_STATUS_HINT[s]}`}
+                    aria-label={`${LEAD_STATUS_LABEL[s]} - ${LEAD_STATUS_HINT[s]}`}
                     className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed ${
                       done || current ? 'bg-emerald-700 text-white' : 'bg-white border-2 border-slate-200 text-slate-400 hover:border-emerald-400'
                     } ${current ? 'ring-4 ring-emerald-100' : ''}`}
@@ -614,7 +614,7 @@ export const EditLeadView: React.FC<{
 
       {lead.paymentWorkflow !== 'NONE' && lead.paymentWorkflow !== 'PAYMENT_CONFIRMED' && <AccountsStateCard workflow={lead.paymentWorkflow} overview={overview} />}
 
-      {/* 2 · Customer details — full width */}
+      {/* 2 · Customer details - full width */}
       <Card className="p-5">
         <h2 className="text-sm font-bold text-slate-900 mb-4">Customer details</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
@@ -643,7 +643,7 @@ export const EditLeadView: React.FC<{
         </div>
       </Card>
 
-      {/* 3 · Services interested in — full width */}
+      {/* 3 · Services interested in - full width */}
       <Card className="p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold text-slate-900">Services interested in</h2>
@@ -655,7 +655,7 @@ export const EditLeadView: React.FC<{
       {/* 4 + 5 · Last conversation and the conversation history */}
       <ConversationSection customerId={id} conversations={conversations} onChange={setConversations} onSaved={refreshActivities} />
 
-      {/* 6 · Last activities — full width, at the bottom */}
+      {/* 6 · Last activities - full width, at the bottom */}
       <ActivityCard activities={lead.activities} title="Last activities" />
 
       {moveOpen && (
@@ -705,7 +705,7 @@ const AccountsStateCard: React.FC<{ workflow: 'PENDING_PAYMENT_CONFIRMATION' | '
       aria-label={pending ? 'With Accounts' : 'Returned from Accounts'}
       className={`rounded-2xl border p-5 ${pending ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-rose-200 bg-rose-50 text-rose-900'}`}
     >
-      <h2 className="text-sm font-bold">{pending ? 'With Accounts — payment confirmation pending' : 'Returned from Accounts'}</h2>
+      <h2 className="text-sm font-bold">{pending ? 'With Accounts - payment confirmation pending' : 'Returned from Accounts'}</h2>
       {pending ? (
         <p className="mt-1 text-xs">
           {req ? `Sent by ${req.requestedBy ?? 'Sales'} on ${fmtDate(req.requestedAt)} · agreed ${rupees(req.agreedAmount)}. ` : ''}
@@ -713,7 +713,7 @@ const AccountsStateCard: React.FC<{ workflow: 'PENDING_PAYMENT_CONFIRMATION' | '
         </p>
       ) : (
         <p className="mt-1 text-xs">
-          {req?.resolutionNote ? <>“{req.resolutionNote}” — </> : ''}
+          {req?.resolutionNote ? <>“{req.resolutionNote}” - </> : ''}
           {req ? `returned by ${req.resolvedBy ?? 'Accounts'} on ${fmtDate(req.resolvedAt)}. ` : ''}
           Follow up with the customer, then send to Accounts again when they are ready.
         </p>

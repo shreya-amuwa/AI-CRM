@@ -1,7 +1,7 @@
 -- =============================================================================
 -- One-off cleanup of test / dummy data. NOT a migration: run it by hand in the
 -- Supabase SQL editor, one step at a time, after reading the preview output.
--- Deletes cannot be undone — take a backup first (Database → Backups).
+-- Deletes cannot be undone - take a backup first (Database → Backups).
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -33,7 +33,7 @@ select c.id, c.name, c.company, c.lead_status, c.created_at, o.full_name as owne
 
 -- ---------------------------------------------------------------------------
 -- STEP 3 · OPTIONAL: drop legacy tables that no screen uses any more.
--- (crm_leads, hr_employees and hr_attendance are still used — keep them.)
+-- (crm_leads, hr_employees and hr_attendance are still used - keep them.)
 -- ---------------------------------------------------------------------------
 -- select count(*) from public.blueprint_requirements;
 -- select count(*) from public.hr_leave_applications;

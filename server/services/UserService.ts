@@ -21,7 +21,7 @@ export class UserService {
     private readonly authAdmin = new AuthAdminRepository()
   ) {}
 
-  /** Own profile — available to every authenticated user, whatever the status. */
+  /** Own profile - available to every authenticated user, whatever the status. */
   me(actor: Actor): Promise<Profile> {
     return this.profiles.findById(actor.id);
   }

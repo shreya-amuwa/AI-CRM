@@ -332,7 +332,7 @@ export const MemberPipelineRows: React.FC<MemberPipelineRowsProps> = ({
                       {/* Contact Info */}
                       <td className="py-3.5 px-3 whitespace-nowrap">
                         <div className="text-slate-800 font-mono text-[11px]">{lead.contact}</div>
-                        <div className="text-slate-400 text-[10px] truncate max-w-[140px]">{lead.email || '—'}</div>
+                        <div className="text-slate-400 text-[10px] truncate max-w-[140px]">{lead.email || '-'}</div>
                       </td>
 
                       {/* Pipeline Stage */}

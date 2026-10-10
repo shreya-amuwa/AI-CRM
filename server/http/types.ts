@@ -17,7 +17,7 @@ export interface RequestContext {
   req: ApiRequest;
   params: Record<string, string>;
   actor: Actor;
-  /** Supabase client authenticated AS THE CALLER — RLS applies to every query. */
+  /** Supabase client authenticated AS THE CALLER - RLS applies to every query. */
   db: SupabaseClient;
 }
 

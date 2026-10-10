@@ -14,11 +14,11 @@ Opens for a **team member of a Support team** who is not a Technical Consultant.
 The dashboard comes from the person's role and team (`profiles.role`, `teams.division`, `profiles.is_technical_consultant`) and is stored in `profiles.default_dashboard`, kept in step by a trigger. Moving someone to another team changes their dashboard; nobody is created twice.
 
 ## Pages (sidebar order)
-1. **Dashboard — Existing Customers** — customers assigned to the member plus post-sale customers of the department; search, status filter, customer profile (details, communication, tickets, tasks, invoices).
-2. **Assigned Tasks** — tasks from the Team Lead (`work_tasks`): Pending / In Progress / Blocked / Completed, history with who updated.
-3. **Add Customer** — `create_support_customer()`; service / product from the services catalog (`crm_services`); choosing WhatsApp API shows campaigns sent and the message package (bought / sent / remaining). Validates, refuses duplicate e-mail / phone, gives a customer ID (`CUS-00001`), then returns to Existing Customers. Each row has **Edit** (`update_support_customer()`) for the assigned member, their team lead and the department head.
-4. **Tickets** — members see three columns: Pending, Waiting for customer reply, Complete. Tickets are opened from a customer's profile; team leads can also create them from Support Tickets, and assign / reassign / close them.
-5. **Invoices** — read-only list of invoices linked to the member's customers (`member_invoices.customer_id`), plus **Invoice requests**: customer, from month, to month and an optional note (`request_invoice()`); the team lead, department head and the customer's owner are notified.
+1. **Dashboard - Existing Customers** - customers assigned to the member plus post-sale customers of the department; search, status filter, customer profile (details, communication, tickets, tasks, invoices).
+2. **Assigned Tasks** - tasks from the Team Lead (`work_tasks`): Pending / In Progress / Blocked / Completed, history with who updated.
+3. **Add Customer** - `create_support_customer()`; service / product from the services catalog (`crm_services`); choosing WhatsApp API shows campaigns sent and the message package (bought / sent / remaining). Validates, refuses duplicate e-mail / phone, gives a customer ID (`CUS-00001`), then returns to Existing Customers. Each row has **Edit** (`update_support_customer()`) for the assigned member, their team lead and the department head.
+4. **Tickets** - members see three columns: Pending, Waiting for customer reply, Complete. Tickets are opened from a customer's profile; team leads can also create them from Support Tickets, and assign / reassign / close them.
+5. **Invoices** - read-only list of invoices linked to the member's customers (`member_invoices.customer_id`), plus **Invoice requests**: customer, from month, to month and an optional note (`request_invoice()`); the team lead, department head and the customer's owner are notified.
 
 ## Security
 Everything is enforced in the database (RLS + functions), not only in the UI:

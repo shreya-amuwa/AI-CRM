@@ -37,7 +37,7 @@ and writes audit + activity in the same transaction: `create_lead`, `update_lead
 ## 3. Document storage
 
 - Private bucket `customer-documents` (20 MB, `application/pdf` only). No public URLs and
-  no storage policies for users — only the API's service role touches objects, and only
+  no storage policies for users - only the API's service role touches objects, and only
   after a database function has authorised the caller for that document.
 - Paths contain ids only: `customers/<customer_id>/invoices/<document_id>.pdf` and
   `customers/<customer_id>/onboarding/<document_id>.pdf`. No names, phone numbers or other
@@ -118,8 +118,8 @@ unlocks only when every item is saved and asks for confirmation.
 
 ### Technical Consultant verification
 
-Support-team members of the same department ("Technical Consultants") — plus department heads
-and the super admin — can review a customer only after the salesperson clicks
+Support-team members of the same department ("Technical Consultants") - plus department heads
+and the super admin - can review a customer only after the salesperson clicks
 **Send to Technical Consultant**. In the Technical Support
 dashboard, **Onboarding verification** lists forwarded customers (To verify / Sent back /
 Verified). Each item can be verified, or sent back with a note: the salesperson is notified,
@@ -129,9 +129,9 @@ change sales data; every verification is audited.
 
 ## 6. Tests
 
-- `npm run test:db` — RLS/function tests, incl. two-customer isolation, upload/replace/delete,
+- `npm run test:db` - RLS/function tests, incl. two-customer isolation, upload/replace/delete,
   locking after forwarding, inbound claim.
-- `npm run test:api` — HTTP → Postgres + emulated Storage: renamed non-PDF rejected,
+- `npm run test:api` - HTTP → Postgres + emulated Storage: renamed non-PDF rejected,
   missing object rejected, token bound to one path and single-use, other salesperson gets 404,
   signed URLs, versions, audit entries.
 - Browser run (Playwright, local stack): full Lead → Potential → Onboarding flow, tooltip via

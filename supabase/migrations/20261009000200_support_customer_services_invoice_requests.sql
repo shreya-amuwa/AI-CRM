@@ -304,7 +304,7 @@ begin
   v_period := case when v_from = v_to then to_char(v_from, 'Mon YYYY')
                    else format('%s – %s', to_char(v_from, 'Mon YYYY'), to_char(v_to, 'Mon YYYY')) end;
   insert into public.customer_activities (customer_id, actor_id, type, note)
-  values (c.id, me.id, 'INVOICE_REQUESTED', format('Invoice requested for %s%s', v_period, coalesce(' — ' || nullif(trim(coalesce(p_note, '')), ''), '')));
+  values (c.id, me.id, 'INVOICE_REQUESTED', format('Invoice requested for %s%s', v_period, coalesce(' - ' || nullif(trim(coalesce(p_note, '')), ''), '')));
   perform private.write_audit('INVOICE_REQUESTED', 'invoice_request', v_id, coalesce(me.department_id, c.department_id), me.team_id,
     jsonb_build_object('customer_id', c.id, 'from', v_from, 'to', v_to));
 
@@ -318,7 +318,7 @@ begin
   loop
     perform private.notify(v_recipient, 'INVOICE_REQUESTED', format('Invoice requested: %s', c.name),
       format('%s asked for an invoice for %s (%s)%s', me.full_name, v_period, c.customer_code,
-             coalesce(' — ' || nullif(trim(coalesce(p_note, '')), ''), '')), 'invoice_request', v_id);
+             coalesce(' - ' || nullif(trim(coalesce(p_note, '')), ''), '')), 'invoice_request', v_id);
   end loop;
   return v_id;
 end $$;

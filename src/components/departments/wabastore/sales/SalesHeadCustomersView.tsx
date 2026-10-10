@@ -1,3 +1,4 @@
+import { rowOpen } from '../../../../lib/rowClick';
 import React, { useState } from 'react';
 import {
   Users,
@@ -165,7 +166,7 @@ export const SalesHeadCustomersView: React.FC = () => {
                 };
 
                 return (
-                  <tr key={cust.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={cust.id} {...rowOpen(() => setSelectedCustomerForView(cust))} className="hover:bg-slate-50 transition-colors focus-visible:bg-blue-50/50 focus-visible:outline-none">
                     <td className="py-3.5 px-4">
                       <div className="font-bold text-slate-900">{cust.name}</div>
                       <div className="text-[11px] text-slate-400 font-mono">{cust.email}</div>

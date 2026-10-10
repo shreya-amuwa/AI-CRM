@@ -6,11 +6,11 @@
 -- (or marked) as Technical Consultant; other support team members get the
 -- normal team member dashboard.
 --
---  * profiles.is_technical_consultant — only for a TEAM_MEMBER of a SUPPORT
+--  * profiles.is_technical_consultant - only for a TEAM_MEMBER of a SUPPORT
 --    team (cleared automatically if the role or team changes)
 --  * staff created through the API with app_metadata
 --    provisioned_technical_consultant = true become consultants
---  * set_technical_consultant(user, value) — switch an existing member
+--  * set_technical_consultant(user, value) - switch an existing member
 --  * review rights (private.my_support_department_id) and "sent to the
 --    Technical Consultant" notifications go to consultants (and support team
 --    leads) only

@@ -101,7 +101,7 @@ begin
     jsonb_build_object('items_rejected', o.items_rejected, 'note', v_note));
   perform private.notify(v.owner_id, 'ONBOARDING_RETURNED',
     format('Returned by Technical Consultant: %s', coalesce(v.company, v.name)),
-    left(coalesce(v_note || ' — ', '') || 'Fix: ' || v_items, 1000), 'customer', p_customer, '{}'::jsonb, 'urgent');
+    left(coalesce(v_note || ' - ', '') || 'Fix: ' || v_items, 1000), 'customer', p_customer, '{}'::jsonb, 'urgent');
 end $$;
 revoke all on function public.return_onboarding_to_sales(uuid, text) from public, anon;
 grant execute on function public.return_onboarding_to_sales(uuid, text) to authenticated;

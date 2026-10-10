@@ -4,7 +4,7 @@ import { AppError } from '../http/errors.js';
 /**
  * Supabase Storage access with the service role. Only ever called AFTER a
  * database function has authorized the caller for the specific document, and
- * only with paths read back from the database — never paths sent by clients.
+ * only with paths read back from the database - never paths sent by clients.
  */
 export class StorageRepository {
   private bucket(name: string) {
@@ -23,7 +23,7 @@ export class StorageRepository {
 
   /**
    * Confirms the uploaded object exists and that its first bytes match the
-   * declared type (file signature — never the name or the declared type alone).
+   * declared type (file signature - never the name or the declared type alone).
    * Returns its stored size.
    */
   async inspectFile(

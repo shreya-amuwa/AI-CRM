@@ -407,7 +407,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                     <div className="flex items-center gap-2 mt-1 text-[11px] font-mono text-slate-600">
                       <span>Trip Started: <strong>{selectedVisit.startTime}</strong></span>
                       <span>•</span>
-                      <span>Est. Arrival: <strong>{selectedVisit.estimatedArrivalTime || '—'}</strong></span>
+                      <span>Est. Arrival: <strong>{selectedVisit.estimatedArrivalTime || '-'}</strong></span>
                     </div>
                   </div>
                 </div>
@@ -480,7 +480,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                     <div className="text-base font-bold font-heading">
                       {selectedVisit.reachedDestination
                         ? `✓ DESTINATION REACHED${selectedVisit.actualArrivalTime ? ` (Arrived at ${selectedVisit.actualArrivalTime})` : ''}`
-                        : `⏳ IN TRANSIT — DESTINATION NOT YET REACHED`}
+                        : `⏳ IN TRANSIT - DESTINATION NOT YET REACHED`}
                     </div>
                     <div className="text-xs mt-0.5">
                       {selectedVisit.reachedDestination

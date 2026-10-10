@@ -83,11 +83,11 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
       </div>
 
       {/* Transparency note: this is the shared generic framework used by
-          every department without a hand-built specialized panel — never
+          every department without a hand-built specialized panel - never
           cloned from any single other department. All figures below are
           scoped strictly to this department's own id. */}
       <div className="text-xs font-mono text-slate-400 px-1">
-        This department has no specialized modules configured yet — showing the shared generic lead-ingestion dashboard, scoped to {activeDepartment?.name || 'this department'} only.
+        This department has no specialized modules configured yet - showing the shared generic lead-ingestion dashboard, scoped to {activeDepartment?.name || 'this department'} only.
       </div>
 
       {/* 4 KPI Metrics Cards Grid */}

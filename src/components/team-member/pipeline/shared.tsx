@@ -9,7 +9,7 @@ import { getSupabase } from '../../../services/supabaseClient';
 // Formatting
 // ---------------------------------------------------------------------------
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-export const money = (n: number | null | undefined) => (n === null || n === undefined ? '—' : inr.format(n));
+export const money = (n: number | null | undefined) => (n === null || n === undefined ? '-' : inr.format(n));
 
 export const initials = (s: string | null | undefined) =>
   (s || '?')
@@ -25,7 +25,7 @@ export const dayDiff = (iso: string) =>
 
 /** "Today, 4:00 PM" / "08 Oct" */
 export function formatFollowUp(iso: string | null): { text: string; urgent: boolean } {
-  if (!iso) return { text: '—', urgent: false };
+  if (!iso) return { text: '-', urgent: false };
   const d = new Date(iso);
   const diff = dayDiff(iso);
   const time = d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }).toUpperCase();
@@ -35,9 +35,9 @@ export function formatFollowUp(iso: string | null): { text: string; urgent: bool
 }
 
 export const shortDate = (iso: string | null | undefined) =>
-  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—';
+  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '-';
 export const longDate = (iso: string | null | undefined) =>
-  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 
 export function relativeDays(iso: string): string {
   const diff = -dayDiff(iso);
@@ -340,7 +340,7 @@ export function useServiceCatalog() {
 
 /**
  * Calls `onChange` (debounced) when pipeline rows this user can see change in
- * the database — keeps counts and lists fresh across tabs and teammates.
+ * the database - keeps counts and lists fresh across tabs and teammates.
  */
 export function usePipelineRealtime(onChange: () => void) {
   const cb = useRef(onChange);

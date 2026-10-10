@@ -29,7 +29,7 @@ export function getAnonClient(): SupabaseClient {
 
 let serviceClient: SupabaseClient | null = null;
 /**
- * Service-role client. BYPASSES RLS — use ONLY for Supabase Auth admin
+ * Service-role client. BYPASSES RLS - use ONLY for Supabase Auth admin
  * operations (create / ban users) after the caller has been authorised via a
  * database check. Never use it for table reads or writes.
  */

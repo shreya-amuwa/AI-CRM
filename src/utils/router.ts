@@ -33,7 +33,7 @@ export const parseCurrentRoute = (): ParsedRoute => {
     };
   }
 
-  // 1a2. /support-lead/dashboard/:leadId[/:page] — Support Team Lead only
+  // 1a2. /support-lead/dashboard/:leadId[/:page] - Support Team Lead only
   const slMatch = path.match(/^\/support-lead\/dashboard\/([^/]+)(?:\/[^/]+)?$/);
   if (slMatch) {
     return {
@@ -43,7 +43,7 @@ export const parseCurrentRoute = (): ParsedRoute => {
     };
   }
 
-  // 1a3. /accounts/dashboard/:id — Accounts department staff only
+  // 1a3. /accounts/dashboard/:id - Accounts department staff only
   const acMatch = path.match(/^\/accounts\/dashboard\/([^/]+)$/);
   if (acMatch) {
     return {

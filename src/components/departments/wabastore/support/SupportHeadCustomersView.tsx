@@ -1,3 +1,4 @@
+import { rowOpen } from '../../../../lib/rowClick';
 import React, { useState } from 'react';
 import {
   Users, Search, Filter, MessageSquare, Phone, Mail, Clock,
@@ -262,7 +263,7 @@ export const SupportHeadCustomersView: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(c => (
-                <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                <tr key={c.id} {...rowOpen(() => setSelectedCust(c))} className="hover:bg-slate-50/70 transition-colors focus-visible:bg-teal-50/50 focus-visible:outline-none">
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-800 font-bold flex items-center justify-center text-xs">

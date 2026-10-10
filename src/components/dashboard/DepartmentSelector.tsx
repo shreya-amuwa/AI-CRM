@@ -58,7 +58,7 @@ export const DepartmentSelector: React.FC = () => {
 
   // Access is decided by the user's database profile: Super Admins may open
   // any unlocked department, department heads only their own. (No shared
-  // department passwords — data inside is scoped by RLS regardless.)
+  // department passwords - data inside is scoped by RLS regardless.)
   const handleEnter = (dept: Department) => {
     if (dept.locked) {
       showNotice(`${dept.name} is locked by the Super Admin.`);
@@ -280,7 +280,7 @@ export const DepartmentSelector: React.FC = () => {
           );
         })}
 
-        {/* Add Department card — always the final card in this grid, never
+        {/* Add Department card - always the final card in this grid, never
             stored as a department record. Super Admin only. */}
         {isSuperAdmin && (
           <button
@@ -328,7 +328,7 @@ export const DepartmentSelector: React.FC = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Add Department modal — opens in-place, never navigates away from this screen
+// Add Department modal - opens in-place, never navigates away from this screen
 // ---------------------------------------------------------------------------
 
 interface AddDepartmentModalProps {
@@ -443,7 +443,7 @@ const AddDepartmentModal: React.FC<AddDepartmentModalProps> = ({ onClose, onCrea
 };
 
 // ---------------------------------------------------------------------------
-// Lock / Unlock confirmation — non-destructive, data always stays intact
+// Lock / Unlock confirmation - non-destructive, data always stays intact
 // ---------------------------------------------------------------------------
 
 interface LockConfirmModalProps {

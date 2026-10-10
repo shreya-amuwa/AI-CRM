@@ -10,15 +10,15 @@ import type {
 /** Shared labels, badges and the payment-history list for Sales and Accounts screens. */
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-export const rupees = (n: number | null | undefined) => (n === null || n === undefined ? '—' : inr.format(n));
+export const rupees = (n: number | null | undefined) => (n === null || n === undefined ? '-' : inr.format(n));
 
 /** "10 Oct 2026, 11:30 AM" */
 export const fmtDateTime = (iso: string | null | undefined) =>
   iso
     ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\b(am|pm)\b/, m => m.toUpperCase())
-    : '—';
+    : '-';
 export const fmtDate = (iso: string | null | undefined) =>
-  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 
 export const METHOD_LABEL: Record<string, string> = { UPI: 'UPI', BANK_TRANSFER: 'Bank transfer', CASH: 'Cash', CARD: 'Card', CHEQUE: 'Cheque', OTHER: 'Other' };
 export const TYPE_LABEL: Record<string, string> = { PART: 'Part payment', FULL: 'Full payment' };

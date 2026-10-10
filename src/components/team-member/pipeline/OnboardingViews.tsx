@@ -18,6 +18,7 @@ import type {
 import {
   errorMessage
 } from '../../../lib/api/client';
+import { rowOpen } from '../../../lib/rowClick';
 import {
   pipelineApi,
   type PipelineQuery
@@ -187,7 +188,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
             const st = onboardingState(saved, itemsTotal, returned);
             const done = saved >= itemsTotal;
             return (
-              <li key={c.id}>
+              <li key={c.id} {...rowOpen(() => onOpen(c.id))} className="rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 hover:[&>div]:shadow-md transition">
                 <Card className={`p-4 h-full flex flex-col ${returned ? 'ring-1 ring-rose-200' : ''}`}>
                   <div className="flex items-start gap-3">
                     <Avatar name={c.company || c.name} />
@@ -210,7 +211,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                   {returned && (
                     <div className="mt-3 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800" role="note">
                       <div className="font-bold">
-                        {toFix > 0 ? `${toFix} item${toFix === 1 ? '' : 's'} to fix` : 'Fixed — send it again'}
+                        {toFix > 0 ? `${toFix} item${toFix === 1 ? '' : 's'} to fix` : 'Fixed - send it again'}
                       </div>
                       {c.onboarding?.returnNote && <div className="mt-0.5 line-clamp-2">“{c.onboarding.returnNote}”</div>}
                     </div>
@@ -274,7 +275,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
 };
 
 // ---------------------------------------------------------------------------
-// 3b · Onboarding — one customer
+// 3b · Onboarding - one customer
 // ---------------------------------------------------------------------------
 const STAGES: { key: OnboardingStage; label: string; hint: string }[] = [
   { key: 'SALES_CONSULTATION', label: 'Sales consultation', hint: 'Done when payment is confirmed' },
@@ -405,7 +406,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
               </dd>
             )}
           </div>
-          <InfoTile label="Sales owner" value={c.owner?.fullName || '—'} />
+          <InfoTile label="Sales owner" value={c.owner?.fullName || '-'} />
           <InfoTile label="Started" value={longDate(c.onboarding?.startedAt)} />
           <div className="px-3 py-2 rounded-xl border border-slate-200">
             <dt className="text-[11px] text-slate-500">Target handover</dt>
@@ -446,7 +447,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                     <span aria-hidden="true">•</span>
                     <span>
                       <strong>{r.label}</strong>
-                      {r.entry?.reviewNote ? ` — ${r.entry.reviewNote}` : ''}
+                      {r.entry?.reviewNote ? ` - ${r.entry.reviewNote}` : ''}
                     </span>
                   </li>
                 ))}
@@ -728,7 +729,7 @@ const ProgressRing: React.FC<{ pct: number; label: string }> = ({ pct, label }) 
   const r = 42;
   const circ = 2 * Math.PI * r;
   return (
-    <div className="relative w-28 h-28 mx-auto" role="img" aria-label={`${pct}% — ${label}`}>
+    <div className="relative w-28 h-28 mx-auto" role="img" aria-label={`${pct}% - ${label}`}>
       <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90" aria-hidden="true">
         <circle cx="50" cy="50" r={r} fill="none" stroke="#E2E8F0" strokeWidth="8" />
         <circle

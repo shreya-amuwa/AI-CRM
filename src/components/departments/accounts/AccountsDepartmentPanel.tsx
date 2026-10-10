@@ -76,7 +76,7 @@ export const AccountsDepartmentPanel: React.FC<AccountsDepartmentPanelProps> = (
   };
 
   // Customers Sales sent to Accounts: business name list, details in a pop-up with the Confirm button.
-  if (activeTab === 'confirmations') return <AccountsConfirmations layout="popup" />;
+  if (activeTab === 'confirmations') return <AccountsConfirmations />;
   // Part-paid customers: the accountant follows up the balance.
   if (activeTab === 'part_payments') return <PartPaymentsView mode="accounts" />;
 

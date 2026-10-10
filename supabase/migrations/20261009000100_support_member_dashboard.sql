@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Support Team Member dashboard.
 --
---  1. profiles.default_dashboard — the dashboard a user opens, stored in the
+--  1. profiles.default_dashboard - the dashboard a user opens, stored in the
 --     database and kept in step with role / team / consultant flag by trigger
 --     (Support team members → 'support-member', Sales → 'sales-member', …).
 --  2. Customers: a human customer code (CUS-00001), the fields the Support
@@ -252,7 +252,7 @@ begin
   perform private.notify(t.assigned_by, 'TASK_UPDATE',
     format('%s: %s', me.full_name, case p_status when 'COMPLETED' then 'completed' when 'NOT_COMPLETED' then 'could not complete'
                                       when 'BLOCKED' then 'is blocked' else format('%s%% done', v_progress) end),
-    format('%s%s', t.title, coalesce(' — ' || v_note, '')), 'work_task', t.id,
+    format('%s%s', t.title, coalesce(' - ' || v_note, '')), 'work_task', t.id,
     '{}'::jsonb, case when p_status in ('NOT_COMPLETED', 'BLOCKED') then 'urgent' else 'normal' end);
 end $$;
 

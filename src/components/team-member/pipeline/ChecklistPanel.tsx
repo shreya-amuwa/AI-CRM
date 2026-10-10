@@ -398,7 +398,7 @@ const ChecklistCard: React.FC<{
       {status === 'REJECTED' && entry?.reviewNote && (
         <p className="mt-2 text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5" role="note">
           <b>Needs fixing:</b> {entry.reviewNote}
-          {entry.reviewedBy ? ` — ${entry.reviewedBy}` : ''}
+          {entry.reviewedBy ? ` - ${entry.reviewedBy}` : ''}
         </p>
       )}
       {status === 'VERIFIED' && entry?.reviewedBy && (
@@ -463,7 +463,7 @@ const ChecklistCard: React.FC<{
                 </>
               )}
               {mode === 'sales' && !isFile && (
-                <button type="button" className={entry ? btn.secondary : btn.primary} onClick={() => setDialog('edit')} aria-label={`${entry ? 'Edit' : ACTION_LABEL[item.kind]} — ${item.label}`}>
+                <button type="button" className={entry ? btn.secondary : btn.primary} onClick={() => setDialog('edit')} aria-label={`${entry ? 'Edit' : ACTION_LABEL[item.kind]} - ${item.label}`}>
                   {entry ? 'Edit' : ACTION_LABEL[item.kind]}
                 </button>
               )}
@@ -520,7 +520,7 @@ const ChecklistCard: React.FC<{
       {dialog === 'edit' && <EntryDialog item={item} customerId={customer.id} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); onChanged(); }} />}
       {dialog === 'view' && (
         <Dialog title={item.label} description={item.hint || undefined} onClose={() => setDialog(null)}>
-          <p className="text-sm text-slate-800 whitespace-pre-line break-words">{entry ? displayValue(item) || '—' : 'Not filled yet.'}</p>
+          <p className="text-sm text-slate-800 whitespace-pre-line break-words">{entry ? displayValue(item) || '-' : 'Not filled yet.'}</p>
           {entry?.savedBy && (
             <p className="text-[11px] text-slate-500">
               {entry.savedBy} · {shortDate(entry.savedAt)}

@@ -29,7 +29,7 @@ export interface Department {
   totalLeads: number;
   activeSessions: number;
   maxSessions: number;
-  // Access state — replaces the old free-text "status" field entirely.
+  // Access state - replaces the old free-text "status" field entirely.
   // Controlled solely by the inline department lock/unlock control.
   locked: boolean;
   // Department Head assignment (Phase 2 will add full credential management)
