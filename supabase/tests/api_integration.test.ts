@@ -300,7 +300,7 @@ check(r.json.data.total === 1 && r.json.data.items[0].services.length === 2, 'se
 r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&service=SEO');
 check(r.json.data.total === 0, 'service filter excludes non-matching leads');
 
-r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'INVOICE', fileName: 'inv.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/documents`, { documentType: 'IMPORTANT_DOCUMENTS', fileName: 'kyc.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
 check(r.status === 409 || r.status === 422, 'documents cannot be uploaded before onboarding', r);
 
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/move-to-potential`, { dealAmount: 50000, paymentDueDate: tomorrow });
@@ -351,22 +351,22 @@ check(r.status === 422 || r.status === 409, 'cannot forward to support without m
 const PDF = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const put = (t: any, body: Buffer, type = 'application/pdf') =>
   fetch(`${GW}/storage/v1/object/upload/sign/${t.bucket}/${t.path}?token=${t.token}`, { method: 'PUT', headers: { 'content-type': type, 'x-upsert': 'false' }, body });
-const begin = (who: string, customer: string, documentType: string, fileName = 'Galaxy Invoice.pdf', extra: object = {}) =>
+const begin = (who: string, customer: string, documentType: string, fileName = 'Galaxy KYC.pdf', extra: object = {}) =>
   api(who, 'POST', `/pipeline/customers/${customer}/documents`, { documentType, fileName, mimeType: 'application/pdf', sizeBytes: PDF.length, ...extra });
 
-r = await begin('a', leadA, 'INVOICE', 'x.png', { mimeType: 'image/png' });
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'x.png', { mimeType: 'image/png' });
 check(r.status === 422, 'non-PDF declared type rejected', r);
-r = await begin('a', leadA, 'INVOICE', 'big.pdf', { sizeBytes: 21 * 1024 });
-check(r.status === 422, 'an invoice over 20 KB is refused', r);
+r = await begin('a', leadA, 'INVOICE', 'invoice.pdf');
+check(r.status === 403 && /Accounts/.test(r.json.error.message), 'Sales cannot upload an invoice (Accounts issues invoices)', r);
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'big.pdf', { sizeBytes: 501 * 1024 });
 check(r.status === 422, 'any other document over 500 KB is refused', r);
-r = await begin('a', leadA, 'INVOICE', 'big.pdf', { sizeBytes: 30 * 1024 * 1024 });
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'big.pdf', { sizeBytes: 30 * 1024 * 1024 });
 check(r.status === 422, 'oversize file rejected before upload', r);
-r = await begin('b', leadA, 'INVOICE');
+r = await begin('b', leadA, 'IMPORTANT_DOCUMENTS');
 check(r.status === 404, "member B cannot upload to A's customer", r);
 
-r = await begin('a', leadA, 'INVOICE', 'fake.pdf');
-check(r.status === 201 && r.json.data.token && r.json.data.path === `customers/${leadA}/invoices/${r.json.data.document.id}.pdf` && r.json.data.document.status === 'PENDING',
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'fake.pdf');
+check(r.status === 201 && r.json.data.token && r.json.data.path === `customers/${leadA}/onboarding/${r.json.data.document.id}.pdf` && r.json.data.document.status === 'PENDING',
   'upload ticket: path uses ids only (no file name / PII)', r);
 let ticket = r.json.data;
 let up = await put(ticket, Buffer.from('MZ this is an executable renamed to .pdf'));
@@ -378,12 +378,12 @@ check(!keys.some(k => k.includes(ticket.document.id)), 'rejected object removed 
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 check(r.status === 409, 'failed upload cannot be completed later', r);
 
-r = await begin('a', leadA, 'INVOICE');
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS');
 ticket = r.json.data;
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 check(r.status === 422 && /did not finish/.test(r.json.error.message), 'complete without an object → no fake success', r);
 
-r = await begin('a', leadA, 'INVOICE');
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS');
 ticket = r.json.data;
 up = await put({ ...ticket, path: ticket.path.replace(ticket.document.id, crypto.randomUUID()) }, PDF);
 check(up.status !== 200, 'upload token is bound to its exact path');
@@ -394,30 +394,70 @@ check(up.status === 200, 'browser uploads PDF with signed token');
 up = await put(ticket, PDF);
 check(up.status !== 200, 'upload token is single-use / no overwrite');
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
-check(r.status === 200 && r.json.data.status === 'UPLOADED' && r.json.data.version === 1 && r.json.data.sizeBytes === PDF.length, 'invoice v1 uploaded', r);
-const invoiceV1 = r.json.data.id;
+check(r.status === 200 && r.json.data.status === 'UPLOADED' && r.json.data.version === 1 && r.json.data.sizeBytes === PDF.length, 'document v1 uploaded', r);
+const docV1 = r.json.data.id;
 
-r = await api('b', 'GET', `/documents/${invoiceV1}/url`);
+r = await api('b', 'GET', `/documents/${docV1}/url`);
 check(r.status === 404, "member B cannot get a URL for A's document", r);
 const direct = await fetch(`${GW}/storage/v1/object/sign/${ticket.bucket}/${ticket.path}`, {
   method: 'POST', headers: { authorization: `Bearer ${tokens.get('b')}`, 'content-type': 'application/json' }, body: '{"expiresIn":60}' });
 check(direct.status >= 400, 'storage cannot be signed with a user token (private bucket)');
-r = await api('a', 'GET', `/documents/${invoiceV1}/url?action=view`);
-check(r.status === 200 && r.json.data.expiresInSeconds <= 300 && r.json.data.fileName === 'Galaxy Invoice.pdf', 'short-lived signed view URL', r);
+r = await api('a', 'GET', `/documents/${docV1}/url?action=view`);
+check(r.status === 200 && r.json.data.expiresInSeconds <= 300 && r.json.data.fileName === 'Galaxy KYC.pdf', 'short-lived signed view URL', r);
 const fileText = await fetch(r.json.data.url).then(x => x.text());
 check(fileText.startsWith('%PDF-'), 'signed URL serves the stored PDF');
-r = await api('th', 'GET', `/documents/${invoiceV1}/url?action=download`);
+r = await api('th', 'GET', `/documents/${docV1}/url?action=download`);
 check(r.status === 200 && /download=/.test(r.json.data.url), 'team head can download team documents', r);
 
-r = await begin('a', leadA, 'INVOICE', 'Invoice v2.pdf');
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'KYC v2.pdf');
 ticket = r.json.data;
 await put(ticket, PDF);
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 check(r.status === 200 && r.json.data.version === 2, 'replacement creates version 2', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
-const invoices = r.json.data.documents.filter((d: any) => d.documentType === 'INVOICE');
-check(invoices.length === 2 && invoices.find((d: any) => d.version === 1).status === 'SUPERSEDED' && r.json.data.onboarding.mandatorySaved === 1,
+const versions = r.json.data.documents.filter((d: any) => d.documentType === 'IMPORTANT_DOCUMENTS');
+check(versions.length === 2 && versions.find((d: any) => d.version === 1).status === 'SUPERSEDED' && r.json.data.onboarding.mandatorySaved === 1,
   'old version superseded, progress 1 of 2', r.json.data);
+
+// --- invoices: issued by the Accounts department only; Sales reads them --------------
+const accountsDept = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'accounts');
+r = await api('sa', 'POST', '/users', { email: 'dh.acc@amuwa.com', fullName: 'Accounts Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: accountsDept.id });
+check(r.status === 201, 'super admin creates the Accounts department head', r);
+tokens.set('accdh', tokenFor(r.json.data.id));
+const accTeam = (await api('sa', 'GET', `/teams?departmentId=${accountsDept.id}`)).json.data[0].id;
+r = await api('accdh', 'POST', '/users', { email: 'acc.m@amuwa.com', fullName: 'Accounts Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: accTeam });
+check(r.status === 201 && r.json.data.defaultDashboard === 'accounts-staff', 'an Accounts member resolves to the Accounts dashboard', r);
+tokens.set('accm', tokenFor(r.json.data.id));
+const invoiceLine = { serviceCode: 'META_ADS_MANAGEMENT', quantity: 1, unitPrice: 30000, discount: 1000, taxPercent: 18 };
+r = await api('a', 'POST', '/accounts/invoices', { customerId: leadA, items: [invoiceLine] });
+check(r.status === 403, 'Sales cannot create an invoice', r);
+r = await api('a', 'GET', '/accounts/invoice-customers');
+check(r.status === 403, 'Sales cannot list the customers to invoice', r);
+r = await api('accm', 'GET', '/accounts/invoice-customers?search=galaxy');
+check(r.status === 200 && r.json.data.some((c: any) => c.id === leadA && c.hasServiceInvoice === false && c.services.length === 2), 'Accounts finds the customer to invoice, with its services', r);
+r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [{ ...invoiceLine, discount: 40000 }] });
+check(r.status === 422, 'a discount above the line amount is refused', r);
+r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [invoiceLine], dueDate: tomorrow, note: 'Setup and first month' });
+const serviceInvoice = r.json.data;
+check(r.status === 201 && /^INV-\d{4}-\d{5}$/.test(serviceInvoice.number) && serviceInvoice.kind === 'SERVICE' && serviceInvoice.subtotal === 30000 && serviceInvoice.discount === 1000
+  && serviceInvoice.tax === 5220 && serviceInvoice.total === 34220 && serviceInvoice.status === 'Pending' && serviceInvoice.issuedBy === 'Accounts Member',
+  'Accounts issues the service invoice; the database numbers it and works out discount, tax and total', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}/invoices`);
+check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].number === serviceInvoice.number && r.json.data[0].items[0].serviceCode === 'META_ADS_MANAGEMENT', 'Sales reads the invoice for its customer', r);
+r = await api('b', 'GET', `/pipeline/customers/${leadA}/invoices`);
+check(r.status === 404, "another salesperson cannot read A's invoices", r);
+r = await api('b', 'GET', '/invoices');
+check(r.status === 200 && r.json.data.total === 0, "and they are not in another salesperson's invoice list", r);
+r = await api('a', 'GET', '/invoices');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.sum === 34220, "the salesperson's invoice list (read-only)", r);
+r = await api('a', 'PATCH', `/accounts/invoices/${serviceInvoice.id}`, { status: 'Paid' });
+check(r.status === 403, 'Sales cannot change an invoice', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+const invoiceItem = r.json.data.checklist.find((c: any) => c.code === 'INVOICE');
+check(invoiceItem.entry?.status === 'SAVED' && invoiceItem.entry.value.includes(serviceInvoice.number) && !invoiceItem.entry.documentId && r.json.data.onboarding.mandatorySaved === 2,
+  'the onboarding Invoice item is filled by the Accounts invoice (no file upload)', invoiceItem);
+r = await api('accm', 'GET', '/accounts/invoices?kind=SERVICE');
+check(r.status === 200 && r.json.data.total === 1, 'Accounts lists the invoices it issued', r);
 
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'kyc.pdf');
 ticket = r.json.data;
@@ -443,7 +483,7 @@ r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const checklist = r.json.data.checklist as any[];
 check(checklist.length === 13 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
   'checklist built from the services sold (basics first, mandatory documents last)', checklist.map((c: any) => c.code));
-check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'uploaded mandatory documents already count as saved');
+check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'the uploaded documents and the Accounts invoice already count as saved');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
 check(r.status === 422 && /Complete these items first/.test(r.json.error.message), 'forward blocked until every checklist item is saved', r);
 r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_PLAN`, { value: 'Weekly' });
@@ -479,14 +519,6 @@ check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 
 r = await api('b', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 404, "member B cannot delete A's document", r);
 // Accounts confirms the amount before the Technical Consultant gets the customer.
-const accountsDept = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'accounts');
-r = await api('sa', 'POST', '/users', { email: 'dh.acc@amuwa.com', fullName: 'Accounts Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: accountsDept.id });
-check(r.status === 201, 'super admin creates the Accounts department head', r);
-tokens.set('accdh', tokenFor(r.json.data.id));
-const accTeam = (await api('sa', 'GET', `/teams?departmentId=${accountsDept.id}`)).json.data[0].id;
-r = await api('accdh', 'POST', '/users', { email: 'acc.m@amuwa.com', fullName: 'Accounts Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: accTeam });
-check(r.status === 201 && r.json.data.defaultDashboard === 'accounts-staff', 'an Accounts member resolves to the Accounts dashboard', r);
-tokens.set('accm', tokenFor(r.json.data.id));
 
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
 check(r.status === 200 && !r.json.data.onboarding.forwardedToSupportAt && r.json.data.onboarding.sentToAccountsAt && !r.json.data.onboarding.accountsConfirmedAt && r.json.data.onboarding.stage !== 'SETUP',
@@ -513,15 +545,15 @@ check(r.status === 200 && r.json.data.onboarding.forwardedToSupportAt && r.json.
   'after confirmation the customer is with the Technical Consultant', r);
 r = await api('a', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 409, 'current documents are locked after forwarding', r);
-r = await api('a', 'DELETE', `/documents/${invoiceV1}`);
+r = await api('a', 'DELETE', `/documents/${docV1}`);
 check(r.status === 200, 'superseded version can be deleted', r);
-r = await api('a', 'GET', `/documents/${invoiceV1}/url`);
+r = await api('a', 'GET', `/documents/${docV1}/url`);
 check(r.status === 404, 'deleted document is no longer reachable');
 
 const { rows: audit } = await db.query(
   `select action from public.audit_logs where entity_type = 'customer_document' order by created_at`);
 const actions = audit.map((x: any) => x.action);
-for (const a of ['INVOICE_UPLOADED', 'INVOICE_REPLACED', 'DOCUMENT_UPLOADED', 'DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED', 'INVOICE_DELETED']) {
+for (const a of ['DOCUMENT_UPLOADED', 'DOCUMENT_REPLACED', 'DOCUMENT_VIEWED', 'DOCUMENT_DOWNLOADED', 'DOCUMENT_DELETED']) {
   check(actions.includes(a), `audit log has ${a}`, actions);
 }
 
@@ -552,41 +584,134 @@ r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&intake=true');
 check(r.json.data.total === 1 && r.json.data.items[0].id === leadA && r.json.data.items[0].onboarding.consultantStartedAt === null, 'the consultant\'s Customers panel lists the confirmed customer', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/contract`, { signed: true });
 check(r.status === 200 && r.json.data.onboarding.contractSigned === true, 'consultant sets Contract to Yes', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/addons`, { addons: [{ code: 'AI_CALLING' }, { name: 'Custom setup call' }] });
-check(r.status === 200 && r.json.data.onboarding.addons.length === 2 && r.json.data.onboarding.addons[1].name === 'Custom setup call', 'consultant adds a catalog add-on and a manual one', r);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/consultant/details`, { name: 'Siddhesh', company: 'Galaxy Jewellers', phone: '+91 98200 11111' });
 check(r.status === 200, 'consultant edits the contact details', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/consultant/contract`, { signed: false });
 check(r.status === 404, 'a salesperson cannot change the contract', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/consultant/start-onboarding`);
 check(r.status === 404, 'a salesperson cannot send for onboarding', r);
-// Add-ons Services, consultation notes, stale-form protection (Technical Consultant)
+// Add-on services: priced by the Technical Consultant, checked by Accounts, invoiced and paid before any add-on document is collected
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/addon-request`);
+check(r.status === 200 && r.json.data === null, 'no add-on request yet', r);
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/consultant/addons-required`, { required: true });
 check(r.status === 404, 'a salesperson cannot answer the add-ons question', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/send-to-addons`);
-check(r.status === 422, 'cannot send to Add-ons before answering Yes', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/addons-required`, { required: 'yes' });
 check(r.status === 422, 'the add-ons answer must be true or false', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/addons-required`, { required: true });
 check(r.status === 200 && r.json.data.onboarding.addonsRequired === true, 'Yes is saved', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/start-onboarding`);
-check(r.status === 409, 'Send for onboarding is refused while add-ons are selected but not sent to Add-ons', r);
+const addonLines = [{ serviceCode: 'AI_CALLING', quantity: 1, unitPrice: 12000, taxPercent: 18 }, { name: 'Custom setup call', quantity: 2, unitPrice: 1000, discount: 500 }];
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: addonLines });
+check(r.status === 404, 'a salesperson cannot price add-ons', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: [{ name: 'x', quantity: 1, unitPrice: 10 }] });
+check(r.status === 422, 'a typed add-on needs a real name', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: [{ serviceCode: 'AI_CALLING', quantity: 1, unitPrice: 10.555 }] });
+check(r.status === 422, 'prices have at most 2 decimals', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: addonLines, notes: 'Agreed on the call' });
+check(r.status === 200 && r.json.data.status === 'DRAFT' && r.json.data.subtotal === 14000 && r.json.data.discount === 500 && r.json.data.tax === 2160 && r.json.data.total === 15660
+  && r.json.data.canEdit === true && r.json.data.consultant.fullName === 'Tech Consultant', 'the consultant saves a priced draft (totals worked out by the database)', r);
+let addonReq = r.json.data;
+r = await api('accm', 'GET', '/accounts/addon-requests');
+check(r.status === 200 && r.json.data.total === 0, 'a draft is not in Business Verification', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}/addon-checklist`);
-check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 4 && r.json.data.every((i: any) => i.serviceCode === 'AI_CALLING'), 'the add-on checklist lists the add-on service\'s own items', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/send-to-addons`);
-check(r.status === 200 && r.json.data.onboarding.addonsSubmittedAt && r.json.data.onboarding.addonItemsTotal === 4, 'Send to Add-ons submits the customer', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/send-to-addons`);
-check(r.status === 409, 'a second Send to Add-ons is refused', r);
+check(r.status === 200 && r.json.data.length === 0, 'no add-on documents before the add-on payment is confirmed', r);
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_BUSINESS_ROLE`, { value: 'Receptionist' });
+check(r.status === 404, 'the consultant cannot collect add-on details before payment', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: addonLines, submit: true, expectedVersion: addonReq.version + 5 });
+check(r.status === 409, 'a submit from a stale form is refused', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: addonLines, notes: 'Agreed on the call', submit: true, expectedVersion: addonReq.version });
+check(r.status === 200 && r.json.data.status === 'PENDING_VERIFICATION' && r.json.data.submittedAt && r.json.data.canEdit === false, 'Submit for Accounts Verification', r);
+addonReq = r.json.data;
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: [{ ...addonLines[0], unitPrice: 1 }] });
+check(r.status === 409, 'submitted prices cannot be changed', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/addons-required`, { required: false });
-check(r.status === 409, 'once sent to Add-ons the answer cannot go back to No', r);
+check(r.status === 409, 'once submitted to Accounts the add-ons answer cannot go back to No', r);
+r = await api('a', 'GET', '/accounts/addon-requests');
+check(r.status === 403, 'Sales cannot open Business Verification', r);
+r = await api('tc', 'GET', '/accounts/addon-requests');
+check(r.status === 403, 'the consultant cannot open Business Verification', r);
+r = await api('accm', 'GET', '/accounts/addon-requests?status=PENDING_VERIFICATION&search=galaxy');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === addonReq.id && r.json.data.items[0].total === 15660 && r.json.data.counts.PENDING_VERIFICATION === 1
+  && r.json.data.consultants.some((c: any) => c.fullName === 'Tech Consultant'), 'Accounts sees the request in Business Verification', r);
+r = await api('accm', 'GET', `/accounts/addon-requests/${addonReq.id}`);
+check(r.status === 200 && r.json.data.originalServices.length === 2 && r.json.data.items.length === 2 && r.json.data.salesperson, 'the request shows the original services, the add-ons and who sold it', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, {});
+check(r.status === 409, 'an unapproved request cannot be invoiced', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`, { decision: 'CHANGES' });
+check(r.status === 422, 'asking for changes needs a reason', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`, { decision: 'CHANGES', note: 'The setup call is Rs. 1500 each' });
+check(r.status === 200 && r.json.data.status === 'CHANGES_REQUESTED', 'Accounts asks for changes', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/addon-request`);
+check(r.json.data.status === 'CHANGES_REQUESTED' && r.json.data.decisionNote === 'The setup call is Rs. 1500 each' && r.json.data.canEdit === true, 'the consultant sees the reason and can correct it', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: [addonLines[0], { ...addonLines[1], unitPrice: 1500 }], submit: true, expectedVersion: r.json.data.version });
+check(r.status === 200 && r.json.data.status === 'PENDING_VERIFICATION' && r.json.data.total === 16660, 'the consultant corrects and resubmits', r);
+addonReq = r.json.data;
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`, { decision: 'APPROVE', expectedVersion: addonReq.version - 1 });
+check(r.status === 409, 'Accounts cannot approve a version it did not see', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`, { decision: 'APPROVE', expectedVersion: addonReq.version });
+check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.decidedBy === 'Accounts Member', 'Accounts approves (and is recorded as the verifier)', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`, { decision: 'APPROVE' });
+check(r.status === 409, 'a request cannot be approved twice', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/payments`, { amount: 1000, method: 'UPI' });
+check(r.status === 409, 'no add-on payment before the invoice', r);
+r = await api('tc', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, {});
+check(r.status === 403, 'the consultant cannot generate the invoice', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, { dueDate: tomorrow });
+check(r.status === 201 && r.json.data.status === 'INVOICE_GENERATED' && r.json.data.invoice.kind === 'ADDON' && r.json.data.invoice.total === 16660 && r.json.data.invoice.status === 'Pending',
+  'Accounts generates the add-on invoice from the approved prices', r);
+const addonInvoice = r.json.data.invoice;
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, {});
+check(r.status === 409, 'the add-on invoice cannot be generated twice', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}/invoices`);
+check(r.status === 200 && r.json.data.length === 2 && r.json.data.some((i: any) => i.id === addonInvoice.id && i.status === 'Pending'), 'Sales sees the add-on invoice read-only', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/invoices`);
+check(r.status === 200 && r.json.data.some((i: any) => i.id === addonInvoice.id), 'the consultant sees the add-on invoice read-only', r);
+r = await api('accm', 'PATCH', `/accounts/invoices/${addonInvoice.id}`, { status: 'Paid' });
+check(r.status === 409, 'an add-on invoice is paid only through the payment confirmation', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/payments`, { amount: 20000, method: 'UPI' });
+check(r.status === 422, 'an add-on payment cannot exceed the invoice', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/payments`, { amount: 10000, method: 'UPI', reference: 'UTR-1', verify: true });
+check(r.status === 201 && r.json.data.paid === 10000 && r.json.data.payments.length === 1, 'Accounts records and verifies a part payment', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/payments`, { amount: 10, method: 'UPI', reference: 'UTR-1' });
+check(r.status === 409, 'a payment reference is used once', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/confirm-payment`, {});
+check(r.status === 422 || r.status === 409, 'the add-on payment cannot be confirmed while money is open', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/payments`, { amount: 6660, method: 'BANK_TRANSFER', reference: 'UTR-2' });
+check(r.status === 201 && r.json.data.pendingPayments === 6660, 'the balance is recorded, waiting for verification', r);
+const pendingPay = r.json.data.payments.find((p: any) => p.status === 'PENDING');
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/confirm-payment`, {});
+check(r.status === 422 || r.status === 409, 'not confirmed while a payment waits for verification', r);
+r = await api('tc', 'POST', `/accounts/addon-payments/${pendingPay.id}/decision`, { decision: 'VERIFY' });
+check(r.status === 403, 'the consultant cannot verify money', r);
+r = await api('accm', 'POST', `/accounts/addon-payments/${pendingPay.id}/decision`, { decision: 'VERIFY' });
+check(r.status === 200 && r.json.data.paid === 16660 && r.json.data.pendingPayments === 0, 'Accounts verifies the balance', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request/start-documents`);
+check(r.status === 409, 'add-on documents wait for the payment confirmation', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/confirm-payment`, { note: 'Both payments in the bank' });
+check(r.status === 200 && r.json.data.status === 'PAYMENT_CONFIRMED' && r.json.data.invoice.status === 'Paid' && r.json.data.paymentConfirmedBy === 'Accounts Member', 'Accounts confirms the add-on payment; the invoice is paid', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/confirm-payment`, {});
+check(r.status === 409, 'the add-on payment cannot be confirmed twice', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+check(r.json.data.dealAmount === 50000 && r.json.data.amountReceived === 15000 && r.json.data.amountVerified === 15000 && r.json.data.paymentStatus === 'PARTIALLY_PAID',
+  "add-on money stays out of the original deal's payments", r.json.data);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/addon-checklist`);
+check(r.status === 200 && r.json.data.length === 4 && r.json.data.every((i: any) => i.serviceCode === 'AI_CALLING'), "after payment the add-on checklist lists the add-on service's own items", r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request/start-documents`);
+check(r.status === 200 && r.json.data.status === 'IN_PROGRESS', 'the consultant starts add-on document collection', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&addons=true');
-check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === leadA && r.json.data.items[0].onboarding.addonsSubmittedByName, 'the Add-ons Services list has the customer and who sent it', r);
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === leadA && r.json.data.items[0].onboarding.addonRequestStatus === 'IN_PROGRESS', 'the Add-ons Services list shows the request status', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&intake=true');
-check(r.json.data.total === 0, 'the customer left the Customers panel', r);
+check(r.json.data.total === 1, 'the original onboarding is not blocked: the customer still waits for Send for onboarding', r);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_BUSINESS_ROLE`, { value: 'Receptionist' });
 check(r.status === 200, 'the consultant collects an add-on detail', r);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '5' });
 check(r.status === 404, 'but not a normal onboarding item', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request/complete`);
+check(r.status === 409 || r.status === 422, 'add-ons complete only when every add-on item is verified', r);
+{
+  const { rows } = await db.query(`select type, count(*)::int n from public.notifications where type like 'ADDON_%' group by type`);
+  const n = Object.fromEntries(rows.map((x: any) => [x.type, x.n]));
+  check(n.ADDON_SUBMITTED >= 2 && n.ADDON_CHANGES_REQUESTED >= 1 && n.ADDON_APPROVED >= 1 && n.ADDON_INVOICE_ISSUED >= 1 && n.ADDON_PAYMENT_CONFIRMED >= 1, 'every step notified the people involved', n);
+}
 r = await api('a', 'GET', `/pipeline/customers/${leadA}/consultant/notes`);
 check(r.status === 404, 'a salesperson cannot read the consultation notes', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/notes`, { body: '   ' });
@@ -938,8 +1063,11 @@ check(r.json.data.leads.RETURNED === 1 && typeof r.json.data.partPayments === 'n
 
 
 // --- Accounts finance (income from verified payments, expenses, analytics) -----------------
-const { rows: [verifiedSum] } = await db.query(`select coalesce(sum(amount), 0)::float as s, count(*)::int as n from customer_payments where status = 'VERIFIED'`);
-const { rows: [wabIncome] } = await db.query(`select coalesce(sum(p.amount), 0)::float as s from customer_payments p join customers c on c.id = p.customer_id where p.status = 'VERIFIED' and c.department_id = $1`, [wab.id]);
+// Income = verified payments of the original deals plus verified add-on payments.
+const VERIFIED_INCOME = `(select customer_id, amount from customer_payments where status = 'VERIFIED' union all select customer_id, amount from addon_payments where status = 'VERIFIED')`;
+const { rows: [verifiedSum] } = await db.query(`select coalesce(sum(amount), 0)::float as s, count(*)::int as n from ${VERIFIED_INCOME} v`);
+const { rows: [wabIncome] } = await db.query(`select coalesce(sum(p.amount), 0)::float as s from ${VERIFIED_INCOME} p join customers c on c.id = p.customer_id where c.department_id = $1`, [wab.id]);
+check(verifiedSum.n > 0 && (await db.query(`select 1 from addon_payments where status = 'VERIFIED'`)).rowCount === 2, 'the add-on payments are part of the verified income');
 r = await api('a', 'GET', '/accounts/finance/summary');
 check(r.status === 403, 'Sales cannot read the finance totals', r);
 r = await api('a', 'POST', '/accounts/finance/expenses', { date: '2026-10-05', description: 'x', category: 'Rent', amount: 100 });

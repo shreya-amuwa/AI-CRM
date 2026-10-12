@@ -27,7 +27,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, addons_required, addons_submitted_at, addons_submitted_by, addons_by:profiles!addons_submitted_by(full_name), addon_items_total, addon_items_saved, addon_items_verified, addon_items_rejected, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
+  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, addons_required, addons_submitted_at, addons_submitted_by, addons_by:profiles!addons_submitted_by(full_name), addon_items_total, addon_items_saved, addon_items_verified, addon_items_rejected, addon_request_status, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
     handover_stage, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
 
@@ -88,6 +88,7 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           addonItemsSaved: o.addon_items_saved ?? 0,
           addonItemsVerified: o.addon_items_verified ?? 0,
           addonItemsRejected: o.addon_items_rejected ?? 0,
+          addonRequestStatus: o.addon_request_status ?? null,
           sentToAccountsAt: o.sent_to_accounts_at ?? null,
           accountsConfirmedAt: o.accounts_confirmed_at ?? null,
           paymentMethod: o.payment_method,
@@ -230,7 +231,7 @@ export class PipelineRepository {
     if (q.service) columns += ', service_filter:customer_services!inner(service_code)';
     const needsOnboarding = q.onboarding || q.review || q.forwarded || q.intake || q.addons || q.handover || q.handoverMine;
     if (needsOnboarding) {
-      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, get_started, with_consultant, consultant_started_at, addons_submitted_at, handover_stage, team_lead_id, team_member_id)';
+      columns += ', onboarding_filter:customer_onboarding!inner(onboarding_state, review_state, get_started, with_consultant, consultant_started_at, addon_request_status, handover_stage, team_lead_id, team_member_id)';
     }
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
@@ -266,9 +267,9 @@ export class PipelineRepository {
     // Consultant queue: sent to them, or sent back and waiting for sales.
     if (q.forwarded || q.review) query = query.eq('onboarding_filter.with_consultant', true);
     // Onboarding Customers = the consultant pressed "Send for onboarding"; Customers panel (intake) = not yet.
-    if (q.intake) query = query.eq('onboarding_filter.with_consultant', true).is('onboarding_filter.consultant_started_at', null).is('onboarding_filter.addons_submitted_at', null);
-    // Add-ons Services section: customers the consultant sent to Add-ons (they may also be in onboarding).
-    if (q.addons) query = query.eq('onboarding_filter.with_consultant', true).not('onboarding_filter.addons_submitted_at', 'is', null);
+    if (q.intake) query = query.eq('onboarding_filter.with_consultant', true).is('onboarding_filter.consultant_started_at', null);
+    // Add-ons Services section: customers with an add-on request in any state (they may also be in onboarding).
+    if (q.addons) query = query.eq('onboarding_filter.with_consultant', true).not('onboarding_filter.addon_request_status', 'is', null);
     else if (!q.addons && (q.forwarded || q.review)) query = query.not('onboarding_filter.consultant_started_at', 'is', null);
     if (q.review) query = query.eq('onboarding_filter.review_state', q.review);
     if (q.handover) query = query.eq('onboarding_filter.handover_stage', q.handover);
@@ -389,10 +390,6 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('consultant_set_contract', { p_customer: id, p_signed: signed }));
   }
 
-  async consultantSetAddons(id: string, addons: { code?: string; name?: string }[]): Promise<{ code?: string; name: string }[]> {
-    return unwrap(await this.db.rpc('consultant_set_addons', { p_customer: id, p_addons: addons })) as { code?: string; name: string }[];
-  }
-
   async consultantUpdateCustomer(id: string, d: { name: string; company?: string | null; phone?: string | null; email?: string | null; expectedUpdatedAt?: string | null }): Promise<void> {
     unwrap(
       await this.db.rpc('consultant_update_customer', {
@@ -408,10 +405,6 @@ export class PipelineRepository {
 
   async consultantSetAddonsRequired(id: string, required: boolean): Promise<void> {
     unwrap(await this.db.rpc('consultant_set_addons_required', { p_customer: id, p_required: required }));
-  }
-
-  async consultantSendToAddons(id: string): Promise<void> {
-    unwrap(await this.db.rpc('consultant_send_to_addons', { p_customer: id }));
   }
 
   async addonChecklist(id: string): Promise<ChecklistItem[]> {

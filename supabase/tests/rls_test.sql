@@ -525,48 +525,50 @@ create temp table docs (name text primary key, id uuid, path text);
 grant all on docs to authenticated;
 set role authenticated;
 select test.login('tm_a');
-select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.png', 'image/png', 1000)$$,
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'x.png', 'image/png', 1000)$$,
   'only PDFs are accepted', 'not accepted');
-select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'big.pdf', 'application/pdf', 50000000)$$,
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'big.pdf', 'application/pdf', 50000000)$$,
   'file size limit enforced', 'smaller than');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'PASSPORT', 'x.pdf', 'application/pdf', 1000)$$,
   'unknown document type rejected', 'Unknown document type');
-select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'big.pdf', 'application/pdf', 20481)$$,
-  'an invoice over 20 KB is refused', '20 KB');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'invoice.pdf', 'application/pdf', 1200)$$,
+  'Sales cannot upload an invoice (Accounts issues invoices)', 'issued by the Accounts department');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'INVOICE', 'INV-1')$$,
+  'Sales cannot fill the Invoice item by hand', 'issued by the Accounts department');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'big.pdf', 'application/pdf', 512001)$$,
   'any other document over 500 KB is refused', '500 KB');
 select test.check((select max_size_bytes = 20480 from document_types where code = 'INVOICE')
                   and (select bool_and(max_size_bytes = 512000) from document_types where code <> 'INVOICE'), 'limits: invoice 20 KB, every other document 500 KB');
-insert into docs select 'A_inv1', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'invoice-oct.pdf', 'application/pdf', 1200);
-select test.check((select path = format('customers/%s/invoices/%s.pdf', (select id from pipeline where name = 'A'), id) from docs where name = 'A_inv1'),
-  'storage path = customers/<customer_id>/invoices/<document_id>.pdf (no PII)');
+insert into docs select 'A_inv1', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc-oct.pdf', 'application/pdf', 1200);
+select test.check((select path = format('customers/%s/onboarding/%s.pdf', (select id from pipeline where name = 'A'), id) from docs where name = 'A_inv1'),
+  'storage path = customers/<customer_id>/<folder>/<document_id>.pdf (no PII)');
 select test.check((select status = 'PENDING' from customer_documents where id = (select id from docs where name = 'A_inv1')), 'metadata starts PENDING until the file is verified');
 select test.must_fail($$insert into customer_documents (customer_id, document_type, version, storage_path, original_file_name, mime_type)
-  values ((select id from pipeline where name = 'B'), 'INVOICE', 9, 'customers/x/y.pdf', 'x.pdf', 'application/pdf')$$,
+  values ((select id from pipeline where name = 'B'), 'IMPORTANT_DOCUMENTS', 9, 'customers/x/y.pdf', 'x.pdf', 'application/pdf')$$,
   'cannot insert document metadata directly', 'permission denied');
 select test.must_fail($$update customer_documents set customer_id = (select id from pipeline where name = 'B')$$,
   'cannot re-map a document to another customer', 'permission denied');
 select complete_document_upload((select id from docs where name = 'A_inv1'), 1200);
 select test.must_fail($$select complete_document_upload((select id from docs where name = 'A_inv1'), 1200)$$, 'cannot complete twice', 'already finished');
-insert into docs select 'A_inv2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'invoice-v2.pdf', 'application/pdf', 1300);
+insert into docs select 'A_inv2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc-v2.pdf', 'application/pdf', 1300);
 select complete_document_upload((select id from docs where name = 'A_inv2'), 1300);
 select test.check((select status = 'SUPERSEDED' from customer_documents where id = (select id from docs where name = 'A_inv1'))
               and (select status = 'UPLOADED' and version = 2 from customer_documents where id = (select id from docs where name = 'A_inv2')),
   'replacement keeps the old version (SUPERSEDED) and the new one current');
-insert into docs select 'B_inv', id, storage_path from begin_document_upload((select id from pipeline where name = 'B'), 'INVOICE', 'b.pdf', 'application/pdf', 900);
+insert into docs select 'B_inv', id, storage_path from begin_document_upload((select id from pipeline where name = 'B'), 'IMPORTANT_DOCUMENTS', 'b.pdf', 'application/pdf', 900);
 select complete_document_upload((select id from docs where name = 'B_inv'), 900);
-select test.check((select bool_and(customer_id = (select id from pipeline where name = 'A')) from customer_documents where document_type = 'INVOICE' and id in (select id from docs where name like 'A_%')),
+select test.check((select bool_and(customer_id = (select id from pipeline where name = 'A')) from customer_documents where document_type = 'IMPORTANT_DOCUMENTS' and id in (select id from docs where name like 'A_%')),
   'customer A documents map to customer A only');
 select test.check((select count(*) = 1 from customer_documents where customer_id = (select id from pipeline where name = 'B')), 'customer B sees only its own document');
 insert into docs select 'A_fail', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc.pdf', 'application/pdf', 5000);
 select test.check((select fail_document_upload((select id from docs where name = 'A_fail')) = (select path from docs where name = 'A_fail')), 'failed upload returns path for cleanup');
 select test.check((select status = 'FAILED' from customer_documents where id = (select id from docs where name = 'A_fail')), 'failed upload never shows as uploaded');
-select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$, 'forwarding needs all mandatory documents', 'All Important Documents');
+select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$, 'forwarding needs all mandatory documents', 'Invoice');
 select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_inv2'), 'VIEW')), 'owner may view own customer document');
 
 select test.login('pending_d');
 select test.must_fail($$select * from authorize_document_access((select id from docs where name = 'A_inv2'), 'DOWNLOAD')$$, 'teammate cannot open another member''s document', 'NOT_FOUND');
-select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 100)$$, 'teammate cannot upload to another member''s customer', 'NOT_FOUND');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'x.pdf', 'application/pdf', 100)$$, 'teammate cannot upload to another member''s customer', 'NOT_FOUND');
 select test.must_fail($$select delete_customer_document((select id from docs where name = 'A_inv2'))$$, 'teammate cannot delete another member''s document', 'NOT_FOUND');
 select test.check((select count(*) = 0 from customer_documents), 'teammate cannot list another member''s documents');
 select test.login('tm_c');
@@ -585,8 +587,39 @@ select complete_document_upload((select id from docs where name = 'A_kyc'), 5000
 -- Service checklist: Meta Ads + Gold Rate package for customer A.
 select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 13),
   'checklist = 2 basics + 5 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
-select test.check((select items_total = 13 and items_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
-  'uploaded mandatory documents count as saved checklist items');
+select test.check((select items_total = 13 and items_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'the uploaded mandatory document counts as a saved checklist item; the invoice is still missing');
+-- The Invoice item is filled by an invoice Accounts issues (Sales cannot create invoices).
+select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount, customer_id) values ('INV-SALES', 'Ankit Shah', 1, (select id from pipeline where name = 'A'))$$,
+  'Sales cannot create an invoice directly', 'permission denied');
+select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":30000}]'::jsonb)$$,
+  'Sales cannot issue an invoice', 'Only the Accounts department');
+select test.login('acc_m');
+select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[]'::jsonb)$$, 'an invoice needs a line', 'at least one service');
+select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":100,"discount":200}]'::jsonb)$$, 'discount cannot exceed the line', 'discount');
+select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":100}]'::jsonb, current_date, current_date - 1)$$, 'due date after the invoice date', 'due date');
+create temp table inv (name text primary key, data jsonb);
+grant all on inv to authenticated;
+insert into inv select 'A1', accounts_create_invoice((select id from pipeline where name = 'A'),
+  '[{"serviceCode":"META_ADS_MANAGEMENT","quantity":1,"unitPrice":20000,"discount":1000,"taxPercent":18},{"name":"Gold rate creatives","quantity":2,"unitPrice":5000}]'::jsonb,
+  current_date, current_date + 7, 'October');
+select test.check((select (data ->> 'subtotal')::numeric = 30000 and (data ->> 'discount')::numeric = 1000 and (data ->> 'tax')::numeric = 3420
+                     and (data ->> 'total')::numeric = 32420 and data ->> 'number' like 'INV-____-_____' and data ->> 'kind' = 'SERVICE' and data ->> 'status' = 'Pending'
+                     and jsonb_array_length(data -> 'items') = 2 and data -> 'items' -> 0 ->> 'name' = 'Meta Ads Management' from inv where name = 'A1'),
+  'Accounts issues an invoice: numbered, totals with discount and tax computed by the database');
+select test.must_fail($$select accounts_set_invoice_status((select (data ->> 'id')::uuid from inv where name = 'A1'), 'Lost')$$, 'invoice status validated', 'paid or pending');
+select test.login('tm_a');
+select test.check((select count(*) = 1 and bool_and(kind = 'SERVICE' and amount = 32420) from member_invoices where customer_id = (select id from pipeline where name = 'A')),
+  'Sales sees the invoice Accounts issued for its customer (read-only)');
+select test.must_fail($$update member_invoices set amount = 1 where customer_id = (select id from pipeline where name = 'A')$$, 'Sales cannot edit an invoice', 'permission denied');
+select test.must_fail($$delete from member_invoices where customer_id = (select id from pipeline where name = 'A')$$, 'Sales cannot delete an invoice', 'permission denied');
+select test.check((select items_saved = 2 and (select status = 'SAVED' and value like 'INV-%issued by Accounts' and document_id is null
+                     from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'INVOICE')
+                   from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'the issued invoice fills the Invoice item of the onboarding checklist');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from member_invoices where customer_id = (select id from pipeline where name = 'A')), 'another department cannot see the invoice');
+select test.login('tm_a');
 select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$, 'forwarding needs every checklist item', 'Complete these items first');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'WABA_ID', '123')$$,
   'items of services not sold are rejected', 'not part of');
@@ -638,11 +671,12 @@ select test.check((select (onboarding_review_counts() ->> 'newCustomers')::int =
   'the customer is in the Customers panel, not yet in Onboarding Customers');
 select consultant_set_contract((select id from pipeline where name = 'A'), true);
 select test.check((select contract_signed from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'contract set to Yes');
-select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"AI_CALLING"},{"name":"Custom setup  call"},{"name":"custom setup call"},{"code":"AI_CALLING"}]'::jsonb);
-select test.check((select jsonb_array_length(addons) = 2 and addons -> 0 ->> 'name' = 'AI Calling' and addons -> 0 ->> 'code' = 'AI_CALLING' and addons -> 1 ->> 'name' = 'Custom setup call' and not (addons -> 1 ? 'code')
-                     from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-ons: a catalog service and a manual one, duplicates dropped');
-select test.must_fail($$select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"NOT_A_SERVICE"}]'::jsonb)$$, 'an unknown catalog add-on is refused', 'Choose an add-on');
-select test.must_fail($$select consultant_set_addons((select id from pipeline where name = 'A'), '[{"name":"x"}]'::jsonb)$$, 'a one-letter manual add-on is refused', 'at least 2');
+select test.must_fail($$select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"AI_CALLING"}]'::jsonb)$$,
+  'the unpriced add-on picker is gone (add-ons are priced requests checked by Accounts)', 'does not exist');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"serviceCode":"NOT_A_SERVICE","quantity":1,"unitPrice":100}]'::jsonb, null, false, null)$$,
+  'an unknown catalog add-on is refused', 'choose a service from the catalogue');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"name":"x","quantity":1,"unitPrice":100}]'::jsonb, null, false, null)$$,
+  'a manual add-on needs a real name', 'enter the service name');
 select consultant_update_customer((select id from pipeline where name = 'A'), 'Siddhesh Shah', 'Galaxy Jewellers Pvt', '+91 98200 11111', null);
 select test.check((select name = 'Siddhesh Shah' and company = 'Galaxy Jewellers Pvt' from customers where id = (select id from pipeline where name = 'A')), 'the consultant can correct the contact details');
 select test.must_fail($$select consultant_update_customer((select id from pipeline where name = 'A'), 'X', null, null, null)$$, 'name and a contact are required', 'Enter');
@@ -678,27 +712,95 @@ select test.login('sa');
 select test.check((select count(*) = 2 from audit_logs where action in ('CONSULTANT_NOTE_ADDED')) and (select count(*) = 1 from audit_logs where action = 'CONSULTANT_NOTE_EDITED' and metadata ->> 'previous' like 'Second call: agreed to proceed after a discount.'), 'notes are audited, the previous text of an edit is kept');
 select test.login('tm_b');
 
--- Technical Consultant: Add-ons Services
-select test.must_fail($$select consultant_send_to_addons((select id from pipeline where name = 'A'))$$, 'cannot send to Add-ons before answering Yes', 'Answer Yes');
-select consultant_set_addons_required((select id from pipeline where name = 'A'), true);
-select consultant_set_addons((select id from pipeline where name = 'A'), '[{"code":"GBP_SETUP"},{"code":"AI_CALLING"},{"name":"Custom setup call"}]'::jsonb);
-select test.must_fail($$select consultant_start_onboarding((select id from pipeline where name = 'A'))$$, 'Send for onboarding is refused while add-ons are selected', 'Send to Add-ons');
-select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_BUSINESS_ROLE', 'Receptionist')$$, 'add-on details cannot be collected before Send to Add-ons', 'Customer not found');
+-- Technical Consultant: add-on request -> Accounts verification -> invoice -> payment -> add-on documents
+create temp table ar (name text primary key, data jsonb);
+grant all on ar to authenticated;
+select test.check((select customer_addon_request((select id from pipeline where name = 'A')) is null), 'no add-on request yet');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[]'::jsonb)$$, 'a request needs at least one service', 'at least one service');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"serviceCode":"NOPE","unitPrice":1}]'::jsonb)$$, 'services come from the catalogue', 'catalogue');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"serviceCode":"GBP_SETUP","unitPrice":-1}]'::jsonb)$$, 'the price is validated', 'agreed price');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"serviceCode":"GBP_SETUP","unitPrice":0}]'::jsonb, null, true)$$, 'cannot submit without prices', 'agreed prices');
+insert into ar select 'draft', consultant_save_addon_request((select id from pipeline where name = 'A'),
+  '[{"serviceCode":"GBP_SETUP","quantity":1,"unitPrice":8000,"taxPercent":18},{"serviceCode":"AI_CALLING","quantity":2,"unitPrice":5000,"discount":1000}]'::jsonb,
+  'Wants a Google listing and AI calling');
+select test.check((select data ->> 'status' = 'DRAFT' and (data ->> 'total')::numeric = 18440 and (data ->> 'tax')::numeric = 1440
+                     and jsonb_array_length(data -> 'items') = 2 and (data ->> 'canEdit')::boolean from ar where name = 'draft'),
+  'a draft with agreed prices: totals with tax and discount computed by the database');
+select test.check((select jsonb_array_length(customer_addon_checklist((select id from pipeline where name = 'A'))) = 0), 'no add-on documents before the add-on payment is confirmed');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_BUSINESS_ROLE', 'Receptionist')$$, 'add-on details cannot be collected before payment', 'Customer not found');
+insert into ar select 'sub', consultant_save_addon_request((select id from pipeline where name = 'A'),
+  '[{"serviceCode":"GBP_SETUP","quantity":1,"unitPrice":8000,"taxPercent":18},{"serviceCode":"AI_CALLING","quantity":2,"unitPrice":5000,"discount":1000}]'::jsonb,
+  'Wants a Google listing and AI calling', true, (select (data ->> 'version')::int from ar where name = 'draft'));
+select test.check((select data ->> 'status' = 'PENDING_VERIFICATION' and data ->> 'id' = (select data ->> 'id' from ar where name = 'draft') from ar where name = 'sub'),
+  'Submit for Accounts Verification: same request, now pending verification');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"serviceCode":"GBP_SETUP","unitPrice":1}]'::jsonb)$$, 'a submitted request cannot be changed by the consultant', 'with Accounts');
+select test.must_fail($$select consultant_set_addons_required((select id from pipeline where name = 'A'), false)$$, 'the answer cannot go back to No while Accounts has the request', 'cannot change to No');
+select test.check((select addon_request_status = 'PENDING_VERIFICATION' and consultant_started_at is null from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'the add-on status is kept apart from the original onboarding');
 select test.login('tm_a');
-select test.must_fail($$select consultant_send_to_addons((select id from pipeline where name = 'A'))$$, 'a salesperson cannot send to Add-ons', 'Customer not found');
-select test.must_fail($$select consultant_set_addons_required((select id from pipeline where name = 'A'), false)$$, 'nor change the answer', 'Customer not found');
+create temp table ledger_before as select amount_verified, payment_status from customers where id = (select id from pipeline where name = 'A');
+select test.check((select customer_addon_request((select id from pipeline where name = 'A')) ->> 'status' = 'PENDING_VERIFICATION'), 'Sales can track the add-on status of its customer');
+select test.must_fail($$select consultant_save_addon_request((select id from pipeline where name = 'A'), '[{"serviceCode":"GBP_SETUP","unitPrice":1}]'::jsonb)$$, 'Sales cannot submit add-ons', 'Customer not found');
+select test.must_fail($$select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'APPROVE')$$, 'Sales cannot approve add-ons', 'Only the Accounts department');
+select test.login('tm_c');
+select test.must_fail($$select customer_addon_request((select id from pipeline where name = 'A'))$$, 'another department cannot see the add-ons', 'Customer not found');
+select test.login('acc_m');
+select test.check((select (accounts_addon_requests() ->> 'total')::int = 1 and accounts_addon_requests() -> 'items' -> 0 ->> 'status' = 'PENDING_VERIFICATION'
+                     and (accounts_addon_requests() -> 'items' -> 0 ->> 'total')::numeric = 18440
+                     and accounts_addon_requests() -> 'items' -> 0 -> 'consultant' ->> 'fullName' = 'Member B'),
+  'Business Verification lists the request with the consultant and the total');
+select test.check((select (accounts_addon_requests(p_status => 'APPROVED') ->> 'total')::int = 0 and (accounts_addon_requests(p_search => 'galaxy') ->> 'total')::int = 1), 'the queue filters by status and searches by business');
+select test.must_fail($$select accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'an unapproved request cannot be invoiced', 'Only an approved');
+select test.must_fail($$select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'REJECT', null)$$, 'a rejection needs a reason', 'reason');
+select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'CHANGES', 'AI calling price looks too low');
 select test.login('tm_b');
-select consultant_send_to_addons((select id from pipeline where name = 'A'));
-select test.check((select addons_submitted_at is not null and addons_submitted_by = test.id('tm_b') and addons_required from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'the customer is sent to Add-ons Services');
-select test.check((select (onboarding_review_counts() ->> 'newCustomers')::int = 0 and (onboarding_review_counts() ->> 'addons')::int = 1 and (onboarding_review_counts() ->> 'all')::int = 0), 'it leaves the Customers panel and is counted under Add-ons Services, not yet in onboarding');
-select test.must_fail($$select consultant_send_to_addons((select id from pipeline where name = 'A'))$$, 'cannot be sent twice', 'already sent');
-select test.must_fail($$select consultant_set_addons_required((select id from pipeline where name = 'A'), false)$$, 'cannot be switched back to No after submission', 'already sent');
+select test.check((select customer_addon_request((select id from pipeline where name = 'A')) ->> 'status' = 'CHANGES_REQUESTED' and customer_addon_request((select id from pipeline where name = 'A')) ->> 'decisionNote' = 'AI calling price looks too low'
+                     and (customer_addon_request((select id from pipeline where name = 'A')) ->> 'canEdit')::boolean), 'the consultant sees the reason and may correct the request');
+insert into ar select 'resub', consultant_save_addon_request((select id from pipeline where name = 'A'),
+  '[{"serviceCode":"GBP_SETUP","quantity":1,"unitPrice":8000,"taxPercent":18},{"serviceCode":"AI_CALLING","quantity":2,"unitPrice":6000,"discount":1000}]'::jsonb,
+  'Corrected AI calling price', true);
+select test.check((select data ->> 'status' = 'PENDING_VERIFICATION' and (data ->> 'total')::numeric = 20440 from ar where name = 'resub'), 'corrected and resubmitted');
+select test.login('acc_m');
+select test.must_fail($$select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'APPROVE', null, (select (data ->> 'version')::int from ar where name = 'draft'))$$,
+  'a decision on an older version is refused', 'changed this request');
+select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'APPROVE', 'Prices checked', (select (data ->> 'version')::int from ar where name = 'resub'));
+select test.must_fail($$select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'REJECT', 'too late')$$, 'a request is decided once', 'already decided');
+select test.check((select (accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'paid')::numeric = 0 and accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'status' = 'APPROVED'
+                     and accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'paymentConfirmedAt' is null), 'approval is not a payment confirmation');
+select test.must_fail($$select accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 1000, 'UPI')$$, 'no payment before the invoice', 'invoice is generated');
+select test.must_fail($$select accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'), current_date, current_date - 1)$$, 'the due date is validated', 'due date');
+insert into ar select 'inv', accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'), current_date, current_date + 7);
+select test.check((select data ->> 'status' = 'INVOICE_GENERATED' and data -> 'invoice' ->> 'kind' = 'ADDON' and (data -> 'invoice' ->> 'total')::numeric = 20440
+                     and data -> 'invoice' ->> 'status' = 'Pending' and jsonb_array_length(data -> 'invoice' -> 'items') = 2 from ar where name = 'inv'),
+  'Accounts generates the add-on invoice from the approved services and prices');
+select test.must_fail($$select accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'the add-on invoice is generated once', 'already generated');
+select test.check((select count(*) = 1 from member_invoices where addon_request_id = (select (data ->> 'id')::uuid from ar where name = 'draft')), 'exactly one add-on invoice');
+select test.must_fail($$select accounts_confirm_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'nothing paid: cannot confirm', 'is verified');
+insert into ar select 'p1', accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 10000, 'UPI', 'UTR-ADD-1', null, null, false);
+select test.must_fail($$select accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 10000, 'UPI', 'utr-add-1')$$, 'a reference is recorded once', 'already recorded');
+select test.must_fail($$select accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 15000, 'CASH')$$, 'cannot record more than the open amount', 'still open');
+select test.must_fail($$select accounts_confirm_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'pending payments block the confirmation', 'pending payments');
+select accounts_decide_addon_payment((select (p ->> 'id')::uuid from ar, jsonb_array_elements(data -> 'payments') p where name = 'p1' limit 1), 'VERIFY');
+select test.must_fail($$select accounts_confirm_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'a part payment cannot be confirmed', 'full invoice');
+select accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 10440, 'BANK_TRANSFER', 'NEFT-ADD-2', null, null, true);
+select test.check((select data ->> 'status' = 'PAYMENT_CONFIRMED' and data -> 'invoice' ->> 'status' = 'Paid' and (data ->> 'paid')::numeric = 20440
+                     from (select accounts_confirm_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft')) as data) x), 'Accounts confirms the add-on payment; the invoice is marked paid');
+select test.must_fail($$select accounts_confirm_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'confirmed once', 'already confirmed');
+select test.check((select (accounts_finance_summary() ->> 'income')::numeric >= 20440), 'verified add-on payments count as income');
+select test.login('tm_a');
+select test.check((select c.amount_verified = b.amount_verified and c.payment_status = b.payment_status from customers c, ledger_before b where c.id = (select id from pipeline where name = 'A')),
+  'the original services'' payment status is unchanged by the add-on payment');
+select test.check((select count(*) = 2 from member_invoices where customer_id = (select id from pipeline where name = 'A')), 'Sales sees both invoices (service and add-on), read-only');
+-- Add-on documents, only now
+select test.login('tm_b');
 select test.check((select jsonb_array_length(customer_addon_checklist((select id from pipeline where name = 'A'))) = 7
                      and not exists (select 1 from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' not in ('GBP_NO_EXISTING','GBP_LISTING_DETAILS','GBP_PHOTOS','AI_CALL_BUSINESS_ROLE','AI_CALL_CUSTOMER_NUMBER','AI_CALL_SCRIPT','AI_CALL_PLAN'))
                      and (select e ->> 'serviceCode' from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' = 'GBP_PHOTOS') = 'GBP_SETUP'),
-  'each add-on service lists its own required documents');
+  'after payment, each paid add-on service lists its own required documents');
 select test.check((select not exists (select 1 from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' in ('GBP_PHOTOS','AI_CALL_BUSINESS_ROLE'))), 'the normal onboarding checklist is unchanged by add-ons');
-select test.check((select addon_items_total = 7 and addon_items_saved = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-on progress starts at 0 of 7');
+select consultant_start_addon_documents((select id from pipeline where name = 'A'));
+select test.must_fail($$select consultant_start_addon_documents((select id from pipeline where name = 'A'))$$, 'started once', 'already started');
+select test.check((select addon_items_total = 7 and addon_items_saved = 0 and addon_request_status = 'IN_PROGRESS' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-on progress starts at 0 of 7');
 select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_BUSINESS_ROLE', 'Receptionist');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_PLAN', 'not an option')$$, 'a value outside the options is refused', 'Choose one');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'META_AD_BUDGET', '1')$$, 'the TC cannot overwrite a normal onboarding item', 'Customer not found');
@@ -708,7 +810,20 @@ select complete_document_upload((select id from docs where name = 'A_gbp'), 3000
 select test.check((select addon_items_total = 7 and addon_items_saved = 2 and addon_items_verified = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'saved details and the uploaded document count towards the add-on progress');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'VERIFIED', null);
 select test.check((select addon_items_verified = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'verification of an add-on item is tracked');
+select test.must_fail($$select consultant_complete_addons((select id from pipeline where name = 'A'))$$, 'add-ons complete only when every add-on document is verified', 'Verify every add-on document');
 select test.check((select count(*) = 1 from customer_documents where customer_id = (select id from pipeline where name = 'A') and document_type = 'GBP_PHOTOS' and status = 'UPLOADED' and uploaded_by = test.id('tm_b')), 'the document is stored once, with who uploaded it');
+select test.check((select count(*) >= 1 from notifications where type = 'ADDON_CHANGES_REQUESTED') and (select count(*) >= 1 from notifications where type = 'ADDON_APPROVED')
+                   and (select count(*) >= 1 from notifications where type = 'ADDON_INVOICE_ISSUED') and (select count(*) >= 1 from notifications where type = 'ADDON_PAYMENT_CONFIRMED'),
+  'the consultant was notified of every Accounts decision, the invoice and the payment');
+select test.login('acc_m');
+select test.check((select count(*) >= 2 from notifications where type = 'ADDON_SUBMITTED'), 'Accounts was notified of each submission');
+select test.login('sa');
+select test.check((select count(*) = 1 from audit_logs where action = 'ADDON_REQUEST_CHANGES_REQUESTED') and (select count(*) = 1 from audit_logs where action = 'ADDON_REQUEST_APPROVED')
+                   and (select count(*) = 1 from audit_logs where action = 'ADDON_PAYMENT_CONFIRMED') and (select count(*) = 2 from audit_logs where action = 'ADDON_REQUEST_SUBMITTED'),
+  'every add-on step is audited');
+select test.check((select jsonb_array_length(accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) -> 'events') >= 10), 'the request keeps its own history of every step');
+select test.must_fail($$select * from addon_request_events$$, 'the history cannot be read or changed directly', 'permission denied');
+select test.login('tm_b');
 
 select test.login('tm_a');
 select test.must_fail($$select consultant_set_contract((select id from pipeline where name = 'A'), false)$$, 'a salesperson cannot change the contract', 'Customer not found');
@@ -721,7 +836,7 @@ select test.check((select (onboarding_review_counts() ->> 'newCustomers')::int =
 select test.login('tm_a');
 select test.check((select mandatory_saved = 2 from customer_onboarding where customer_id = (select id from pipeline where name = 'A'))
                    and (select mandatory_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'B')),
-  'onboarding progress tracks saved mandatory documents per customer');
+  'mandatory progress per customer: A has its file plus the invoice Accounts issued; B has its file only');
 select test.check((select stage = 'SETUP' and forwarded_to_support_at is not null from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'forwarded to support once mandatory documents are saved');
 select test.must_fail($$select delete_customer_document((select id from docs where name = 'A_kyc'))$$, 'current documents locked after forwarding', 'locked');
@@ -761,10 +876,12 @@ select test.login('tm_a');
 reset role;
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_FORWARDED' and recipient_id = test.id('tm_b')),
   'support team head notified');
-select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_REPLACED' and actor_id = test.id('tm_a') and metadata ->> 'customer_id' = (select id::text from pipeline where name = 'A')),
-  'invoice replacement audited with actor + customer');
+select test.check((select count(*) >= 1 from audit_logs where action = 'DOCUMENT_REPLACED' and actor_id = test.id('tm_a') and metadata ->> 'customer_id' = (select id::text from pipeline where name = 'A')),
+  'document replacement audited with actor + customer');
+select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_ISSUED' and actor_id = test.id('acc_m') and metadata ->> 'kind' = 'SERVICE')
+                   and (select count(*) = 1 from audit_logs where action = 'INVOICE_ISSUED' and metadata ->> 'kind' = 'ADDON'), 'both invoices issued by Accounts are audited');
 select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_DOWNLOADED' and actor_id = test.id('th_wab')), 'download audited');
-select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_DELETED'), 'deletion audited');
+select test.check((select count(*) >= 1 from audit_logs where action = 'DOCUMENT_DELETED'), 'deletion audited');
 select test.check((select count(*) = 0 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'a single Not authorized does not notify on its own');
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_VERIFIED' and recipient_id = test.id('tm_a')), 'owner notified when everything is verified');
 -- 2 single verifications: one add-on item (Add-ons Services test above) and the one verified here.
@@ -1247,22 +1364,24 @@ select test.check((select count(*) = 2 from work_tasks where title = 'Call back 
 reset role;
 select test.check((select count(*) = 1 from notifications where type = 'TASK_UPDATE' and recipient_id = test.id('sup_th')), 'team lead notified of the blocked task');
 
--- Invoices: linked to customers; support staff read, never write
+-- Invoices: linked to customers; support staff read, never write. These two are older invoices a
+-- salesperson created before invoices moved to Accounts (written here as the database owner).
+insert into member_invoices (owner_id, invoice_number, customer_name, amount, status) values (test.id('tm_a'), 'INV-1001', 'Sales Customer', 11800, 'Pending');
+insert into member_invoices (owner_id, invoice_number, customer_name, amount, status) values (test.id('tm_a'), 'INV-1002', 'Unknown Person', 500, 'Pending');
 set role authenticated;
 select test.login('tm_a');
-insert into member_invoices (invoice_number, customer_name, amount, status) values ('INV-1001', 'Sales Customer', 11800, 'Pending');
-insert into member_invoices (invoice_number, customer_name, amount, status) values ('INV-1002', 'Unknown Person', 500, 'Pending');
+select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount) values ('INV-1003', 'Sales Customer', 1)$$, 'Sales can no longer create invoices', 'permission denied');
 select test.check((select customer_id = (select id from sc where name = 'cust') from member_invoices where invoice_number = 'INV-1001'), 'invoice is linked to the customer by name');
 select test.check((select customer_id is null from member_invoices where invoice_number = 'INV-1002'), 'unmatched invoice stays unlinked');
 select test.login('sup_plain');
 select test.check((select count(*) = 1 and bool_and(invoice_number = 'INV-1001') from member_invoices), 'support member sees invoices of visible customers only');
-select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount) values ('INV-X', 'Priya Nair', 1)$$, 'support member cannot create invoices', 'row-level security');
-select test.check((select test.rows($$update member_invoices set status = 'Paid' where invoice_number = 'INV-1001'$$) = 0), 'support member cannot mark an invoice paid');
-select test.check((select test.rows($$delete from member_invoices where invoice_number = 'INV-1001'$$) = 0), 'support member cannot delete invoices');
+select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount) values ('INV-X', 'Priya Nair', 1)$$, 'support member cannot create invoices', 'permission denied');
+select test.must_fail($$update member_invoices set status = 'Paid' where invoice_number = 'INV-1001'$$, 'support member cannot mark an invoice paid', 'permission denied');
+select test.must_fail($$delete from member_invoices where invoice_number = 'INV-1001'$$, 'support member cannot delete invoices', 'permission denied');
 select test.login('tm_c');
 select test.check((select count(*) = 0 from member_invoices), 'other departments see no invoices');
 select test.login('tm_a');
-select test.check((select count(*) = 2 from member_invoices), 'sales member still sees and keeps their own invoices');
+select test.check((select count(*) = 2 from member_invoices where invoice_number in ('INV-1001', 'INV-1002')), 'sales member still sees their older invoices (read-only)');
 reset role;
 
 -- ---------------------------------------------------------------------------

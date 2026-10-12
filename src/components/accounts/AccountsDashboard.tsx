@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Building2, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
+import { BadgeCheck, Bell, Building2, FileText, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { pipelineApi } from '../../lib/api/endpoints';
+import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
 import { PartPaymentsView } from '../payments/PartPaymentsView';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { AccountsConfirmations } from './AccountsConfirmations';
+import { BusinessVerification } from './BusinessVerification';
+import { AccountsInvoices } from './AccountsInvoices';
 import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
@@ -14,11 +16,12 @@ import { AccountsExpenses } from './finance/AccountsExpenses';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
- * payment confirmation, part-payment follow-ups, department income, expenses, analytics.
+ * payment confirmation, Business Verification of add-ons, invoices (Accounts is the only department
+ * that issues them), part-payment follow-ups, department income, expenses, analytics.
  */
 export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
@@ -27,9 +30,15 @@ export const AccountsDashboard: React.FC = () => {
   const [bellOpen, setBellOpen] = useState(false);
   const [page, setPage] = useState<Page>('overview');
   const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);
+  // Add-on requests that wait for Accounts: to verify, or approved and waiting for the invoice.
+  const [addonsWaiting, setAddonsWaiting] = useState(0);
   const bellRef = useRef<HTMLDivElement>(null);
   const refreshCounts = () => {
     pipelineApi.accountsCounts().then(setCounts, () => setCounts(null));
+    addonsApi.list({ pageSize: 1 }).then(
+      r => setAddonsWaiting((r.counts.PENDING_VERIFICATION ?? 0) + (r.counts.APPROVED ?? 0)),
+      () => setAddonsWaiting(0)
+    );
   };
   useEffect(refreshCounts, []);
   usePipelineRealtime(refreshCounts);
@@ -72,6 +81,8 @@ export const AccountsDashboard: React.FC = () => {
                 ['overview', 'Account Overview', LayoutDashboard, 0],
                 ['income', 'Income', TrendingUp, 0],
                 ['confirmations', 'Confirmation', ReceiptIndianRupee, (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0)],
+                ['business-verification', 'Business Verification', BadgeCheck, addonsWaiting],
+                ['invoices', 'Invoices', FileText, 0],
                 ['part-payments', 'Part Payment', Wallet, counts?.followUpsDue ?? 0],
                 ['department-income', 'Department Income', Building2, 0],
                 ['expenses', 'Expenses', WalletCards, 0],
@@ -157,6 +168,8 @@ export const AccountsDashboard: React.FC = () => {
           {page === 'overview' && <AccountsOverview />}
           {page === 'income' && <AccountsIncome />}
           {page === 'confirmations' && <AccountsConfirmations onCountsChanged={refreshCounts} />}
+          {page === 'business-verification' && <BusinessVerification onCountsChanged={refreshCounts} />}
+          {page === 'invoices' && <AccountsInvoices />}
           {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
           {page === 'department-income' && <AccountsDepartmentIncome />}
           {page === 'expenses' && <AccountsExpenses />}

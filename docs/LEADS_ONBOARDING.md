@@ -23,7 +23,9 @@ record once (`claim_inbound_lead`, a second claim gets 409).
   Existing rows default to `CUSTOMER`, so My Customers is unchanged.
 - `crm_services` (catalogue, 21 services in 4 groups) and `customer_services`.
 - `customer_onboarding`: stage, payment method, started, target handover, forwarded to support.
-- `document_types`: `INVOICE` and `IMPORTANT_DOCUMENTS` (both mandatory, PDF only).
+- `document_types`: `INVOICE` and `IMPORTANT_DOCUMENTS` (both mandatory). Since
+  `20261015000100_addon_verification_invoices.sql` the Invoice item is filled by the invoice the
+  Accounts department issues (no upload by Sales); see [ADDONS_INVOICES.md](ADDONS_INVOICES.md).
 - `customer_documents`: versioned metadata (PENDING → UPLOADED → SUPERSEDED / DELETED / FAILED);
   at most one UPLOADED file per customer and type.
 
@@ -55,8 +57,9 @@ Upload flow (no orphans, no fake success):
 
 Viewing/downloading: `GET /documents/:id/url?action=view|download` returns a signed URL valid
 for 120 seconds and writes DOCUMENT_VIEWED / DOCUMENT_DOWNLOADED to the audit log.
-Uploads, replacements and deletions are logged as INVOICE_UPLOADED / INVOICE_REPLACED /
-INVOICE_DELETED and DOCUMENT_UPLOADED / DOCUMENT_REPLACED / DOCUMENT_DELETED.
+Uploads, replacements and deletions are logged as DOCUMENT_UPLOADED / DOCUMENT_REPLACED /
+DOCUMENT_DELETED (INVOICE_UPLOADED / INVOICE_REPLACED / INVOICE_DELETED in older rows, from when
+Sales still uploaded invoice files).
 After forwarding to support the current files are locked (replace, don't delete).
 
 ## 4. API

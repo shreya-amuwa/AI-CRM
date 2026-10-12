@@ -4,6 +4,13 @@
  */
 import type {
   AccountsConfirmation,
+  AddonRequest,
+  AddonRequestPage,
+  AddonRequestStatus,
+  Invoice,
+  InvoiceCustomer,
+  InvoiceKind,
+  InvoicePage,
   AccountsPaymentCounts,
   ChecklistItem,
   ConsultantNote,
@@ -56,7 +63,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -149,12 +156,10 @@ export const pipelineApi = {
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
   consultantSetContract: (id: string, signed: boolean) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/contract`, { signed }),
-  consultantSetAddons: (id: string, addons: { code?: string; name?: string }[]) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/addons`, { addons }),
   consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null; expectedUpdatedAt?: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/consultant/details`, body),
   consultantSetAddonsRequired: (id: string, required: boolean) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/addons-required`, { required }),
-  consultantSendToAddons: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/send-to-addons`),
   addonChecklist: (id: string) => api.get<ChecklistItem[]>(`/pipeline/customers/${id}/addon-checklist`),
   consultantNotes: (id: string) => api.get<ConsultantNote[]>(`/pipeline/customers/${id}/consultant/notes`),
   consultantAddNote: (id: string, body: { body: string; serviceCode?: string | null }) =>
@@ -216,6 +221,42 @@ export interface ExpenseParams {
   page?: number;
   pageSize?: number;
 }
+
+/** Add-on requests (Technical Consultant -> Accounts Business Verification) and Accounts-issued invoices. */
+export const addonsApi = {
+  request: (customerId: string) => api.get<AddonRequest | null>(`/pipeline/customers/${customerId}/addon-request`),
+  save: (customerId: string, body: { items: PricedLineInput[]; notes?: string | null; submit?: boolean; expectedVersion?: number }) =>
+    api.post<AddonRequest>(`/pipeline/customers/${customerId}/addon-request`, body),
+  startDocuments: (customerId: string) => api.post<AddonRequest>(`/pipeline/customers/${customerId}/addon-request/start-documents`),
+  complete: (customerId: string) => api.post<AddonRequest>(`/pipeline/customers/${customerId}/addon-request/complete`),
+  // Accounts
+  list: (q: { status?: AddonRequestStatus; search?: string; consultant?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<AddonRequestPage>('/accounts/addon-requests', { ...q }),
+  get: (id: string) => api.get<AddonRequest>(`/accounts/addon-requests/${id}`),
+  decide: (id: string, body: { decision: 'APPROVE' | 'REJECT' | 'CHANGES'; note?: string | null; expectedVersion?: number }) =>
+    api.post<AddonRequest>(`/accounts/addon-requests/${id}/decision`, body),
+  generateInvoice: (id: string, body: { issueDate?: string | null; dueDate?: string | null } = {}) =>
+    api.post<AddonRequest>(`/accounts/addon-requests/${id}/invoice`, body),
+  recordPayment: (id: string, body: { amount: number; method: PaymentMethod; reference?: string | null; paidAt?: string | null; note?: string | null; verify?: boolean }) =>
+    api.post<AddonRequest>(`/accounts/addon-requests/${id}/payments`, body),
+  decidePayment: (paymentId: string, body: { decision: 'VERIFY' | 'REJECT'; reason?: string | null }) =>
+    api.post<AddonRequest>(`/accounts/addon-payments/${paymentId}/decision`, body),
+  confirmPayment: (id: string, note?: string | null) => api.post<AddonRequest>(`/accounts/addon-requests/${id}/confirm-payment`, { note: note || null })
+};
+
+export const invoicesApi = {
+  /** Read-only: invoices for one customer the caller may see. */
+  forCustomer: (customerId: string) => api.get<Invoice[]>(`/pipeline/customers/${customerId}/invoices`),
+  /** Read-only: every invoice the caller may see (Sales: own customers; TC: assigned; Accounts: all). */
+  visible: (q: { search?: string; status?: 'Paid' | 'Pending'; page?: number; pageSize?: number } = {}) => api.get<InvoicePage>('/invoices', { ...q }),
+  // Accounts only
+  list: (q: { search?: string; kind?: InvoiceKind; status?: 'Paid' | 'Pending'; page?: number; pageSize?: number } = {}) =>
+    api.get<InvoicePage>('/accounts/invoices', { ...q }),
+  create: (body: { customerId: string; items: PricedLineInput[]; issueDate?: string | null; dueDate?: string | null; note?: string | null }) =>
+    api.post<Invoice>('/accounts/invoices', body),
+  setStatus: (id: string, status: 'Paid' | 'Pending') => api.patch<Invoice>(`/accounts/invoices/${id}`, { status }),
+  customers: (search?: string) => api.get<InvoiceCustomer[]>('/accounts/invoice-customers', { search })
+};
 
 export const financeApi = {
   summary: (q: { departmentId?: string; from?: string; to?: string } = {}) => api.get<FinanceSummary>('/accounts/finance/summary', { ...q }),

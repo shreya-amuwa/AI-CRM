@@ -1,6 +1,6 @@
 import { rowOpen } from '../../../lib/rowClick';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, Pencil, Search, Send } from 'lucide-react';
+import { ArrowRight, PackagePlus, Pencil, Search, Send } from 'lucide-react';
 import type { Paginated, PipelineCustomer } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
@@ -17,7 +17,8 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
-import { AddonSelector, type Addon } from './AddonSelector';
+import { ADDON_STATUS_LABEL, AddonStatusPill } from '../../invoices/invoiceShared';
+import { AddonRequestDialog, AddonRequestEditor } from './AddonRequestPanel';
 import { ConsultationNotes } from './ConsultationNotes';
 
 const PAGE_SIZE = 10;
@@ -25,12 +26,13 @@ const PAGE_SIZE = 10;
 /**
  * Technical Consultant: "Customers" panel. Customers Accounts confirmed arrive here as a table:
  * business, services, Contacted yes/no, the add-ons question and the send button. A customer opens
- * read-only; details change only after an explicit Edit. "Send for onboarding" moves the customer to
- * Onboarding Customers; when add-ons are needed the button is "Send to Add-ons" and moves the customer
- * to Add-ons Services instead. Every change is saved straight to the database and re-checked there.
+ * read-only; details change only after an explicit Edit. When the customer wants additional services the
+ * consultant prices them and submits them for Accounts Verification (they continue in Add-ons Services);
+ * "Send for onboarding" moves the customer's original services on and is never blocked by the add-ons.
+ * Every change is saved straight to the database and re-checked there.
  */
 export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: () => void; onGoToAddons: () => void }> = ({ onSent, onGoToOnboarding, onGoToAddons }) => {
-  const { items: catalog, byCode } = useServiceCatalog();
+  const { byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<PipelineCustomer> | null>(null);
@@ -121,12 +123,17 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
                   <IntakeRow
                     key={c.id}
                     customer={c}
-                    catalog={catalog}
                     serviceName={code => byCode.get(code)?.name || code}
                     onChanged={patchRow}
                     onOpen={edit => setOpen({ id: c.id, edit })}
+                    onAddonsSubmitted={name => {
+                      setNotice({ text: `The add-ons for ${name} were submitted for Accounts Verification. Follow them in Add-ons Services.`, to: 'addons' });
+                      notifyPipelineChanged();
+                      onSent();
+                      load();
+                    }}
                     onSent={(name, to) => {
-                      setNotice({ text: to === 'addons' ? `${name} was sent to Add-ons Services.` : `${name} was sent for onboarding.`, to });
+                      setNotice({ text: `${name} was sent for onboarding.`, to });
                       notifyPipelineChanged();
                       onSent();
                       load();
@@ -163,21 +170,22 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
 // ---------------------------------------------------------------------------
 const IntakeRow: React.FC<{
   customer: PipelineCustomer;
-  catalog: { code: string; name: string; category: string }[];
   serviceName: (code: string) => string;
   onChanged: (c: PipelineCustomer) => void;
   onOpen: (edit: boolean) => void;
+  onAddonsSubmitted: (name: string) => void;
   onSent: (name: string, to: 'onboarding' | 'addons') => void;
-}> = ({ customer: c, catalog, serviceName, onChanged, onOpen, onSent }) => {
+}> = ({ customer: c, serviceName, onChanged, onOpen, onAddonsSubmitted, onSent }) => {
   const [busy, setBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
   const [confirmNo, setConfirmNo] = useState(false);
-  const addons: Addon[] = c.onboarding?.addons || [];
+  const [editAddons, setEditAddons] = useState(false);
+  const addonStatus = c.onboarding?.addonRequestStatus ?? null;
   // The radio moves at once; if the database refuses, it goes back (the saved answer is the truth).
   const [shown, setShown] = useState<boolean | null | undefined>(undefined);
   const required = shown !== undefined ? shown : (c.onboarding?.addonsRequired ?? null);
   const label = c.company || c.name;
-  const toAddons = required === true;
+  const hasDraft = addonStatus === 'DRAFT' || addonStatus === 'CHANGES_REQUESTED';
 
   const run = async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
     setBusy(true);
@@ -204,13 +212,13 @@ const IntakeRow: React.FC<{
   };
   const answer = (value: boolean) => {
     if (value === required) return;
-    // Answering No keeps the saved selection (it is only ignored); say so before changing it.
-    if (!value && addons.length > 0) return setConfirmNo(true);
+    // Answering No keeps a saved draft (it is only ignored); say so before changing it.
+    if (!value && hasDraft) return setConfirmNo(true);
     void setRequired(value);
   };
   const send = async () => {
-    const done = await run(() => (toAddons ? pipelineApi.consultantSendToAddons(c.id) : pipelineApi.consultantStartOnboarding(c.id)));
-    if (done) onSent(label, toAddons ? 'addons' : 'onboarding');
+    const done = await run(() => pipelineApi.consultantStartOnboarding(c.id));
+    if (done) onSent(label, 'onboarding');
   };
 
   return (
@@ -249,7 +257,7 @@ const IntakeRow: React.FC<{
       </td>
       <td className="px-3 py-4">
         <fieldset disabled={busy} className="min-w-0">
-          <legend className="text-[11px] font-semibold text-slate-600 mb-1.5">Does the customer require any additional services?</legend>
+          <legend className="text-[11px] font-semibold text-slate-600 mb-1.5">Is the customer interested in add-on services?</legend>
           <div className="flex items-center gap-5 mb-2">
             {([true, false] as const).map(v => (
               <label key={String(v)} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
@@ -259,18 +267,22 @@ const IntakeRow: React.FC<{
                   checked={required === v}
                   onChange={() => answer(v)}
                   className="w-3.5 h-3.5 accent-indigo-600"
-                  aria-label={`${v ? 'Yes' : 'No'}: additional services for ${label}`}
+                  aria-label={`${v ? 'Yes' : 'No'}: add-on services for ${label}`}
                 />
                 {v ? 'Yes' : 'No'}
               </label>
             ))}
           </div>
-          {required === true && <AddonSelector customerId={c.id} label={label} addons={addons} catalog={catalog} disabled={busy} onChanged={onChanged} />}
-          {required === false && addons.length > 0 && (
-            <p className="text-[11px] text-slate-500">
-              {addons.length} saved add-on{addons.length === 1 ? ' is' : 's are'} kept but not used while No is selected.
-            </p>
+          {required === true && (
+            <div className="flex flex-wrap items-center gap-2">
+              {addonStatus && <AddonStatusPill status={addonStatus} />}
+              <button type="button" className={btn.secondary} onClick={() => setEditAddons(true)} aria-label={`Add-on services and prices for ${label}`}>
+                <PackagePlus className="w-3.5 h-3.5" aria-hidden="true" />
+                {!addonStatus || addonStatus === 'REJECTED' ? 'Select add-ons and prices' : hasDraft ? (addonStatus === 'DRAFT' ? 'Continue draft' : 'Correct and resubmit') : 'View add-ons'}
+              </button>
+            </div>
           )}
+          {required === false && hasDraft && <p className="text-[11px] text-slate-500">A saved add-on draft is kept but not used while No is selected.</p>}
         </fieldset>
         {rowError && (
           <p className="text-[11px] text-rose-700 mt-1.5" role="alert">
@@ -283,41 +295,48 @@ const IntakeRow: React.FC<{
           <button type="button" onClick={() => onOpen(true)} className={btn.secondary} aria-label={`Edit ${label}`}>
             <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
           </button>
-          <button
-            type="button"
-            disabled={busy || (toAddons && addons.length === 0)}
-            title={toAddons && addons.length === 0 ? 'Select at least one add-on service first' : undefined}
-            onClick={() => void send()}
-            className={btn.primary}
-            aria-label={toAddons ? `Send ${label} to Add-ons` : `Send ${label} for onboarding`}
-          >
-            <Send className="w-3.5 h-3.5" aria-hidden="true" /> {toAddons ? 'Send to Add-ons' : 'Send for onboarding'}
+          <button type="button" disabled={busy} onClick={() => void send()} className={btn.primary} aria-label={`Send ${label} for onboarding`}>
+            <Send className="w-3.5 h-3.5" aria-hidden="true" /> Send for onboarding
           </button>
         </div>
       </td>
-      {confirmNo && (
+      {(confirmNo || editAddons) && (
         <td className="p-0" data-no-row-click>
-          <Dialog
-            title="Switch to No?"
-            description={`${label} has ${addons.length} add-on${addons.length === 1 ? '' : 's'} selected. They stay saved, but are not used or sent anywhere while the answer is No. You can switch back to Yes any time before sending to Add-ons.`}
-            onClose={() => setConfirmNo(false)}
-          >
-            <div className="flex justify-end gap-2">
-              <button type="button" className={btn.secondary} onClick={() => setConfirmNo(false)}>
-                Keep Yes
-              </button>
-              <button
-                type="button"
-                className={btn.primary}
-                onClick={() => {
-                  setConfirmNo(false);
-                  void setRequired(false);
-                }}
-              >
-                Switch to No
-              </button>
-            </div>
-          </Dialog>
+          {confirmNo && (
+            <Dialog
+              title="Switch to No?"
+              description={`${label} has an add-on draft. It stays saved, but is not sent to Accounts while the answer is No. You can switch back to Yes any time.`}
+              onClose={() => setConfirmNo(false)}
+            >
+              <div className="flex justify-end gap-2">
+                <button type="button" className={btn.secondary} onClick={() => setConfirmNo(false)}>
+                  Keep Yes
+                </button>
+                <button
+                  type="button"
+                  className={btn.primary}
+                  onClick={() => {
+                    setConfirmNo(false);
+                    void setRequired(false);
+                  }}
+                >
+                  Switch to No
+                </button>
+              </div>
+            </Dialog>
+          )}
+          {editAddons && (
+            <AddonRequestDialog
+              customerId={c.id}
+              label={label}
+              originalServices={c.services}
+              onClose={() => setEditAddons(false)}
+              onChanged={r => {
+                if (r.status === 'PENDING_VERIFICATION') onAddonsSubmitted(label);
+                else onChanged({ ...c, onboarding: c.onboarding ? { ...c.onboarding, addonRequestStatus: r.status, addonsRequired: true } : c.onboarding });
+              }}
+            />
+          )}
         </td>
       )}
     </tr>
@@ -352,8 +371,8 @@ const CustomerDetailsDialog: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = customer.company || customer.name;
-  const addons = customer.onboarding?.addons || [];
   const required = customer.onboarding?.addonsRequired ?? null;
+  const addonStatus = customer.onboarding?.addonRequestStatus ?? null;
 
   const resetForm = () => {
     setName(customer.name);
@@ -452,11 +471,12 @@ const CustomerDetailsDialog: React.FC<{
             <Row k="Contacted" v={customer.onboarding?.contractSigned ? 'Yes' : 'No'} />
             <Row
               k="Additional services"
-              v={required === null ? 'Not answered yet' : required ? `Yes${addons.length ? `: ${addons.map(a => a.name).join(', ')}` : ''}` : 'No'}
+              v={required === null ? 'Not answered yet' : required ? `Yes${addonStatus ? ` - ${ADDON_STATUS_LABEL[addonStatus]}` : ''}` : 'No'}
             />
           </dl>
         )}
       </section>
+      {required && <AddonRequestEditor customerId={customer.id} originalServices={customer.services} />}
       <ConsultationNotes customerId={customer.id} canWrite services={customer.services} />
       <div className="flex justify-end">
         <button type="button" onClick={onClose} className={btn.secondary}>

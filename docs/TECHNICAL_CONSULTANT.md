@@ -99,22 +99,23 @@ Migration: `supabase/migrations/20261014000100_tc_notes_addons.sql` (safe to re-
 
 **Customers panel.** The old "Contract" column is labelled **Contacted** (the stored value
 `customer_onboarding.contract_signed` is unchanged). Additional services is a Yes / No question
-(`customer_onboarding.addons_required`, null = not answered). Yes shows the service picker (built from
-the service catalogue). Answering No keeps any saved selection (it is only ignored) and asks first.
+(`customer_onboarding.addons_required`, null = not answered). Yes opens the priced add-on request
+(services, quantity, agreed price, discount, tax, notes). Answering No keeps a saved draft (it is only
+ignored) and asks first; it is refused once the request is with Accounts.
 A customer opens read-only; details change only after an explicit Edit, with Save / Cancel. A save made
 from a stale form is refused (`consultant_update_customer(..., p_expected)`).
 
-**Send to Add-ons.** With Yes and at least one add-on the button reads "Send to Add-ons"
-(`consultant_send_to_addons`, once per customer). "Send for onboarding" is refused by the database
-while add-ons are selected but not sent. The customer then leaves Customers and is listed under
-**Add-ons Services** (same customer record, no copy). From there the TC changes the services, collects
-and verifies the add-on documents and can still send the customer for onboarding.
+**Add-on requests (replaces "Send to Add-ons").** Since `20261015000100_addon_verification_invoices.sql`
+the TC saves a draft and presses **Submit for Accounts Verification**; Accounts approves, rejects or asks
+for changes, issues the add-on invoice and confirms the payment. See [ADDONS_INVOICES.md](ADDONS_INVOICES.md).
+"Send for onboarding" (original services) is never blocked by add-ons. **Add-ons Services** lists every
+customer with an add-on request (same customer record, no copy).
 
 **Add-on documents.** The checklist is built from the same `onboarding_items` /
 `onboarding_item_services` as normal onboarding, for the add-on service codes only
 (`customer_addon_checklist`). Entries and uploads use the same tables and the same upload, size and
-type rules; a document is collected once. The TC may save / upload / replace only items of the add-on
-services of a customer sent to Add-ons (`private.can_collect_addon_item`); normal onboarding items stay
+type rules; a document is collected once. The TC may save / upload / replace only items of add-on
+services whose payment Accounts has confirmed (`private.can_collect_addon_item`); normal onboarding items stay
 with Sales. Progress (`addon_items_*`) is kept by triggers. Nothing is marked verified automatically.
 
 **Consultation notes.** `consultant_notes` is append-only history (add, edit by the author only; the

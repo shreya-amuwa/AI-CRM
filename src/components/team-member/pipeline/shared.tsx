@@ -369,6 +369,7 @@ export function usePipelineRealtime(onChange: () => void) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_documents' }, fire)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_onboarding' }, fire)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_onboarding_entries' }, fire)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_invoices' }, fire)
       .subscribe();
     return () => {
       clearTimeout(timer);

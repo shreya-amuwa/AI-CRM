@@ -30,6 +30,7 @@ import { PaymentDialog } from './PotentialView';
 import { MoneyTiles, PaymentHistory, PaymentStatusBadge } from '../../payments/PaymentBits';
 import { getStartedBlockers } from '../../../../shared/contracts';
 import { HandoverBanner } from '../../support/consultant/HandoverPanel';
+import { ADDON_STATUS_LABEL, AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 import {
   ChecklistPanel,
   isDone,
@@ -241,7 +242,10 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                       ) : null}{' '}
                       ·{' '}
                       {c.onboarding?.forwardedToSupportAt ? (
-                        <span className="font-semibold text-emerald-700">Sent to Technical Consultant</span>
+                        <span className="font-semibold text-emerald-700">
+                          With Technical Consultant
+                          {c.onboarding.addonRequestStatus === 'PENDING_VERIFICATION' && <span className="text-amber-700"> · add-ons in Accounts verification</span>}
+                        </span>
                       ) : c.onboarding?.sentToAccountsAt && !c.onboarding?.accountsConfirmedAt ? (
                         <span className="font-semibold text-amber-700">With Accounts · awaiting confirmation</span>
                       ) : returned ? (
@@ -591,6 +595,29 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
               {overview.balance > 0 && overview.verified > 0 && (
                 <p className="text-[11px] text-slate-500">Accounts follows up the remaining balance. Onboarding continues meanwhile.</p>
               )}
+            </Card>
+          )}
+
+          {mode === 'sales' && (
+            <Card className="p-5 space-y-3">
+              <h2 className="text-sm font-bold text-slate-900">Invoices</h2>
+              <p className="text-[11px] text-slate-500">Issued by the Accounts department. Read-only.</p>
+              <CustomerInvoices customerId={c.id} compact />
+            </Card>
+          )}
+          {mode === 'sales' && c.onboarding?.addonRequestStatus && (
+            <Card className="p-5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-bold text-slate-900">Add-on services</h2>
+                <AddonStatusPill status={c.onboarding.addonRequestStatus} />
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {c.onboarding.addonRequestStatus === 'PENDING_VERIFICATION'
+                  ? 'The Technical Consultant priced add-ons; Accounts is verifying them.'
+                  : c.onboarding.addonRequestStatus === 'DRAFT' || c.onboarding.addonRequestStatus === 'CHANGES_REQUESTED'
+                    ? 'The Technical Consultant is preparing the add-ons.'
+                    : `${ADDON_STATUS_LABEL[c.onboarding.addonRequestStatus]}. Add-ons are tracked separately and do not hold up this onboarding.`}
+              </p>
             </Card>
           )}
 

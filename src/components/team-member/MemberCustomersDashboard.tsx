@@ -41,13 +41,14 @@ const recentActivities: { id: string; type: string; title: string; subtitle: str
 interface MemberCustomersDashboardProps {
   currentUserId: string;
   onSendWhatsApp?: (phone: string, name: string) => void;
-  onCreateInvoice?: (customer: Customer) => void;
+  /** Opens the read-only invoice list (invoices are issued by Accounts). */
+  onViewInvoices?: () => void;
 }
 
 export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> = ({
   currentUserId,
   onSendWhatsApp,
-  onCreateInvoice
+  onViewInvoices
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [segmentFilter, setSegmentFilter] = useState('all');
@@ -587,19 +588,13 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
 
               <button
                 type="button"
-                onClick={() => {
-                  if (onCreateInvoice && customers.length > 0) {
-                    onCreateInvoice(customers[0]);
-                  } else {
-                    alert('Select a customer to create an invoice');
-                  }
-                }}
+                onClick={() => onViewInvoices?.()}
                 className="flex flex-col items-center justify-center p-3 rounded-xl border border-emerald-100 bg-emerald-50/30 hover:bg-emerald-50 text-emerald-700 text-xs font-semibold transition-all cursor-pointer"
               >
                 <div className="w-8 h-8 rounded-lg bg-emerald-100/70 text-emerald-600 flex items-center justify-center mb-1.5">
                   <FileText className="w-4 h-4" />
                 </div>
-                <span>Create Invoice</span>
+                <span>View Invoices</span>
               </button>
 
               <button

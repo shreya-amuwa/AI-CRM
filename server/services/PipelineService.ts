@@ -32,7 +32,6 @@ import {
   paymentReasonSchema,
   paymentRequestsQuerySchema,
   sendToAccountsSchema,
-  consultantAddonsSchema,
   consultantAddonsRequiredSchema,
   consultantNoteSchema,
   consultantNoteUpdateSchema,
@@ -249,12 +248,6 @@ export class PipelineService {
     return this.repo.get(customerId);
   }
 
-  async consultantSetAddons(id: string, body: unknown): Promise<PipelineCustomer> {
-    const customerId = parse(uuidSchema, id);
-    await this.repo.consultantSetAddons(customerId, parse(consultantAddonsSchema, body).addons);
-    return this.repo.get(customerId);
-  }
-
   async consultantUpdateCustomer(id: string, body: unknown): Promise<PipelineCustomer> {
     const customerId = parse(uuidSchema, id);
     await this.repo.consultantUpdateCustomer(customerId, parse(consultantDetailsSchema, body));
@@ -265,13 +258,6 @@ export class PipelineService {
   async consultantSetAddonsRequired(id: string, body: unknown): Promise<PipelineCustomer> {
     const customerId = parse(uuidSchema, id);
     await this.repo.consultantSetAddonsRequired(customerId, parse(consultantAddonsRequiredSchema, body).required);
-    return this.repo.get(customerId);
-  }
-
-  /** "Send to Add-ons": once, only when Yes is answered and at least one add-on is selected. */
-  async consultantSendToAddons(id: string): Promise<PipelineCustomer> {
-    const customerId = parse(uuidSchema, id);
-    await this.repo.consultantSendToAddons(customerId);
     return this.repo.get(customerId);
   }
 
