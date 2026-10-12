@@ -338,13 +338,13 @@ insert into fx select 'ads', accounts_add_expense(current_date, 'Facebook ads', 
 insert into fx select 'sw', accounts_add_expense(current_date, 'Tools', test.dept('whatsbox'), 'Software', 300, 'PAID', null);
 select test.admin_check($Q$select (accounts_finance_summary() ->> 'expenses')::numeric = 2300.50 and (accounts_finance_summary() ->> 'expensesPending')::numeric = 800
   and (accounts_finance_summary() ->> 'expensesPaid')::numeric = 1500.50$Q$, 'company totals: all expenses, with the pending part reported separately');
-select test.admin_check($Q$select (accounts_finance_summary() ->> 'income')::numeric = (select coalesce(sum(amount), 0) from customer_payments where status = 'VERIFIED')
+select test.admin_check($Q$select (accounts_finance_summary() ->> 'income')::numeric = (select coalesce(sum(amount), 0) from (select amount, paid_at, customer_id from customer_payments where status = 'VERIFIED' union all select amount, paid_at, customer_id from addon_payments where status = 'VERIFIED') v)
   and (accounts_finance_summary() ->> 'net')::numeric = (accounts_finance_summary() ->> 'income')::numeric - 2300.50$Q$, 'income is exactly the verified payments; net = income - expenses');
 select test.admin_check($Q$select (accounts_finance_summary(test.dept('wabastore')) ->> 'expenses')::numeric = 1200.50
   and (accounts_finance_summary(test.dept('whatsbox')) ->> 'expenses')::numeric = 300
   and (accounts_finance_summary(test.dept('digitree')) ->> 'expenses')::numeric = 0$Q$, 'a department shows only its own expenses (company-wide ones are not attributed to it)');
 select test.admin_check($Q$select (accounts_finance_summary(test.dept('wabastore')) ->> 'income')::numeric
-  = (select coalesce(sum(p.amount), 0) from customer_payments p join customers c on c.id = p.customer_id where p.status = 'VERIFIED' and c.department_id = test.dept('wabastore'))
+  = (select coalesce(sum(p.amount), 0) from (select amount, paid_at, customer_id from customer_payments where status = 'VERIFIED' union all select amount, paid_at, customer_id from addon_payments where status = 'VERIFIED') p join customers c on c.id = p.customer_id where c.department_id = test.dept('wabastore'))
   and (accounts_finance_summary(test.dept('whatsbox')) ->> 'income')::numeric = 0$Q$, 'department income comes from that department''s customers only');
 select test.admin_check($Q$select jsonb_array_length(accounts_finance_by_department()) = (select count(*) from departments where generates_revenue)$Q$,
   'Department Income has one box per revenue department in the CRM');
@@ -387,13 +387,13 @@ select test.check((select (accounts_expenses_list() ->> 'total')::int = 4), 'an 
 select test.admin_check($Q$select (select count(*) from audit_logs where action in ('EXPENSE_ADDED', 'EXPENSE_EDITED', 'EXPENSE_DELETED', 'EXPENSES_IMPORTED')) >= 8$Q$, 'expense changes are audited');
 
 -- Income list + analytics (real records only)
-select test.admin_check($Q$select (accounts_income_list() ->> 'total')::int = (select count(*) from customer_payments where status = 'VERIFIED')
-  and (accounts_income_list() ->> 'sum')::numeric = (select sum(amount) from customer_payments where status = 'VERIFIED')$Q$, 'the income list is exactly the verified payments');
+select test.admin_check($Q$select (accounts_income_list() ->> 'total')::int = (select count(*) from (select amount, paid_at, customer_id from customer_payments where status = 'VERIFIED' union all select amount, paid_at, customer_id from addon_payments where status = 'VERIFIED') v)
+  and (accounts_income_list() ->> 'sum')::numeric = (select sum(amount) from (select amount, paid_at, customer_id from customer_payments where status = 'VERIFIED' union all select amount, paid_at, customer_id from addon_payments where status = 'VERIFIED') v)$Q$, 'the income list is exactly the verified payments (original services and add-ons)');
 select test.check((select (accounts_income_list(p_search => 'UTR-0001') ->> 'total')::int = 1 and accounts_income_list(p_search => 'UTR-0001') -> 'items' -> 0 ->> 'customer' = 'Desai Clinic'), 'income search by payment reference finds the customer');
 select test.check((select (accounts_income_list(p_department => test.dept('whatsbox')) ->> 'total')::int = 0), 'income filtered by another department is empty');
 select test.check((select jsonb_array_length(accounts_finance_trend() -> 'months') = 12 and jsonb_array_length(accounts_finance_trend(3) -> 'months') = 3), 'analytics returns one row per month');
 select test.admin_check($Q$select (select (m ->> 'income')::numeric from jsonb_array_elements(accounts_finance_trend() -> 'months') m order by m ->> 'month' desc limit 1)
-  = (select coalesce(sum(amount), 0) from customer_payments where status = 'VERIFIED' and date_trunc('month', paid_at) = date_trunc('month', now()))$Q$, 'this month''s income in the trend equals the verified payments of this month');
+  = (select coalesce(sum(amount), 0) from (select amount, paid_at, customer_id from customer_payments where status = 'VERIFIED' union all select amount, paid_at, customer_id from addon_payments where status = 'VERIFIED') v where date_trunc('month', paid_at) = date_trunc('month', now()))$Q$, 'this month''s income in the trend equals the verified payments of this month');
 select test.check((select accounts_finance_trend() -> 'expenseCategories' -> 0 ->> 'category' is not null), 'top expense categories come from the expenses');
 select test.check((select not exists (select 1 from jsonb_array_elements(accounts_finance_by_department()) d where d ->> 'slug' in ('accounts', 'edutraining', 'hr'))
                      and exists (select 1 from jsonb_array_elements(accounts_finance_by_department()) d where d ->> 'slug' = 'wabastore')),

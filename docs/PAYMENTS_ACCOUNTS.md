@@ -51,8 +51,10 @@ The Account Dashboard (`/accounts/dashboard/:id`, Accounts staff) is separate fr
 **Account Department** panel (`/admin/dashboard/accounts`). The two share only the visual style of
 the summary cards; no component, route, permission or data is shared.
 
-Sidebar: Account Overview, Income, Confirmation, Part Payment, Department Income, Expenses,
-Notification Center. Invoice and Quotation are not part of this dashboard.
+Sidebar: Account Overview, Income, Confirmation, Business Verification, Invoices, Part Payment,
+Department Income, Expenses, Notification Center. Business Verification and Invoices are described in
+[ADDONS_INVOICES.md](ADDONS_INVOICES.md); Quotation is not part of this dashboard. Income includes
+verified add-on payments (`private.verified_income()`).
 
 - **Account Overview**: the three company-wide cards (Total Gross Income, Total Expenses, Total Net
   Earnings) and, below them, the company-wide trends that used to be on the separate Overall

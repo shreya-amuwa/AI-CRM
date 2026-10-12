@@ -344,6 +344,8 @@ export interface CustomerOnboarding {
   addonItemsSaved: number;
   addonItemsVerified: number;
   addonItemsRejected: number;
+  /** The latest add-on request's status (Draft -> Accounts verification -> invoice -> payment -> documents); null when none. */
+  addonRequestStatus: AddonRequestStatus | null;
   /** Sales sent the customer to Accounts to confirm the amount. */
   sentToAccountsAt: string | null;
   /** Accounts confirmed the amount; the customer then goes to the Technical Consultant. */
@@ -750,4 +752,136 @@ export interface FinanceTrend {
   months: { month: string; income: number; expenses: number; net: number }[];
   expenseCategories: { category: string; amount: number }[];
   firstRecordAt: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Add-on requests (Technical Consultant -> Accounts verification) and invoices (Accounts only)
+// ---------------------------------------------------------------------------
+export const ADDON_REQUEST_STATUSES = [
+  'DRAFT',
+  'PENDING_VERIFICATION',
+  'CHANGES_REQUESTED',
+  'REJECTED',
+  'APPROVED',
+  'INVOICE_GENERATED',
+  'PAYMENT_CONFIRMED',
+  'IN_PROGRESS',
+  'COMPLETED'
+] as const;
+export type AddonRequestStatus = (typeof ADDON_REQUEST_STATUSES)[number];
+
+/** One priced line: a catalogue service (serviceCode) or one typed by hand. Totals are computed by the database. */
+export interface PricedLine {
+  id?: string;
+  serviceCode?: string | null;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  taxPercent: number;
+  tax?: number;
+  lineTotal?: number;
+}
+
+export type InvoiceKind = 'MANUAL' | 'SERVICE' | 'ADDON';
+export interface Invoice {
+  id: string;
+  number: string;
+  kind: InvoiceKind;
+  customerId: string | null;
+  customer: string;
+  contact: string;
+  customerCode: string | null;
+  department: string | null;
+  issueDate: string | null;
+  dueDate: string | null;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  status: 'Paid' | 'Pending' | 'Overdue';
+  paidAt: string | null;
+  items: PricedLine[];
+  note: string | null;
+  addonRequestId: string | null;
+  issuedBy: string | null;
+  issuedAt: string;
+  createdAt: string;
+}
+export interface InvoicePage extends Paginated<Invoice> {
+  sum?: number;
+  paid?: number;
+}
+
+export interface AddonPayment {
+  id: string;
+  amount: number;
+  method: PaymentMethod | null;
+  reference: string | null;
+  paidAt: string;
+  status: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  note: string | null;
+  reason: string | null;
+  recordedBy: string | null;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+}
+
+export interface AddonRequest {
+  id: string;
+  customerId: string;
+  status: AddonRequestStatus;
+  version: number;
+  notes: string | null;
+  customer: string;
+  contact: string;
+  customerCode: string | null;
+  phone: string | null;
+  department: string | null;
+  consultant: { id: string; fullName: string } | null;
+  salesperson: string | null;
+  originalServices: string[];
+  originalAmount: number | null;
+  onboardingReference: string | null;
+  onboardingStartedAt: string | null;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  items: PricedLine[];
+  submittedAt: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  decidedBy: string | null;
+  invoice: Invoice | null;
+  payments: AddonPayment[] | null;
+  paid: number;
+  pendingPayments: number;
+  paymentConfirmedAt: string | null;
+  paymentConfirmedBy: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  documents: { total: number; saved: number; verified: number; rejected: number } | null;
+  events: { action: string; note: string | null; at: string; by: string | null }[] | null;
+  /** The caller may still change it (draft, or Accounts asked for changes). */
+  canEdit?: boolean;
+}
+export interface AddonRequestPage extends Paginated<AddonRequest> {
+  counts: Partial<Record<AddonRequestStatus, number>>;
+  consultants: { id: string; fullName: string }[];
+}
+
+export interface InvoiceCustomer {
+  id: string;
+  name: string;
+  company: string | null;
+  customerCode: string | null;
+  department: string | null;
+  stage: LifecycleStage;
+  dealAmount: number | null;
+  amountVerified: number;
+  services: { code: string; name: string }[];
+  hasServiceInvoice: boolean;
 }

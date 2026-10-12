@@ -545,28 +545,10 @@ class TeamMemberStore {
     return this.eodReports.find(r => r.date === today) || null;
   }
 
-  // --- INVOICES -------------------------------------------------------------
+  // --- INVOICES (read-only: issued by the Accounts department) ---------------
 
   public getInvoices(_userId?: string): Invoice[] {
     return this.invoices;
-  }
-
-  public async addInvoice(invoice: Omit<Invoice, 'id'>): Promise<void> {
-    const db = this.db();
-    const { invoiceNumber, customerName, company, amount, status, issueDate, dueDate, userId, teamMemberId, ...details } =
-      invoice;
-    await this.write(['member_invoices'], () =>
-      db.from('member_invoices').insert({
-        invoice_number: invoiceNumber,
-        customer_name: customerName,
-        company: company || '',
-        amount,
-        status,
-        issue_date: issueDate,
-        due_date: dueDate,
-        details
-      })
-    );
   }
 
   // --- CALENDAR -------------------------------------------------------------

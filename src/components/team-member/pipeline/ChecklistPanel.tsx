@@ -22,6 +22,7 @@ import { errorMessage } from '../../../lib/api/client';
 import { documentsApi, pipelineApi } from '../../../lib/api/endpoints';
 import { requireSupabase } from '../../../services/supabaseClient';
 import { btn, categoryDot, Dialog, ErrorBanner, inputCls, money, Pill, shortDate } from './shared';
+import { CustomerInvoices } from '../../invoices/invoiceShared';
 
 /** 'addon': the Technical Consultant collects the add-on documents and verifies them (both actions). */
 export type ChecklistMode = 'sales' | 'review' | 'addon';
@@ -223,7 +224,7 @@ const ChecklistCard: React.FC<{
   const [phase, setPhase] = useState<null | 'checking' | 'uploading' | 'verifying'>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [dialog, setDialog] = useState<null | 'edit' | 'reject' | 'view'>(null);
+  const [dialog, setDialog] = useState<null | 'edit' | 'reject' | 'view' | 'invoices'>(null);
   const [confirmDelete, setConfirmDelete] = useState<CustomerDocument | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -232,7 +233,9 @@ const ChecklistCard: React.FC<{
   const isFile = item.kind === 'FILE';
   const currentDoc = isFile ? customer.documents.find(d => d.documentType === item.code && d.status === 'UPLOADED') || null : null;
   const history = isFile ? customer.documents.filter(d => d.documentType === item.code && d.status === 'SUPERSEDED') : [];
-  const collects = mode === 'sales' || mode === 'addon';
+  // The Invoice item is filled by the invoice the Accounts department issues: nobody uploads it here.
+  const issuedByAccounts = item.code === 'INVOICE';
+  const collects = (mode === 'sales' || mode === 'addon') && !issuedByAccounts;
   const reviews = mode === 'review' || mode === 'addon';
   const allowed = item.allowedMimeTypes || ['application/pdf'];
   const maxSize = fmtSize(item.maxSizeBytes || 512000);
@@ -300,6 +303,7 @@ const ChecklistCard: React.FC<{
   /** Clicking anywhere on the card (not on its own buttons) opens the item. */
   const openCard = () => {
     if (phase || busy) return;
+    if (issuedByAccounts) return setDialog('invoices');
     if (isFile) {
       if (currentDoc) void open(currentDoc, 'view');
       else if (collects) inputRef.current?.click();
@@ -340,6 +344,7 @@ const ChecklistCard: React.FC<{
     if (isFile && currentDoc) {
       return `${currentDoc.originalFileName} · ${fmtSize(currentDoc.sizeBytes)} · ${shortDate(currentDoc.uploadedAt)}${currentDoc.uploadedBy ? ` · ${currentDoc.uploadedBy.fullName}` : ''}`;
     }
+    if (issuedByAccounts) return entry?.value || 'Issued by the Accounts department. Not issued yet.';
     if (entry && !isFile) return displayValue(item);
     if (isFile) return collects ? `${typesText}, up to ${maxSize}. Drop the file here or upload.` : 'Not uploaded yet';
     return item.hint || 'Not filled yet';
@@ -448,6 +453,11 @@ const ChecklistCard: React.FC<{
                   </button>
                 </>
               )}
+              {issuedByAccounts && (
+                <button type="button" className={btn.secondary} onClick={() => setDialog('invoices')} aria-label="View the invoices issued by Accounts">
+                  <FileText className="w-3.5 h-3.5" /> View invoice
+                </button>
+              )}
               {collects && isFile && (
                 <>
                   <button
@@ -530,6 +540,16 @@ const ChecklistCard: React.FC<{
             </p>
           )}
           <div className="flex justify-end pt-1">
+            <button type="button" className={btn.secondary} onClick={() => setDialog(null)}>
+              Close
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {dialog === 'invoices' && (
+        <Dialog title="Invoices" description="Issued by the Accounts department. Read-only here." onClose={() => setDialog(null)} wide>
+          <CustomerInvoices customerId={customer.id} />
+          <div className="flex justify-end">
             <button type="button" className={btn.secondary} onClick={() => setDialog(null)}>
               Close
             </button>

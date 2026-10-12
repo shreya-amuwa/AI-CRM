@@ -43,6 +43,7 @@ import {
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
 import { ConsultationNotes } from './ConsultationNotes';
+import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -512,25 +513,22 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           )}
         </section>
 
-        {(c.onboarding?.addons.length ?? 0) > 0 && (
-          <section className="bg-white rounded-2xl border border-slate-200/80 p-5" aria-labelledby="addons-heading">
-            <h2 id="addons-heading" className="font-bold text-slate-900">
-              Add-on services
-            </h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {c.onboarding?.addons.map((a, i) => (
-                <span key={`${a.code || a.name}-${i}`} className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-semibold">
-                  {a.name}
-                </span>
-              ))}
+        {c.onboarding?.addonRequestStatus && (
+          <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" aria-labelledby="addons-heading">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="addons-heading" className="font-bold text-slate-900">
+                Add-on services
+              </h2>
+              <AddonStatusPill status={c.onboarding.addonRequestStatus} />
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              {c.onboarding?.addonsSubmittedAt
-                ? `Sent to Add-ons Services on ${longDate(c.onboarding.addonsSubmittedAt)}: ${c.onboarding.addonItemsSaved} of ${c.onboarding.addonItemsTotal} add-on items collected, ${c.onboarding.addonItemsVerified} verified. Manage them under Add-ons Services.`
-                : c.onboarding?.addonsRequired
-                  ? 'Selected, not yet sent to Add-ons Services.'
-                  : 'Saved, not used (the answer to additional services is No).'}
+            <p className="text-xs text-slate-500">
+              Add-ons are tracked separately from these services and do not hold up this onboarding.
+              {['IN_PROGRESS', 'COMPLETED'].includes(c.onboarding.addonRequestStatus)
+                ? ` ${c.onboarding.addonItemsSaved} of ${c.onboarding.addonItemsTotal} add-on items collected, ${c.onboarding.addonItemsVerified} verified.`
+                : ''}{' '}
+              Manage them under Add-ons Services.
             </p>
+            <CustomerInvoices customerId={c.id} kind="ADDON" compact />
           </section>
         )}
 
@@ -706,13 +704,17 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
   const entry = item.entry;
   const state = entry?.status ?? 'MISSING';
   const S = ROW_STATUS[state];
-  const isFile = item.kind === 'FILE';
+  // The Invoice item is filled by the invoice Accounts issues (a record, not an uploaded file).
+  const issuedByAccounts = item.code === 'INVOICE' && !!entry && !entry.documentId;
+  const isFile = item.kind === 'FILE' && !issuedByAccounts;
   const doc: CustomerDocument | null = isFile ? customer.documents.find(d => d.id === entry?.documentId) || null : null;
   const value = entry ? formatEntryValue(item, entry.value) : null;
   const sub = isFile
     ? doc
       ? `${doc.originalFileName} • ${fmtDateTime(doc.uploadedAt)}`
-      : 'Not uploaded yet'
+      : item.code === 'INVOICE'
+        ? 'Not issued by Accounts yet'
+        : 'Not uploaded yet'
     : entry
       ? `${value} • ${fmtDateTime(entry.savedAt)}`
       : 'Not filled yet';
@@ -823,6 +825,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
               <S.Icon className="w-3 h-3" aria-hidden="true" /> {S.label}
             </span>
           </div>
+          {issuedByAccounts && <CustomerInvoices customerId={customer.id} kind="SERVICE" compact />}
 
           {isFile ? (
             <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-2">

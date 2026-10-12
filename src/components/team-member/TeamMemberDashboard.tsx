@@ -440,7 +440,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
               const clean = phone.replace(/[^\d]/g, '');
               window.open(`https://wa.me/${clean}`, '_blank');
             }}
-            onCreateInvoice={() => setActiveNav('invoices')}
+            onViewInvoices={() => setActiveNav('invoices')}
           />
         )}
 

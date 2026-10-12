@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import {
   ACCOUNT_STATUSES,
+  ADDON_REQUEST_STATUSES,
   LEAD_STATUSES,
   ONBOARDING_FILTERS,
   HANDOVER_STAGES,
@@ -409,13 +410,6 @@ export const consultantNoteSchema = z
   .object({ body: z.string().trim().min(1, 'Write the note first.').max(4000, 'Keep the note under 4000 characters.'), serviceCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).nullish() })
   .strict();
 export const consultantNoteUpdateSchema = z.object({ body: z.string().trim().min(1, 'Write the note first.').max(4000, 'Keep the note under 4000 characters.') }).strict();
-export const consultantAddonsSchema = z
-  .object({
-    addons: z
-      .array(z.object({ code: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).optional(), name: trimmed(120).optional() }).strict())
-      .max(25)
-  })
-  .strict();
 export const consultantDetailsSchema = z
   .object({
     name: trimmed(200).min(2, 'Enter the customer\'s name.'),
@@ -550,3 +544,94 @@ export const expenseImportSchema = z
       .max(1000)
   })
   .strict();
+
+
+// ---------------------------------------------------------------------------
+// Add-on requests and invoices
+// ---------------------------------------------------------------------------
+const amount2 = (msg: string) =>
+  z.coerce.number().min(0, msg).max(1e8, msg).refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Use at most 2 decimal places.');
+export const pricedLineSchema = z
+  .object({
+    serviceCode: z.preprocess(v => (v === '' ? null : v), z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).nullable().optional()),
+    name: trimmed(120).optional(),
+    quantity: z.coerce.number().int('Use a whole number.').min(1, 'At least 1.').max(1000).default(1),
+    unitPrice: amount2('Enter the agreed price.'),
+    discount: amount2('Enter the discount.').default(0),
+    taxPercent: z.coerce.number().min(0, 'Tax is 0 to 100 %.').max(100, 'Tax is 0 to 100 %.').default(0)
+  })
+  .strict()
+  .refine(l => !!l.serviceCode || (l.name ?? '').length >= 2, { message: 'Choose a service or type its name.', path: ['name'] });
+export type PricedLineInput = z.infer<typeof pricedLineSchema>;
+const pricedLines = z.array(pricedLineSchema).min(1, 'Add at least one service.').max(30, 'Add at most 30 lines.');
+
+export const addonRequestSaveSchema = z
+  .object({
+    items: pricedLines,
+    notes: optionalText(2000),
+    submit: z.boolean().optional(),
+    expectedVersion: z.number().int().positive().optional()
+  })
+  .strict();
+export type AddonRequestSaveInput = z.infer<typeof addonRequestSaveSchema>;
+
+export const addonDecisionSchema = z
+  .object({
+    decision: z.enum(['APPROVE', 'REJECT', 'CHANGES']),
+    note: optionalText(1000),
+    expectedVersion: z.number().int().positive().optional()
+  })
+  .strict()
+  .refine(d => d.decision === 'APPROVE' || !!(d.note && d.note.trim()), { message: 'Give the reason, so the consultant knows what to do.', path: ['note'] });
+
+export const addonInvoiceSchema = z.object({ issueDate: isoDate.optional().nullable(), dueDate: isoDate.optional().nullable() }).strict();
+
+export const addonPaymentSchema = z
+  .object({
+    amount: money2,
+    method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Select the payment method.' }) }),
+    reference: optionalText(120),
+    paidAt: z.string().datetime({ offset: true }).optional().nullable(),
+    note: optionalText(1000),
+    verify: z.boolean().optional()
+  })
+  .strict();
+
+export const addonPaymentDecisionSchema = z
+  .object({ decision: z.enum(['VERIFY', 'REJECT']), reason: optionalText(500) })
+  .strict()
+  .refine(d => d.decision === 'VERIFY' || !!(d.reason && d.reason.trim()), { message: 'Give the reason for rejecting this payment.', path: ['reason'] });
+
+export const noteBodySchema = z.object({ note: optionalText(1000) }).strict();
+
+export const invoiceCreateSchema = z
+  .object({
+    customerId: uuidSchema,
+    items: pricedLines,
+    issueDate: isoDate.optional().nullable(),
+    dueDate: isoDate.optional().nullable(),
+    note: optionalText(1000)
+  })
+  .strict();
+export type InvoiceCreateInput = z.infer<typeof invoiceCreateSchema>;
+export const invoiceStatusSchema = z.object({ status: z.enum(['Paid', 'Pending']) }).strict();
+
+const pageQuery = {
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+};
+export const addonRequestsQuerySchema = z.object({
+  status: z.enum(ADDON_REQUEST_STATUSES).optional(),
+  search: z.string().trim().max(100).optional(),
+  consultant: uuidSchema.optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  ...pageQuery
+});
+export const invoicesQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  kind: z.enum(['MANUAL', 'SERVICE', 'ADDON']).optional(),
+  status: z.enum(['Paid', 'Pending', 'Overdue']).optional(),
+  ...pageQuery
+});
+export const invoiceCustomersQuerySchema = z.object({ search: z.string().trim().max(100).optional() });
