@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, FileText, Search } from 'lucide-react';
+import { FileText, Search } from 'lucide-react';
 import type { Invoice, InvoicePage } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { invoicesApi } from '../../lib/api/endpoints';
 import { rowOpen } from '../../lib/rowClick';
 import { btn, ErrorBanner, longDate, Pager, selectCls, Spinner, useDebounced, usePipelineRealtime } from '../team-member/pipeline/shared';
-import { downloadInvoice, INVOICE_KIND_LABEL, InvoiceDetail, InvoiceStatusPill, rupees } from './invoiceShared';
+import { fmtBytes } from './invoiceFiles';
+import { INVOICE_KIND_LABEL, InvoiceDetail, InvoiceRowActions, InvoiceStatusPill, rupees } from './invoiceShared';
 
 const PAGE_SIZE = 20;
 
@@ -96,8 +97,8 @@ export const InvoiceBrowser: React.FC<{ title: string; subtitle: string }> = ({ 
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[52rem]">
+          <div className="relative overflow-x-auto">
+            <table className="w-full text-sm min-w-[58rem]">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100 bg-slate-50/60">
                   <th scope="col" className="px-5 py-3 font-semibold">Invoice</th>
@@ -106,8 +107,9 @@ export const InvoiceBrowser: React.FC<{ title: string; subtitle: string }> = ({ 
                   <th scope="col" className="px-3 py-3 font-semibold">Due date</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-right">Amount</th>
                   <th scope="col" className="px-3 py-3 font-semibold">Status</th>
+                  <th scope="col" className="px-3 py-3 font-semibold">PDF file</th>
                   <th scope="col" className="px-5 py-3 font-semibold text-right">
-                    <span className="sr-only">Download</span>
+                    <span className="sr-only">Preview and download</span>
                   </th>
                 </tr>
               </thead>
@@ -128,10 +130,22 @@ export const InvoiceBrowser: React.FC<{ title: string; subtitle: string }> = ({ 
                     <td className="px-3 py-3.5">
                       <InvoiceStatusPill invoice={i} />
                     </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button type="button" className={btn.secondary} onClick={() => downloadInvoice(i)} aria-label={`Download ${i.number}`}>
-                        <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
-                      </button>
+                    <td className="px-3 py-3.5 text-xs text-slate-600 max-w-[14rem]">
+                      {i.file ? (
+                        <>
+                          <div className="font-semibold text-slate-800 truncate" title={i.file.fileName}>
+                            {i.file.fileName}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {fmtBytes(i.file.sizeBytes)} · {longDate(i.file.uploadedAt)} · {i.file.uploadedBy || 'Accounts'}
+                          </div>
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                      <InvoiceRowActions invoice={i} />
                     </td>
                   </tr>
                 ))}

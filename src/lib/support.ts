@@ -510,6 +510,9 @@ export interface SupportInvoice {
   contactPhone: string | null;
   departmentName: string | null;
   createdAt: string;
+  kind: string;
+  /** The stored PDF of an uploaded invoice (opened through the authorised signed-URL endpoint). */
+  file: { documentId: string; fileName: string; sizeBytes: number | null; uploadedAt: string | null } | null;
 }
 
 /** Invoices linked to customers the user may see (RLS), newest first. */
@@ -527,6 +530,18 @@ export function useSupportInvoices() {
       if (ids.length) {
         const { data: cs } = await db().from('customers').select('id, customer_code').in('id', ids);
         (cs || []).forEach((c: any) => codes.set(c.id, c.customer_code));
+      }
+      const files = new Map<string, { documentId: string; fileName: string; sizeBytes: number | null; uploadedAt: string | null }>();
+      const uploadedIds = rows.filter((r: any) => r.kind === 'UPLOADED').map((r: any) => r.id);
+      if (uploadedIds.length) {
+        const { data: ds } = await db()
+          .from('customer_documents')
+          .select('id, invoice_id, original_file_name, size_bytes, uploaded_at')
+          .in('invoice_id', uploadedIds)
+          .eq('status', 'UPLOADED');
+        (ds || []).forEach((d: any) =>
+          files.set(d.invoice_id, { documentId: d.id, fileName: d.original_file_name, sizeBytes: d.size_bytes === null ? null : Number(d.size_bytes), uploadedAt: d.uploaded_at })
+        );
       }
       setInvoices(
         rows.map((r: any) => {
@@ -551,7 +566,9 @@ export function useSupportInvoices() {
             contactEmail: d.contactEmail ?? null,
             contactPhone: d.contactPhone ?? null,
             departmentName: d.departmentName ?? null,
-            createdAt: r.created_at
+            createdAt: r.created_at,
+            kind: r.kind ?? 'MANUAL',
+            file: files.get(r.id) ?? null
           };
         })
       );

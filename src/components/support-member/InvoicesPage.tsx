@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { fmtDay, fmtMoney, type SupportInvoice } from '../../lib/support';
 import { InvoiceRequests } from './InvoiceRequests';
+import { fmtBytes, InvoiceFileButtons } from '../invoices/invoiceFiles';
 import { Empty, ErrorBanner, inputClass, KpiCard, Loading, Modal, outstandingOf, PageHeader, Pager, PaymentPill, paymentStatus } from './SupportParts';
 
 const PAGE_SIZE = 10;
@@ -32,7 +33,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Invoices" subtitle="Invoices raised for your customers. You can view them here; invoices are created and edited by Sales and Accounts." />
+      <PageHeader title="Invoices" subtitle="Invoices for your customers. You can view and download them here; invoices are uploaded and managed by Accounts." />
       {data.error && <ErrorBanner message={data.error} onRetry={() => void data.reload()} />}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Invoices" value={data.invoices.length} />
@@ -115,13 +116,13 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
                       <div>Issued {fmtDay(i.issueDate)}</div>
                       <div className="text-slate-400">Due {fmtDay(i.dueDate)}</div>
                     </td>
-                    <td className="py-3 px-3 text-right font-semibold">{fmtMoney(i.amount)}</td>
+                    <td className="py-3 px-3 text-right font-semibold">{i.kind === 'UPLOADED' && !i.amount ? '-' : fmtMoney(i.amount)}</td>
                     <td className="py-3 px-3 text-right text-xs text-slate-500">{i.taxAmount !== null ? fmtMoney(i.taxAmount) : '-'}</td>
                     <td className="py-3 px-3">
                       <PaymentPill invoice={i} />
                     </td>
                     <td className="py-3 px-3 text-right text-xs">{fmtMoney(outstandingOf(i))}</td>
-                    <td className="py-3 px-3 text-xs text-slate-600 max-w-[12rem] truncate">{i.service || '-'}</td>
+                    <td className="py-3 px-3 text-xs text-slate-600 max-w-[12rem] truncate">{i.service || (i.file ? 'PDF invoice' : '-')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -168,6 +169,20 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
                 <dd className="font-semibold mt-0.5">{fmtMoney(outstandingOf(open))}</dd>
               </div>
             </dl>
+            {open.file && (
+              <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/60 text-xs">
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-slate-900 break-all">{open.file.fileName}</div>
+                  <div className="text-slate-500">
+                    {fmtBytes(open.file.sizeBytes)} · uploaded by Accounts{open.file.uploadedAt ? ` on ${fmtDay(open.file.uploadedAt)}` : ''}
+                  </div>
+                </div>
+                <InvoiceFileButtons
+                  number={open.invoiceNumber}
+                  file={{ documentId: open.file.documentId, fileName: open.file.fileName, sizeBytes: open.file.sizeBytes, uploadedAt: open.file.uploadedAt, uploadedBy: null, version: 1, mimeType: 'application/pdf', versionCount: 1, versions: [] }}
+                />
+              </div>
+            )}
             {open.items.length > 0 && (
               <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-xs">
@@ -212,7 +227,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
                 <p className="text-slate-700 whitespace-pre-line">{open.terms}</p>
               </div>
             )}
-            <p className="text-[11px] text-slate-400">View only. Payment status is updated by Sales or Accounts once a payment is verified.</p>
+            <p className="text-[11px] text-slate-400">View only. Invoices are uploaded and managed by Accounts; payment status is updated once a payment is verified.</p>
           </div>
         </Modal>
       )}

@@ -129,7 +129,8 @@ export function mapDocument(r: any): CustomerDocument {
     sizeBytes: num(r.size_bytes),
     uploadedBy: r.uploader ? { id: r.uploader.id, fullName: r.uploader.full_name } : null,
     uploadedAt: r.uploaded_at,
-    createdAt: r.created_at
+    createdAt: r.created_at,
+    invoiceId: r.invoice_id ?? null
   };
 }
 
@@ -143,7 +144,7 @@ function leadPayload(input: Partial<LeadCreateInput> & { activityNote?: string |
 }
 
 const DOCUMENT_COLUMNS = `id, customer_id, document_type, version, status, original_file_name, mime_type, size_bytes,
-  uploaded_at, created_at, uploader:profiles!customer_documents_uploaded_by_fkey(id, full_name)`;
+  invoice_id, uploaded_at, created_at, uploader:profiles!customer_documents_uploaded_by_fkey(id, full_name)`;
 
 /** Data access for the sales pipeline. All queries run as the caller (RLS). */
 export class PipelineRepository {
@@ -482,6 +483,34 @@ export class PipelineRepository {
     ) as any;
   }
 
+  async beginInvoiceUpload(b: {
+    customerId: string; invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; amount?: number | null;
+    reference?: string | null; note?: string | null; fileName: string; mimeType: string; sizeBytes: number;
+  }) {
+    return unwrap(
+      await this.db.rpc('begin_invoice_upload', {
+        p_customer: b.customerId,
+        p_invoice_number: b.invoiceNumber,
+        p_issue_date: b.issueDate ?? null,
+        p_due_date: b.dueDate ?? null,
+        p_amount: b.amount ?? null,
+        p_reference: b.reference ?? null,
+        p_note: b.note ?? null,
+        p_file_name: b.fileName,
+        p_mime: b.mimeType,
+        p_size: b.sizeBytes
+      })
+    ) as any;
+  }
+
+  async beginInvoiceReplacement(invoiceId: string, fileName: string, mime: string, size: number) {
+    return unwrap(await this.db.rpc('begin_invoice_replacement', { p_invoice: invoiceId, p_file_name: fileName, p_mime: mime, p_size: size })) as any;
+  }
+
+  async invoiceDetail(invoiceId: string) {
+    return unwrap(await this.db.rpc('invoice_detail', { p_invoice: invoiceId }));
+  }
+
   async completeUpload(documentId: string, size: number) {
     return unwrap(await this.db.rpc('complete_document_upload', { p_document: documentId, p_size: size })) as any;
   }
@@ -492,11 +521,11 @@ export class PipelineRepository {
 
   async pendingDocument(
     documentId: string
-  ): Promise<{ id: string; storage_bucket: string; storage_path: string; document_type: string; status: string; mime_type: string } | null> {
+  ): Promise<{ id: string; storage_bucket: string; storage_path: string; document_type: string; status: string; mime_type: string; invoice_id: string | null } | null> {
     const row = unwrap(
       await this.db
         .from('customer_documents')
-        .select('id, storage_bucket, storage_path, document_type, status, mime_type')
+        .select('id, storage_bucket, storage_path, document_type, status, mime_type, invoice_id')
         .eq('id', documentId)
         .maybeSingle()
     ) as any;

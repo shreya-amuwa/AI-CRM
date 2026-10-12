@@ -537,8 +537,12 @@ select test.must_fail($$select save_onboarding_entry((select id from pipeline wh
   'Sales cannot fill the Invoice item by hand', 'issued by the Accounts department');
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'big.pdf', 'application/pdf', 512001)$$,
   'any other document over 500 KB is refused', '500 KB');
-select test.check((select max_size_bytes = 20480 from document_types where code = 'INVOICE')
-                  and (select bool_and(max_size_bytes = 512000) from document_types where code <> 'INVOICE'), 'limits: invoice 20 KB, every other document 500 KB');
+select test.check((select bool_and(max_size_bytes = 512000) from document_types), 'limits: every document type, invoices included, is 500 KB');
+do $$ begin
+  perform set_config('role', 'postgres', true);
+  if not (select file_size_limit = 512000 from storage.buckets where id = 'customer-documents') then raise exception 'TEST FAILED: the storage bucket must enforce 500 KB'; end if;
+end $$;
+select test.check(true, 'the storage bucket itself enforces the same 500 KB');
 insert into docs select 'A_inv1', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc-oct.pdf', 'application/pdf', 1200);
 select test.check((select path = format('customers/%s/onboarding/%s.pdf', (select id from pipeline where name = 'A'), id) from docs where name = 'A_inv1'),
   'storage path = customers/<customer_id>/<folder>/<document_id>.pdf (no PII)');
@@ -887,6 +891,150 @@ select test.check((select count(*) = 1 from notifications where type = 'ONBOARDI
 -- 2 single verifications: one add-on item (Add-ons Services test above) and the one verified here.
 select test.check((select count(*) = 2 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
                    and (select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEMS_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
+
+\echo '--- 13b2. Uploaded invoice PDFs (Accounts uploads; everyone who may see the customer reads)'
+create temp table invd (name text primary key, id uuid, doc uuid);
+grant all on invd to authenticated;
+reset role;
+select test.check((select count(*) = 0 from member_invoices where kind = 'UPLOADED'), 'no uploaded invoice yet');
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'Sales cannot upload an invoice PDF', 'Only the Accounts department');
+select test.login('tm_c');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'another department cannot upload an invoice PDF', 'Only the Accounts department');
+select test.login('tm_b');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'the Technical Consultant cannot upload an invoice PDF', 'Only the Accounts department');
+select test.login('acc_m');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.png', 'image/png', 1000)$$,
+  'only PDF is accepted', 'Only PDF');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 512001)$$,
+  'a PDF over 500 KB is refused', 'exceeds the 500 KB limit');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 0)$$,
+  'an empty file is refused', 'empty');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), '   ', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'the invoice number is required', 'Enter the invoice number');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), '../etc/passwd', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'an unsafe invoice number is refused', 'invoice number can use');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', '2026-13-45', null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'dates are validated', 'valid dates');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', '2026-10-10', '2026-10-01', null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'due date cannot precede the issue date', 'due date');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, 10.555, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'the total has at most 2 decimals', '2 decimals');
+select test.must_fail($$select begin_invoice_upload(gen_random_uuid(), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
+  'an unknown customer is refused (nothing is created for it)', 'Customer not found');
+select test.check((select count(*) = 0 from customer_documents where document_type = 'INVOICE' and invoice_meta is not null) and (select count(*) = 0 from member_invoices where kind = 'UPLOADED'),
+  'refused uploads left no file row and no invoice record');
+-- a PDF of exactly 500 KB is accepted; the invoice record appears only when the file is stored
+insert into invd select 'U1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', '2026-10-05', '2026-10-20', 41300, 'PO-8812', 'Diwali pack',
+  'Galaxy Jewellers Oct.pdf', 'application/pdf', 512000);
+select test.check((select status = 'PENDING' and size_bytes = 512000 and path_ok from (select d.*, d.storage_path = format('customers/%s/invoices/%s.pdf', d.customer_id, d.id) as path_ok
+                     from customer_documents d where id = (select doc from invd where name = 'U1')) x),
+  'exactly 500 KB is accepted; the storage path uses ids only');
+select test.check((select count(*) = 0 from member_invoices where kind = 'UPLOADED'), 'no invoice record until the file is stored');
+select test.must_fail($$select complete_document_upload((select doc from invd where name = 'U1'), 512001)$$, 'the stored size is checked again on completion', 'exceeds the 500 KB limit');
+select test.login('tm_a');
+select test.must_fail($$select complete_document_upload((select doc from invd where name = 'U1'), 512000)$$, 'Sales cannot finish an Accounts upload', 'Document not found');
+select test.login('acc_m');
+select complete_document_upload((select doc from invd where name = 'U1'), 512000);
+update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'U1';
+select test.check((select i.kind = 'UPLOADED' and i.invoice_number = 'GST/26-27/001' and i.customer_id = (select id from pipeline where name = 'A')
+                     and i.status = 'Pending' and i.amount = 41300 and i.issue_date = '2026-10-05' and i.due_date = '2026-10-20'
+                     and i.details ->> 'reference' = 'PO-8812' and i.details ->> 'note' = 'Diwali pack'
+                     from member_invoices i where i.id = (select id from invd where name = 'U1')),
+  'the invoice record keeps the number exactly, the customer, total, dates, reference and note');
+select test.check((select d.status = 'UPLOADED' and d.version >= 1 and d.original_file_name = 'Galaxy Jewellers Oct.pdf' and d.size_bytes = 512000
+                          and d.uploaded_by = test.id('acc_m') and d.uploaded_at is not null and d.invoice_id = (select id from invd where name = 'U1') and d.invoice_meta is null
+                     from customer_documents d where d.id = (select doc from invd where name = 'U1')),
+  'the file metadata: original name, size, uploader and time, linked to the invoice');
+-- the same number cannot be used twice (any case), even by two uploads started together
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'gst/26-27/001', null, null, null, null, null, 'x.pdf', 'application/pdf', 1000)$$,
+  'a duplicate invoice number is refused (case-insensitive)', 'already exists');
+insert into invd select 'R1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/002', null, null, null, null, null, 'two-a.pdf', 'application/pdf', 1200);
+insert into invd select 'R2', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/002', null, null, null, null, null, 'two-b.pdf', 'application/pdf', 1300);
+select complete_document_upload((select doc from invd where name = 'R1'), 1200);
+select test.must_fail($$select complete_document_upload((select doc from invd where name = 'R2'), 1300)$$, 'two uploads started together cannot both create the same invoice number', 'already exists');
+select test.check((select count(*) = 1 from member_invoices where lower(invoice_number) = 'gst/26-27/002'), 'exactly one invoice record for that number');
+select test.check((select fail_document_upload((select doc from invd where name = 'R2')) like 'customers/%/invoices/%.pdf'), 'a failed upload returns its object path so the API can remove it');
+reset role;
+select test.check((select status = 'FAILED' and invoice_meta is null and invoice_id is null from customer_documents where id = (select doc from invd where name = 'R2')),
+  'the failed upload is marked FAILED and keeps no invoice details');
+set role authenticated;
+select test.login('acc_m');
+insert into invd select 'F1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/003', null, null, null, null, null, 'three.pdf', 'application/pdf', 900);
+select fail_document_upload((select doc from invd where name = 'F1'));
+select test.check((select count(*) = 0 from member_invoices where invoice_number = 'GST/26-27/003'), 'an abandoned upload leaves no invoice record (the number can be used again)');
+update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'R1';
+
+-- every employee who may see the customer reads the same invoice; others cannot
+select test.login('tm_a');
+select test.check((select count(*) = 2 and bool_and(data ->> 'kind' = 'UPLOADED') and bool_and(data -> 'file' ->> 'fileName' is not null)
+                     from (select jsonb_array_elements(customer_invoices((select id from pipeline where name = 'A'))) data) x
+                    where data ->> 'kind' = 'UPLOADED'), 'Sales sees the uploaded invoices of its customer with their file details');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')), 'the Sales owner can open the PDF');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'DOWNLOAD')), 'and download it');
+select test.login('th_wab');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')), 'the team head can open it');
+select test.login('dh_wab');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'DOWNLOAD')), 'the department head can download it');
+select test.login('tm_b');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')), 'the Technical Consultant can open it');
+select test.login('sa');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')), 'the Super Admin can open it');
+select test.login('tm_c');
+select test.must_fail($$select * from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')$$, 'an employee with no access to the customer cannot open it', 'Document not found');
+select test.check((select count(*) = 0 from customer_documents where invoice_id is not null), 'and cannot even list its metadata');
+select test.must_fail($$select customer_invoices((select id from pipeline where name = 'A'))$$, 'nor list its invoices', 'Customer not found');
+select test.check((select count(*) = 0 from member_invoices where kind = 'UPLOADED'), 'nor read the invoice rows');
+select test.login('dh_wbx');
+select test.must_fail($$select * from authorize_document_access((select doc from invd where name = 'U1'), 'DOWNLOAD')$$, 'a department head of another department cannot download it', 'Document not found');
+
+-- only Accounts replaces or edits; the previous file stays as an older version
+select test.login('tm_a');
+select test.must_fail($$select begin_invoice_replacement((select id from invd where name = 'U1'), 'new.pdf', 'application/pdf', 1000)$$, 'Sales cannot replace an invoice PDF', 'Only the Accounts department');
+select test.must_fail($$select accounts_update_uploaded_invoice((select id from invd where name = 'U1'), null, null, 1, null, null)$$, 'Sales cannot edit an invoice', 'Only the Accounts department');
+select test.must_fail($$update member_invoices set invoice_number = 'X' where kind = 'UPLOADED'$$, 'nor change it directly', 'permission denied');
+select test.must_fail($$select delete_customer_document((select doc from invd where name = 'U1'))$$, 'nor delete it', 'Invoices are kept by the Accounts department');
+select test.login('acc_m');
+select test.must_fail($$select begin_invoice_replacement((select id from invd where name = 'U1'), 'new.pdf', 'application/pdf', 512001)$$, 'a replacement over 500 KB is refused', 'exceeds the 500 KB limit');
+select test.must_fail($$select begin_invoice_replacement((select id from invd where name = 'U1'), 'new.jpg', 'image/jpeg', 1000)$$, 'a replacement must be a PDF', 'Only PDF');
+select test.must_fail($$select begin_invoice_replacement((select (data ->> 'id')::uuid from inv where name = 'A1'), 'new.pdf', 'application/pdf', 1000)$$, 'a generated invoice has no PDF to replace', 'Only an uploaded invoice');
+select test.check((select status = 'UPLOADED' from customer_documents where id = (select doc from invd where name = 'U1')), 'a refused replacement keeps the current file');
+insert into invd select 'U1b', null, id from begin_invoice_replacement((select id from invd where name = 'U1'), 'Galaxy Jewellers Oct v2.pdf', 'application/pdf', 20000);
+select test.check((select status = 'UPLOADED' from customer_documents where id = (select doc from invd where name = 'U1')), 'the current file stays available while the replacement uploads');
+select complete_document_upload((select doc from invd where name = 'U1b'), 20000);
+select test.check((select (select status from customer_documents where id = (select doc from invd where name = 'U1')) = 'SUPERSEDED'
+                      and (select status from customer_documents where id = (select doc from invd where name = 'U1b')) = 'UPLOADED'
+                      and (select invoice_id from customer_documents where id = (select doc from invd where name = 'U1b')) = (select id from invd where name = 'U1')),
+  'the replacement is current, linked to the same invoice; the old file is kept as an older version');
+select test.check((select count(*) = 1 from member_invoices where lower(invoice_number) = 'gst/26-27/001'), 'replacing does not create a second invoice');
+select test.check((select (d -> 'file' ->> 'fileName') = 'Galaxy Jewellers Oct v2.pdf' and (d -> 'file' ->> 'versionCount')::int = 2
+                          and jsonb_array_length(d -> 'file' -> 'versions') = 1 and d -> 'file' -> 'versions' -> 0 ->> 'fileName' = 'Galaxy Jewellers Oct.pdf'
+                     from (select invoice_detail((select id from invd where name = 'U1')) d) x), 'Accounts sees the current file and the older version');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')), 'Accounts can still open the older version');
+select test.login('tm_a');
+select test.check((select d -> 'file' ->> 'fileName' = 'Galaxy Jewellers Oct v2.pdf' and jsonb_array_length(d -> 'file' -> 'versions') = 0
+                     from (select invoice_detail((select id from invd where name = 'U1')) d) x), 'Sales sees the current file only');
+select test.must_fail($$select * from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')$$, 'Sales cannot open an older version', 'Document not found');
+select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1b'), 'DOWNLOAD')), 'Sales opens the current version');
+select test.check((select count(*) = 0 from customer_documents where invoice_id is not null and status <> 'UPLOADED'), 'Sales cannot even list older versions of an invoice PDF');
+select test.login('acc_m');
+select test.check((select (accounts_update_uploaded_invoice((select id from invd where name = 'U1'), '2026-10-06', '2026-10-25', 41300.50, 'PO-8812', 'Updated') ->> 'total')::numeric = 41300.50), 'Accounts edits the total, dates and reference');
+select test.must_fail($$select accounts_update_uploaded_invoice((select (data ->> 'id')::uuid from inv where name = 'A1'), null, null, 1, null, null)$$, 'a generated invoice is not edited here', 'Only an uploaded invoice');
+select test.check((select (accounts_set_invoice_status((select id from invd where name = 'U1'), 'Paid') ->> 'status') = 'Paid'), 'Accounts marks an uploaded invoice paid');
+
+-- the Invoice item of the checklist, progress, audit, notifications
+reset role;
+select test.check((select status = 'SAVED' and document_id is not null from customer_onboarding_entries
+                    where customer_id = (select id from pipeline where name = 'A') and item_code = 'INVOICE'), 'an uploaded invoice fills the Invoice item of the onboarding checklist');
+select test.check((select count(*) = 2 from audit_logs where action = 'INVOICE_UPLOADED' and actor_id = test.id('acc_m'))
+                   and (select count(*) = 1 from audit_logs where action = 'INVOICE_REPLACED' and actor_id = test.id('acc_m') and metadata ->> 'number' = 'GST/26-27/001'),
+  'uploads and the replacement are audited with the actor, invoice number and file');
+select test.check((select count(*) >= 3 from notifications where type = 'INVOICE_UPLOADED' and recipient_id = test.id('tm_a')), 'the salesperson is notified of uploaded invoices');
+select test.check((select count(*) >= 2 from audit_logs where action = 'DOCUMENT_VIEWED' and metadata ->> 'invoice_id' is not null), 'viewing an invoice PDF is audited');
 
 \echo '--- 13c. Onboarding automations'
 select test.login('tm_b');

@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import type {
   OnboardingFilter,
-  PaymentOverview,
   OnboardingStage,
   Paginated,
   PipelineCounts,
@@ -27,7 +26,7 @@ import {
   ActivityCard
 } from './LeadForms';
 import { PaymentDialog } from './PotentialView';
-import { MoneyTiles, PaymentHistory, PaymentStatusBadge } from '../../payments/PaymentBits';
+import { PaymentStatusBadge } from '../../payments/PaymentBits';
 import { getStartedBlockers } from '../../../../shared/contracts';
 import { HandoverBanner } from '../../support/consultant/HandoverPanel';
 import { ADDON_STATUS_LABEL, AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
@@ -298,7 +297,6 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const [confirmSend, setConfirmSend] = useState(false);
   const [editingHandover, setEditingHandover] = useState(false);
   const [paying, setPaying] = useState(false);
-  const [overview, setOverview] = useState<PaymentOverview | null>(null);
 
   const load = useCallback(() => {
     pipelineApi.get(id).then(
@@ -308,9 +306,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
       },
       e => setError(errorMessage(e))
     );
-    // Payments live in the ledger; Sales reads them (never the Accounts follow-up notes).
-    if (mode === 'sales') pipelineApi.paymentOverview(id).then(setOverview, () => setOverview(null));
-  }, [id, mode]);
+  }, [id]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
 
@@ -587,21 +583,11 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           </Card>
 
           {mode === 'sales' && <GetStartedCard o={c.onboarding} />}
-          {mode === 'sales' && overview && (
-            <Card className="p-5 space-y-3">
-              <h2 className="text-sm font-bold text-slate-900">Payments</h2>
-              <MoneyTiles deal={overview.dealAmount} verified={overview.verified} pending={overview.pending} balance={overview.balance} />
-              <PaymentHistory payments={overview.payments} />
-              {overview.balance > 0 && overview.verified > 0 && (
-                <p className="text-[11px] text-slate-500">Accounts follows up the remaining balance. Onboarding continues meanwhile.</p>
-              )}
-            </Card>
-          )}
 
           {mode === 'sales' && (
             <Card className="p-5 space-y-3">
               <h2 className="text-sm font-bold text-slate-900">Invoices</h2>
-              <p className="text-[11px] text-slate-500">Issued by the Accounts department. Read-only.</p>
+              <p className="text-[11px] text-slate-500">Uploaded or issued by the Accounts department. Read-only: open or download the PDF.</p>
               <CustomerInvoices customerId={c.id} compact />
             </Card>
           )}

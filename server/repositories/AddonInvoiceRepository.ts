@@ -116,6 +116,18 @@ export class AddonInvoiceRepository {
   async setInvoiceStatus(id: string, status: string): Promise<Invoice> {
     return unwrap(await this.db.rpc('accounts_set_invoice_status', { p_invoice: id, p_status: status })) as Invoice;
   }
+  async updateInvoiceDetails(id: string, d: { issueDate?: string | null; dueDate?: string | null; amount?: number | null; reference?: string | null; note?: string | null }): Promise<Invoice> {
+    return unwrap(
+      await this.db.rpc('accounts_update_uploaded_invoice', {
+        p_invoice: id,
+        p_issue_date: d.issueDate ?? null,
+        p_due_date: d.dueDate ?? null,
+        p_amount: d.amount ?? null,
+        p_reference: d.reference ?? null,
+        p_note: d.note ?? null
+      })
+    ) as Invoice;
+  }
   async invoiceCustomers(search?: string): Promise<InvoiceCustomer[]> {
     return unwrap(await this.db.rpc('accounts_invoice_customers', { p_search: search ?? null })) as InvoiceCustomer[];
   }

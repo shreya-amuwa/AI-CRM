@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, FilePlus2, FileText, Search } from 'lucide-react';
+import { FilePlus2, FileText, Search, UploadCloud } from 'lucide-react';
 import type { Invoice, InvoiceCustomer, InvoiceKind, InvoicePage } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { invoicesApi } from '../../lib/api/endpoints';
@@ -20,10 +20,11 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../team-member/pipeline/shared';
+import { fmtBytes, UploadInvoiceDialog } from '../invoices/invoiceFiles';
 import {
-  downloadInvoice,
   INVOICE_KIND_LABEL,
   InvoiceDetail,
+  InvoiceRowActions,
   InvoiceStatusPill,
   type LineDraft,
   newLine,
@@ -50,6 +51,7 @@ export const AccountsInvoices: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Invoice | null>(null);
   const [creating, setCreating] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -91,11 +93,16 @@ export const AccountsInvoices: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Invoices</h1>
-          <p className="text-sm text-slate-500 mt-1">Invoices for original services and add-ons. Only Accounts creates and manages them; Sales and the consultants see them read-only.</p>
+          <p className="text-sm text-slate-500 mt-1">Upload existing invoice PDFs or issue invoices for original services and add-ons. Only Accounts uploads and manages them; every employee who may see the customer can view and download them.</p>
         </div>
-        <button type="button" className={btn.primary} onClick={() => setCreating(true)}>
-          <FilePlus2 className="w-4 h-4" aria-hidden="true" /> New invoice
-        </button>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <button type="button" className={btn.primary} onClick={() => setUploading(true)}>
+            <UploadCloud className="w-4 h-4" aria-hidden="true" /> Upload Invoice PDF
+          </button>
+          <button type="button" className={btn.secondary} onClick={() => setCreating(true)}>
+            <FilePlus2 className="w-4 h-4" aria-hidden="true" /> New invoice
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-2">
@@ -114,6 +121,7 @@ export const AccountsInvoices: React.FC = () => {
           <option value="">All types</option>
           <option value="SERVICE">Services</option>
           <option value="ADDON">Add-on services</option>
+          <option value="UPLOADED">Uploaded PDFs</option>
           <option value="MANUAL">Earlier invoices</option>
         </select>
         <select aria-label="Payment status" value={status} onChange={e => setStatus(e.target.value as typeof status)} className={selectCls}>
@@ -139,8 +147,8 @@ export const AccountsInvoices: React.FC = () => {
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[60rem]">
+          <div className="relative overflow-x-auto">
+            <table className="w-full text-sm min-w-[64rem]">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100 bg-slate-50/60">
                   <th scope="col" className="px-5 py-3 font-semibold">Invoice</th>
@@ -149,7 +157,8 @@ export const AccountsInvoices: React.FC = () => {
                   <th scope="col" className="px-3 py-3 font-semibold">Due date</th>
                   <th scope="col" className="px-3 py-3 font-semibold text-right">Total</th>
                   <th scope="col" className="px-3 py-3 font-semibold">Status</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Issued by</th>
+                  <th scope="col" className="px-3 py-3 font-semibold">PDF file</th>
+                  <th scope="col" className="px-3 py-3 font-semibold">Uploaded / issued by</th>
                   <th scope="col" className="px-5 py-3 font-semibold text-right">
                     <span className="sr-only">Download</span>
                   </th>
@@ -172,11 +181,26 @@ export const AccountsInvoices: React.FC = () => {
                     <td className="px-3 py-3.5">
                       <InvoiceStatusPill invoice={i} />
                     </td>
-                    <td className="px-3 py-3.5 text-xs text-slate-600">{i.issuedBy || '-'}</td>
-                    <td className="px-5 py-3.5 text-right">
-                      <button type="button" className={btn.secondary} onClick={() => downloadInvoice(i)} aria-label={`Download ${i.number}`}>
-                        <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
-                      </button>
+                    <td className="px-3 py-3.5 text-xs text-slate-600 max-w-[14rem]">
+                      {i.file ? (
+                        <>
+                          <div className="font-semibold text-slate-800 truncate" title={i.file.fileName}>
+                            {i.file.fileName}
+                          </div>
+                          <div className="text-[11px] text-slate-500">{fmtBytes(i.file.sizeBytes)}</div>
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className="px-3 py-3.5 text-xs text-slate-600">
+                      <div>{i.issuedBy || '-'}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {new Date(i.file?.uploadedAt || i.issuedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                      <InvoiceRowActions invoice={i} />
                     </td>
                   </tr>
                 ))}
@@ -190,6 +214,12 @@ export const AccountsInvoices: React.FC = () => {
       {open && (
         <InvoiceDetail
           invoice={open}
+          canManage
+          onChanged={inv => {
+            setOpen(inv);
+            notifyPipelineChanged();
+            load();
+          }}
           onClose={() => {
             setOpen(null);
             setActionError(null);
@@ -210,6 +240,18 @@ export const AccountsInvoices: React.FC = () => {
               )}
             </>
           }
+        />
+      )}
+      {uploading && (
+        <UploadInvoiceDialog
+          onClose={() => setUploading(false)}
+          onUploaded={inv => {
+            setUploading(false);
+            setNotice(`Invoice ${inv.number} was uploaded for ${inv.customer}. Everyone who may see this customer can now open it.`);
+            notifyPipelineChanged();
+            load();
+            setOpen(inv);
+          }}
         />
       )}
       {creating && (

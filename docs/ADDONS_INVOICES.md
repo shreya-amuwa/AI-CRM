@@ -85,6 +85,8 @@ The onboarding "Invoice" item is filled by the services invoice Accounts issues.
 | POST | `/accounts/addon-requests/:id/payments`, `/accounts/addon-payments/:id/decision` | Accounts |
 | POST | `/accounts/addon-requests/:id/confirm-payment` | Accounts |
 | GET / POST / PATCH | `/accounts/invoices`, `/accounts/invoices/:id`, `/accounts/invoice-customers` | Accounts |
+| POST | `/accounts/invoice-uploads`, `/accounts/invoices/:id/replace`, `/accounts/invoice-uploads/:documentId/complete`, `/accounts/invoices/:id/details` | Accounts (invoice PDFs) |
+| GET | `/invoices/:id` | anyone who may see the customer |
 
 ## Notifications (from saved state changes)
 
@@ -97,3 +99,41 @@ salesperson. The existing notifications for the initial payment and the hand-ove
 Add-ons chosen with the old unpriced picker become DRAFT requests at price 0 with a note asking the
 TC to enter the agreed prices; nothing is approved, invoiced or paid automatically. Invoice PDFs Sales
 uploaded earlier stay where they were and still count for the Invoice item.
+
+## Upload Invoice PDF (Accounts)
+
+Migration: `supabase/migrations/20261015000200_invoice_pdf_uploads.sql` (re-runnable). It reuses the
+existing pieces; there is no new storage system and no second invoice table.
+
+- **Where:** Accounts dashboard > Invoices > **Upload Invoice PDF**. Accounts picks the customer (or the
+  customer is preset), types the invoice number (required, kept exactly as typed, unique case-insensitively),
+  and optionally the dates, total, a payment / order / service reference and a note, then chooses the PDF.
+  Nothing is generated and the PDF is never modified. The "New invoice" (generated) flow is unchanged.
+- **Model:** the invoice record is a `member_invoices` row of kind `UPLOADED`; its file is a
+  `customer_documents` row (type `INVOICE`) linked by `invoice_id`, in the existing private
+  `customer-documents` bucket at `customers/<customer_id>/invoices/<document_id>.pdf` (ids only).
+  One current file per invoice (a customer can have several invoices); earlier versions stay as `SUPERSEDED`.
+- **Flow:** `POST /accounts/invoice-uploads` (validates and returns a single-use signed path) ->
+  the browser uploads to that path -> `POST /accounts/invoice-uploads/:documentId/complete` (the API checks the
+  stored object exists and starts with `%PDF-`, the database checks the size again, then creates the
+  invoice record). A failed or abandoned upload creates no invoice and its object is removed.
+- **500 KB (512,000 bytes), one limit everywhere:** `INVOICE_PDF_MAX_BYTES` (browser and API schema),
+  `document_types.max_size_bytes` (checked when the upload starts and again on completion) and the bucket's
+  own `file_size_limit` (a larger object is refused by storage even if the request declared less).
+  Over the limit: "File size exceeds the 500 KB limit. Please upload a smaller PDF." Nothing is compressed.
+- **PDF only:** extension, MIME type and the file signature are checked in the browser, the API and the
+  stored object; a renamed image or text file is rejected and nothing is stored.
+- **Who:** only Accounts staff upload, replace or edit (`begin_invoice_upload`, `begin_invoice_replacement`,
+  `accounts_update_uploaded_invoice`). Everyone who may see the customer (Sales owner, team and department
+  heads, the Technical Consultant, support staff of a post-sale customer, Super Admin) can list, preview and
+  download the current PDF; customers they cannot see return "not found". Earlier versions (and their file
+  names) are visible to Accounts only. There is no delete.
+- **Replace:** a confirmation dialog, the same checks, the same invoice and customer; the old file is kept as
+  an earlier version; a failed replacement leaves the current file untouched.
+- **Where employees see it:** Sales > Invoices and the onboarding "Invoice" item, the Technical Consultant's
+  document row, the Support Invoices page, and `GET /invoices`, `GET /invoices/:id`,
+  `GET /pipeline/customers/:id/invoices`. Preview opens a 120-second signed URL; download keeps the original
+  file name; each view / download is audited. Storage paths are never returned.
+- **Audit and notifications:** `INVOICE_UPLOADED`, `INVOICE_REPLACED`, `INVOICE_UPDATED`; the customer's
+  salesperson is notified of an uploaded or replaced PDF.
+- The Sales onboarding page no longer has a Payments section; payments stay in Part payments and with Accounts.

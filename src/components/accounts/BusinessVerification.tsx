@@ -144,7 +144,7 @@ export const BusinessVerification: React.FC<{ onCountsChanged?: () => void }> = 
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full text-sm min-w-[72rem]">
               <thead>
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100 bg-slate-50/60">
