@@ -58,7 +58,9 @@ tokens.set('sa', tokenFor(sa.id));
 
 let r = await api(null, 'GET', '/me');
 check(r.status === 401 && r.json.error.code === 'UNAUTHENTICATED', 'missing token → 401 envelope', r);
-tokens.set('forged', sign({ sub: sa.id, role: 'authenticated' }).replace(/.$/, 'x'));
+// change the FIRST character of the signature: the last base64url character carries spare bits, so changing it
+// sometimes decodes to the same signature (and "replacing" it with the character it already is changes nothing)
+tokens.set('forged', sign({ sub: sa.id, role: 'authenticated' }).replace(/\.([A-Za-z0-9_-])([^.]*)$/, (_m, c, rest) => `.${c === 'A' ? 'B' : 'A'}${rest}`));
 r = await api('forged', 'GET', '/me');
 check(r.status === 401, 'tampered token rejected');
 
@@ -795,8 +797,6 @@ r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ sizeBytes: M
 check(r.status === 422 && /500 KB limit/.test(r.json.error.message), 'a file over 500 KB is refused with the size message', r);
 r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ sizeBytes: 0 }));
 check(r.status === 422, 'an empty file is refused', r);
-r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: '  ' }));
-check(r.status === 422, 'the invoice number is required', r);
 r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: '../../etc/passwd' }));
 check(r.status === 422, 'an unsafe invoice number is refused', r);
 r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ customerId: crypto.randomUUID() }));
@@ -833,6 +833,14 @@ check(up.status !== 200, 'storage refuses an object over 500 KB even when the re
 r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkBig.document.id}/complete`);
 check(r.status === 422 && /did not finish/.test(r.json.error.message), 'completing it fails', r);
 check((await countInvoices('OVERSIZE-1')) === 0, 'no invoice record is left behind');
+// the accountant only chooses the PDF: a blank invoice number is numbered by the system, a blank issue date is today
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: '  ' }));
+check(r.status === 201, 'a blank invoice number is accepted', r);
+const tkBlank = r.json.data;
+const blankMeta = (await db.query(`select invoice_meta ->> 'number' n, invoice_meta ->> 'issueDate' d from public.customer_documents where id = $1`, [tkBlank.document.id])).rows[0];
+check(/^INV-\d{4}-\d{5}$/.test(blankMeta.n) && /^\d{4}-\d{2}-\d{2}$/.test(blankMeta.d), `the system numbers it (${blankMeta.n}) and dates it`);
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkBlank.document.id}/complete`);
+check(r.status === 422, 'an upload that never finished is discarded', r);
 keys = await listKeys();
 check(!keys.some(k => k.includes(tkBig.document.id)), 'and no orphan file');
 // a renamed non-PDF is stopped by its content

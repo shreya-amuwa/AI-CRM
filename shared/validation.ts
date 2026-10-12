@@ -614,12 +614,14 @@ const invoicePdfFields = {
     .positive('This file is empty.')
     .max(INVOICE_PDF_MAX_BYTES, `File size exceeds the ${INVOICE_PDF_MAX_LABEL} limit. Please upload a smaller PDF.`)
 };
+/** Optional: the accountant only chooses the PDF, a blank number is numbered by the database. */
 const invoiceNumber = z
   .string()
   .trim()
-  .min(1, 'Enter the invoice number.')
   .max(60, 'The invoice number is too long.')
-  .regex(/^[A-Za-z0-9][A-Za-z0-9 ./#_-]*$/, 'The invoice number can use letters, numbers, spaces and - / . # _');
+  .regex(/^([A-Za-z0-9][A-Za-z0-9 ./#_-]*)?$/, 'The invoice number can use letters, numbers, spaces and - / . # _')
+  .optional()
+  .nullable();
 export const invoiceUploadSchema = z
   .object({
     customerId: uuidSchema,

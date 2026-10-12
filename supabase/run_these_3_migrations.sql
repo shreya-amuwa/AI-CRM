@@ -1870,11 +1870,26 @@ grant execute on function public.invoice_detail(uuid) to authenticated;
 drop function if exists public.accounts_create_invoice(uuid, jsonb, date, date, text);
 drop function if exists public.accounts_generate_addon_invoice(uuid, date, date);
 drop function if exists private.invoice_fills_checklist(public.member_invoices);
-drop function if exists private.next_invoice_number();
 
 -- ---------------------------------------------------------------------------
--- 2. The checks every uploaded invoice goes through (number, dates, total, reference, note)
+-- 2. The checks every uploaded invoice goes through (number, dates, total, reference, note).
+--    The accountant only chooses the PDF: a blank number is numbered by the system (INV-YYYY-#####,
+--    never reused) and a blank issue date is today. A typed number is still accepted and kept as typed.
 -- ---------------------------------------------------------------------------
+create sequence if not exists public.invoice_number_seq;
+create or replace function private.next_invoice_number()
+returns text language plpgsql security definer set search_path = '' as $$
+declare
+  v text;
+begin
+  loop
+    v := 'INV-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('public.invoice_number_seq')::text, 5, '0');
+    exit when not exists (select 1 from public.member_invoices where lower(invoice_number) = lower(v));
+  end loop;
+  return v;
+end $$;
+revoke all on function private.next_invoice_number() from public, anon, authenticated;
+
 create or replace function private.invoice_upload_meta(
   p_number text, p_issue_date text, p_due_date text, p_amount numeric, p_reference text, p_note text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -1883,7 +1898,7 @@ declare
   v_issue date; v_due date;
 begin
   if v_no = '' then
-    raise exception 'VALIDATION_ERROR: Enter the invoice number.' using errcode = 'P0001';
+    v_no := private.next_invoice_number();
   end if;
   if v_no !~ '^[A-Za-z0-9][A-Za-z0-9 ./#_-]{0,59}$' then
     raise exception 'VALIDATION_ERROR: The invoice number can use letters, numbers, spaces and - / . # _ (up to 60 characters).' using errcode = 'P0001';
@@ -1894,6 +1909,7 @@ begin
   begin
     v_issue := nullif(btrim(coalesce(p_issue_date, '')), '')::date;
     v_due := nullif(btrim(coalesce(p_due_date, '')), '')::date;
+    v_issue := coalesce(v_issue, (now() at time zone 'Asia/Kolkata')::date);
   exception when others then
     raise exception 'VALIDATION_ERROR: Enter valid dates.' using errcode = 'P0001';
   end;
@@ -2122,6 +2138,7 @@ begin
   begin
     v_issue := nullif(btrim(coalesce(p_issue_date, '')), '')::date;
     v_due := nullif(btrim(coalesce(p_due_date, '')), '')::date;
+    v_issue := coalesce(v_issue, (now() at time zone 'Asia/Kolkata')::date);
   exception when others then
     raise exception 'VALIDATION_ERROR: Enter valid dates.' using errcode = 'P0001';
   end;
@@ -2147,4 +2164,3 @@ begin
 end $$;
 revoke all on function public.accounts_update_uploaded_invoice(uuid, text, text, numeric, text, text) from public, anon;
 grant execute on function public.accounts_update_uploaded_invoice(uuid, text, text, numeric, text, text) to authenticated;
-

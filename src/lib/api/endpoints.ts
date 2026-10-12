@@ -237,7 +237,7 @@ export const addonsApi = {
     api.post<AddonRequest>(`/accounts/addon-requests/${id}/decision`, body),
   /** The invoice of an approved request is uploaded by Accounts: begin -> upload -> invoicesApi.completeUpload. */
   beginInvoiceUpload: (id: string, body: {
-    invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; reference?: string | null; note?: string | null;
+    invoiceNumber?: string | null; issueDate?: string | null; dueDate?: string | null; reference?: string | null; note?: string | null;
     fileName: string; mimeType: 'application/pdf'; sizeBytes: number;
   }) => api.post<DocumentUploadTicket>(`/accounts/addon-requests/${id}/invoice-upload`, body),
   recordPayment: (id: string, body: { amount: number; method: PaymentMethod; reference?: string | null; paidAt?: string | null; note?: string | null; verify?: boolean }) =>
@@ -261,7 +261,7 @@ export const invoicesApi = {
   get: (id: string) => api.get<Invoice>(`/invoices/${id}`),
   // Existing invoice PDFs (Accounts only): begin -> upload to the signed path -> complete
   beginUpload: (body: {
-    customerId: string; invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; amount?: number | null;
+    customerId: string; invoiceNumber?: string | null; issueDate?: string | null; dueDate?: string | null; amount?: number | null;
     reference?: string | null; note?: string | null; fileName: string; mimeType: 'application/pdf'; sizeBytes: number;
   }) => api.post<DocumentUploadTicket>('/accounts/invoice-uploads', body),
   beginReplacement: (id: string, body: { fileName: string; mimeType: 'application/pdf'; sizeBytes: number }) =>

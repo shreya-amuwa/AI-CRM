@@ -60,7 +60,7 @@ request cannot be approved or invoiced twice and a payment cannot exceed the inv
 
 | Role | Invoices |
 | --- | --- |
-| Accounts staff | Upload invoice PDFs (any customer they handle; the add-on invoice of an approved request), replace, edit details, mark paid / pending (not add-on invoices), view, download |
+| Accounts staff | Upload invoice PDFs (any customer they handle; the add-on invoice of an approved request), replace, mark paid / pending (not add-on invoices), view, download |
 | Sales | Read-only, own customers (list, detail, PDF). Cannot create, edit, upload or delete |
 | Technical Consultant | Read-only for the customers of their department in onboarding |
 | Department / team heads, Support | Read-only where they may already see the customer |
@@ -89,7 +89,7 @@ generated before that stay readable. Older text in this page that says "generate
 | POST | `/accounts/addon-requests/:id/payments`, `/accounts/addon-payments/:id/decision` | Accounts |
 | POST | `/accounts/addon-requests/:id/confirm-payment` | Accounts |
 | GET / POST / PATCH | `/accounts/invoices`, `/accounts/invoices/:id`, `/accounts/invoice-customers` | Accounts |
-| POST | `/accounts/invoice-uploads`, `/accounts/invoices/:id/replace`, `/accounts/invoice-uploads/:documentId/complete`, `/accounts/invoices/:id/details` | Accounts (invoice PDFs) |
+| POST | `/accounts/invoice-uploads`, `/accounts/invoices/:id/replace`, `/accounts/invoice-uploads/:documentId/complete` | Accounts (invoice PDFs) |
 | GET | `/invoices/:id` | anyone who may see the customer |
 
 ## Notifications (from saved state changes)
@@ -110,10 +110,11 @@ Migration: `supabase/migrations/20261015000200_invoice_pdf_uploads.sql` (re-runn
 existing pieces; there is no new storage system and no second invoice table.
 
 - **Where:** Accounts dashboard > Invoices > **Upload Invoice PDF**. Accounts picks the customer (or the
-  customer is preset), types the invoice number (required, kept exactly as typed, unique case-insensitively),
-  and optionally the dates, total, a payment / order / service reference and a note, then chooses the PDF.
-  Nothing is generated and the PDF is never modified. The upload dialog closes only with its own Cancel button
-  (not on a click outside it or Escape), so a chosen file is never lost by accident.
+  customer is preset) and chooses the PDF. That is all: there is no invoice number, date, total, reference or
+  note to fill in. The system numbers the invoice (`INV-YYYY-#####`, never reused), dates it today and keeps the
+  original file name. Nothing is generated and the PDF is never modified. The upload dialog closes only with its
+  own Cancel button (not on a click outside it or Escape), so a chosen file is never lost by accident.
+  (The API still accepts an optional number, dates, total, reference and note for other callers; the screen does not ask.)
 - **Also inside the customer pop-up:** in Accounts > Confirmation and Part Payment, the customer pop-up has an
   **Invoices** section next to the payments, with **Upload Invoice PDF** (the customer is preset) and the
   customer's invoices (preview, download, replace).
@@ -149,8 +150,8 @@ existing pieces; there is no new storage system and no second invoice table.
 ## Add-on invoice upload (after Accounts approves)
 
 When Accounts approves an add-on request, Business Verification shows **Upload the add-on invoice** instead of
-a generate step. The dialog has the customer and the approved total preset (the total cannot be typed); Accounts
-enters the invoice number and optional dates / reference / note and chooses the PDF (PDF only, 500 KB).
+a generate step. The dialog has the customer preset and asks only for the PDF (PDF only, 500 KB); the invoice takes
+the approved total and lines from the request (the total cannot be typed) and is numbered by the system.
 `POST /accounts/addon-requests/:id/invoice-upload` -> browser upload -> `POST /accounts/invoice-uploads/:documentId/complete`.
 The invoice record (kind `UPLOADED`, linked to the request, with the approved lines) is created only when the file is
 stored, the request moves to Invoice Uploaded, and the consultant and the salesperson are notified. One invoice per
