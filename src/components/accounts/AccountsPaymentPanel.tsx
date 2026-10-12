@@ -1,3 +1,4 @@
+import { AccountsCustomerInvoices } from '../invoices/AccountsCustomerInvoices';
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Plus } from 'lucide-react';
 import type { FollowUpOutcome, LedgerPayment, PaymentOverview, PaymentType } from '../../../shared/contracts';
@@ -213,7 +214,9 @@ export const AccountsPaymentPanel: React.FC<{
   onLoaded?: (o: PaymentOverview) => void;
   /** History only: no recording, verifying or editing (e.g. a lead Accounts already returned). */
   readOnly?: boolean;
-}> = ({ customerId, followUps = false, onChanged, onLoaded, readOnly = false }) => {
+  /** Shown in the Upload Invoice PDF dialog. */
+  customerLabel?: string;
+}> = ({ customerId, followUps = false, onChanged, onLoaded, readOnly = false, customerLabel = 'This customer' }) => {
   const { profile } = useAuth();
   const isManager = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'TEAM_HEAD';
   const [overview, setOverview] = useState<PaymentOverview | null>(null);
@@ -310,6 +313,8 @@ export const AccountsPaymentPanel: React.FC<{
           </>
         )}
       />
+
+      <AccountsCustomerInvoices customerId={customerId} customerLabel={customerLabel} canUpload={!readOnly} />
 
       {followUps && !readOnly && (
         <>

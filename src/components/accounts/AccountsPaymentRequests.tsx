@@ -89,7 +89,7 @@ const RequestDetail: React.FC<{
           )}
         </div>
 
-        <AccountsPaymentPanel customerId={item.id} readOnly={item.status === 'RETURNED'} onLoaded={setOverview} onChanged={onChanged} />
+        <AccountsPaymentPanel customerId={item.id} customerLabel={item.company || item.name} readOnly={item.status === 'RETURNED'} onLoaded={setOverview} onChanged={onChanged} />
 
         {item.resolvedAt && (
           <p className={`text-xs rounded-xl px-3 py-2 border ${item.status === 'CONFIRMED' ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-rose-800 bg-rose-50 border-rose-200'}`}>

@@ -102,7 +102,7 @@ const Detail: React.FC<{ item: PartPaymentItem; mode: 'sales' | 'accounts'; onCh
         <dd className="font-semibold text-slate-900">{item.verifiedBy ?? '-'}</dd>
       </div>
     </dl>
-    {mode === 'accounts' ? <AccountsPaymentPanel customerId={item.id} followUps readOnly={item.stage === 'LEAD' || item.stage === 'LOST'} onChanged={onChanged} onLoaded={setLive} /> : <SalesPaymentSummary customerId={item.id} />}
+    {mode === 'accounts' ? <AccountsPaymentPanel customerId={item.id} customerLabel={item.company || item.name} followUps readOnly={item.stage === 'LEAD' || item.stage === 'LOST'} onChanged={onChanged} onLoaded={setLive} /> : <SalesPaymentSummary customerId={item.id} />}
   </div>
   );
 };
