@@ -593,34 +593,33 @@ select test.check((select jsonb_array_length(customer_onboarding_checklist((sele
   'checklist = 2 basics + 5 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
 select test.check((select items_total = 13 and items_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'the uploaded mandatory document counts as a saved checklist item; the invoice is still missing');
--- The Invoice item is filled by an invoice Accounts issues (Sales cannot create invoices).
+-- The Invoice item is filled by the invoice PDF Accounts uploads (Sales cannot create invoices).
 select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount, customer_id) values ('INV-SALES', 'Ankit Shah', 1, (select id from pipeline where name = 'A'))$$,
   'Sales cannot create an invoice directly', 'permission denied');
-select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":30000}]'::jsonb)$$,
-  'Sales cannot issue an invoice', 'Only the Accounts department');
+select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'INV-SALES', null, null, null, null, null, 'x.pdf', 'application/pdf', 1000)$$,
+  'Sales cannot upload an invoice', 'Only the Accounts department');
 select test.login('acc_m');
-select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[]'::jsonb)$$, 'an invoice needs a line', 'at least one service');
-select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":100,"discount":200}]'::jsonb)$$, 'discount cannot exceed the line', 'discount');
-select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":100}]'::jsonb, current_date, current_date - 1)$$, 'due date after the invoice date', 'due date');
+-- invoices are never generated: the generating functions no longer exist
+select test.must_fail($$select accounts_create_invoice((select id from pipeline where name = 'A'), '[{"name":"Meta Ads","quantity":1,"unitPrice":30000}]'::jsonb)$$, 'a services invoice cannot be generated', 'does not exist');
+select test.must_fail($$select accounts_generate_addon_invoice(gen_random_uuid())$$, 'an add-on invoice cannot be generated', 'does not exist');
 create temp table inv (name text primary key, data jsonb);
 grant all on inv to authenticated;
-insert into inv select 'A1', accounts_create_invoice((select id from pipeline where name = 'A'),
-  '[{"serviceCode":"META_ADS_MANAGEMENT","quantity":1,"unitPrice":20000,"discount":1000,"taxPercent":18},{"name":"Gold rate creatives","quantity":2,"unitPrice":5000}]'::jsonb,
-  current_date, current_date + 7, 'October');
-select test.check((select (data ->> 'subtotal')::numeric = 30000 and (data ->> 'discount')::numeric = 1000 and (data ->> 'tax')::numeric = 3420
-                     and (data ->> 'total')::numeric = 32420 and data ->> 'number' like 'INV-____-_____' and data ->> 'kind' = 'SERVICE' and data ->> 'status' = 'Pending'
-                     and jsonb_array_length(data -> 'items') = 2 and data -> 'items' -> 0 ->> 'name' = 'Meta Ads Management' from inv where name = 'A1'),
-  'Accounts issues an invoice: numbered, totals with discount and tax computed by the database');
-select test.must_fail($$select accounts_set_invoice_status((select (data ->> 'id')::uuid from inv where name = 'A1'), 'Lost')$$, 'invoice status validated', 'paid or pending');
+create temp table invd (name text primary key, id uuid, doc uuid);
+grant all on invd to authenticated;
+insert into invd select 'A1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'INV/A/0001', current_date::text, (current_date + 7)::text, 32420, 'Order 7', 'October',
+  'Galaxy Oct.pdf', 'application/pdf', 20000);
+select complete_document_upload((select doc from invd where name = 'A1'), 20000);
+update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'A1';
+select test.must_fail($$select accounts_set_invoice_status((select id from invd where name = 'A1'), 'Lost')$$, 'invoice status validated', 'paid or pending');
 select test.login('tm_a');
-select test.check((select count(*) = 1 and bool_and(kind = 'SERVICE' and amount = 32420) from member_invoices where customer_id = (select id from pipeline where name = 'A')),
-  'Sales sees the invoice Accounts issued for its customer (read-only)');
+select test.check((select count(*) = 1 and bool_and(kind = 'UPLOADED' and amount = 32420 and invoice_number = 'INV/A/0001') from member_invoices where customer_id = (select id from pipeline where name = 'A')),
+  'Sales sees the invoice Accounts uploaded for its customer (read-only)');
 select test.must_fail($$update member_invoices set amount = 1 where customer_id = (select id from pipeline where name = 'A')$$, 'Sales cannot edit an invoice', 'permission denied');
 select test.must_fail($$delete from member_invoices where customer_id = (select id from pipeline where name = 'A')$$, 'Sales cannot delete an invoice', 'permission denied');
-select test.check((select items_saved = 2 and (select status = 'SAVED' and value like 'INV-%issued by Accounts' and document_id is null
+select test.check((select items_saved = 2 and (select status = 'SAVED' and value = 'Galaxy Oct.pdf' and document_id is not null
                      from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'INVOICE')
                    from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
-  'the issued invoice fills the Invoice item of the onboarding checklist');
+  'the uploaded invoice fills the Invoice item of the onboarding checklist');
 select test.login('tm_c');
 select test.check((select count(*) = 0 from member_invoices where customer_id = (select id from pipeline where name = 'A')), 'another department cannot see the invoice');
 select test.login('tm_a');
@@ -754,7 +753,7 @@ select test.check((select (accounts_addon_requests() ->> 'total')::int = 1 and a
                      and accounts_addon_requests() -> 'items' -> 0 -> 'consultant' ->> 'fullName' = 'Member B'),
   'Business Verification lists the request with the consultant and the total');
 select test.check((select (accounts_addon_requests(p_status => 'APPROVED') ->> 'total')::int = 0 and (accounts_addon_requests(p_search => 'galaxy') ->> 'total')::int = 1), 'the queue filters by status and searches by business');
-select test.must_fail($$select accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'an unapproved request cannot be invoiced', 'Only an approved');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/01', null, null, null, null, 'a.pdf', 'application/pdf', 1000)$$, 'an unapproved request cannot be invoiced', 'Only an approved');
 select test.must_fail($$select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'REJECT', null)$$, 'a rejection needs a reason', 'reason');
 select accounts_decide_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'), 'CHANGES', 'AI calling price looks too low');
 select test.login('tm_b');
@@ -772,13 +771,29 @@ select test.must_fail($$select accounts_decide_addon_request((select (data ->> '
 select test.check((select (accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'paid')::numeric = 0 and accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'status' = 'APPROVED'
                      and accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'paymentConfirmedAt' is null), 'approval is not a payment confirmation');
 select test.must_fail($$select accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 1000, 'UPI')$$, 'no payment before the invoice', 'invoice is generated');
-select test.must_fail($$select accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'), current_date, current_date - 1)$$, 'the due date is validated', 'due date');
-insert into ar select 'inv', accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'), current_date, current_date + 7);
-select test.check((select data ->> 'status' = 'INVOICE_GENERATED' and data -> 'invoice' ->> 'kind' = 'ADDON' and (data -> 'invoice' ->> 'total')::numeric = 20440
-                     and data -> 'invoice' ->> 'status' = 'Pending' and jsonb_array_length(data -> 'invoice' -> 'items') = 2 from ar where name = 'inv'),
-  'Accounts generates the add-on invoice from the approved services and prices');
-select test.must_fail($$select accounts_generate_addon_invoice((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'the add-on invoice is generated once', 'already generated');
+select test.login('tm_b');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/01', null, null, null, null, 'a.pdf', 'application/pdf', 1000)$$, 'the consultant cannot upload the add-on invoice', 'Only the Accounts department');
+select test.login('acc_m');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/01', null, null, null, null, 'a.png', 'image/png', 1000)$$, 'the add-on invoice must be a PDF', 'Only PDF');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/01', null, null, null, null, 'a.pdf', 'application/pdf', 512001)$$, 'and at most 500 KB', 'exceeds the 500 KB limit');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/01', '2026-10-10', '2026-10-01', null, null, 'a.pdf', 'application/pdf', 1000)$$, 'the due date is validated', 'due date');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'INV/A/0001', null, null, null, null, 'a.pdf', 'application/pdf', 1000)$$, 'an invoice number already used is refused', 'already exists');
+insert into invd select 'ADDON', null, id from begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/01', current_date::text, (current_date + 7)::text, 'Quote 5', null,
+  'Add-on invoice.pdf', 'application/pdf', 15000);
+select test.check((select accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'status' = 'APPROVED'
+                     and (select count(*) = 0 from member_invoices where addon_request_id = (select (data ->> 'id')::uuid from ar where name = 'draft'))),
+  'nothing changes until the PDF is stored: still approved, no invoice');
+select complete_document_upload((select doc from invd where name = 'ADDON'), 15000);
+update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'ADDON';
+insert into ar select 'inv', accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'));
+select test.check((select data ->> 'status' = 'INVOICE_GENERATED' and data -> 'invoice' ->> 'kind' = 'UPLOADED' and (data -> 'invoice' ->> 'total')::numeric = 20440
+                     and data -> 'invoice' ->> 'number' = 'ADDON/2026/01' and data -> 'invoice' ->> 'status' = 'Pending' and jsonb_array_length(data -> 'invoice' -> 'items') = 2
+                     and data -> 'invoice' -> 'file' ->> 'fileName' = 'Add-on invoice.pdf' and data -> 'invoice' ->> 'addonRequestId' = data ->> 'id' from ar where name = 'inv'),
+  'Accounts uploads the add-on invoice: it takes the approved total and lines, the request moves to Invoice Generated');
+select test.must_fail($$select begin_addon_invoice_upload((select (data ->> 'id')::uuid from ar where name = 'draft'), 'ADDON/2026/02', null, null, null, null, 'b.pdf', 'application/pdf', 1000)$$, 'the add-on invoice is uploaded once', 'already uploaded');
 select test.check((select count(*) = 1 from member_invoices where addon_request_id = (select (data ->> 'id')::uuid from ar where name = 'draft')), 'exactly one add-on invoice');
+select test.must_fail($$select accounts_set_invoice_status((select id from invd where name = 'ADDON'), 'Paid')$$, 'an add-on invoice is not marked paid by hand', 'payment');
+select test.check((select (accounts_update_uploaded_invoice((select id from invd where name = 'ADDON'), null, null, 1, 'Quote 5', null) ->> 'total')::numeric = 20440), 'editing the details cannot change an add-on invoice total');
 select test.must_fail($$select accounts_confirm_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'))$$, 'nothing paid: cannot confirm', 'is verified');
 insert into ar select 'p1', accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 10000, 'UPI', 'UTR-ADD-1', null, null, false);
 select test.must_fail($$select accounts_record_addon_payment((select (data ->> 'id')::uuid from ar where name = 'draft'), 10000, 'UPI', 'utr-add-1')$$, 'a reference is recorded once', 'already recorded');
@@ -882,8 +897,8 @@ select test.check((select count(*) = 1 from notifications where type = 'ONBOARDI
   'support team head notified');
 select test.check((select count(*) >= 1 from audit_logs where action = 'DOCUMENT_REPLACED' and actor_id = test.id('tm_a') and metadata ->> 'customer_id' = (select id::text from pipeline where name = 'A')),
   'document replacement audited with actor + customer');
-select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_ISSUED' and actor_id = test.id('acc_m') and metadata ->> 'kind' = 'SERVICE')
-                   and (select count(*) = 1 from audit_logs where action = 'INVOICE_ISSUED' and metadata ->> 'kind' = 'ADDON'), 'both invoices issued by Accounts are audited');
+select test.check((select count(*) = 1 from audit_logs where action = 'INVOICE_UPLOADED' and actor_id = test.id('acc_m') and metadata ->> 'addon_request_id' is not null)
+                   and (select count(*) = 1 from audit_logs where action = 'INVOICE_UPLOADED' and metadata ->> 'number' = 'INV/A/0001'), 'both invoices uploaded by Accounts are audited');
 select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_DOWNLOADED' and actor_id = test.id('th_wab')), 'download audited');
 select test.check((select count(*) >= 1 from audit_logs where action = 'DOCUMENT_DELETED'), 'deletion audited');
 select test.check((select count(*) = 0 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'a single Not authorized does not notify on its own');
@@ -893,10 +908,8 @@ select test.check((select count(*) = 2 from audit_logs where action = 'ONBOARDIN
                    and (select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEMS_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
 
 \echo '--- 13b2. Uploaded invoice PDFs (Accounts uploads; everyone who may see the customer reads)'
-create temp table invd (name text primary key, id uuid, doc uuid);
-grant all on invd to authenticated;
 reset role;
-select test.check((select count(*) = 0 from member_invoices where kind = 'UPLOADED'), 'no uploaded invoice yet');
+select test.check((select count(*) = 2 from member_invoices where kind = 'UPLOADED'), 'only the invoice of customer A and the add-on invoice are uploaded so far');
 set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
@@ -926,7 +939,7 @@ select test.must_fail($$select begin_invoice_upload((select id from pipeline whe
   'the total has at most 2 decimals', '2 decimals');
 select test.must_fail($$select begin_invoice_upload(gen_random_uuid(), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
   'an unknown customer is refused (nothing is created for it)', 'Customer not found');
-select test.check((select count(*) = 0 from customer_documents where document_type = 'INVOICE' and invoice_meta is not null) and (select count(*) = 0 from member_invoices where kind = 'UPLOADED'),
+select test.check((select count(*) = 0 from customer_documents where document_type = 'INVOICE' and invoice_meta is not null) and (select count(*) = 2 from member_invoices where kind = 'UPLOADED'),
   'refused uploads left no file row and no invoice record');
 -- a PDF of exactly 500 KB is accepted; the invoice record appears only when the file is stored
 insert into invd select 'U1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', '2026-10-05', '2026-10-20', 41300, 'PO-8812', 'Diwali pack',
@@ -934,7 +947,7 @@ insert into invd select 'U1', null, id from begin_invoice_upload((select id from
 select test.check((select status = 'PENDING' and size_bytes = 512000 and path_ok from (select d.*, d.storage_path = format('customers/%s/invoices/%s.pdf', d.customer_id, d.id) as path_ok
                      from customer_documents d where id = (select doc from invd where name = 'U1')) x),
   'exactly 500 KB is accepted; the storage path uses ids only');
-select test.check((select count(*) = 0 from member_invoices where kind = 'UPLOADED'), 'no invoice record until the file is stored');
+select test.check((select count(*) = 2 from member_invoices where kind = 'UPLOADED'), 'no new invoice record until the file is stored');
 select test.must_fail($$select complete_document_upload((select doc from invd where name = 'U1'), 512001)$$, 'the stored size is checked again on completion', 'exceeds the 500 KB limit');
 select test.login('tm_a');
 select test.must_fail($$select complete_document_upload((select doc from invd where name = 'U1'), 512000)$$, 'Sales cannot finish an Accounts upload', 'Document not found');
@@ -971,7 +984,7 @@ update invd set id = (select invoice_id from customer_documents where id = doc) 
 
 -- every employee who may see the customer reads the same invoice; others cannot
 select test.login('tm_a');
-select test.check((select count(*) = 2 and bool_and(data ->> 'kind' = 'UPLOADED') and bool_and(data -> 'file' ->> 'fileName' is not null)
+select test.check((select count(*) = 4 and bool_and(data ->> 'kind' = 'UPLOADED') and bool_and(data -> 'file' ->> 'fileName' is not null)
                      from (select jsonb_array_elements(customer_invoices((select id from pipeline where name = 'A'))) data) x
                     where data ->> 'kind' = 'UPLOADED'), 'Sales sees the uploaded invoices of its customer with their file details');
 select test.check((select count(*) = 1 from authorize_document_access((select doc from invd where name = 'U1'), 'VIEW')), 'the Sales owner can open the PDF');
@@ -1001,7 +1014,6 @@ select test.must_fail($$select delete_customer_document((select doc from invd wh
 select test.login('acc_m');
 select test.must_fail($$select begin_invoice_replacement((select id from invd where name = 'U1'), 'new.pdf', 'application/pdf', 512001)$$, 'a replacement over 500 KB is refused', 'exceeds the 500 KB limit');
 select test.must_fail($$select begin_invoice_replacement((select id from invd where name = 'U1'), 'new.jpg', 'image/jpeg', 1000)$$, 'a replacement must be a PDF', 'Only PDF');
-select test.must_fail($$select begin_invoice_replacement((select (data ->> 'id')::uuid from inv where name = 'A1'), 'new.pdf', 'application/pdf', 1000)$$, 'a generated invoice has no PDF to replace', 'Only an uploaded invoice');
 select test.check((select status = 'UPLOADED' from customer_documents where id = (select doc from invd where name = 'U1')), 'a refused replacement keeps the current file');
 insert into invd select 'U1b', null, id from begin_invoice_replacement((select id from invd where name = 'U1'), 'Galaxy Jewellers Oct v2.pdf', 'application/pdf', 20000);
 select test.check((select status = 'UPLOADED' from customer_documents where id = (select doc from invd where name = 'U1')), 'the current file stays available while the replacement uploads');
@@ -1023,14 +1035,13 @@ select test.check((select count(*) = 1 from authorize_document_access((select do
 select test.check((select count(*) = 0 from customer_documents where invoice_id is not null and status <> 'UPLOADED'), 'Sales cannot even list older versions of an invoice PDF');
 select test.login('acc_m');
 select test.check((select (accounts_update_uploaded_invoice((select id from invd where name = 'U1'), '2026-10-06', '2026-10-25', 41300.50, 'PO-8812', 'Updated') ->> 'total')::numeric = 41300.50), 'Accounts edits the total, dates and reference');
-select test.must_fail($$select accounts_update_uploaded_invoice((select (data ->> 'id')::uuid from inv where name = 'A1'), null, null, 1, null, null)$$, 'a generated invoice is not edited here', 'Only an uploaded invoice');
 select test.check((select (accounts_set_invoice_status((select id from invd where name = 'U1'), 'Paid') ->> 'status') = 'Paid'), 'Accounts marks an uploaded invoice paid');
 
 -- the Invoice item of the checklist, progress, audit, notifications
 reset role;
 select test.check((select status = 'SAVED' and document_id is not null from customer_onboarding_entries
                     where customer_id = (select id from pipeline where name = 'A') and item_code = 'INVOICE'), 'an uploaded invoice fills the Invoice item of the onboarding checklist');
-select test.check((select count(*) = 2 from audit_logs where action = 'INVOICE_UPLOADED' and actor_id = test.id('acc_m'))
+select test.check((select count(*) = 4 from audit_logs where action = 'INVOICE_UPLOADED' and actor_id = test.id('acc_m'))
                    and (select count(*) = 1 from audit_logs where action = 'INVOICE_REPLACED' and actor_id = test.id('acc_m') and metadata ->> 'number' = 'GST/26-27/001'),
   'uploads and the replacement are audited with the actor, invoice number and file');
 select test.check((select count(*) >= 3 from notifications where type = 'INVOICE_UPLOADED' and recipient_id = test.id('tm_a')), 'the salesperson is notified of uploaded invoices');

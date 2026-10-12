@@ -13,7 +13,7 @@ TC contacts the customer: interested in add-on services?
          Accounts: Business Verification
            Reject (reason)           -> TC sees the reason; may start a new request
            Request changes (reason)  -> TC corrects and resubmits
-           Approve                   -> Accounts generates the add-on invoice
+           Approve                   -> Accounts uploads the add-on invoice PDF
                                        -> Accounts records / verifies payments -> Confirm payment
                                        -> TC starts add-on document collection -> verify -> Complete
 ```
@@ -30,7 +30,7 @@ blocked by add-ons. Add-on money is kept in `addon_payments`, apart from `custom
 | CHANGES_REQUESTED | Changes Requested | Accounts gave a reason; TC can edit and resubmit |
 | REJECTED | Rejected | Closed with a reason; a new request may be started |
 | APPROVED | Approved | Verifier recorded; waiting for the invoice |
-| INVOICE_GENERATED | Invoice Generated | Shown with the payment state "Pending Payment" / "Part paid" |
+| INVOICE_GENERATED | Invoice Uploaded | The status key is unchanged; shown with the payment state "Pending Payment" / "Part paid" |
 | PAYMENT_CONFIRMED | Payment Confirmed | TC may start the add-on documents |
 | IN_PROGRESS | Technical Onboarding In Progress | Add-on documents being collected and verified |
 | COMPLETED | Completed | Every add-on item verified |
@@ -60,7 +60,7 @@ request cannot be approved or invoiced twice and a payment cannot exceed the inv
 
 | Role | Invoices |
 | --- | --- |
-| Accounts staff | Create (services), generate (approved add-ons only), mark services invoices paid / pending, view, download |
+| Accounts staff | Upload invoice PDFs (any customer they handle; the add-on invoice of an approved request), replace, edit details, mark paid / pending (not add-on invoices), view, download |
 | Sales | Read-only, own customers (list, detail, PDF). Cannot create, edit, upload or delete |
 | Technical Consultant | Read-only for the customers of their department in onboarding |
 | Department / team heads, Support | Read-only where they may already see the customer |
@@ -69,7 +69,11 @@ request cannot be approved or invoiced twice and a payment cannot exceed the inv
 The Sales "Add Invoice" form, the "Create Invoice" quick action and the Invoice upload on the onboarding
 checklist are gone. Insert / update / delete on `member_invoices` are revoked from `authenticated`, and
 `begin_document_upload`, `save_onboarding_entry` and `delete_customer_document` refuse the INVOICE item.
-The onboarding "Invoice" item is filled by the services invoice Accounts issues.
+The onboarding "Invoice" item is filled by the invoice PDF Accounts uploads.
+
+**Invoices are uploaded, never generated.** Migration `20261015000300_invoices_upload_only.sql` drops the two
+functions that generated an invoice and the "New invoice" / "Generate invoice" screens are gone. Invoices
+generated before that stay readable. Older text in this page that says "generate" or "issue" now means upload.
 
 ## API
 
@@ -108,7 +112,8 @@ existing pieces; there is no new storage system and no second invoice table.
 - **Where:** Accounts dashboard > Invoices > **Upload Invoice PDF**. Accounts picks the customer (or the
   customer is preset), types the invoice number (required, kept exactly as typed, unique case-insensitively),
   and optionally the dates, total, a payment / order / service reference and a note, then chooses the PDF.
-  Nothing is generated and the PDF is never modified. The "New invoice" (generated) flow is unchanged.
+  Nothing is generated and the PDF is never modified. The upload dialog closes only with its own Cancel button
+  (not on a click outside it or Escape), so a chosen file is never lost by accident.
 - **Also inside the customer pop-up:** in Accounts > Confirmation and Part Payment, the customer pop-up has an
   **Invoices** section next to the payments, with **Upload Invoice PDF** (the customer is preset) and the
   customer's invoices (preview, download, replace).
@@ -140,3 +145,14 @@ existing pieces; there is no new storage system and no second invoice table.
 - **Audit and notifications:** `INVOICE_UPLOADED`, `INVOICE_REPLACED`, `INVOICE_UPDATED`; the customer's
   salesperson is notified of an uploaded or replaced PDF.
 - The Sales onboarding page no longer has a Payments section; payments stay in Part payments and with Accounts.
+
+## Add-on invoice upload (after Accounts approves)
+
+When Accounts approves an add-on request, Business Verification shows **Upload the add-on invoice** instead of
+a generate step. The dialog has the customer and the approved total preset (the total cannot be typed); Accounts
+enters the invoice number and optional dates / reference / note and chooses the PDF (PDF only, 500 KB).
+`POST /accounts/addon-requests/:id/invoice-upload` -> browser upload -> `POST /accounts/invoice-uploads/:documentId/complete`.
+The invoice record (kind `UPLOADED`, linked to the request, with the approved lines) is created only when the file is
+stored, the request moves to Invoice Uploaded, and the consultant and the salesperson are notified. One invoice per
+request; Accounts, the consultant and everyone who may see the customer can open it. It is marked paid only by the
+add-on payment confirmation; its total cannot be edited.

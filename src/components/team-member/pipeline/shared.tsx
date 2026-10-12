@@ -282,12 +282,17 @@ export const Pager: React.FC<{
   );
 };
 
-/** Accessible modal dialog: focus moves in, Escape closes, focus returns. */
-export const Dialog: React.FC<{ title: string; description?: string; onClose: () => void; wide?: boolean; children: React.ReactNode }> = ({
+/**
+ * Accessible modal dialog: focus moves in, Escape closes, focus returns.
+ * `persistent` is for forms where an accidental click would lose the user's work (e.g. a chosen file):
+ * clicking outside or pressing Escape does nothing, only the dialog's own Cancel / Close buttons close it.
+ */
+export const Dialog: React.FC<{ title: string; description?: string; onClose: () => void; wide?: boolean; persistent?: boolean; children: React.ReactNode }> = ({
   title,
   description,
   onClose,
   wide,
+  persistent,
   children
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -298,15 +303,20 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // A persistent dialog swallows Escape so a pop-up behind it does not close and take the dialog with it.
+      if (persistent) e.stopPropagation();
+      else closeRef.current();
+    };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       previous?.focus?.();
     };
-  }, []);
+  }, [persistent]);
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => !persistent && e.target === e.currentTarget && onClose()}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="pl-dialog-title" className={`w-full ${wide ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
         <div>
           <h2 id="pl-dialog-title" className="text-base font-bold text-slate-900">

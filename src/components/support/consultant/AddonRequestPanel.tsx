@@ -25,7 +25,7 @@ const EVENT_LABEL: Record<string, string> = {
   CHANGES_REQUESTED: 'Accounts asked for changes',
   REJECTED: 'Rejected by Accounts',
   APPROVED: 'Approved by Accounts',
-  INVOICE_GENERATED: 'Invoice generated',
+  INVOICE_GENERATED: 'Invoice uploaded',
   PAYMENT_RECORDED: 'Payment recorded',
   PAYMENT_VERIFIED: 'Payment verified',
   PAYMENT_REJECTED: 'Payment rejected',
@@ -158,7 +158,7 @@ export const AddonRequestEditor: React.FC<{
       </div>
       <p className="text-xs text-slate-500">
         Original services: {originalServices.length ? originalServices.map(c => byCode.get(c)?.name || c).join(', ') : '-'}. Add-ons are separate: they start only after Accounts approves them,
-        issues the invoice and confirms the payment.
+        uploads the invoice and confirms the payment.
       </p>
 
       {request && (request.status === 'CHANGES_REQUESTED' || request.status === 'REJECTED') && request.decisionNote && (
@@ -266,7 +266,7 @@ export const AddonRequestEditor: React.FC<{
             </div>
           )}
           {request.status === 'PENDING_VERIFICATION' && <p className="text-xs text-slate-500">Waiting for Accounts. Prices cannot be changed while Accounts checks them.</p>}
-          {request.status === 'APPROVED' && <p className="text-xs text-slate-500">Approved. Accounts will now issue the add-on invoice.</p>}
+          {request.status === 'APPROVED' && <p className="text-xs text-slate-500">Approved. Accounts will now upload the add-on invoice.</p>}
           {request.status === 'INVOICE_GENERATED' && <p className="text-xs text-slate-500">Waiting for the customer's payment. Add-on documents can be collected once Accounts confirms it.</p>}
           <AddonEvents events={request.events} />
         </div>

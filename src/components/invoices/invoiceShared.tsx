@@ -20,7 +20,7 @@ export const ADDON_STATUS_LABEL: Record<AddonRequestStatus, string> = {
   CHANGES_REQUESTED: 'Changes Requested',
   REJECTED: 'Rejected',
   APPROVED: 'Approved',
-  INVOICE_GENERATED: 'Invoice Generated',
+  INVOICE_GENERATED: 'Invoice Uploaded',
   PAYMENT_CONFIRMED: 'Payment Confirmed',
   IN_PROGRESS: 'Technical Onboarding In Progress',
   COMPLETED: 'Completed'

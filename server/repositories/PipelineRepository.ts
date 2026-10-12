@@ -503,6 +503,25 @@ export class PipelineRepository {
     ) as any;
   }
 
+  async beginAddonInvoiceUpload(requestId: string, b: {
+    invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; reference?: string | null; note?: string | null;
+    fileName: string; mimeType: string; sizeBytes: number;
+  }) {
+    return unwrap(
+      await this.db.rpc('begin_addon_invoice_upload', {
+        p_request: requestId,
+        p_invoice_number: b.invoiceNumber,
+        p_issue_date: b.issueDate ?? null,
+        p_due_date: b.dueDate ?? null,
+        p_reference: b.reference ?? null,
+        p_note: b.note ?? null,
+        p_file_name: b.fileName,
+        p_mime: b.mimeType,
+        p_size: b.sizeBytes
+      })
+    ) as any;
+  }
+
   async beginInvoiceReplacement(invoiceId: string, fileName: string, mime: string, size: number) {
     return unwrap(await this.db.rpc('begin_invoice_replacement', { p_invoice: invoiceId, p_file_name: fileName, p_mime: mime, p_size: size })) as any;
   }

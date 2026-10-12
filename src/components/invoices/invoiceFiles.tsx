@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Download, Eye, FileText, Pencil, RefreshCw, Search, UploadCloud } from 'lucide-react';
 import { INVOICE_PDF_MAX_BYTES, INVOICE_PDF_MAX_LABEL, type DocumentUploadTicket, type Invoice, type InvoiceCustomer, type InvoiceFile } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
-import { documentsApi, invoicesApi } from '../../lib/api/endpoints';
+import { addonsApi, documentsApi, invoicesApi } from '../../lib/api/endpoints';
 import { requireSupabase } from '../../services/supabaseClient';
 import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, money, Spinner, todayIso, useDebounced } from '../team-member/pipeline/shared';
 
@@ -137,9 +137,12 @@ const phaseLabel = { checking: 'Checking the file…', uploading: 'Uploading…'
 export const UploadInvoiceDialog: React.FC<{
   /** Set when opened from a customer: the customer is not asked for again. */
   customer?: { id: string; label: string } | null;
+  /** Set for the invoice of an approved add-on request: its customer and total come from the request. */
+  addon?: { requestId: string; customerId: string; label: string; total: number } | null;
   onClose: () => void;
   onUploaded: (invoice: Invoice) => void;
-}> = ({ customer: preset, onClose, onUploaded }) => {
+}> = ({ customer: presetCustomer, addon, onClose, onUploaded }) => {
+  const preset = addon ? { id: addon.customerId, label: addon.label } : presetCustomer;
   const [search, setSearch] = useState('');
   const [customers, setCustomers] = useState<InvoiceCustomer[] | null>(null);
   const [picked, setPicked] = useState<{ id: string; label: string; sub?: string } | null>(preset ?? null);
@@ -180,7 +183,7 @@ export const UploadInvoiceDialog: React.FC<{
     if (!number.trim()) return setError('Enter the invoice number.');
     if (!/^[A-Za-z0-9][A-Za-z0-9 ./#_-]*$/.test(number.trim())) return setError('The invoice number can use letters, numbers, spaces and - / . # _');
     if (dueDate && issueDate && dueDate < issueDate) return setError('The due date cannot be before the issue date.');
-    const total = amount.trim() === '' ? null : Number(amount);
+    const total = addon || amount.trim() === '' ? null : Number(amount);
     if (total !== null && (Number.isNaN(total) || total < 0 || Math.round(total * 100) / 100 !== total)) return setError('Enter the invoice total in rupees (up to 2 decimals), or leave it empty.');
     if (!file) return setError('Choose the invoice PDF.');
     submitting.current = true;
@@ -194,7 +197,18 @@ export const UploadInvoiceDialog: React.FC<{
       const invoice = await uploadInvoicePdf(
         file,
         () =>
-          invoicesApi.beginUpload({
+          addon
+            ? addonsApi.beginInvoiceUpload(addon.requestId, {
+                invoiceNumber: number.trim(),
+                issueDate: issueDate || null,
+                dueDate: dueDate || null,
+                reference: reference.trim() || null,
+                note: note.trim() || null,
+                fileName: file.name,
+                mimeType: 'application/pdf',
+                sizeBytes: file.size
+              })
+            : invoicesApi.beginUpload({
             customerId: picked.id,
             invoiceNumber: number.trim(),
             issueDate: issueDate || null,
@@ -219,7 +233,17 @@ export const UploadInvoiceDialog: React.FC<{
 
   const busy = phase !== null;
   return (
-    <Dialog title="Upload Invoice PDF" description="Upload an existing invoice. It is stored privately and shown to everyone who may see this customer. Nothing is generated or changed in the PDF." onClose={busy ? () => undefined : onClose} wide>
+    <Dialog
+      title={addon ? 'Upload the add-on invoice' : 'Upload Invoice PDF'}
+      description={
+        addon
+          ? 'Upload the invoice for the approved add-on services. It is stored privately and shown to the consultant and everyone who may see this customer. Nothing is generated or changed in the PDF.'
+          : 'Upload an existing invoice. It is stored privately and shown to everyone who may see this customer. Nothing is generated or changed in the PDF.'
+      }
+      onClose={onClose}
+      wide
+      persistent
+    >
       {!picked ? (
         <div className="space-y-3">
           <label className="relative block">
@@ -278,9 +302,15 @@ export const UploadInvoiceDialog: React.FC<{
             <Field label="Due date" htmlFor="ui-due">
               <input id="ui-due" type="date" className={inputCls} value={dueDate} min={issueDate || undefined} disabled={busy} onChange={e => setDueDate(e.target.value)} />
             </Field>
-            <Field label="Invoice total (Rs., optional)" htmlFor="ui-total">
-              <input id="ui-total" inputMode="decimal" className={inputCls} value={amount} disabled={busy} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="e.g. 41300" />
-            </Field>
+            {addon ? (
+              <Field label="Approved add-on total" htmlFor="ui-total">
+                <input id="ui-total" className={inputCls} value={money(addon.total)} readOnly disabled />
+              </Field>
+            ) : (
+              <Field label="Invoice total (Rs., optional)" htmlFor="ui-total">
+                <input id="ui-total" inputMode="decimal" className={inputCls} value={amount} disabled={busy} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="e.g. 41300" />
+              </Field>
+            )}
             <Field label="Payment / order / service reference" htmlFor="ui-ref">
               <input id="ui-ref" className={inputCls} value={reference} maxLength={120} disabled={busy} onChange={e => setReference(e.target.value)} placeholder="Optional" />
             </Field>
@@ -347,7 +377,8 @@ export const ReplaceInvoiceDialog: React.FC<{ invoice: Invoice; onClose: () => v
     <Dialog
       title={`Replace the PDF of invoice ${invoice.number}?`}
       description={`The current file${invoice.file ? ` (${invoice.file.fileName})` : ''} is kept as an earlier version that only Accounts can open. Everyone sees the new file once it is saved.`}
-      onClose={busy ? () => undefined : onClose}
+      onClose={onClose}
+      persistent
     >
       <PdfPicker id="ri-file" file={file} onFile={f => void chooseFile(f)} disabled={busy} error={fileError} />
       {error && <ErrorBanner message={error} />}
@@ -395,7 +426,7 @@ export const EditInvoiceDialog: React.FC<{ invoice: Invoice; onClose: () => void
     }
   };
   return (
-    <Dialog title={`Edit invoice ${invoice.number}`} description="The invoice number and the PDF stay as uploaded. Use Replace PDF to change the file." onClose={onClose}>
+    <Dialog title={`Edit invoice ${invoice.number}`} description="The invoice number and the PDF stay as uploaded. Use Replace PDF to change the file." onClose={onClose} persistent>
       <form onSubmit={save} className="space-y-3" aria-label="Edit invoice details">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Invoice date" htmlFor="ei-issue">

@@ -107,7 +107,7 @@ from a stale form is refused (`consultant_update_customer(..., p_expected)`).
 
 **Add-on requests (replaces "Send to Add-ons").** Since `20261015000100_addon_verification_invoices.sql`
 the TC saves a draft and presses **Submit for Accounts Verification**; Accounts approves, rejects or asks
-for changes, issues the add-on invoice and confirms the payment. See [ADDONS_INVOICES.md](ADDONS_INVOICES.md).
+for changes, uploads the add-on invoice and confirms the payment. See [ADDONS_INVOICES.md](ADDONS_INVOICES.md).
 "Send for onboarding" (original services) is never blocked by add-ons. **Add-ons Services** lists every
 customer with an add-on request (same customer record, no copy).
 

@@ -586,8 +586,6 @@ export const addonDecisionSchema = z
   .strict()
   .refine(d => d.decision === 'APPROVE' || !!(d.note && d.note.trim()), { message: 'Give the reason, so the consultant knows what to do.', path: ['note'] });
 
-export const addonInvoiceSchema = z.object({ issueDate: isoDate.optional().nullable(), dueDate: isoDate.optional().nullable() }).strict();
-
 export const addonPaymentSchema = z
   .object({
     amount: money2,
@@ -606,16 +604,6 @@ export const addonPaymentDecisionSchema = z
 
 export const noteBodySchema = z.object({ note: optionalText(1000) }).strict();
 
-export const invoiceCreateSchema = z
-  .object({
-    customerId: uuidSchema,
-    items: pricedLines,
-    issueDate: isoDate.optional().nullable(),
-    dueDate: isoDate.optional().nullable(),
-    note: optionalText(1000)
-  })
-  .strict();
-export type InvoiceCreateInput = z.infer<typeof invoiceCreateSchema>;
 /** The PDF of an uploaded invoice: PDF only, at most 500 KB (the database and the bucket check it again). */
 const invoicePdfFields = {
   fileName: trimmed(255).min(1, 'Choose the invoice PDF.'),
@@ -639,6 +627,16 @@ export const invoiceUploadSchema = z
     issueDate: isoDate.optional().nullable(),
     dueDate: isoDate.optional().nullable(),
     amount: z.coerce.number().min(0).max(9999999999.99).refine(n => Math.round(n * 100) / 100 === n, 'Use at most 2 decimals.').optional().nullable(),
+    reference: optionalText(120),
+    note: optionalText(1000),
+    ...invoicePdfFields
+  })
+  .strict();
+export const addonInvoiceUploadSchema = z
+  .object({
+    invoiceNumber,
+    issueDate: isoDate.optional().nullable(),
+    dueDate: isoDate.optional().nullable(),
     reference: optionalText(120),
     note: optionalText(1000),
     ...invoicePdfFields

@@ -1,12 +1,10 @@
 import type { AddonRequest, AddonRequestPage, Invoice, InvoiceCustomer, InvoicePage } from '../../shared/contracts.js';
 import {
   addonDecisionSchema,
-  addonInvoiceSchema,
   addonPaymentDecisionSchema,
   addonPaymentSchema,
   addonRequestSaveSchema,
   addonRequestsQuerySchema,
-  invoiceCreateSchema,
   invoiceDetailsSchema,
   invoiceCustomersQuerySchema,
   invoicesQuerySchema,
@@ -50,9 +48,6 @@ export class AddonInvoiceService {
   decide(id: unknown, body: unknown): Promise<AddonRequest> {
     return this.repo.decide(parse(uuidSchema, id), parse(addonDecisionSchema, body));
   }
-  generateInvoice(id: unknown, body: unknown): Promise<AddonRequest> {
-    return this.repo.generateInvoice(parse(uuidSchema, id), parse(addonInvoiceSchema, body ?? {}));
-  }
   recordPayment(id: unknown, body: unknown): Promise<AddonRequest> {
     return this.repo.recordPayment(parse(uuidSchema, id), parse(addonPaymentSchema, body));
   }
@@ -64,9 +59,6 @@ export class AddonInvoiceService {
   }
   invoices(query: unknown): Promise<InvoicePage> {
     return this.repo.invoices(parse(invoicesQuerySchema, query ?? {}));
-  }
-  createInvoice(body: unknown): Promise<Invoice> {
-    return this.repo.createInvoice(parse(invoiceCreateSchema, body));
   }
   setInvoiceStatus(id: unknown, body: unknown): Promise<Invoice> {
     return this.repo.setInvoiceStatus(parse(uuidSchema, id), parse(invoiceStatusSchema, body).status);
