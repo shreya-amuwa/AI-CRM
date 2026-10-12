@@ -72,9 +72,6 @@ export class AddonInvoiceRepository {
       await this.db.rpc('accounts_decide_addon_request', { p_request: id, p_decision: d.decision, p_note: d.note ?? null, p_expected_version: d.expectedVersion ?? null })
     ) as AddonRequest;
   }
-  async generateInvoice(id: string, d: { issueDate?: string | null; dueDate?: string | null }): Promise<AddonRequest> {
-    return unwrap(await this.db.rpc('accounts_generate_addon_invoice', { p_request: id, p_issue_date: d.issueDate ?? null, p_due_date: d.dueDate ?? null })) as AddonRequest;
-  }
   async recordPayment(
     id: string,
     p: { amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null; verify?: boolean }
@@ -101,17 +98,6 @@ export class AddonInvoiceRepository {
     return unwrap(
       await this.db.rpc('accounts_invoices', { p_search: q.search ?? null, p_kind: q.kind ?? null, p_status: q.status ?? null, p_page: q.page, p_page_size: q.pageSize })
     ) as InvoicePage;
-  }
-  async createInvoice(b: { customerId: string; items: PricedLineInput[]; issueDate?: string | null; dueDate?: string | null; note?: string | null }): Promise<Invoice> {
-    return unwrap(
-      await this.db.rpc('accounts_create_invoice', {
-        p_customer: b.customerId,
-        p_items: lines(b.items),
-        p_issue_date: b.issueDate ?? null,
-        p_due_date: b.dueDate ?? null,
-        p_note: b.note ?? null
-      })
-    ) as Invoice;
   }
   async setInvoiceStatus(id: string, status: string): Promise<Invoice> {
     return unwrap(await this.db.rpc('accounts_set_invoice_status', { p_invoice: id, p_status: status })) as Invoice;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BadgeCheck, CheckCircle2, FileText, IndianRupee, MessageSquareWarning, Search, XCircle } from 'lucide-react';
+import { BadgeCheck, CheckCircle2, FileText, IndianRupee, MessageSquareWarning, Search, UploadCloud, XCircle } from 'lucide-react';
 import type { AddonRequest, AddonRequestPage, AddonRequestStatus, PaymentMethod } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { addonsApi } from '../../lib/api/endpoints';
@@ -17,11 +17,11 @@ import {
   Pill,
   selectCls,
   Spinner,
-  todayIso,
   useDebounced,
   usePipelineRealtime
 } from '../team-member/pipeline/shared';
 import { addonPaymentState, ADDON_STATUS_LABEL, AddonStatusPill, InvoiceDetail, rupees, Totals } from '../invoices/invoiceShared';
+import { UploadInvoiceDialog } from '../invoices/invoiceFiles';
 import { AddonEvents } from '../support/consultant/AddonRequestPanel';
 
 const PAGE_SIZE = 20;
@@ -40,7 +40,7 @@ const METHODS: PaymentMethod[] = ['UPI', 'BANK_TRANSFER', 'CASH', 'CARD', 'CHEQU
 
 /**
  * Accounts: "Business Verification". Add-on services the Technical Consultants priced for their
- * customers. Accounts approves, rejects or asks for changes; generates the add-on invoice from the
+ * customers. Accounts approves, rejects or asks for changes; uploads the add-on invoice PDF for the
  * approved prices; records, verifies and confirms the add-on payment. Each is a separate step, and the
  * database checks every one (role, state, version, amounts) so nothing is approved or invoiced twice.
  */
@@ -81,7 +81,7 @@ export const BusinessVerification: React.FC<{ onCountsChanged?: () => void }> = 
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Business Verification</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Add-on services the Technical Consultants priced for their customers. Verify the business and the prices, then generate the invoice and confirm the payment.
+          Add-on services the Technical Consultants priced for their customers. Verify the business and the prices, then upload the invoice and confirm the payment.
         </p>
       </div>
 
@@ -233,7 +233,7 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
   const [deciding, setDeciding] = useState<null | 'REJECT' | 'CHANGES'>(null);
   const [reason, setReason] = useState('');
   const [confirmApprove, setConfirmApprove] = useState(false);
-  const [dueDate, setDueDate] = useState('');
+  const [uploadingInvoice, setUploadingInvoice] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const [pay, setPay] = useState({ amount: '', method: 'UPI' as PaymentMethod, reference: '', note: '', verify: true });
   const [rejectPayment, setRejectPayment] = useState<{ id: string; reason: string } | null>(null);
@@ -397,15 +397,14 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
 
       {/* Step 2: invoice */}
       {r.status === 'APPROVED' && (
-        <section aria-label="Generate invoice" className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
-          <h3 className="text-sm font-bold text-slate-900">Generate the add-on invoice</h3>
-          <p className="text-xs text-slate-500">The invoice uses the approved services and prices ({rupees(r.total)}). It is numbered by the system and can be generated once.</p>
-          <div className="flex flex-wrap items-end justify-end gap-2">
-            <Field label="Due date (optional)" htmlFor="bv-due">
-              <input id="bv-due" type="date" min={todayIso()} value={dueDate} onChange={e => setDueDate(e.target.value)} className={inputCls} />
-            </Field>
-            <button type="button" className={btn.primary} disabled={busy} onClick={() => void act(() => addonsApi.generateInvoice(r.id, { dueDate: dueDate || null }))}>
-              <FileText className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Generating…' : 'Generate invoice'}
+        <section aria-label="Upload the add-on invoice" className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900">Upload the add-on invoice</h3>
+          <p className="text-xs text-slate-500">
+            The add-ons are approved ({rupees(r.total)}). Upload the invoice PDF for them (PDF only, up to 500 KB). The consultant is told, and the customer can then pay.
+          </p>
+          <div className="flex justify-end">
+            <button type="button" className={btn.primary} disabled={busy} onClick={() => setUploadingInvoice(true)}>
+              <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" /> Upload invoice PDF
             </button>
           </div>
         </section>
@@ -416,7 +415,7 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
           <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" />
           <span className="font-semibold text-slate-800">Invoice {r.invoice.number}</span>
           <span className="text-slate-500">
-            issued {longDate(r.invoice.issueDate)}
+            dated {longDate(r.invoice.issueDate)}
             {r.invoice.dueDate ? ` · due ${longDate(r.invoice.dueDate)}` : ''}
           </span>
           <span className="font-bold text-slate-900">{rupees(r.invoice.total)}</span>
@@ -597,7 +596,28 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
           </div>
         </Dialog>
       )}
-      {showInvoice && r.invoice && <InvoiceDetail invoice={r.invoice} onClose={() => setShowInvoice(false)} />}
+      {showInvoice && r.invoice && (
+        <InvoiceDetail
+          invoice={r.invoice}
+          canManage
+          onChanged={() => {
+            load();
+            onChanged();
+          }}
+          onClose={() => setShowInvoice(false)}
+        />
+      )}
+      {uploadingInvoice && (
+        <UploadInvoiceDialog
+          addon={{ requestId: r.id, customerId: r.customerId, label: r.customer, total: r.total }}
+          onClose={() => setUploadingInvoice(false)}
+          onUploaded={() => {
+            setUploadingInvoice(false);
+            load();
+            onChanged();
+          }}
+        />
+      )}
     </Dialog>
   );
 };

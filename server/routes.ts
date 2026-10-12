@@ -113,12 +113,11 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/accounts/addon-requests', handler: addons.requests },
   { method: 'GET', path: '/accounts/addon-requests/:id', handler: addons.request },
   { method: 'POST', path: '/accounts/addon-requests/:id/decision', handler: addons.decide, options: S },
-  { method: 'POST', path: '/accounts/addon-requests/:id/invoice', handler: addons.generateInvoice, options: S },
+  { method: 'POST', path: '/accounts/addon-requests/:id/invoice-upload', handler: documents.beginAddonInvoiceUpload, options: S },
   { method: 'POST', path: '/accounts/addon-requests/:id/payments', handler: addons.recordPayment, options: S },
   { method: 'POST', path: '/accounts/addon-requests/:id/confirm-payment', handler: addons.confirmPayment, options: S },
   { method: 'POST', path: '/accounts/addon-payments/:id/decision', handler: addons.decidePayment, options: S },
   { method: 'GET', path: '/accounts/invoices', handler: addons.invoices },
-  { method: 'POST', path: '/accounts/invoices', handler: addons.createInvoice, options: S },
   // Existing invoice PDFs: begin -> browser uploads to the signed path -> complete (then the invoice record exists)
   { method: 'POST', path: '/accounts/invoice-uploads', handler: documents.beginInvoiceUpload, options: S },
   { method: 'POST', path: '/accounts/invoices/:id/replace', handler: documents.beginInvoiceReplacement, options: S },

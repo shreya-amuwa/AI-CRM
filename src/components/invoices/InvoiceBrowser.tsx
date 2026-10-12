@@ -92,7 +92,7 @@ export const InvoiceBrowser: React.FC<{ title: string; subtitle: string }> = ({ 
           <FileText className="w-6 h-6 mx-auto text-slate-300" aria-hidden="true" />
           <div className="text-sm font-bold text-slate-800 mt-2">{debounced || status ? 'No invoice matches' : 'No invoices yet'}</div>
           <p className="text-xs text-slate-500 mt-1">
-            {debounced || status ? 'Try another search or status.' : 'Invoices appear here once the Accounts department issues them for your customers.'}
+            {debounced || status ? 'Try another search or status.' : 'Invoices appear here once the Accounts department uploads them for your customers.'}
           </p>
         </div>
       ) : (

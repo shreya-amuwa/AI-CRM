@@ -235,8 +235,11 @@ export const addonsApi = {
   get: (id: string) => api.get<AddonRequest>(`/accounts/addon-requests/${id}`),
   decide: (id: string, body: { decision: 'APPROVE' | 'REJECT' | 'CHANGES'; note?: string | null; expectedVersion?: number }) =>
     api.post<AddonRequest>(`/accounts/addon-requests/${id}/decision`, body),
-  generateInvoice: (id: string, body: { issueDate?: string | null; dueDate?: string | null } = {}) =>
-    api.post<AddonRequest>(`/accounts/addon-requests/${id}/invoice`, body),
+  /** The invoice of an approved request is uploaded by Accounts: begin -> upload -> invoicesApi.completeUpload. */
+  beginInvoiceUpload: (id: string, body: {
+    invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; reference?: string | null; note?: string | null;
+    fileName: string; mimeType: 'application/pdf'; sizeBytes: number;
+  }) => api.post<DocumentUploadTicket>(`/accounts/addon-requests/${id}/invoice-upload`, body),
   recordPayment: (id: string, body: { amount: number; method: PaymentMethod; reference?: string | null; paidAt?: string | null; note?: string | null; verify?: boolean }) =>
     api.post<AddonRequest>(`/accounts/addon-requests/${id}/payments`, body),
   decidePayment: (paymentId: string, body: { decision: 'VERIFY' | 'REJECT'; reason?: string | null }) =>
@@ -252,8 +255,6 @@ export const invoicesApi = {
   // Accounts only
   list: (q: { search?: string; kind?: InvoiceKind; status?: 'Paid' | 'Pending'; page?: number; pageSize?: number } = {}) =>
     api.get<InvoicePage>('/accounts/invoices', { ...q }),
-  create: (body: { customerId: string; items: PricedLineInput[]; issueDate?: string | null; dueDate?: string | null; note?: string | null }) =>
-    api.post<Invoice>('/accounts/invoices', body),
   setStatus: (id: string, status: 'Paid' | 'Pending') => api.patch<Invoice>(`/accounts/invoices/${id}`, { status }),
   customers: (search?: string) => api.get<InvoiceCustomer[]>('/accounts/invoice-customers', { search }),
   /** One invoice the caller may read (current PDF included for an uploaded invoice). */

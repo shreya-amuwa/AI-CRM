@@ -428,36 +428,40 @@ const accTeam = (await api('sa', 'GET', `/teams?departmentId=${accountsDept.id}`
 r = await api('accdh', 'POST', '/users', { email: 'acc.m@amuwa.com', fullName: 'Accounts Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: accTeam });
 check(r.status === 201 && r.json.data.defaultDashboard === 'accounts-staff', 'an Accounts member resolves to the Accounts dashboard', r);
 tokens.set('accm', tokenFor(r.json.data.id));
-const invoiceLine = { serviceCode: 'META_ADS_MANAGEMENT', quantity: 1, unitPrice: 30000, discount: 1000, taxPercent: 18 };
-r = await api('a', 'POST', '/accounts/invoices', { customerId: leadA, items: [invoiceLine] });
-check(r.status === 403, 'Sales cannot create an invoice', r);
+const pdfOfSize = (n: number, tag = 'x') => Buffer.concat([Buffer.from(`%PDF-1.4\n% ${tag}\n`), Buffer.alloc(Math.max(0, n - 40), 0x20), Buffer.from('\n%%EOF\n')]);
+// Invoices are uploaded by Accounts, never generated: the generating endpoints are gone.
+r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [{ serviceCode: 'META_ADS_MANAGEMENT', quantity: 1, unitPrice: 30000 }] });
+check(r.status === 404 || r.status === 405, 'there is no endpoint that generates an invoice', r);
 r = await api('a', 'GET', '/accounts/invoice-customers');
 check(r.status === 403, 'Sales cannot list the customers to invoice', r);
 r = await api('accm', 'GET', '/accounts/invoice-customers?search=galaxy');
-check(r.status === 200 && r.json.data.some((c: any) => c.id === leadA && c.hasServiceInvoice === false && c.services.length === 2), 'Accounts finds the customer to invoice, with its services', r);
-r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [{ ...invoiceLine, discount: 40000 }] });
-check(r.status === 422, 'a discount above the line amount is refused', r);
-r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [invoiceLine], dueDate: tomorrow, note: 'Setup and first month' });
+check(r.status === 200 && r.json.data.some((c: any) => c.id === leadA && c.services.length === 2), 'Accounts finds the customer, with its services', r);
+const firstPdf = Buffer.concat([Buffer.from('%PDF-1.4\n% first\n'), Buffer.alloc(19000, 0x20), Buffer.from('\n%%EOF\n')]);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', { customerId: leadA, invoiceNumber: 'INV/A/0001', issueDate: '2026-10-05', dueDate: tomorrow, amount: 32420, reference: 'Order 7', note: 'October',
+  fileName: 'Galaxy Oct.pdf', mimeType: 'application/pdf', sizeBytes: firstPdf.length });
+check(r.status === 201, 'Accounts starts the upload of the customer invoice', r);
+const tkFirst = r.json.data;
+await put(tkFirst, firstPdf);
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkFirst.document.id}/complete`);
 const serviceInvoice = r.json.data;
-check(r.status === 201 && /^INV-\d{4}-\d{5}$/.test(serviceInvoice.number) && serviceInvoice.kind === 'SERVICE' && serviceInvoice.subtotal === 30000 && serviceInvoice.discount === 1000
-  && serviceInvoice.tax === 5220 && serviceInvoice.total === 34220 && serviceInvoice.status === 'Pending' && serviceInvoice.issuedBy === 'Accounts Member',
-  'Accounts issues the service invoice; the database numbers it and works out discount, tax and total', r);
+check(r.status === 201 && serviceInvoice.kind === 'UPLOADED' && serviceInvoice.number === 'INV/A/0001' && serviceInvoice.total === 32420 && serviceInvoice.status === 'Pending' && serviceInvoice.issuedBy === 'Accounts Member',
+  'Accounts uploads the customer invoice PDF', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}/invoices`);
-check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].number === serviceInvoice.number && r.json.data[0].items[0].serviceCode === 'META_ADS_MANAGEMENT', 'Sales reads the invoice for its customer', r);
+check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].number === serviceInvoice.number && r.json.data[0].file.fileName === 'Galaxy Oct.pdf', 'Sales reads the invoice for its customer', r);
 r = await api('b', 'GET', `/pipeline/customers/${leadA}/invoices`);
 check(r.status === 404, "another salesperson cannot read A's invoices", r);
 r = await api('b', 'GET', '/invoices');
 check(r.status === 200 && r.json.data.total === 0, "and they are not in another salesperson's invoice list", r);
 r = await api('a', 'GET', '/invoices');
-check(r.status === 200 && r.json.data.total === 1 && r.json.data.sum === 34220, "the salesperson's invoice list (read-only)", r);
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.sum === 32420, "the salesperson's invoice list (read-only)", r);
 r = await api('a', 'PATCH', `/accounts/invoices/${serviceInvoice.id}`, { status: 'Paid' });
 check(r.status === 403, 'Sales cannot change an invoice', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const invoiceItem = r.json.data.checklist.find((c: any) => c.code === 'INVOICE');
-check(invoiceItem.entry?.status === 'SAVED' && invoiceItem.entry.value.includes(serviceInvoice.number) && !invoiceItem.entry.documentId && r.json.data.onboarding.mandatorySaved === 2,
-  'the onboarding Invoice item is filled by the Accounts invoice (no file upload)', invoiceItem);
-r = await api('accm', 'GET', '/accounts/invoices?kind=SERVICE');
-check(r.status === 200 && r.json.data.total === 1, 'Accounts lists the invoices it issued', r);
+check(invoiceItem.entry?.status === 'SAVED' && invoiceItem.entry.value === 'Galaxy Oct.pdf' && invoiceItem.entry.documentId && r.json.data.onboarding.mandatorySaved === 2,
+  'the onboarding Invoice item is filled by the uploaded invoice PDF', invoiceItem);
+r = await api('accm', 'GET', '/accounts/invoices?kind=UPLOADED');
+check(r.status === 200 && r.json.data.total === 1, 'Accounts lists the invoices it uploaded', r);
 
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'kyc.pdf');
 ticket = r.json.data;
@@ -634,7 +638,7 @@ check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id ===
   && r.json.data.consultants.some((c: any) => c.fullName === 'Tech Consultant'), 'Accounts sees the request in Business Verification', r);
 r = await api('accm', 'GET', `/accounts/addon-requests/${addonReq.id}`);
 check(r.status === 200 && r.json.data.originalServices.length === 2 && r.json.data.items.length === 2 && r.json.data.salesperson, 'the request shows the original services, the add-ons and who sold it', r);
-r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, {});
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, { invoiceNumber: 'ADDON/2026/01', fileName: 'a.pdf', mimeType: 'application/pdf', sizeBytes: 1000 });
 check(r.status === 409, 'an unapproved request cannot be invoiced', r);
 r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`, { decision: 'CHANGES' });
 check(r.status === 422, 'asking for changes needs a reason', r);
@@ -653,14 +657,34 @@ r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/decision`
 check(r.status === 409, 'a request cannot be approved twice', r);
 r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/payments`, { amount: 1000, method: 'UPI' });
 check(r.status === 409, 'no add-on payment before the invoice', r);
-r = await api('tc', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, {});
-check(r.status === 403, 'the consultant cannot generate the invoice', r);
-r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, { dueDate: tomorrow });
-check(r.status === 201 && r.json.data.status === 'INVOICE_GENERATED' && r.json.data.invoice.kind === 'ADDON' && r.json.data.invoice.total === 16660 && r.json.data.invoice.status === 'Pending',
-  'Accounts generates the add-on invoice from the approved prices', r);
-const addonInvoice = r.json.data.invoice;
+const addonBody = (over: object = {}) => ({ invoiceNumber: 'ADDON/2026/01', issueDate: '2026-10-12', dueDate: '2026-10-26', reference: 'Quote 5', fileName: 'Add-on invoice.pdf', mimeType: 'application/pdf', sizeBytes: 15000, ...over });
+r = await api('tc', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody());
+check(r.status === 403, 'the consultant cannot upload the add-on invoice', r);
+r = await api('a', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody());
+check(r.status === 403, 'Sales cannot upload the add-on invoice', r);
 r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice`, {});
-check(r.status === 409, 'the add-on invoice cannot be generated twice', r);
+check(r.status === 404 || r.status === 405, 'there is no endpoint that generates the add-on invoice', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody({ mimeType: 'image/png' }));
+check(r.status === 422, 'the add-on invoice must be a PDF', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody({ sizeBytes: 512001 }));
+check(r.status === 422 && /500 KB limit/.test(r.json.error.message), 'and at most 500 KB', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody({ total: 1 }));
+check(r.status === 422, 'a typed total is refused (the total comes from the approved request)', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody());
+check(r.status === 201 && r.json.data.path.includes('/invoices/'), 'Accounts starts the add-on invoice upload', r);
+const tkAddon = r.json.data;
+r = await api('accm', 'GET', `/accounts/addon-requests/${addonReq.id}`);
+check(r.json.data.status === 'APPROVED' && r.json.data.invoice === null, 'nothing changes until the PDF is stored', r);
+await put(tkAddon, pdfOfSize(15000, 'addon'));
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkAddon.document.id}/complete`);
+check(r.status === 201 && r.json.data.kind === 'UPLOADED' && r.json.data.total === 16660 && r.json.data.addonRequestId === addonReq.id && r.json.data.status === 'Pending'
+  && r.json.data.items.length === 2 && r.json.data.number === 'ADDON/2026/01' && r.json.data.file.fileName === 'Add-on invoice.pdf',
+  'the add-on invoice takes its total and lines from the approved request', r);
+const addonInvoice = r.json.data;
+r = await api('accm', 'GET', `/accounts/addon-requests/${addonReq.id}`);
+check(r.json.data.status === 'INVOICE_GENERATED' && r.json.data.invoice.id === addonInvoice.id, 'the request moves to Invoice Uploaded', r);
+r = await api('accm', 'POST', `/accounts/addon-requests/${addonReq.id}/invoice-upload`, addonBody({ invoiceNumber: 'ADDON/2026/02' }));
+check(r.status === 409, 'the add-on invoice is uploaded once', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}/invoices`);
 check(r.status === 200 && r.json.data.length === 2 && r.json.data.some((i: any) => i.id === addonInvoice.id && i.status === 'Pending'), 'Sales sees the add-on invoice read-only', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}/invoices`);
@@ -848,7 +872,7 @@ check(r.status === 200 && r.json.data.some((i: any) => i.id === upInv.id && i.fi
 r = await api('a', 'GET', '/invoices');
 check(r.status === 200 && invIds(r).includes(upInv.id), "Sales's invoice list has it", r);
 r = await api('accm', 'GET', '/accounts/invoices?kind=UPLOADED');
-check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === upInv.id, 'the Accounts list filters uploaded invoices', r);
+check(r.status === 200 && r.json.data.total === 3 && r.json.data.items.some((i: any) => i.id === upInv.id), 'the Accounts list filters uploaded invoices', r);
 r = await api('accm', 'GET', '/accounts/invoices?search=gst/26');
 check(r.json.data.total === 1, 'and finds it by invoice number', r);
 r = await api('b', 'GET', `/invoices/${upInv.id}`);
@@ -877,8 +901,6 @@ r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileNa
 check(r.status === 422, 'a replacement must be a PDF', r);
 r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'new.pdf', mimeType: 'application/pdf', sizeBytes: MAX_PDF + 1 });
 check(r.status === 422 && /500 KB limit/.test(r.json.error.message), 'a replacement over 500 KB is refused', r);
-r = await api('accm', 'POST', `/accounts/invoices/${serviceInvoice.id}/replace`, { fileName: 'new.pdf', mimeType: 'application/pdf', sizeBytes: 1000 });
-check(r.status === 409, 'a generated invoice has no uploaded PDF to replace', r);
 // a failed replacement keeps the current file
 r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'bad.pdf', mimeType: 'application/pdf', sizeBytes: 500 });
 const tkBad = r.json.data;
@@ -915,7 +937,7 @@ check(invItem.entry?.status === 'SAVED' && invItem.entry.documentId && r.json.da
   && !r.json.data.documents.some((d: any) => d.invoiceId === upInv.id && d.status === 'SUPERSEDED'), 'the Invoice item of the onboarding checklist shows the uploaded PDF (older versions hidden from Sales)', invItem);
 const { rows: invAudit } = await db.query(`select action, count(*)::int n from public.audit_logs where action in ('INVOICE_UPLOADED', 'INVOICE_REPLACED', 'INVOICE_UPDATED') group by action`);
 const ia = Object.fromEntries(invAudit.map((x: any) => [x.action, x.n]));
-check(ia.INVOICE_UPLOADED === 1 && ia.INVOICE_REPLACED === 1 && ia.INVOICE_UPDATED === 1, 'upload, replacement and edit are audited', ia);
+check(ia.INVOICE_UPLOADED === 3 && ia.INVOICE_REPLACED === 1 && ia.INVOICE_UPDATED === 1, 'upload, replacement and edit are audited', ia);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '1' });
 check(r.status === 404, 'consultant cannot change sales data', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DOCUMENTS/review`, { decision: 'REJECTED' });

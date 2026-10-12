@@ -41,6 +41,7 @@ import {
   checklistReviewSchema,
   checklistSaveSchema,
   documentUploadSchema,
+  addonInvoiceUploadSchema,
   invoiceReplaceSchema,
   invoiceUploadSchema,
   leadCreateSchema,
@@ -331,6 +332,11 @@ export class PipelineService {
   // Invoice PDFs (Accounts only; the database checks the role, the customer, the number and the size again).
   async beginInvoiceUpload(body: unknown): Promise<DocumentUploadTicket> {
     return this.ticket(await this.repo.beginInvoiceUpload(parse(invoiceUploadSchema, body)));
+  }
+
+  /** The invoice PDF of an approved add-on request (its total always comes from the approved request). */
+  async beginAddonInvoiceUpload(requestId: string, body: unknown): Promise<DocumentUploadTicket> {
+    return this.ticket(await this.repo.beginAddonInvoiceUpload(parse(uuidSchema, requestId), parse(addonInvoiceUploadSchema, body)));
   }
 
   async beginInvoiceReplacement(invoiceId: string, body: unknown): Promise<DocumentUploadTicket> {
