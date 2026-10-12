@@ -7,6 +7,7 @@ import {
   addonRequestSaveSchema,
   addonRequestsQuerySchema,
   invoiceCreateSchema,
+  invoiceDetailsSchema,
   invoiceCustomersQuerySchema,
   invoicesQuerySchema,
   invoiceStatusSchema,
@@ -69,6 +70,9 @@ export class AddonInvoiceService {
   }
   setInvoiceStatus(id: unknown, body: unknown): Promise<Invoice> {
     return this.repo.setInvoiceStatus(parse(uuidSchema, id), parse(invoiceStatusSchema, body).status);
+  }
+  updateInvoiceDetails(id: unknown, body: unknown): Promise<Invoice> {
+    return this.repo.updateInvoiceDetails(parse(uuidSchema, id), parse(invoiceDetailsSchema, body));
   }
   invoiceCustomers(query: unknown): Promise<InvoiceCustomer[]> {
     return this.repo.invoiceCustomers(parse(invoiceCustomersQuerySchema, query ?? {}).search);

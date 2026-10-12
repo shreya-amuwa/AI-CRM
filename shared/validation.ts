@@ -6,6 +6,8 @@ import { z } from 'zod';
 import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
+  INVOICE_PDF_MAX_BYTES,
+  INVOICE_PDF_MAX_LABEL,
   LEAD_STATUSES,
   ONBOARDING_FILTERS,
   HANDOVER_STAGES,
@@ -614,6 +616,44 @@ export const invoiceCreateSchema = z
   })
   .strict();
 export type InvoiceCreateInput = z.infer<typeof invoiceCreateSchema>;
+/** The PDF of an uploaded invoice: PDF only, at most 500 KB (the database and the bucket check it again). */
+const invoicePdfFields = {
+  fileName: trimmed(255).min(1, 'Choose the invoice PDF.'),
+  mimeType: z.literal('application/pdf', { errorMap: () => ({ message: 'Only PDF files are accepted for invoices.' }) }),
+  sizeBytes: z.coerce
+    .number({ invalid_type_error: 'The file size is missing.' })
+    .int()
+    .positive('This file is empty.')
+    .max(INVOICE_PDF_MAX_BYTES, `File size exceeds the ${INVOICE_PDF_MAX_LABEL} limit. Please upload a smaller PDF.`)
+};
+const invoiceNumber = z
+  .string()
+  .trim()
+  .min(1, 'Enter the invoice number.')
+  .max(60, 'The invoice number is too long.')
+  .regex(/^[A-Za-z0-9][A-Za-z0-9 ./#_-]*$/, 'The invoice number can use letters, numbers, spaces and - / . # _');
+export const invoiceUploadSchema = z
+  .object({
+    customerId: uuidSchema,
+    invoiceNumber,
+    issueDate: isoDate.optional().nullable(),
+    dueDate: isoDate.optional().nullable(),
+    amount: z.coerce.number().min(0).max(9999999999.99).refine(n => Math.round(n * 100) / 100 === n, 'Use at most 2 decimals.').optional().nullable(),
+    reference: optionalText(120),
+    note: optionalText(1000),
+    ...invoicePdfFields
+  })
+  .strict();
+export const invoiceReplaceSchema = z.object({ ...invoicePdfFields }).strict();
+export const invoiceDetailsSchema = z
+  .object({
+    issueDate: isoDate.optional().nullable(),
+    dueDate: isoDate.optional().nullable(),
+    amount: z.coerce.number().min(0).max(9999999999.99).refine(n => Math.round(n * 100) / 100 === n, 'Use at most 2 decimals.').optional().nullable(),
+    reference: optionalText(120),
+    note: optionalText(1000)
+  })
+  .strict();
 export const invoiceStatusSchema = z.object({ status: z.enum(['Paid', 'Pending']) }).strict();
 
 const pageQuery = {
@@ -630,7 +670,7 @@ export const addonRequestsQuerySchema = z.object({
 });
 export const invoicesQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
-  kind: z.enum(['MANUAL', 'SERVICE', 'ADDON']).optional(),
+  kind: z.enum(['MANUAL', 'SERVICE', 'ADDON', 'UPLOADED']).optional(),
   status: z.enum(['Paid', 'Pending', 'Overdue']).optional(),
   ...pageQuery
 });

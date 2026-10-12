@@ -108,6 +108,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/addon-request/complete', handler: addons.complete, options: S },
   { method: 'GET', path: '/pipeline/customers/:id/invoices', handler: addons.customerInvoices },
   { method: 'GET', path: '/invoices', handler: addons.visibleInvoices },
+  { method: 'GET', path: '/invoices/:id', handler: documents.invoiceDetail },
   // Accounts: Business Verification and invoices
   { method: 'GET', path: '/accounts/addon-requests', handler: addons.requests },
   { method: 'GET', path: '/accounts/addon-requests/:id', handler: addons.request },
@@ -118,6 +119,11 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/accounts/addon-payments/:id/decision', handler: addons.decidePayment, options: S },
   { method: 'GET', path: '/accounts/invoices', handler: addons.invoices },
   { method: 'POST', path: '/accounts/invoices', handler: addons.createInvoice, options: S },
+  // Existing invoice PDFs: begin -> browser uploads to the signed path -> complete (then the invoice record exists)
+  { method: 'POST', path: '/accounts/invoice-uploads', handler: documents.beginInvoiceUpload, options: S },
+  { method: 'POST', path: '/accounts/invoices/:id/replace', handler: documents.beginInvoiceReplacement, options: S },
+  { method: 'POST', path: '/accounts/invoice-uploads/:id/complete', handler: documents.completeInvoiceUpload, options: S },
+  { method: 'POST', path: '/accounts/invoices/:id/details', handler: addons.updateInvoiceDetails, options: S },
   { method: 'PATCH', path: '/accounts/invoices/:id', handler: addons.setInvoiceStatus, options: S },
   { method: 'GET', path: '/accounts/invoice-customers', handler: addons.invoiceCustomers },
   { method: 'GET', path: '/accounts/finance/summary', handler: finance.summary },

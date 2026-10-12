@@ -747,6 +747,175 @@ r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
 check(r.status === 200 && r.json.data.checklist.length === 13, 'consultant opens the full checklist', r);
 r = await api('tc', 'GET', `/documents/${importantDoc}/url?action=view`);
 check(r.status === 200, 'consultant can view the documents', r);
+
+// --- Upload Invoice PDF (Accounts): 500 KB, PDF content, Accounts-only writes, company-wide reads -------------
+const MAX_PDF = 512000;
+const pdfOf = (n: number, tag = 'x') => {
+  const head = Buffer.from(`%PDF-1.4\n% ${tag}\n`), tail = Buffer.from('\n%%EOF\n');
+  return Buffer.concat([head, Buffer.alloc(Math.max(0, n - head.length - tail.length), 0x20), tail]);
+};
+const listKeys = async () => (await fetch(`${GW}/storage/v1/__objects`, { headers: { authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }).then(x => x.json())) as string[];
+const upBody = (over: object = {}) => ({ customerId: leadA, invoiceNumber: 'GST/26-27/001', issueDate: '2026-10-05', dueDate: '2026-10-20', amount: 41300, reference: 'PO-8812', note: 'Diwali pack',
+  fileName: 'Galaxy Jewellers Oct.pdf', mimeType: 'application/pdf', sizeBytes: 1000, ...over });
+const countInvoices = async (n: string) => Number((await db.query(`select count(*) c from public.member_invoices where lower(invoice_number) = lower($1)`, [n])).rows[0].c);
+
+for (const who of ['a', 'th', 'dh', 'tc']) {
+  r = await api(who, 'POST', '/accounts/invoice-uploads', upBody());
+  check(r.status === 403, `${who} (not Accounts) cannot upload an invoice PDF`, r);
+}
+r = await api(null, 'POST', '/accounts/invoice-uploads', upBody());
+check(r.status === 401, 'an anonymous request cannot upload');
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ mimeType: 'image/png', fileName: 'inv.png' }));
+check(r.status === 422 && /PDF/.test(r.json.error.message), 'a non-PDF type is refused', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ sizeBytes: MAX_PDF + 1 }));
+check(r.status === 422 && /500 KB limit/.test(r.json.error.message), 'a file over 500 KB is refused with the size message', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ sizeBytes: 0 }));
+check(r.status === 422, 'an empty file is refused', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: '  ' }));
+check(r.status === 422, 'the invoice number is required', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: '../../etc/passwd' }));
+check(r.status === 422, 'an unsafe invoice number is refused', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ customerId: crypto.randomUUID() }));
+check(r.status === 404, 'an unknown customer is refused (no customer is created)', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ unexpected: 'field' }));
+check(r.status === 422, 'unknown fields are refused', r);
+check((await countInvoices('GST/26-27/001')) === 0 && Number((await db.query(`select count(*) c from public.customer_documents where invoice_meta is not null`)).rows[0].c) === 0, 'refused uploads left no invoice and no file row');
+
+// a PDF of exactly 500 KB is accepted end to end
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ sizeBytes: MAX_PDF }));
+check(r.status === 201 && r.json.data.token && r.json.data.path === `customers/${leadA}/invoices/${r.json.data.document.id}.pdf`, 'upload ticket for a 500 KB PDF: the path uses ids only', r);
+const tk1 = r.json.data;
+check((await countInvoices('GST/26-27/001')) === 0, 'no invoice record before the file is stored');
+const pdf500 = pdfOf(MAX_PDF, 'v1');
+check(pdf500.length === MAX_PDF, 'test file is exactly 500 KB');
+up = await put(tk1, pdf500);
+check(up.status === 200, 'the browser uploads the 500 KB PDF to its signed path');
+r = await api('a', 'POST', `/accounts/invoice-uploads/${tk1.document.id}/complete`);
+check(r.status === 403 || r.status === 404, 'Sales cannot finish an Accounts upload', r);
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tk1.document.id}/complete`);
+const upInv = r.json.data;
+check(r.status === 201 && upInv.kind === 'UPLOADED' && upInv.number === 'GST/26-27/001' && upInv.customerId === leadA && upInv.status === 'Pending' && upInv.total === 41300
+  && upInv.reference === 'PO-8812' && upInv.file.fileName === 'Galaxy Jewellers Oct.pdf' && upInv.file.sizeBytes === MAX_PDF && upInv.file.uploadedBy === 'Accounts Member'
+  && upInv.file.version === 1 && upInv.file.versionCount === 1 && upInv.issueDate === '2026-10-05' && upInv.dueDate === '2026-10-20',
+  'the invoice is saved with the customer, number (kept exactly), dates, reference and its original file name, size and uploader', r);
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: 'gst/26-27/001' }));
+check(r.status === 409, 'the same invoice number cannot be used twice (case-insensitive)', r);
+
+// the same limit cannot be bypassed: a file larger than declared is stopped by storage itself
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: 'OVERSIZE-1', sizeBytes: 1000 }));
+const tkBig = r.json.data;
+up = await put(tkBig, pdfOf(MAX_PDF + 1, 'big'));
+check(up.status !== 200, 'storage refuses an object over 500 KB even when the request declared less');
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkBig.document.id}/complete`);
+check(r.status === 422 && /did not finish/.test(r.json.error.message), 'completing it fails', r);
+check((await countInvoices('OVERSIZE-1')) === 0, 'no invoice record is left behind');
+keys = await listKeys();
+check(!keys.some(k => k.includes(tkBig.document.id)), 'and no orphan file');
+// a renamed non-PDF is stopped by its content
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: 'FAKE-1', fileName: 'invoice.pdf' }));
+const tkFake = r.json.data;
+up = await put(tkFake, Buffer.from('MZ this is an executable renamed to .pdf'));
+check(up.status === 200, 'a renamed file reaches storage');
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkFake.document.id}/complete`);
+check(r.status === 422 && /not a valid PDF/.test(r.json.error.message), 'the backend rejects it by its content', r);
+check((await countInvoices('FAKE-1')) === 0, 'no invoice record for the renamed file');
+keys = await listKeys();
+check(!keys.some(k => k.includes(tkFake.document.id)), 'its object was removed');
+// abandoned upload
+r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: 'ABANDONED-1' }));
+await put(r.json.data, pdfOf(2000));
+const r2 = await api('accm', 'POST', `/documents/${r.json.data.document.id}/abort`);
+check(r2.status === 200 && (await countInvoices('ABANDONED-1')) === 0 && !(await listKeys()).some(k => k.includes(r.json.data.document.id)), 'an aborted upload leaves nothing behind');
+
+// everyone who may see the customer reads the same invoice and PDF; others cannot
+const invIds = (res: any) => (res.json.data.items || res.json.data).map((i: any) => i.id);
+for (const who of ['a', 'th', 'dh', 'tc', 'sa', 'accm']) {
+  r = await api(who, 'GET', `/invoices/${upInv.id}`);
+  check(r.status === 200 && r.json.data.file.fileName === 'Galaxy Jewellers Oct.pdf' && r.json.data.file.sizeBytes === MAX_PDF && r.json.data.customer === upInv.customer
+    && r.json.data.number === 'GST/26-27/001' && !JSON.stringify(r.json.data).includes('storage_path') && !JSON.stringify(r.json.data).includes('/invoices/'),
+    `${who} sees the same invoice details and no storage path`, r);
+  r = await api(who, 'GET', `/documents/${upInv.file.documentId}/url?action=view`);
+  check(r.status === 200 && r.json.data.expiresInSeconds <= 300 && r.json.data.fileName === 'Galaxy Jewellers Oct.pdf', `${who} can preview the PDF (short-lived signed URL)`, r);
+  const body = Buffer.from(await fetch(r.json.data.url).then(x => x.arrayBuffer()));
+  check(body.equals(pdf500), `${who} receives the original, unmodified file`);
+}
+r = await api('a', 'GET', `/documents/${upInv.file.documentId}/url?action=download`);
+const dlRes = await fetch(r.json.data.url);
+check(r.status === 200 && new URL(r.json.data.url).searchParams.get('download') === 'Galaxy Jewellers Oct.pdf', 'download keeps the original file name', r.json);
+await dlRes.arrayBuffer();
+r = await api('a', 'GET', `/pipeline/customers/${leadA}/invoices`);
+check(r.status === 200 && r.json.data.some((i: any) => i.id === upInv.id && i.file), 'the customer view lists it with the others', r);
+r = await api('a', 'GET', '/invoices');
+check(r.status === 200 && invIds(r).includes(upInv.id), "Sales's invoice list has it", r);
+r = await api('accm', 'GET', '/accounts/invoices?kind=UPLOADED');
+check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === upInv.id, 'the Accounts list filters uploaded invoices', r);
+r = await api('accm', 'GET', '/accounts/invoices?search=gst/26');
+check(r.json.data.total === 1, 'and finds it by invoice number', r);
+r = await api('b', 'GET', `/invoices/${upInv.id}`);
+check(r.status === 404, "another salesperson cannot read this customer's invoice", r);
+r = await api('b', 'GET', `/documents/${upInv.file.documentId}/url?action=view`);
+check(r.status === 404, 'nor open its PDF by guessing the document id', r);
+r = await api('b', 'GET', '/invoices');
+check(r.status === 200 && !invIds(r).includes(upInv.id), 'nor see it in the list', r);
+r = await api(null, 'GET', `/documents/${upInv.file.documentId}/url`);
+check(r.status === 401, 'an anonymous request cannot open the PDF');
+// persistence: a new session sees the same record and file
+tokens.set('a2', tokenFor((await db.query(`select owner_id from public.customers where id = $1`, [leadA])).rows[0].owner_id));
+r = await api('a2', 'GET', `/invoices/${upInv.id}`);
+check(r.status === 200 && r.json.data.file.documentId === upInv.file.documentId, 'after signing in again the invoice and its PDF are still there', r);
+
+// only Accounts replaces or edits
+for (const who of ['a', 'th', 'tc']) {
+  r = await api(who, 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'new.pdf', mimeType: 'application/pdf', sizeBytes: 1000 });
+  check(r.status === 403, `${who} cannot replace an invoice PDF`, r);
+  r = await api(who, 'POST', `/accounts/invoices/${upInv.id}/details`, { amount: 1 });
+  check(r.status === 403, `${who} cannot edit an uploaded invoice`, r);
+}
+r = await api('a', 'DELETE', `/documents/${upInv.file.documentId}`);
+check(r.status === 403 || r.status === 404, 'nobody deletes an uploaded invoice file here', r);
+r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'new.pdf', mimeType: 'image/jpeg', sizeBytes: 1000 });
+check(r.status === 422, 'a replacement must be a PDF', r);
+r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'new.pdf', mimeType: 'application/pdf', sizeBytes: MAX_PDF + 1 });
+check(r.status === 422 && /500 KB limit/.test(r.json.error.message), 'a replacement over 500 KB is refused', r);
+r = await api('accm', 'POST', `/accounts/invoices/${serviceInvoice.id}/replace`, { fileName: 'new.pdf', mimeType: 'application/pdf', sizeBytes: 1000 });
+check(r.status === 409, 'a generated invoice has no uploaded PDF to replace', r);
+// a failed replacement keeps the current file
+r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'bad.pdf', mimeType: 'application/pdf', sizeBytes: 500 });
+const tkBad = r.json.data;
+await put(tkBad, Buffer.from('not a pdf at all'));
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkBad.document.id}/complete`);
+check(r.status === 422, 'a replacement that is not a PDF is rejected', r);
+r = await api('a', 'GET', `/invoices/${upInv.id}`);
+check(r.json.data.file.documentId === upInv.file.documentId && r.json.data.file.version === 1, 'the existing invoice PDF stays available after a failed replacement', r);
+// a good replacement
+r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/replace`, { fileName: 'Galaxy Jewellers Oct v2.pdf', mimeType: 'application/pdf', sizeBytes: 30000 });
+const tkRep = r.json.data;
+const pdf2 = pdfOf(30000, 'v2');
+await put(tkRep, pdf2);
+r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkRep.document.id}/complete`);
+check(r.status === 201 && r.json.data.id === upInv.id && r.json.data.file.fileName === 'Galaxy Jewellers Oct v2.pdf' && r.json.data.file.version === 2 && r.json.data.file.versionCount === 2
+  && r.json.data.file.versions.length === 1 && r.json.data.file.versions[0].fileName === 'Galaxy Jewellers Oct.pdf' && r.json.data.customerId === leadA, 'the replacement keeps the same invoice and customer; the old file is an older version', r);
+check((await countInvoices('GST/26-27/001')) === 1, 'no second invoice record was created');
+r = await api('a', 'GET', `/invoices/${upInv.id}`);
+check(r.json.data.file.fileName === 'Galaxy Jewellers Oct v2.pdf' && r.json.data.file.versions.length === 0, 'Sales sees the new file and no older versions', r);
+r = await api('a', 'GET', `/documents/${upInv.file.documentId}/url`);
+check(r.status === 404, 'Sales cannot open the older version', r);
+r = await api('accm', 'GET', `/documents/${upInv.file.documentId}/url`);
+check(r.status === 200, 'Accounts can still open the older version', r);
+check((await listKeys()).some(k => k.includes(upInv.file.documentId)), 'the older file is preserved in storage');
+r = await api('tc', 'GET', `/documents/${tkRep.document.id}/url?action=download`);
+check(r.status === 200 && Buffer.from(await fetch(r.json.data.url).then(x => x.arrayBuffer())).equals(pdf2), 'the Technical Consultant downloads the new file, unmodified', r);
+r = await api('accm', 'POST', `/accounts/invoices/${upInv.id}/details`, { amount: 41300.5, reference: 'PO-8812', note: 'Updated', issueDate: '2026-10-06', dueDate: '2026-10-25' });
+check(r.status === 200 && r.json.data.total === 41300.5 && r.json.data.issueDate === '2026-10-06', 'Accounts edits the details of an uploaded invoice', r);
+r = await api('accm', 'PATCH', `/accounts/invoices/${upInv.id}`, { status: 'Paid' });
+check(r.status === 200 && r.json.data.status === 'Paid', 'Accounts marks it paid', r);
+r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
+const invItem = r.json.data.checklist.find((c: any) => c.code === 'INVOICE');
+check(invItem.entry?.status === 'SAVED' && invItem.entry.documentId && r.json.data.documents.some((d: any) => d.documentType === 'INVOICE' && d.invoiceId === upInv.id && d.status === 'UPLOADED')
+  && !r.json.data.documents.some((d: any) => d.invoiceId === upInv.id && d.status === 'SUPERSEDED'), 'the Invoice item of the onboarding checklist shows the uploaded PDF (older versions hidden from Sales)', invItem);
+const { rows: invAudit } = await db.query(`select action, count(*)::int n from public.audit_logs where action in ('INVOICE_UPLOADED', 'INVOICE_REPLACED', 'INVOICE_UPDATED') group by action`);
+const ia = Object.fromEntries(invAudit.map((x: any) => [x.action, x.n]));
+check(ia.INVOICE_UPLOADED === 1 && ia.INVOICE_REPLACED === 1 && ia.INVOICE_UPDATED === 1, 'upload, replacement and edit are audited', ia);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '1' });
 check(r.status === 404, 'consultant cannot change sales data', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DOCUMENTS/review`, { decision: 'REJECTED' });

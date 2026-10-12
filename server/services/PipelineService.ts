@@ -41,6 +41,8 @@ import {
   checklistReviewSchema,
   checklistSaveSchema,
   documentUploadSchema,
+  invoiceReplaceSchema,
+  invoiceUploadSchema,
   leadCreateSchema,
   leadUpdateSchema,
   moveToPotentialSchema,
@@ -312,7 +314,11 @@ export class PipelineService {
   async beginUpload(customerId: string, body: unknown): Promise<DocumentUploadTicket> {
     const id = parse(uuidSchema, customerId);
     const input = parse(documentUploadSchema, body);
-    const row = await this.repo.beginUpload(id, input.documentType, input.fileName, input.mimeType, input.sizeBytes);
+    return this.ticket(await this.repo.beginUpload(id, input.documentType, input.fileName, input.mimeType, input.sizeBytes));
+  }
+
+  /** The single signed upload path for a PENDING row; the row is failed if storage cannot issue it. */
+  private async ticket(row: any): Promise<DocumentUploadTicket> {
     try {
       const token = await this.storage.createUploadToken(row.storage_bucket, row.storage_path);
       return { document: mapDocument(row), bucket: row.storage_bucket, path: row.storage_path, token };
@@ -320,6 +326,27 @@ export class PipelineService {
       await this.repo.failUpload(row.id).catch(() => undefined);
       throw err;
     }
+  }
+
+  // Invoice PDFs (Accounts only; the database checks the role, the customer, the number and the size again).
+  async beginInvoiceUpload(body: unknown): Promise<DocumentUploadTicket> {
+    return this.ticket(await this.repo.beginInvoiceUpload(parse(invoiceUploadSchema, body)));
+  }
+
+  async beginInvoiceReplacement(invoiceId: string, body: unknown): Promise<DocumentUploadTicket> {
+    const input = parse(invoiceReplaceSchema, body);
+    return this.ticket(await this.repo.beginInvoiceReplacement(parse(uuidSchema, invoiceId), input.fileName, input.mimeType, input.sizeBytes));
+  }
+
+  /** Same checks as any document (stored object, PDF signature, size), then the invoice as it now stands. */
+  async completeInvoiceUpload(documentId: string): Promise<unknown> {
+    const doc = await this.completeUpload(documentId);
+    if (!doc.invoiceId) throw new AppError('CONFLICT', 'This file is not an invoice.');
+    return this.repo.invoiceDetail(doc.invoiceId);
+  }
+
+  invoiceDetail(invoiceId: string): Promise<unknown> {
+    return this.repo.invoiceDetail(parse(uuidSchema, invoiceId));
   }
 
   async completeUpload(documentId: string): Promise<CustomerDocument> {
@@ -338,7 +365,9 @@ export class PipelineService {
       throw new AppError(
         'VALIDATION_ERROR',
         doc.mime_type === 'application/pdf'
-          ? 'This file is not a valid PDF. Please combine the documents into one PDF and try again.'
+          ? doc.document_type === 'INVOICE'
+            ? 'This file is not a valid PDF. Please upload the original invoice PDF.'
+            : 'This file is not a valid PDF. Please combine the documents into one PDF and try again.'
           : 'The file content does not match its type. Please upload the original file.'
       );
     }

@@ -203,11 +203,16 @@ export const addonInvoiceController = {
   confirmPayment: (async ctx => ok(await svc(ctx).addons.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   invoices: (async ctx => ok(await svc(ctx).addons.invoices(ctx.req.query))) as Handler,
   createInvoice: (async ctx => ok(await svc(ctx).addons.createInvoice(ctx.req.body), 201)) as Handler,
+  updateInvoiceDetails: (async ctx => ok(await svc(ctx).addons.updateInvoiceDetails(ctx.params.id, ctx.req.body))) as Handler,
   setInvoiceStatus: (async ctx => ok(await svc(ctx).addons.setInvoiceStatus(ctx.params.id, ctx.req.body))) as Handler,
   invoiceCustomers: (async ctx => ok(await svc(ctx).addons.invoiceCustomers(ctx.req.query))) as Handler
 };
 
 export const documentsController = {
+  beginInvoiceUpload: (async ctx => ok(await svc(ctx).pipeline.beginInvoiceUpload(ctx.req.body), 201)) as Handler,
+  beginInvoiceReplacement: (async ctx => ok(await svc(ctx).pipeline.beginInvoiceReplacement(ctx.params.id, ctx.req.body), 201)) as Handler,
+  completeInvoiceUpload: (async ctx => ok(await svc(ctx).pipeline.completeInvoiceUpload(ctx.params.id), 201)) as Handler,
+  invoiceDetail: (async ctx => ok(await svc(ctx).pipeline.invoiceDetail(ctx.params.id))) as Handler,
   beginUpload: (async ctx => ok(await svc(ctx).pipeline.beginUpload(ctx.params.id, ctx.req.body), 201)) as Handler,
   complete: (async ctx => ok(await svc(ctx).pipeline.completeUpload(ctx.params.id))) as Handler,
   abort: (async ctx => {

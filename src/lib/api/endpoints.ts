@@ -255,7 +255,19 @@ export const invoicesApi = {
   create: (body: { customerId: string; items: PricedLineInput[]; issueDate?: string | null; dueDate?: string | null; note?: string | null }) =>
     api.post<Invoice>('/accounts/invoices', body),
   setStatus: (id: string, status: 'Paid' | 'Pending') => api.patch<Invoice>(`/accounts/invoices/${id}`, { status }),
-  customers: (search?: string) => api.get<InvoiceCustomer[]>('/accounts/invoice-customers', { search })
+  customers: (search?: string) => api.get<InvoiceCustomer[]>('/accounts/invoice-customers', { search }),
+  /** One invoice the caller may read (current PDF included for an uploaded invoice). */
+  get: (id: string) => api.get<Invoice>(`/invoices/${id}`),
+  // Existing invoice PDFs (Accounts only): begin -> upload to the signed path -> complete
+  beginUpload: (body: {
+    customerId: string; invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; amount?: number | null;
+    reference?: string | null; note?: string | null; fileName: string; mimeType: 'application/pdf'; sizeBytes: number;
+  }) => api.post<DocumentUploadTicket>('/accounts/invoice-uploads', body),
+  beginReplacement: (id: string, body: { fileName: string; mimeType: 'application/pdf'; sizeBytes: number }) =>
+    api.post<DocumentUploadTicket>(`/accounts/invoices/${id}/replace`, body),
+  completeUpload: (documentId: string) => api.post<Invoice>(`/accounts/invoice-uploads/${documentId}/complete`),
+  updateDetails: (id: string, body: { issueDate?: string | null; dueDate?: string | null; amount?: number | null; reference?: string | null; note?: string | null }) =>
+    api.post<Invoice>(`/accounts/invoices/${id}/details`, body)
 };
 
 export const financeApi = {

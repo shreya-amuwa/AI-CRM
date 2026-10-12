@@ -400,6 +400,8 @@ export interface CustomerDocument {
   uploadedBy: ProfileSummary | null;
   uploadedAt: string | null;
   createdAt: string;
+  /** Set for the PDF of an uploaded invoice. */
+  invoiceId?: string | null;
 }
 
 export const CHECKLIST_KINDS = ['DETAILS', 'FILE', 'YES_NO', 'APPROVAL', 'ACCESS', 'AMOUNT', 'CHOICE'] as const;
@@ -783,7 +785,27 @@ export interface PricedLine {
   lineTotal?: number;
 }
 
-export type InvoiceKind = 'MANUAL' | 'SERVICE' | 'ADDON';
+/** MANUAL: older invoices; SERVICE / ADDON: issued by Accounts; UPLOADED: an existing invoice PDF uploaded by Accounts. */
+export type InvoiceKind = 'MANUAL' | 'SERVICE' | 'ADDON' | 'UPLOADED';
+
+/** The one limit for an uploaded invoice PDF (the database and the storage bucket enforce the same). */
+export const INVOICE_PDF_MAX_BYTES = 512000;
+export const INVOICE_PDF_MAX_LABEL = '500 KB';
+
+export interface InvoiceFileVersion {
+  documentId: string;
+  fileName: string;
+  sizeBytes: number | null;
+  uploadedAt: string | null;
+  uploadedBy: string | null;
+  version: number;
+}
+/** The current PDF of an uploaded invoice. Older versions are listed for Accounts only. */
+export interface InvoiceFile extends InvoiceFileVersion {
+  mimeType: string;
+  versionCount: number;
+  versions: InvoiceFileVersion[];
+}
 export interface Invoice {
   id: string;
   number: string;
@@ -795,14 +817,18 @@ export interface Invoice {
   department: string | null;
   issueDate: string | null;
   dueDate: string | null;
-  subtotal: number;
+  subtotal: number | null;
   discount: number;
   tax: number;
-  total: number;
+  /** Null for an uploaded invoice whose total was not entered. */
+  total: number | null;
   status: 'Paid' | 'Pending' | 'Overdue';
   paidAt: string | null;
   items: PricedLine[];
   note: string | null;
+  /** Payment, order or service reference entered with an uploaded invoice. */
+  reference: string | null;
+  file: InvoiceFile | null;
   addonRequestId: string | null;
   issuedBy: string | null;
   issuedAt: string;

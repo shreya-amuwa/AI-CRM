@@ -231,8 +231,14 @@ const ChecklistCard: React.FC<{
   const entry = item.entry;
   const done = isDone(item);
   const isFile = item.kind === 'FILE';
-  const currentDoc = isFile ? customer.documents.find(d => d.documentType === item.code && d.status === 'UPLOADED') || null : null;
-  const history = isFile ? customer.documents.filter(d => d.documentType === item.code && d.status === 'SUPERSEDED') : [];
+  // Several invoices can exist: the Invoice item shows the latest one (the one it was filled from).
+  const currentDoc = isFile
+    ? (item.code === 'INVOICE' && entry?.documentId ? customer.documents.find(d => d.id === entry.documentId && d.status === 'UPLOADED') : undefined) ||
+      customer.documents.find(d => d.documentType === item.code && d.status === 'UPLOADED') ||
+      null
+    : null;
+  // Earlier versions of an invoice PDF are for Accounts only.
+  const history = isFile && item.code !== 'INVOICE' ? customer.documents.filter(d => d.documentType === item.code && d.status === 'SUPERSEDED') : [];
   // The Invoice item is filled by the invoice the Accounts department issues: nobody uploads it here.
   const issuedByAccounts = item.code === 'INVOICE';
   const collects = (mode === 'sales' || mode === 'addon') && !issuedByAccounts;
@@ -344,7 +350,7 @@ const ChecklistCard: React.FC<{
     if (isFile && currentDoc) {
       return `${currentDoc.originalFileName} · ${fmtSize(currentDoc.sizeBytes)} · ${shortDate(currentDoc.uploadedAt)}${currentDoc.uploadedBy ? ` · ${currentDoc.uploadedBy.fullName}` : ''}`;
     }
-    if (issuedByAccounts) return entry?.value || 'Issued by the Accounts department. Not issued yet.';
+    if (issuedByAccounts) return entry?.value || 'The Accounts department uploads the invoice. Not uploaded yet.';
     if (entry && !isFile) return displayValue(item);
     if (isFile) return collects ? `${typesText}, up to ${maxSize}. Drop the file here or upload.` : 'Not uploaded yet';
     return item.hint || 'Not filled yet';
@@ -454,8 +460,8 @@ const ChecklistCard: React.FC<{
                 </>
               )}
               {issuedByAccounts && (
-                <button type="button" className={btn.secondary} onClick={() => setDialog('invoices')} aria-label="View the invoices issued by Accounts">
-                  <FileText className="w-3.5 h-3.5" /> View invoice
+                <button type="button" className={btn.secondary} onClick={() => setDialog('invoices')} aria-label="Show all invoices of this customer">
+                  <FileText className="w-3.5 h-3.5" /> All invoices
                 </button>
               )}
               {collects && isFile && (
@@ -547,7 +553,7 @@ const ChecklistCard: React.FC<{
         </Dialog>
       )}
       {dialog === 'invoices' && (
-        <Dialog title="Invoices" description="Issued by the Accounts department. Read-only here." onClose={() => setDialog(null)} wide>
+        <Dialog title="Invoices" description="Uploaded or issued by the Accounts department. Read-only here: open or download the PDF." onClose={() => setDialog(null)} wide>
           <CustomerInvoices customerId={customer.id} />
           <div className="flex justify-end">
             <button type="button" className={btn.secondary} onClick={() => setDialog(null)}>

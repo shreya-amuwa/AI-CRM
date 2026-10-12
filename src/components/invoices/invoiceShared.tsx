@@ -5,6 +5,7 @@ import type { PricedLineInput } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { invoicesApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, Pill, Spinner, todayIso, type Tone, usePipelineRealtime } from '../team-member/pipeline/shared';
+import { InvoiceFileButtons, InvoiceFilePanel, openStoredFile } from './invoiceFiles';
 
 // ---------------------------------------------------------------------------
 // Formatting and status labels
@@ -51,7 +52,7 @@ const isOverdue = (i: Invoice) => i.status !== 'Paid' && !!i.dueDate && i.dueDat
 export const InvoiceStatusPill: React.FC<{ invoice: Invoice }> = ({ invoice }) =>
   invoice.status === 'Paid' ? <Pill tone="green">Paid</Pill> : isOverdue(invoice) || invoice.status === 'Overdue' ? <Pill tone="red">Overdue</Pill> : <Pill tone="orange">Pending</Pill>;
 
-export const INVOICE_KIND_LABEL: Record<Invoice['kind'], string> = { SERVICE: 'Services', ADDON: 'Add-on services', MANUAL: 'Earlier invoice' };
+export const INVOICE_KIND_LABEL: Record<Invoice['kind'], string> = { SERVICE: 'Services', ADDON: 'Add-on services', MANUAL: 'Earlier invoice', UPLOADED: 'Uploaded PDF' };
 
 // ---------------------------------------------------------------------------
 // PDF (generated in the browser from the invoice record; text only, standard fonts)
@@ -125,10 +126,10 @@ export function invoicePdf(inv: Invoice): Blob {
   line(50, y + 8, 545, y + 8);
   y -= 6;
   for (const [label, value, bold] of [
-    ['Subtotal', inv.subtotal, false],
+    ['Subtotal', inv.subtotal ?? 0, false],
     ['Discount', -inv.discount, false],
     ['Tax', inv.tax, false],
-    ['Total', inv.total, true]
+    ['Total', inv.total ?? 0, true]
   ] as const) {
     text(440, y, label, bold ? 11 : 10, bold, 'right');
     text(545, y, value < 0 ? `- ${pdfAmount(-value)}` : pdfAmount(value), bold ? 11 : 10, bold, 'right');
@@ -164,6 +165,11 @@ export function invoicePdf(inv: Invoice): Blob {
 }
 
 export function downloadInvoice(inv: Invoice) {
+  // An uploaded invoice is the original PDF Accounts stored: download that file, never a regenerated one.
+  if (inv.kind === 'UPLOADED' && inv.file) {
+    void openStoredFile(inv.file.documentId, 'download').catch(() => undefined);
+    return;
+  }
   const url = URL.createObjectURL(invoicePdf(inv));
   const a = document.createElement('a');
   a.href = url;
@@ -177,75 +183,115 @@ export function downloadInvoice(inv: Invoice) {
 // ---------------------------------------------------------------------------
 // Invoice detail (read-only everywhere; Accounts adds its own actions through `actions`)
 // ---------------------------------------------------------------------------
-export const InvoiceDetail: React.FC<{ invoice: Invoice; onClose: () => void; actions?: React.ReactNode }> = ({ invoice: i, onClose, actions }) => (
-  <Dialog title={`Invoice ${i.number}`} description={`${INVOICE_KIND_LABEL[i.kind]} · ${i.customer}`} onClose={onClose} wide>
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-      {(
-        [
-          ['Customer', `${i.customer}${i.customerCode ? ` (${i.customerCode})` : ''}`],
-          ['Issue date', longDate(i.issueDate)],
-          ['Due date', i.dueDate ? longDate(i.dueDate) : '-'],
-          ['Department', i.department || '-']
-        ] as const
-      ).map(([k, v]) => (
-        <div key={k} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
-          <div className="text-[11px] text-slate-500">{k}</div>
-          <div className="mt-0.5 font-semibold text-slate-800 break-words">{v}</div>
-        </div>
-      ))}
-    </div>
-    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
-      <InvoiceStatusPill invoice={i} />
-      {i.paidAt && <span>Paid on {longDate(i.paidAt)}</span>}
-      <span>· Issued by {i.issuedBy || 'Accounts'} on {longDate(i.issuedAt)}</span>
-    </div>
-    <div className="overflow-x-auto border border-slate-200 rounded-xl">
-      <table className="w-full text-xs">
-        <thead className="bg-slate-50 text-slate-500">
-          <tr>
-            <th className="text-left font-semibold px-3 py-2">Service</th>
-            <th className="text-right font-semibold px-3 py-2">Qty</th>
-            <th className="text-right font-semibold px-3 py-2">Unit price</th>
-            <th className="text-right font-semibold px-3 py-2">Discount</th>
-            <th className="text-right font-semibold px-3 py-2">Tax</th>
-            <th className="text-right font-semibold px-3 py-2">Amount</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {i.items.length === 0 ? (
-            <tr>
-              <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
-                This invoice has no line details.
-              </td>
-            </tr>
-          ) : (
-            i.items.map((it, n) => (
-              <tr key={it.id || n}>
-                <td className="px-3 py-2 text-slate-800">{it.name}</td>
-                <td className="px-3 py-2 text-right">{it.quantity}</td>
-                <td className="px-3 py-2 text-right">{rupees(it.unitPrice)}</td>
-                <td className="px-3 py-2 text-right">{it.discount ? rupees(it.discount) : '-'}</td>
-                <td className="px-3 py-2 text-right">{it.taxPercent}%</td>
-                <td className="px-3 py-2 text-right font-semibold">{rupees(it.lineTotal ?? null)}</td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-    <Totals subtotal={i.subtotal} discount={i.discount} tax={i.tax} total={i.total} />
-    {i.note && <p className="text-xs text-slate-600 whitespace-pre-line">Note: {i.note}</p>}
-    <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
-      {actions}
-      <button type="button" className={btn.secondary} onClick={() => downloadInvoice(i)}>
-        <Download className="w-3.5 h-3.5" aria-hidden="true" /> Download PDF
-      </button>
-      <button type="button" className={btn.primary} onClick={onClose}>
-        Close
-      </button>
-    </div>
-  </Dialog>
-);
+export const InvoiceDetail: React.FC<{
+  invoice: Invoice;
+  onClose: () => void;
+  actions?: React.ReactNode;
+  /** Accounts only: replace the PDF / edit the details of an uploaded invoice. */
+  canManage?: boolean;
+  onChanged?: (invoice: Invoice) => void;
+}> = ({ invoice: given, onClose, actions, canManage, onChanged }) => {
+  const [i, setI] = useState(given);
+  useEffect(() => setI(given), [given]);
+  const uploaded = i.kind === 'UPLOADED';
+  return (
+    <Dialog title={`Invoice ${i.number}`} description={`${INVOICE_KIND_LABEL[i.kind]} · ${i.customer}`} onClose={onClose} wide>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        {(
+          [
+            ['Customer', `${i.customer}${i.customerCode ? ` (${i.customerCode})` : ''}`],
+            ['Issue date', longDate(i.issueDate)],
+            ['Due date', i.dueDate ? longDate(i.dueDate) : '-'],
+            ['Department', i.department || '-'],
+            ...(uploaded ? ([['Invoice total', i.total === null ? '-' : rupees(i.total)], ['Reference', i.reference || '-']] as const) : [])
+          ] as const
+        ).map(([k, v]) => (
+          <div key={k} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+            <div className="text-[11px] text-slate-500">{k}</div>
+            <div className="mt-0.5 font-semibold text-slate-800 break-words">{v}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+        <InvoiceStatusPill invoice={i} />
+        {i.paidAt && <span>Paid on {longDate(i.paidAt)}</span>}
+        <span>
+          · {uploaded ? 'Uploaded' : 'Issued'} by {i.issuedBy || 'Accounts'} on {longDate(i.issuedAt)}
+        </span>
+      </div>
+      {uploaded ? (
+        <InvoiceFilePanel
+          invoice={i}
+          canManage={canManage}
+          onChanged={inv => {
+            setI(inv);
+            onChanged?.(inv);
+          }}
+        />
+      ) : (
+        <>
+          <div className="overflow-x-auto border border-slate-200 rounded-xl">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left font-semibold px-3 py-2">Service</th>
+                  <th className="text-right font-semibold px-3 py-2">Qty</th>
+                  <th className="text-right font-semibold px-3 py-2">Unit price</th>
+                  <th className="text-right font-semibold px-3 py-2">Discount</th>
+                  <th className="text-right font-semibold px-3 py-2">Tax</th>
+                  <th className="text-right font-semibold px-3 py-2">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {i.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-4 text-center text-slate-500">
+                      This invoice has no line details.
+                    </td>
+                  </tr>
+                ) : (
+                  i.items.map((it, n) => (
+                    <tr key={it.id || n}>
+                      <td className="px-3 py-2 text-slate-800">{it.name}</td>
+                      <td className="px-3 py-2 text-right">{it.quantity}</td>
+                      <td className="px-3 py-2 text-right">{rupees(it.unitPrice)}</td>
+                      <td className="px-3 py-2 text-right">{it.discount ? rupees(it.discount) : '-'}</td>
+                      <td className="px-3 py-2 text-right">{it.taxPercent}%</td>
+                      <td className="px-3 py-2 text-right font-semibold">{rupees(it.lineTotal ?? null)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <Totals subtotal={i.subtotal ?? 0} discount={i.discount} tax={i.tax} total={i.total ?? 0} />
+        </>
+      )}
+      {i.note && <p className="text-xs text-slate-600 whitespace-pre-line">Note: {i.note}</p>}
+      <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
+        {actions}
+        {!uploaded && (
+          <button type="button" className={btn.secondary} onClick={() => downloadInvoice(i)}>
+            <Download className="w-3.5 h-3.5" aria-hidden="true" /> Download PDF
+          </button>
+        )}
+        <button type="button" className={btn.primary} onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </Dialog>
+  );
+};
+
+/** Per-row actions: the stored PDF (Preview / Download) for an uploaded invoice, a generated PDF otherwise. */
+export const InvoiceRowActions: React.FC<{ invoice: Invoice }> = ({ invoice: i }) =>
+  i.kind === 'UPLOADED' && i.file ? (
+    <InvoiceFileButtons file={i.file} number={i.number} compact />
+  ) : (
+    <button type="button" className={btn.secondary} onClick={e => { e.stopPropagation(); downloadInvoice(i); }} aria-label={`Download ${i.number}`}>
+      <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
+    </button>
+  );
 
 export const Totals: React.FC<{ subtotal: number; discount: number; tax: number; total: number; label?: string }> = ({ subtotal, discount, tax, total, label = 'Total' }) => (
   <dl className="ml-auto w-full sm:w-72 text-xs space-y-1">
@@ -300,6 +346,7 @@ export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean;
                 <span className="text-slate-500">{INVOICE_KIND_LABEL[i.kind]}</span>
                 <span className="text-slate-500">Issued {longDate(i.issueDate)}</span>
                 {i.dueDate && <span className="text-slate-500">Due {longDate(i.dueDate)}</span>}
+                {i.file && <span className="text-slate-600 truncate max-w-[14rem]" title={i.file.fileName}>{i.file.fileName}</span>}
                 <span className="ml-auto font-bold text-slate-900">{rupees(i.total)}</span>
                 <InvoiceStatusPill invoice={i} />
               </button>
