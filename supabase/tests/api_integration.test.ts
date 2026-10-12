@@ -58,7 +58,9 @@ tokens.set('sa', tokenFor(sa.id));
 
 let r = await api(null, 'GET', '/me');
 check(r.status === 401 && r.json.error.code === 'UNAUTHENTICATED', 'missing token → 401 envelope', r);
-tokens.set('forged', sign({ sub: sa.id, role: 'authenticated' }).replace(/.$/, 'x'));
+// change the FIRST character of the signature: the last base64url character carries spare bits, so changing it
+// sometimes decodes to the same signature (and "replacing" it with the character it already is changes nothing)
+tokens.set('forged', sign({ sub: sa.id, role: 'authenticated' }).replace(/\.([A-Za-z0-9_-])([^.]*)$/, (_m, c, rest) => `.${c === 'A' ? 'B' : 'A'}${rest}`));
 r = await api('forged', 'GET', '/me');
 check(r.status === 401, 'tampered token rejected');
 
