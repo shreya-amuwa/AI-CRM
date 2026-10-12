@@ -315,7 +315,7 @@ export const Totals: React.FC<{ subtotal: number; discount: number; tax: number;
 );
 
 /** Read-only list of one customer's invoices (Sales, Technical Consultant, Support, heads). */
-export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean; kind?: Invoice['kind'] }> = ({ customerId, compact, kind }) => {
+export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean; kind?: Invoice['kind']; /** Accounts: replace the PDF / edit details from the opened invoice. */ canManage?: boolean }> = ({ customerId, compact, kind, canManage }) => {
   const [items, setItems] = useState<Invoice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Invoice | null>(null);
@@ -354,7 +354,7 @@ export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean;
           ))}
         </ul>
       )}
-      {open && <InvoiceDetail invoice={open} onClose={() => setOpen(null)} />}
+      {open && <InvoiceDetail invoice={open} canManage={canManage} onChanged={inv => { setOpen(inv); load(); }} onClose={() => setOpen(null)} />}
     </div>
   );
 };

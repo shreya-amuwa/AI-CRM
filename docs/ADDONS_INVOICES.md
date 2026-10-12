@@ -109,6 +109,9 @@ existing pieces; there is no new storage system and no second invoice table.
   customer is preset), types the invoice number (required, kept exactly as typed, unique case-insensitively),
   and optionally the dates, total, a payment / order / service reference and a note, then chooses the PDF.
   Nothing is generated and the PDF is never modified. The "New invoice" (generated) flow is unchanged.
+- **Also inside the customer pop-up:** in Accounts > Confirmation and Part Payment, the customer pop-up has an
+  **Invoices** section next to the payments, with **Upload Invoice PDF** (the customer is preset) and the
+  customer's invoices (preview, download, replace).
 - **Model:** the invoice record is a `member_invoices` row of kind `UPLOADED`; its file is a
   `customer_documents` row (type `INVOICE`) linked by `invoice_id`, in the existing private
   `customer-documents` bucket at `customers/<customer_id>/invoices/<document_id>.pdf` (ids only).
