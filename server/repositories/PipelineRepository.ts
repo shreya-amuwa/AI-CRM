@@ -338,8 +338,26 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('assert_client_account_allowed', { p_customer: customerId, p_email: email }));
   }
 
-  async recordClientAccount(customerId: string, userId: string, email: string): Promise<void> {
-    unwrap(await this.db.rpc('record_client_account', { p_customer: customerId, p_user_id: userId, p_email: email }));
+  async recordClientAccount(customerId: string, userId: string, email: string, secret: string | null): Promise<void> {
+    unwrap(await this.db.rpc('record_client_account', { p_customer: customerId, p_user_id: userId, p_email: email, p_secret: secret }));
+  }
+
+  async consultantSetWebsite(customerId: string, url: string): Promise<string> {
+    return unwrap(await this.db.rpc('consultant_set_website', { p_customer: customerId, p_url: url })) as string;
+  }
+
+  /** The customer's onboarding stage and the messages queued / sent for it (RLS: who may see the customer). */
+  async clientMessages(customerId: string): Promise<{ info: any; rows: any[] }> {
+    const info = unwrap(await this.db.rpc('customer_client_stage', { p_customer: customerId })) as any;
+    const rows = unwrap(
+      await this.db
+        .from('automation_jobs')
+        .select('id, channel, stage, status, detail, attempts, recipient, created_at, sent_at, next_attempt_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: true })
+        .limit(50)
+    ) as any[];
+    return { info, rows };
   }
 
   async handoverInfo(customerId: string): Promise<HandoverInfo | null> {

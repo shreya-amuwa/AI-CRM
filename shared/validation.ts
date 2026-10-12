@@ -392,6 +392,10 @@ export const documentUploadSchema = z
   })
   .strict();
 
+export const consultantWebsiteSchema = z
+  .object({ url: z.string().trim().min(4, 'Enter the website address.').max(500, 'The website address is too long.') })
+  .strict();
+
 export const clientAccountSchema = z
   .object({
     email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254),

@@ -464,6 +464,31 @@ export interface AutomationStatus {
   lastRun: { status: 'PENDING' | 'SENT' | 'FAILED'; triggeredAt: string; triggeredBy: string | null; detail: string | null } | null;
 }
 
+/** Onboarding emails / WhatsApp sent from the CRM (Wabastore, WhatsApp API + Blue Tick). */
+export type ClientStage = 'WEBSITE_PENDING' | 'UNDER_REVIEW' | 'META_VERIFICATION' | 'COMPLETED';
+export interface ClientMessage {
+  id: string;
+  channel: 'EMAIL' | 'WHATSAPP';
+  stage: ClientStage;
+  status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
+  detail: string | null;
+  attempts: number;
+  recipient: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  nextAttemptAt: string;
+}
+export interface ClientMessages {
+  /** Null: this customer is not automated, or has not reached the Technical Consultant yet. */
+  stage: ClientStage | null;
+  stageChangedAt: string | null;
+  automated: boolean;
+  /** off: nothing is processed; dry_run: prepared but not sent; live: sent. */
+  mode: 'off' | 'dry_run' | 'live';
+  testMode: boolean;
+  messages: ClientMessage[];
+}
+
 export interface PipelineCustomerDetail extends PipelineCustomer {
   documents: CustomerDocument[];
   documentTypes: DocumentType[];

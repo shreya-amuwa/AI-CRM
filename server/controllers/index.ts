@@ -89,6 +89,8 @@ export const pipelineController = {
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
   createClientAccount: (async ctx => ok(await svc(ctx).pipeline.createClientAccount(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
+  consultantSetWebsite: (async ctx => ok(await svc(ctx).pipeline.consultantSetWebsite(ctx.params.id, ctx.req.body))) as Handler,
+  clientMessages: (async ctx => ok(await svc(ctx).pipeline.clientMessages(ctx.params.id))) as Handler,
   sendToDepartmentHead: (async ctx => {
     await svc(ctx).pipeline.sendToDepartmentHead(ctx.params.id, ctx.req.body);
     return ok(null);

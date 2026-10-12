@@ -14,6 +14,9 @@ import { AppError } from './http/errors.js';
 import { enforce, ipBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HttpMethod, RouteDef } from './http/types.js';
 import { routes } from './routes.js';
+import { automationSettings } from './automations/config.js';
+import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
+import { timingSafeEqual } from 'node:crypto';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
@@ -62,6 +65,28 @@ app.use('*', async (c, next) => {
 // Routes
 // ---------------------------------------------------------------------------
 app.get('/health', async c => c.json(ok(await healthCheck())));
+
+// Onboarding emails / WhatsApp: a change made in the Technical Consultant's (or
+// Accounts') work queues messages in the database; send them right away, within
+// the same request, so they go out in seconds. Never fails the request itself.
+app.use('/pipeline/customers/*', async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET' && c.res.status < 300) await dispatchQuietly();
+});
+
+// Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
+// (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
+app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
+  const secrets = automationSettings().dispatchSecrets;
+  if (!secrets.length) throw new AppError('SERVICE_UNAVAILABLE', 'Automation dispatch is not configured.');
+  const given = Buffer.from((c.req.header('authorization') || '').replace(/^Bearer\s+/i, ''));
+  const okSecret = secrets.some(sec => {
+    const want = Buffer.from(sec);
+    return want.length === given.length && timingSafeEqual(want, given);
+  });
+  if (!okSecret) throw new AppError('UNAUTHENTICATED');
+  return c.json(ok(await runDispatch({ limit: 50, budgetMs: 25_000 })));
+});
 
 for (const route of routes) {
   app.on(route.method, route.path, authenticated(route), adapt(route));
