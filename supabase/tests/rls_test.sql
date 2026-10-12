@@ -927,8 +927,11 @@ select test.must_fail($$select begin_invoice_upload((select id from pipeline whe
   'a PDF over 500 KB is refused', 'exceeds the 500 KB limit');
 select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', null, null, null, null, null, 'inv.pdf', 'application/pdf', 0)$$,
   'an empty file is refused', 'empty');
-select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), '   ', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
-  'the invoice number is required', 'Enter the invoice number');
+insert into invd select 'N1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), '   ', null, null, null, null, null, 'blank.pdf', 'application/pdf', 1000);
+select test.check((select d.invoice_meta ->> 'number' ~ '^INV-[0-9]{4}-[0-9]{5}$' and d.invoice_meta ->> 'issueDate' = ((now() at time zone 'Asia/Kolkata')::date)::text
+                     from customer_documents d where d.id = (select doc from invd where name = 'N1')),
+  'a blank invoice number is numbered by the system and a blank issue date is today');
+select fail_document_upload((select doc from invd where name = 'N1'));
 select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), '../etc/passwd', null, null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,
   'an unsafe invoice number is refused', 'invoice number can use');
 select test.must_fail($$select begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/001', '2026-13-45', null, null, null, null, 'inv.pdf', 'application/pdf', 1000)$$,

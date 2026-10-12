@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Eye, FileText, Pencil, RefreshCw, Search, UploadCloud } from 'lucide-react';
+import { Download, Eye, FileText, RefreshCw, Search, UploadCloud } from 'lucide-react';
 import { INVOICE_PDF_MAX_BYTES, INVOICE_PDF_MAX_LABEL, type DocumentUploadTicket, type Invoice, type InvoiceCustomer, type InvoiceFile } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { addonsApi, documentsApi, invoicesApi } from '../../lib/api/endpoints';
 import { requireSupabase } from '../../services/supabaseClient';
-import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, money, Spinner, todayIso, useDebounced } from '../team-member/pipeline/shared';
+import { btn, Dialog, ErrorBanner, inputCls, longDate, money, Spinner, useDebounced } from '../team-member/pipeline/shared';
 
 // ---------------------------------------------------------------------------
 // Checks the browser can make before anything is sent (the API, the database and the storage bucket
@@ -146,12 +146,6 @@ export const UploadInvoiceDialog: React.FC<{
   const [search, setSearch] = useState('');
   const [customers, setCustomers] = useState<InvoiceCustomer[] | null>(null);
   const [picked, setPicked] = useState<{ id: string; label: string; sub?: string } | null>(preset ?? null);
-  const [number, setNumber] = useState('');
-  const [issueDate, setIssueDate] = useState(todayIso());
-  const [dueDate, setDueDate] = useState('');
-  const [amount, setAmount] = useState('');
-  const [reference, setReference] = useState('');
-  const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -180,11 +174,6 @@ export const UploadInvoiceDialog: React.FC<{
     e.preventDefault();
     if (submitting.current || !picked) return;
     setError(null);
-    if (!number.trim()) return setError('Enter the invoice number.');
-    if (!/^[A-Za-z0-9][A-Za-z0-9 ./#_-]*$/.test(number.trim())) return setError('The invoice number can use letters, numbers, spaces and - / . # _');
-    if (dueDate && issueDate && dueDate < issueDate) return setError('The due date cannot be before the issue date.');
-    const total = addon || amount.trim() === '' ? null : Number(amount);
-    if (total !== null && (Number.isNaN(total) || total < 0 || Math.round(total * 100) / 100 !== total)) return setError('Enter the invoice total in rupees (up to 2 decimals), or leave it empty.');
     if (!file) return setError('Choose the invoice PDF.');
     submitting.current = true;
     setPhase('checking');
@@ -198,28 +187,8 @@ export const UploadInvoiceDialog: React.FC<{
         file,
         () =>
           addon
-            ? addonsApi.beginInvoiceUpload(addon.requestId, {
-                invoiceNumber: number.trim(),
-                issueDate: issueDate || null,
-                dueDate: dueDate || null,
-                reference: reference.trim() || null,
-                note: note.trim() || null,
-                fileName: file.name,
-                mimeType: 'application/pdf',
-                sizeBytes: file.size
-              })
-            : invoicesApi.beginUpload({
-            customerId: picked.id,
-            invoiceNumber: number.trim(),
-            issueDate: issueDate || null,
-            dueDate: dueDate || null,
-            amount: total,
-            reference: reference.trim() || null,
-            note: note.trim() || null,
-            fileName: file.name,
-            mimeType: 'application/pdf',
-            sizeBytes: file.size
-          }),
+            ? addonsApi.beginInvoiceUpload(addon.requestId, { fileName: file.name, mimeType: 'application/pdf', sizeBytes: file.size })
+            : invoicesApi.beginUpload({ customerId: picked.id, fileName: file.name, mimeType: 'application/pdf', sizeBytes: file.size }),
         p => setPhase(p)
       );
       onUploaded(invoice);
@@ -237,8 +206,8 @@ export const UploadInvoiceDialog: React.FC<{
       title={addon ? 'Upload the add-on invoice' : 'Upload Invoice PDF'}
       description={
         addon
-          ? 'Upload the invoice for the approved add-on services. It is stored privately and shown to the consultant and everyone who may see this customer. Nothing is generated or changed in the PDF.'
-          : 'Upload an existing invoice. It is stored privately and shown to everyone who may see this customer. Nothing is generated or changed in the PDF.'
+          ? 'Choose the invoice PDF for the approved add-on services. It is stored privately and shown to the consultant and everyone who may see this customer.'
+          : 'Choose the invoice PDF. It is stored privately and shown to everyone who may see this customer.'
       }
       onClose={onClose}
       wide
@@ -292,32 +261,6 @@ export const UploadInvoiceDialog: React.FC<{
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Invoice number" htmlFor="ui-number" required>
-              <input id="ui-number" className={inputCls} value={number} maxLength={60} disabled={busy} onChange={e => setNumber(e.target.value)} placeholder="e.g. GST/26-27/001" />
-            </Field>
-            <Field label="Invoice date" htmlFor="ui-issue">
-              <input id="ui-issue" type="date" className={inputCls} value={issueDate} max={todayIso()} disabled={busy} onChange={e => setIssueDate(e.target.value)} />
-            </Field>
-            <Field label="Due date" htmlFor="ui-due">
-              <input id="ui-due" type="date" className={inputCls} value={dueDate} min={issueDate || undefined} disabled={busy} onChange={e => setDueDate(e.target.value)} />
-            </Field>
-            {addon ? (
-              <Field label="Approved add-on total" htmlFor="ui-total">
-                <input id="ui-total" className={inputCls} value={money(addon.total)} readOnly disabled />
-              </Field>
-            ) : (
-              <Field label="Invoice total (Rs., optional)" htmlFor="ui-total">
-                <input id="ui-total" inputMode="decimal" className={inputCls} value={amount} disabled={busy} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="e.g. 41300" />
-              </Field>
-            )}
-            <Field label="Payment / order / service reference" htmlFor="ui-ref">
-              <input id="ui-ref" className={inputCls} value={reference} maxLength={120} disabled={busy} onChange={e => setReference(e.target.value)} placeholder="Optional" />
-            </Field>
-            <Field label="Note" htmlFor="ui-note">
-              <input id="ui-note" className={inputCls} value={note} maxLength={1000} disabled={busy} onChange={e => setNote(e.target.value)} placeholder="Optional" />
-            </Field>
-          </div>
           <PdfPicker id="ui-file" file={file} onFile={f => void chooseFile(f)} disabled={busy} error={fileError} />
           {error && <ErrorBanner message={error} />}
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -329,7 +272,7 @@ export const UploadInvoiceDialog: React.FC<{
             <button type="button" className={btn.secondary} disabled={busy} onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className={btn.primary} disabled={busy || !file || !!fileError || !number.trim()}>
+            <button type="submit" className={btn.primary} disabled={busy || !file || !!fileError}>
               <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Uploading…' : 'Upload invoice'}
             </button>
           </div>
@@ -400,72 +343,11 @@ export const ReplaceInvoiceDialog: React.FC<{ invoice: Invoice; onClose: () => v
 };
 
 // ---------------------------------------------------------------------------
-// Edit the details of an uploaded invoice (Accounts)
-// ---------------------------------------------------------------------------
-export const EditInvoiceDialog: React.FC<{ invoice: Invoice; onClose: () => void; onSaved: (invoice: Invoice) => void }> = ({ invoice, onClose, onSaved }) => {
-  const [issueDate, setIssueDate] = useState(invoice.issueDate || '');
-  const [dueDate, setDueDate] = useState(invoice.dueDate || '');
-  const [amount, setAmount] = useState(invoice.total === null ? '' : String(invoice.total));
-  const [reference, setReference] = useState(invoice.reference || '');
-  const [note, setNote] = useState(invoice.note || '');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const total = amount.trim() === '' ? null : Number(amount);
-    if (total !== null && (Number.isNaN(total) || total < 0 || Math.round(total * 100) / 100 !== total)) return setError('Enter the invoice total in rupees (up to 2 decimals), or leave it empty.');
-    if (dueDate && issueDate && dueDate < issueDate) return setError('The due date cannot be before the issue date.');
-    setBusy(true);
-    setError(null);
-    try {
-      onSaved(await invoicesApi.updateDetails(invoice.id, { issueDate: issueDate || null, dueDate: dueDate || null, amount: total, reference: reference.trim() || null, note: note.trim() || null }));
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog title={`Edit invoice ${invoice.number}`} description="The invoice number and the PDF stay as uploaded. Use Replace PDF to change the file." onClose={onClose} persistent>
-      <form onSubmit={save} className="space-y-3" aria-label="Edit invoice details">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Invoice date" htmlFor="ei-issue">
-            <input id="ei-issue" type="date" className={inputCls} value={issueDate} onChange={e => setIssueDate(e.target.value)} />
-          </Field>
-          <Field label="Due date" htmlFor="ei-due">
-            <input id="ei-due" type="date" className={inputCls} value={dueDate} min={issueDate || undefined} onChange={e => setDueDate(e.target.value)} />
-          </Field>
-          <Field label="Invoice total (Rs.)" htmlFor="ei-total">
-            <input id="ei-total" inputMode="decimal" className={inputCls} value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} />
-          </Field>
-          <Field label="Reference" htmlFor="ei-ref">
-            <input id="ei-ref" className={inputCls} value={reference} maxLength={120} onChange={e => setReference(e.target.value)} />
-          </Field>
-        </div>
-        <Field label="Note" htmlFor="ei-note">
-          <input id="ei-note" className={inputCls} value={note} maxLength={1000} onChange={e => setNote(e.target.value)} />
-        </Field>
-        {error && <ErrorBanner message={error} />}
-        <div className="flex justify-end gap-2">
-          <button type="button" className={btn.secondary} disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className={btn.primary} disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </form>
-    </Dialog>
-  );
-};
-
-// ---------------------------------------------------------------------------
 // The PDF section of an uploaded invoice's detail view
 // ---------------------------------------------------------------------------
 export const InvoiceFilePanel: React.FC<{ invoice: Invoice; canManage?: boolean; onChanged?: (invoice: Invoice) => void }> = ({ invoice, canManage, onChanged }) => {
   const f = invoice.file;
   const [replacing, setReplacing] = useState(false);
-  const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   if (!f) return <p className="text-xs text-slate-500">The PDF of this invoice is not available.</p>;
   return (
@@ -492,9 +374,6 @@ export const InvoiceFilePanel: React.FC<{ invoice: Invoice; canManage?: boolean;
         <div className="flex flex-wrap gap-2">
           <button type="button" className={btn.secondary} onClick={() => setReplacing(true)}>
             <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Replace PDF
-          </button>
-          <button type="button" className={btn.secondary} onClick={() => setEditing(true)}>
-            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit details
           </button>
         </div>
       )}
@@ -523,17 +402,6 @@ export const InvoiceFilePanel: React.FC<{ invoice: Invoice; canManage?: boolean;
           onReplaced={inv => {
             setReplacing(false);
             setNotice('The PDF was replaced. The earlier file is kept as an older version.');
-            onChanged?.(inv);
-          }}
-        />
-      )}
-      {editing && (
-        <EditInvoiceDialog
-          invoice={invoice}
-          onClose={() => setEditing(false)}
-          onSaved={inv => {
-            setEditing(false);
-            setNotice('Invoice details saved.');
             onChanged?.(inv);
           }}
         />

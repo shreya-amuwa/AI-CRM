@@ -484,13 +484,13 @@ export class PipelineRepository {
   }
 
   async beginInvoiceUpload(b: {
-    customerId: string; invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; amount?: number | null;
+    customerId: string; invoiceNumber?: string | null; issueDate?: string | null; dueDate?: string | null; amount?: number | null;
     reference?: string | null; note?: string | null; fileName: string; mimeType: string; sizeBytes: number;
   }) {
     return unwrap(
       await this.db.rpc('begin_invoice_upload', {
         p_customer: b.customerId,
-        p_invoice_number: b.invoiceNumber,
+        p_invoice_number: b.invoiceNumber ?? null,
         p_issue_date: b.issueDate ?? null,
         p_due_date: b.dueDate ?? null,
         p_amount: b.amount ?? null,
@@ -504,13 +504,13 @@ export class PipelineRepository {
   }
 
   async beginAddonInvoiceUpload(requestId: string, b: {
-    invoiceNumber: string; issueDate?: string | null; dueDate?: string | null; reference?: string | null; note?: string | null;
+    invoiceNumber?: string | null; issueDate?: string | null; dueDate?: string | null; reference?: string | null; note?: string | null;
     fileName: string; mimeType: string; sizeBytes: number;
   }) {
     return unwrap(
       await this.db.rpc('begin_addon_invoice_upload', {
         p_request: requestId,
-        p_invoice_number: b.invoiceNumber,
+        p_invoice_number: b.invoiceNumber ?? null,
         p_issue_date: b.issueDate ?? null,
         p_due_date: b.dueDate ?? null,
         p_reference: b.reference ?? null,
