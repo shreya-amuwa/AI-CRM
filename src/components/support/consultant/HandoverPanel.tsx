@@ -58,8 +58,10 @@ export const ClientLoginCard: React.FC<{
   defaultEmail: string | null;
   account: HandoverInfo['clientAccount'] | undefined;
   locked: boolean;
+  /** Wabastore WhatsApp API customers: the login is e-mailed in the "Meta Verification Completed" email. */
+  emailsLogin?: boolean;
   onChanged: () => void;
-}> = ({ customerId, defaultEmail, account, locked, onChanged }) => {
+}> = ({ customerId, defaultEmail, account, locked, emailsLogin, onChanged }) => {
   const [email, setEmail] = useState(defaultEmail || '');
   const [password, setPassword] = useState('');
   const [show, setShow] = useState(false);
@@ -105,7 +107,10 @@ export const ClientLoginCard: React.FC<{
           <h2 id="client-login-heading" className="font-bold text-slate-900">
             Client panel login
           </h2>
-          <p className="text-xs text-slate-500">The e-mail and password the client uses in the app. Use the same ones you set in the internal platform.</p>
+          <p className="text-xs text-slate-500">
+            The e-mail and password the client uses in the app. Use the same ones you set in the internal platform.
+            {emailsLogin && ' Creating it sends the customer the "Meta Verification Completed" email with these login details.'}
+          </p>
         </div>
       </div>
 
@@ -122,7 +127,10 @@ export const ClientLoginCard: React.FC<{
           </dl>
           {justCreated && (
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2" role="status">
-              <p className="font-semibold">Save the password now - it is not stored and cannot be shown again.</p>
+              <p className="font-semibold">
+                Save the password now - it cannot be shown again.
+                {emailsLogin && ' The customer also receives it in the "Meta Verification Completed" email.'}
+              </p>
               <p className="font-mono break-all">{justCreated.password}</p>
               <button type="button" onClick={copy} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white font-bold">
                 <Copy className="w-3.5 h-3.5" aria-hidden="true" /> {copied ? 'Copied' : 'Copy e-mail & password'}

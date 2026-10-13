@@ -49,6 +49,7 @@ import type {
   ReviewCounts,
   AutomationCode,
   AutomationStatus,
+  ClientMessages,
   PipelineCustomer,
   PipelineCustomerDetail,
   PipelineStage,
@@ -205,6 +206,8 @@ export const pipelineApi = {
   reviewCounts: () => api.get<ReviewCounts>('/pipeline/review-counts'),
   verifyAll: (id: string) => api.post<{ verified: number }>(`/pipeline/customers/${id}/checklist/verify-all`),
   automations: (id: string) => api.get<AutomationStatus[]>(`/pipeline/customers/${id}/automations`),
+  clientMessages: (id: string) => api.get<ClientMessages>(`/pipeline/customers/${id}/client-messages`),
+  setWebsite: (id: string, url: string) => api.post<{ website: string }>(`/pipeline/customers/${id}/consultant/website`, { url }),
   triggerAutomation: (id: string, code: AutomationCode) => api.post<AutomationStatus>(`/pipeline/customers/${id}/automations/${code}`),
   reviewChecklistItem: (id: string, item: string, body: { decision: 'VERIFIED' | 'REJECTED'; note?: string | null }) =>
     api.post<null>(`/pipeline/customers/${id}/checklist/${item}/review`, body)

@@ -1,4 +1,5 @@
 import type {
+  ClientMessages,
   AccountsConfirmation,
   AccountsPaymentCounts,
   ChecklistItem,
@@ -53,6 +54,7 @@ import {
   assignToMemberSchema,
   backOutSchema,
   clientAccountSchema,
+  consultantWebsiteSchema,
   handoverNoteSchema,
   passToTeamLeadSchema,
   returnToSalesSchema,
@@ -64,6 +66,8 @@ import type { Actor } from '../auth/authenticate.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
+import { automationSettings } from '../automations/config.js';
+import { encryptSecret } from '../automations/secrets.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
@@ -178,20 +182,54 @@ export class PipelineService {
 
   /**
    * The Technical Consultant creates the client's panel login. The database checks
-   * who may do it first; Supabase Auth then stores the (hashed) password.
+   * who may do it first; Supabase Auth then stores the (hashed) password, which the
+   * client's mobile app signs in with. For the "Status Completed" email the password
+   * is also passed on encrypted; the database erases it once that email is sent.
    */
   async createClientAccount(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
     const customerId = parse(uuidSchema, id);
     const input = parse(clientAccountSchema, body);
     await this.repo.assertClientAccountAllowed(customerId, input.email);
     const userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
+    const key = automationSettings().secretKey;
     try {
-      await this.repo.recordClientAccount(customerId, userId, input.email);
+      await this.repo.recordClientAccount(customerId, userId, input.email, key ? encryptSecret(input.password, key) : null);
     } catch (e) {
       await this.authAdmin.deleteUser(userId).catch(() => undefined);
       throw e;
     }
     return { email: input.email };
+  }
+
+  /** The Technical Consultant saves (or corrects) the customer's website link. */
+  async consultantSetWebsite(id: string, body: unknown): Promise<{ website: string }> {
+    const input = parse(consultantWebsiteSchema, body);
+    return { website: await this.repo.consultantSetWebsite(parse(uuidSchema, id), input.url) };
+  }
+
+  /** Onboarding emails / WhatsApp messages of a customer, with the current stage. */
+  async clientMessages(id: string): Promise<ClientMessages> {
+    const { info, rows } = await this.repo.clientMessages(parse(uuidSchema, id));
+    const s = automationSettings();
+    return {
+      automated: !!info?.automated,
+      stage: info?.stage ?? null,
+      stageChangedAt: info?.stageChangedAt ?? null,
+      mode: s.mode,
+      testMode: s.mode === 'live' && !!s.testRecipients,
+      messages: rows.map(r => ({
+        id: r.id,
+        channel: r.channel,
+        stage: r.stage,
+        status: r.status,
+        detail: r.detail ?? null,
+        attempts: r.attempts,
+        recipient: r.recipient ?? null,
+        createdAt: r.created_at,
+        sentAt: r.sent_at ?? null,
+        nextAttemptAt: r.next_attempt_at
+      }))
+    };
   }
 
   async sendToDepartmentHead(id: string, body: unknown): Promise<void> {

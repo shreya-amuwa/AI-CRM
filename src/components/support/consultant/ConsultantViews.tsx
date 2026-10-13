@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type {
+  ClientMessages,
   ChecklistItem,
   CustomerDocument,
   Paginated,
@@ -42,6 +43,7 @@ import {
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
+import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { ConsultationNotes } from './ConsultationNotes';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 
@@ -263,7 +265,11 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [sendingBack, setSendingBack] = useState(false);
   const [sendBackNote, setSendBackNote] = useState('');
+  const [messages, setMessages] = useState<ClientMessages | null>(null);
 
+  const loadMessages = useCallback(() => {
+    pipelineApi.clientMessages(id).then(setMessages, () => setMessages(null));
+  }, [id]);
   const load = useCallback(() => {
     pipelineApi.get(id).then(
       d => {
@@ -272,9 +278,17 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
       },
       e => setError(errorMessage(e))
     );
-  }, [id]);
+    loadMessages();
+  }, [id, loadMessages]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
+  // While a message is waiting to be sent, check again every 10 seconds.
+  const waitingMessages = !!messages?.messages.some(m => m.status === 'QUEUED' || m.status === 'SENDING');
+  useEffect(() => {
+    if (!waitingMessages) return;
+    const t = window.setInterval(loadMessages, 10_000);
+    return () => window.clearInterval(t);
+  }, [waitingMessages, loadMessages]);
 
   if (error && !c) return <ErrorBanner message={error} onRetry={load} />;
   if (!c) return <Spinner label="Loading customer…" />;
@@ -532,9 +546,24 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           </section>
         )}
 
+        <ClientMessagesPanel
+          customerId={c.id}
+          data={messages}
+          websiteItem={c.checklist.find(i => i.code === 'WA_WEBSITE_URL')}
+          locked={locked}
+          onChanged={changed}
+        />
+
         <ConsultationNotes customerId={c.id} canWrite services={c.services} />
 
-        <ClientLoginCard customerId={c.id} defaultEmail={c.email} account={c.handover?.clientAccount} locked={waiting || handedOver} onChanged={changed} />
+        <ClientLoginCard
+          customerId={c.id}
+          defaultEmail={c.email}
+          account={c.handover?.clientAccount}
+          locked={waiting || handedOver}
+          emailsLogin={!!messages?.automated}
+          onChanged={changed}
+        />
       </div>
     </div>
   );
@@ -584,6 +613,7 @@ const KIND_LABEL: Record<ChecklistItem['kind'], string> = {
 
 function formatEntryValue(item: ChecklistItem, value: string | null): string {
   if (value == null || value === '') return '-';
+  if (item.code === 'WA_WEBSITE_URL' && value === 'NO_WEBSITE') return 'Customer has no website';
   if (item.kind === 'AMOUNT') return money(Number(value));
   if (value === 'YES') return 'Yes';
   if (value === 'NO') return 'No';

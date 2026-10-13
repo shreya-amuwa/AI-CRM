@@ -73,8 +73,13 @@ export const isDone = (i: ChecklistItem) => i.entry?.status === 'SAVED' || i.ent
 /** Optional items (e.g. Website URL) only count towards progress once filled in. */
 export const counts = (i: ChecklistItem) => !(i.optional && !i.entry);
 
+/** The Website URL item: a link, or "no website" (ticked by sales). */
+export const WEBSITE_ITEM = 'WA_WEBSITE_URL';
+export const NO_WEBSITE = 'NO_WEBSITE';
+
 function displayValue(item: ChecklistItem): string {
   const v = item.entry?.value || '';
+  if (item.code === WEBSITE_ITEM && v === NO_WEBSITE) return 'Customer has no website';
   if (item.kind === 'YES_NO') return v === 'YES' ? 'Yes' : v === 'NO' ? 'No' : v;
   if (item.kind === 'AMOUNT') return money(Number(v));
   return v;
@@ -622,7 +627,9 @@ const EntryDialog: React.FC<{ item: ChecklistItem; customerId: string; onClose: 
   return (
     <Dialog title={item.label} description={item.hint || undefined} onClose={onClose}>
       <div className="space-y-3">
-        {item.kind === 'YES_NO' ? (
+        {item.code === WEBSITE_ITEM ? (
+          <WebsiteFields value={value} onChange={setValue} busy={busy} footer={footer} />
+        ) : item.kind === 'YES_NO' ? (
           <div className="flex gap-2" role="group" aria-label={item.label}>
             {(['YES', 'NO'] as const).map(v => (
               <button key={v} type="button" className={`${value === v ? btn.primary : btn.secondary} flex-1`} disabled={busy} onClick={() => save(v)}>
@@ -663,6 +670,55 @@ const EntryDialog: React.FC<{ item: ChecklistItem; customerId: string; onClose: 
         {error && <ErrorBanner message={error} />}
       </div>
     </Dialog>
+  );
+};
+
+/** Website address, or the "Customer has no website" tick (then the customer gets the Mini Website email). */
+const WebsiteFields: React.FC<{
+  value: string;
+  onChange: (v: string) => void;
+  busy: boolean;
+  footer: (label: string, v: string) => React.ReactNode;
+}> = ({ value, onChange, busy, footer }) => {
+  const none = value === NO_WEBSITE;
+  const [url, setUrl] = useState(none ? '' : value);
+  return (
+    <>
+      <label className="block text-xs font-medium text-slate-600" htmlFor="entry-website">
+        Website address
+      </label>
+      <input
+        id="entry-website"
+        type="url"
+        inputMode="url"
+        autoComplete="url"
+        maxLength={500}
+        placeholder="https://www.example.com"
+        className={inputCls}
+        value={none ? '' : url}
+        disabled={none || busy}
+        onChange={e => {
+          setUrl(e.target.value);
+          onChange(e.target.value);
+        }}
+      />
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-slate-300"
+          checked={none}
+          disabled={busy}
+          onChange={e => onChange(e.target.checked ? NO_WEBSITE : url)}
+        />
+        Customer has no website
+      </label>
+      <p className="text-[11px] text-slate-500">
+        {none
+          ? 'Wabastore customers then get the "Mini Website for Your Business" email when they reach the Technical Consultant.'
+          : 'Wabastore customers then get the "Documents Received - Under Review" email when they reach the Technical Consultant.'}
+      </p>
+      {footer('Save', value)}
+    </>
   );
 };
 

@@ -2,7 +2,7 @@
 
 **Goal.** Replace the Google Sheet + Apps Script automations with automations that run from the CRM's own data. When the Technical Consultant (TC) changes something in their dashboard, the database records it and the right email, WhatsApp message or AI call goes out. There is no sheet, no copy-paste and no manual "Trigger" button for the normal flow.
 
-**Status:** proposal, nothing built yet. Section 9 lists the decisions needed before building.
+**Status:** Phase 1 (onboarding email + WhatsApp for Wabastore, WhatsApp API + Blue Tick) is built - see `docs/ONBOARDING_AUTOMATIONS.md`, which supersedes this plan where they differ.
 
 ---
 
@@ -260,7 +260,7 @@ automation_events (job_id, type, data jsonb, created_at)   -- delivered / opened
 2. **WhatsApp:** **keep the same 1automations webhook and payload**, adding only `source: 'AI CRM'`. Nothing changes in Automation Builder.
 3. **AI calling (Bolify):** the script never places calls ("waiting for a supported BolifyAI calling method"). We need Bolify's API docs and an API key, or a webhook URL that starts a call. **Until then we build the scheduler in dry_run.**
 4. **Who moves the stages:** **automatic** for Under Review / Website Pending (when sales sends to the TC), and **TC buttons** for Meta Verification and Completed, because those happen outside the CRM. The alternative is a free dropdown like the sheet.
-5. **Panel password in the "Completed" email:** the script emails the same password (`1234@1234`) to every client and keeps it in code. **Recommendation:**
+5. **Panel password in the "Completed" email:** the script emails the same password (a single shared password) to every client and keeps it in code. **Recommendation:**
    - Store the panel password per department as a server secret, or have the TC type the client's password when completing.
    - Never store it in the database.
    - Ask clients to change it after first login.

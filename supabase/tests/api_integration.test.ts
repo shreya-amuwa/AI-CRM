@@ -4,6 +4,7 @@
  * Run via supabase/tests/run-api.sh.
  */
 import http from 'node:http';
+import net from 'node:net';
 import crypto from 'node:crypto';
 import pg from 'pg';
 
@@ -1347,6 +1348,242 @@ const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=ap
 check(viaRewrite.status === 409, 'Vercel rewrite form (?__path=) routes multi-segment POSTs', viaRewrite.status);
 r = await api('sa', 'PUT', '/customers');
 check(r.status === 405, 'wrong method → 405');
+
+// ---------------------------------------------------------------------------
+// Onboarding emails + WhatsApp (Wabastore, WhatsApp API + Blue Tick): queued by the
+// database, sent by the API. A local mock stands in for the email provider and the
+// WhatsApp webhook - nothing real is sent.
+// ---------------------------------------------------------------------------
+const outbox: { path: string; headers: http.IncomingHttpHeaders; body: any }[] = [];
+const failNext: Record<string, number[]> = {};
+const provider = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', c => (raw += c));
+  req.on('end', () => {
+    const path = (req.url || '').split('?')[0];
+    outbox.push({ path, headers: req.headers, body: raw ? JSON.parse(raw) : null });
+    const status = failNext[path]?.shift() ?? 200;
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(status < 300 ? { id: `msg-${outbox.length}` } : { message: 'Service busy' }));
+  });
+});
+await new Promise<void>(rs => provider.listen(0, rs));
+const P = `http://127.0.0.1:${(provider.address() as any).port}`;
+Object.assign(process.env, {
+  AUTOMATION_MODE: 'dry_run',
+  EMAIL_PROVIDER: 'resend',
+  EMAIL_API_KEY: 're_test_key',
+  EMAIL_API_BASE_URL: P,
+  EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
+  WHATSAPP_WEBHOOK_URL: `${P}/wa`,
+  AUTOMATION_SECRET_KEY: 'local-test-automation-secret',
+  AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789'
+});
+const dispatch = (secret?: string) =>
+  fetch(`${base}/internal/automations/dispatch`, { method: 'POST', headers: secret ? { authorization: `Bearer ${secret}` } : {} }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+const jobsOf = async (id: string) => (await db.query(`select channel, stage, status, detail, secret, attempts from public.automation_jobs where customer_id = $1 order by created_at, channel`, [id])).rows;
+
+// A customer of member A (Wabastore) with the WhatsApp API service, brought to the Technical Consultant.
+async function autoCustomer(fields: Record<string, unknown>, website: string | null) {
+  const res = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], ...fields });
+  check(res.status === 201, `automation test customer ${fields.company} created`, res);
+  const id = res.json.data.id as string;
+  await db.query(`update public.customers set lifecycle_stage = 'POTENTIAL', deal_amount = 1000, amount_received = 1000, stage_changed_at = now() where id = $1`, [id]);
+  const st = await api('a', 'POST', `/pipeline/customers/${id}/start-onboarding`, { amountReceived: 0, paymentMethod: 'UPI' });
+  check(st.status === 200, 'onboarding started', st);
+  if (website) {
+    const w = await api('a', 'PATCH', `/pipeline/customers/${id}/checklist/WA_WEBSITE_URL`, { value: website });
+    check(w.status === 200, `sales saves the website "${website}"`, w);
+  }
+  await db.query(
+    `insert into public.customer_onboarding_entries (customer_id, item_code, value, status, saved_at)
+     select $1, i.code, case when i.kind = 'YES_NO' then 'YES' else 'saved' end, 'SAVED', now()
+       from private.customer_items($1) i where i.code <> 'WA_WEBSITE_URL'
+     on conflict (customer_id, item_code) do nothing`, [id]);
+  await db.query(`select private.refresh_onboarding_progress($1)`, [id]);
+  // what Accounts confirming the payment does: the customer reaches the Technical Consultant
+  await db.query(`select private.forward_to_consultant(c.id, c, false) from public.customers c where c.id = $1`, [id]);
+  return id;
+}
+
+// The dispatch endpoint is protected
+check((await dispatch()).status === 401, 'dispatch needs the secret');
+check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secret is refused');
+
+// Dry run: prepared and logged, nothing sent
+const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://dry-traders.example');
+let d = await dispatch('dispatch-secret-0123456789');
+check(d.status === 200 && d.json.data.mode === 'dry_run' && d.json.data.claimed >= 2 && d.json.data.sent === 0, 'dry run: jobs are processed, nothing is sent', d);
+check(outbox.length === 0, 'dry run: no request reached the email provider or the WhatsApp webhook');
+r = await api('tc', 'GET', `/pipeline/customers/${autoB}/client-messages`);
+check(r.status === 200 && r.json.data.automated && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.mode === 'dry_run'
+  && r.json.data.messages.length === 2 && r.json.data.messages.every((m: any) => m.status === 'SKIPPED' && /^Dry run/.test(m.detail))
+  && r.json.data.messages.some((m: any) => m.detail.includes('Documents Received – Under Review') && m.detail.includes('d***@example.com')),
+  'the TC sees the Under Review email and WhatsApp as dry-run (subject and masked recipient)', r);
+check(!JSON.stringify(r.json).includes('secret'), 'the messages list never includes the password field');
+r = await api('a', 'GET', `/pipeline/customers/${autoB}/client-messages`);
+check(r.status === 200 && r.json.data.messages.length === 2, 'the salesperson can see what was sent to their customer', r);
+r = await api('accm', 'GET', `/pipeline/customers/${autoB}/client-messages`);
+check(r.status === 404, 'staff who cannot see the customer get 404', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}/client-messages`);
+check(r.status === 200 && r.json.data.automated === false && r.json.data.messages.length === 0, 'customers without the WhatsApp API service are not automated', r);
+
+// Live, test recipients only
+Object.assign(process.env, { AUTOMATION_MODE: 'live', AUTOMATION_TEST_RECIPIENTS: '9372286055, 9321664464, auto.client@example.com, nosite.client@example.com' });
+r = await api('tc', 'POST', `/pipeline/customers/${autoB}/checklist/verify-all`);
+check(r.status === 200, 'the TC authorizes every document', r);
+const metaMail = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification In Progress | Amuwa Corporation');
+const metaWa = outbox.find(o => o.path === '/wa' && o.body.status === 'Meta Verification');
+check(!metaMail, 'live with test recipients: a customer that is not a test recipient gets no email');
+check(metaWa && metaWa.body.phone === '919372286055', 'the WhatsApp goes to a test number (+91 format)', metaWa?.body);
+check(metaWa && metaWa.body.whatsapp_number === '919372286055' && metaWa.body.source === 'Google Sheets' && metaWa.body.automation === 'Client Onboarding'
+  && metaWa.body.department === 'Wabastore' && metaWa.body.website === 'https://dry-traders.example' && metaWa.body.name === 'Dry Run'
+  && metaWa.body.email === 'dry.client@example.com' && metaWa.body.event_key === `crm|${autoB}|meta verification|919372286055`,
+  'the WhatsApp webhook gets the same payload as from the Google Sheet', metaWa?.body);
+check((await jobsOf(autoB)).some(j => j.stage === 'META_VERIFICATION' && j.channel === 'EMAIL' && j.status === 'SKIPPED' && /not a test recipient/.test(j.detail)),
+  'the skipped email says why');
+
+// Customer A: no website at arrival -> Website Pending; the website saved later, then the TC authorizes everything
+const autoA = await autoCustomer({ name: 'Auto <Client>', company: 'Auto Traders', email: 'auto.client@example.com', whatsapp: '+91 93722 86055', phone: '9321664464' }, null);
+r = await api('a', 'PATCH', `/pipeline/customers/${autoA}/checklist/WA_WEBSITE_URL`, { value: 'not a website' });
+check(r.status === 422 && /website address/.test(r.json.error.message), 'a website that is not an address is refused', r);
+r = await api('a', 'PATCH', `/pipeline/customers/${autoA}/checklist/WA_WEBSITE_URL`, { value: 'www.auto-traders.example' });
+check(r.status === 200, 'a website without https:// is accepted', r);
+d = await dispatch('dispatch-secret-0123456789');
+const wpMail = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject === 'Mini Website for Your Business | Amuwa Corporation');
+check(wpMail && wpMail.headers.authorization === 'Bearer re_test_key' && wpMail.body.from === 'Amuwa Corporation <meta@amuwa.com>' && wpMail.body.reply_to === 'meta@amuwa.com'
+  && wpMail.body.html.includes('Dear Auto &lt;Client&gt;,') && wpMail.body.html.includes('918879690034') && wpMail.body.text.includes('Mini Website'),
+  'Website Pending: the Mini Website email (from meta@amuwa.com, name HTML-escaped, plain-text copy)', wpMail?.body);
+r = await api('tc', 'POST', `/pipeline/customers/${autoA}/checklist/verify-all`);
+const metaA = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject.startsWith('Meta Verification In Progress'));
+check(metaA && metaA.body.html.includes('your website has been created') && metaA.body.html.includes('around 2-3 weeks'),
+  'Meta Verification email after the website was created: says so, and that it takes about 2-3 weeks', metaA?.body?.html);
+check(!outbox.some(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject.startsWith('Documents Received')),
+  'a customer that started at Website Pending never gets the Under Review email');
+
+// Step 3: the client login. The password is kept encrypted only until the email is sent.
+process.env.AUTOMATION_MODE = 'off';
+r = await api('tc', 'POST', `/pipeline/customers/${autoA}/client-account`, { email: 'auto.login@example.com', password: 'AutoPass#2026x' });
+check(r.status === 201, 'the TC creates the client login', r);
+let jobs = await jobsOf(autoA);
+const pending = jobs.find(j => j.stage === 'COMPLETED' && j.channel === 'EMAIL');
+check(pending && pending.status === 'QUEUED' && /^v1:/.test(pending.secret) && !pending.secret.includes('AutoPass'), 'the password is stored encrypted on the completion email job only', pending);
+check(jobs.filter(j => j.secret).length === 1, 'and nowhere else');
+d = await dispatch('dispatch-secret-0123456789');
+check(d.json.data.claimed === 0, 'sending switched off: nothing is processed');
+process.env.AUTOMATION_MODE = 'live';
+failNext['/wa'] = [503];
+d = await dispatch('dispatch-secret-0123456789');
+const done = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification Completed – Panel Access Details | Amuwa Corporation');
+check(done && done.body.html.includes('https://chat.wabastore.shop/login') && done.body.html.includes('auto.login@example.com')
+  && done.body.html.includes('AutoPass#2026x') && done.body.html.includes('<b>Department:</b> Wabastore'),
+  'Status Completed email: Wabastore panel link, the login e-mail as user ID and the password', done?.body?.html);
+jobs = await jobsOf(autoA);
+check(jobs.every(j => !j.secret), 'once sent, the encrypted password is erased');
+const waJob = jobs.find(j => j.stage === 'COMPLETED' && j.channel === 'WHATSAPP');
+check(waJob && waJob.status === 'QUEUED' && waJob.attempts === 1 && /HTTP 503/.test(waJob.detail), 'a WhatsApp webhook error is retried later', waJob);
+await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and status = 'QUEUED'`, [autoA]);
+d = await dispatch('dispatch-secret-0123456789');
+check(d.json.data.sent === 1 && (await jobsOf(autoA)).find(j => j.stage === 'COMPLETED' && j.channel === 'WHATSAPP')?.status === 'SENT', 'the retry succeeds', d);
+r = await api('tc', 'GET', `/pipeline/customers/${autoA}/client-messages`);
+check(r.json.data.stage === 'COMPLETED' && r.json.data.messages.filter((m: any) => m.status === 'SENT').length === 6
+  && r.json.data.messages.every((m: any) => m.status === 'SENT'), 'every step of customer A was sent exactly once', r.json.data.messages);
+
+// The TC adds the website link; invalid email is skipped
+const autoC = await autoCustomer({ name: 'No Site', company: 'No Site Stores', email: 'nosite.client@example.com', whatsapp: '9876501234', phone: '9321664464' }, 'NO_WEBSITE');
+r = await api('a', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'https://nosite.example' });
+check(r.status === 404, 'sales cannot use the consultant website action', r);
+r = await api('tc', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'nosite-stores.example' });
+check(r.status === 200 && r.json.data.website === 'https://nosite-stores.example', 'the TC saves the website link', r);
+jobs = await jobsOf(autoC);
+check(jobs.some(j => j.stage === 'WEBSITE_PENDING' && j.channel === 'WHATSAPP' && j.status === 'SKIPPED' && /not a test recipient/.test(j.detail)), 'a WhatsApp number outside the test list is not messaged', jobs);
+const autoD = await autoCustomer({ name: 'Phone Only', company: 'Phone Only Co', whatsapp: '9372286055', phone: '9321664464' }, 'https://phone-only.example');
+d = await dispatch('dispatch-secret-0123456789');
+jobs = await jobsOf(autoD);
+check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
+  && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT'), 'no email address: the email is skipped, the WhatsApp still goes', jobs);
+// --- Email through nodemailer (SMTP), e.g. the meta@amuwa.com Google Workspace mailbox ---
+// A tiny fake SMTP server stands in for smtp.gmail.com.
+const smtpMail: { from: string; to: string[]; data: string; user: string }[] = [];
+let smtpMode: 'ok' | 'badauth' | 'busy' | 'reject' = 'ok';
+const smtp = net.createServer(sock => {
+  let buf = '', inData = false, cur = { from: '', to: [] as string[], data: '', user: '' }, authStep = '';
+  const send = (l: string) => sock.write(l + '\r\n');
+  send('220 mock.smtp ESMTP');
+  sock.on('data', chunk => {
+    buf += chunk.toString('utf8');
+    for (;;) {
+      if (inData) {
+        const end = buf.indexOf('\r\n.\r\n');
+        if (end < 0) return;
+        cur.data = buf.slice(0, end);
+        buf = buf.slice(end + 5);
+        inData = false;
+        if (smtpMode === 'busy') send('451 4.3.0 Temporary problem, try again later');
+        else { smtpMail.push(cur); send('250 2.0.0 OK queued'); }
+        cur = { from: '', to: [], data: '', user: '' };
+        continue;
+      }
+      const nl = buf.indexOf('\r\n');
+      if (nl < 0) return;
+      const line = buf.slice(0, nl); buf = buf.slice(nl + 2);
+      const up = line.toUpperCase();
+      if (authStep === 'plain') { authStep = ''; cur.user = Buffer.from(line, 'base64').toString().split('\0')[1] ?? ''; send(smtpMode === 'badauth' ? '535 5.7.8 Username and Password not accepted' : '235 2.7.0 Accepted'); }
+      else if (authStep === 'login-user') { authStep = 'login-pass'; cur.user = Buffer.from(line, 'base64').toString(); send('334 UGFzc3dvcmQ6'); }
+      else if (authStep === 'login-pass') { authStep = ''; send(smtpMode === 'badauth' ? '535 5.7.8 Username and Password not accepted' : '235 2.7.0 Accepted'); }
+      else if (up.startsWith('EHLO') || up.startsWith('HELO')) { send('250-mock.smtp'); send('250-AUTH PLAIN LOGIN'); send('250 8BITMIME'); }
+      else if (up.startsWith('AUTH PLAIN ')) { cur.user = Buffer.from(line.slice(11), 'base64').toString().split('\0')[1] ?? ''; send(smtpMode === 'badauth' ? '535 5.7.8 Username and Password not accepted' : '235 2.7.0 Accepted'); }
+      else if (up === 'AUTH PLAIN') { authStep = 'plain'; send('334 '); }
+      else if (up === 'AUTH LOGIN') { authStep = 'login-user'; send('334 VXNlcm5hbWU6'); }
+      else if (up.startsWith('MAIL FROM')) { cur.from = line; send('250 2.1.0 OK'); }
+      else if (up.startsWith('RCPT TO')) { if (smtpMode === 'reject') send('550 5.1.1 No such user'); else { cur.to.push(line); send('250 2.1.5 OK'); } }
+      else if (up === 'DATA') { inData = true; send('354 go ahead'); }
+      else if (up === 'QUIT') { send('221 bye'); sock.end(); }
+      else send('250 OK');
+    }
+  });
+});
+await new Promise<void>(rs => smtp.listen(0, '127.0.0.1', rs));
+Object.assign(process.env, {
+  AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'smtp', EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
+  SMTP_HOST: '127.0.0.1', SMTP_PORT: String((smtp.address() as any).port), SMTP_SECURE: 'false',
+  SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop', AUTOMATION_TEST_RECIPIENTS: '9372286055,smtp.client@example.com,smtp.two@example.com,smtp.three@example.com'
+});
+const autoS = await autoCustomer({ name: 'Smtp Client', company: 'Smtp Stores', email: 'smtp.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://smtp-stores.example');
+const waBefore = outbox.length;
+d = await dispatch('dispatch-secret-0123456789');
+const sm = smtpMail.at(-1);
+const decoded = sm ? sm.data.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))) : '';
+check(sm && sm.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(sm.from) && sm.to.some(t => /smtp\.client@example\.com/.test(t)),
+  'nodemailer sends through SMTP, signed in as meta@amuwa.com (spaces in the app password are ignored)', sm);
+check(/Subject:.*(Documents Received|=\?UTF-8\?)/i.test(sm?.data ?? '') && /Reply-To: meta@amuwa\.com/i.test(sm?.data ?? '') && /multipart\/alternative/i.test(sm?.data ?? '')
+  && /Dear Smtp Client/.test(decoded), 'the SMTP email has the Under Review subject, reply-to meta@amuwa.com, an HTML and a plain-text part');
+check(outbox.length === waBefore + 1 && outbox.at(-1)?.path === '/wa', 'the WhatsApp still goes through the webhook');
+check((await jobsOf(autoS)).filter(j => j.status === 'SENT').length === 2, 'both jobs are SENT');
+
+// Wrong app password: failed for good would be wrong - the customer's message waits and is retried; the TC sees why
+smtpMode = 'badauth';
+const autoS2 = await autoCustomer({ name: 'Smtp Two', company: 'Smtp Two Co', email: 'smtp.two@example.com', whatsapp: '9372286055', phone: '9321664465' }, 'https://smtp-two.example');
+d = await dispatch('dispatch-secret-0123456789');
+let j2 = (await jobsOf(autoS2)).find(j => j.channel === 'EMAIL');
+check(j2 && j2.status === 'QUEUED' && /SMTP sign-in failed/.test(j2.detail), 'a wrong mailbox password is a clear message ("SMTP sign-in failed") and the email waits for a retry', j2);
+smtpMode = 'ok';
+await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1`, [autoS2]);
+d = await dispatch('dispatch-secret-0123456789');
+check((await jobsOf(autoS2)).find(j => j.channel === 'EMAIL')?.status === 'SENT', 'once the password is fixed the waiting email goes out');
+smtpMode = 'busy';
+const autoS3 = await autoCustomer({ name: 'Smtp Three', company: 'Smtp Three Co', email: 'smtp.three@example.com', whatsapp: '9372286055', phone: '9321664466' }, 'https://smtp-three.example');
+d = await dispatch('dispatch-secret-0123456789');
+j2 = (await jobsOf(autoS3)).find(j => j.channel === 'EMAIL');
+check(j2 && j2.status === 'QUEUED' && j2.attempts === 1 && /SMTP error 451/.test(j2.detail), 'a temporary SMTP error (451) is retried later', j2);
+smtpMode = 'ok';
+await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1`, [autoS3]);
+d = await dispatch('dispatch-secret-0123456789');
+check((await jobsOf(autoS3)).find(j => j.channel === 'EMAIL')?.status === 'SENT', 'and goes out when the server is back');
+smtp.close();
+for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
+for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
+provider.close();
 
 // A project missing an earlier migration must still let people sign in.
 await db.query(`alter function public.rate_limit_consume(jsonb) rename to rate_limit_consume_hidden`);
