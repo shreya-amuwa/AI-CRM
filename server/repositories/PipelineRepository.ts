@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AccountsConfirmation,
   AccountsPaymentCounts,
+  DivisionLeadsOverview,
   ChecklistItem,
   ConsultantNote,
   Conversation,
@@ -26,6 +27,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   lead_source, notes, next_follow_up_at, expected_budget, deal_amount, amount_received, amount_verified, payment_status, payment_workflow, payment_due_date,
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
+  creator:profiles!customers_created_by_fkey(id, full_name),
   services:customer_services(service_code),
   onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, addons_required, addons_submitted_at, addons_submitted_by, addons_by:profiles!addons_submitted_by(full_name), addon_items_total, addon_items_saved, addon_items_verified, addon_items_rejected, addon_request_status, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
@@ -68,6 +70,7 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
     paymentDueDate: r.payment_due_date,
     services: (r.services || []).map((s: any) => s.service_code),
     owner: r.owner ? { id: r.owner.id, fullName: r.owner.full_name } : null,
+    createdBy: r.creator ? { id: r.creator.id, fullName: r.creator.full_name } : null,
     ownerId: r.owner_id,
     teamId: r.team_id,
     departmentId: r.department_id,
@@ -223,6 +226,10 @@ export class PipelineRepository {
     }));
   }
 
+  async divisionOverview(departmentId: string, division: string): Promise<DivisionLeadsOverview> {
+    return unwrap(await this.db.rpc('division_leads_overview', { p_department_id: departmentId, p_division: division })) as DivisionLeadsOverview;
+  }
+
   async counts(): Promise<PipelineCounts> {
     return unwrap(await this.db.rpc('customer_pipeline_counts')) as PipelineCounts;
   }
@@ -237,6 +244,15 @@ export class PipelineRepository {
 
     let query = this.db.from('customers').select(columns, { count: 'exact' }).eq('lifecycle_stage', q.stage);
     if (q.mine) query = query.eq('owner_id', actorId);
+    if (q.ownerId) query = query.eq('owner_id', q.ownerId);
+    // Sub-department scope (e.g. Wabastore Sales): the teams of that division in the department. Never matched by name.
+    if (q.departmentId && q.division) {
+      const teams = unwrap(await this.db.from('teams').select('id').eq('department_id', q.departmentId).eq('division', q.division)) as { id: string }[];
+      if (!teams.length) return { items: [], page: q.page, pageSize: q.pageSize, total: 0 };
+      query = query.in('team_id', teams.map(t => t.id));
+    } else if (q.departmentId) {
+      query = query.eq('department_id', q.departmentId);
+    }
     if (q.search) query = query.ilike('search_text', likePattern(q.search));
     if (q.service) query = query.eq('service_filter.service_code', q.service);
     if (q.source) query = query.eq('lead_source', q.source);

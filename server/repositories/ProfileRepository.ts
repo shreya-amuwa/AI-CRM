@@ -44,6 +44,11 @@ export class ProfileRepository {
     if (q.role) query = query.eq('role', q.role);
     if (q.departmentId) query = query.eq('department_id', q.departmentId);
     if (q.teamId) query = query.eq('team_id', q.teamId);
+    if (q.division && q.departmentId) {
+      const teams = unwrap(await this.db.from('teams').select('id').eq('department_id', q.departmentId).eq('division', q.division)) as { id: string }[];
+      if (!teams.length) return { items: [], page: q.page, pageSize: q.pageSize, total: 0 };
+      query = query.in('team_id', teams.map(t => t.id));
+    }
     if (q.search) {
       const p = likePattern(q.search);
       query = query.or(`full_name.ilike.${JSON.stringify(p)},email.ilike.${JSON.stringify(p)}`);

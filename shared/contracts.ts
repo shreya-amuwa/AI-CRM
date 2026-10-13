@@ -273,6 +273,8 @@ export interface PipelineCustomer {
   paymentDueDate: string | null;
   services: string[];
   owner: ProfileSummary | null;
+  /** Who added the lead (stays when the lead is reassigned). */
+  createdBy: ProfileSummary | null;
   ownerId: string;
   teamId: string;
   departmentId: string;
@@ -504,6 +506,49 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
 
 /** Leads tabs beyond the status ones: with Accounts for payment confirmation / returned by Accounts. */
 export type LeadAccountsFilter = 'WITH_ACCOUNTS' | 'RETURNED';
+
+/** One person of a sub-department with the leads they added / own (Super Admin Team Performance). */
+export interface DivisionMemberStats {
+  id: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  status: AccountStatus;
+  teamId: string;
+  teamName: string;
+  leadsAdded: number;
+  owned: number;
+  leads: number;
+  new: number;
+  contacted: number;
+  interested: number;
+  readyToBuy: number;
+  potential: number;
+  onboarding: number;
+  customers: number;
+  followUpsOverdue: number;
+  followUpsToday: number;
+  noFollowUp: number;
+  lastLeadAt: string | null;
+}
+
+export interface DivisionLeadsOverview {
+  teamIds: string[];
+  members: DivisionMemberStats[];
+  totals: {
+    members: number;
+    leadsAdded: number;
+    leads: number;
+    potential: number;
+    onboarding: number;
+    customers: number;
+    followUpsOverdue: number;
+    followUpsToday: number;
+    noFollowUp: number;
+  };
+  /** Same keys as PipelineCounts.leads, only for the sub-department's teams. */
+  leads: PipelineCounts['leads'];
+}
 
 export interface PipelineCounts {
   leads: Record<'all' | LeadStatus | LeadAccountsFilter, number>;

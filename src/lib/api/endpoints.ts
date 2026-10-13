@@ -4,6 +4,7 @@
  */
 import type {
   AccountsConfirmation,
+  DivisionLeadsOverview,
   AddonRequest,
   AddonRequestPage,
   AddonRequestStatus,
@@ -107,6 +108,10 @@ export interface PartPaymentsParams {
 
 export interface PipelineQuery {
   stage: PipelineStage;
+  /** Super Admin: one sub-department (department + team division) and optionally one owner. */
+  departmentId?: string;
+  division?: TeamDivision;
+  ownerId?: string;
   page?: number;
   pageSize?: number;
   search?: string;
@@ -135,6 +140,8 @@ export interface PipelineQuery {
 export const pipelineApi = {
   services: () => api.get<ServiceCatalogItem[]>('/pipeline/services'),
   counts: () => api.get<PipelineCounts>('/pipeline/counts'),
+  divisionOverview: (departmentId: string, division: TeamDivision) =>
+    api.get<DivisionLeadsOverview>('/pipeline/division-overview', { departmentId, division }),
   list: (q: PipelineQuery) => api.get<Paginated<PipelineCustomer>>('/pipeline/customers', { ...q }),
   get: (id: string) => api.get<PipelineCustomerDetail>(`/pipeline/customers/${id}`),
   createLead: (body: LeadCreateInput) => api.post<PipelineCustomer>('/pipeline/leads', body),
@@ -316,7 +323,7 @@ export const customersApi = {
 };
 
 export const usersApi = {
-  list: (q: { page?: number; pageSize?: number; status?: string; role?: Role; departmentId?: string; teamId?: string; search?: string } = {}) =>
+  list: (q: { page?: number; pageSize?: number; status?: string; role?: Role; departmentId?: string; teamId?: string; division?: TeamDivision; search?: string } = {}) =>
     api.get<Paginated<Profile>>('/users', { ...q }),
   get: (id: string) => api.get<Profile>(`/users/${id}`),
   create: (body: { email: string; fullName: string; password: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string | null }) =>
