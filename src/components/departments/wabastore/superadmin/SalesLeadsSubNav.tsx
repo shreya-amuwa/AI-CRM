@@ -3,19 +3,23 @@ import type { ActiveTab } from '../../../layout/Sidebar';
 import { useSalesOverview, useWabastoreId } from './useSalesOverview';
 
 /**
- * The numbered "1 Leads / 2 Potential" steps under Leads, styled like the Sales Team Member
+ * The numbered "1 Leads / 2 Potential / 3 Customer onboarding / 4 Part payments" steps under Leads, styled like the Sales Team Member
  * dashboard's My Leads sub-menu, with the sub-department's real counts.
  */
-const CHILDREN: { id: ActiveTab; label: string; step: number; badge: string; activeBadge: string; key: 'leads' | 'potential' }[] = [
+type Key = 'leads' | 'potential' | 'onboarding' | 'partPayments';
+const CHILDREN: { id: ActiveTab; label: string; step: number; badge: string; activeBadge: string; key: Key }[] = [
   { id: 'leads', label: 'Leads', step: 1, badge: 'bg-indigo-50 text-indigo-700', activeBadge: 'bg-indigo-600 text-white', key: 'leads' },
-  { id: 'sales_potential' as ActiveTab, label: 'Potential', step: 2, badge: 'bg-orange-50 text-orange-700', activeBadge: 'bg-orange-700 text-white', key: 'potential' }
+  { id: 'sales_potential' as ActiveTab, label: 'Potential', step: 2, badge: 'bg-orange-50 text-orange-700', activeBadge: 'bg-orange-700 text-white', key: 'potential' },
+  { id: 'sales_onboarding' as ActiveTab, label: 'Customer onboarding', step: 3, badge: 'bg-emerald-50 text-emerald-700', activeBadge: 'bg-emerald-700 text-white', key: 'onboarding' },
+  { id: 'sales_part_payments' as ActiveTab, label: 'Part payments', step: 4, badge: 'bg-blue-50 text-blue-700', activeBadge: 'bg-blue-700 text-white', key: 'partPayments' }
 ];
 
 export const SalesLeadsSubNav: React.FC<{ activeTab: ActiveTab; onSelectTab: (tab: ActiveTab) => void }> = ({ activeTab, onSelectTab }) => {
   const departmentId = useWabastoreId();
   const { data } = useSalesOverview(departmentId);
   // The counts come from the database function; an older function without them just shows no number.
-  const count = (k: 'leads' | 'potential'): number | undefined => (k === 'leads' ? data?.leads?.all : data?.potential?.all);
+  const count = (k: Key): number | undefined =>
+    k === 'leads' ? data?.leads?.all : k === 'potential' ? data?.potential?.all : k === 'onboarding' ? data?.onboarding?.all : data?.partPayments;
   return (
     <ul role="group" aria-label="Leads" className="mt-1 ml-3 pl-2 border-l border-slate-100 space-y-0.5">
       {CHILDREN.map(child => {

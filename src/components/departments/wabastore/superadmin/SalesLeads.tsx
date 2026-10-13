@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { LeadsView } from '../../../team-member/pipeline/LeadsView';
 import { PotentialView } from '../../../team-member/pipeline/PotentialView';
+import { OnboardingListView } from '../../../team-member/pipeline/OnboardingViews';
+import { PartPaymentsView } from '../../../payments/PartPaymentsView';
 import { CustomerQuickView } from '../../../team-member/pipeline/CustomerQuickView';
 import { useSalesOverview } from './useSalesOverview';
 
@@ -53,4 +55,33 @@ export const SalesPotential: React.FC<{ departmentId: string | undefined; initia
       }}
     />
   );
+};
+
+/** Wabastore Sales - Customer onboarding for the Super Admin: the Sales Team Member's onboarding list, view only. */
+export const SalesOnboarding: React.FC<{ departmentId: string | undefined; initialOwnerId?: string }> = ({ departmentId, initialOwnerId }) => {
+  const { data } = useSalesOverview(departmentId);
+  const [openId, setOpenId] = useState<string | null>(null);
+  if (!departmentId) return null;
+  return (
+    <>
+      <OnboardingListView
+        key={initialOwnerId || 'all'}
+        counts={data?.onboarding ? { onboarding: data.onboarding } : null}
+        onOpen={setOpenId}
+        scope={{
+          departmentId,
+          division: 'SALES',
+          initialOwnerId,
+          members: (data?.members || []).map(m => ({ id: m.id, fullName: m.fullName }))
+        }}
+      />
+      {openId && <CustomerQuickView id={openId} title="Customer onboarding" onClose={() => setOpenId(null)} />}
+    </>
+  );
+};
+
+/** Wabastore Sales - Part payments for the Super Admin: the Sales Team Member's part-payments list, read only. */
+export const SalesPartPayments: React.FC<{ departmentId: string | undefined }> = ({ departmentId }) => {
+  if (!departmentId) return null;
+  return <PartPaymentsView mode="sales" scope={{ departmentId, division: 'SALES' }} />;
 };

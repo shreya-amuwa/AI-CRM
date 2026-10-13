@@ -26,6 +26,7 @@ import {
   ActivityCard
 } from './LeadForms';
 import { PaymentDialog } from './PotentialView';
+import type { LeadsViewScope } from './LeadsView';
 import { PaymentStatusBadge } from '../../payments/PaymentBits';
 import { getStartedBlockers } from '../../../../shared/contracts';
 import { HandoverBanner } from '../../support/consultant/HandoverPanel';
@@ -72,7 +73,14 @@ const onboardingState = (saved: number, total: number, returned = false): Onboar
 // ---------------------------------------------------------------------------
 // 3 · Customer onboarding (list)
 // ---------------------------------------------------------------------------
-export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOnly?: boolean; onOpen: (id: string) => void }> = ({ counts, ownOnly, onOpen }) => {
+export const OnboardingListView: React.FC<{
+  counts: (Pick<PipelineCounts, 'onboarding'> & { mandatoryDocuments?: number }) | null;
+  ownOnly?: boolean;
+  onOpen: (id: string) => void;
+  /** Super Admin / Department Head: a sub-department's onboarding customers, read only, with who added each. */
+  scope?: LeadsViewScope;
+}> = ({ counts, ownOnly, onOpen, scope }) => {
+  const [owner, setOwner] = useState(scope?.initialOwnerId || '');
   const { items: services, byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [service, setService] = useState('');
@@ -92,15 +100,15 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
     setLoading(true);
     setError(null);
     pipelineApi
-      .list({ stage: 'ONBOARDING', mine: ownOnly || undefined, page, pageSize, search: debounced || undefined, service: service || undefined, onboarding: filter || undefined, sort })
+      .list({ stage: 'ONBOARDING', ...(scope ? { departmentId: scope.departmentId, division: scope.division, ownerId: owner || undefined } : {}), mine: ownOnly || undefined, page, pageSize, search: debounced || undefined, service: service || undefined, onboarding: filter || undefined, sort })
       .then(
         r => seq === seqRef.current && setData(r),
         e => seq === seqRef.current && setError(errorMessage(e))
       )
       .finally(() => seq === seqRef.current && setLoading(false));
-  }, [page, pageSize, debounced, service, filter, sort, ownOnly]);
+  }, [page, pageSize, debounced, service, filter, sort, ownOnly, scope?.departmentId, scope?.division, owner]);
   useEffect(load, [load]);
-  useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize]);
+  useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize, owner]);
   usePipelineRealtime(load);
 
   const tabs: ('' | OnboardingFilter)[] = ['', 'RETURNED', 'COLLECTING', 'WAITING_ON_CLIENT', 'READY_FOR_HANDOVER', 'GET_STARTED'];
@@ -110,7 +118,11 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
       <div>
         <p className="text-xs text-slate-500">Pipeline / Customer onboarding</p>
         <h1 className="text-2xl font-bold text-slate-900 mt-1">Customer onboarding</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Customers whose payment Accounts has confirmed. Open a customer to collect their documents and run their onboarding.</p>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {scope
+            ? 'Customers of this team whose payment Accounts has confirmed. View only: the team members collect the documents and run the onboarding.'
+            : 'Customers whose payment Accounts has confirmed. Open a customer to collect their documents and run their onboarding.'}
+        </p>
       </div>
 
       <Card className="p-4 flex flex-col lg:flex-row gap-2">
@@ -133,6 +145,16 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
             </option>
           ))}
         </select>
+        {scope?.members && (
+          <select aria-label="Filter by team member" className={selectCls} value={owner} onChange={e => setOwner(e.target.value)}>
+            <option value="">All team members</option>
+            {scope.members.map(m => (
+              <option key={m.id} value={m.id}>
+                {m.fullName}
+              </option>
+            ))}
+          </select>
+        )}
         <select aria-label="Sort" className={selectCls} value={sort} onChange={e => setSort(e.target.value as PipelineQuery['sort'])}>
           <option value="newest">Newest first</option>
           <option value="oldest">Oldest first</option>
@@ -143,7 +165,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
       <div role="tablist" aria-label="Onboarding status" className="flex flex-wrap gap-1.5">
         {tabs.map(t => {
           const active = filter === t;
-          const n = counts ? (t ? counts.onboarding[t] : counts.onboarding.all) : null;
+          const n = counts?.onboarding ? (t ? counts.onboarding[t] : counts.onboarding.all) : null;
           return (
             <button
               key={t || 'ALL'}
@@ -174,7 +196,7 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
         <Card className="py-12 text-center text-sm text-slate-500">
           {filter === 'GET_STARTED'
             ? 'No customer is ready to get started yet. A customer appears here once every document is verified and Accounts has verified a part or full payment.'
-            : filter || debounced || service
+            : filter || debounced || service || owner
               ? 'No customers match these filters.'
               : 'No customers in onboarding yet. Customers arrive here when Accounts confirms their payment.'}
         </Card>
@@ -198,6 +220,12 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                         {c.name}
                         {c.city ? ` · ${c.city}` : ''}
                       </div>
+                      {scope && (
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          Added by <span className="font-semibold text-slate-700">{c.createdBy?.fullName || '-'}</span>
+                          {c.owner && c.owner.id !== c.createdBy?.id ? ` · Owner: ${c.owner.fullName}` : ''}
+                        </div>
+                      )}
                     </div>
                     <Pill tone={ONBOARDING_STATE[st].tone}>{ONBOARDING_STATE[st].label}</Pill>
                   </div>
@@ -257,9 +285,9 @@ export const OnboardingListView: React.FC<{ counts: PipelineCounts | null; ownOn
                       type="button"
                       onClick={() => onOpen(c.id)}
                       className="inline-flex items-center gap-1 font-bold text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded"
-                      aria-label={`Open onboarding for ${c.company || c.name}`}
+                      aria-label={`${scope ? 'View' : 'Open'} onboarding for ${c.company || c.name}`}
                     >
-                      Open <ArrowRight className="w-3.5 h-3.5" />
+                      {scope ? 'View' : 'Open'} <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </Card>

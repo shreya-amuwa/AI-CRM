@@ -105,6 +105,9 @@ export interface PartPaymentsParams {
   sort?: 'recent' | 'balance' | 'name' | 'followUp';
   page?: number;
   pageSize?: number;
+  /** Super Admin: one sub-department (department + team division). */
+  departmentId?: string;
+  division?: TeamDivision;
 }
 
 export interface PipelineQuery {

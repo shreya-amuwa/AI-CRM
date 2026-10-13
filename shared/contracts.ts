@@ -550,8 +550,13 @@ export interface DivisionLeadsOverview {
   };
   /** Same keys as PipelineCounts.leads, only for the sub-department's teams. */
   leads: PipelineCounts['leads'];
-  /** Same keys as PipelineCounts.potential, only for the sub-department's teams. */
-  potential: PipelineCounts['potential'];
+  /**
+   * Same keys as PipelineCounts.potential / .onboarding and the part-payments count, only for the
+   * sub-department's teams. Optional: a database that has not had the latest migration omits them.
+   */
+  potential?: PipelineCounts['potential'];
+  onboarding?: PipelineCounts['onboarding'];
+  partPayments?: number;
 }
 
 /** One person of a Support sub-department (Super Admin Team Performance). */

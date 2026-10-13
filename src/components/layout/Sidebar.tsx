@@ -61,6 +61,8 @@ export type ActiveTab =
   | 'sales_conversion'
   | 'sales_team_performance'
   | 'sales_potential'
+  | 'sales_onboarding'
+  | 'sales_part_payments'
   | 'sales_reports'
   | 'support_tickets'
   | 'support_customers'
@@ -338,7 +340,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const isActive = ((isSalesSuperAdmin || isSupportSuperAdmin) && activeTab === 'dashboard' ? 'team_members' : activeTab) === item.id;
             const isNotif = item.id === 'notifications';
             const hasLeadsSteps = isSalesSuperAdmin && item.id === 'leads';
-            const highlighted = hasLeadsSteps ? isActive || activeTab === 'sales_potential' : isActive;
+            const highlighted = hasLeadsSteps ? isActive || activeTab === 'sales_potential' || activeTab === 'sales_onboarding' || activeTab === 'sales_part_payments' : isActive;
 
             return (
               <React.Fragment key={item.id}>

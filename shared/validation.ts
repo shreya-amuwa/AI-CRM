@@ -509,7 +509,10 @@ export const partPaymentsQuerySchema = z.object({
   followUp: z.enum(['FOLLOW_UP_REQUIRED', 'CONTACTED', 'AWAITING_PAYMENT', 'FULLY_PAID']).optional(),
   sort: z.enum(['recent', 'balance', 'name', 'followUp']).default('recent'),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  /** Super Admin / Department Head: one sub-department (department + team division). */
+  departmentId: uuidSchema.optional(),
+  division: z.enum(TEAM_DIVISIONS).optional()
 });
 export type PartPaymentsQuery = z.infer<typeof partPaymentsQuerySchema>;
 
