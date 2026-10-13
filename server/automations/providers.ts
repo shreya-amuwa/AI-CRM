@@ -1,3 +1,4 @@
+import nodemailer from 'nodemailer';
 import type { AutomationSettings } from './config.js';
 import type { RenderedEmail } from './templates.js';
 
@@ -43,9 +44,56 @@ function networkFailure(err: unknown): SendResult {
   return { ok: false, retry: true, code: null, ref: null, detail: timeout ? 'The provider did not answer in time.' : 'Could not reach the provider.' };
 }
 
-/** Sends one email through the configured transactional provider (Resend or Brevo). */
+/**
+ * SMTP through nodemailer, e.g. the meta@amuwa.com Google Workspace mailbox
+ * (smtp.gmail.com, an app password). Temporary failures (4xx, network) are retried.
+ */
+async function sendSmtp(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail): Promise<SendResult> {
+  const smtp = s.email.smtp;
+  if (!smtp) return { ok: false, retry: false, code: null, ref: null, detail: 'SMTP is not configured.' };
+  const transport = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: smtp.user, pass: smtp.pass },
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000
+  });
+  try {
+    const info = await transport.sendMail({
+      from: { name: s.email.fromName, address: s.email.fromEmail },
+      to: { name: to.name, address: to.email },
+      replyTo: s.email.replyTo,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+      ...(s.email.cc.length ? { cc: s.email.cc } : {}),
+      ...(s.email.bcc.length ? { bcc: s.email.bcc } : {})
+    });
+    const rejected = [...(info.rejected ?? [])];
+    if (rejected.length) return { ok: false, retry: false, code: null, ref: null, detail: 'The mail server rejected the recipient address.' };
+    return { ok: true, retry: false, code: 250, ref: info.messageId ?? null, detail: 'SMTP 250' };
+  } catch (err) {
+    const e = err as { responseCode?: number; code?: string; message?: string };
+    const code = typeof e.responseCode === 'number' ? e.responseCode : null;
+    // 5xx = refused for good, except 535 (wrong mailbox / app password): that is our setup, so keep
+    // the message and retry; fixing the password in the settings then recovers it. 4xx / network: temporary.
+    const permanent = code !== null && code >= 500 && code !== 535 && e.code !== 'EAUTH';
+    const detail =
+      code === 535 || e.code === 'EAUTH'
+        ? 'SMTP sign-in failed: check the mailbox and its app password.'
+        : `SMTP error${code ? ` ${code}` : e.code ? ` ${e.code}` : ''}: ${String(e.message ?? '').slice(0, 160)}`;
+    return { ok: false, retry: !permanent, code, ref: null, detail };
+  } finally {
+    transport.close();
+  }
+}
+
+/** Sends one email through the configured provider: SMTP (nodemailer), Resend or Brevo. */
 export async function sendEmail(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail): Promise<SendResult> {
   const { provider, apiKey } = s.email;
+  if (provider === 'smtp') return sendSmtp(s, to, mail);
   if (!provider || !apiKey) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
   try {
     if (provider === 'resend') {

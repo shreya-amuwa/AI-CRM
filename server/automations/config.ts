@@ -23,8 +23,10 @@ export interface AutomationSettings {
   /** off: nothing is processed. dry_run: messages are prepared and logged, never sent. live: sent. */
   mode: AutomationMode;
   email: {
-    provider: 'resend' | 'brevo' | null;
+    provider: 'smtp' | 'resend' | 'brevo' | null;
     apiKey: string | null;
+    /** provider "smtp" (nodemailer): e.g. smtp.gmail.com with the mailbox's app password. */
+    smtp: { host: string; port: number; secure: boolean; user: string; pass: string } | null;
     /** For tests only: point the provider at a local mock server. */
     apiBaseUrl: string | null;
     fromName: string;
@@ -73,8 +75,19 @@ export function automationSettings(): AutomationSettings {
   return {
     mode: mode === 'live' || mode === 'off' ? mode : 'dry_run',
     email: {
-      provider: provider === 'resend' || provider === 'brevo' ? provider : null,
+      provider: provider === 'smtp' || provider === 'resend' || provider === 'brevo' ? provider : null,
       apiKey: env.EMAIL_API_KEY?.trim() || null,
+      smtp:
+        env.SMTP_HOST?.trim() && env.SMTP_USER?.trim() && env.SMTP_PASS
+          ? {
+              host: env.SMTP_HOST.trim(),
+              port: Number(env.SMTP_PORT) || 465,
+              // port 465 is implicit TLS; 587 upgrades with STARTTLS
+              secure: env.SMTP_SECURE ? env.SMTP_SECURE.trim().toLowerCase() === 'true' : (Number(env.SMTP_PORT) || 465) === 465,
+              user: env.SMTP_USER.trim(),
+              pass: env.SMTP_PASS.replace(/\s+/g, '')
+            }
+          : null,
       apiBaseUrl: httpsUrl(env.EMAIL_API_BASE_URL),
       fromName: (m ? m[1].trim().replace(/^"|"$/g, '') : '') || COMPANY.senderName,
       fromEmail: (m ? m[2].trim() : from) || COMPANY.teamEmail,
@@ -101,7 +114,7 @@ export function automationSettings(): AutomationSettings {
 /** Channels whose provider is configured (in live mode only these are claimed; the rest wait). */
 export function liveChannels(s: AutomationSettings): ('EMAIL' | 'WHATSAPP')[] {
   const out: ('EMAIL' | 'WHATSAPP')[] = [];
-  if (s.email.provider && s.email.apiKey) out.push('EMAIL');
+  if ((s.email.provider === 'smtp' && s.email.smtp) || (s.email.provider && s.email.provider !== 'smtp' && s.email.apiKey)) out.push('EMAIL');
   if (s.whatsapp.webhookUrl) out.push('WHATSAPP');
   return out;
 }

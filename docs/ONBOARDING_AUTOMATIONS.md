@@ -76,12 +76,20 @@ Supabase Auth keeps the password (hashed) for signing in. For the completion ema
 | Variable | Value |
 | --- | --- |
 | `AUTOMATION_MODE` | `dry_run` first (prepared and logged, nothing sent), then `live`. `off` stops everything; jobs wait. |
-| `EMAIL_PROVIDER` / `EMAIL_API_KEY` | `resend` or `brevo`, and its API key. Verify `amuwa.com` with the provider (SPF/DKIM records) so `meta@amuwa.com` can send. |
+| `EMAIL_PROVIDER` | `smtp` (nodemailer, sending through the mailbox itself), `resend` or `brevo`. |
+| SMTP (`EMAIL_PROVIDER=smtp`) | `SMTP_HOST` (`smtp.gmail.com`), `SMTP_PORT` (`465`, or `587` for STARTTLS), `SMTP_USER` (`meta@amuwa.com`), `SMTP_PASS` (a Google **app password**, not the normal one; spaces are ignored). `SMTP_SECURE` defaults to true on port 465. |
+| Resend / Brevo (`EMAIL_PROVIDER=resend` or `brevo`) | `EMAIL_API_KEY`. Verify `amuwa.com` with the provider (SPF/DKIM records) so `meta@amuwa.com` can send. |
 | `EMAIL_FROM` | `Amuwa Corporation <meta@amuwa.com>` (default). `EMAIL_REPLY_TO` defaults to `meta@amuwa.com`. `EMAIL_CC` / `EMAIL_BCC` are optional. |
 | `WHATSAPP_WEBHOOK_URL` | The 1automations webhook. Generate a new one: the old one was shared in the Apps Script. |
 | `AUTOMATION_TEST_RECIPIENTS` | While testing: e.g. `9372286055,9321664464,you@amuwa.com`. Everyone else is skipped ("not a test recipient"). Remove it to go live for everyone. |
 | `AUTOMATION_SECRET_KEY` | A long random string. Without it the completion email says the password is shared separately. |
 | `AUTOMATION_DISPATCH_SECRET` | A long random string (16+ characters) for the dispatch endpoint. |
+
+**Using Gmail / Google Workspace over SMTP (nodemailer):**
+1. The `meta@amuwa.com` account needs 2-Step Verification, then create an **App password** (Google Account → Security → App passwords). Your Workspace admin may need to allow this.
+2. Gmail limits sending (about 2,000 messages a day for Workspace, 500 for a free Gmail), which is plenty for onboarding emails. Gmail also rewrites the "From" to the signed-in mailbox, so keep `EMAIL_FROM` as that mailbox.
+3. A wrong or revoked app password does not lose messages: they wait, show "SMTP sign-in failed" on the customer's panel and are retried, so fixing the password recovers them.
+4. Move to Resend or Brevo later by changing `EMAIL_PROVIDER` and the key. Nothing else changes.
 
 **Optional safety net** (retries without waiting for the next TC action). Run this in the Supabase SQL editor, with
 the `pg_cron` and `pg_net` extensions enabled:

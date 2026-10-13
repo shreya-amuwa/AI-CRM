@@ -4,6 +4,7 @@
  * Run via supabase/tests/run-api.sh.
  */
 import http from 'node:http';
+import net from 'node:net';
 import crypto from 'node:crypto';
 import pg from 'pg';
 
@@ -1501,6 +1502,86 @@ d = await dispatch('dispatch-secret-0123456789');
 jobs = await jobsOf(autoD);
 check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
   && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT'), 'no email address: the email is skipped, the WhatsApp still goes', jobs);
+// --- Email through nodemailer (SMTP), e.g. the meta@amuwa.com Google Workspace mailbox ---
+// A tiny fake SMTP server stands in for smtp.gmail.com.
+const smtpMail: { from: string; to: string[]; data: string; user: string }[] = [];
+let smtpMode: 'ok' | 'badauth' | 'busy' | 'reject' = 'ok';
+const smtp = net.createServer(sock => {
+  let buf = '', inData = false, cur = { from: '', to: [] as string[], data: '', user: '' }, authStep = '';
+  const send = (l: string) => sock.write(l + '\r\n');
+  send('220 mock.smtp ESMTP');
+  sock.on('data', chunk => {
+    buf += chunk.toString('utf8');
+    for (;;) {
+      if (inData) {
+        const end = buf.indexOf('\r\n.\r\n');
+        if (end < 0) return;
+        cur.data = buf.slice(0, end);
+        buf = buf.slice(end + 5);
+        inData = false;
+        if (smtpMode === 'busy') send('451 4.3.0 Temporary problem, try again later');
+        else { smtpMail.push(cur); send('250 2.0.0 OK queued'); }
+        cur = { from: '', to: [], data: '', user: '' };
+        continue;
+      }
+      const nl = buf.indexOf('\r\n');
+      if (nl < 0) return;
+      const line = buf.slice(0, nl); buf = buf.slice(nl + 2);
+      const up = line.toUpperCase();
+      if (authStep === 'plain') { authStep = ''; cur.user = Buffer.from(line, 'base64').toString().split('\0')[1] ?? ''; send(smtpMode === 'badauth' ? '535 5.7.8 Username and Password not accepted' : '235 2.7.0 Accepted'); }
+      else if (authStep === 'login-user') { authStep = 'login-pass'; cur.user = Buffer.from(line, 'base64').toString(); send('334 UGFzc3dvcmQ6'); }
+      else if (authStep === 'login-pass') { authStep = ''; send(smtpMode === 'badauth' ? '535 5.7.8 Username and Password not accepted' : '235 2.7.0 Accepted'); }
+      else if (up.startsWith('EHLO') || up.startsWith('HELO')) { send('250-mock.smtp'); send('250-AUTH PLAIN LOGIN'); send('250 8BITMIME'); }
+      else if (up.startsWith('AUTH PLAIN ')) { cur.user = Buffer.from(line.slice(11), 'base64').toString().split('\0')[1] ?? ''; send(smtpMode === 'badauth' ? '535 5.7.8 Username and Password not accepted' : '235 2.7.0 Accepted'); }
+      else if (up === 'AUTH PLAIN') { authStep = 'plain'; send('334 '); }
+      else if (up === 'AUTH LOGIN') { authStep = 'login-user'; send('334 VXNlcm5hbWU6'); }
+      else if (up.startsWith('MAIL FROM')) { cur.from = line; send('250 2.1.0 OK'); }
+      else if (up.startsWith('RCPT TO')) { if (smtpMode === 'reject') send('550 5.1.1 No such user'); else { cur.to.push(line); send('250 2.1.5 OK'); } }
+      else if (up === 'DATA') { inData = true; send('354 go ahead'); }
+      else if (up === 'QUIT') { send('221 bye'); sock.end(); }
+      else send('250 OK');
+    }
+  });
+});
+await new Promise<void>(rs => smtp.listen(0, '127.0.0.1', rs));
+Object.assign(process.env, {
+  AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'smtp', EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
+  SMTP_HOST: '127.0.0.1', SMTP_PORT: String((smtp.address() as any).port), SMTP_SECURE: 'false',
+  SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop', AUTOMATION_TEST_RECIPIENTS: '9372286055,smtp.client@example.com,smtp.two@example.com,smtp.three@example.com'
+});
+const autoS = await autoCustomer({ name: 'Smtp Client', company: 'Smtp Stores', email: 'smtp.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://smtp-stores.example');
+const waBefore = outbox.length;
+d = await dispatch('dispatch-secret-0123456789');
+const sm = smtpMail.at(-1);
+const decoded = sm ? sm.data.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))) : '';
+check(sm && sm.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(sm.from) && sm.to.some(t => /smtp\.client@example\.com/.test(t)),
+  'nodemailer sends through SMTP, signed in as meta@amuwa.com (spaces in the app password are ignored)', sm);
+check(/Subject:.*(Documents Received|=\?UTF-8\?)/i.test(sm?.data ?? '') && /Reply-To: meta@amuwa\.com/i.test(sm?.data ?? '') && /multipart\/alternative/i.test(sm?.data ?? '')
+  && /Dear Smtp Client/.test(decoded), 'the SMTP email has the Under Review subject, reply-to meta@amuwa.com, an HTML and a plain-text part');
+check(outbox.length === waBefore + 1 && outbox.at(-1)?.path === '/wa', 'the WhatsApp still goes through the webhook');
+check((await jobsOf(autoS)).filter(j => j.status === 'SENT').length === 2, 'both jobs are SENT');
+
+// Wrong app password: failed for good would be wrong - the customer's message waits and is retried; the TC sees why
+smtpMode = 'badauth';
+const autoS2 = await autoCustomer({ name: 'Smtp Two', company: 'Smtp Two Co', email: 'smtp.two@example.com', whatsapp: '9372286055', phone: '9321664465' }, 'https://smtp-two.example');
+d = await dispatch('dispatch-secret-0123456789');
+let j2 = (await jobsOf(autoS2)).find(j => j.channel === 'EMAIL');
+check(j2 && j2.status === 'QUEUED' && /SMTP sign-in failed/.test(j2.detail), 'a wrong mailbox password is a clear message ("SMTP sign-in failed") and the email waits for a retry', j2);
+smtpMode = 'ok';
+await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1`, [autoS2]);
+d = await dispatch('dispatch-secret-0123456789');
+check((await jobsOf(autoS2)).find(j => j.channel === 'EMAIL')?.status === 'SENT', 'once the password is fixed the waiting email goes out');
+smtpMode = 'busy';
+const autoS3 = await autoCustomer({ name: 'Smtp Three', company: 'Smtp Three Co', email: 'smtp.three@example.com', whatsapp: '9372286055', phone: '9321664466' }, 'https://smtp-three.example');
+d = await dispatch('dispatch-secret-0123456789');
+j2 = (await jobsOf(autoS3)).find(j => j.channel === 'EMAIL');
+check(j2 && j2.status === 'QUEUED' && j2.attempts === 1 && /SMTP error 451/.test(j2.detail), 'a temporary SMTP error (451) is retried later', j2);
+smtpMode = 'ok';
+await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1`, [autoS3]);
+d = await dispatch('dispatch-secret-0123456789');
+check((await jobsOf(autoS3)).find(j => j.channel === 'EMAIL')?.status === 'SENT', 'and goes out when the server is back');
+smtp.close();
+for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
 for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 provider.close();
 
