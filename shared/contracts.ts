@@ -468,10 +468,12 @@ export interface AutomationStatus {
 
 /** Onboarding emails / WhatsApp sent from the CRM (Wabastore, WhatsApp API + Blue Tick). */
 export type ClientStage = 'WEBSITE_PENDING' | 'UNDER_REVIEW' | 'META_VERIFICATION' | 'COMPLETED';
+/** The steps above plus the one-off "your mini website is ready" message. */
+export type MessageStage = ClientStage | 'WEBSITE_READY';
 export interface ClientMessage {
   id: string;
   channel: 'EMAIL' | 'WHATSAPP';
-  stage: ClientStage;
+  stage: MessageStage;
   status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
   detail: string | null;
   attempts: number;

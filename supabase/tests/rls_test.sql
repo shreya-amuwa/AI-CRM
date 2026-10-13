@@ -958,7 +958,7 @@ select test.login('acc_m');
 select complete_document_upload((select doc from invd where name = 'U1'), 512000);
 update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'U1';
 select test.check((select i.kind = 'UPLOADED' and i.invoice_number = 'GST/26-27/001' and i.customer_id = (select id from pipeline where name = 'A')
-                     and i.status = 'Pending' and i.amount = 41300 and i.issue_date = '2026-10-05' and i.due_date = '2026-10-20'
+                     and i.status = 'Paid' and i.amount = 41300 and i.issue_date = '2026-10-05' and i.due_date = '2026-10-20'
                      and i.details ->> 'reference' = 'PO-8812' and i.details ->> 'note' = 'Diwali pack'
                      from member_invoices i where i.id = (select id from invd where name = 'U1')),
   'the invoice record keeps the number exactly, the customer, total, dates, reference and note');

@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { CheckCircle2, Clock, Globe, Mail, MessageCircle, Send, XCircle } from 'lucide-react';
-import type { ChecklistItem, ClientMessage, ClientMessages, ClientStage } from '../../../../shared/contracts';
+import type { ChecklistItem, ClientMessage, ClientMessages, ClientStage, MessageStage } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
-import { normalizeWebsite } from '../../../../shared/contactValidation';
-import { btn, ErrorBanner, inputCls } from '../../team-member/pipeline/shared';
+import { btn, ErrorBanner } from '../../team-member/pipeline/shared';
+import { WebsiteEditDialog } from './WebsiteEditDialog';
 
 /**
  * The customer's onboarding emails and WhatsApp messages (Wabastore, WhatsApp API + Blue Tick).
@@ -17,11 +17,12 @@ const STAGES: { code: ClientStage; label: string }[] = [
   { code: 'META_VERIFICATION', label: 'Meta Verification' },
   { code: 'COMPLETED', label: 'Status Completed' }
 ];
-const STAGE_LABEL: Record<ClientStage, string> = {
+const STAGE_LABEL: Record<MessageStage, string> = {
   WEBSITE_PENDING: 'Website Pending',
   UNDER_REVIEW: 'Under Review',
   META_VERIFICATION: 'Meta Verification',
-  COMPLETED: 'Status Completed'
+  COMPLETED: 'Status Completed',
+  WEBSITE_READY: 'Website Ready'
 };
 const RANK: Record<ClientStage, number> = { WEBSITE_PENDING: 0, UNDER_REVIEW: 0, META_VERIFICATION: 1, COMPLETED: 2 };
 
@@ -42,7 +43,7 @@ function nextStep(stage: ClientStage | null, hasSite: boolean): string {
     case 'WEBSITE_PENDING':
       return hasSite
         ? 'Authorize every document: the Meta Verification email (about 2-3 weeks) goes out.'
-        : 'Create the website, save its link below and authorize every document: the Meta Verification email (about 2-3 weeks) goes out.';
+        : 'Create the website, edit the Website URL below with its link and authorize it: the "website is ready" email and WhatsApp go out. Then authorize every document: the Meta Verification email (about 2-3 weeks) goes out.';
     case 'UNDER_REVIEW':
       return 'Authorize every document: the Meta Verification email (about 2-3 weeks) goes out.';
     case 'META_VERIFICATION':
@@ -64,12 +65,9 @@ export const ClientMessagesPanel: React.FC<{
   const current = websiteItem?.entry?.value || '';
   const site = current && current !== 'NO_WEBSITE' ? current : '';
   const [editing, setEditing] = useState(false);
-  const [url, setUrl] = useState(site);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendNote, setResendNote] = useState<string | null>(null);
-  useEffect(() => setUrl(site), [site]);
 
   if (!data?.automated) return null;
   const stage = data.stage;
@@ -91,23 +89,6 @@ export const ClientMessagesPanel: React.FC<{
     }
   };
   const waiting = data.messages.some(m => m.status === 'QUEUED' || m.status === 'SENDING');
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const w = normalizeWebsite(url);
-    if (w.url === null) return setError(w.error);
-    setBusy(true);
-    setError(null);
-    try {
-      await pipelineApi.setWebsite(customerId, w.url);
-      setEditing(false);
-      onChanged();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-4" aria-labelledby="client-messages-heading">
@@ -170,43 +151,17 @@ export const ClientMessagesPanel: React.FC<{
               </button>
             )}
           </div>
-          {editing ? (
-            <form onSubmit={save} className="mt-2 flex flex-col sm:flex-row gap-2" noValidate>
-              <label className="sr-only" htmlFor="tc-website">
-                Website address
-              </label>
-              <input
-                id="tc-website"
-                type="url"
-                inputMode="url"
-                maxLength={500}
-                placeholder="https://www.example.com"
-                className={`${inputCls} py-2`}
-                value={url}
-                onChange={e => setUrl(e.target.value)}
-              />
-              <div className="flex gap-2 shrink-0">
-                <button type="submit" className={btn.primary} disabled={busy}>
-                  {busy ? 'Saving…' : 'Save link'}
-                </button>
-                <button type="button" className={btn.secondary} disabled={busy} onClick={() => { setEditing(false); setUrl(site); setError(null); }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          ) : (
-            <p className="mt-1 text-sm text-slate-700 break-all">
-              {site ? (
-                <a href={site} target="_blank" rel="noreferrer noopener" className="text-blue-700 hover:underline">
-                  {site}
-                </a>
-              ) : current === 'NO_WEBSITE' ? (
-                'The customer has no website yet.'
-              ) : (
-                'No website entered.'
-              )}
-            </p>
-          )}
+          <p className="mt-1 text-sm text-slate-700 break-all">
+            {site ? (
+              <a href={site} target="_blank" rel="noreferrer noopener" className="text-blue-700 hover:underline">
+                {site}
+              </a>
+            ) : current === 'NO_WEBSITE' ? (
+              'The customer has no website yet.'
+            ) : (
+              'No website entered.'
+            )}
+          </p>
           {error && (
             <div className="mt-2">
               <ErrorBanner message={error} />
@@ -268,6 +223,17 @@ export const ClientMessagesPanel: React.FC<{
         </ul>
       ) : (
         <p className="text-xs text-slate-500">No messages yet.</p>
+      )}
+      {editing && (
+        <WebsiteEditDialog
+          customerId={customerId}
+          current={site}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            onChanged();
+          }}
+        />
       )}
     </section>
   );

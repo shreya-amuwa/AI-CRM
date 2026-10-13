@@ -1438,7 +1438,7 @@ check((await dispatch()).status === 401, 'dispatch needs the secret');
 check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secret is refused');
 
 // Dry run: prepared and logged, nothing sent
-const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://dry-traders.example');
+const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9819900011', phone: '9819900022' }, 'https://dry-traders.example');
 let d = await dispatch('dispatch-secret-0123456789');
 check(d.status === 200 && d.json.data.mode === 'dry_run' && d.json.data.sent === 0, 'dry run: nothing is sent (the jobs were already processed right after the TC\'s click)', d);
 check((await jobsOf(autoB)).length === 2 && (await jobsOf(autoB)).every(j => j.status === 'SKIPPED'), 'dry run: both jobs are prepared and marked as not sent');
@@ -1457,22 +1457,22 @@ r = await api('tc', 'GET', `/pipeline/customers/${leadA}/client-messages`);
 check(r.status === 200 && r.json.data.automated === false && r.json.data.messages.length === 0, 'customers without the WhatsApp API service are not automated', r);
 
 // Live, test recipients only
-Object.assign(process.env, { AUTOMATION_MODE: 'live', AUTOMATION_TEST_RECIPIENTS: '9372286055, 9321664464, auto.client@example.com, nosite.client@example.com' });
+Object.assign(process.env, { AUTOMATION_MODE: 'live', AUTOMATION_TEST_RECIPIENTS: '9819900011, 9819900022, auto.client@example.com, nosite.client@example.com' });
 r = await api('tc', 'POST', `/pipeline/customers/${autoB}/checklist/verify-all`);
 check(r.status === 200, 'the TC authorizes every document', r);
 const metaMail = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification In Progress | Amuwa Corporation');
 const metaWa = outbox.find(o => o.path === '/wa' && o.body.status === 'Meta Verification');
 check(!metaMail, 'live with test recipients: a customer that is not a test recipient gets no email');
-check(metaWa && metaWa.body.phone === '919372286055', 'the WhatsApp goes to a test number (+91 format)', metaWa?.body);
-check(metaWa && metaWa.body.whatsapp_number === '919372286055' && metaWa.body.source === 'Google Sheets' && metaWa.body.automation === 'Client Onboarding'
+check(metaWa && metaWa.body.phone === '919819900011', 'the WhatsApp goes to a test number (+91 format)', metaWa?.body);
+check(metaWa && metaWa.body.whatsapp_number === '919819900011' && metaWa.body.source === 'Google Sheets' && metaWa.body.automation === 'Client Onboarding'
   && metaWa.body.department === 'Wabastore' && metaWa.body.website === 'https://dry-traders.example' && metaWa.body.name === 'Dry Run'
-  && metaWa.body.email === 'dry.client@example.com' && metaWa.body.event_key === `crm|${autoB}|meta verification|919372286055`,
+  && metaWa.body.email === 'dry.client@example.com' && metaWa.body.event_key === `crm|${autoB}|meta verification|919819900011`,
   'the WhatsApp webhook gets the same payload as from the Google Sheet', metaWa?.body);
 check((await jobsOf(autoB)).some(j => j.stage === 'META_VERIFICATION' && j.channel === 'EMAIL' && j.status === 'SKIPPED' && /not a test recipient/.test(j.detail)),
   'the skipped email says why');
 
 // Customer A: no website at arrival -> Website Pending; the website saved later, then the TC authorizes everything
-const autoA = await autoCustomer({ name: 'Auto <Client>', company: 'Auto Traders', email: 'auto.client@example.com', whatsapp: '+91 93722 86055', phone: '9321664464' }, null);
+const autoA = await autoCustomer({ name: 'Auto <Client>', company: 'Auto Traders', email: 'auto.client@example.com', whatsapp: '+91 98199 00011', phone: '9819900022' }, null);
 r = await api('a', 'PATCH', `/pipeline/customers/${autoA}/checklist/WA_WEBSITE_URL`, { value: 'not a website' });
 check(r.status === 422 && /website address/.test(r.json.error.message), 'a website that is not an address is refused', r);
 r = await api('a', 'PATCH', `/pipeline/customers/${autoA}/checklist/WA_WEBSITE_URL`, { value: 'www.auto-traders.example' });
@@ -1488,6 +1488,15 @@ check(metaA && metaA.body.html.includes('your website has been created') && meta
   'Meta Verification email after the website was created: says so, and that it takes about 2-3 weeks', metaA?.body?.html);
 check(!outbox.some(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject.startsWith('Documents Received')),
   'a customer that started at Website Pending never gets the Under Review email');
+const readyMail = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject === 'Your Mini Website is Ready | Amuwa Corporation');
+check(readyMail && readyMail.body.html.includes('Mini Website is now ready') && readyMail.body.html.includes('href="https://www.auto-traders.example"')
+  && readyMail.body.text.includes('https://www.auto-traders.example'),
+  'authorizing the website of a customer that started without one: the "mini website is ready" email carries the website address', readyMail?.body?.html);
+const readyWa = outbox.find(o => o.path === '/wa' && o.body.status === 'Website Ready' && o.body.phone === '919819900011');
+check(readyWa && readyWa.body.website === 'https://www.auto-traders.example' && readyWa.body.automation === 'Client Onboarding'
+  && readyWa.body.event_key === `crm|${autoA}|website ready|919819900011`,
+  'and the "Website Ready" WhatsApp carries the website address', readyWa?.body);
+check(outbox.indexOf(readyMail) < outbox.indexOf(metaA), '"website is ready" is sent before "Meta Verification"');
 
 // Step 3: the client login. The password is kept encrypted only until the email is sent.
 process.env.AUTOMATION_MODE = 'off';
@@ -1514,18 +1523,26 @@ await db.query(`update public.automation_jobs set next_attempt_at = now() where 
 d = await dispatch('dispatch-secret-0123456789');
 check(d.json.data.sent === 1 && (await jobsOf(autoA)).find(j => j.stage === 'COMPLETED' && j.channel === 'WHATSAPP')?.status === 'SENT', 'the retry succeeds', d);
 r = await api('tc', 'GET', `/pipeline/customers/${autoA}/client-messages`);
-check(r.json.data.stage === 'COMPLETED' && r.json.data.messages.filter((m: any) => m.status === 'SENT').length === 6
+check(r.json.data.stage === 'COMPLETED' && r.json.data.messages.filter((m: any) => m.status === 'SENT').length === 8
   && r.json.data.messages.every((m: any) => m.status === 'SENT'), 'every step of customer A was sent exactly once', r.json.data.messages);
 
 // The TC adds the website link; invalid email is skipped
-const autoC = await autoCustomer({ name: 'No Site', company: 'No Site Stores', email: 'nosite.client@example.com', whatsapp: '9876501234', phone: '9321664464' }, 'NO_WEBSITE');
+const autoC = await autoCustomer({ name: 'No Site', company: 'No Site Stores', email: 'nosite.client@example.com', whatsapp: '9876501234', phone: '9819900022' }, 'NO_WEBSITE');
 r = await api('a', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'https://nosite.example' });
 check(r.status === 404, 'sales cannot use the consultant website action', r);
 r = await api('tc', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'nosite-stores.example' });
 check(r.status === 200 && r.json.data.website === 'https://nosite-stores.example', 'the TC saves the website link', r);
 jobs = await jobsOf(autoC);
+check(!jobs.some(j => j.stage === 'WEBSITE_READY'), 'saving the link alone does not send "website ready": the TC must authorize it', jobs);
+r = await api('tc', 'POST', `/pipeline/customers/${autoC}/checklist/WA_WEBSITE_URL/review`, { decision: 'VERIFIED' });
+check(r.status === 200, 'the TC authorizes the website', r);
+jobs = await jobsOf(autoC);
+check(jobs.filter(j => j.stage === 'WEBSITE_READY').length === 2, 'authorizing it queues the "website ready" email + WhatsApp', jobs);
+r = await api('tc', 'POST', `/pipeline/customers/${autoC}/checklist/WA_WEBSITE_URL/review`, { decision: 'VERIFIED' });
+jobs = await jobsOf(autoC);
+check(jobs.filter(j => j.stage === 'WEBSITE_READY').length === 2, 'authorizing again sends nothing more', jobs);
 check(jobs.some(j => j.stage === 'WEBSITE_PENDING' && j.channel === 'WHATSAPP' && j.status === 'SKIPPED' && /not a test recipient/.test(j.detail)), 'a WhatsApp number outside the test list is not messaged', jobs);
-const autoD = await autoCustomer({ name: 'Phone Only', company: 'Phone Only Co', whatsapp: '9372286055', phone: '9321664464' }, 'https://phone-only.example');
+const autoD = await autoCustomer({ name: 'Phone Only', company: 'Phone Only Co', whatsapp: '9819900011', phone: '9819900022' }, 'https://phone-only.example');
 d = await dispatch('dispatch-secret-0123456789');
 jobs = await jobsOf(autoD);
 check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
@@ -1596,10 +1613,10 @@ await new Promise<void>(rs => smtp.listen(0, '127.0.0.1', rs));
 Object.assign(process.env, {
   AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'smtp', EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
   SMTP_HOST: '127.0.0.1', SMTP_PORT: String((smtp.address() as any).port), SMTP_SECURE: 'false',
-  SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop', AUTOMATION_TEST_RECIPIENTS: '9372286055,smtp.client@example.com,smtp.two@example.com,smtp.three@example.com'
+  SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop', AUTOMATION_TEST_RECIPIENTS: '9819900011,smtp.client@example.com,smtp.two@example.com,smtp.three@example.com'
 });
 const waBefore = outbox.length;
-const autoS = await autoCustomer({ name: 'Smtp Client', company: 'Smtp Stores', email: 'smtp.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://smtp-stores.example');
+const autoS = await autoCustomer({ name: 'Smtp Client', company: 'Smtp Stores', email: 'smtp.client@example.com', whatsapp: '9819900011', phone: '9819900022' }, 'https://smtp-stores.example');
 d = await dispatch('dispatch-secret-0123456789');
 const sm = smtpMail.at(-1);
 const decoded = sm ? sm.data.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))) : '';
@@ -1612,7 +1629,7 @@ check((await jobsOf(autoS)).filter(j => j.status === 'SENT').length === 2, 'both
 
 // Wrong app password: failed for good would be wrong - the customer's message waits and is retried; the TC sees why
 smtpMode = 'badauth';
-const autoS2 = await autoCustomer({ name: 'Smtp Two', company: 'Smtp Two Co', email: 'smtp.two@example.com', whatsapp: '9372286055', phone: '9321664465' }, 'https://smtp-two.example');
+const autoS2 = await autoCustomer({ name: 'Smtp Two', company: 'Smtp Two Co', email: 'smtp.two@example.com', whatsapp: '9819900011', phone: '9321664465' }, 'https://smtp-two.example');
 d = await dispatch('dispatch-secret-0123456789');
 let j2 = (await jobsOf(autoS2)).find(j => j.channel === 'EMAIL');
 check(j2 && j2.status === 'QUEUED' && /SMTP sign-in failed/.test(j2.detail), 'a wrong mailbox password is a clear message ("SMTP sign-in failed") and the email waits for a retry', j2);
@@ -1621,7 +1638,7 @@ await db.query(`update public.automation_jobs set next_attempt_at = now() where 
 d = await dispatch('dispatch-secret-0123456789');
 check((await jobsOf(autoS2)).find(j => j.channel === 'EMAIL')?.status === 'SENT', 'once the password is fixed the waiting email goes out');
 smtpMode = 'busy';
-const autoS3 = await autoCustomer({ name: 'Smtp Three', company: 'Smtp Three Co', email: 'smtp.three@example.com', whatsapp: '9372286055', phone: '9321664466' }, 'https://smtp-three.example');
+const autoS3 = await autoCustomer({ name: 'Smtp Three', company: 'Smtp Three Co', email: 'smtp.three@example.com', whatsapp: '9819900011', phone: '9321664466' }, 'https://smtp-three.example');
 d = await dispatch('dispatch-secret-0123456789');
 j2 = (await jobsOf(autoS3)).find(j => j.channel === 'EMAIL');
 check(j2 && j2.status === 'QUEUED' && j2.attempts === 1 && /SMTP error 451/.test(j2.detail), 'a temporary SMTP error (451) is retried later', j2);
