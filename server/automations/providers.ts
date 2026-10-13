@@ -155,7 +155,12 @@ export async function postWhatsApp(s: AutomationSettings, payload: WhatsAppPaylo
   if (!s.whatsapp.webhookUrl) return { ok: false, retry: false, code: null, ref: null, detail: 'The WhatsApp webhook is not configured.' };
   try {
     const r = await post(s.whatsapp.webhookUrl, {}, payload);
-    return result(r.status, r.text, null);
+    const res = result(r.status, r.text, null);
+    // Keep what the webhook answered: "accepted" only means it received the request, and what the
+    // WhatsApp router did with it (for example no route for this status) is visible in its answer.
+    const answer = r.text.replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (res.ok && answer) res.detail = `HTTP ${r.status}: ${answer}`;
+    return res;
   } catch (err) {
     return networkFailure(err);
   }

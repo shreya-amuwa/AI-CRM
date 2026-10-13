@@ -107,7 +107,7 @@ async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outco
     automation: 'Client Onboarding',
     event_key: ['crm', c.id, status.toLowerCase(), full].join('|')
   });
-  return fromResult(r, full, `${status} WhatsApp request accepted by webhook`);
+  return fromResult(r, full, `${status} WhatsApp request accepted by webhook (${r.detail})`);
 }
 
 function fromResult(r: SendResult, recipient: string, okText: string): Outcome {
