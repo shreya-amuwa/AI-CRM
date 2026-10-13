@@ -1507,6 +1507,9 @@ check(readyWa && readyWa.body.website === 'https://www.auto-traders.example' && 
   && readyWa.body.event_key === `crm|${autoA}|website ready|919819900011`,
   'and the "Website Ready" WhatsApp carries the website address', readyWa?.body);
 check(outbox.indexOf(readyMail) < outbox.indexOf(metaA), '"website is ready" is sent before "Meta Verification"');
+const readyJobs = await jobsOf(autoA);
+check(readyJobs.some(j => j.stage === 'WEBSITE_READY' && j.channel === 'WHATSAPP' && j.status === 'SENT' && /accepted by webhook \(HTTP 200: .*msg-/.test(j.detail)),
+  'the WhatsApp job keeps what the webhook answered, so a router that ignores a status can be seen', readyJobs.filter(j => j.channel === 'WHATSAPP'));
 
 // Step 3: the client login. The password is kept encrypted only until the email is sent.
 process.env.AUTOMATION_MODE = 'off';
