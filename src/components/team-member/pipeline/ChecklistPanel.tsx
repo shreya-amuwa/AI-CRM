@@ -1,3 +1,4 @@
+import { NO_WEBSITE, normalizeWebsite } from '../../../../shared/contactValidation';
 import React, { useId, useMemo, useRef, useState } from 'react';
 import {
   Check,
@@ -75,7 +76,6 @@ export const counts = (i: ChecklistItem) => !(i.optional && !i.entry);
 
 /** The Website URL item: a link, or "no website" (ticked by sales). */
 export const WEBSITE_ITEM = 'WA_WEBSITE_URL';
-export const NO_WEBSITE = 'NO_WEBSITE';
 
 function displayValue(item: ChecklistItem): string {
   const v = item.entry?.value || '';
@@ -600,8 +600,14 @@ const EntryDialog: React.FC<{ item: ChecklistItem; customerId: string; onClose: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const save = async (v: string) => {
-    if (!v.trim()) return setError('Enter a value.');
+  const save = async (raw: string) => {
+    let v = raw;
+    if (!v.trim()) return setError(item.code === WEBSITE_ITEM ? 'Enter the website address, or tick "Customer has no website".' : 'Enter a value.');
+    if (item.code === WEBSITE_ITEM && v !== NO_WEBSITE) {
+      const w = normalizeWebsite(v);
+      if (w.url === null) return setError(w.error);
+      v = w.url;
+    }
     setBusy(true);
     setError(null);
     try {

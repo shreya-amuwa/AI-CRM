@@ -19,6 +19,8 @@ const sign = (payload: Record<string, unknown>) => {
 process.env.SUPABASE_URL = process.env.GATEWAY_URL;
 process.env.SUPABASE_ANON_KEY = sign({ role: 'anon' });
 process.env.SUPABASE_SERVICE_ROLE_KEY = sign({ role: 'service_role' });
+process.env.RATE_LIMIT_IP_PER_MIN = '5000';
+process.env.RATE_LIMIT_USER_PER_MIN = '5000';
 process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 process.env.RATE_LIMIT_SENSITIVE_PER_MIN = '100';
 process.env.API_ACCESS_LOG = 'off';
@@ -1355,7 +1357,7 @@ check(limitedBody.error.code === 'RATE_LIMITED' && Number(limited!.headers.get('
 const { rows: [rl] } = await db.query(`select count(*)::int n from private.rate_limit_counters where bucket like 'user:%:import'`);
 check(rl.n >= 1, 'quota counters are stored in Postgres (shared across instances)');
 const normal = await fetch(base + '/departments', { headers: { authorization: `Bearer ${tokens.get('sa')}` } });
-check(normal.headers.get('ratelimit-limit') === '300' && normal.headers.get('x-request-id') && normal.headers.get('x-content-type-options') === 'nosniff',
+check(normal.headers.get('ratelimit-limit') === '5000' && normal.headers.get('x-request-id') && normal.headers.get('x-content-type-options') === 'nosniff',
   'responses carry RateLimit-*, X-Request-Id and security headers');
 
 const health = await fetch(base + '/health').then(x => x.json()) as any;
@@ -1402,7 +1404,7 @@ const dispatch = (secret?: string) =>
 const jobsOf = async (id: string) => (await db.query(`select channel, stage, status, detail, secret, attempts from public.automation_jobs where customer_id = $1 order by created_at, channel`, [id])).rows;
 
 // A customer of member A (Wabastore) with the WhatsApp API service, brought to the Technical Consultant.
-async function autoCustomer(fields: Record<string, unknown>, website: string | null) {
+async function autoCustomer(fields: Record<string, unknown>, website: string | null, opts: { addons?: boolean } = {}) {
   const res = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], ...fields });
   check(res.status === 201, `automation test customer ${fields.company} created`, res);
   const id = res.json.data.id as string;
@@ -1421,6 +1423,13 @@ async function autoCustomer(fields: Record<string, unknown>, website: string | n
   await db.query(`select private.refresh_onboarding_progress($1)`, [id]);
   // what Accounts confirming the payment does: the customer reaches the Technical Consultant
   await db.query(`select private.forward_to_consultant(c.id, c, false) from public.customers c where c.id = $1`, [id]);
+  // reaching the consultant sends nothing; the messages start when the TC clicks "Send for onboarding"
+  const arrived = await api('tc', 'GET', `/pipeline/customers/${id}/client-messages`);
+  check(arrived.status === 200 && arrived.json.data.stage === null && arrived.json.data.messages.length === 0, `${fields.company}: reaching the consultant sends nothing`, arrived.json);
+  const ans = await api('tc', 'POST', `/pipeline/customers/${id}/consultant/addons-required`, { required: opts.addons ?? false });
+  check(ans.status === 200, 'the TC answers the add-ons question', ans);
+  const startRes = await api('tc', 'POST', `/pipeline/customers/${id}/consultant/start-onboarding`);
+  check(startRes.status === 200, `${fields.company}: the TC clicks Send for onboarding`, startRes);
   return id;
 }
 
@@ -1431,7 +1440,8 @@ check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secre
 // Dry run: prepared and logged, nothing sent
 const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://dry-traders.example');
 let d = await dispatch('dispatch-secret-0123456789');
-check(d.status === 200 && d.json.data.mode === 'dry_run' && d.json.data.claimed >= 2 && d.json.data.sent === 0, 'dry run: jobs are processed, nothing is sent', d);
+check(d.status === 200 && d.json.data.mode === 'dry_run' && d.json.data.sent === 0, 'dry run: nothing is sent (the jobs were already processed right after the TC\'s click)', d);
+check((await jobsOf(autoB)).length === 2 && (await jobsOf(autoB)).every(j => j.status === 'SKIPPED'), 'dry run: both jobs are prepared and marked as not sent');
 check(outbox.length === 0, 'dry run: no request reached the email provider or the WhatsApp webhook');
 r = await api('tc', 'GET', `/pipeline/customers/${autoB}/client-messages`);
 check(r.status === 200 && r.json.data.automated && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.mode === 'dry_run'
@@ -1520,6 +1530,27 @@ d = await dispatch('dispatch-secret-0123456789');
 jobs = await jobsOf(autoD);
 check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
   && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT'), 'no email address: the email is skipped, the WhatsApp still goes', jobs);
+// --- Mobile numbers and websites must be real ---
+const leadOk = { name: 'Valid Check', company: 'Valid Check Co', leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'] };
+for (const [phone, why] of [['12345', '5 digits'], ['98765', 'too short'], ['5123456789', 'starts with 5'], ['98200 1111', '9 digits'], ['9999999999', 'one repeated digit'], ['9876543210', 'a counting run'], ['98200abcde', 'letters'], ['+1 202 555 0143', 'a foreign number']]) {
+  r = await api('a', 'POST', '/pipeline/leads', { ...leadOk, phone });
+  check(r.status === 422 && /mobile|digit|starts|real/i.test(JSON.stringify(r.json.error)), `mobile "${phone}" is refused (${why})`, r);
+}
+r = await api('a', 'POST', '/pipeline/leads', { ...leadOk, phone: '+91 98201 33445', whatsapp: '12345' });
+check(r.status === 422, 'an invalid WhatsApp number is refused too', r);
+r = await api('a', 'POST', '/pipeline/leads', { ...leadOk, phone: '+91 98201 33445', whatsapp: '' });
+check(r.status === 201, 'a valid +91 mobile number with no WhatsApp number is accepted', r);
+for (const ok of ['098201 33446', '919820133447', '+91-98201-33448', '98201 33449']) {
+  r = await api('a', 'POST', '/pipeline/leads', { ...leadOk, company: 'Fmt ' + ok, phone: ok });
+  check(r.status === 201, `mobile "${ok}" is accepted`, r);
+}
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/consultant/details`, { name: 'Siddhesh', phone: '12345' });
+check(r.status === 422, 'the Technical Consultant cannot save an invalid mobile number', r);
+for (const [url, why] of [['a', 'a single letter'], ['localhost', 'localhost'], ['http://192.168.1.10', 'an IP address'], ['my shop.com', 'spaces'], ['ftp://files.example.com', 'not http'], ['https://shop.c0m', 'digits in the ending'], ['https://user:pw@example.com', 'a password in the address']]) {
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/consultant/website`, { url });
+  check(r.status === 422, `website "${url}" is refused (${why})`, r);
+}
+
 // --- Email through nodemailer (SMTP), e.g. the meta@amuwa.com Google Workspace mailbox ---
 // A tiny fake SMTP server stands in for smtp.gmail.com.
 const smtpMail: { from: string; to: string[]; data: string; user: string }[] = [];
@@ -1567,8 +1598,8 @@ Object.assign(process.env, {
   SMTP_HOST: '127.0.0.1', SMTP_PORT: String((smtp.address() as any).port), SMTP_SECURE: 'false',
   SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop', AUTOMATION_TEST_RECIPIENTS: '9372286055,smtp.client@example.com,smtp.two@example.com,smtp.three@example.com'
 });
-const autoS = await autoCustomer({ name: 'Smtp Client', company: 'Smtp Stores', email: 'smtp.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://smtp-stores.example');
 const waBefore = outbox.length;
+const autoS = await autoCustomer({ name: 'Smtp Client', company: 'Smtp Stores', email: 'smtp.client@example.com', whatsapp: '9372286055', phone: '9321664464' }, 'https://smtp-stores.example');
 d = await dispatch('dispatch-secret-0123456789');
 const sm = smtpMail.at(-1);
 const decoded = sm ? sm.data.replace(/=\r\n/g, '').replace(/=([0-9A-F]{2})/g, (_m, h) => String.fromCharCode(parseInt(h, 16))) : '';

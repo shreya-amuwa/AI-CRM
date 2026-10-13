@@ -3,6 +3,7 @@
  * feedback). The database enforces the same rules again with constraints.
  */
 import { z } from 'zod';
+import { mobileProblem, normalizeWebsite } from './contactValidation';
 import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
@@ -32,6 +33,11 @@ const optionalText = (max: number) =>
 export const uuidSchema = z.string().uuid('Must be a valid identifier.');
 export const emailSchema = z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254);
 const phoneSchema = z.string().trim().regex(/^[0-9+()\-\s.]{5,25}$/, 'Enter a valid phone number.');
+/** A real Indian mobile number: what the WhatsApp automation can send to. */
+const mobileSchema = z.string().trim().superRefine((v, ctx) => {
+  const problem = mobileProblem(v);
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+});
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.');
 
 const pageParams = {
@@ -274,8 +280,8 @@ const datetime = z.string().datetime({ offset: true });
 const leadFields = {
   name: trimmed(200).min(1, 'Contact person is required.'),
   company: trimmed(200).min(1, 'Business name is required.'),
-  phone: phoneSchema,
-  whatsapp: z.preprocess(v => (v === '' ? null : v), phoneSchema.nullable().optional()),
+  phone: mobileSchema,
+  whatsapp: z.preprocess(v => (v === '' ? null : v), mobileSchema.nullable().optional()),
   email: z.preprocess(v => (v === '' ? null : v), emailSchema.nullable().optional()),
   city: optionalText(120),
   businessCategory: optionalText(120),
@@ -405,8 +411,14 @@ export const documentUploadSchema = z
   .strict();
 
 export const consultantWebsiteSchema = z
-  .object({ url: z.string().trim().min(4, 'Enter the website address.').max(500, 'The website address is too long.') })
-  .strict();
+  .object({
+    url: z.string().superRefine((v, ctx) => {
+      const r = normalizeWebsite(v);
+      if (r.error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.error });
+    })
+  })
+  .strict()
+  .transform(b => ({ url: normalizeWebsite(b.url).url as string }));
 
 export const clientAccountSchema = z
   .object({
@@ -432,7 +444,7 @@ export const consultantDetailsSchema = z
   .object({
     name: trimmed(200).min(2, 'Enter the customer\'s name.'),
     company: trimmed(200).optional().nullable(),
-    phone: trimmed(25).optional().nullable(),
+    phone: z.preprocess(v => (v === '' ? null : v), mobileSchema.nullable().optional()),
     email: trimmed(254).optional().nullable(),
     /** updated_at the form was loaded with: a save from a stale form is refused. */
     expectedUpdatedAt: z.string().max(40).optional().nullable()
