@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { ActiveTab } from '../../../layout/Sidebar';
 import { StaffManagementPanel } from '../../../common/StaffManagementPanel';
-import { SalesLeads, SalesPotential } from './SalesLeads';
+import { SalesLeads, SalesOnboarding, SalesPartPayments, SalesPotential } from './SalesLeads';
 import { SalesTeamPerformance } from './SalesTeamPerformance';
 import { useWabastoreId } from './useSalesOverview';
 
@@ -31,6 +31,10 @@ export const SalesSuperAdminDashboard: React.FC<{ activeTab: ActiveTab; onSelect
       return <SalesLeads departmentId={departmentId} initialOwnerId={ownerId} />;
     case 'sales_potential':
       return <SalesPotential departmentId={departmentId} initialOwnerId={ownerId} />;
+    case 'sales_onboarding':
+      return <SalesOnboarding departmentId={departmentId} initialOwnerId={ownerId} />;
+    case 'sales_part_payments':
+      return <SalesPartPayments departmentId={departmentId} />;
     default:
       return <StaffManagementPanel departmentSlug="wabastore" subDept="sales" view="members" />;
   }

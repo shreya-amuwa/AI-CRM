@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ChevronRight, Search } from 'lucide-react';
-import type { PartPaymentItem, PartPaymentStatusFilter, PartPaymentsPage, PaymentOverview } from '../../../shared/contracts';
+import type { PartPaymentItem, PartPaymentStatusFilter, PartPaymentsPage, PaymentOverview, TeamDivision } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi, type PartPaymentsParams } from '../../lib/api/endpoints';
 import { rowOpen } from '../../lib/rowClick';
@@ -113,7 +113,13 @@ const Detail: React.FC<{ item: PartPaymentItem; mode: 'sales' | 'accounts'; onCh
  *  - Accounts: the same customers as pending-balance follow-ups, with the accountant, follow-up status and actions.
  * Both read the same customers and the same payment ledger.
  */
-export const PartPaymentsView: React.FC<{ mode: 'sales' | 'accounts'; onOpenOnboarding?: (id: string) => void; onCountsChanged?: () => void }> = ({ mode, onOpenOnboarding, onCountsChanged }) => {
+export const PartPaymentsView: React.FC<{
+  mode: 'sales' | 'accounts';
+  onOpenOnboarding?: (id: string) => void;
+  onCountsChanged?: () => void;
+  /** Super Admin / Department Head: only the part payments of one sub-department (department + team division). */
+  scope?: { departmentId: string; division: TeamDivision };
+}> = ({ mode, onOpenOnboarding, onCountsChanged, scope }) => {
   const accounts = mode === 'accounts';
   const [status, setStatus] = useState<PartPaymentStatusFilter>('PARTIAL');
   const [search, setSearch] = useState('');
@@ -146,14 +152,15 @@ export const PartPaymentsView: React.FC<{ mode: 'sales' | 'accounts'; onOpenOnbo
         to: to || undefined,
         sort,
         page,
-        pageSize: PAGE_SIZE
+        pageSize: PAGE_SIZE,
+        ...(scope ? { departmentId: scope.departmentId, division: scope.division } : {})
       })
       .then(
         r => n === seq.current && setData(r),
         e => n === seq.current && setError(errorMessage(e))
       )
       .finally(() => n === seq.current && setLoading(false));
-  }, [status, debounced, salesperson, accountsOwner, followUp, from, to, sort, page, accounts]);
+  }, [status, debounced, salesperson, accountsOwner, followUp, from, to, sort, page, accounts, scope?.departmentId, scope?.division]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
   useEffect(() => setPage(1), [status, debounced, salesperson, accountsOwner, followUp, from, to, sort]);

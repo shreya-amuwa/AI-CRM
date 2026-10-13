@@ -719,7 +719,9 @@ export class PipelineRepository {
         p_followup: q.followUp ?? null,
         p_sort: q.sort,
         p_page: q.page,
-        p_page_size: q.pageSize
+        p_page_size: q.pageSize,
+        // Only sent for a sub-department view, so databases without the latest migration keep working.
+        ...(q.departmentId && q.division ? { p_department: q.departmentId, p_division: q.division } : {})
       })
     ) as PartPaymentsPage;
   }

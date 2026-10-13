@@ -450,6 +450,39 @@ insert into invs select 'i3', id, customer_id from ins;
 select private.sync_invoice_payment_status((select cust from invs where name = 'i3'));
 select test.check((select status = 'Pending' from member_invoices where id = (select id from invs where name = 'i3')), 'an add-on invoice is not paid by the original-service payments');
 
+
+-- ---------------------------------------------------------------------------
+\echo '--- 25. Super Admin: part payments and onboarding of one sub-department'
+-- ---------------------------------------------------------------------------
+reset role;
+create temp table sub_expect as
+select d.slug as dept, t.division::text as division,
+       (select count(*) from customers c where c.team_id in (select id from teams x where x.department_id = d.id and x.division = t.division)
+           and c.payment_status = 'PARTIALLY_PAID' and c.lifecycle_stage not in ('LEAD', 'LOST')
+           and exists (select 1 from customer_payments p where p.customer_id = c.id and p.status = 'VERIFIED' and p.payment_type = 'PART')) as part_list,
+       (select count(*) from customers c where c.team_id in (select id from teams x where x.department_id = d.id and x.division = t.division)
+           and c.lifecycle_stage in ('ONBOARDING', 'CUSTOMER') and c.payment_status = 'PARTIALLY_PAID'
+           and exists (select 1 from customer_payments p where p.customer_id = c.id and p.status = 'VERIFIED' and p.payment_type = 'PART')) as part_count,
+       (select count(*) from customers c where c.team_id in (select id from teams x where x.department_id = d.id and x.division = t.division)
+           and c.lifecycle_stage = 'ONBOARDING') as onboarding
+  from departments d join (select distinct department_id, division from teams) t on t.department_id = d.id
+ where d.slug in ('wabastore', 'whatsbox') and t.division in ('SALES', 'SUPPORT');
+grant select on sub_expect to authenticated;
+set role authenticated;
+select test.login('sa');
+select test.check((select bool_and((part_payments_list(p_department => (select id from departments where slug = e.dept), p_division => e.division) ->> 'total')::int = e.part_list) from sub_expect e),
+  'part_payments_list for one sub-department returns exactly that sub-department''s part payments');
+select test.check((select (part_payments_list() ->> 'total')::int >= (select sum(part_list) from sub_expect)), 'without a scope the list is unchanged (all sub-departments)');
+select test.check((select bool_and(coalesce((division_leads_overview((select id from departments where slug = e.dept), e.division::team_division) -> 'partPayments')::int, -1) = e.part_count)
+                     from sub_expect e where e.division = 'SALES'),
+  'overview partPayments equals the sub-department''s part-paid customers');
+select test.check((select bool_and((division_leads_overview((select id from departments where slug = e.dept), e.division::team_division) -> 'onboarding' ->> 'all')::int = e.onboarding)
+                     from sub_expect e where e.division = 'SALES'),
+  'overview onboarding count equals the sub-department''s ONBOARDING customers');
+select test.login('tm_a');
+select test.check((select (part_payments_list(p_department => test.dept('whatsbox'), p_division => 'SALES') ->> 'total')::int = 0), 'a sales member scoping to another department still sees only what they may work on');
+reset role;
+
 reset role;
 \echo '=== ALL PAYMENT WORKFLOW TESTS PASSED ==='
 

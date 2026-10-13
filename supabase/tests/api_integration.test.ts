@@ -319,6 +319,15 @@ r = await api('sa', 'GET', `/users?departmentId=${wab.id}&division=SUPPORT&pageS
 check(r.status === 200 && r.json.data.items.every((u: any) => u.team?.division === 'SUPPORT') && !r.json.data.items.some((u: any) => u.id === memberA), 'users listed by the Support division exclude Sales members', r);
 r = await api('sa', 'GET', `/pipeline/division-overview?departmentId=${wab.id}&division=SALES`);
 check(r.status === 200 && typeof r.json.data.potential.all === 'number' && r.json.data.potential.all === 0, 'division overview carries the Potential counts', r);
+check(typeof r.json.data.onboarding.all === 'number' && typeof r.json.data.partPayments === 'number', 'division overview carries the Customer onboarding and Part payments counts', r);
+r = await api('sa', 'GET', `/pipeline/part-payments?status=ALL&departmentId=${wab.id}&division=SALES`);
+check(r.status === 200 && Array.isArray(r.json.data.items), 'Super Admin lists the part payments of one sub-department', r);
+r = await api('sa', 'GET', `/pipeline/part-payments?status=ALL&departmentId=${wab.id}&division=SUPPORT`);
+check(r.status === 200 && r.json.data.total === 0, 'the Support division has no Sales part payments', r);
+r = await api('sa', 'GET', `/pipeline/part-payments?status=ALL`);
+check(r.status === 200, 'part payments without a scope still work', r);
+r = await api('a', 'GET', `/pipeline/customers?stage=ONBOARDING&departmentId=${wab.id}&division=SALES`);
+check(r.status === 200, 'a Sales member may use the sub-department filter but only gets what they may see', r);
 
 r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { leadStatus: 'CONTACTED', activityNote: 'Called, wants a demo' });
 check(r.status === 200 && r.json.data.leadStatus === 'CONTACTED', 'lead status updated', r);
