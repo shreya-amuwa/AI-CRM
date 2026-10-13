@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Users, LogOut, Cloud, ShieldCheck } from 'lucide-react';
+import { Users, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { sessionManager } from '../../services/sessionManager';
 import { AmuwaLogo } from '../common/AmuwaLogo';
-import { getSupabaseConfig } from '../../services/supabaseClient';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
@@ -11,7 +10,6 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
   const { activeDepartment, user, logout } = useAuth();
-  const supabaseConfig = getSupabaseConfig();
 
   if (!activeDepartment) return null;
 
@@ -64,26 +62,6 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
         {/* Right Side Tools */}
         <div className="flex items-center gap-2.5">
           
-          {/* Cloud Connection Status Badge (not shown in the Accounts department) */}
-          {activeDepartment.id !== 'accounts' && (
-          <div
-            className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-1.5 shadow-xs ${
-              supabaseConfig.isConfigured
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                : 'bg-slate-100 border-slate-200 text-slate-600'
-            }`}
-            title={supabaseConfig.isConfigured ? 'Cloud: Active' : 'Cloud: Local'}
-          >
-            <Cloud className={`w-3.5 h-3.5 ${supabaseConfig.isConfigured ? 'text-emerald-600' : 'text-slate-500'}`} />
-            <span className="hidden sm:inline">
-              {supabaseConfig.isConfigured ? 'CLOUD: ACTIVE' : 'CLOUD: LOCAL'}
-            </span>
-            {supabaseConfig.isConfigured && (
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            )}
-          </div>
-          )}
-
           {/* User Profile & Logout */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
             <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center font-mono shadow-xs">

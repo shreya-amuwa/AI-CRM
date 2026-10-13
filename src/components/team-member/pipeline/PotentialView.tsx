@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { IndianRupee, Search, Undo2 } from 'lucide-react';
+import { Eye, IndianRupee, Search, Undo2 } from 'lucide-react';
 import type { Paginated, PaymentFilter, PaymentMethod, PipelineCounts, PipelineCustomer } from '../../../../shared/contracts';
 import { PAYMENT_METHODS } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
 import { rowOpen } from '../../../lib/rowClick';
 import { CustomerQuickView } from './CustomerQuickView';
+import type { LeadsViewScope } from './LeadsView';
 import {
   Avatar,
   blockDecimals,
@@ -55,7 +56,14 @@ function dueText(iso: string | null): { text: string; cls: string } {
   return { text: `In ${d} days`, cls: 'text-slate-500' };
 }
 
-export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: boolean; onStarted: (id: string) => void }> = ({ counts, ownOnly, onStarted }) => {
+export const PotentialView: React.FC<{
+  counts: Pick<PipelineCounts, 'potential'> | null;
+  ownOnly?: boolean;
+  onStarted: (id: string) => void;
+  /** Super Admin / Department Head: a sub-department's potential customers, read only, with who added each. */
+  scope?: LeadsViewScope;
+}> = ({ counts, ownOnly, onStarted, scope }) => {
+  const [owner, setOwner] = useState(scope?.initialOwnerId || '');
   const { items: services, byCode } = useServiceCatalog();
   const [filter, setFilter] = useState<'' | PaymentFilter>('');
   const [search, setSearch] = useState('');
@@ -79,15 +87,15 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
     setLoading(true);
     setError(null);
     pipelineApi
-      .list({ stage: 'POTENTIAL', mine: ownOnly || undefined, page, pageSize, search: debounced || undefined, service: service || undefined, payment: filter || undefined, sort })
+      .list({ stage: 'POTENTIAL', ...(scope ? { departmentId: scope.departmentId, division: scope.division, ownerId: owner || undefined } : {}), mine: ownOnly || undefined, page, pageSize, search: debounced || undefined, service: service || undefined, payment: filter || undefined, sort })
       .then(
         r => seq === seqRef.current && setData(r),
         e => seq === seqRef.current && setError(errorMessage(e))
       )
       .finally(() => seq === seqRef.current && setLoading(false));
-  }, [page, pageSize, debounced, service, filter, sort, ownOnly]);
+  }, [page, pageSize, debounced, service, filter, sort, ownOnly, scope?.departmentId, scope?.division, owner]);
   useEffect(load, [load]);
-  useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize]);
+  useEffect(() => setPage(1), [debounced, service, filter, sort, pageSize, owner]);
   usePipelineRealtime(load);
 
   const cards: { key: '' | PaymentFilter; label: string; hint: string; dot: string }[] = [
@@ -106,7 +114,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
       <div>
         <p className="text-xs text-slate-500">Pipeline / Potential</p>
         <h1 className="text-2xl font-bold text-slate-900 mt-1">Potential customers</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Ready to buy. When payment is received, confirm it to start onboarding.</p>
+        <p className="text-sm text-slate-500 mt-0.5">{scope ? 'Every potential customer of this team. View only: the team members confirm payments and start onboarding.' : 'Ready to buy. When payment is received, confirm it to start onboarding.'}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" role="group" aria-label="Payment filter">
@@ -155,13 +163,23 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
               </option>
             ))}
           </select>
+          {scope?.members && (
+            <select aria-label="Filter by team member" className={selectCls} value={owner} onChange={e => setOwner(e.target.value)}>
+              <option value="">All team members</option>
+              {scope.members.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.fullName}
+                </option>
+              ))}
+            </select>
+          )}
           <select aria-label="Sort" className={selectCls} value={sort} onChange={e => setSort(e.target.value as PipelineQuery['sort'])}>
             <option value="dueDate">Due date (soonest)</option>
             <option value="newest">Recently moved</option>
             <option value="amount">Amount (highest)</option>
             <option value="name">Business name</option>
           </select>
-          {selected.size > 0 && (
+          {!scope && selected.size > 0 && (
             <button
               type="button"
               className={btn.secondary}
@@ -188,34 +206,37 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
           <table className="w-full text-left text-sm min-w-[900px]">
             <thead className="text-[11px] text-slate-500 bg-slate-50/60">
               <tr>
-                <th scope="col" className="px-4 py-2.5 w-8">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all on this page"
-                    className="w-4 h-4 accent-indigo-600"
-                    checked={allChecked}
-                    onChange={() => setSelected(allChecked ? new Set() : new Set(items.map(i => i.id)))}
-                  />
-                </th>
+                {!scope && (
+                  <th scope="col" className="px-4 py-2.5 w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all on this page"
+                      className="w-4 h-4 accent-indigo-600"
+                      checked={allChecked}
+                      onChange={() => setSelected(allChecked ? new Set() : new Set(items.map(i => i.id)))}
+                    />
+                  </th>
+                )}
                 <th scope="col" className="px-2 py-2.5 font-medium">Customer</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Services</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Amount</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Due date</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Payment</th>
+                {scope && <th scope="col" className="px-4 py-2.5 font-medium">Added by / Owner</th>}
                 <th scope="col" className="px-4 py-2.5 font-medium">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100" aria-busy={loading}>
               {loading && !data ? (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={scope ? 7 : 7}>
                     <Spinner label="Loading potential customers…" />
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-sm text-slate-500">
-                    {filter || debounced || service ? 'No potential customers match these filters.' : 'No potential customers yet. Move a lead here once they are ready to buy.'}
+                    {filter || debounced || service || owner ? 'No potential customers match these filters.' : scope ? 'No potential customers in this team yet.' : 'No potential customers yet. Move a lead here once they are ready to buy.'}
                   </td>
                 </tr>
               ) : (
@@ -226,7 +247,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                   const fresh = dayDiff(c.stageChangedAt) === 0 && Date.now() - new Date(c.stageChangedAt).getTime() < 10 * 60000;
                   return (
                     <tr key={c.id} {...rowOpen(() => setViewing(c.id))} className={`${fresh ? 'bg-emerald-50/60' : 'hover:bg-slate-50/60'} focus-visible:bg-indigo-50/50 focus-visible:outline-none ${loading ? 'opacity-60' : ''}`}>
-                      <td className="px-4 py-3">
+                      {!scope && <td className="px-4 py-3">
                         <input
                           type="checkbox"
                           aria-label={`Select ${c.company || c.name}`}
@@ -240,7 +261,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                             })
                           }
                         />
-                      </td>
+                      </td>}
                       <td className="px-2 py-3">
                         <div className="flex items-center gap-3">
                           <Avatar name={c.company || c.name} />
@@ -282,7 +303,18 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                       <td className="px-4 py-3">
                         <Pill tone={PAYMENT_PILL[st].tone}>{PAYMENT_PILL[st].label}</Pill>
                       </td>
+                      {scope && (
+                        <td className="px-4 py-3 text-xs text-slate-700">
+                          <div className="font-semibold">{c.createdBy?.fullName || '-'}</div>
+                          {c.owner && c.owner.id !== c.createdBy?.id && <div className="text-slate-500">Owner: {c.owner.fullName}</div>}
+                        </td>
+                      )}
                       <td className="px-4 py-3">
+                        {scope ? (
+                          <button type="button" className={btn.secondary} onClick={() => setViewing(c.id)} aria-label={`View potential customer ${c.company || c.name}`}>
+                            <Eye className="w-3.5 h-3.5" /> {scope.actionLabel || 'View'}
+                          </button>
+                        ) : (
                         <div className="flex items-center gap-1.5">
                           <button type="button" className={`${btn.green} whitespace-nowrap`} onClick={() => setConfirming(c)}>
                             Confirm &amp; start onboarding
@@ -310,6 +342,7 @@ export const PotentialView: React.FC<{ counts: PipelineCounts | null; ownOnly?: 
                             </button>
                           )}
                         </div>
+                        )}
                       </td>
                     </tr>
                   );

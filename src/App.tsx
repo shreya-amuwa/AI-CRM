@@ -27,6 +27,7 @@ const AmuwaHqPanel = lazy(() => import('./components/departments/amuwa/AmuwaHqPa
 const AmuwaSettingsPanel = lazy(() => import('./components/departments/amuwa/AmuwaSettingsPanel').then(m => ({ default: m.AmuwaSettingsPanel })));
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
+const SupportSuperAdminDashboard = lazy(() => import('./components/departments/wabastore/superadmin/SupportSuperAdminDashboard').then(m => ({ default: m.SupportSuperAdminDashboard })));
 const SalesSuperAdminDashboard = lazy(() => import('./components/departments/wabastore/superadmin/SalesSuperAdminDashboard').then(m => ({ default: m.SalesSuperAdminDashboard })));
 const WabastorePanel = lazy(() => import('./components/departments/wabastore/WabastorePanel').then(m => ({ default: m.WabastorePanel })));
 const DtalkPanel = lazy(() => import('./components/departments/dtalk/DtalkPanel').then(m => ({ default: m.DtalkPanel })));
@@ -385,6 +386,9 @@ const MainAppContent: React.FC = () => {
             ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'sales' && currentActiveTab !== 'notifications' ? (
               /* Super Admin of Wabastore Sales: Team Members, Access Control, Team Performance, Leads */
               <SalesSuperAdminDashboard activeTab={currentActiveTab} onSelectTab={(tab: any) => handleTabUpdate(tab)} />
+            ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'support' && currentActiveTab !== 'notifications' ? (
+              /* Super Admin of Wabastore Support: Team Members, Access Control, Team Performance, Customers, Tickets */
+              <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_access' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} />
             ) : currentActiveTab === 'notifications' ? (

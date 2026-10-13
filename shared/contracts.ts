@@ -548,6 +548,49 @@ export interface DivisionLeadsOverview {
   };
   /** Same keys as PipelineCounts.leads, only for the sub-department's teams. */
   leads: PipelineCounts['leads'];
+  /** Same keys as PipelineCounts.potential, only for the sub-department's teams. */
+  potential: PipelineCounts['potential'];
+}
+
+/** One person of a Support sub-department (Super Admin Team Performance). */
+export interface DivisionSupportMember {
+  id: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  status: AccountStatus;
+  teamId: string;
+  teamName: string;
+  customersAdded: number;
+  customersOwned: number;
+  ticketsAssigned: number;
+  ticketsOpen: number;
+  ticketsInProgress: number;
+  ticketsWaiting: number;
+  ticketsEscalated: number;
+  ticketsResolved: number;
+  tasksPending: number;
+  tasksDone: number;
+  lastCustomerAt: string | null;
+}
+
+export interface DivisionSupportOverview {
+  teamIds: string[];
+  members: DivisionSupportMember[];
+  totals: {
+    members: number;
+    customers: number;
+    customersActive: number;
+    tickets: number;
+    open: number;
+    inProgress: number;
+    waiting: number;
+    escalated: number;
+    resolved: number;
+    unassigned: number;
+    tasksPending: number;
+    tasksDone: number;
+  };
 }
 
 export interface PipelineCounts {

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LeadsView } from '../../../team-member/pipeline/LeadsView';
+import { PotentialView } from '../../../team-member/pipeline/PotentialView';
 import { CustomerQuickView } from '../../../team-member/pipeline/CustomerQuickView';
 import { useSalesOverview } from './useSalesOverview';
 
@@ -32,5 +33,24 @@ export const SalesLeads: React.FC<{ departmentId: string | undefined; initialOwn
       />
       {openId && <CustomerQuickView id={openId} title="Lead details" onClose={() => setOpenId(null)} />}
     </>
+  );
+};
+
+/** Wabastore Sales - Potential for the Super Admin: the Sales Team Member's Potential list, view only. */
+export const SalesPotential: React.FC<{ departmentId: string | undefined; initialOwnerId?: string }> = ({ departmentId, initialOwnerId }) => {
+  const { data } = useSalesOverview(departmentId);
+  if (!departmentId) return null;
+  return (
+    <PotentialView
+      key={initialOwnerId || 'all'}
+      counts={data ? { potential: data.potential } : null}
+      onStarted={() => undefined}
+      scope={{
+        departmentId,
+        division: 'SALES',
+        initialOwnerId,
+        members: (data?.members || []).map(m => ({ id: m.id, fullName: m.fullName }))
+      }}
+    />
   );
 };
