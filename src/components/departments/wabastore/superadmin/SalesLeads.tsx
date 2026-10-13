@@ -18,7 +18,7 @@ export const SalesLeads: React.FC<{ departmentId: string | undefined; initialOwn
     <>
       <LeadsView
         key={initialOwnerId || 'all'}
-        counts={data ? { leads: data.leads } : null}
+        counts={data?.leads ? { leads: data.leads } : null}
         showInbound={false}
         onAdd={() => undefined}
         onEdit={setOpenId}
@@ -43,7 +43,7 @@ export const SalesPotential: React.FC<{ departmentId: string | undefined; initia
   return (
     <PotentialView
       key={initialOwnerId || 'all'}
-      counts={data ? { potential: data.potential } : null}
+      counts={data?.potential ? { potential: data.potential } : null}
       onStarted={() => undefined}
       scope={{
         departmentId,
