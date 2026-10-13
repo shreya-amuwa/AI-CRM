@@ -1,7 +1,9 @@
 # Onboarding email + WhatsApp automations
 
 The customer emails and WhatsApp messages that the Google Sheet + Apps Script sent now go out from the CRM.
-They are triggered by the Technical Consultant's work. No sheet and no "Trigger" button are involved.
+They are triggered by the Technical Consultant's work. **Nothing is sent when the customer merely reaches the
+Technical Consultant**: the first messages go out when the Technical Consultant clicks **Send for onboarding**, once,
+whether or not the customer wants add-on services. Asking for add-ons later never sends them again. No sheet and no "Trigger" button are involved.
 
 **Scope for now:** Wabastore customers with the **WhatsApp API + Blue Tick** service. Other departments and services
 are not automated yet.
@@ -12,8 +14,8 @@ Migration: `supabase/migrations/20261016000100_onboarding_automations.sql` (re-r
 
 | Step | What happens in the CRM | Email | WhatsApp `status` |
 | --- | --- | --- | --- |
-| 1a | The customer reaches the Technical Consultant (Accounts confirmed the payment) with a **website URL** entered by sales | "Documents Received – Under Review" | `Under Review` |
-| 1b | The customer reaches the Technical Consultant with **"Customer has no website"** ticked (or no website entered) | "Mini Website for Your Business" | `Website Pending` |
+| 1a | The Technical Consultant clicks **Send for onboarding** (whether or not the customer wants add-ons) and sales entered a **website URL** | "Documents Received – Under Review" | `Under Review` |
+| 1b | The Technical Consultant clicks **Send for onboarding** and sales ticked **"Customer has no website"** (or entered no website) | "Mini Website for Your Business" | `Website Pending` |
 | 2 | The website link is saved (the TC can add or correct it) **and** every document / detail sales collected is authorized | "Meta Verification In Progress" (adds: takes about 2-3 weeks; "your website has been created" when the customer started at Website Pending) | `Meta Verification` |
 | 3 | The TC creates the **client login** | "Meta Verification Completed – Panel Access Details": panel link, user ID (the login e-mail) and the password | `Status Completed` |
 
@@ -81,7 +83,7 @@ Supabase Auth keeps the password (hashed) for signing in. For the completion ema
 | Resend / Brevo (`EMAIL_PROVIDER=resend` or `brevo`) | `EMAIL_API_KEY`. Verify `amuwa.com` with the provider (SPF/DKIM records) so `meta@amuwa.com` can send. |
 | `EMAIL_FROM` | `Amuwa Corporation <meta@amuwa.com>` (default). `EMAIL_REPLY_TO` defaults to `meta@amuwa.com`. `EMAIL_CC` / `EMAIL_BCC` are optional. |
 | `WHATSAPP_WEBHOOK_URL` | The 1automations webhook. Generate a new one: the old one was shared in the Apps Script. |
-| `AUTOMATION_TEST_RECIPIENTS` | While testing: e.g. `9372286055,9321664464,you@amuwa.com`. Everyone else is skipped ("not a test recipient"). Remove it to go live for everyone. |
+| `AUTOMATION_TEST_RECIPIENTS` | **Leave it empty / delete it in production**: the CRM then sends to each customer's own email and WhatsApp number from the database. Set it only to test: everyone not in the list is skipped ("not a test recipient"). |
 | `AUTOMATION_SECRET_KEY` | A long random string. Without it the completion email says the password is shared separately. |
 | `AUTOMATION_DISPATCH_SECRET` | A long random string (16+ characters) for the dispatch endpoint. |
 
@@ -120,7 +122,7 @@ Open the customer in the Technical Consultant dashboard: the **Customer emails &
 | What the panel shows | Meaning and fix |
 | --- | --- |
 | No panel at all | The customer is not automated: Wabastore + WhatsApp API + Blue Tick only. Or the migration has not been run. |
-| A step is shown but **no messages**, with the amber note | The customer reached the Technical Consultant before the automations were switched on (the step was recorded without messages). Press **Send ... messages**. |
+| A step is shown but **no messages**, with the amber note | Onboarding was started before the automations were switched on (the step was recorded without messages). Press **Send ... messages**. |
 | Messages say **Not sent – Dry run** | `AUTOMATION_MODE` is `dry_run`. Set it to `live` and redeploy. |
 | Messages say **Test mode – ... is not a test recipient** | `AUTOMATION_TEST_RECIPIENTS` is set and the customer's email or WhatsApp number is not in it. Add it, or remove the setting to go live for everyone. Then press **Send ... messages**. |
 | Red note: **Email / WhatsApp sending is not set up** | The provider settings (`EMAIL_PROVIDER` + `SMTP_*` / `EMAIL_API_KEY`, or `WHATSAPP_WEBHOOK_URL`) are missing on the server. Messages wait and go out once they are set and redeployed. |
@@ -134,5 +136,6 @@ After changing environment variables in Vercel, **redeploy**; they are read only
 It confirms the migrations are applied and lists the latest customers with their step and every message
 (no email addresses or phone numbers).
 
-Migrations: `20261016000100_onboarding_automations.sql`, then `20261016000200_resend_client_messages.sql`
-(the **Send ... messages** button).
+Migrations, in order: `20261016000100_onboarding_automations.sql`, `20261016000200_resend_client_messages.sql`
+(the **Send ... messages** button), `20261016000300_start_onboarding_trigger.sql` (messages start at
+**Send for onboarding**; a stricter website check).

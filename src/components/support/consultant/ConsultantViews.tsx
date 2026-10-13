@@ -44,6 +44,7 @@ import {
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
+import { CustomerAddonDetails } from './CustomerAddonDetails';
 import { ConsultationNotes } from './ConsultationNotes';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 
@@ -542,6 +543,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
                 : ''}{' '}
               Manage them under Add-ons Services.
             </p>
+            <CustomerAddonDetails customerId={c.id} documents={c.documents} />
             <CustomerInvoices customerId={c.id} kind="ADDON" compact />
           </section>
         )}

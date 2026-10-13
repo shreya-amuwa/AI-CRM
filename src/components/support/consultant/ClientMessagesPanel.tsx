@@ -3,12 +3,13 @@ import { CheckCircle2, Clock, Globe, Mail, MessageCircle, Send, XCircle } from '
 import type { ChecklistItem, ClientMessage, ClientMessages, ClientStage } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
+import { normalizeWebsite } from '../../../../shared/contactValidation';
 import { btn, ErrorBanner, inputCls } from '../../team-member/pipeline/shared';
 
 /**
  * The customer's onboarding emails and WhatsApp messages (Wabastore, WhatsApp API + Blue Tick).
  * They are sent automatically from the Technical Consultant's work:
- *   reaches you -> Under Review / Website Pending, website link + every item authorized -> Meta Verification,
+ *   Send for onboarding -> Under Review / Website Pending, website link + every item authorized -> Meta Verification,
  *   client login created -> Status Completed.
  */
 const STAGES: { code: ClientStage; label: string }[] = [
@@ -49,7 +50,7 @@ function nextStep(stage: ClientStage | null, hasSite: boolean): string {
     case 'COMPLETED':
       return 'All onboarding messages are done.';
     default:
-      return 'Messages start when the customer reaches you.';
+      return 'The first messages go out when you click Send for onboarding.';
   }
 }
 
@@ -93,11 +94,12 @@ export const ClientMessagesPanel: React.FC<{
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return setError('Enter the website address.');
+    const w = normalizeWebsite(url);
+    if (w.url === null) return setError(w.error);
     setBusy(true);
     setError(null);
     try {
-      await pipelineApi.setWebsite(customerId, url.trim());
+      await pipelineApi.setWebsite(customerId, w.url);
       setEditing(false);
       onChanged();
     } catch (err) {
@@ -230,7 +232,7 @@ export const ClientMessagesPanel: React.FC<{
       )}
       {stage && data.messages.length === 0 && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-          Nothing was sent for this step. The customer reached you before the automatic messages were switched on. Use the button above to send them now.
+          Nothing was sent for this step: onboarding was started before the automatic messages were switched on. Use the button above to send them now.
         </p>
       )}
 

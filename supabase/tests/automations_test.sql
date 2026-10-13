@@ -34,6 +34,12 @@ set role authenticated;
 select test.login('tm_a');
 select start_customer_onboarding(id, 0, 'UPI', null) from au;
 
+-- Website: only a real web address is accepted
+select test.must_fail($$select save_onboarding_entry((select id from au where name = 'site'), 'WA_WEBSITE_URL', 'a')$$, 'a single letter is not a website', 'Enter the website address');
+select test.must_fail($$select save_onboarding_entry((select id from au where name = 'site'), 'WA_WEBSITE_URL', 'localhost')$$, 'localhost is not a website', 'Enter the website address');
+select test.must_fail($$select save_onboarding_entry((select id from au where name = 'site'), 'WA_WEBSITE_URL', 'http://192.168.1.10')$$, 'an IP address is not a website', 'Enter the website address');
+select test.must_fail($$select save_onboarding_entry((select id from au where name = 'site'), 'WA_WEBSITE_URL', 'my shop.com')$$, 'spaces are not allowed', 'Enter the website address');
+select test.must_fail($$select save_onboarding_entry((select id from au where name = 'site'), 'WA_WEBSITE_URL', 'https://shop.c0m')$$, 'the ending must be letters', 'Enter the website address');
 -- Website: a URL (normalized) or "no website"
 select test.must_fail($$select save_onboarding_entry((select id from au where name = 'site'), 'WA_WEBSITE_URL', 'not a website')$$,
   'a website that is not an address is refused', 'Enter the website address');
@@ -59,8 +65,17 @@ select test.check((select count(*) = 0 from automation_jobs where customer_id in
                    and (select bool_and(client_status is null) from customer_onboarding where customer_id in (select id from au)),
   'nothing is queued before the customer reaches the Technical Consultant');
 
--- Step 1: Accounts confirmed -> the customer reaches the Technical Consultant
+-- Reaching the Technical Consultant (Accounts confirmed) sends nothing yet
 select private.forward_to_consultant(a.id, c, false) from au a join customers c on c.id = a.id;
+select test.check((select count(*) = 0 from automation_jobs where customer_id in (select id from au))
+                   and (select bool_and(client_status is null) from customer_onboarding where customer_id in (select id from au)),
+  'reaching the Technical Consultant sends nothing: the messages wait for "Send for onboarding"');
+-- Step 1: the TC clicks "Send for onboarding" (add-ons or not): the first messages are queued
+set role authenticated;
+select test.login('late_consultant');
+select consultant_set_addons_required(a.id, a.name = 'nosite') from au a where a.name <> 'other';
+select consultant_start_onboarding(a.id) from au a where a.name <> 'other';
+reset role;
 select test.check((select client_status = 'UNDER_REVIEW' from customer_onboarding where customer_id = (select id from au where name = 'site'))
                    and (select count(*) = 2 and bool_and(stage = 'UNDER_REVIEW' and status = 'QUEUED') and count(distinct channel) = 2
                           from automation_jobs where customer_id = (select id from au where name = 'site')),
@@ -74,6 +89,18 @@ select test.check((select client_status is null from customer_onboarding where c
 select test.check((select dedupe_key = format('ONBOARD|%s|EMAIL|UNDER_REVIEW', (select id from au where name = 'site')) from automation_jobs
                     where customer_id = (select id from au where name = 'site') and channel = 'EMAIL'),
   'each job has a unique key per customer, channel and stage');
+
+-- Asking for add-on services afterwards never sends the onboarding messages again
+set role authenticated;
+select test.login('late_consultant');
+select consultant_set_addons_required((select id from au where name = 'site'), true);
+reset role;
+select test.check((select count(*) = 2 from automation_jobs where customer_id = (select id from au where name = 'site')),
+  'asking for add-ons later sends no new onboarding messages');
+set role authenticated;
+select test.login('late_consultant');
+select test.must_fail($$select consultant_start_onboarding((select id from au where name = 'site'))$$, 'onboarding cannot be started twice (so it cannot send twice)', 'already in onboarding');
+reset role;
 
 -- Sent back to sales and sent again: nothing is sent twice
 update customer_onboarding set returned_at = now() where customer_id = (select id from au where name = 'site');
