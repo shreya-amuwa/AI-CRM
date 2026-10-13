@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Inbox, Pencil, Plus, Search } from 'lucide-react';
-import type { InboundLead, LeadAccountsFilter, LeadStatus, Paginated, PipelineCounts, PipelineCustomer } from '../../../../shared/contracts';
+import { Eye, Inbox, Pencil, Plus, Search } from 'lucide-react';
+import type { InboundLead, LeadAccountsFilter, LeadStatus, Paginated, PipelineCounts, PipelineCustomer, TeamDivision } from '../../../../shared/contracts';
 import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { WorkflowBadge } from '../../payments/PaymentBits';
 import { errorMessage } from '../../../lib/api/client';
@@ -44,12 +44,32 @@ type Tab = '' | LeadStatus | LeadAccountsFilter;
 const TABS: Tab[] = ['', 'NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY', 'RETURNED', 'WITH_ACCOUNTS'];
 const TAB_LABEL = (t: Tab) => (t === 'WITH_ACCOUNTS' ? 'With Accounts' : t === 'RETURNED' ? 'Returned from Accounts' : t ? LEAD_STATUS_LABEL[t] : 'All');
 
+/**
+ * Optional Super Admin / Department Head mode (all props default to the Sales
+ * Team Member behaviour): lists the leads of one sub-department, shows who
+ * added each lead and cannot add leads.
+ */
+export interface LeadsViewScope {
+  departmentId: string;
+  division: TeamDivision;
+  /** Start with one team member's leads. */
+  initialOwnerId?: string;
+  /** Team members offered in the "added by" filter. */
+  members?: { id: string; fullName: string }[];
+  title?: string;
+  subtitle?: string;
+  /** Label of the row button (the details are read-only), default "View". */
+  actionLabel?: string;
+}
+
 export const LeadsView: React.FC<{
-  counts: PipelineCounts | null;
+  counts: Pick<PipelineCounts, 'leads'> | null;
   showInbound?: boolean;
   onAdd: () => void;
   onEdit: (id: string) => void;
-}> = ({ counts, showInbound = true, onAdd, onEdit }) => {
+  scope?: LeadsViewScope;
+}> = ({ counts, showInbound = true, onAdd, onEdit, scope }) => {
+  const [owner, setOwner] = useState(scope?.initialOwnerId || '');
   const { items: services, byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [service, setService] = useState('');
@@ -71,6 +91,7 @@ export const LeadsView: React.FC<{
     pipelineApi
       .list({
         stage: 'LEAD',
+        ...(scope ? { departmentId: scope.departmentId, division: scope.division, ownerId: owner || undefined } : {}),
         page,
         pageSize: 10,
         search: debounced || undefined,
@@ -86,10 +107,10 @@ export const LeadsView: React.FC<{
         err => seq === requestSeq.current && setError(errorMessage(err))
       )
       .finally(() => seq === requestSeq.current && setLoading(false));
-  }, [page, debounced, service, source, status, followUp]);
+  }, [page, debounced, service, source, status, followUp, scope?.departmentId, scope?.division, owner]);
 
   useEffect(load, [load]);
-  useEffect(() => setPage(1), [debounced, service, source, status, followUp]);
+  useEffect(() => setPage(1), [debounced, service, source, status, followUp, owner]);
   usePipelineRealtime(load);
 
   // Ctrl/Cmd+K focuses search, as shown in the design.
@@ -109,12 +130,14 @@ export const LeadsView: React.FC<{
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
           <p className="text-xs text-slate-500">Pipeline / Leads</p>
-          <h1 className="text-2xl font-bold text-slate-900 mt-1">Leads</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Customers interested in our services. You see only the leads assigned to you.</p>
+          <h1 className="text-2xl font-bold text-slate-900 mt-1">{scope?.title || 'Leads'}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{scope?.subtitle || 'Customers interested in our services. You see only the leads assigned to you.'}</p>
         </div>
-        <button type="button" className={`${btn.primary} py-2.5`} onClick={onAdd}>
-          <Plus className="w-4 h-4" /> Add lead
-        </button>
+        {!scope && (
+          <button type="button" className={`${btn.primary} py-2.5`} onClick={onAdd}>
+            <Plus className="w-4 h-4" /> Add lead
+          </button>
+        )}
       </div>
 
       {showInbound && <InboundStrip onClaimed={id => onEdit(id)} />}
@@ -149,6 +172,16 @@ export const LeadsView: React.FC<{
                 <option key={s}>{s}</option>
               ))}
             </select>
+            {scope?.members && (
+              <select aria-label="Filter by team member" className={selectCls} value={owner} onChange={e => setOwner(e.target.value)}>
+                <option value="">All team members</option>
+                {scope.members.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.fullName}
+                  </option>
+                ))}
+              </select>
+            )}
             <select aria-label="Filter by follow-up" className={selectCls} value={followUp} onChange={e => setFollowUp(e.target.value as FollowUpFilter)}>
               <option value="">Any follow-up</option>
               <option value="TODAY">Due today</option>
@@ -193,6 +226,7 @@ export const LeadsView: React.FC<{
                 <th scope="col" className="px-4 py-2.5 font-medium">Phone</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Services interested</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Source</th>
+                {scope && <th scope="col" className="px-4 py-2.5 font-medium">Added by / Owner</th>}
                 <th scope="col" className="px-4 py-2.5 font-medium">Follow-up</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Status</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Action</th>
@@ -201,14 +235,14 @@ export const LeadsView: React.FC<{
             <tbody className="divide-y divide-slate-100" aria-busy={loading}>
               {loading && !data ? (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={scope ? 8 : 7}>
                     <Spinner label="Loading leads…" />
                   </td>
                 </tr>
               ) : data && data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-sm text-slate-500">
-                    {debounced || service || source || status || followUp ? 'No leads match these filters.' : 'No leads yet. Add your first lead to get started.'}
+                  <td colSpan={scope ? 8 : 7} className="py-12 text-center text-sm text-slate-500">
+                    {debounced || service || source || status || followUp || owner ? 'No leads match these filters.' : scope ? 'No leads have been added by this team yet.' : 'No leads yet. Add your first lead to get started.'}
                   </td>
                 </tr>
               ) : (
@@ -230,6 +264,12 @@ export const LeadsView: React.FC<{
                         <ServiceChips codes={l.services} catalog={byCode} />
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-700">{l.leadSource || '-'}</td>
+                      {scope && (
+                        <td className="px-4 py-3 text-xs text-slate-700">
+                          <div className="font-semibold">{l.createdBy?.fullName || '-'}</div>
+                          {l.owner && l.owner.id !== l.createdBy?.id && <div className="text-slate-500">Owner: {l.owner.fullName}</div>}
+                        </td>
+                      )}
                       <td className={`px-4 py-3 text-xs whitespace-nowrap ${f.urgent ? 'text-rose-700 font-bold' : 'text-slate-700'}`}>{f.text}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col items-start gap-1">
@@ -238,8 +278,9 @@ export const LeadsView: React.FC<{
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <button type="button" className={btn.secondary} onClick={() => onEdit(l.id)} aria-label={`${l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'} lead ${l.name}`}>
-                          <Pencil className="w-3.5 h-3.5" /> {l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'}
+                        <button type="button" className={btn.secondary} onClick={() => onEdit(l.id)} aria-label={`${scope ? 'View' : l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'} lead ${l.name}`}>
+                          {scope ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}{' '}
+                          {scope ? scope.actionLabel || 'View' : l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'}
                         </button>
                       </td>
                     </tr>

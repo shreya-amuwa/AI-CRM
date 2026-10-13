@@ -1899,4 +1899,56 @@ select test.must_fail($$insert into hr_employees (id, name, profile_id) values (
   'two HR records cannot point at the same account', 'duplicate key');
 reset role;
 
+-- ---------------------------------------------------------------------------
+\echo '--- 23. Sub-department (Wabastore Sales) leads overview for the Super Admin'
+-- ---------------------------------------------------------------------------
+reset role;
+select test.create_auth_user('ov_m1', 'ov.m1@amuwa.com', '{"full_name":"Overview One"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales')));
+select test.create_auth_user('ov_m2', 'ov.m2@amuwa.com', '{"full_name":"Overview Two"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales')));
+create temp table ovl (name text, id uuid);
+grant all on ovl to authenticated;
+set role authenticated;
+select test.login('ov_m1');
+insert into ovl select 'one-a', create_lead('{"name":"Ov Lead A","phone":"+91 90000 51001","leadStatus":"READY_TO_BUY","nextFollowUpAt":"2020-01-01T10:00:00Z"}', array['AI_CALLING']);
+insert into ovl select 'one-b', create_lead('{"name":"Ov Lead B","phone":"+91 90000 51002"}', array['AI_CALLING']);
+select test.login('ov_m2');
+insert into ovl select 'two-a', create_lead('{"name":"Ov Lead C","phone":"+91 90000 51003","leadStatus":"CONTACTED"}', array['AI_CALLING']);
+-- another department's sales member adds a lead: it must NOT appear in Wabastore Sales
+select test.login('tm_c');
+insert into ovl select 'other', create_lead('{"name":"Other Dept Lead","phone":"+91 90000 51004"}', array['AI_CALLING']);
+
+-- access
+select test.login('tm_a');
+select test.must_fail($$select division_leads_overview(test.dept('wabastore'), 'SALES')$$, 'a sales member cannot read the sub-department overview', 'FORBIDDEN');
+select test.login('dh_wbx');
+select test.must_fail($$select division_leads_overview(test.dept('wabastore'), 'SALES')$$, 'another department''s head cannot read it', 'FORBIDDEN');
+
+select test.login('sa');
+create temp table ovr as select division_leads_overview(test.dept('wabastore'), 'SALES') as j;
+grant all on ovr to authenticated;
+select test.check((select (select count(*) from jsonb_array_elements_text(j -> 'teamIds')) = (select count(*) from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES') and (select count(*) from jsonb_array_elements_text(j -> 'teamIds') x where x::uuid in (select t.id from teams t where t.division = 'SALES' and t.department_id = test.dept('wabastore'))) = (select count(*) from jsonb_array_elements_text(j -> 'teamIds')) from ovr),
+  'the sub-department is the Sales-division team(s) of the department (by id)');
+select test.check((select count(*) = 1 from ovr, jsonb_array_elements(j -> 'members') m where m ->> 'email' = 'ov.m1@amuwa.com'
+                      and (m ->> 'leadsAdded')::int = 2 and (m ->> 'leads')::int = 2 and (m ->> 'readyToBuy')::int = 1 and (m ->> 'new')::int = 1
+                      and (m ->> 'followUpsOverdue')::int = 1 and (m ->> 'noFollowUp')::int = 1),
+  'member one: 2 leads added, status mix and an overdue follow-up come from the records');
+select test.check((select count(*) = 1 from ovr, jsonb_array_elements(j -> 'members') m where m ->> 'email' = 'ov.m2@amuwa.com'
+                      and (m ->> 'leadsAdded')::int = 1 and (m ->> 'contacted')::int = 1),
+  'member two: 1 lead added, contacted');
+select test.check((select count(*) = 0 from ovr, jsonb_array_elements(j -> 'members') m where m ->> 'email' in ('sup.b@amuwa.com', 'dh.wab@amuwa.com', 'root@amuwa.com')),
+  'support members, the department head and the Super Admin are not in the Sales member list');
+select test.check((select (j -> 'totals' ->> 'leadsAdded')::int = (select count(*) from customers where team_id in (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES')) from ovr),
+  'total leads added equals the customers of the Sales team');
+select test.check((select (j -> 'totals' ->> 'leads')::int = (select count(*) from customers where team_id in (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES') and lifecycle_stage = 'LEAD') from ovr),
+  'open leads equal the LEAD customers of the Sales team');
+select test.check((select count(*) = 0 from customers where name = 'Other Dept Lead' and team_id in (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES')), 'the other department''s lead is not in Wabastore Sales');
+select test.check((select (j -> 'leads' ->> 'all')::int = (select count(*) from customers where team_id in (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES') and lifecycle_stage = 'LEAD' and payment_workflow <> 'PENDING_PAYMENT_CONFIRMATION') from ovr),
+  'tab counts use the same rule as the Sales dashboard');
+-- the Department Head of Wabastore may read it too
+select test.login('dh_wab');
+select test.check((select (division_leads_overview(test.dept('wabastore'), 'SALES') -> 'totals' ->> 'leadsAdded')::int > 0), 'the Wabastore Department Head can read it');
+reset role;
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

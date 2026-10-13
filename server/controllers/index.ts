@@ -82,6 +82,7 @@ export const auditController = {
 export const pipelineController = {
   services: (async ctx => ok(await svc(ctx).pipeline.services())) as Handler,
   counts: (async ctx => ok(await svc(ctx).pipeline.counts())) as Handler,
+  divisionOverview: (async ctx => ok(await svc(ctx).pipeline.divisionOverview(ctx.req.query))) as Handler,
   list: (async ctx => ok(await svc(ctx).pipeline.list(ctx.actor, ctx.req.query))) as Handler,
   get: (async ctx => ok(await svc(ctx).pipeline.get(ctx.params.id))) as Handler,
   createLead: (async ctx => ok(await svc(ctx).pipeline.createLead(ctx.actor, ctx.req.body), 201)) as Handler,

@@ -135,7 +135,9 @@ export const userListQuerySchema = z.object({
   status: z.enum(ACCOUNT_STATUSES).optional(),
   role: z.enum(ROLES).optional(),
   departmentId: uuidSchema.optional(),
-  teamId: uuidSchema.optional()
+  teamId: uuidSchema.optional(),
+  /** With departmentId: every team of that division (e.g. all Sales teams of Wabastore). */
+  division: z.enum(TEAM_DIVISIONS).optional()
 });
 export type UserListQuery = z.infer<typeof userListQuerySchema>;
 
@@ -327,11 +329,21 @@ export const pipelineListQuerySchema = z.object({
   intake: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   /** Technical Consultant Add-ons Services section: customers sent to Add-ons. */
   addons: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
+  /** Super Admin / Department Head: every team of this division in the department (the sub-department), and optionally one owner. */
+  departmentId: uuidSchema.optional(),
+  division: z.enum(TEAM_DIVISIONS).optional(),
+  ownerId: uuidSchema.optional(),
   /** Only records owned by the caller (e.g. a support member's own pipeline). */
   mine: z.preprocess(v => v === true || v === 'true' || v === '1', z.boolean()).optional(),
   sort: z.enum(['newest', 'oldest', 'followUp', 'dueDate', 'amount', 'name']).default('newest')
 });
 export type PipelineListQuery = z.infer<typeof pipelineListQuerySchema>;
+
+export const divisionOverviewQuerySchema = z.object({
+  departmentId: uuidSchema,
+  division: z.enum(TEAM_DIVISIONS)
+});
+export type DivisionOverviewQuery = z.infer<typeof divisionOverviewQuerySchema>;
 
 export const moveToPotentialSchema = z
   .object({

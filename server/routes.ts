@@ -48,6 +48,7 @@ export const routes: RouteDef[] = [
 
   { method: 'GET', path: '/pipeline/services', handler: pipeline.services },
   { method: 'GET', path: '/pipeline/counts', handler: pipeline.counts },
+  { method: 'GET', path: '/pipeline/division-overview', handler: pipeline.divisionOverview },
   { method: 'GET', path: '/pipeline/customers', handler: pipeline.list },
   { method: 'GET', path: '/pipeline/customers/:id', handler: pipeline.get },
   { method: 'POST', path: '/pipeline/leads', handler: pipeline.createLead },

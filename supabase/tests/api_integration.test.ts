@@ -290,6 +290,24 @@ check(r.status === 404, "member B cannot edit A's lead", r);
 r = await api('th', 'GET', '/pipeline/customers?stage=LEAD');
 check(r.json.data.total === 2, 'team head sees both leads');
 
+// Super Admin: the Wabastore Sales sub-department (department + SALES division), by id
+r = await api('sa', 'GET', `/pipeline/customers?stage=LEAD&departmentId=${wab.id}&division=SALES`);
+check(r.status === 200 && r.json.data.total === 2 && r.json.data.items.every((x: any) => x.createdBy && x.owner), 'Super Admin lists every lead of the Sales sub-department, with who added it', r);
+r = await api('sa', 'GET', `/pipeline/customers?stage=LEAD&departmentId=${wab.id}&division=SALES&ownerId=${memberA}`);
+check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'filtered to one team member', r);
+r = await api('sa', 'GET', `/pipeline/customers?stage=LEAD&departmentId=${wab.id}&division=SUPPORT`);
+check(r.status === 200 && r.json.data.total === 0, 'the Support division of the same department has none of them', r);
+r = await api('sa', 'GET', `/pipeline/division-overview?departmentId=${wab.id}&division=SALES`);
+const salesTotal = Number((await db.query(`select count(*) from public.customers where team_id in (select id from public.teams where department_id = $1 and division = 'SALES')`, [wab.id])).rows[0].count);
+check(r.status === 200 && r.json.data.totals.leadsAdded === salesTotal && r.json.data.totals.leads === 2 && r.json.data.members.some((m: any) => m.id === memberA && m.leads === 1 && m.leadsAdded >= 1),
+  'division overview: totals equal the customers of the Sales teams; per-member numbers come from the records', r);
+r = await api('a', 'GET', `/pipeline/division-overview?departmentId=${wab.id}&division=SALES`);
+check(r.status === 403, 'a team member cannot read the overview', r);
+r = await api('sa', 'GET', '/pipeline/division-overview?division=SALES');
+check(r.status === 422, 'the overview needs a department', r);
+r = await api('sa', 'GET', `/users?departmentId=${wab.id}&division=SALES&pageSize=50`);
+check(r.status === 200 && r.json.data.items.some((u: any) => u.id === memberA) && r.json.data.items.every((u: any) => u.team?.division === 'SALES' || u.team === null), 'users can be listed by sub-department (division)', r);
+
 r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { leadStatus: 'CONTACTED', activityNote: 'Called, wants a demo' });
 check(r.status === 200 && r.json.data.leadStatus === 'CONTACTED', 'lead status updated', r);
 r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { lifecycleStage: 'ONBOARDING' });

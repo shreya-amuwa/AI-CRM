@@ -34,6 +34,13 @@ interface StaffManagementPanelProps {
   departmentSlug: string;
   /** Current sub-department; picks the default team for new members. */
   subDept?: 'sales' | 'support' | string | null;
+  /**
+   * 'all' (default): the combined "Team Members & Access" page.
+   * 'members': a read-only member list with an "Add Team Member" button.
+   * 'access': "Access Control" - the form plus role / access management.
+   * 'members' and 'access' list every team of the sub-department's division.
+   */
+  view?: 'all' | 'members' | 'access';
 }
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
@@ -57,7 +64,7 @@ function generatePassword(): string {
   return Array.from(bytes, b => chars[b % chars.length]).join('');
 }
 
-export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept }) => {
+export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all' }) => {
   const { profile } = useAuth();
   const { departments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
@@ -81,6 +88,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [position, setPosition] = useState('');
   const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
   const [teamId, setTeamId] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const manage = view !== 'members';
+  const showForm = view !== 'members' || formOpen;
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [created, setCreated] = useState<{ profile: Profile; dashboard: string } | null>(null);
@@ -125,8 +135,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setLoading(true);
     setListError(null);
     try {
-      const listTeamId = isTeamLead ? profile?.teamId || undefined : scope === 'subdept' ? defaultTeam?.id : undefined;
-      const result = await usersApi.list({ departmentId, teamId: listTeamId, page, pageSize: MEMBERS_PAGE_SIZE });
+      const bySubDept = view !== 'all' && !isTeamLead && scope === 'subdept' && !!division;
+      const listTeamId = isTeamLead ? profile?.teamId || undefined : bySubDept ? undefined : scope === 'subdept' ? defaultTeam?.id : undefined;
+      const result = await usersApi.list({ departmentId, teamId: listTeamId, division: bySubDept ? division : undefined, page, pageSize: MEMBERS_PAGE_SIZE });
       setMembers(result.items.filter(m => m.id !== profile?.id));
       setTotal(result.total);
     } catch (err) {
@@ -134,7 +145,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     } finally {
       setLoading(false);
     }
-  }, [departmentId, scope, defaultTeam?.id, isTeamLead, profile?.teamId, profile?.id, page]);
+  }, [departmentId, scope, defaultTeam?.id, isTeamLead, profile?.teamId, profile?.id, page, view, division]);
 
   // Back to page 1 when the list changes scope.
   useEffect(() => setPage(1), [scope, departmentId]);
@@ -313,25 +324,36 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold font-heading text-slate-900">Team Members & Access</h2>
+            <h2 className="text-xl font-bold font-heading text-slate-900">{view === 'members' ? 'Team Members' : view === 'access' ? 'Access Control' : 'Team Members & Access'}</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - you can create:{' '}
               {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[r])).join(', ')}
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void loadMembers()}
-          className="self-start sm:self-center px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="self-start sm:self-center flex items-center gap-2">
+          {view === 'members' && (
+            <button
+              type="button"
+              onClick={() => setFormOpen(o => !o)}
+              className="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5"
+            >
+              <UserPlus className="w-3.5 h-3.5" /> {formOpen ? 'Close form' : 'Add Team Member'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void loadMembers()}
+            className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         {/* Create member form */}
-        <form onSubmit={handleCreate} className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3.5">
+        {showForm && <form onSubmit={handleCreate} className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3.5">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <UserPlus className="w-4 h-4 text-blue-600" />
             <h3 className="text-sm font-bold text-slate-900">Add Team Member</h3>
@@ -456,15 +478,15 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}
           </button>
-        </form>
+        </form>}
 
         {/* Member list */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+        <div className={`${showForm ? 'lg:col-span-3' : 'lg:col-span-5'} bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
             <h3 className="text-sm font-bold text-slate-900">
               Members {loading ? '' : `(${total})`}
             </h3>
-            {!isTeamLead && (
+            {!isTeamLead && view === 'all' && (
               <div className="flex gap-1 text-xs">
                 {(['subdept', 'department'] as const).map(s => (
                   <button
@@ -488,7 +510,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           {listError && <div className="p-2.5 rounded-xl text-xs border bg-rose-50 border-rose-200 text-rose-700">{listError}</div>}
 
           {!loading && members.length === 0 && !listError ? (
-            <p className="text-xs text-slate-500 py-8 text-center">No members yet. Create the first account using the form.</p>
+            <p className="text-xs text-slate-500 py-8 text-center">{manage ? 'No members yet. Create the first account using the form.' : 'No members yet. Use Add Team Member to create the first account.'}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -496,9 +518,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                   <tr className="text-left text-slate-500 border-b border-slate-100">
                     <th className="py-2 pr-3 font-semibold">Name / Email</th>
                     <th className="py-2 pr-3 font-semibold">Role</th>
-                    <th className="py-2 pr-3 font-semibold">Default dashboard</th>
+                    {manage && <th className="py-2 pr-3 font-semibold">Default dashboard</th>}
                     <th className="py-2 pr-3 font-semibold">Status</th>
-                    <th className="py-2 font-semibold text-right">Access</th>
+                    {manage && <th className="py-2 font-semibold text-right">Access</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -511,7 +533,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       <td className="py-2.5 pr-3 text-slate-700">
                         {staffRoleLabel(m)}
                         {m.team && <div className="text-slate-400">{m.team.name}</div>}
-                        {m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
+                        {manage && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => void toggleConsultant(m)}
@@ -521,7 +543,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             {isTechnicalConsultant(m) ? 'Make team member' : 'Make Technical Consultant'}
                           </button>
                         )}
-                        {m.role === 'TEAM_MEMBER' && m.teamId && allowedRoles.includes('TEAM_HEAD') && m.status === 'ACTIVE' && (
+                        {manage && m.role === 'TEAM_MEMBER' && m.teamId && allowedRoles.includes('TEAM_HEAD') && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => promote(m, 'TEAM_HEAD')}
@@ -531,7 +553,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             <ArrowUpCircle className="w-3 h-3" aria-hidden="true" /> Make Team Lead
                           </button>
                         )}
-                        {m.role === 'TEAM_HEAD' && profile.role === 'SUPER_ADMIN' && m.departmentId && m.status === 'ACTIVE' && (
+                        {manage && m.role === 'TEAM_HEAD' && profile.role === 'SUPER_ADMIN' && m.departmentId && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => promote(m, 'DEPARTMENT_HEAD')}
@@ -542,11 +564,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           </button>
                         )}
                       </td>
-                      <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m))}</td>
+                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m))}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>
-                      <td className="py-2.5 text-right whitespace-nowrap">
+                      {manage && <td className="py-2.5 text-right whitespace-nowrap">
                         {m.status === 'ACTIVE' ? (
                           <>
                             <button type="button" onClick={() => changeStatus(m, 'SUSPENDED')} title="Suspend" aria-label={`Suspend ${m.fullName}`} className="p-1.5 rounded-lg text-orange-600 hover:bg-orange-50">
@@ -570,7 +592,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      </td>
+                      </td>}
                     </tr>
                   ))}
                 </tbody>

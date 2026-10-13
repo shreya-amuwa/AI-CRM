@@ -81,6 +81,15 @@ interface SidebarProps {
 
 const NOTIFICATION_TAB = { id: 'notifications' as ActiveTab, label: 'Notification Center', icon: Bell };
 
+// Super Admin view of Wabastore Sales: exactly these pages, in this order (Notification Center stays last).
+const WABASTORE_SALES_SUPERADMIN_NAV = [
+  { id: 'team_members' as ActiveTab, label: 'Team Members', icon: Users },
+  { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
+  { id: 'sales_team_performance' as ActiveTab, label: 'Team Performance', icon: Award },
+  { id: 'leads' as ActiveTab, label: 'Leads', icon: Database },
+  NOTIFICATION_TAB // MUST BE LAST!
+];
+
 // Wabastore Support Sources (1 to 6 only, removing 7. Website to Accounts & Invoices)
 const WABASTORE_SUPPORT_SOURCES = [
   { id: 'dashboard' as ActiveTab, label: 'Support Dashboard', icon: LayoutDashboard },
@@ -272,7 +281,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canManageStaff = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'hr' || user?.role === 'team-lead';
   // Anchored entries stay together under the dashboard (e.g. Accounts: Confirmations, Part Payments).
   const anchored = baseNavItems[1]?.id === 'confirmations' ? (baseNavItems[2]?.id === 'part_payments' ? 3 : 2) : 1;
-  const navItems = canManageStaff
+  const isSalesSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_sales';
+  const navItems = isSalesSuperAdmin
+    ? WABASTORE_SALES_SUPERADMIN_NAV
+    : canManageStaff
     ? [
         ...baseNavItems.slice(0, anchored),
         { id: 'staff_access' as ActiveTab, label: 'Team Members & Access', icon: UserCheck },
@@ -307,7 +319,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {navItems.map(item => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            const isActive = (isSalesSuperAdmin && activeTab === 'dashboard' ? 'team_members' : activeTab) === item.id;
             const isNotif = item.id === 'notifications';
 
             return (

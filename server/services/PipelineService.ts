@@ -1,4 +1,5 @@
 import type {
+  DivisionLeadsOverview,
   ClientMessages,
   AccountsConfirmation,
   AccountsPaymentCounts,
@@ -49,6 +50,7 @@ import {
   leadUpdateSchema,
   moveToPotentialSchema,
   onboardingUpdateSchema,
+  divisionOverviewQuerySchema,
   pipelineListQuerySchema,
   recordPaymentSchema,
   assignToMemberSchema,
@@ -90,6 +92,11 @@ export class PipelineService {
 
   services(): Promise<ServiceCatalogItem[]> {
     return this.repo.services();
+  }
+
+  divisionOverview(query: unknown): Promise<DivisionLeadsOverview> {
+    const q = parse(divisionOverviewQuerySchema, query);
+    return this.repo.divisionOverview(q.departmentId, q.division);
   }
 
   counts(): Promise<PipelineCounts> {
