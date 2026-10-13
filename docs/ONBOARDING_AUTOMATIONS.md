@@ -112,3 +112,27 @@ $$);
 
 Customers that were already with the Technical Consultant before the migration get their current stage recorded
 **without** any message. They only get messages for their next steps.
+
+## Nothing was sent? (troubleshooting)
+
+Open the customer in the Technical Consultant dashboard: the **Customer emails & WhatsApp** panel says why.
+
+| What the panel shows | Meaning and fix |
+| --- | --- |
+| No panel at all | The customer is not automated: Wabastore + WhatsApp API + Blue Tick only. Or the migration has not been run. |
+| A step is shown but **no messages**, with the amber note | The customer reached the Technical Consultant before the automations were switched on (the step was recorded without messages). Press **Send ... messages**. |
+| Messages say **Not sent – Dry run** | `AUTOMATION_MODE` is `dry_run`. Set it to `live` and redeploy. |
+| Messages say **Test mode – ... is not a test recipient** | `AUTOMATION_TEST_RECIPIENTS` is set and the customer's email or WhatsApp number is not in it. Add it, or remove the setting to go live for everyone. Then press **Send ... messages**. |
+| Red note: **Email / WhatsApp sending is not set up** | The provider settings (`EMAIL_PROVIDER` + `SMTP_*` / `EMAIL_API_KEY`, or `WHATSAPP_WEBHOOK_URL`) are missing on the server. Messages wait and go out once they are set and redeployed. |
+| **Queued** with "attempt N failed" | The provider refused it (for example `SMTP sign-in failed`: wrong app password). It retries by itself after 1, 5, 15 and 60 minutes. |
+| **Not sent – Invalid client email** / **WhatsApp Number is missing or invalid** | Correct the customer's details, then press **Send ... messages**. |
+| **Failed** | Five attempts failed. The Technical Consultants got a bell notification. Fix the cause, then press **Send ... messages**. |
+
+After changing environment variables in Vercel, **redeploy**; they are read only when the app is deployed.
+
+**Read-only check against the database:** run `supabase/diagnostics/automation_status.sql` in the Supabase SQL editor.
+It confirms the migrations are applied and lists the latest customers with their step and every message
+(no email addresses or phone numbers).
+
+Migrations: `20261016000100_onboarding_automations.sql`, then `20261016000200_resend_client_messages.sql`
+(the **Send ... messages** button).

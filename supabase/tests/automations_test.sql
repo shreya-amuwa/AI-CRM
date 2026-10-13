@@ -239,4 +239,28 @@ select test.check((select private.advance_client_status((select id from au where
                    and (select count(*) = 0 from automation_jobs where customer_id = (select id from au where name = 'early')),
   'recording the current stage of an existing customer sends nothing');
 
+-- "Send messages for this step" (the TC queues the current step again)
+set role authenticated;
+select test.login('late_consultant');
+select test.must_fail($$select consultant_resend_client_messages((select id from au where name = 'other'))$$, 'not for customers without the WhatsApp API service', 'not set up');
+select test.must_fail($$select consultant_resend_client_messages((select id from au where name = 'nosite'))$$, 'not while the step''s messages are still waiting', 'already waiting|wait a minute');
+select test.login('tm_a');
+select test.must_fail($$select consultant_resend_client_messages((select id from au where name = 'site'))$$, 'sales cannot use it', 'NOT_FOUND');
+reset role;
+update automation_jobs set status = 'SENT', sent_at = now(), created_at = now() - interval '5 minutes', secret = null
+ where customer_id = (select id from au where name = 'nosite') and status in ('QUEUED', 'SENDING');
+update automation_jobs set created_at = now() - interval '5 minutes' where customer_id = (select id from au where name = 'nosite');
+set role authenticated;
+select test.login('late_consultant');
+select test.check((select (consultant_resend_client_messages((select id from au where name = 'nosite')) ->> 'queued')::int = 2), 'the TC queues the current step again (email + WhatsApp)');
+reset role;
+select test.check((select count(*) = 2 and bool_and(stage = 'META_VERIFICATION' and status = 'QUEUED' and dedupe_key like '%|RESEND|%')
+                     from automation_jobs where customer_id = (select id from au where name = 'nosite') and context ? 'resend'),
+  'the new jobs are for the step the customer is at, with their own keys');
+select test.check((select client_status = 'META_VERIFICATION' from customer_onboarding where customer_id = (select id from au where name = 'nosite')), 'the step does not move');
+set role authenticated;
+select test.login('late_consultant');
+select test.must_fail($$select consultant_resend_client_messages((select id from au where name = 'nosite'))$$, 'and not twice in a row', 'already waiting');
+reset role;
+
 \echo '=== ALL AUTOMATION TESTS PASSED ==='

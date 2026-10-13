@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Clock, Globe, Mail, MessageCircle, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Globe, Mail, MessageCircle, Send, XCircle } from 'lucide-react';
 import type { ChecklistItem, ClientMessage, ClientMessages, ClientStage } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
@@ -66,12 +66,30 @@ export const ClientMessagesPanel: React.FC<{
   const [url, setUrl] = useState(site);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendNote, setResendNote] = useState<string | null>(null);
   useEffect(() => setUrl(site), [site]);
 
   if (!data?.automated) return null;
   const stage = data.stage;
   const startLabel = stage === 'WEBSITE_PENDING' ? 'Website Pending' : 'Under Review';
   const steps = STAGES.map(s => (s.code === 'UNDER_REVIEW' ? { ...s, label: startLabel } : s));
+
+  const resend = async () => {
+    setResending(true);
+    setError(null);
+    setResendNote(null);
+    try {
+      await pipelineApi.resendClientMessages(customerId);
+      setResendNote('The messages are being sent.');
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setResending(false);
+    }
+  };
+  const waiting = data.messages.some(m => m.status === 'QUEUED' || m.status === 'SENDING');
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,6 +124,17 @@ export const ClientMessagesPanel: React.FC<{
           <span className="px-2 py-0.5 rounded-full border text-[11px] font-semibold bg-amber-50 text-amber-800 border-amber-200">Test recipients only</span>
         ) : null}
       </div>
+
+      {data.mode === 'live' && (!data.emailReady || !data.whatsappReady) && (
+        <p role="alert" className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+          {!data.emailReady && !data.whatsappReady
+            ? 'Email and WhatsApp sending are not set up on the server yet, so these messages are waiting.'
+            : !data.emailReady
+              ? 'Email sending is not set up on the server yet (email provider settings), so emails are waiting.'
+              : 'WhatsApp sending is not set up on the server yet (webhook link), so WhatsApp messages are waiting.'}{' '}
+          Ask your administrator to finish the setup; the waiting messages then go out by themselves.
+        </p>
+      )}
 
       <ol className="grid grid-cols-3 gap-2" aria-label="Customer onboarding steps">
         {steps.map(s => {
@@ -182,6 +211,27 @@ export const ClientMessagesPanel: React.FC<{
             </div>
           )}
         </div>
+      )}
+
+      {stage && !locked && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className={btn.secondary} onClick={resend} disabled={resending || waiting}>
+            <Send className="w-3.5 h-3.5" aria-hidden="true" /> {resending ? 'Sending…' : `Send ${STAGE_LABEL[stage]} messages`}
+          </button>
+          <span className="text-[11px] text-slate-500">
+            {waiting
+              ? 'Messages for this step are waiting to be sent.'
+              : stage === 'COMPLETED'
+                ? 'Sends the panel access email and WhatsApp again (without the password).'
+                : 'Sends the email and WhatsApp of the step the customer is at.'}
+          </span>
+          {resendNote && <span role="status" className="text-xs font-semibold text-emerald-700">{resendNote}</span>}
+        </div>
+      )}
+      {stage && data.messages.length === 0 && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          Nothing was sent for this step. The customer reached you before the automatic messages were switched on. Use the button above to send them now.
+        </p>
       )}
 
       {data.messages.length > 0 ? (

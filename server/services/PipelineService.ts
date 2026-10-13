@@ -66,7 +66,7 @@ import type { Actor } from '../auth/authenticate.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
-import { automationSettings } from '../automations/config.js';
+import { automationSettings, liveChannels } from '../automations/config.js';
 import { encryptSecret } from '../automations/secrets.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
@@ -207,6 +207,11 @@ export class PipelineService {
     return { website: await this.repo.consultantSetWebsite(parse(uuidSchema, id), input.url) };
   }
 
+  /** Queues the messages of the customer's current step again (they are sent right after this request). */
+  async resendClientMessages(id: string): Promise<{ stage: string; queued: number }> {
+    return this.repo.resendClientMessages(parse(uuidSchema, id));
+  }
+
   /** Onboarding emails / WhatsApp messages of a customer, with the current stage. */
   async clientMessages(id: string): Promise<ClientMessages> {
     const { info, rows } = await this.repo.clientMessages(parse(uuidSchema, id));
@@ -217,6 +222,8 @@ export class PipelineService {
       stageChangedAt: info?.stageChangedAt ?? null,
       mode: s.mode,
       testMode: s.mode === 'live' && !!s.testRecipients,
+      emailReady: liveChannels(s).includes('EMAIL'),
+      whatsappReady: liveChannels(s).includes('WHATSAPP'),
       messages: rows.map(r => ({
         id: r.id,
         channel: r.channel,

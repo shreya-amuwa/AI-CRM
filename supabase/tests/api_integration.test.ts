@@ -1582,6 +1582,28 @@ d = await dispatch('dispatch-secret-0123456789');
 check((await jobsOf(autoS3)).find(j => j.channel === 'EMAIL')?.status === 'SENT', 'and goes out when the server is back');
 smtp.close();
 for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
+process.env.EMAIL_PROVIDER = 'resend';
+r = await api('tc', 'GET', `/pipeline/customers/${autoD}/client-messages`);
+check(r.json.data.mode === 'live' && r.json.data.emailReady === true && r.json.data.whatsappReady === true, 'the panel knows both senders are set up', r.json.data);
+const keepKey = process.env.EMAIL_API_KEY; delete process.env.EMAIL_API_KEY; delete process.env.WHATSAPP_WEBHOOK_URL;
+r = await api('tc', 'GET', `/pipeline/customers/${autoD}/client-messages`);
+check(r.json.data.emailReady === false && r.json.data.whatsappReady === false, 'and warns when email or WhatsApp sending is not set up (messages would wait silently)', r.json.data);
+process.env.EMAIL_API_KEY = keepKey!; process.env.WHATSAPP_WEBHOOK_URL = `${P}/wa`;
+// "Send messages for this step": a customer whose step was recorded before the automations were on (no messages)
+await db.query(`delete from public.automation_jobs where customer_id = $1`, [autoD]);
+r = await api('tc', 'GET', `/pipeline/customers/${autoD}/client-messages`);
+check(r.status === 200 && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.messages.length === 0, 'a step without messages (recorded before go-live) is visible to the TC', r);
+r = await api('a', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
+check(r.status === 404, 'sales cannot send them', r);
+r = await api('tc', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
+check(r.status === 200 && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.queued === 2, 'the TC sends the current step\'s messages', r);
+jobs = await jobsOf(autoD);
+check(jobs.length === 2 && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT') && jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED'),
+  'they are sent right away (the email is skipped: this customer has no email address)', jobs);
+r = await api('tc', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
+check(r.status === 409, 'and not again within a minute', r);
+const un = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-messages/resend`);
+check(un.status === 409 || un.status === 404, 'not for customers that are not automated', un);
 for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 provider.close();
 
