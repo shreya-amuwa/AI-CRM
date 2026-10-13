@@ -1474,4 +1474,83 @@ select test.must_fail($$insert into customer_onboarding_entries (customer_id, it
 insert into customer_onboarding_entries (customer_id, item_code, value, status) values ((select id from rmc), 'WABA_ID', '1234 5678 9012', 'VERIFIED');
 select test.check((select value = '123456789012' from customer_onboarding_entries where customer_id = (select id from rmc) and item_code = 'WABA_ID'), 'a 12-digit WABA ID is saved (spaces removed)');
 
+-- ---------------------------------------------------------------------------
+\echo '--- 22. HR employee directory (real members, one row per person)'
+-- ---------------------------------------------------------------------------
+reset role;
+select test.create_auth_user('hr_head', 'hr.head@amuwa.com', '{"full_name":"HR Head"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('hr')));
+-- a self-registered account waits for approval
+select test.create_auth_user('dir_pend', 'dir.pending@amuwa.com', '{"full_name":"Pending Person"}', '{}');
+-- HR-only record with no CRM login, and an HR record for a person who also has an account
+insert into hr_employees (id, name, email, designation, department_id, status, monthly_salary)
+values ('HR-EMP-9001', 'HR Only Person', 'hr.only@amuwa.com', 'Office Assistant', 'hr', 'Intern', '₹15,000'),
+       ('HR-EMP-9002', 'Support B (HR copy)', 'sup.b@amuwa.com', 'Support Executive', 'wabastore', 'Training / Probation', '₹30,000');
+
+create temp table dir_expect as
+  select (select full_name from profiles where team_id = test.team('wabastore', 'Support') and role = 'TEAM_HEAD'
+             and status = 'ACTIVE' order by created_at limit 1) as lead_name;
+grant all on dir_expect to authenticated;
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select hr_employee_directory()$$, 'a sales member cannot read the HR directory', 'FORBIDDEN');
+select test.login('dh_wab');
+select test.must_fail($$select hr_employee_directory()$$, 'another department''s head cannot read the HR directory', 'FORBIDDEN');
+
+select test.login('hr_head');
+create temp table dir as select hr_employee_directory() as j;
+grant all on dir to authenticated;
+select test.check((select count(*) = 0 from dir, jsonb_array_elements(j -> 'employees') e where e ->> 'email' = 'root@amuwa.com'),
+  'HR directory does not list Super Admin accounts');
+select test.check((select count(*) = 1 from dir, jsonb_array_elements(j -> 'employees') e where e ->> 'email' = 'sup.b@amuwa.com'),
+  'a person with a CRM account and an HR record appears exactly once');
+select test.check((select e ->> 'departmentName' = 'Wabastore' and e ->> 'teamName' = 'Support' and e ->> 'role' = 'TEAM_MEMBER'
+                      and e ->> 'teamLead' = (select lead_name from dir_expect) and e ->> 'departmentHead' = 'DH Wabastore'
+                      and e ->> 'accountStatus' = 'ACTIVE' and e ->> 'approvalStatus' = 'APPROVED'
+                      and e ->> 'hrStatus' = 'Training / Probation' and e ->> 'monthlySalary' = '₹30,000'
+                   from dir, jsonb_array_elements(j -> 'employees') e where e ->> 'email' = 'sup.b@amuwa.com'),
+  'the row carries the real department, role, team lead, department head, status and the HR record data');
+select test.check((select count(*) = 1 from dir, jsonb_array_elements(j -> 'employees') e
+                    where e ->> 'email' = 'hr.only@amuwa.com' and e ->> 'source' = 'hr_record' and e ->> 'departmentName' = 'HR Department'),
+  'an HR-only record without an account is still listed (once)');
+select test.check((select e ->> 'accountStatus' = 'PENDING' and e ->> 'approvalStatus' = 'PENDING'
+                   from dir, jsonb_array_elements(j -> 'employees') e where e ->> 'email' = 'dir.pending@amuwa.com'),
+  'a member awaiting approval is listed as pending');
+select test.check((select jsonb_array_length(j -> 'departments') = (select count(*) from departments) from dir),
+  'every department is listed with its head and member count');
+select test.check((select (x ->> 'headName') = 'DH Wabastore' and (x ->> 'memberCount')::int > 0
+                   from dir, jsonb_array_elements(j -> 'departments') x where x ->> 'slug' = 'wabastore'),
+  'department cards show the real head and the real member count');
+
+-- the Super Admin approves the pending member -> HR sees the approval
+select test.login('sa');
+select approve_registration((select id from approval_requests where subject_user_id = test.id('dir_pend')), test.team('wabastore', 'Sales'));
+select test.login('hr_head');
+select test.check((select e ->> 'accountStatus' = 'ACTIVE' and e ->> 'approvalStatus' = 'APPROVED' and e ->> 'departmentName' = 'Wabastore'
+                      and e ->> 'approvedBy' = 'Root'
+                   from jsonb_array_elements(hr_employee_directory() -> 'employees') e where e ->> 'email' = 'dir.pending@amuwa.com'),
+  'after Super Admin approval HR sees the member as approved, in the assigned department');
+
+-- a department / role change is reflected
+select test.login('sa');
+select assign_user(test.id('dir_pend'), 'TEAM_MEMBER', test.dept('wabastore'), test.team('wabastore', 'Support'));
+select test.login('hr_head');
+select test.check((select e ->> 'teamName' = 'Support' and e ->> 'teamLead' = (select lead_name from dir_expect)
+                   from jsonb_array_elements(hr_employee_directory() -> 'employees') e where e ->> 'email' = 'dir.pending@amuwa.com'),
+  'a team change is reflected in HR');
+
+-- a revoked / rejected account
+select test.login('sa');
+select set_user_status(test.id('dir_pend'), 'REVOKED', 'left');
+select test.login('hr_head');
+select test.check((select e ->> 'accountStatus' = 'REVOKED'
+                   from jsonb_array_elements(hr_employee_directory() -> 'employees') e where e ->> 'email' = 'dir.pending@amuwa.com'),
+  'a revoked account is listed as inactive');
+
+-- HR can save its record for an account (one HR record per account)
+select test.check(test.rows($$update hr_employees set profile_id = test.id('sup_b') where id = 'HR-EMP-9002'$$) = 1, 'HR links its record to the CRM account');
+select test.must_fail($$insert into hr_employees (id, name, profile_id) values ('HR-EMP-9004', 'Dup', test.id('sup_b'))$$,
+  'two HR records cannot point at the same account', 'duplicate key');
+reset role;
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

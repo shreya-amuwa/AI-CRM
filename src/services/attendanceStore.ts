@@ -19,124 +19,8 @@ export interface AttendanceRecord {
   time?: string;
 }
 
-const STORAGE_KEY = 'amuwa_crm_attendance_records_v6';
-const LATEST_LOGIN_KEY = 'amuwa_crm_latest_member_login_v6';
-
-const INITIAL_ATTENDANCE_SEEDS: AttendanceRecord[] = [
-  {
-    id: 'ATT-TM-1',
-    empId: 'tm-priya',
-    name: 'Priya Nair',
-    email: 'priya@amuwa.com',
-    role: 'Sales Executive',
-    department: 'Wabastore Sales',
-    avatar: 'PN',
-    loginTime: '09:14 AM',
-    crmLoginTime: '09:14 AM',
-    biometricTime: '09:08 AM',
-    loginTimestamp: Date.now() - 3600000 * 2,
-    loginDate: `Today, ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`,
-    authMethod: 'CRM Login (System Login)',
-    device: 'CRM Web Client',
-    status: 'On Time',
-    isOnline: true,
-    ipAddress: '192.168.1.47'
-  },
-  {
-    id: 'ATT-TM-2',
-    empId: 'tm-rahul',
-    name: 'Rahul Kumar',
-    email: 'rahul@amuwa.com',
-    role: 'Sales Executive',
-    department: 'Wabastore Sales',
-    avatar: 'RK',
-    loginTime: '09:22 AM',
-    crmLoginTime: '09:22 AM',
-    biometricTime: '09:15 AM',
-    loginTimestamp: Date.now() - 3600000 * 1.8,
-    loginDate: `Today, ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`,
-    authMethod: 'CRM Login (System Login)',
-    device: 'CRM Web Client',
-    status: 'On Time',
-    isOnline: true,
-    ipAddress: '192.168.1.88'
-  },
-  {
-    id: 'ATT-TM-3',
-    empId: 'tm-amit',
-    name: 'Amit Patel',
-    email: 'amit@amuwa.com',
-    role: 'Senior Sales Specialist',
-    department: 'Wabastore Sales',
-    avatar: 'AP',
-    loginTime: '09:28 AM',
-    crmLoginTime: '09:28 AM',
-    biometricTime: '09:18 AM',
-    loginTimestamp: Date.now() - 3600000 * 1.5,
-    loginDate: `Today, ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`,
-    authMethod: 'CRM Login (System Login)',
-    device: 'CRM Web Client',
-    status: 'On Time',
-    isOnline: true,
-    ipAddress: '192.168.1.102'
-  },
-  {
-    id: 'ATT-TL-1',
-    empId: 'tl-vikram',
-    name: 'Vikram Deshmukh',
-    email: 'lead@amuwa.com',
-    role: 'Team Lead (Pod Alpha)',
-    department: 'Wabastore Sales',
-    avatar: 'VD',
-    loginTime: '09:05 AM',
-    crmLoginTime: '09:05 AM',
-    biometricTime: '08:58 AM',
-    loginTimestamp: Date.now() - 3600000 * 2.5,
-    loginDate: `Today, ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`,
-    authMethod: 'CRM Login (System Login)',
-    device: 'CRM Web Client',
-    status: 'On Time',
-    isOnline: true,
-    ipAddress: '192.168.1.15'
-  },
-  {
-    id: 'ATT-1',
-    empId: 'EMP-1001',
-    name: 'Alexander Wright',
-    email: 'alexander.w@amuwa.com',
-    role: 'Operations Lead',
-    department: 'Amuwa Corporation',
-    avatar: 'AW',
-    loginTime: '09:28 AM',
-    crmLoginTime: '09:28 AM',
-    biometricTime: '09:20 AM',
-    loginTimestamp: Date.now() - 3600000 * 1.6,
-    loginDate: `Today, ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`,
-    authMethod: 'CRM Login (System Login)',
-    device: 'CRM Web Client',
-    status: 'On Time',
-    isOnline: true,
-    ipAddress: '192.168.1.1'
-  },
-  {
-    id: 'ATT-4',
-    empId: 'EMP-1004',
-    name: 'Kavya Nair',
-    email: 'kavya@amuwa.com',
-    role: 'Design Specialist',
-    department: 'Amuwa Design Studio',
-    avatar: 'KN',
-    loginTime: '09:25 AM',
-    biometricTime: '09:25 AM',
-    loginTimestamp: Date.now() - 3600000 * 1.7,
-    loginDate: `Today, ${new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short' })}`,
-    authMethod: 'Biometric Scanner',
-    device: 'Biometric Scanner',
-    status: 'On Time',
-    isOnline: true,
-    ipAddress: '192.168.1.52'
-  }
-];
+const STORAGE_KEY = 'amuwa_crm_attendance_records_v7';
+const LATEST_LOGIN_KEY = 'amuwa_crm_latest_member_login_v7';
 
 class AttendanceStore {
   private records: AttendanceRecord[] = [];
@@ -164,11 +48,10 @@ class AttendanceStore {
       if (raw) {
         this.records = JSON.parse(raw);
       } else {
-        this.records = [...INITIAL_ATTENDANCE_SEEDS];
-        this.saveToStorage();
+        this.records = [];
       }
     } catch {
-      this.records = [...INITIAL_ATTENDANCE_SEEDS];
+      this.records = [];
     }
   }
 
