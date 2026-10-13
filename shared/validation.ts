@@ -3,7 +3,7 @@
  * feedback). The database enforces the same rules again with constraints.
  */
 import { z } from 'zod';
-import { mobileProblem, normalizeWebsite } from './contactValidation';
+import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
