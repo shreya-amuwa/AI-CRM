@@ -58,6 +58,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/client-account', handler: pipeline.createClientAccount, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/consultant/website', handler: pipeline.consultantSetWebsite },
   { method: 'GET', path: '/pipeline/customers/:id/client-messages', handler: pipeline.clientMessages },
+  { method: 'POST', path: '/pipeline/customers/:id/client-messages/resend', handler: pipeline.resendClientMessages, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/handover/department-head', handler: pipeline.sendToDepartmentHead },
   { method: 'POST', path: '/pipeline/customers/:id/handover/team-lead', handler: pipeline.passToTeamLead },
   { method: 'POST', path: '/pipeline/customers/:id/handover/team-member', handler: pipeline.assignToTeamMember },

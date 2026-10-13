@@ -486,6 +486,9 @@ export interface ClientMessages {
   /** off: nothing is processed; dry_run: prepared but not sent; live: sent. */
   mode: 'off' | 'dry_run' | 'live';
   testMode: boolean;
+  /** Which senders are set up on the server (live mode only sends through these). */
+  emailReady: boolean;
+  whatsappReady: boolean;
   messages: ClientMessage[];
 }
 

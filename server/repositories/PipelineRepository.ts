@@ -342,6 +342,10 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('record_client_account', { p_customer: customerId, p_user_id: userId, p_email: email, p_secret: secret }));
   }
 
+  async resendClientMessages(customerId: string): Promise<{ stage: string; queued: number }> {
+    return unwrap(await this.db.rpc('consultant_resend_client_messages', { p_customer: customerId })) as any;
+  }
+
   async consultantSetWebsite(customerId: string, url: string): Promise<string> {
     return unwrap(await this.db.rpc('consultant_set_website', { p_customer: customerId, p_url: url })) as string;
   }
