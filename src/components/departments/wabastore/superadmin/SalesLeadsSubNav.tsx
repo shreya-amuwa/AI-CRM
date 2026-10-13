@@ -14,7 +14,8 @@ const CHILDREN: { id: ActiveTab; label: string; step: number; badge: string; act
 export const SalesLeadsSubNav: React.FC<{ activeTab: ActiveTab; onSelectTab: (tab: ActiveTab) => void }> = ({ activeTab, onSelectTab }) => {
   const departmentId = useWabastoreId();
   const { data } = useSalesOverview(departmentId);
-  const count = (k: 'leads' | 'potential') => (data ? (k === 'leads' ? data.leads.all : data.potential.all) : undefined);
+  // The counts come from the database function; an older function without them just shows no number.
+  const count = (k: 'leads' | 'potential'): number | undefined => (k === 'leads' ? data?.leads?.all : data?.potential?.all);
   return (
     <ul role="group" aria-label="Leads" className="mt-1 ml-3 pl-2 border-l border-slate-100 space-y-0.5">
       {CHILDREN.map(child => {
