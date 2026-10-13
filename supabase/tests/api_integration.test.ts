@@ -310,6 +310,16 @@ check(r.status === 422, 'the overview needs a department', r);
 r = await api('sa', 'GET', `/users?departmentId=${wab.id}&division=SALES&pageSize=50`);
 check(r.status === 200 && r.json.data.items.some((u: any) => u.id === memberA) && r.json.data.items.every((u: any) => u.team?.division === 'SALES' || u.team === null), 'users can be listed by sub-department (division)', r);
 
+r = await api('sa', 'GET', `/pipeline/division-support-overview?departmentId=${wab.id}&division=SUPPORT`);
+check(r.status === 200 && Array.isArray(r.json.data.members) && r.json.data.members.every((m: any) => m.id !== memberA) && typeof r.json.data.totals.tickets === 'number',
+  'Support overview: Support teams only, the Sales member is not in it', r);
+r = await api('a', 'GET', `/pipeline/division-support-overview?departmentId=${wab.id}&division=SUPPORT`);
+check(r.status === 403, 'a team member cannot read the Support overview', r);
+r = await api('sa', 'GET', `/users?departmentId=${wab.id}&division=SUPPORT&pageSize=50`);
+check(r.status === 200 && r.json.data.items.every((u: any) => u.team?.division === 'SUPPORT') && !r.json.data.items.some((u: any) => u.id === memberA), 'users listed by the Support division exclude Sales members', r);
+r = await api('sa', 'GET', `/pipeline/division-overview?departmentId=${wab.id}&division=SALES`);
+check(r.status === 200 && typeof r.json.data.potential.all === 'number' && r.json.data.potential.all === 0, 'division overview carries the Potential counts', r);
+
 r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { leadStatus: 'CONTACTED', activityNote: 'Called, wants a demo' });
 check(r.status === 200 && r.json.data.leadStatus === 'CONTACTED', 'lead status updated', r);
 r = await api('a', 'PATCH', `/pipeline/leads/${leadA}`, { lifecycleStage: 'ONBOARDING' });

@@ -1,5 +1,6 @@
 import type {
   DivisionLeadsOverview,
+  DivisionSupportOverview,
   ClientMessages,
   AccountsConfirmation,
   AccountsPaymentCounts,
@@ -97,6 +98,11 @@ export class PipelineService {
   divisionOverview(query: unknown): Promise<DivisionLeadsOverview> {
     const q = parse(divisionOverviewQuerySchema, query);
     return this.repo.divisionOverview(q.departmentId, q.division);
+  }
+
+  divisionSupportOverview(query: unknown): Promise<DivisionSupportOverview> {
+    const q = parse(divisionOverviewQuerySchema, query);
+    return this.repo.divisionSupportOverview(q.departmentId, q.division);
   }
 
   counts(): Promise<PipelineCounts> {

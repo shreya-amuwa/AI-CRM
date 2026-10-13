@@ -1951,4 +1951,45 @@ select test.login('dh_wab');
 select test.check((select (division_leads_overview(test.dept('wabastore'), 'SALES') -> 'totals' ->> 'leadsAdded')::int > 0), 'the Wabastore Department Head can read it');
 reset role;
 
+-- ---------------------------------------------------------------------------
+\echo '--- 24. Sub-department overviews: Wabastore Sales potential counts and Wabastore Support'
+-- ---------------------------------------------------------------------------
+reset role;
+select test.create_auth_user('ov_s1', 'ov.s1@amuwa.com', '{"full_name":"Overview Support"}',
+  jsonb_build_object('provisioned_by', test.id('dh_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support')));
+create temp table ovs (name text, id uuid);
+grant all on ovs to authenticated;
+set role authenticated;
+select test.login('ov_s1');
+insert into ovs select 'cust', create_support_customer('Ov Support Customer', null, '+91 90000 52001', null, 'RETAIL', 'ACTIVE', null, null, null, null, null);
+insert into ovs select 'tkt', create_support_ticket((select id from ovs where name = 'cust'), 'Cannot log in to panel', 'Customer cannot log in', 'TECHNICAL', 'HIGH', test.id('ov_s1'));
+select test.login('tm_a');
+select test.must_fail($$select division_support_overview(test.dept('wabastore'), 'SUPPORT')$$, 'a sales member cannot read the Support overview', 'FORBIDDEN');
+select test.login('dh_wbx');
+select test.must_fail($$select division_support_overview(test.dept('wabastore'), 'SUPPORT')$$, 'another department''s head cannot read it', 'FORBIDDEN');
+
+select test.login('sa');
+create temp table ovsr as select division_support_overview(test.dept('wabastore'), 'SUPPORT') as j;
+grant all on ovsr to authenticated;
+select test.check((select count(*) = 1 from ovsr, jsonb_array_elements(j -> 'members') m where m ->> 'email' = 'ov.s1@amuwa.com'
+                      and (m ->> 'customersAdded')::int = 1 and (m ->> 'ticketsAssigned')::int = 1 and (m ->> 'ticketsOpen')::int = 1),
+  'Support member: 1 customer added, 1 ticket assigned and open - from the records');
+select test.check((select count(*) = 0 from ovsr, jsonb_array_elements(j -> 'members') m where m ->> 'email' in ('a@amuwa.com', 'ov.m1@amuwa.com', 'ov.m2@amuwa.com', 'th.wab@amuwa.com')),
+  'Sales members are not in the Support list');
+select test.check((select (j -> 'totals' ->> 'customers')::int = (select count(*) from customers where team_id in
+                      (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SUPPORT')) from ovsr),
+  'Support customers equal the customers of the Support teams (Sales leads excluded)');
+select test.check((select (j -> 'totals' ->> 'tickets')::int = (select count(*) from support_tickets where team_id in
+                      (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SUPPORT')) from ovsr),
+  'Support tickets equal the tickets of the Support teams');
+select test.check((select count(*) = 0 from customers c where c.name = 'Ov Support Customer' and c.team_id in
+                      (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES')),
+  'the Support customer is not in a Sales team');
+-- Sales overview: the Potential counts use the Sales dashboard's rule
+select test.check((select (division_leads_overview(test.dept('wabastore'), 'SALES') -> 'potential' ->> 'all')::int
+                     = (select count(*) from customers where lifecycle_stage = 'POTENTIAL' and team_id in
+                         (select t.id from teams t where t.department_id = test.dept('wabastore') and t.division = 'SALES'))),
+  'Sales Potential count equals the POTENTIAL customers of the Sales teams');
+reset role;
+
 \echo '=== ALL AUTHORIZATION TESTS PASSED ==='

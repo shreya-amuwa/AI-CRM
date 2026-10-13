@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
+import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
 
 export type ActiveTab =
   | 'dashboard'
@@ -59,6 +60,7 @@ export type ActiveTab =
   | 'sales_revenue'
   | 'sales_conversion'
   | 'sales_team_performance'
+  | 'sales_potential'
   | 'sales_reports'
   | 'support_tickets'
   | 'support_customers'
@@ -87,6 +89,17 @@ const WABASTORE_SALES_SUPERADMIN_NAV = [
   { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
   { id: 'sales_team_performance' as ActiveTab, label: 'Team Performance', icon: Award },
   { id: 'leads' as ActiveTab, label: 'Leads', icon: Database },
+  NOTIFICATION_TAB // MUST BE LAST!
+];
+
+// Super Admin view of Wabastore Support: the same structure as Wabastore Sales, with the Support workflow
+// (customers and tickets) in place of leads. Notification Center stays last.
+const WABASTORE_SUPPORT_SUPERADMIN_NAV = [
+  { id: 'team_members' as ActiveTab, label: 'Team Members', icon: Users },
+  { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
+  { id: 'support_team_performance' as ActiveTab, label: 'Team Performance', icon: Award },
+  { id: 'support_customers' as ActiveTab, label: 'Customers', icon: UserCheck },
+  { id: 'support_tickets' as ActiveTab, label: 'Tickets', icon: LifeBuoy },
   NOTIFICATION_TAB // MUST BE LAST!
 ];
 
@@ -282,8 +295,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Anchored entries stay together under the dashboard (e.g. Accounts: Confirmations, Part Payments).
   const anchored = baseNavItems[1]?.id === 'confirmations' ? (baseNavItems[2]?.id === 'part_payments' ? 3 : 2) : 1;
   const isSalesSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_sales';
+  const isSupportSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_support';
   const navItems = isSalesSuperAdmin
     ? WABASTORE_SALES_SUPERADMIN_NAV
+    : isSupportSuperAdmin
+    ? WABASTORE_SUPPORT_SUPERADMIN_NAV
     : canManageStaff
     ? [
         ...baseNavItems.slice(0, anchored),
@@ -319,21 +335,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {navItems.map(item => {
             const Icon = item.icon;
-            const isActive = (isSalesSuperAdmin && activeTab === 'dashboard' ? 'team_members' : activeTab) === item.id;
+            const isActive = ((isSalesSuperAdmin || isSupportSuperAdmin) && activeTab === 'dashboard' ? 'team_members' : activeTab) === item.id;
             const isNotif = item.id === 'notifications';
+            const hasLeadsSteps = isSalesSuperAdmin && item.id === 'leads';
+            const highlighted = hasLeadsSteps ? isActive || activeTab === 'sales_potential' : isActive;
 
             return (
+              <React.Fragment key={item.id}>
               <button
-                key={item.id}
                 onClick={() => onSelectTab(item.id)}
                 className={`w-full py-2.5 px-3 rounded-xl flex items-center justify-between text-left font-medium transition-all ${
-                  isActive
+                  highlighted
                     ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
                 <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${highlighted ? 'text-blue-600' : 'text-slate-400'}`} />
                   <span className="font-sans text-xs font-semibold truncate">{item.label}</span>
                 </div>
 
@@ -343,26 +361,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 )}
               </button>
+              {hasLeadsSteps && <SalesLeadsSubNav activeTab={activeTab} onSelectTab={onSelectTab} />}
+              </React.Fragment>
             );
           })}
         </div>
 
-      </div>
-
-      {/* Bottom Status */}
-      <div className="p-3.5 m-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-600 text-xs shrink-0">
-        <div className="flex items-center justify-between font-semibold text-slate-800 font-sans">
-          <span className="flex items-center gap-2 text-xs">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>CRM Network</span>
-          </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-bold">
-            ONLINE
-          </span>
-        </div>
       </div>
 
     </aside>

@@ -3,6 +3,7 @@ import type {
   AccountsConfirmation,
   AccountsPaymentCounts,
   DivisionLeadsOverview,
+  DivisionSupportOverview,
   ChecklistItem,
   ConsultantNote,
   Conversation,
@@ -228,6 +229,10 @@ export class PipelineRepository {
 
   async divisionOverview(departmentId: string, division: string): Promise<DivisionLeadsOverview> {
     return unwrap(await this.db.rpc('division_leads_overview', { p_department_id: departmentId, p_division: division })) as DivisionLeadsOverview;
+  }
+
+  async divisionSupportOverview(departmentId: string, division: string): Promise<DivisionSupportOverview> {
+    return unwrap(await this.db.rpc('division_support_overview', { p_department_id: departmentId, p_division: division })) as DivisionSupportOverview;
   }
 
   async counts(): Promise<PipelineCounts> {

@@ -5,6 +5,7 @@
 import type {
   AccountsConfirmation,
   DivisionLeadsOverview,
+  DivisionSupportOverview,
   AddonRequest,
   AddonRequestPage,
   AddonRequestStatus,
@@ -140,6 +141,8 @@ export interface PipelineQuery {
 export const pipelineApi = {
   services: () => api.get<ServiceCatalogItem[]>('/pipeline/services'),
   counts: () => api.get<PipelineCounts>('/pipeline/counts'),
+  divisionSupportOverview: (departmentId: string, division: TeamDivision) =>
+    api.get<DivisionSupportOverview>('/pipeline/division-support-overview', { departmentId, division }),
   divisionOverview: (departmentId: string, division: TeamDivision) =>
     api.get<DivisionLeadsOverview>('/pipeline/division-overview', { departmentId, division }),
   list: (q: PipelineQuery) => api.get<Paginated<PipelineCustomer>>('/pipeline/customers', { ...q }),

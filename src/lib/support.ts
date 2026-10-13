@@ -167,7 +167,8 @@ export interface CustomerFilters {
 }
 
 /** A page of customers the signed-in user may see (RLS decides), newest activity first. */
-export function useSupportCustomers(filters: CustomerFilters, ownerId: string | undefined) {
+export function useSupportCustomers(filters: CustomerFilters, ownerId: string | undefined, teamIds?: string[]) {
+  const teamKey = teamIds?.join(',');
   const [items, setItems] = useState<SupportCustomer[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -191,6 +192,8 @@ export function useSupportCustomers(filters: CustomerFilters, ownerId: string | 
         .range((page - 1) * pageSize, page * pageSize - 1);
       if (status !== 'ALL') q = q.eq('status', status);
       if (scope === 'mine' && ownerId) q = q.eq('owner_id', ownerId);
+      // Super Admin / Department Head view of one sub-department: only that division's teams.
+      if (teamIds) q = q.in('team_id', teamIds.length ? teamIds : ['00000000-0000-0000-0000-000000000000']);
       if (search) {
         const term = search.toLowerCase().replace(/[%,()]/g, ' ').trim();
         if (term) q = q.or(`search_text.ilike.%${term}%,customer_code.ilike.%${term}%`);
@@ -206,7 +209,8 @@ export function useSupportCustomers(filters: CustomerFilters, ownerId: string | 
     } finally {
       setLoading(false);
     }
-  }, [status, scope, page, pageSize, search, ownerId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, scope, page, pageSize, search, ownerId, teamKey]);
 
   useEffect(() => {
     void load();
@@ -223,13 +227,15 @@ export interface CustomerStats {
 }
 
 /** Headline counts for the dashboard cards (counted by the database, not by paging). */
-export function useCustomerStats(ownerId: string | undefined) {
+export function useCustomerStats(ownerId: string | undefined, teamIds?: string[]) {
+  const teamKey = teamIds?.join(',');
   const [stats, setStats] = useState<CustomerStats>({ total: 0, assigned: 0, active: 0, newThisMonth: 0 });
   const [recent, setRecent] = useState<SupportCustomer[]>([]);
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
     try {
-      const base = () => db().from('customers').select('id', { count: 'exact', head: true }).eq('lifecycle_stage', 'CUSTOMER');
+      const scoped = (q: any) => (teamIds ? q.in('team_id', teamIds.length ? teamIds : ['00000000-0000-0000-0000-000000000000']) : q);
+      const base = () => scoped(db().from('customers').select('id', { count: 'exact', head: true }).eq('lifecycle_stage', 'CUSTOMER'));
       const since = new Date();
       since.setDate(since.getDate() - 30);
       const [all, mine, active, fresh, latest] = await Promise.all([
@@ -237,7 +243,7 @@ export function useCustomerStats(ownerId: string | undefined) {
         ownerId ? base().eq('owner_id', ownerId) : Promise.resolve({ count: 0 } as any),
         base().eq('status', 'ACTIVE'),
         base().gte('created_at', since.toISOString()),
-        db().from('customers').select(CUSTOMER_COLUMNS).eq('lifecycle_stage', 'CUSTOMER').order('updated_at', { ascending: false }).limit(5)
+        scoped(db().from('customers').select(CUSTOMER_COLUMNS).eq('lifecycle_stage', 'CUSTOMER')).order('updated_at', { ascending: false }).limit(5)
       ]);
       setStats({ total: all.count ?? 0, assigned: mine.count ?? 0, active: active.count ?? 0, newThisMonth: fresh.count ?? 0 });
       const rows = latest.data || [];
@@ -246,7 +252,8 @@ export function useCustomerStats(ownerId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  }, [ownerId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerId, teamKey]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -420,7 +427,8 @@ export interface TicketData {
 }
 
 /** Every ticket (and its history) the signed-in user may see, kept live. */
-export function useTickets(): TicketData {
+export function useTickets(teamIds?: string[]): TicketData {
+  const teamKey = teamIds?.join(',');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [updates, setUpdates] = useState<TicketUpdateRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -428,10 +436,15 @@ export function useTickets(): TicketData {
 
   const reload = useCallback(async () => {
     try {
-      const [t, u] = await Promise.all([
-        db().from('support_tickets').select('*').order('updated_at', { ascending: false }).limit(1000),
-        db().from('support_ticket_updates').select('*').order('created_at', { ascending: true }).limit(5000)
-      ]);
+      // With teamIds (Super Admin / Department Head looking at one sub-department): only those teams' tickets.
+      const none = ['00000000-0000-0000-0000-000000000000'];
+      let tq = db().from('support_tickets').select('*').order('updated_at', { ascending: false }).limit(1000);
+      if (teamIds) tq = tq.in('team_id', teamIds.length ? teamIds : none);
+      const t = await tq;
+      const scopedIds = teamIds ? (t.data || []).map((r: any) => r.id) : null;
+      let uq = db().from('support_ticket_updates').select('*').order('created_at', { ascending: true }).limit(5000);
+      if (scopedIds) uq = uq.in('ticket_id', scopedIds.length ? scopedIds : none);
+      const u = await uq;
       const firstError = t.error || u.error;
       if (firstError) throw new Error(cleanDbError(firstError.message));
       const rows = t.data || [];
@@ -461,7 +474,8 @@ export function useTickets(): TicketData {
     } finally {
       setLoading(false);
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamKey]);
 
   useEffect(() => {
     void reload();

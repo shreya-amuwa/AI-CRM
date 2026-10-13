@@ -56,17 +56,19 @@ interface CustomersPageProps {
   onAddCustomer?: () => void;
   /** e.g. "Neha Verma was added." after Add Customer. */
   notice?: string | null;
+  /** Super Admin / Department Head: only the customers of these (Support division) teams. */
+  teamIds?: string[];
 }
 
 /** Dashboard - Existing Customers (the landing page) and the supervisor's customer list. */
-export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer, notice }) => {
+export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer, notice, teamIds }) => {
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<CustomerStatusValue | 'ALL'>('ALL');
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const [page, setPage] = useState(1);
-  const list = useSupportCustomers({ search, status, scope, page, pageSize: PAGE_SIZE }, profile?.id);
-  const { stats } = useCustomerStats(profile?.id);
+  const list = useSupportCustomers({ search, status, scope, page, pageSize: PAGE_SIZE }, profile?.id, teamIds);
+  const { stats } = useCustomerStats(profile?.id, teamIds);
   const [editing, setEditing] = useState<SupportCustomer | null>(null);
   const canEdit = (c: SupportCustomer) =>
     c.ownerId === profile?.id ||

@@ -3,29 +3,10 @@ import { Award, Eye, Flag, Target, TrendingUp, Users } from 'lucide-react';
 import type { DivisionMemberStats } from '../../../../../shared/contracts';
 import { Avatar, btn, Card, ErrorBanner, Pill, Spinner } from '../../../team-member/pipeline/shared';
 import { useSalesOverview } from './useSalesOverview';
+import { Tile } from './parts';
 
 const dateText = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
-
-const Tile: React.FC<{ icon: React.ReactNode; label: string; value: number; hint?: string; tone?: string; testId: string }> = ({
-  icon,
-  label,
-  value,
-  hint,
-  tone = 'text-slate-900',
-  testId
-}) => (
-  <Card className="p-4">
-    <div className="flex items-center justify-between text-slate-500">
-      <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
-      {icon}
-    </div>
-    <div className={`mt-2 text-3xl font-bold ${tone}`} data-testid={testId}>
-      {value}
-    </div>
-    {hint && <div className="text-xs text-slate-500 mt-1">{hint}</div>}
-  </Card>
-);
 
 const STATUS_BARS: { key: 'NEW' | 'CONTACTED' | 'INTERESTED' | 'READY_TO_BUY' | 'WITH_ACCOUNTS' | 'RETURNED'; label: string; bar: string }[] = [
   { key: 'NEW', label: 'New', bar: 'bg-slate-400' },
