@@ -4,7 +4,7 @@ import { automationSettings, liveChannels, PANEL_URLS, type AutomationSettings }
 import { postWhatsApp, sendEmail, type SendResult } from './providers.js';
 import { cleanPhone, EMAIL_RE, maskEmail, maskPhone, STAGE_LABEL, type ClientStage } from './rules.js';
 import { decryptSecret } from './secrets.js';
-import { renderEmail } from './templates.js';
+import { renderAccountsEmail, renderEmail } from './templates.js';
 
 /**
  * Sends the queued onboarding messages (automation_jobs). The database queues
@@ -19,7 +19,7 @@ interface ClaimedJob {
   channel: 'EMAIL' | 'WHATSAPP';
   stage: ClientStage;
   attempts: number;
-  context: { from?: string };
+  context: { from?: string } & Record<string, string | undefined>;
   secret: string | null;
   customer: {
     id: string;
@@ -47,8 +47,35 @@ export interface DispatchSummary {
 
 const websiteOf = (w: string | null) => (w && w !== 'NO_WEBSITE' ? w : '');
 
+/**
+ * The payment-request email to the Accounts person (internal: a staff email, so no test-recipient rule and
+ * no customer checks). Sent through the same email provider as the customer emails.
+ */
+async function processAccountsMail(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+  const x = job.context;
+  const to = (x.to || '').trim().toLowerCase();
+  if (job.channel !== 'EMAIL') return { outcome: 'SKIPPED', detail: 'Only the email is sent to Accounts' };
+  if (!EMAIL_RE.test(to)) return { outcome: 'SKIPPED', detail: 'The Accounts person has no valid email address' };
+  const mail = renderAccountsEmail({
+    toName: x.toName || '',
+    kind: x.kind || '',
+    title: x.title || '',
+    body: x.body || '',
+    customer: x.customer || job.customer.company || job.customer.name,
+    contact: x.contact || job.customer.name,
+    phone: x.phone,
+    customerEmail: x.customerEmail,
+    from: x.from,
+    fromDepartment: x.fromDepartment,
+    link: s.appUrl ? `${s.appUrl}/accounts/dashboard/${job.customer.id}` : ''
+  });
+  if (s.mode !== 'live') return { outcome: 'SKIPPED', detail: `Dry run – not sent: "${mail.subject}" to ${maskEmail(to)}`, recipient: to };
+  return fromResult(await sendEmail(s, { email: to, name: x.toName || to }, mail), to, `Payment request email sent to ${maskEmail(to)}`);
+}
+
 /** Decide and (in live mode) send one job. Never throws. */
 async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+  if (job.stage === 'ACCOUNTS_PAYMENT') return processAccountsMail(s, job);
   const c = job.customer;
   const name = c.name?.trim() || 'Customer';
   const phone10 = cleanPhone(c.whatsapp);

@@ -224,7 +224,7 @@ reset role;
 set role service_role;
 create temp table claimed (j jsonb);
 insert into claimed select jsonb_array_elements(automation_claim_jobs(array['EMAIL'], 50));
-select test.check((select count(*) = 7 and bool_and(j ->> 'channel' = 'EMAIL') from claimed), 'the server claims the due email jobs only');
+select test.check((select count(*) filter (where j ->> 'stage' <> 'ACCOUNTS_PAYMENT') = 7 and bool_and(j ->> 'channel' = 'EMAIL') from claimed), 'the server claims the due email jobs only');
 select test.check((select count(*) = 0 from automation_jobs where channel = 'EMAIL' and status <> 'SENDING' and customer_id in (select id from au)),
   'claimed jobs are marked SENDING');
 select test.check((select jsonb_array_length(automation_claim_jobs(array['EMAIL'], 50)) = 0), 'a second run cannot claim the same jobs');

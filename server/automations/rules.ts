@@ -15,7 +15,9 @@ export const STAGE_LABEL = {
   META_VERIFICATION: 'Meta Verification',
   COMPLETED: 'Status Completed',
   /** Sent once when the Technical Consultant authorizes the mini website we built for the customer. */
-  WEBSITE_READY: 'Website Ready'
+  WEBSITE_READY: 'Website Ready',
+  /** Internal: the email to the Accounts payment desk (not a customer message). */
+  ACCOUNTS_PAYMENT: 'Accounts payment request'
 } as const;
 export type ClientStage = keyof typeof STAGE_LABEL;
 

@@ -4,6 +4,7 @@ import type { Person } from '../../lib/workTasks';
 import { customerApi } from '../../lib/support';
 import { CustomerForm, emptyCustomerInput } from './CustomerForm';
 import { PageHeader } from './SupportParts';
+import { CustomerUpload } from './CustomerUpload';
 
 interface AddCustomerPageProps {
   people: Person[];
@@ -31,6 +32,7 @@ export const AddCustomerPage: React.FC<AddCustomerPageProps> = ({ people, onCrea
           }}
         />
       </div>
+      <CustomerUpload onDone={onCancel} />
     </div>
   );
 };

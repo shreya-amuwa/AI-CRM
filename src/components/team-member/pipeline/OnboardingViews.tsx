@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import type {
   OnboardingFilter,
-  OnboardingStage,
   Paginated,
   PipelineCounts,
   PipelineCustomer,
@@ -26,6 +25,7 @@ import {
   ActivityCard
 } from './LeadForms';
 import { PaymentDialog } from './PotentialView';
+import { OnboardingStageCard } from './CustomerJourney';
 import type { LeadsViewScope } from './LeadsView';
 import { PaymentStatusBadge } from '../../payments/PaymentBits';
 import { getStartedBlockers } from '../../../../shared/contracts';
@@ -308,14 +308,6 @@ export const OnboardingListView: React.FC<{
 // ---------------------------------------------------------------------------
 // 3b · Onboarding - one customer
 // ---------------------------------------------------------------------------
-const STAGES: { key: OnboardingStage; label: string; hint: string }[] = [
-  { key: 'SALES_CONSULTATION', label: 'Sales consultation', hint: 'Done when payment is confirmed' },
-  { key: 'COLLECT_REQUIREMENTS', label: 'Collect requirements', hint: 'Mandatory documents' },
-  { key: 'SETUP', label: 'Setup & configuration', hint: 'Technical Consultant' },
-  { key: 'APPROVAL', label: 'Approval & testing', hint: 'Client sign-off' },
-  { key: 'HANDOVER', label: 'Client handover', hint: 'After verification' }
-];
-
 export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; mode?: ChecklistMode }> = ({ id, onBack, mode = 'sales' }) => {
   const { byCode } = useServiceCatalog();
   const [c, setC] = useState<PipelineCustomerDetail | null>(null);
@@ -358,7 +350,6 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const withAccounts = !forwarded && !!c.onboarding?.sentToAccountsAt && !c.onboarding?.accountsConfirmedAt;
   // After Accounts confirmed, a re-send after a return goes straight to the consultant.
   const toAccounts = !c.onboarding?.accountsConfirmedAt;
-  const stageIndex = STAGES.findIndex(s => s.key === (c.onboarding?.stage === 'COMPLETED' ? 'HANDOVER' : c.onboarding?.stage));
   const phoneDigits = (c.whatsapp || c.phone || '').replace(/\D/g, '');
   const changed = () => {
     notifyPipelineChanged();
@@ -635,35 +626,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
             </Card>
           )}
 
-          <Card className="p-5">
-            <h2 className="text-sm font-bold text-slate-900 mb-3">Onboarding stage</h2>
-            <ol className="space-y-0">
-              {STAGES.map((s, i) => {
-                const done = i < stageIndex || c.onboarding?.stage === 'COMPLETED';
-                const now = i === stageIndex && c.onboarding?.stage !== 'COMPLETED';
-                return (
-                  <li key={s.key} className="flex gap-3" aria-current={now ? 'step' : undefined}>
-                    <div className="flex flex-col items-center">
-                      <span
-                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                          done ? 'bg-emerald-700 text-white' : now ? 'bg-indigo-600 text-white' : 'border border-slate-300 text-slate-400'
-                        }`}
-                      >
-                        {done ? <Check className="w-3.5 h-3.5" /> : i + 1}
-                      </span>
-                      {i < STAGES.length - 1 && <span className={`w-0.5 flex-1 min-h-4 ${done ? 'bg-emerald-700' : 'bg-slate-200'}`} />}
-                    </div>
-                    <div className="pb-3">
-                      <div className={`text-xs ${now || done ? 'font-bold text-slate-900' : 'font-semibold text-slate-600'}`}>{s.label}</div>
-                      <div className="text-[11px] text-slate-500">
-                        {s.key === 'COLLECT_REQUIREMENTS' && now ? `In progress · ${savedTypes.length} of ${types.length}` : s.hint}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          </Card>
+          <OnboardingStageCard o={c.onboarding} savedCount={savedTypes.length} totalCount={types.length} />
 
           <ActivityCard activities={c.activities} />
         </div>
