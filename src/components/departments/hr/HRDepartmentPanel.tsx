@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Users, FileText, UserPlus, CheckCircle2, Clock, AlertCircle, 
   Calendar, Award, Sparkles, Send, FileCheck, ArrowRight, ShieldCheck,
@@ -11,11 +11,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { useLeadStore } from '../../../context/LeadStoreContext';
-import { 
-  INITIAL_EMPLOYEES, 
-  INITIAL_OFFER_LETTERS, 
-  INITIAL_LEAVE_APPLICATIONS 
-} from '../../../data/amuwaHqInitialData';
 import { Employee, OfferLetter, LeaveApplication } from '../../../types/amuwaHq';
 import { AmuwaOfficialOfferLetter } from '../amuwa/AmuwaOfficialOfferLetter';
 import { EmployeeProfileModal } from '../amuwa/EmployeeProfileModal';
@@ -23,6 +18,7 @@ import { AutomatedLetterGeneratorWorkspace } from './AutomatedLetterGeneratorWor
 import { ActiveTab } from '../../layout/Sidebar';
 import { departmentMemberStore } from '../../../services/departmentMemberStore';
 import { getSupabase } from '../../../services/supabaseClient';
+import { fetchHrDirectory, saveHrRecord, HrDepartment } from '../../../lib/hrDirectory';
 import { attendanceStore, AttendanceRecord } from '../../../services/attendanceStore';
 
 interface HRDepartmentPanelProps {
@@ -32,35 +28,26 @@ interface HRDepartmentPanelProps {
 export type { AttendanceRecord };
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = attendanceStore.getAttendanceRecords();
 
-export const CORPORATE_DEPARTMENTS = [
-  { id: 'amuwa', name: 'Amuwa Corporation', lead: 'Alexander Wright', staff: 14, status: 'Active', icon: Building2, color: 'text-red-600 bg-red-50 border-red-200' },
-  { id: 'designstudio', name: 'Amuwa Design Studio', lead: 'Sarah Jenkins', staff: 9, status: 'Active', icon: Sparkles, color: 'text-rose-600 bg-rose-50 border-rose-200' },
-  { id: 'wabastar', name: 'Wabastar', lead: 'Karthik Raman', staff: 11, status: 'Active', icon: Star, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  { id: 'wabastore', name: 'Wabastore', lead: 'Vikram Singhania', staff: 17, status: 'Active', icon: ShoppingBag, color: 'text-teal-600 bg-teal-50 border-teal-200' },
-  { id: 'whatsbox', name: 'Whatsbox', lead: 'Meera Nambiar', staff: 8, status: 'Active', icon: MessageSquare, color: 'text-cyan-600 bg-cyan-50 border-cyan-200' },
-  { id: 'dtalk', name: 'D Talk Corporation', lead: 'Rohan Deshmukh', staff: 10, status: 'Active', icon: PhoneCall, color: 'text-purple-600 bg-purple-50 border-purple-200' },
-  { id: 'digitree', name: 'Digitree Infotech', lead: 'Arjun Kapoor', staff: 15, status: 'Active', icon: Cpu, color: 'text-pink-600 bg-pink-50 border-pink-200' },
-  { id: 'mpillar', name: 'M Pillar Corporation', lead: 'Rajesh Verma', staff: 12, status: 'Active', icon: Layers, color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  { id: 'edutraining', name: 'Education & Training', lead: 'Pooja Hegde', staff: 6, status: 'Active', icon: GraduationCap, color: 'text-sky-600 bg-sky-50 border-sky-200' },
-  { id: 'hr', name: 'HR Department', lead: 'Priya Sharma', staff: 4, status: 'Active', icon: Users, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  { id: 'accounts', name: 'Accounts Department', lead: 'Rajiv Khanna', staff: 5, status: 'Active', icon: DollarSign, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' }
-];
-
 export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab = 'dashboard' }) => {
   const { activeDepartment } = useAuth();
   const { getLeadsForDepartment } = useLeadStore();
 
   // State Management
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
-  const [offerLetters, setOfferLetters] = useState<OfferLetter[]>(INITIAL_OFFER_LETTERS);
-  const [leaves, setLeaves] = useState<LeaveApplication[]>(INITIAL_LEAVE_APPLICATIONS);
+  // Employees come from the database (CRM members + HR records); nothing is seeded.
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [pendingEmployees, setPendingEmployees] = useState<Employee[]>([]);
+  const [departments, setDepartments] = useState<HrDepartment[]>([]);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [offerLetters, setOfferLetters] = useState<OfferLetter[]>([]);
+  const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [activeModule, setActiveModule] = useState<string | null>(null);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => attendanceStore.getAttendanceRecords());
   const [latestMemberLogin, setLatestMemberLogin] = useState<AttendanceRecord | null>(() => attendanceStore.getLatestMemberLogin());
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'crm' | 'biometric'>('all');
   const [showPayrollModal, setShowPayrollModal] = useState(false);
   const [showManualPunchModal, setShowManualPunchModal] = useState(false);
-  const [punchEmpId, setPunchEmpId] = useState('EMP-1001');
+  const [punchEmpId, setPunchEmpId] = useState('');
   const [punchTime, setPunchTime] = useState('09:30 AM');
   const [punchStatus, setPunchStatus] = useState<'On Time' | 'Half-Day Approved' | 'Late'>('On Time');
   const [punchDevice, setPunchDevice] = useState<'Biometric Scanner' | 'Mobile Punch' | 'HR Override'>('HR Override');
@@ -75,21 +62,6 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
     });
     return () => unsub();
   }, []);
-
-  // Quick simulation helper to test real-time team member login with ID & Password
-  const handleSimulateMemberLogin = (name: string, email: string, role: string, empId: string) => {
-    const rec = attendanceStore.recordMemberLogin({
-      empId,
-      name,
-      email,
-      role,
-      department: 'Wabastore Sales',
-      authMethod: 'ID & Password Auth (System Login)',
-      device: 'CRM Web Client (ID & Password)'
-    });
-    setOpToast(`🔐 System Login: ${name} logged in with ID & Password at ${rec.loginTime}`);
-    setTimeout(() => setOpToast(null), 4000);
-  };
 
   // System Login Time auto-captured the moment the system is opened
   const [systemLoginTime, setSystemLoginTime] = useState<string>(() => {
@@ -119,84 +91,87 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
     recognized?: boolean;
   }
 
-  const [upcomingCelebrations, setUpcomingCelebrations] = useState<UpcomingCelebration[]>([
-    { id: 'CEL-1', type: 'birthday', name: 'Kavya Nair', role: 'Design Specialist', date: '02 October', daysLeft: 4, avatar: 'KN', wished: false },
-    { id: 'CEL-2', type: 'anniversary', name: 'Alexander Wright', role: 'Operations Lead', date: '05 October', milestone: '1st Year Milestone', daysLeft: 7, avatar: 'AW', recognized: false },
-    { id: 'CEL-3', type: 'birthday', name: 'Rohan Mehta', role: 'Operations Trainee', date: '14 October', daysLeft: 16, avatar: 'RM', wished: false },
-    { id: 'CEL-4', type: 'anniversary', name: 'Priya Sharma', role: 'Senior HR Lead', date: '21 October', milestone: '2nd Year Milestone', daysLeft: 23, avatar: 'PS', recognized: false }
-  ]);
+  // Work anniversaries come from the joining dates in the database (there is no birth date on file).
+  const [celebrated, setCelebrated] = useState<Record<string, boolean>>({});
+  const upcomingCelebrations: UpcomingCelebration[] = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const list: UpcomingCelebration[] = [];
+    employees.filter(e => e.status !== 'Left' && e.joiningDate).forEach(e => {
+      const joined = new Date(e.joiningDate);
+      if (Number.isNaN(joined.getTime())) return;
+      let next = new Date(today.getFullYear(), joined.getMonth(), joined.getDate());
+      if (next < today) next = new Date(today.getFullYear() + 1, joined.getMonth(), joined.getDate());
+      const years = next.getFullYear() - joined.getFullYear();
+      const daysLeft = Math.round((next.getTime() - today.getTime()) / 86400000);
+      if (years < 1 || daysLeft > 30) return;
+      list.push({
+        id: `ANN-${e.id}`,
+        type: 'anniversary',
+        name: e.name,
+        role: e.designation,
+        date: next.toLocaleDateString('en-GB', { day: '2-digit', month: 'long' }),
+        daysLeft,
+        avatar: e.name.slice(0, 2).toUpperCase(),
+        milestone: `${years}${years === 1 ? 'st' : years === 2 ? 'nd' : years === 3 ? 'rd' : 'th'} Year Milestone`,
+        recognized: !!celebrated[`ANN-${e.id}`]
+      });
+    });
+    return list.sort((a, b) => a.daysLeft - b.daysLeft);
+  }, [employees, celebrated]);
 
   const handleWishBirthday = (name: string, id: string) => {
-    setUpcomingCelebrations(prev => prev.map(c => c.id === id ? { ...c, wished: true } : c));
+    setCelebrated(prev => ({ ...prev, [id]: true }));
     setOpToast(`🎂 Sent official corporate birthday greeting & Kudos card to ${name}!`);
     setTimeout(() => setOpToast(null), 4500);
   };
 
   const handleRecognizeAnniversary = (name: string, milestone: string, id: string) => {
-    setUpcomingCelebrations(prev => prev.map(c => c.id === id ? { ...c, recognized: true } : c));
+    setCelebrated(prev => ({ ...prev, [id]: true }));
     setOpToast(`🎈 Awarded official ${milestone} Honor Badge & Certificate to ${name}!`);
     setTimeout(() => setOpToast(null), 4500);
   };
 
-  // Live Supabase Cloud Sync
-  useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) return;
-
-    // Load cloud employees
-    supabase.from('hr_employees').select('*').order('created_at', { ascending: false }).then(({ data, error }) => {
-      if (!error && data && data.length > 0) {
-        setEmployees(data.map((d: any) => ({
-          id: d.id,
-          name: d.name,
-          email: d.email || '',
-          phone: d.phone || '',
-          designation: d.designation || '',
-          departmentId: d.department_id || 'amuwa',
-          status: d.status || 'Full-Time',
-          joiningDate: d.joining_date || '',
-          workingHours: d.working_hours || '09:30 AM - 06:30 PM (Mon-Sat)',
-          monthlySalary: d.monthly_salary || '',
-          documentsCollected: true,
-          uploadedDocs: [],
-          leaveHistory: [],
-          halfDaysCount: 0,
-          totalLeavesCount: 0
-        })));
-      }
-    });
-
-    // Realtime changes listener
-    const channel = supabase.channel('public:hr_employees')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'hr_employees' }, (payload: any) => {
-        if (payload.eventType === 'INSERT') {
-          const d = payload.new;
-          const newE: Employee = {
-            id: d.id,
-            name: d.name,
-            email: d.email || '',
-            phone: d.phone || '',
-            designation: d.designation || '',
-            departmentId: d.department_id || 'amuwa',
-            status: d.status || 'Full-Time',
-            joiningDate: d.joining_date || '',
-            workingHours: d.working_hours || '09:30 AM - 06:30 PM (Mon-Sat)',
-            monthlySalary: d.monthly_salary || '',
-            documentsCollected: true,
-            uploadedDocs: [],
-            leaveHistory: [],
-            halfDaysCount: 0,
-            totalLeavesCount: 0
-          };
-          setEmployees(prev => [newE, ...prev.filter(e => e.id !== newE.id)]);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      channel.unsubscribe();
-    };
+  // Employee directory: always the database. Refreshes when members are created /
+  // approved / changed (realtime), when the tab regains focus, and on a timer.
+  const loadDirectory = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setDirectoryLoading(true);
+      const dir = await fetchHrDirectory();
+      setEmployees(dir.employees);
+      setPendingEmployees(dir.pending);
+      setDepartments(dir.departments);
+      setDirectoryError(null);
+    } catch (err) {
+      setDirectoryError(err instanceof Error ? err.message : 'Could not load employees.');
+    } finally {
+      setDirectoryLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadDirectory();
+    const supabase = getSupabase();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => void loadDirectory(true), 400);
+    };
+    const channel = supabase
+      ?.channel('hr-employee-directory')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hr_employees' }, refresh)
+      .subscribe();
+    const onFocus = () => void loadDirectory(true);
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(() => void loadDirectory(true), 30000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      if (channel) void supabase?.removeChannel(channel);
+    };
+  }, [loadDirectory]);
 
   const handleApproveLeave = (leaveId: string) => {
     setLeaves(prev => prev.map(l => l.id === leaveId ? { ...l, status: 'Approved' } : l));
@@ -235,6 +210,10 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
     setTimeout(() => setOpToast(null), 4500);
   };
 
+  useEffect(() => {
+    if (!employees.some(e => e.id === punchEmpId)) setPunchEmpId(employees[0]?.id ?? '');
+  }, [employees, punchEmpId]);
+
   const handleSaveManualPunch = (e: React.FormEvent) => {
     e.preventDefault();
     const emp = employees.find(e => e.id === punchEmpId);
@@ -254,12 +233,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   };
 
   // Operational State for Rewards & Projects Modules
-  const [rewardPoints, setRewardPoints] = useState(12450);
-  const [initiatives, setInitiatives] = useState([
-    { id: 'INIT-1', title: 'Q3 Performance Appraisal Review', progress: 75, due: 'In 12 days', lead: 'Priya Sharma', status: 'In Progress' },
-    { id: 'INIT-2', title: 'Digital Onboarding Kit v2.4', progress: 90, due: 'Friday', lead: 'Alexander Wright', status: 'In Review' },
-    { id: 'INIT-3', title: 'Annual Health & Wellness Camp', progress: 30, due: 'Next Month', lead: 'Kavya Nair', status: 'Planning' },
-  ]);
+  const [rewardPoints, setRewardPoints] = useState(0);
+  const [initiatives, setInitiatives] = useState<{ id: string; title: string; progress: number; due: string; lead: string; status: string }[]>([]);
 
   const handleGrantRewardPoints = (empName: string, amount: number = 250) => {
     setRewardPoints(prev => prev + amount);
@@ -278,7 +253,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
       title: 'Company-Wide Growth & Culture Track 2026',
       progress: 20,
       due: 'End of Month',
-      lead: 'HR Operations',
+      lead: 'HR',
       status: 'In Progress'
     };
     setInitiatives(prev => [newInit, ...prev]);
@@ -297,7 +272,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
 
   // Sub-tabs inside HR & OPERATIONS
   const [hrSubTab, setHrSubTab] = useState<'employees' | 'offers' | 'leaves'>('employees');
-  const [employeeFilter, setEmployeeFilter] = useState<'all' | 'fulltime' | 'trainees' | 'interns' | 'left'>('all');
+  const [employeeFilter, setEmployeeFilter] = useState<'all' | 'fulltime' | 'trainees' | 'interns' | 'left' | 'pending'>('all');
 
   // Modals state
   const [selectedProfileEmp, setSelectedProfileEmp] = useState<Employee | null>(null);
@@ -308,8 +283,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const [newEmpName, setNewEmpName] = useState('');
   const [newEmpEmail, setNewEmpEmail] = useState('');
   const [newEmpPhone, setNewEmpPhone] = useState('');
-  const [newEmpDesignation, setNewEmpDesignation] = useState('HR Specialist');
-  const [newEmpSalary, setNewEmpSalary] = useState('₹60,000');
+  const [newEmpDesignation, setNewEmpDesignation] = useState('');
+  const [newEmpSalary, setNewEmpSalary] = useState('');
   const [newEmpHours, setNewEmpHours] = useState('09:30 AM - 06:30 PM (Mon-Sat)');
   const [newEmpStatus, setNewEmpStatus] = useState<'Full-Time' | 'Training / Probation' | 'Intern'>('Full-Time');
   const [newEmpDepartment, setNewEmpDepartment] = useState('hr');
@@ -318,52 +293,61 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const [newEmpDocsCollected, setNewEmpDocsCollected] = useState(false);
 
   // Handlers
+  // HR actions are saved to the database (hr_employees) so they survive a refresh and
+  // are visible to every HR user; the list is then re-read from the database.
+  const persistEmployee = async (updated: Employee) => {
+    setEmployees(prev => prev.map(emp => (emp.id === updated.id ? updated : emp)));
+    try {
+      await saveHrRecord(updated);
+      void loadDirectory(true);
+    } catch (err) {
+      setOpToast(`⚠️ Could not save ${updated.name}: ${err instanceof Error ? err.message : 'unknown error'}`);
+      setTimeout(() => setOpToast(null), 5500);
+      void loadDirectory(true);
+    }
+  };
+
   const handleConvertTraineeToEmployee = (empId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setEmployees(prev => prev.map(emp => {
-      if (emp.id === empId) {
-        return {
-          ...emp,
-          status: 'Full-Time',
-          designation: emp.designation.replace(/(Trainee|Intern)/gi, 'Specialist'),
-          notes: `Converted to Permanent Employee on ${new Date().toLocaleDateString()}`
-        };
-      }
-      return emp;
-    }));
+    const emp = employees.find(x => x.id === empId);
+    if (!emp) return;
+    void persistEmployee({
+      ...emp,
+      status: 'Full-Time',
+      designation: emp.designation.replace(/(Trainee|Intern)/gi, 'Specialist'),
+      notes: `Converted to Permanent Employee on ${new Date().toLocaleDateString()}`
+    });
   };
 
   const handleMarkLeft = (empId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setEmployees(prev => prev.map(emp => {
-      if (emp.id === empId) {
-        return {
-          ...emp,
-          status: 'Left',
-          leftDate: new Date().toISOString().split('T')[0]
-        };
-      }
-      return emp;
-    }));
+    const emp = employees.find(x => x.id === empId);
+    if (!emp) return;
+    void persistEmployee({ ...emp, status: 'Left', leftDate: new Date().toISOString().split('T')[0] });
   };
 
   const handleToggleDocuments = (empId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setEmployees(prev => prev.map(emp => {
-      if (emp.id === empId) {
-        return { ...emp, documentsCollected: !emp.documentsCollected };
-      }
-      return emp;
-    }));
+    const emp = employees.find(x => x.id === empId);
+    if (!emp) return;
+    void persistEmployee({ ...emp, documentsCollected: !emp.documentsCollected });
   };
 
   const handleUpdateEmployee = (updatedEmp: Employee) => {
-    setEmployees(prev => prev.map(emp => emp.id === updatedEmp.id ? updatedEmp : emp));
+    void persistEmployee(updatedEmp);
   };
 
-  const handleAddEmployee = (e: React.FormEvent) => {
+  const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmpName.trim() || !newEmpEmail.trim()) return;
+
+    // One person = one record: refuse an e-mail that already belongs to a member or an HR record.
+    const emailKey = newEmpEmail.trim().toLowerCase();
+    if ([...employees, ...pendingEmployees].some(x => x.email.toLowerCase() === emailKey)) {
+      setOpToast(`⚠️ ${newEmpEmail.trim()} is already in the employee list - no duplicate was created.`);
+      setTimeout(() => setOpToast(null), 5500);
+      return;
+    }
 
     const isWabastore = newEmpDepartment === 'wabastore' || newEmpDepartment === 'sales' || newEmpDepartment === 'support' || newEmpDepartment === 'wabastore_sales' || newEmpDepartment === 'wabastore_support';
     const isIntern = newEmpStatus === 'Intern';
@@ -376,21 +360,30 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
       id: generatedEmpId,
       name: newEmpName.trim(),
       email: newEmpEmail.trim(),
-      phone: newEmpPhone.trim() || '+91 98000 00000',
-      designation: newEmpDesignation.trim() || 'Operations Specialist',
+      phone: newEmpPhone.trim(),
+      designation: newEmpDesignation.trim(),
       departmentId: newEmpDepartment,
       status: newEmpStatus,
       joiningDate: newEmpJoiningDate || new Date().toISOString().split('T')[0],
       workingHours: newEmpHours,
-      monthlySalary: newEmpSalary.trim() || (newEmpStatus === 'Intern' ? '₹18,000' : '₹60,000'),
+      monthlySalary: newEmpSalary.trim(),
       documentsCollected: newEmpDocsCollected,
       uploadedDocs: [],
       leaveHistory: [],
       halfDaysCount: 0,
-      totalLeavesCount: 0
+      totalLeavesCount: 0,
+      departmentSlug: newEmpDepartment,
+      source: 'hr_record'
     };
 
-    setEmployees(prev => [newEmp, ...prev]);
+    try {
+      await saveHrRecord(newEmp);
+    } catch (err) {
+      setOpToast(`⚠️ Could not save ${newEmp.name}: ${err instanceof Error ? err.message : 'unknown error'}`);
+      setTimeout(() => setOpToast(null), 5500);
+      return;
+    }
+    void loadDirectory(true);
 
     // If department is Wabastore (Sales or Support), dispatch as pending approval
     if (isWabastore) {
@@ -413,12 +406,12 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
         phone: newEmp.phone,
         salary: newEmp.monthlySalary,
         addedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        submittedBy: 'HR Operations (Priya Sharma)'
+        submittedBy: 'HR Operations'
       });
 
       setOpToast(`📋 Registered ${newEmp.name} (${generatedEmpId}) in HR! Dispatched to ${targetDeptName} Head as pending approval for SuperAdmin / Admin authorization.`);
     } else {
-      const selectedDeptObj = CORPORATE_DEPARTMENTS.find(d => d.id === newEmpDepartment);
+      const selectedDeptObj = departments.find(d => d.slug === newEmpDepartment);
       const deptName = selectedDeptObj ? selectedDeptObj.name : newEmpDepartment;
       setOpToast(`🎉 Successfully onboarded ${newEmp.name} into ${deptName} as ${newEmp.status} (${newEmp.designation})!`);
     }
@@ -434,25 +427,6 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
       device: 'HR Direct Registration'
     });
 
-    // Save to Supabase Cloud
-    const supabase = getSupabase();
-    if (supabase) {
-      supabase.from('hr_employees').upsert({
-        id: newEmp.id,
-        name: newEmp.name,
-        email: newEmp.email,
-        phone: newEmp.phone,
-        designation: newEmp.designation,
-        department_id: newEmp.departmentId,
-        status: newEmp.status,
-        joining_date: newEmp.joiningDate,
-        monthly_salary: newEmp.monthlySalary,
-        working_hours: newEmp.workingHours
-      }).then(({ error }: any) => {
-        if (error) console.warn('[Supabase HR] Error saving employee:', error.message);
-      });
-    }
-
     setShowAddEmployeeModal(false);
     setTimeout(() => setOpToast(null), 5500);
 
@@ -460,15 +434,15 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
     setNewEmpName('');
     setNewEmpEmail('');
     setNewEmpPhone('');
-    setNewEmpDesignation('HR Specialist');
-    setNewEmpSalary('₹60,000');
+    setNewEmpDesignation('');
+    setNewEmpSalary('');
     setNewEmpStatus('Full-Time');
     setNewEmpDepartment('hr');
     setNewEmpSubDepartment('sales');
     setNewEmpDocsCollected(false);
   };
 
-  const filteredEmployees = employees.filter(emp => {
+  const filteredEmployees = (employeeFilter === 'pending' ? pendingEmployees : employees).filter(emp => {
     if (employeeFilter === 'fulltime') return emp.status === 'Full-Time';
     if (employeeFilter === 'trainees') return emp.status === 'Training / Probation';
     if (employeeFilter === 'interns') return emp.status === 'Intern';
@@ -476,6 +450,11 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
     return true;
   });
 
+  const activeStaff = employees.filter(e => e.status !== 'Left');
+  const presentToday = attendanceRecords.filter(r => r.loginDate.startsWith('Today'));
+  const attendancePct = activeStaff.length ? Math.min(100, Math.round((presentToday.length / activeStaff.length) * 100)) : 0;
+  const monthlyPayroll = activeStaff.reduce((sum, e) => sum + (parseInt((e.monthlySalary || '').replace(/[^\d]/g, '').slice(0, 9), 10) || 0), 0);
+  const pendingLeaves = leaves.filter(l => l.status === 'Pending' || l.status === 'Noted');
   const traineesCount = employees.filter(e => e.status === 'Training / Probation').length;
   const internsCount = employees.filter(e => e.status === 'Intern').length;
   const fulltimeCount = employees.filter(e => e.status === 'Full-Time').length;
@@ -584,12 +563,12 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                 </div>
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-bold font-heading text-emerald-700">100%</span>
-                <span className="text-xs text-emerald-700 font-mono font-semibold">4 / 4 Present</span>
+                <span className="text-2xl sm:text-3xl font-bold font-heading text-emerald-700">{attendancePct}%</span>
+                <span className="text-xs text-emerald-700 font-mono font-semibold">{presentToday.length} / {activeStaff.length} Present</span>
               </div>
               <div className="flex items-center gap-1.5 mt-2 text-[11px] text-emerald-700 font-medium">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>3 On Time • 1 Shift Approved</span>
+                <span>{presentToday.filter(r => r.status === 'On Time').length} On Time • {presentToday.filter(r => r.status === 'Half-Day Approved').length} Shift Approved</span>
               </div>
             </div>
 
@@ -606,13 +585,13 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl sm:text-3xl font-bold font-heading text-slate-900">
-                  {leaves.filter(l => l.status === 'Pending' || l.status === 'Noted').length}
+                  {pendingLeaves.length}
                 </span>
                 <span className="text-xs text-amber-700 font-mono font-semibold">Action Required</span>
               </div>
               <div className="flex items-center gap-1 mt-2 text-[11px] text-amber-700 font-medium">
                 <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>Rohan Mehta (Half-Day)</span>
+                <span>{pendingLeaves[0]?.employeeName ?? 'No pending requests'}</span>
               </div>
             </div>
 
@@ -628,8 +607,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                 </div>
               </div>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-bold font-heading text-slate-900">₹2.00 L</span>
-                <span className="text-xs text-slate-400 font-mono">Disbursed</span>
+                <span className="text-2xl sm:text-3xl font-bold font-heading text-slate-900">₹{monthlyPayroll.toLocaleString('en-IN')}</span>
+                <span className="text-xs text-slate-400 font-mono">Salaries on record</span>
               </div>
               <div className="flex items-center gap-1.5 mt-2 text-[11px] text-indigo-700 font-medium">
                 <Check className="w-3.5 h-3.5 text-indigo-600" />
@@ -654,7 +633,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                   <span className="text-slate-300">/</span>
                   <span className="text-xs font-mono font-bold text-slate-900 uppercase">
                     {activeModule === 'attendance' && 'Attendance & Shift Management'}
-                    {activeModule === 'departments' && 'Corporate Department Hierarchy (10 Units)'}
+                    {activeModule === 'departments' && `Department Hierarchy (${departments.length} Units)`}
                     {activeModule === 'recruitment' && 'Recruitment & Talent Acquisition Desk'}
                     {activeModule === 'employees' && 'Employee Directory & KYC Profiles'}
                     {activeModule === 'leaves' && 'Leave & Shift Approvals Register'}
@@ -772,35 +751,6 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                           <span>Biometric ({attendanceRecords.filter(r => r.biometricTime || r.authMethod.includes('Biometric')).length})</span>
                         </button>
                       </div>
-
-                      {/* Quick Member Login Simulation */}
-                      <div className="flex items-center gap-1 text-[11px]">
-                        <span className="text-slate-400 text-[10px] uppercase font-mono mr-0.5">Simulate:</span>
-                        <button
-                          type="button"
-                          onClick={() => handleSimulateMemberLogin('Priya Nair', 'priya@amuwa.com', 'Sales Executive', 'tm-priya')}
-                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 transition-colors cursor-pointer"
-                          title="Simulate CRM System login for Priya Nair"
-                        >
-                          Priya
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSimulateMemberLogin('Rahul Kumar', 'rahul@amuwa.com', 'Sales Executive', 'tm-rahul')}
-                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 transition-colors cursor-pointer"
-                          title="Simulate CRM System login for Rahul Kumar"
-                        >
-                          Rahul
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSimulateMemberLogin('Amit Patel', 'amit@amuwa.com', 'Senior Sales Specialist', 'tm-amit')}
-                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-600 transition-colors cursor-pointer"
-                          title="Simulate CRM System login for Amit Patel"
-                        >
-                          Amit
-                        </button>
-                      </div>
                     </div>
                   </div>
 
@@ -904,33 +854,36 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                 <div className="space-y-4">
                   <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs">
                     <h4 className="text-sm font-bold text-slate-900">Corporate Department Hierarchy</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">All 10 business units, assigned department leads, team capacity, and functional reporting chains</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Departments from the CRM with their Department Head and active member count</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {CORPORATE_DEPARTMENTS.map(dept => {
-                      const IconComp = dept.icon;
-                      return (
-                        <div key={dept.id} className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className={`w-9 h-9 rounded-xl border flex items-center justify-center ${dept.color}`}>
-                              <IconComp className="w-4 h-4" />
-                            </div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              {dept.status}
-                            </span>
+                    {departments.map(dept => (
+                      <div key={dept.id} className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="w-9 h-9 rounded-xl border flex items-center justify-center text-blue-600 bg-blue-50 border-blue-200">
+                            <Building2 className="w-4 h-4" />
                           </div>
-                          <div>
-                            <h5 className="font-bold text-sm text-slate-900">{dept.name}</h5>
-                            <p className="text-xs text-slate-500 mt-0.5">Lead: <span className="font-semibold text-slate-800">{dept.lead}</span></p>
-                          </div>
-                          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs font-mono text-slate-500">
-                            <span>{dept.staff} Members</span>
-                            <span className="text-blue-600 font-semibold cursor-pointer hover:underline" onClick={() => setOpToast(`Navigating to ${dept.name}...`)}>Active Unit →</span>
-                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                            dept.isLocked ? 'bg-slate-100 text-slate-600 border-slate-300' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          }`}>
+                            {dept.isLocked ? 'Locked' : 'Active'}
+                          </span>
                         </div>
-                      );
-                    })}
+                        <div>
+                          <h5 className="font-bold text-sm text-slate-900">{dept.name}</h5>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            Department Head: <span className="font-semibold text-slate-800">{dept.headName || 'Not assigned'}</span>
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs font-mono text-slate-500">
+                          <span>{dept.memberCount} {dept.memberCount === 1 ? 'Member' : 'Members'}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {!departments.length && !directoryLoading && (
+                      <p className="col-span-full text-center text-xs text-slate-500 py-8">No departments found.</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1177,7 +1130,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       <p className="text-xs text-slate-500 mt-0.5">Track upcoming employee milestones, work anniversaries (soon), birthdays within 30 days, and honors</p>
                     </div>
                     <button
-                      onClick={() => handleNominateAward('Priya Sharma')}
+                      onClick={() => { setMainSection('hr_ops'); setHrSubTab('employees'); setOpToast('Open an employee profile from the directory to nominate them.'); setTimeout(() => setOpToast(null), 4500); }}
                       className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
                     >
                       <Award className="w-4 h-4" />
@@ -1190,7 +1143,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     <div className="flex items-center justify-between">
                       <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                         <Cake className="w-4 h-4 text-amber-600" />
-                        <span>Upcoming Birthdays &amp; Work Anniversaries (Within 30 Days)</span>
+                        <span>Upcoming Work Anniversaries (Within 30 Days)</span>
                       </h5>
                       <span className="text-xs font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                         {upcomingCelebrations.length} Upcoming Events
@@ -1198,6 +1151,9 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {!upcomingCelebrations.length && (
+                        <p className="col-span-full text-xs text-slate-500 bg-white border border-slate-200 rounded-2xl p-5">No work anniversaries in the next 30 days.</p>
+                      )}
                       {upcomingCelebrations.map(cel => (
                         <div
                           key={cel.id}
@@ -1273,49 +1229,9 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       Executive Star Performers of the Quarter
                     </h5>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold">
-                            <Award className="w-5 h-5" />
-                          </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-amber-200 text-amber-900">
-                            Star of the Month Q3
-                          </span>
-                        </div>
-                        <div>
-                          <h5 className="font-bold text-base text-slate-900">Priya Sharma</h5>
-                          <p className="text-xs text-slate-600 mt-1">Senior HR Partner • Recognized for 100% On-Time Onboarding &amp; Policy Revamp</p>
-                        </div>
-                        <button
-                          onClick={() => handleNominateAward('Priya Sharma')}
-                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                        >
-                          Celebrate Priya 👏
-                        </button>
-                      </div>
-
-                      <div className="p-5 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
-                            <Calendar className="w-5 h-5" />
-                          </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-blue-200 text-blue-900">
-                            Work Anniversary
-                          </span>
-                        </div>
-                        <div>
-                          <h5 className="font-bold text-base text-slate-900">Alexander Wright</h5>
-                          <p className="text-xs text-slate-600 mt-1">1 Year of Outstanding Leadership at Amuwa HQ</p>
-                        </div>
-                        <button
-                          onClick={() => handleNominateAward('Alexander Wright')}
-                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-                        >
-                          Send Congrats 🚀
-                        </button>
-                      </div>
-                    </div>
+                    <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-2xl p-5">
+                      No award nominations yet. Use "Nominate Star Award" to recognise a team member.
+                    </p>
                   </div>
                 </div>
               )}
@@ -1389,7 +1305,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                         <Building2 className="w-5 h-5" />
                       </div>
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                        10 Units
+                        {departments.length} Units
                       </span>
                     </div>
 
@@ -1503,8 +1419,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     </p>
 
                     <div className="mt-3.5 p-2.5 rounded-xl bg-amber-50/60 border border-amber-200/60 flex items-center justify-between text-xs font-mono">
-                      <span className="text-amber-900 font-bold truncate">Rohan Mehta (Half-Day)</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold shrink-0">1 Pending</span>
+                      <span className="text-amber-900 font-bold truncate">{pendingLeaves[0]?.employeeName ?? 'No pending requests'}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-semibold shrink-0">{pendingLeaves.length} Pending</span>
                     </div>
                   </div>
 
@@ -1539,9 +1455,9 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     <div className="mt-3.5 p-2.5 rounded-xl bg-amber-50/60 border border-amber-200/70 flex items-center justify-between text-xs font-mono">
                       <span className="text-amber-900 font-semibold truncate flex items-center gap-1">
                         <Cake className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        <span className="truncate">Kavya (in 4d)</span>
+                        <span className="truncate">{upcomingCelebrations[0] ? `${upcomingCelebrations[0].name} (in ${upcomingCelebrations[0].daysLeft}d)` : 'No upcoming events'}</span>
                       </span>
-                      <span className="text-indigo-800 text-[11px] font-semibold shrink-0">1-Yr Anniv (in 7d)</span>
+                      <span className="text-indigo-800 text-[11px] font-semibold shrink-0">{upcomingCelebrations.length} Anniv (30d)</span>
                     </div>
                   </div>
 
@@ -1767,7 +1683,16 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       employeeFilter === 'left' ? 'bg-slate-700 text-white shadow-2xs' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
                     }`}
                   >
-                    Left Company ({leftCount})
+                    Left / Inactive ({leftCount})
+                  </button>
+
+                  <button
+                    onClick={() => setEmployeeFilter('pending')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
+                      employeeFilter === 'pending' ? 'bg-blue-700 text-white shadow-2xs' : 'bg-white text-blue-800 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    Pending Approval ({pendingEmployees.length})
                   </button>
                 </div>
 
@@ -1784,6 +1709,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       <tr>
                         <th className="p-3.5">Employee Name &amp; ID</th>
                         <th className="p-3.5">Designation &amp; Salary</th>
+                        <th className="p-3.5">Department &amp; Reports To</th>
                         <th className="p-3.5">Employment Type</th>
                         <th className="p-3.5">Documents Status</th>
                         <th className="p-3.5">Half-Days &amp; Leaves</th>
@@ -1811,7 +1737,21 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
 
                           <td className="p-3.5 font-medium text-slate-700">
                             {emp.designation}
-                            <span className="block text-[11px] font-mono font-bold text-emerald-700">{emp.monthlySalary || '₹65,000'}</span>
+                            <span className="block text-[11px] font-mono font-bold text-emerald-700">{emp.monthlySalary || 'Salary not set'}</span>
+                          </td>
+
+                          <td className="p-3.5 text-slate-700">
+                            <span className="font-semibold block">{emp.departmentName || 'No department'}</span>
+                            <span className="block text-[11px] font-mono text-slate-500">
+                              {[emp.roleLabel, emp.teamName].filter(Boolean).join(' • ') || 'HR record (no CRM login)'}
+                            </span>
+                            {(emp.teamLead || emp.departmentHead) && (
+                              <span className="block text-[11px] font-mono text-slate-400">
+                                {emp.teamLead ? `Team Lead: ${emp.teamLead}` : ''}
+                                {emp.teamLead && emp.departmentHead ? ' • ' : ''}
+                                {emp.departmentHead ? `Dept Head: ${emp.departmentHead}` : ''}
+                              </span>
+                            )}
                           </td>
 
                           <td className="p-3.5">
@@ -1826,6 +1766,18 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                             }`}>
                               {emp.status === 'Full-Time' ? 'Employee' : emp.status === 'Training / Probation' ? 'In-Training' : emp.status}
                             </span>
+                            {emp.approvalStatus === 'PENDING' ? (
+                              <span className="block mt-1 text-[10px] font-mono font-bold text-blue-700">Awaiting approval</span>
+                            ) : emp.accountStatus && emp.accountStatus !== 'ACTIVE' ? (
+                              <span className="block mt-1 text-[10px] font-mono font-bold text-rose-700">Account {emp.accountStatus.toLowerCase()}</span>
+                            ) : emp.accountStatus ? (
+                              <span className="block mt-1 text-[10px] font-mono text-emerald-700">
+                                Approved{emp.approvedBy ? ` by ${emp.approvedBy}` : ''}
+                              </span>
+                            ) : null}
+                            {emp.joiningDate && (
+                              <span className="block text-[10px] font-mono text-slate-400">Joined {emp.joiningDate}</span>
+                            )}
                           </td>
 
                           <td className="p-3.5">
@@ -1895,6 +1847,24 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                           </td>
                         </tr>
                       ))}
+                      {!filteredEmployees.length && (
+                        <tr>
+                          <td colSpan={7} className="p-10 text-center text-xs text-slate-500">
+                            {directoryLoading
+                              ? 'Loading employees...'
+                              : directoryError
+                              ? (
+                                <span className="text-rose-700">
+                                  Could not load employees: {directoryError}{' '}
+                                  <button type="button" onClick={() => void loadDirectory()} className="underline font-bold">Try again</button>
+                                </span>
+                              )
+                              : employeeFilter === 'pending'
+                              ? 'No members are waiting for approval.'
+                              : 'No employees found.'}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -2119,17 +2089,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                   <label className="text-xs font-mono font-bold text-slate-700 mb-1.5 block">Employment Tier *</label>
                   <select
                     value={newEmpStatus}
-                    onChange={(e) => {
-                      const val = e.target.value as 'Full-Time' | 'Training / Probation' | 'Intern';
-                      setNewEmpStatus(val);
-                      if (val === 'Intern' && newEmpSalary === '₹60,000') {
-                        setNewEmpSalary('₹18,000');
-                        if (newEmpDesignation === 'HR Specialist') setNewEmpDesignation('HR Intern');
-                      } else if (val === 'Full-Time' && newEmpSalary === '₹18,000') {
-                        setNewEmpSalary('₹60,000');
-                        if (newEmpDesignation === 'HR Intern') setNewEmpDesignation('HR Specialist');
-                      }
-                    }}
+                    onChange={(e) => setNewEmpStatus(e.target.value as 'Full-Time' | 'Training / Probation' | 'Intern')}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-xs font-medium text-slate-800 bg-white"
                   >
                     <option value="Full-Time">Full-Time Employee (Permanent)</option>
@@ -2145,8 +2105,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     onChange={(e) => setNewEmpDepartment(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-xs font-medium text-slate-800 bg-white"
                   >
-                    {CORPORATE_DEPARTMENTS.map(d => (
-                      <option key={d.id} value={d.id}>
+                    {departments.map(d => (
+                      <option key={d.id} value={d.slug}>
                         {d.name}
                       </option>
                     ))}
@@ -2428,7 +2388,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                         {emp.designation}
                       </td>
                       <td className="p-3 font-bold text-slate-900">
-                        {emp.monthlySalary || '₹50,000'}
+                        {emp.monthlySalary || 'Not set'}
                       </td>
                       <td className="p-3 text-right">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -2447,7 +2407,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                 type="button"
                 onClick={() => {
                   const headers = ['Employee ID', 'Name', 'Designation', 'Gross Monthly Salary', 'Disbursement Status'];
-                  const rows = employees.filter(e => e.status !== 'Left').map(e => [e.id, `"${e.name}"`, `"${e.designation}"`, `"${e.monthlySalary || '₹50,000'}"`, 'Processed']);
+                  const rows = employees.filter(e => e.status !== 'Left').map(e => [e.id, `"${e.name}"`, `"${e.designation}"`, `"${e.monthlySalary || ''}"`, 'Processed']);
                   const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
                   const link = document.createElement('a');
                   link.setAttribute('href', encodeURI(csv));

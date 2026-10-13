@@ -49,6 +49,18 @@ export interface Employee {
   halfDaysCount: number;
   totalLeavesCount: number;
   notes?: string;
+  // Filled from the database for members that have a CRM account (HR directory)
+  profileId?: string;
+  source?: 'account' | 'hr_record';
+  departmentName?: string;
+  departmentSlug?: string;
+  roleLabel?: string;
+  teamName?: string;
+  teamLead?: string;
+  departmentHead?: string;
+  accountStatus?: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED' | 'REJECTED';
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string;
 }
 
 export interface OfferLetter {
