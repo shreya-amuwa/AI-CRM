@@ -58,6 +58,9 @@ async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outco
     const email = (c.email || '').trim().toLowerCase();
     if (!EMAIL_RE.test(email)) return { outcome: 'SKIPPED', detail: 'Invalid client email – nothing sent' };
     if (s.requireValidWhatsapp && !phone10) return { outcome: 'SKIPPED', detail: 'NOT sent – WhatsApp Number is missing or invalid.' };
+    if (job.stage === 'WEBSITE_READY' && !websiteOf(c.website)) {
+      return { outcome: 'SKIPPED', detail: 'NOT sent – the customer has no website link yet' };
+    }
     const panelUrl = PANEL_URLS[c.departmentSlug] || '';
     if (job.stage === 'COMPLETED' && !panelUrl) {
       return { outcome: 'SKIPPED', detail: `NOT sent – no panel URL for department "${c.department}"` };
@@ -70,7 +73,8 @@ async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outco
       panelUrl,
       userId: c.loginEmail || email,
       password,
-      websiteCreated: job.context?.from === 'WEBSITE_PENDING'
+      websiteCreated: job.context?.from === 'WEBSITE_PENDING',
+      website: websiteOf(c.website)
     });
     const note = job.stage === 'COMPLETED' && !password ? ' (without the password)' : '';
     if (!live) return { outcome: 'SKIPPED', detail: `Dry run – not sent: "${mail.subject}" to ${maskEmail(email)}${note}`, recipient: email };
@@ -82,6 +86,9 @@ async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outco
 
   // WhatsApp
   if (!phone10) return { outcome: 'SKIPPED', detail: 'WhatsApp not sent – WhatsApp Number is missing or invalid.' };
+  if (job.stage === 'WEBSITE_READY' && !websiteOf(c.website)) {
+    return { outcome: 'SKIPPED', detail: 'WhatsApp not sent – the customer has no website link yet' };
+  }
   const full = '91' + phone10;
   const status = STAGE_LABEL[job.stage];
   if (!live) return { outcome: 'SKIPPED', detail: `Dry run – not sent: "${status}" WhatsApp to ${maskPhone(full)}`, recipient: full };

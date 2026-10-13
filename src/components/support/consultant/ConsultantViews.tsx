@@ -10,6 +10,7 @@ import {
   Eye,
   FileText,
   IndianRupee,
+  Pencil,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -44,6 +45,7 @@ import {
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
+import { WebsiteEditDialog } from './WebsiteEditDialog';
 import { CustomerAddonDetails } from './CustomerAddonDetails';
 import { ConsultationNotes } from './ConsultationNotes';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
@@ -733,9 +735,12 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
   const [error, setError] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [editingWebsite, setEditingWebsite] = useState(false);
   const entry = item.entry;
   const state = entry?.status ?? 'MISSING';
   const S = ROW_STATUS[state];
+  const isWebsite = item.code === 'WA_WEBSITE_URL';
+  const websiteUrl = isWebsite && entry?.value && entry.value !== 'NO_WEBSITE' ? entry.value : '';
   // The Invoice item is filled by the invoice Accounts issues (a record, not an uploaded file).
   const issuedByAccounts = item.code === 'INVOICE' && !!entry && !entry.documentId;
   const isFile = item.kind === 'FILE' && !issuedByAccounts;
@@ -822,6 +827,16 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
         >
           <Eye className="w-3.5 h-3.5" aria-hidden="true" /> View details
         </button>
+        {isWebsite && !readOnly && (
+          <button
+            type="button"
+            onClick={() => setEditingWebsite(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700"
+            aria-label={websiteUrl ? 'Edit website' : 'Add website'}
+          >
+            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> {websiteUrl ? 'Edit website' : 'Add website'}
+          </button>
+        )}
         <div className="flex gap-2 ml-auto">
           <button
             type="button"
@@ -944,6 +959,17 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
             </button>
           </div>
         </Dialog>
+      )}
+      {editingWebsite && (
+        <WebsiteEditDialog
+          customerId={customer.id}
+          current={websiteUrl}
+          onClose={() => setEditingWebsite(false)}
+          onSaved={() => {
+            setEditingWebsite(false);
+            onChanged();
+          }}
+        />
       )}
       {rejecting && <RejectDialog label={item.label} busy={busy} onClose={() => setRejecting(false)} onConfirm={note => review('REJECTED', note)} />}
     </li>

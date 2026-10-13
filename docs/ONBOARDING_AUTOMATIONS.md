@@ -16,8 +16,14 @@ Migration: `supabase/migrations/20261016000100_onboarding_automations.sql` (re-r
 | --- | --- | --- | --- |
 | 1a | The Technical Consultant clicks **Send for onboarding** (whether or not the customer wants add-ons) and sales entered a **website URL** | "Documents Received – Under Review" | `Under Review` |
 | 1b | The Technical Consultant clicks **Send for onboarding** and sales ticked **"Customer has no website"** (or entered no website) | "Mini Website for Your Business" | `Website Pending` |
-| 2 | The website link is saved (the TC can add or correct it) **and** every document / detail sales collected is authorized | "Meta Verification In Progress" (adds: takes about 2-3 weeks; "your website has been created" when the customer started at Website Pending) | `Meta Verification` |
+| 1c | The TC builds the mini website for a customer that started at Website Pending, clicks **Edit website** on the **Website URL** card, saves the link and clicks **Authorize** on that card | "Your Mini Website is Ready": the website link | `Website Ready` (the payload's `website` is the link) |
+| 2 | The website link is **authorized** (the TC can add or correct it with **Edit website**) **and** every document / detail sales collected is authorized | "Meta Verification In Progress" (adds: takes about 2-3 weeks; "your website has been created" when the customer started at Website Pending) | `Meta Verification` |
 | 3 | The TC creates the **client login** | "Meta Verification Completed – Panel Access Details": panel link, user ID (the login e-mail) and the password | `Status Completed` |
+
+**"Website ready" (step 1c).** Sent once, only to customers that started at Website Pending, when the TC authorizes a real
+website address. Saving the link alone sends nothing: it waits for **Authorize**. Correcting the link later and authorizing it again
+sends nothing new. When authorizing the link also completes the checklist, "website ready" goes out before "Meta Verification".
+The WhatsApp router (Automation Builder) needs a branch for `status = "Website Ready"`.
 
 **Rules kept from the Apps Script:**
 - **Forward only.** A stage is never repeated or moved back. A customer that started at Website Pending goes straight to
@@ -138,4 +144,5 @@ It confirms the migrations are applied and lists the latest customers with their
 
 Migrations, in order: `20261016000100_onboarding_automations.sql`, `20261016000200_resend_client_messages.sql`
 (the **Send ... messages** button), `20261016000300_start_onboarding_trigger.sql` (messages start at
-**Send for onboarding**; a stricter website check).
+**Send for onboarding**; a stricter website check), `20261016000400_invoice_auto_paid_website_ready.sql`
+("website ready" message; invoices turn **Paid** by themselves once the payments are verified).

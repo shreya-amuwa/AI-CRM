@@ -97,7 +97,7 @@ select test.must_fail($$select accounts_return_to_leads((select id from pt where
 select test.must_fail($$select accounts_payment_requests()$$, 'Sales cannot read the Accounts queue', 'Only the Accounts department');
 select test.must_fail($$select accounts_payment_counts()$$, 'Sales cannot read the Accounts counters', 'Only the Accounts department');
 select test.must_fail($$insert into customer_payments (customer_id, payment_type, amount, status) values ((select id from pt where name = 'L2'), 'PART', 100, 'VERIFIED')$$, 'payments cannot be inserted directly', 'permission denied');
-select test.must_fail($$update customers set amount_verified = 50000 where id = (select id from pt where name = 'L2')$$, 'verified money cannot be edited directly', 'permission denied');
+select test.must_fail($$update customers set amount_received = 50000, amount_verified = 50000 where id = (select id from pt where name = 'L2')$$, 'verified money cannot be edited directly', 'permission denied');
 
 -- Accounts
 select test.login('acc_m');
@@ -399,6 +399,56 @@ select test.check((select not exists (select 1 from jsonb_array_elements(account
                      and exists (select 1 from jsonb_array_elements(accounts_finance_by_department()) d where d ->> 'slug' = 'wabastore')),
   'the department boxes leave out Accounts, Education & Training and HR');
 select test.must_fail($$select * from department_expenses$$, 'expenses cannot be read directly', 'permission denied');
+
+-- ---------------------------------------------------------------------------
+\echo '--- Invoice status follows the verified payments'
+reset role;
+create temp table invs (name text primary key, id uuid, cust uuid);
+grant all on invs to authenticated;
+set session_replication_role = replica; -- set the ledger totals directly, as the verified payments would
+update customers set deal_amount = 50000, amount_verified = 10000 where id = (select id from pt where name = 'L2');
+set session_replication_role = origin;
+insert into invs select 'i1', id, customer_id from member_invoices where false;
+with ins as (insert into member_invoices (owner_id, invoice_number, customer_name, amount, status, customer_id, kind)
+  values (test.id('acc_m'), 'AUTO/001', 'Desai Clinic', 50000, 'Pending', (select id from pt where name = 'L2'), 'UPLOADED') returning id, customer_id)
+insert into invs select 'i1', id, customer_id from ins;
+select test.check((select status = 'Pending' and status_source is null from member_invoices where id = (select id from invs where name = 'i1')),
+  'an invoice stays Pending while the verified payments do not cover the agreed amount');
+set session_replication_role = replica;
+update customers set amount_received = 50000, amount_verified = 50000 where id = (select cust from invs where name = 'i1');
+set session_replication_role = origin;
+select private.sync_invoice_payment_status((select cust from invs where name = 'i1'));
+select test.check((select status = 'Paid' and status_source = 'AUTO' and paid_at is not null from member_invoices where id = (select id from invs where name = 'i1')),
+  'fully verified payments make the invoice Paid by themselves');
+set session_replication_role = replica;
+update customers set amount_verified = 40000 where id = (select cust from invs where name = 'i1');
+set session_replication_role = origin;
+select private.sync_invoice_payment_status((select cust from invs where name = 'i1'));
+select test.check((select status = 'Pending' and paid_at is null from member_invoices where id = (select id from invs where name = 'i1')),
+  'a reversed payment puts an automatically paid invoice back to Pending');
+set session_replication_role = replica;
+update customers set amount_received = 50000, amount_verified = 50000 where id = (select cust from invs where name = 'i1');
+set session_replication_role = origin;
+-- an invoice uploaded after the payment was verified is Paid from the start
+with ins as (insert into member_invoices (owner_id, invoice_number, customer_name, amount, status, customer_id, kind)
+  values (test.id('acc_m'), 'AUTO/002', 'Desai Clinic', 50000, 'Pending', (select id from pt where name = 'L2'), 'UPLOADED') returning id, customer_id)
+insert into invs select 'i2', id, customer_id from ins;
+select test.check((select status = 'Paid' and status_source = 'AUTO' from member_invoices where id = (select id from invs where name = 'i2')),
+  'an invoice uploaded after the payment was verified is Paid from the start');
+-- a status set by hand is never changed by the system
+set role authenticated;
+select test.login('acc_m');
+select test.check((select (accounts_set_invoice_status((select id from invs where name = 'i2'), 'Pending') ->> 'status') = 'Pending'), 'Accounts can still mark it Pending by hand');
+reset role;
+select private.sync_invoice_payment_status((select cust from invs where name = 'i2'));
+select test.check((select status = 'Pending' and status_source = 'MANUAL' from member_invoices where id = (select id from invs where name = 'i2')),
+  'a status set by hand is not overwritten by the automatic one');
+-- add-on invoices follow their own payment confirmation
+with ins as (insert into member_invoices (owner_id, invoice_number, customer_name, amount, status, customer_id, kind)
+  values (test.id('acc_m'), 'AUTO/ADDON', 'Desai Clinic', 5000, 'Pending', (select id from pt where name = 'L2'), 'ADDON') returning id, customer_id)
+insert into invs select 'i3', id, customer_id from ins;
+select private.sync_invoice_payment_status((select cust from invs where name = 'i3'));
+select test.check((select status = 'Pending' from member_invoices where id = (select id from invs where name = 'i3')), 'an add-on invoice is not paid by the original-service payments');
 
 reset role;
 \echo '=== ALL PAYMENT WORKFLOW TESTS PASSED ==='

@@ -19,6 +19,8 @@ export interface TemplateData {
   password: string | null;
   /** The customer started at Website Pending: our team created the website. */
   websiteCreated: boolean;
+  /** The customer's website address (the mini website, in the "website ready" email). */
+  website: string;
 }
 
 export interface RenderedEmail {
@@ -85,6 +87,20 @@ function mailNoWebsite(d: TemplateData) {
   ${signature('Technical Team')}`;
 }
 
+// status "Website Ready": the mini website our team built has been authorized by the Technical Consultant
+function mailWebsiteReady(d: TemplateData) {
+  const link = esc(d.website);
+  return `
+  <p>Dear ${esc(d.name)},</p>
+  <p>We are pleased to inform you that your <b>Mini Website is now ready</b>.</p>
+  <p><b>Your Website:</b> <a href="${link}">${link}</a></p>
+  <p>Please open the link and check your website. If you would like any change or have any enquiry related to the website, please contact our <b>Technical Team</b>.</p>
+  <p><b>Technical Team Contact:</b> ${esc(COMPANY.techPhone)}</p>
+  <p>Our team is now continuing with the remaining steps of your onboarding and will keep you updated.</p>
+  <p>Thank you for your cooperation.</p>
+  ${signature('Technical Team')}`;
+}
+
 // status "Meta Verification" (+ "about 2-3 weeks"; website-created wording when we built the website)
 function mailInProgress(d: TemplateData) {
   const opening = d.websiteCreated
@@ -127,7 +143,8 @@ const TEMPLATES: Record<ClientStage, { subject: string; html: (d: TemplateData) 
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },
   UNDER_REVIEW: { subject: 'Documents Received – Under Review | Amuwa Corporation', html: mailUnderReview },
   META_VERIFICATION: { subject: 'Meta Verification In Progress | Amuwa Corporation', html: mailInProgress },
-  COMPLETED: { subject: 'Meta Verification Completed – Panel Access Details | Amuwa Corporation', html: mailCompleted }
+  COMPLETED: { subject: 'Meta Verification Completed – Panel Access Details | Amuwa Corporation', html: mailCompleted },
+  WEBSITE_READY: { subject: 'Your Mini Website is Ready | Amuwa Corporation', html: mailWebsiteReady }
 };
 
 export function renderEmail(stage: ClientStage, data: TemplateData): RenderedEmail {

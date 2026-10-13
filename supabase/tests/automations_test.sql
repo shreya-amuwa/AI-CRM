@@ -18,10 +18,10 @@ grant select on all tables in schema test to service_role;
 -- Wabastore WhatsApp API customers in onboarding, and one that is not automated.
 set role authenticated;
 select test.login('tm_a');
-insert into au select 'site', create_lead('{"name":"Site Owner","company":"Site Traders","email":"site.owner@example.com","whatsapp":"+91 93722 86055","phone":"9321664464","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
-insert into au select 'nosite', create_lead('{"name":"No Site","company":"No Site Stores","email":"nosite@example.com","phone":"9321664464","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
-insert into au select 'early', create_lead('{"name":"Early Login","company":"Early Co","email":"early@example.com","phone":"9321664464","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
-insert into au select 'other', create_lead('{"name":"Other Service","company":"Calls Only","email":"calls@example.com","phone":"9321664464","leadSource":"Walk-in"}', array['AI_CALLING']);
+insert into au select 'site', create_lead('{"name":"Site Owner","company":"Site Traders","email":"site.owner@example.com","whatsapp":"+91 98199 00011","phone":"9819900022","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
+insert into au select 'nosite', create_lead('{"name":"No Site","company":"No Site Stores","email":"nosite@example.com","phone":"9819900022","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
+insert into au select 'early', create_lead('{"name":"Early Login","company":"Early Co","email":"early@example.com","phone":"9819900022","leadSource":"Walk-in"}', array['WHATSAPP_API_BLUE_TICK']);
+insert into au select 'other', create_lead('{"name":"Other Service","company":"Calls Only","email":"calls@example.com","phone":"9819900022","leadSource":"Walk-in"}', array['AI_CALLING']);
 reset role;
 do $$
 declare r record;
@@ -140,20 +140,38 @@ select test.must_fail($$select consultant_set_website((select id from au where n
 select test.check((select consultant_set_website((select id from au where name = 'nosite'), 'nosite-stores.example') = 'https://nosite-stores.example'),
   'the TC saves the new website link');
 reset role;
+select test.check((select status = 'SAVED' and reviewed_at is null from customer_onboarding_entries where customer_id = (select id from au where name = 'nosite') and item_code = 'WA_WEBSITE_URL'),
+  'the saved link waits for the TC''s Authorize');
+select test.check((select client_status = 'WEBSITE_PENDING' from customer_onboarding where customer_id = (select id from au where name = 'nosite'))
+                   and (select count(*) = 2 from automation_jobs where customer_id = (select id from au where name = 'nosite')),
+  'saving the link alone sends nothing: the TC has not authorized it yet');
+-- Authorize the website: the customer is told the mini website is ready, then Meta Verification follows
+set role authenticated;
+select test.login('late_consultant');
+select review_onboarding_entry((select id from au where name = 'nosite'), 'WA_WEBSITE_URL', 'VERIFIED', null);
+reset role;
+select test.check((select count(*) = 2 and bool_and(status = 'QUEUED') and count(*) filter (where channel = 'EMAIL') = 1 and count(*) filter (where channel = 'WHATSAPP') = 1
+                     from automation_jobs where customer_id = (select id from au where name = 'nosite') and stage = 'WEBSITE_READY'),
+  'authorizing the website queues the "website is ready" email + WhatsApp');
 select test.check((select client_status = 'META_VERIFICATION' from customer_onboarding where customer_id = (select id from au where name = 'nosite'))
-                   and (select count(*) = 4 from automation_jobs where customer_id = (select id from au where name = 'nosite'))
+                   and (select count(*) = 6 from automation_jobs where customer_id = (select id from au where name = 'nosite'))
                    and not exists (select 1 from automation_jobs where customer_id = (select id from au where name = 'nosite') and stage = 'UNDER_REVIEW')
                    and (select bool_and(context ->> 'from' = 'WEBSITE_PENDING') from automation_jobs
                           where customer_id = (select id from au where name = 'nosite') and stage = 'META_VERIFICATION'),
   'website created + documents authorized: Meta Verification (never Under Review)');
+select test.check((select min(next_attempt_at) filter (where stage = 'WEBSITE_READY') < min(next_attempt_at) filter (where stage = 'META_VERIFICATION')
+                     from automation_jobs where customer_id = (select id from au where name = 'nosite')),
+  '"website is ready" goes out before "Meta Verification"');
 set role authenticated;
 select test.login('late_consultant');
 select consultant_set_website((select id from au where name = 'nosite'), 'https://nosite-stores.example/corrected');
+select review_onboarding_entry((select id from au where name = 'nosite'), 'WA_WEBSITE_URL', 'VERIFIED', null);
 reset role;
-select test.check((select count(*) = 4 from automation_jobs where customer_id = (select id from au where name = 'nosite')),
-  'correcting the link sends nothing again');
-select test.check((select status = 'VERIFIED' from customer_onboarding_entries where customer_id = (select id from au where name = 'nosite') and item_code = 'WA_WEBSITE_URL'),
-  'the link saved by the TC counts as authorized');
+select test.check((select count(*) = 6 from automation_jobs where customer_id = (select id from au where name = 'nosite')),
+  'correcting the link and authorizing it again sends nothing again');
+-- a customer who started with a website gets no "website ready" message
+select test.check((select count(*) = 0 from automation_jobs where customer_id = (select id from au where name = 'site') and stage = 'WEBSITE_READY'),
+  'a customer who had a website from the start gets no "website ready" message');
 
 -- Step 3: the TC creates the client login; the encrypted password rides only on the email job
 set role authenticated;
@@ -206,17 +224,17 @@ reset role;
 set role service_role;
 create temp table claimed (j jsonb);
 insert into claimed select jsonb_array_elements(automation_claim_jobs(array['EMAIL'], 50));
-select test.check((select count(*) = 6 and bool_and(j ->> 'channel' = 'EMAIL') from claimed), 'the server claims the due email jobs only');
+select test.check((select count(*) = 7 and bool_and(j ->> 'channel' = 'EMAIL') from claimed), 'the server claims the due email jobs only');
 select test.check((select count(*) = 0 from automation_jobs where channel = 'EMAIL' and status <> 'SENDING' and customer_id in (select id from au)),
   'claimed jobs are marked SENDING');
 select test.check((select jsonb_array_length(automation_claim_jobs(array['EMAIL'], 50)) = 0), 'a second run cannot claim the same jobs');
-select test.check((select j -> 'customer' ->> 'email' = 'site.owner@example.com' and j -> 'customer' ->> 'whatsapp' = '+91 93722 86055'
+select test.check((select j -> 'customer' ->> 'email' = 'site.owner@example.com' and j -> 'customer' ->> 'whatsapp' = '+91 98199 00011'
                           and j -> 'customer' ->> 'departmentSlug' = 'wabastore' and j -> 'customer' ->> 'department' = 'Wabastore'
                           and j -> 'customer' ->> 'website' = 'https://www.site-traders.example' and j -> 'customer' ->> 'loginEmail' = 'site.client@example.com'
                           and j ->> 'secret' = 'v1:iv:tag:ciphertext'
                      from claimed where j ->> 'stage' = 'COMPLETED'),
   'a claimed job carries the customer''s current details, login e-mail and the encrypted password');
-select test.check((select j -> 'customer' ->> 'whatsapp' = '9321664464' from claimed where j ->> 'stage' = 'WEBSITE_PENDING'),
+select test.check((select j -> 'customer' ->> 'whatsapp' = '9819900022' from claimed where j ->> 'stage' = 'WEBSITE_PENDING'),
   'without a WhatsApp number the phone number is used');
 
 select automation_finish_job((select (j ->> 'id')::uuid from claimed where j ->> 'stage' = 'COMPLETED'), 'SENT', 'HTTP 200', 200, 'site.owner@example.com', 'msg-1');

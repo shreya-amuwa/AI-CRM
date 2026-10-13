@@ -157,3 +157,12 @@ The invoice record (kind `UPLOADED`, linked to the request, with the approved li
 stored, the request moves to Invoice Uploaded, and the consultant and the salesperson are notified. One invoice per
 request; Accounts, the consultant and everyone who may see the customer can open it. It is marked paid only by the
 add-on payment confirmation; its total cannot be edited.
+
+## Invoice status for the original services
+
+An invoice for a customer's original services (uploaded by Accounts) is **Pending** until the payments Accounts verified cover
+the agreed amount. At that moment it turns **Paid** by itself, including an invoice uploaded after the payment was verified. If
+a verified payment is reversed so that the agreed amount is no longer covered, an invoice that was marked Paid automatically goes
+back to Pending. A status Accounts sets by hand with **Mark as paid** / **Mark as pending** is never changed by the system.
+Add-on invoices keep following the add-on payment confirmation. (Migration `20261016000400_invoice_auto_paid_website_ready.sql`;
+existing invoices are brought up to date when it runs.)
