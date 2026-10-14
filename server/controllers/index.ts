@@ -229,3 +229,14 @@ export const documentsController = {
     return ok(null);
   }) as Handler
 };
+
+/** Staff side of the client dashboard: service requests (Technical Consultant), plans (Accounts), replies (Support). */
+export const clientWorkflowController = {
+  serviceRequests: (async ctx => ok(await svc(ctx).client.consultantServiceRequests(ctx.params.id))) as Handler,
+  decideServiceRequest: (async ctx => (await svc(ctx).client.decideServiceRequest(ctx.params.id, ctx.req.body), ok(null))) as Handler,
+  plans: (async ctx => ok(await svc(ctx).client.accountsPlans())) as Handler,
+  createPlan: (async ctx => ok(await svc(ctx).client.savePlan(null, ctx.req.body), 201)) as Handler,
+  updatePlan: (async ctx => ok(await svc(ctx).client.savePlan(ctx.params.id, ctx.req.body))) as Handler,
+  decidePlanRequest: (async ctx => (await svc(ctx).client.decidePlanRequest(ctx.params.id, ctx.req.body), ok(null))) as Handler,
+  replyToTicket: (async ctx => (await svc(ctx).client.replyToClientTicket(ctx.params.id, ctx.req.body), ok(null, 201))) as Handler
+};

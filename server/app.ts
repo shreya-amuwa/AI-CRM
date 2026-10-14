@@ -15,6 +15,7 @@ import { enforce, ipBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HttpMethod, RouteDef } from './http/types.js';
 import { routes } from './routes.js';
 import { automationSettings } from './automations/config.js';
+import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { timingSafeEqual } from 'node:crypto';
 
@@ -88,11 +89,28 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   return c.json(ok(await runDispatch({ limit: 50, budgetMs: 25_000 })));
 });
 
+// The client dashboard: the customer's own login, their own records only.
+for (const route of clientRoutes) {
+  app.on(route.method, `/client${route.path}`, async c => {
+    const { db, me, limit } = await authenticateClient(c.req.header('authorization'));
+    setRateHeaders(c, limit);
+    const request: ApiRequest = {
+      method: c.req.method as HttpMethod,
+      path: relativePath(c),
+      query: Object.fromEntries(Object.entries(c.req.query()).filter(([k]) => k !== '__path')),
+      headers: Object.fromEntries(Object.entries(c.req.header()).map(([k, v]) => [k.toLowerCase(), v])),
+      body: c.req.method === 'GET' || c.req.method === 'DELETE' ? undefined : await readJson(c)
+    };
+    const result = await route.handler({ req: request, params: c.req.param() as Record<string, string>, db, me, services: clientServices(db) });
+    return c.json(ok(result.data), (result.status ?? 200) as 200);
+  });
+}
+
 for (const route of routes) {
   app.on(route.method, route.path, authenticated(route), adapt(route));
 }
 
-const routeMatchers = routes.map(r => new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`));
+const routeMatchers = [...routes.map(r => new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`)), ...clientRouteMatchers];
 
 app.notFound(c => {
   const path = relativePath(c);

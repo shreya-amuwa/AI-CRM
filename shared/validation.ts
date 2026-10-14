@@ -706,3 +706,50 @@ export const invoicesQuerySchema = z.object({
   ...pageQuery
 });
 export const invoiceCustomersQuerySchema = z.object({ search: z.string().trim().max(100).optional() });
+
+// ---------------------------------------------------------------------------
+// Client dashboard
+// ---------------------------------------------------------------------------
+const serviceCodeSchema = z.string().trim().regex(/^[A-Z0-9_]{2,60}$/, 'Choose a service.');
+const clientNote = z.string().trim().max(1000, 'Keep the note under 1000 characters.').optional().nullable().transform(v => v || null);
+
+export const clientServiceRequestSchema = z.object({ serviceCode: serviceCodeSchema, note: clientNote }).strict();
+export const clientPlanRequestSchema = z.object({ planId: uuidSchema, note: clientNote }).strict();
+export const clientTicketCreateSchema = z
+  .object({
+    subject: z.string().trim().min(3, 'Enter a subject (at least 3 characters).').max(200, 'The subject is too long.'),
+    description: z.string().trim().min(5, 'Describe the problem (at least 5 characters).').max(4000, 'The description is too long.'),
+    category: z.enum(['GENERAL', 'BILLING', 'TECHNICAL', 'ONBOARDING', 'COMPLAINT', 'SERVICE_REQUEST', 'OTHER']).default('GENERAL'),
+    serviceCode: serviceCodeSchema.optional().nullable().transform(v => v || null)
+  })
+  .strict();
+export const clientTicketReplySchema = z.object({ message: z.string().trim().min(1, 'Write your reply.').max(4000, 'The reply is too long.') }).strict();
+export const clientNotificationsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).default(0)
+});
+export const clientMarkReadSchema = z.object({ ids: z.array(uuidSchema).min(1).max(100).optional() }).strict();
+export const clientFileQuerySchema = z.object({ action: z.enum(['view', 'download']).default('view') });
+
+export const serviceRequestDecisionSchema = z
+  .object({ decision: z.enum(['IN_REVIEW', 'REJECTED']), note: z.string().trim().max(1000).optional().nullable().transform(v => v || null) })
+  .strict();
+export const planSaveSchema = z
+  .object({
+    code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_]{2,40}$/, 'The code can use letters, numbers and _ (2 to 40 characters).').optional(),
+    name: z.string().trim().min(2, 'Enter the plan name.').max(120),
+    description: z.string().trim().max(1000).optional().nullable().transform(v => v || null),
+    monthlyPrice: z.number().min(0, 'Enter the monthly price.').max(10_000_000),
+    features: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+    services: z.array(serviceCodeSchema).max(30).default([]),
+    isActive: z.boolean().default(true)
+  })
+  .strict();
+export const planRequestDecisionSchema = z
+  .object({
+    decision: z.enum(['APPROVE', 'REJECT', 'ACTIVATE']),
+    note: z.string().trim().max(1000).optional().nullable().transform(v => v || null),
+    paymentConfirmed: z.boolean().default(false),
+    renewsOn: isoDate.optional().nullable().transform(v => v || null)
+  })
+  .strict();

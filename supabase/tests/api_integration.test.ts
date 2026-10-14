@@ -1719,6 +1719,134 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
 for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 provider.close();
 
+// --- client dashboard API ------------------------------------------------------
+{
+  const signIn = async (email: string, password: string) => {
+    const res = await fetch(`${process.env.GATEWAY_URL}/auth/v1/token?grant_type=password`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password })
+    });
+    return ((await res.json()) as any).access_token as string;
+  };
+  tokens.set('cl1', await signIn(clientEmail, 'ClientPass#2026'));
+  tokens.set('cl2', await signIn('auto.login@example.com', 'AutoPass#2026x'));
+
+  r = await api(null, 'GET', '/client/me');
+  check(r.status === 401, 'client API: no token → 401', r);
+  r = await api('forged', 'GET', '/client/me');
+  check(r.status === 401, 'client API: a tampered token → 401', r);
+  r = await api('sa', 'GET', '/client/me');
+  check(r.status === 403, 'client API: staff cannot use the client API', r);
+  r = await api('cl1', 'GET', '/pipeline/customers');
+  check(r.status === 401 || r.status === 403, 'a client cannot reach the staff API', r);
+
+  r = await api('cl1', 'GET', '/client/me');
+  check(r.status === 200 && r.json.data.customerId === leadA && !JSON.stringify(r.json).toLowerCase().includes('password'), 'client API: /me is the customer linked to the login', r);
+  r = await api('cl2', 'GET', '/client/me');
+  check(r.status === 200 && r.json.data.customerId === autoA, 'client API: another login gets their own customer', r);
+
+  r = await api('cl1', 'GET', '/client/overview');
+  check(r.status === 200 && Array.isArray(r.json.data.invoices.recent) && Array.isArray(r.json.data.tickets.recent) && r.json.data.profile.customerId === leadA, 'client API: overview', r);
+  r = await api('cl1', 'GET', '/client/catalog');
+  check(r.status === 200 && r.json.data.length > 0, 'client API: catalogue', r);
+  const cat = r.json.data.find((c: any) => !c.owned) ?? r.json.data[0];
+
+  r = await api('cl1', 'POST', '/client/service-requests', { serviceCode: cat.code, note: 'please' });
+  const firstRequest = r.status;
+  check(firstRequest === 201 && r.json.data.status === 'REQUESTED', 'client API: asking for a service creates a request only', r);
+  r = await api('cl1', 'POST', '/client/service-requests', { serviceCode: cat.code });
+  check(r.status === 409, 'client API: duplicate request refused', r);
+  r = await api('cl1', 'POST', '/client/service-requests', { serviceCode: '' });
+  check(r.status === 422, 'client API: invalid request refused', r);
+  r = await api('cl2', 'GET', '/client/service-requests');
+  check(r.status === 200 && r.json.data.length === 0, 'client API: client 2 does not see client 1 requests', r);
+
+  r = await api('cl1', 'GET', '/client/plans');
+  check(r.status === 200 && Array.isArray(r.json.data.options) && r.json.data.current === null, 'client API: plans (nothing configured, nothing invented)', r);
+  r = await api('cl1', 'POST', '/client/plan-requests', { planId: '00000000-0000-0000-0000-000000000000' });
+  check(r.status === 404, 'client API: unknown plan', r);
+
+  r = await api('cl1', 'GET', '/client/invoices');
+  check(r.status === 200 && Array.isArray(r.json.data), 'client API: invoices list', r);
+  r = await api('cl1', 'GET', '/client/invoices/00000000-0000-0000-0000-000000000000/url');
+  check(r.status === 404, 'client API: unknown invoice', r);
+  r = await api('cl1', 'GET', '/client/invoices/not-a-uuid/url');
+  check(r.status === 422, 'client API: bad invoice id', r);
+
+  r = await api('cl1', 'POST', '/client/tickets', { subject: 'Cannot log in', description: 'I get an error when I open the panel.', category: 'TECHNICAL' });
+  check(r.status === 201 && r.json.data.status === 'OPEN', 'client API: raise a ticket', r);
+  const ticketId = r.json.data.id;
+  r = await api('cl1', 'POST', '/client/tickets', { subject: '', description: '' });
+  check(r.status === 422, 'client API: empty ticket refused', r);
+  r = await api('cl2', 'GET', `/client/tickets/${ticketId}`);
+  check(r.status === 404, 'client API: client 2 cannot open client 1 ticket', r);
+  r = await api('cl2', 'POST', `/client/tickets/${ticketId}/replies`, { message: 'hello' });
+  check(r.status === 404, 'client API: nor reply to it', r);
+  r = await api('cl2', 'GET', '/client/tickets');
+  check(r.status === 200 && r.json.data.length === 0, 'client API: nor list it', r);
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/replies`, { message: 'Still happening.' });
+  check(r.status === 201, 'client API: reply to own ticket', r);
+  r = await api('cl1', 'GET', `/client/tickets/${ticketId}`);
+  check(r.status === 200 && r.json.data.updates.some((u: any) => u.message === 'Still happening.'), 'client API: ticket history', r);
+
+  r = await api('cl1', 'GET', '/client/notifications');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.type === 'SERVICE_REQUEST_SENT') && r.json.data.unread > 0, 'client API: notifications from real events', r);
+  check(new Set(r.json.data.items.map((n: any) => `${n.type}|${n.entityId}`)).size === r.json.data.items.length, 'client API: no duplicate notifications', r.json.data.items);
+  const ids = r.json.data.items.map((n: any) => n.id);
+  r = await api('cl2', 'POST', '/client/notifications/read', { ids });
+  check(r.status === 200, 'client API: another client marking them read changes nothing', r);
+  r = await api('cl1', 'GET', '/client/notifications');
+  check(r.json.data.unread > 0, 'client API: ... and they stay unread for the owner', r);
+  r = await api('cl1', 'POST', '/client/notifications/read', { ids });
+  r = await api('cl1', 'GET', '/client/notifications');
+  check(r.json.data.unread === 0, 'client API: the owner marks them read', r);
+
+  // staff side of the same workflows
+  r = await api('tc', 'GET', `/pipeline/customers/${leadA}/service-requests`);
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].status === 'REQUESTED', 'the Technical Consultant sees the service the client asked for', r);
+  const srId = r.json.data[0].id;
+  r = await api('a', 'GET', `/pipeline/customers/${leadA}/service-requests`);
+  check(r.status === 404, 'a salesperson cannot see them', r);
+  r = await api('tc', 'POST', `/pipeline/service-requests/${srId}/decision`, { decision: 'REJECTED' });
+  check(r.status === 422, 'rejecting needs a reason', r);
+  r = await api('tc', 'POST', `/pipeline/service-requests/${srId}/decision`, { decision: 'IN_REVIEW' });
+  check(r.status === 200, 'the Technical Consultant takes the request into review', r);
+  r = await api('cl1', 'GET', '/client/service-requests');
+  check(r.json.data[0].status === 'IN_REVIEW', 'the client sees the new status, still not purchased', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: [{ serviceCode: cat.code, quantity: 1, unitPrice: 1500 }], submit: true });
+  check(r.status === 409 && /with Accounts/.test(r.json.error.message), 'after the hand-over the consultant can still reach the existing add-on workflow (this customer already has one with Accounts)', r);
+  r = await api('cl1', 'GET', '/client/services');
+  check(r.status === 200 && !r.json.data.some((x: any) => x.code === cat.code && !cat.owned), 'and the service is not in My Services', r);
+
+  r = await api('cl1', 'GET', '/accounts/plans');
+  check(r.status === 401 || r.status === 403, 'a client cannot open the Accounts plans', r);
+  r = await api('accm', 'POST', '/accounts/plans', { code: 'GROWTH', name: 'Growth', monthlyPrice: 4999, features: ['Priority support'], services: [] });
+  check(r.status === 403, 'an Accounts member cannot configure plans', r);
+  r = await api('accdh', 'POST', '/accounts/plans', { code: 'GROWTH', name: 'Growth', monthlyPrice: 4999, features: ['Priority support'], services: [] });
+  check(r.status === 201, 'the Accounts head configures a plan', r);
+  r = await api('accdh', 'GET', '/accounts/plans');
+  const plan = r.json.data.plans.find((x: any) => x.code === 'GROWTH');
+  check(r.status === 200 && plan, 'and lists it', r);
+  r = await api('cl1', 'GET', '/client/plans');
+  check(r.json.data.options.some((x: any) => x.name === 'Growth') && r.json.data.current === null, 'the client sees the configured plan, none active', r);
+  r = await api('cl1', 'POST', '/client/plan-requests', { planId: plan.id });
+  check(r.status === 201, 'the client requests the plan', r);
+  r = await api('cl1', 'GET', '/client/plans');
+  check(r.json.data.current === null && r.json.data.request.status === 'REQUESTED', 'requesting does not activate it', r);
+  r = await api('accdh', 'GET', '/accounts/plans');
+  const pr = r.json.data.requests.find((x: any) => x.planName === 'Growth' || x.planId === plan.id);
+  check(pr, 'Accounts sees the plan request', r.json.data);
+  r = await api('accdh', 'POST', `/accounts/plan-requests/${pr.id}/decision`, { decision: 'ACTIVATE', paymentConfirmed: false });
+  check(r.status === 409 || r.status === 422, 'a plan cannot start before the payment is confirmed', r);
+  r = await api('accdh', 'POST', `/accounts/plan-requests/${pr.id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 200, 'Accounts approves the request', r);
+  r = await api('accdh', 'POST', `/accounts/plan-requests/${pr.id}/decision`, { decision: 'ACTIVATE', paymentConfirmed: true, renewsOn: '2027-12-01' });
+  check(r.status === 200, 'and activates it once the payment is confirmed', r);
+  r = await api('cl1', 'GET', '/client/plans');
+  check(r.json.data.current?.name === 'Growth' && r.json.data.current.price === 4999, 'the plan is now the client current plan', r.json.data);
+  r = await api('cl2', 'GET', '/client/plans');
+  check(r.json.data.current === null, 'and not another client\'s', r.json.data);
+}
+
 // A project missing an earlier migration must still let people sign in.
 await db.query(`alter function public.rate_limit_consume(jsonb) rename to rate_limit_consume_hidden`);
 r = await api('sa', 'GET', '/me');

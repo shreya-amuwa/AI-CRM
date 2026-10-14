@@ -3,6 +3,7 @@ import { AccountsFinanceRepository } from '../repositories/AccountsFinanceReposi
 import { AddonInvoiceRepository } from '../repositories/AddonInvoiceRepository.js';
 import { ApprovalRepository } from '../repositories/ApprovalRepository.js';
 import { AuditRepository } from '../repositories/AuditRepository.js';
+import { ClientRepository } from '../repositories/ClientRepository.js';
 import { CustomerRepository } from '../repositories/CustomerRepository.js';
 import { NotificationRepository } from '../repositories/NotificationRepository.js';
 import { OrganizationRepository } from '../repositories/OrganizationRepository.js';
@@ -13,6 +14,7 @@ import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { AddonInvoiceService } from './AddonInvoiceService.js';
 import { ApprovalService } from './ApprovalService.js';
 import { AuditService } from './AuditService.js';
+import { ClientService } from './ClientService.js';
 import { CustomerService } from './CustomerService.js';
 import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
@@ -32,7 +34,8 @@ export function createServices(db: SupabaseClient) {
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
     automations: new AutomationService(new PipelineRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),
-    addons: new AddonInvoiceService(new AddonInvoiceRepository(db))
+    addons: new AddonInvoiceService(new AddonInvoiceRepository(db)),
+    client: new ClientService(new ClientRepository(db), new StorageRepository())
   };
 }
 export type Services = ReturnType<typeof createServices>;
