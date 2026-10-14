@@ -48,9 +48,11 @@ const Inner: React.FC = () => {
 
   useEffect(() => {
     if (status !== 'ready') return;
+    // No timer: the bell is read when the dashboard opens and when the tab comes back into view.
     refreshUnread();
-    const t = window.setInterval(refreshUnread, 60_000);
-    return () => window.clearInterval(t);
+    const onVisible = () => document.visibilityState === 'visible' && refreshUnread();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, [status, refreshUnread]);
 
   useEffect(() => { setNav(false); setMenu(false); }, [path]);

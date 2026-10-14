@@ -64,7 +64,7 @@ const RequestDetail: React.FC<{
           </h3>
           <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
             <Row k="Business / company" v={item.company} />
-            <Row k="Contact person" v={item.name} />
+            <Row k="Customer Name" v={item.name} />
             <Row k="Phone" v={item.phone && (<span className="inline-flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" aria-hidden="true" />{item.phone}</span>)} />
             <Row k="WhatsApp" v={item.whatsapp} />
             <Row k="E-mail" v={item.email} />

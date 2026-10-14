@@ -229,7 +229,7 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
       <Card className="p-5">
         <h2 className="text-sm font-bold text-slate-900 mb-3">Customer details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <Field label="Contact person" required htmlFor="lead-name" error={errors.name}>
+          <Field label="Customer Name" required htmlFor="lead-name" error={errors.name}>
             {input('name', { autoComplete: 'name', required: true })}
           </Field>
           <Field label="Business name" required htmlFor="lead-company" error={errors.company}>
@@ -618,7 +618,7 @@ export const EditLeadView: React.FC<{
       <Card className="p-5">
         <h2 className="text-sm font-bold text-slate-900 mb-4">Customer details</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-8 gap-y-4">
-          {detailField('Contact person', 'name')}
+          {detailField('Customer Name', 'name')}
           {detailField('Business name', 'company')}
           {detailField('Mobile', 'phone', { type: 'tel' })}
           {detailField('Email', 'email', { type: 'email' })}

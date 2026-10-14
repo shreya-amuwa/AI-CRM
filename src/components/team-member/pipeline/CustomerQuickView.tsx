@@ -35,7 +35,7 @@ export const CustomerQuickView: React.FC<{ id: string; title?: string; onClose: 
             {(
               [
                 ['Business', c.company],
-                ['Contact person', c.name],
+                ['Customer Name', c.name],
                 ['Phone', c.phone],
                 ['WhatsApp', c.whatsapp],
                 ['E-mail', c.email],

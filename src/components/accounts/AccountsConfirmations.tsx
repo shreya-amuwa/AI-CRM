@@ -55,7 +55,7 @@ const ConfirmationDetail: React.FC<DetailProps> = ({ selected, note, onNote, bus
                   </h3>
                   <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
                     <Row k="Business / company" v={selected.company} />
-                    <Row k="Contact person" v={selected.name} />
+                    <Row k="Customer Name" v={selected.name} />
                     <Row k="Phone" v={selected.phone && (<span className="inline-flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" aria-hidden="true" />{selected.phone}</span>)} />
                     <Row k="E-mail" v={selected.email} />
                     <Row k="Customer type" v={selected.segment ? selected.segment.charAt(0) + selected.segment.slice(1).toLowerCase() : null} />

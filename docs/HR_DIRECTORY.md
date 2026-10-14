@@ -15,7 +15,7 @@ The HR dashboard lists real people from the database. Nothing is seeded in the b
 - Columns: name, e-mail, employee ID (the HR ID, or `EMP-` + the first 8 characters of the account id when no HR record exists yet), designation, department, role, team, team lead, department head, approval and account status, joining date.
 
 ## Refresh
-The screen re-reads the directory when `profiles` / `hr_employees` change (realtime), when the browser tab regains focus, and every 30 seconds. HR actions (convert, left, documents, profile edits) are written to `hr_employees`.
+The screen re-reads the directory when `profiles` / `hr_employees` change (realtime), when the browser tab regains focus. HR actions (convert, left, documents, profile edits) are written to `hr_employees`.
 
 ## Deploy
 Run `supabase/migrations/20261013000100_hr_employee_directory.sql` in the Supabase SQL editor as one file. It is idempotent and keeps existing HR rows (rows whose e-mail matches an account are linked automatically).
