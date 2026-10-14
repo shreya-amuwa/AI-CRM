@@ -795,7 +795,12 @@ export interface DocumentUploadTicket {
   document: CustomerDocument;
   bucket: string;
   path: string;
+  /** Where the file is going. R2 = Cloudflare R2 (presigned PUT in `upload`), SUPABASE = Supabase Storage (`token`). */
+  provider: 'R2' | 'SUPABASE';
+  /** Supabase Storage signed-upload token (empty for R2). */
   token: string;
+  /** R2: PUT the file body to `upload.url` with `upload.headers`. */
+  upload?: { url: string; headers: Record<string, string> };
 }
 
 export interface DocumentUrl {
@@ -914,6 +919,9 @@ export type InvoiceKind = 'MANUAL' | 'SERVICE' | 'ADDON' | 'UPLOADED';
 /** The one limit for an uploaded invoice PDF (the database and the storage bucket enforce the same). */
 export const INVOICE_PDF_MAX_BYTES = 512000;
 export const INVOICE_PDF_MAX_LABEL = '500 KB';
+/** Customer documents (KYC, logos, photos, scripts, lists...): at most 2 MB each. Invoice PDFs keep their own, smaller limit. */
+export const CUSTOMER_DOCUMENT_MAX_BYTES = 2097152;
+export const CUSTOMER_DOCUMENT_MAX_LABEL = '2 MB';
 
 export interface InvoiceFileVersion {
   documentId: string;

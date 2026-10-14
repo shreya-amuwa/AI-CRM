@@ -583,15 +583,21 @@ export class PipelineRepository {
 
   async pendingDocument(
     documentId: string
-  ): Promise<{ id: string; storage_bucket: string; storage_path: string; document_type: string; status: string; mime_type: string; invoice_id: string | null } | null> {
+  ): Promise<{ id: string; storage_bucket: string; storage_path: string; storage_provider: 'R2' | 'SUPABASE'; document_type: string; status: string; mime_type: string; invoice_id: string | null } | null> {
     const row = unwrap(
       await this.db
         .from('customer_documents')
-        .select('id, storage_bucket, storage_path, document_type, status, mime_type, invoice_id')
+        .select('id, storage_bucket, storage_path, storage_provider, document_type, status, mime_type, invoice_id')
         .eq('id', documentId)
         .maybeSingle()
     ) as any;
     return row ?? null;
+  }
+
+  /** Where this document's file lives (documents from before R2 are in Supabase Storage). */
+  async providerOf(documentId: string): Promise<'R2' | 'SUPABASE'> {
+    const row = unwrap(await this.db.from('customer_documents').select('storage_provider').eq('id', documentId).maybeSingle()) as { storage_provider?: string } | null;
+    return row?.storage_provider === 'R2' ? 'R2' : 'SUPABASE';
   }
 
   async authorizeAccess(documentId: string, action: 'VIEW' | 'DOWNLOAD') {

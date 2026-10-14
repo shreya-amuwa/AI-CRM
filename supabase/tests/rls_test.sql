@@ -535,14 +535,18 @@ select test.must_fail($$select begin_document_upload((select id from pipeline wh
   'Sales cannot upload an invoice (Accounts issues invoices)', 'issued by the Accounts department');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'INVOICE', 'INV-1')$$,
   'Sales cannot fill the Invoice item by hand', 'issued by the Accounts department');
-select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'big.pdf', 'application/pdf', 512001)$$,
-  'any other document over 500 KB is refused', '500 KB');
-select test.check((select bool_and(max_size_bytes = 512000) from document_types), 'limits: every document type, invoices included, is 500 KB');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'big.pdf', 'application/pdf', 2097153)$$,
+  'a customer document over 2 MB is refused', '2 MB');
+select test.check((select bool_and(max_size_bytes = case when code = 'INVOICE' then 512000 else 2097152 end) from document_types), 'limits: customer documents are 2 MB, the invoice PDF stays 500 KB');
 do $$ begin
   perform set_config('role', 'postgres', true);
-  if not (select file_size_limit = 512000 from storage.buckets where id = 'customer-documents') then raise exception 'TEST FAILED: the storage bucket must enforce 500 KB'; end if;
+  if not (select file_size_limit = 2097152 from storage.buckets where id = 'customer-documents') then raise exception 'TEST FAILED: the storage bucket must enforce 2 MB'; end if;
 end $$;
-select test.check(true, 'the storage bucket itself enforces the same 500 KB');
+select test.check(true, 'the storage bucket itself enforces 2 MB');
+select test.check((select count(*) = 0 from customer_documents where storage_provider not in ('SUPABASE', 'R2') or storage_ref is null and status = 'UPLOADED'), 'every stored document records where it lives');
+insert into docs select 'A_2mb', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'two-mb.pdf', 'application/pdf', 2097152);
+select fail_document_upload((select id from docs where name = 'A_2mb'));
+select test.check(true, 'a document of exactly 2 MB is accepted');
 insert into docs select 'A_inv1', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc-oct.pdf', 'application/pdf', 1200);
 select test.check((select path = format('customers/%s/onboarding/%s.pdf', (select id from pipeline where name = 'A'), id) from docs where name = 'A_inv1'),
   'storage path = customers/<customer_id>/<folder>/<document_id>.pdf (no PII)');

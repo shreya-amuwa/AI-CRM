@@ -34,5 +34,6 @@ SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
   node scripts/sweep-orphan-customer-files.mjs --apply    # removes them
 ```
 
+If your files are in Cloudflare R2, add `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET` to the same command and it sweeps R2 too.
 It only removes files of customers that no longer exist in the database; files of kept customers are never touched.
 Keep the service role key secret: do not paste it into chat or commit it.

@@ -7,6 +7,8 @@ import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
+  CUSTOMER_DOCUMENT_MAX_BYTES,
+  CUSTOMER_DOCUMENT_MAX_LABEL,
   INVOICE_PDF_MAX_BYTES,
   INVOICE_PDF_MAX_LABEL,
   LEAD_STATUSES,
@@ -406,7 +408,7 @@ export const documentUploadSchema = z
     documentType: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown document type.'),
     fileName: trimmed(255).min(1),
     mimeType: z.enum(UPLOAD_MIME_TYPES, { errorMap: () => ({ message: 'This file type is not accepted.' }) }),
-    sizeBytes: z.coerce.number().int().positive().max(512000)
+    sizeBytes: z.coerce.number().int().positive().max(CUSTOMER_DOCUMENT_MAX_BYTES, `File size exceeds the ${CUSTOMER_DOCUMENT_MAX_LABEL} limit.`)
   })
   .strict();
 
