@@ -85,6 +85,13 @@ select test.check((select payment_workflow = 'PENDING_PAYMENT_CONFIRMATION' and 
                      from customers where id = (select id from pt where name = 'L2')), 'sent to Accounts: status is Pending payment confirmation, same lead record');
 select test.must_fail($$select send_lead_to_accounts((select id from pt where name = 'L2'), 50000, null)$$, 'a second submission is refused', 'already with Accounts');
 select test.check((select count(*) = 1 from customers where company = 'Desai Clinic'), 'still exactly one customer');
+-- The Accounts payment desk is emailed (one person); Sales never sees that job
+select test.admin_check($Q$select (select count(*) = 1 and bool_and(internal and channel = 'EMAIL' and status = 'QUEUED' and context ->> 'kind' = 'PAYMENT_CONFIRMATION_REQUESTED'
+     and context ->> 'to' = (select p.email from profiles p join departments d on d.id = p.department_id where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id limit 1)
+     and context ->> 'customer' = 'Desai Clinic' and context ->> 'from' = 'Member A')
+   from automation_jobs where customer_id = (select id from pt where name = 'L2') and stage = 'ACCOUNTS_PAYMENT')$Q$,
+  'sending to Accounts queues one email to the longest-serving Accounts person (with who sent it)');
+select test.check((select count(*) = 0 from automation_jobs where stage = 'ACCOUNTS_PAYMENT'), 'Sales cannot see the staff email jobs');
 select test.must_fail($$select update_lead((select id from pt where name = 'L2'), '{"city":"X"}')$$, 'a lead with Accounts cannot be edited', 'with Accounts');
 select test.must_fail($$select move_customer_to_potential((select id from pt where name = 'L2'), 50000, current_date + 3)$$, 'a lead with Accounts cannot be moved to Potential', 'with Accounts');
 select test.check((select (customer_pipeline_counts() -> 'leads' ->> 'WITH_ACCOUNTS')::int = 1), 'Sales counts the lead under With Accounts');
@@ -482,6 +489,24 @@ select test.check((select bool_and((division_leads_overview((select id from depa
 select test.login('tm_a');
 select test.check((select (part_payments_list(p_department => test.dept('whatsbox'), p_division => 'SALES') ->> 'total')::int = 0), 'a sales member scoping to another department still sees only what they may work on');
 reset role;
+
+-- ---------------------------------------------------------------------------
+\echo '--- Who gets the payment-request email'
+reset role;
+update profiles set payment_desk_order = 1 where id = test.id('acc_m2');
+select test.check((select email = (select email from profiles where id = test.id('acc_m2')) from private.payment_desk_email((select id from pt where name = 'L2'))),
+  'the payment-desk person (lowest number) gets it when nobody is assigned to the customer');
+update profiles set payment_desk_order = 2 where id = test.id('dh_acc');
+select test.check((select email = (select email from profiles where id = test.id('acc_m2')) from private.payment_desk_email((select id from pt where name = 'L2'))), 'only one person: number 1 wins over number 2');
+update customers set accounts_owner_id = test.id('dh_acc') where id = (select id from pt where name = 'L2');
+select test.check((select email = (select email from profiles where id = test.id('dh_acc')) from private.payment_desk_email((select id from pt where name = 'L2'))),
+  'the accountant assigned to the customer gets their request');
+update profiles set status = 'SUSPENDED' where id = test.id('dh_acc');
+select test.check((select email = (select email from profiles where id = test.id('acc_m2')) from private.payment_desk_email((select id from pt where name = 'L2'))),
+  'a suspended assignee is skipped: the payment desk gets it');
+update profiles set status = 'ACTIVE', payment_desk_order = null where id = test.id('dh_acc');
+update profiles set payment_desk_order = null where id = test.id('acc_m2');
+update customers set accounts_owner_id = test.id('acc_m') where id = (select id from pt where name = 'L2');
 
 reset role;
 \echo '=== ALL PAYMENT WORKFLOW TESTS PASSED ==='

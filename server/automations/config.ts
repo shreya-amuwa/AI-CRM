@@ -44,6 +44,8 @@ export interface AutomationSettings {
   testRecipients: { emails: Set<string>; phones: Set<string> } | null;
   /** The script's REQUIRE_VALID_WHATSAPP: also skip the email when the WhatsApp number is invalid. */
   requireValidWhatsapp: boolean;
+  /** The CRM's web address, for the links in emails to staff (null: no link is added). */
+  appUrl: string | null;
   /** Key for the client password kept (encrypted) until the completion email is sent. */
   secretKey: string | null;
   /** Bearer secret for /internal/automations/dispatch (also accepts CRON_SECRET). */
@@ -62,6 +64,14 @@ function httpsUrl(raw: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** The CRM's own web address (for the links in staff emails): APP_URL, else the Vercel production domain. */
+function appBaseUrl(env: NodeJS.ProcessEnv): string | null {
+  const explicit = httpsUrl(env.APP_URL);
+  if (explicit) return explicit.replace(/\/+$/, '');
+  const vercel = env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  return vercel ? httpsUrl(`https://${vercel}`)?.replace(/\/+$/, '') ?? null : null;
 }
 
 /** Read on every use, so a change of environment variable needs no code change. */
@@ -106,6 +116,7 @@ export function automationSettings(): AutomationSettings {
         }
       : null,
     requireValidWhatsapp: (env.AUTOMATION_REQUIRE_VALID_WHATSAPP || '').trim().toLowerCase() === 'true',
+    appUrl: appBaseUrl(env),
     secretKey: env.AUTOMATION_SECRET_KEY?.trim() || null,
     dispatchSecrets: [env.AUTOMATION_DISPATCH_SECRET, env.CRON_SECRET].map(s => s?.trim() || '').filter(s => s.length >= 16)
   };

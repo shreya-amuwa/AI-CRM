@@ -23,6 +23,22 @@ export interface TemplateData {
   website: string;
 }
 
+/** The email to the Accounts person who handles a payment request (not a customer email). */
+export interface AccountsMailData {
+  toName: string;
+  kind: string;
+  title: string;
+  body: string;
+  customer: string;
+  contact: string;
+  phone?: string;
+  customerEmail?: string;
+  from?: string;
+  fromDepartment?: string;
+  /** A link to the request in the CRM (empty when the CRM's address is not configured). */
+  link: string;
+}
+
 export interface RenderedEmail {
   subject: string;
   html: string;
@@ -139,7 +155,10 @@ function mailCompleted(d: TemplateData) {
   ${signature('Support Team')}`;
 }
 
-const TEMPLATES: Record<ClientStage, { subject: string; html: (d: TemplateData) => string }> = {
+/** The stages with a customer email (the Accounts payment email has its own template). */
+type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT'>;
+
+const TEMPLATES: Record<CustomerStage, { subject: string; html: (d: TemplateData) => string }> = {
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },
   UNDER_REVIEW: { subject: 'Documents Received – Under Review | Amuwa Corporation', html: mailUnderReview },
   META_VERIFICATION: { subject: 'Meta Verification In Progress | Amuwa Corporation', html: mailInProgress },
@@ -147,8 +166,35 @@ const TEMPLATES: Record<ClientStage, { subject: string; html: (d: TemplateData) 
   WEBSITE_READY: { subject: 'Your Mini Website is Ready | Amuwa Corporation', html: mailWebsiteReady }
 };
 
-export function renderEmail(stage: ClientStage, data: TemplateData): RenderedEmail {
+export function renderEmail(stage: CustomerStage, data: TemplateData): RenderedEmail {
   const t = TEMPLATES[stage];
   const html = wrap(t.html(data));
   return { subject: t.subject, html, text: toText(html) };
+}
+
+const ACCOUNTS_HEADING: Record<string, string> = {
+  PAYMENT_CONFIRMATION_REQUESTED: 'New payment confirmation request',
+  PAYMENT_TO_VERIFY: 'A payment is waiting for verification',
+  ADDON_SUBMITTED: 'Add-on services are waiting for verification'
+};
+
+/** Sent to the one Accounts person who handles the request, so they can resolve it. */
+export function renderAccountsEmail(d: AccountsMailData): RenderedEmail {
+  const heading = ACCOUNTS_HEADING[d.kind] ?? 'A request is waiting for Accounts';
+  const row = (label: string, value?: string) => (value ? `<b>${label}:</b> ${esc(value)}<br>` : '');
+  const html = wrap(`
+  <p>Hello ${esc(d.toName || 'team')},</p>
+  <p><b>${esc(heading)}.</b></p>
+  <p>${esc(d.body)}</p>
+  <p>
+    ${row('Customer', d.customer)}
+    ${row('Contact person', d.contact !== d.customer ? d.contact : undefined)}
+    ${row('Phone', d.phone)}
+    ${row('E-mail', d.customerEmail)}
+    ${row('Sent by', d.from ? `${d.from}${d.fromDepartment ? ` (${d.fromDepartment})` : ''}` : undefined)}
+  </p>
+  ${d.link ? `<p><a href="${esc(d.link)}">Open it in the CRM</a></p>` : ''}
+  <p>You are receiving this because you handle payment requests for Accounts. Please verify it in the CRM so the team can continue.</p>
+  <p>Best Regards,<br><b>Amuwa CRM</b></p>`);
+  return { subject: `${heading}: ${d.customer} | Amuwa CRM`, html, text: toText(html) };
 }

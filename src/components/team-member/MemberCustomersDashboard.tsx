@@ -27,6 +27,7 @@ import { customerCreateSchema } from '../../../shared/validation';
 import { segmentFromLabel, statusFromLabel } from '../../lib/customers';
 import { customersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
+import { CustomerJourney } from './pipeline/CustomerJourney';
 import { countLegacyCustomers, legacyCustomersAsImport, retainLegacyCustomers } from '../../lib/legacyStorage';
 
 const PAGE_SIZE = 8;
@@ -835,7 +836,7 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
       {/* CUSTOMER DETAIL MODAL */}
       {selectedCustomer && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[calc(100vh-2rem)] overflow-y-auto p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95" role="dialog" aria-modal="true" aria-label={`Customer ${selectedCustomer.name}`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
@@ -854,7 +855,8 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
               </button>
             </div>
 
-            <div className="mt-4 space-y-3.5 text-xs">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-5">
+            <div className="md:col-span-3 space-y-3.5 text-xs">
               <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <div>
                   <span className="text-slate-400 text-[10px] uppercase font-bold block">Phone</span>
@@ -907,6 +909,10 @@ export const MemberCustomersDashboard: React.FC<MemberCustomersDashboardProps> =
                   Close
                 </button>
               </div>
+            </div>
+            <div className="md:col-span-2">
+              <CustomerJourney customerId={selectedCustomer.id} />
+            </div>
             </div>
           </div>
         </div>

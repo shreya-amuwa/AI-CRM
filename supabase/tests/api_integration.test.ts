@@ -1569,6 +1569,30 @@ d = await dispatch('dispatch-secret-0123456789');
 jobs = await jobsOf(autoD);
 check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
   && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT'), 'no email address: the email is skipped, the WhatsApp still goes', jobs);
+// --- Payment requests are emailed to the one Accounts person who handles them ---
+process.env.APP_URL = 'https://crm.example.test';
+const accEmail = (await db.query(`select p.email from public.profiles p join public.departments d on d.id = p.department_id
+                                     where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id limit 1`)).rows[0].email as string;
+r = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], name: 'Pay Request', company: 'Pay Request Co', phone: '9819900033' });
+const payReq = r.json.data.id as string;
+const mailsBefore = outbox.filter(o => o.path === '/emails').length;
+r = await api('a', 'POST', `/pipeline/customers/${payReq}/send-to-accounts`, { amount: 25000, note: 'Agreed on the call' });
+check(r.status === 200 || r.status === 201, 'Sales sends the customer for payment confirmation', r);
+await dispatch('dispatch-secret-0123456789');
+const accMail = outbox.filter(o => o.path === '/emails').slice(mailsBefore).find(o => o.body.to?.[0] === accEmail);
+check(accMail && accMail.body.subject === 'New payment confirmation request: Pay Request Co | Amuwa CRM' && accMail.body.html.includes('Sales sent a customer for payment confirmation')
+  && accMail.body.html.includes('Sent by') && accMail.body.html.includes(`href="https://crm.example.test/accounts/dashboard/${payReq}"`) && accMail.body.from === 'Amuwa Corporation <meta@amuwa.com>',
+  'the Accounts person gets an email about the payment request, with the sender and a link to it', accMail?.body);
+check(outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => o.body.subject.startsWith('New payment confirmation request')).length === 1,
+  'exactly one person is emailed (not every Accounts staff member)');
+check(!outbox.some(o => o.path === '/wa' && o.body.name === 'Pay Request'), 'no WhatsApp goes out for a payment request');
+r = await api('a', 'GET', `/pipeline/customers/${payReq}/client-messages`);
+check(r.status === 200 && !JSON.stringify(r.json.data).includes(accEmail) && !r.json.data.messages.some((m: any) => m.stage === 'ACCOUNTS_PAYMENT'),
+  'Sales does not see the staff email or its address on the customer');
+const payJob = (await db.query(`select status, internal, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT'`, [payReq])).rows;
+check(payJob.length === 1 && payJob[0].status === 'SENT' && payJob[0].internal && payJob[0].recipient === accEmail, 'the job is recorded as sent to that person', payJob);
+delete process.env.APP_URL;
+
 // --- Mobile numbers and websites must be real ---
 const leadOk = { name: 'Valid Check', company: 'Valid Check Co', leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'] };
 for (const [phone, why] of [['12345', '5 digits'], ['98765', 'too short'], ['5123456789', 'starts with 5'], ['98200 1111', '9 digits'], ['9999999999', 'one repeated digit'], ['9876543210', 'a counting run'], ['98200abcde', 'letters'], ['+1 202 555 0143', 'a foreign number']]) {

@@ -836,6 +836,10 @@ select test.check((select count(*) >= 1 from notifications where type = 'ADDON_C
   'the consultant was notified of every Accounts decision, the invoice and the payment');
 select test.login('acc_m');
 select test.check((select count(*) >= 2 from notifications where type = 'ADDON_SUBMITTED'), 'Accounts was notified of each submission');
+reset role;
+select test.check((select count(*) >= 2 and bool_and(internal and context ->> 'to' is not null) from automation_jobs where stage = 'ACCOUNTS_PAYMENT' and context ->> 'kind' = 'ADDON_SUBMITTED'),
+  'each add-on submission also emails the Accounts payment desk');
+set role authenticated;
 select test.login('sa');
 select test.check((select count(*) = 1 from audit_logs where action = 'ADDON_REQUEST_CHANGES_REQUESTED') and (select count(*) = 1 from audit_logs where action = 'ADDON_REQUEST_APPROVED')
                    and (select count(*) = 1 from audit_logs where action = 'ADDON_PAYMENT_CONFIRMED') and (select count(*) = 2 from audit_logs where action = 'ADDON_REQUEST_SUBMITTED'),
