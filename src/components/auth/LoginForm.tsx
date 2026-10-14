@@ -540,6 +540,9 @@ export const LoginForm: React.FC = () => {
 
                 <p className="text-center pt-1.5 text-xs text-slate-500">Need an account? Ask your Team Lead or Department Head to add you.</p>
               </form>
+              <p className="mt-3 text-center text-[11px] text-slate-500">
+                Are you an Amuwa customer? <a href="/client/login" className="font-bold text-teal-700 hover:underline">Open your customer dashboard</a>
+              </p>
 
             </div>
           )}

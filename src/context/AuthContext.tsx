@@ -68,6 +68,19 @@ const STATUS_NOTICES: Record<string, string> = {
   REJECTED: '❌ Your registration request was declined.'
 };
 
+/**
+ * A customer (not staff) who signs in on the staff page belongs on their own dashboard.
+ * The check is the database's own `client_me()`, which only a client login passes.
+ */
+async function sendClientToDashboard(): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  const { error } = await supabase.rpc('client_me');
+  if (error) return false;
+  window.location.assign('/client/dashboard/overview');
+  return true;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { getDepartment } = useDepartments();
 
@@ -127,6 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session && (await sendClientToDashboard())) return;
       if (data.session) await loadProfile();
       setAuthLoading(false);
     });
@@ -137,7 +151,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (event === 'SIGNED_OUT' || !session) {
           clearState();
         } else if (session.user.id !== loadedUserId.current && event !== 'INITIAL_SESSION') {
-          void loadProfile();
+          void (async () => {
+            if (await sendClientToDashboard()) return; // a customer, not staff
+            await loadProfile();
+          })();
         }
       }, 0);
     });
@@ -146,7 +163,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // API signals: session expired / account deactivated while using the app
   useEffect(() => {
-    const onUnauthenticated = () => void getSupabase()?.auth.signOut();
+    const onUnauthenticated = () => void (async () => {
+      if (await sendClientToDashboard()) return; // a customer's token is not valid for staff routes; do not sign them out
+      await getSupabase()?.auth.signOut();
+    })();
     const onInactive = () => void loadProfile();
     window.addEventListener('crm:unauthenticated', onUnauthenticated);
     window.addEventListener('crm:account-inactive', onInactive);
@@ -175,6 +195,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) {
       return { ok: false, message: /confirm/i.test(error.message) ? 'Please confirm your e-mail address first.' : 'Invalid email or password.' };
     }
+    if (await sendClientToDashboard()) return { ok: true };
     const { profile: me, ...result } = await loadProfile();
     if (me) {
       // TODO(db-migration): HR attendance is still a browser-local register.

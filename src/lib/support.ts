@@ -388,7 +388,9 @@ export interface TicketUpdateRow {
   id: string;
   ticketId: string;
   authorId: string | null;
-  kind: 'CREATED' | 'STATUS_CHANGED' | 'ASSIGNED' | 'ESCALATED' | 'NOTE';
+  kind: 'CREATED' | 'STATUS_CHANGED' | 'ASSIGNED' | 'ESCALATED' | 'NOTE' | 'CLIENT_REPLY';
+  /** A note the customer can read in their dashboard (a reply to them), or the customer's own reply. */
+  clientVisible: boolean;
   fromStatus: TicketStatus | null;
   toStatus: TicketStatus | null;
   assigneeId: string | null;
@@ -461,6 +463,7 @@ export function useTickets(teamIds?: string[]): TicketData {
           ticketId: r.ticket_id,
           authorId: r.author_id,
           kind: r.kind,
+          clientVisible: !!r.client_visible || r.kind === 'CLIENT_REPLY',
           fromStatus: r.from_status,
           toStatus: r.to_status,
           assigneeId: r.assignee_id,
@@ -497,6 +500,8 @@ export const ticketApi = {
     }),
   update: (ticketId: string, i: { status: TicketStatus; note?: string; resolution?: string }) =>
     rpc<void>('update_support_ticket', { p_ticket: ticketId, p_status: i.status, p_note: i.note || null, p_resolution: i.resolution || null }),
+  /** A reply the customer reads in their own dashboard (internal notes stay internal). */
+  replyToClient: (ticketId: string, message: string) => rpc<void>('reply_to_client_ticket', { p_ticket: ticketId, p_message: message }),
   assign: (ticketId: string, assigneeId: string, note?: string) =>
     rpc<void>('assign_support_ticket', { p_ticket: ticketId, p_assignee: assigneeId, p_note: note || null })
 };

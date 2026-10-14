@@ -17,6 +17,7 @@ import {
   Totals,
   validateLines
 } from '../../invoices/invoiceShared';
+import { ClientServiceRequestsCard, useClientServiceRequests } from './ClientServiceRequests';
 
 const EVENT_LABEL: Record<string, string> = {
   CREATED: 'Draft created',
@@ -75,6 +76,7 @@ export const AddonRequestEditor: React.FC<{
   const [saved, setSaved] = useState<string | null>(null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
+  const clientRequests = useClientServiceRequests(customerId).items;
 
   const load = useCallback(() => {
     addonsApi.request(customerId).then(
@@ -95,8 +97,9 @@ export const AddonRequestEditor: React.FC<{
 
   const startEditing = () => {
     const fromRequest = request && request.items.length ? linesFrom(request.items) : null;
-    // Suggest catalogue services the customer does not already have.
-    const first = catalog.find(s => !originalServices.includes(s.code))?.code || catalog[0]?.code || '';
+    // Suggest what the customer asked for in their dashboard, else a catalogue service they do not already have.
+    const asked = clientRequests?.find(r => (r.status === 'REQUESTED' || r.status === 'IN_REVIEW') && !originalServices.includes(r.serviceCode))?.serviceCode;
+    const first = asked || catalog.find(s => !originalServices.includes(s.code))?.code || catalog[0]?.code || '';
     setLines(fromRequest || [newLine(first)]);
     setNotes(request && !closed ? request.notes || '' : '');
     setSaved(null);
@@ -105,9 +108,9 @@ export const AddonRequestEditor: React.FC<{
   };
   useEffect(() => {
     // Open straight in edit mode while it is still a draft / changes are asked (or nothing yet).
-    if (request !== undefined && catalog.length && !editing && lines === null && (!request || request.canEdit)) startEditing();
+    if (request !== undefined && clientRequests !== undefined && catalog.length && !editing && lines === null && (!request || request.canEdit)) startEditing();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request, catalog.length]);
+  }, [request, catalog.length, clientRequests]);
 
   const save = async (submit: boolean) => {
     if (!lines) return;
@@ -144,6 +147,7 @@ export const AddonRequestEditor: React.FC<{
 
   return (
     <section aria-label="Add-on services request" className="space-y-3">
+      <ClientServiceRequestsCard customerId={customerId} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="text-sm font-bold text-slate-900">Add-on services and prices</h3>

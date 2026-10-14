@@ -20,6 +20,7 @@ import {
 } from '../../team-member/pipeline/shared';
 import { addonPaymentState, AddonStatusPill, rupees } from '../../invoices/invoiceShared';
 import { AddonRequestEditor } from './AddonRequestPanel';
+import { OpenClientRequests } from './ClientServiceRequests';
 import { ConsultationNotes } from './ConsultationNotes';
 
 const PAGE_SIZE = 10;
@@ -130,6 +131,8 @@ export const ConsultantAddons: React.FC<{ onCountsChanged: () => void; onGoToOnb
           </select>
         </div>
       </div>
+
+      <OpenClientRequests onOpenCustomer={setOpenId} />
 
       {notice && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" role="status">

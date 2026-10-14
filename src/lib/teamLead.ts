@@ -156,6 +156,7 @@ export const teamLeadApi = {
         ticketId: r.ticket_id,
         authorId: r.author_id,
         kind: r.kind,
+        clientVisible: !!r.client_visible || r.kind === 'CLIENT_REPLY',
         fromStatus: r.from_status,
         toStatus: r.to_status,
         assigneeId: r.assignee_id,

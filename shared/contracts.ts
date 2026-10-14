@@ -1034,3 +1034,173 @@ export interface InvoiceCustomer {
   services: { code: string; name: string }[];
   hasServiceInvoice: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Client dashboard (the customer's own dashboard)
+// ---------------------------------------------------------------------------
+export interface ClientProfile {
+  customerId: string;
+  name: string;
+  businessName: string;
+  email: string | null;
+  phone: string | null;
+  segment: string;
+  status: string;
+  department: string | null;
+  loginEmail: string;
+  clientSince: string;
+}
+export type ClientServiceStatus = 'LIVE' | 'SETTING_UP';
+export interface ClientService {
+  code: string;
+  name: string;
+  category: string;
+  description: string | null;
+  purchasedAt: string;
+  activatedAt: string | null;
+  renewsOn: string | null;
+  status: ClientServiceStatus;
+  plan: string | null;
+}
+export type ServiceRequestStatus = 'REQUESTED' | 'IN_REVIEW' | 'IN_ADDON_WORKFLOW' | 'ACTIVATED' | 'REJECTED' | 'CANCELLED';
+export interface ClientCatalogService {
+  code: string;
+  name: string;
+  category: string;
+  description: string | null;
+  startingPrice: number | null;
+  priceNote: string | null;
+  features: string[];
+  owned: boolean;
+  request: { id: string; status: ServiceRequestStatus; createdAt: string; decisionNote: string | null } | null;
+}
+export interface ClientServiceRequest {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  status: ServiceRequestStatus;
+  note: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface MonthlyPlan {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  monthlyPrice: number;
+  features: string[];
+  services: { code: string; name: string }[];
+}
+export interface ClientPlans {
+  current: (MonthlyPlan & { customerPlanId: string; startedAt: string; renewsOn: string | null; status: string; paymentStatus: 'PENDING' | 'PAID'; price: number }) | null;
+  options: MonthlyPlan[];
+  history: { name: string; startedAt: string; endedAt: string | null; status: string; price: number }[];
+  request: { id: string; planId: string; planName: string; kind: 'SELECT' | 'UPGRADE' | 'SWITCH'; status: 'REQUESTED' | 'APPROVED'; createdAt: string; decisionNote: string | null } | null;
+}
+export interface ClientInvoice {
+  id: string;
+  number: string;
+  kind: string;
+  issuedAt: string;
+  issueDate: string | null;
+  dueDate: string | null;
+  amount: number | null;
+  subtotal: number | null;
+  discount: number | null;
+  tax: number | null;
+  status: 'Paid' | 'Pending';
+  paidAt: string | null;
+  overdue: boolean;
+  related: string;
+  items: { name?: string; quantity?: number; unitPrice?: number; lineTotal?: number }[];
+  hasFile: boolean;
+}
+export type ClientTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
+export interface ClientTicket {
+  id: string;
+  ticketNo: string;
+  subject: string;
+  description: string | null;
+  category: string;
+  priority: string;
+  status: ClientTicketStatus;
+  serviceCode: string | null;
+  serviceName: string | null;
+  resolution: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface ClientTicketDetail extends ClientTicket {
+  updates: { id: string; at: string; type: 'CLIENT' | 'SUPPORT' | 'STATUS'; status: ClientTicketStatus | null; message: string | null }[];
+}
+export interface ClientNotification {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  entityType: 'invoice' | 'service' | 'plan' | 'ticket' | 'service_request' | 'plan_request' | 'addon' | null;
+  entityId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+export interface ClientNotifications {
+  unread: number;
+  total: number;
+  items: ClientNotification[];
+}
+export interface ClientOverview {
+  profile: ClientProfile;
+  services: { total: number; live: number; items: ClientService[] };
+  plan: ClientPlans['current'];
+  invoices: { total: number; pending: number; recent: ClientInvoice[] };
+  tickets: { total: number; open: number; recent: ClientTicket[] };
+  notifications: { unread: number; recent: ClientNotification[] };
+  renewals: { kind: 'SERVICE' | 'PLAN'; name: string; renewsOn: string }[];
+}
+export interface ClientDocumentUrl {
+  url: string;
+  expiresInSeconds: number;
+  fileName: string;
+}
+/** Technical Consultant / Accounts sides of the client workflows. */
+export interface ConsultantServiceRequest {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  status: ServiceRequestStatus;
+  note: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+  addonRequestId: string | null;
+}
+export interface ConsultantOpenServiceRequest {
+  id: string;
+  customerId: string;
+  customer: string;
+  contact: string;
+  serviceCode: string;
+  serviceName: string;
+  status: ServiceRequestStatus;
+  note: string | null;
+  createdAt: string;
+}
+export interface AccountsPlanRequest {
+  id: string;
+  customerId: string;
+  customer: string;
+  planId: string;
+  planName: string;
+  monthlyPrice: number;
+  kind: 'SELECT' | 'UPGRADE' | 'SWITCH';
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'ACTIVATED' | 'CANCELLED';
+  note: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+  currentPlan: string | null;
+}
+export interface AccountsPlans {
+  plans: (MonthlyPlan & { isActive: boolean })[];
+  requests: AccountsPlanRequest[];
+}

@@ -3,6 +3,10 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  AccountsPlans,
+  ConsultantOpenServiceRequest,
+  ConsultantServiceRequest,
+  MonthlyPlan,
   AccountsConfirmation,
   DivisionLeadsOverview,
   DivisionSupportOverview,
@@ -398,3 +402,19 @@ function describeRegistrationError(error: { code?: string; message?: string }): 
   }
   return `Could not load departments (${error.code || 'error'}): ${msg || 'please try again.'}`;
 }
+
+/** The staff side of the client dashboard: service requests (Technical Consultant), plans (Accounts), replies (Support). */
+export const clientWorkApi = {
+  openServiceRequests: () => api.get<ConsultantOpenServiceRequest[]>('/pipeline/service-requests'),
+  serviceRequests: (customerId: string) => api.get<ConsultantServiceRequest[]>(`/pipeline/customers/${customerId}/service-requests`),
+  decideServiceRequest: (id: string, body: { decision: 'IN_REVIEW' | 'REJECTED'; note?: string | null }) =>
+    api.post<null>(`/pipeline/service-requests/${id}/decision`, body),
+  plans: () => api.get<AccountsPlans>('/accounts/plans'),
+  createPlan: (body: PlanInput & { code: string }) => api.post<{ id: string }>('/accounts/plans', body),
+  updatePlan: (id: string, body: PlanInput) => api.patch<{ id: string }>(`/accounts/plans/${id}`, body),
+  decidePlanRequest: (id: string, body: { decision: 'APPROVE' | 'REJECT' | 'ACTIVATE'; note?: string | null; paymentConfirmed?: boolean; renewsOn?: string | null }) =>
+    api.post<null>(`/accounts/plan-requests/${id}/decision`, body),
+  replyToClient: (ticketId: string, message: string) => api.post<null>(`/support/tickets/${ticketId}/client-reply`, { message })
+};
+export interface PlanInput { name: string; description?: string | null; monthlyPrice: number; features: string[]; services: string[]; isActive: boolean }
+export type { MonthlyPlan };
