@@ -353,9 +353,8 @@ export function useServiceCatalog() {
  * Keeps a pipeline screen current without a manual refresh. `onChange` (debounced) runs when
  *  - rows this user can see change in the database (Realtime, RLS-filtered),
  *  - something changes in this tab (the 'crm:pipeline-changed' event),
- *  - the tab becomes visible or the window gets focus again, and
- *  - every 30 seconds while the tab is visible (covers projects where Realtime is off or dropped).
- * Several triggers close together become one reload.
+ *  - the tab becomes visible or the window gets focus again.
+ * There is no timer: nothing is requested while nothing changes. Several triggers close together become one reload.
  */
 export function usePipelineRealtime(onChange: () => void) {
   const cb = useRef(onChange);
@@ -371,7 +370,6 @@ export function usePipelineRealtime(onChange: () => void) {
     window.addEventListener('crm:pipeline-changed', fire);
     window.addEventListener('focus', whenVisible);
     document.addEventListener('visibilitychange', whenVisible);
-    const poll = setInterval(whenVisible, 30000);
     const sb = getSupabase();
     const channel = sb
       ?.channel(`pipeline-${Math.random().toString(36).slice(2)}`)
@@ -383,7 +381,6 @@ export function usePipelineRealtime(onChange: () => void) {
       .subscribe();
     return () => {
       clearTimeout(timer);
-      clearInterval(poll);
       window.removeEventListener('crm:pipeline-changed', fire);
       window.removeEventListener('focus', whenVisible);
       document.removeEventListener('visibilitychange', whenVisible);

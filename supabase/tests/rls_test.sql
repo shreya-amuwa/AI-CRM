@@ -589,9 +589,9 @@ insert into docs select 'A_kyc', id, storage_path from begin_document_upload((se
 select test.check((select path like '%/onboarding/%' from docs where name = 'A_kyc'), 'important documents stored under onboarding/');
 select complete_document_upload((select id from docs where name = 'A_kyc'), 5000);
 -- Service checklist: Meta Ads + Gold Rate package for customer A.
-select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 13),
-  'checklist = 2 basics + 5 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
-select test.check((select items_total = 13 and items_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 14),
+  'checklist = 3 basics + 5 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
+select test.check((select items_total = 14 and items_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'the uploaded mandatory document counts as a saved checklist item; the invoice is still missing');
 -- The Invoice item is filled by the invoice PDF Accounts uploads (Sales cannot create invoices).
 select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount, customer_id) values ('INV-SALES', 'Ankit Shah', 1, (select id from pipeline where name = 'A'))$$,
@@ -630,14 +630,14 @@ select test.must_fail($$select save_onboarding_entry((select id from pipeline wh
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'META_AD_BUDGET', 'lots')$$, 'amount validated', 'amount');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x')$$, 'file items need an upload', 'Upload a file');
 select save_onboarding_entry((select id from pipeline where name = 'A'), c, v) from (values
-  ('BUSINESS_NAME_ADDRESS', 'Shree Ganesh Jewellers, Zaveri Bazaar, Mumbai'), ('CONTACT_PERSON_MOBILE', 'Ankit Shah +91 98765 11111'),
+  ('BUSINESS_NAME_ADDRESS', 'Shree Ganesh Jewellers, Zaveri Bazaar, Mumbai'), ('CUSTOMER_NAME', 'Ankit Shah'), ('CUSTOMER_MOBILE', '+91 98765 11111'),
   ('META_CAMPAIGN_GOAL', 'Walk-in leads for Diwali'), ('FACEBOOK_PAGE_ACCESS', 'Partner access to Amuwa BM'),
   ('INSTAGRAM_PAGE_ACCESS', 'Connected'), ('META_TARGET_AUDIENCE', 'Women 25-50, Mumbai, 200 leads'), ('META_AD_BUDGET', '15000'),
   ('GOLD_CONFIRM_JEWELLER', 'YES'), ('BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C'), ('GOLD_TEMPLATE_APPROVAL', 'Approved on call')) v(c, v);
 insert into docs select 'A_logo', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo.png', 'image/png', 3000);
 select test.check((select path like '%.png' from docs where name = 'A_logo'), 'stored file keeps an extension matching its type');
 select complete_document_upload((select id from docs where name = 'A_logo'), 3000);
-select test.check((select items_saved = 13 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 13 items saved');
+select test.check((select items_saved = 14 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 14 items saved');
 select test.login('tm_b');
 select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')),
   'consultant does not see a customer before sales sends it');
@@ -878,9 +878,9 @@ select test.must_fail($$select save_onboarding_entry((select id from pipeline wh
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x.png', 'image/png', 10)$$, 'support cannot upload', 'NOT_FOUND');
 select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', '')$$, 'rejection needs a note', 'needs fixing');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', 'Gold hex code is missing');
-select test.check((select verify_all_onboarding_entries((select id from pipeline where name = 'A')) = 12), 'authorize all verifies the 12 saved items');
+select test.check((select verify_all_onboarding_entries((select id from pipeline where name = 'A')) = 13), 'authorize all verifies the 13 saved items');
 select test.must_fail($$select verify_all_onboarding_entries((select id from pipeline where name = 'A'))$$, 'authorize all with nothing pending', 'Nothing is waiting');
-select test.check((select items_verified = 12 and items_rejected = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+select test.check((select items_verified = 13 and items_rejected = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'review progress tracked (12 verified, 1 needs fixing)');
 select test.login('tm_c');
 select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$, 'other department cannot review', 'NOT_FOUND');

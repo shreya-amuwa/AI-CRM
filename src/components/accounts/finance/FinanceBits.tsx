@@ -20,12 +20,10 @@ export function useFinanceRefresh(load: () => void) {
     window.addEventListener('crm:pipeline-changed', run);
     window.addEventListener('crm:finance-changed', run);
     document.addEventListener('visibilitychange', onVisible);
-    const t = setInterval(onVisible, 60000);
     return () => {
       window.removeEventListener('crm:pipeline-changed', run);
       window.removeEventListener('crm:finance-changed', run);
       document.removeEventListener('visibilitychange', onVisible);
-      clearInterval(t);
     };
   }, []);
 }

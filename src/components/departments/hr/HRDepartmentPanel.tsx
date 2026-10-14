@@ -164,10 +164,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
       .subscribe();
     const onFocus = () => void loadDirectory(true);
     window.addEventListener('focus', onFocus);
-    const interval = setInterval(() => void loadDirectory(true), 30000);
     return () => {
       clearTimeout(timer);
-      clearInterval(interval);
       window.removeEventListener('focus', onFocus);
       if (channel) void supabase?.removeChannel(channel);
     };

@@ -126,5 +126,5 @@ The Department Head sees the notes on the client detail page; the CEO has read a
 shows customer notes yet.
 
 **Live updates.** Pipeline screens reload when rows change (Realtime on customers, documents,
-onboarding and checklist entries), when the tab is focused again, after any change made in the tab,
-and every 30 seconds while the tab is visible (this also covers a dropped Realtime connection).
+onboarding and checklist entries), when the tab is focused again, and after any change made in the tab.
+There is no timer: an idle screen sends no requests to the database.

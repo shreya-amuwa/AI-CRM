@@ -48,6 +48,7 @@ import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
 import { CustomerAddonDetails } from './CustomerAddonDetails';
 import { ConsultationNotes } from './ConsultationNotes';
+import { useRealtime } from '../../../lib/support';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 
 // ---------------------------------------------------------------------------
@@ -285,13 +286,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   }, [id, loadMessages]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
-  // While a message is waiting to be sent, check again every 10 seconds.
-  const waitingMessages = !!messages?.messages.some(m => m.status === 'QUEUED' || m.status === 'SENDING');
-  useEffect(() => {
-    if (!waitingMessages) return;
-    const t = window.setInterval(loadMessages, 10_000);
-    return () => window.clearInterval(t);
-  }, [waitingMessages, loadMessages]);
+  // A message's status (queued -> sent) changes in the database: reload when it does (no timer).
+  useRealtime('automation_jobs', loadMessages);
 
   if (error && !c) return <ErrorBanner message={error} onRetry={load} />;
   if (!c) return <Spinner label="Loading customer…" />;

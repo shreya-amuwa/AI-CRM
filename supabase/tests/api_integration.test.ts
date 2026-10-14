@@ -513,7 +513,7 @@ r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 const importantDoc = r.json.data.id;
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=COLLECTING');
 check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2 && r.json.data.items[0].onboarding.itemsSaved === 2,
-  'onboarding filter: still collecting (2 of 13 items)', r);
+  'onboarding filter: still collecting (2 of 14 items)', r);
 
 // a pending upload abandoned by the browser
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'abandoned.pdf');
@@ -527,7 +527,7 @@ check(!keys.some(k => k.includes(abandoned.document.id)), 'aborted upload object
 // --- service checklist (Meta Ads + AI Calling) -----------------------------------
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const checklist = r.json.data.checklist as any[];
-check(checklist.length === 13 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
+check(checklist.length === 14 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
   'checklist built from the services sold (basics first, mandatory documents last)', checklist.map((c: any) => c.code));
 check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'the uploaded documents and the Accounts invoice already count as saved');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
@@ -537,7 +537,7 @@ check(r.status === 422, 'choice items only accept listed options', r);
 r = await api('b', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '15000' });
 check(r.status === 404, "member B cannot fill A's checklist", r);
 for (const [code, value] of Object.entries({
-  BUSINESS_NAME_ADDRESS: 'Galaxy Jewellers, Thane', CONTACT_PERSON_MOBILE: 'Siddhesh +91 98200 11111', META_CAMPAIGN_GOAL: 'Diwali walk-ins',
+  BUSINESS_NAME_ADDRESS: 'Galaxy Jewellers, Thane', CUSTOMER_NAME: 'Siddhesh', CUSTOMER_MOBILE: '+91 98200 11111', META_CAMPAIGN_GOAL: 'Diwali walk-ins',
   FACEBOOK_PAGE_ACCESS: 'Partner access granted', INSTAGRAM_PAGE_ACCESS: 'Connected', META_TARGET_AUDIENCE: 'Thane, 25-45', META_AD_BUDGET: '15000',
   AI_CALL_BUSINESS_ROLE: 'Jeweller; agent speaks as store manager', AI_CALL_CUSTOMER_NUMBER: '+91 98200 11111', AI_CALL_SCRIPT: 'Gold rate offers',
   AI_CALL_PLAN: 'Credit-based'
@@ -560,7 +560,7 @@ check(r.status === 200, 'real PNG certificate accepted', r);
 r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/consultant-items/WABA_ID`, { value: '123' });
 check(r.status === 404, 'sales cannot use the consultant-only endpoint', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=READY_FOR_HANDOVER');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 13, 'ready for handover once all 13 items are saved', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 14, 'ready for handover once all 14 items are saved', r);
 
 r = await api('b', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 404, "member B cannot delete A's document", r);
@@ -810,7 +810,7 @@ check(r.status === 409, 'cannot send for onboarding twice', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
 check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant sees forwarded customers of their department', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
-check(r.status === 200 && r.json.data.checklist.length === 13, 'consultant opens the full checklist', r);
+check(r.status === 200 && r.json.data.checklist.length === 14, 'consultant opens the full checklist', r);
 r = await api('tc', 'GET', `/documents/${importantDoc}/url?action=view`);
 check(r.status === 200, 'consultant can view the documents', r);
 
@@ -1032,7 +1032,7 @@ for (const item of r.json.data.checklist as any[]) {
   if (rv.status !== 200) check(false, `verify ${item.code}`, rv);
 }
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=VERIFIED');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 13, 'all items verified', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 14, 'all items verified', r);
 r = await api('a', 'GET', '/notifications');
 check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_RETURNED'),
   'salesperson notified of the send-back and of full verification', r.json.data.items.map((n: any) => n.type));

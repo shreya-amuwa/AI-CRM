@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { DivisionSupportOverview } from '../../../../../shared/contracts';
 import { errorMessage } from '../../../../lib/api/client';
 import { organizationApi, pipelineApi } from '../../../../lib/api/endpoints';
+import { useRealtime } from '../../../../lib/support';
 import { usePipelineRealtime } from '../../../team-member/pipeline/shared';
 
 /**
@@ -37,10 +38,8 @@ export function useSupportOverview(departmentId: string | undefined) {
 
   useEffect(load, [load]);
   usePipelineRealtime(load);
-  // Tickets and tasks change in their own tables.
-  useEffect(() => {
-    const t = setInterval(load, 30000);
-    return () => clearInterval(t);
-  }, [load]);
+  // Tickets and tasks change in their own tables: reload when they do (no timer).
+  useRealtime('support_tickets', load);
+  useRealtime('work_tasks', load);
   return { data, error, loading, reload: load };
 }
