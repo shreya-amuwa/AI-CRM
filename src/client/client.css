@@ -1,4 +1,4 @@
-/* Client dashboard (customers). Palette and type follow the Amuwa customer app design:
+/* Client dashboard (customers), always light. Palette and type follow the Amuwa customer app design:
    warm cream page, white rounded cards, brand teal, Bricolage Grotesque headings + DM Sans body.
    Scoped to .cd so nothing here leaks into the staff CRM. */
 .cd {
@@ -12,17 +12,7 @@
   --font-body: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-head: 'Bricolage Grotesque', 'DM Sans', system-ui, sans-serif;
   background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh;
-  -webkit-font-smoothing: antialiased; line-height: 1.45;
-}
-@media (prefers-color-scheme: dark) {
-  .cd {
-    --bg: #141311; --card: #1e1d1a; --border: #34322d; --text: #f2efe8; --muted: #a9a398;
-    --primary: #0e5a53; --primary-press: #0b4a44; --tint: #173a36; --on-tint: #a6ddd4; --link: #7ccfc2;
-    --attention: #f0a26b; --attention-bg: #3a2416; --attention-text: #f3b587; --attention-strong: #ffd2b0;
-    --success: #9bcb86; --success-bg: #22301c; --info: #9dbdf0; --info-bg: #1c2a3d;
-    --danger: #f97066; --danger-bg: #3b1d1a; --dot: #e07b3f; --input-border: #45423c; --divider: #2a2925;
-    --surface: #262420; --segment: #2a2925; --placeholder: #7a756b; --shadow: rgba(0, 0, 0, 0.4);
-  }
+  -webkit-font-smoothing: antialiased; line-height: 1.45; color-scheme: light;
 }
 .cd *, .cd *::before, .cd *::after { box-sizing: border-box; }
 .cd h1, .cd h2, .cd h3 { font-family: var(--font-head); font-weight: 700; margin: 0; letter-spacing: -0.01em; }

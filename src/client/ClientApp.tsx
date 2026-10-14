@@ -88,7 +88,7 @@ const Inner: React.FC = () => {
         <div className="cd-shell">
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={() => setNav(false)} />
           <aside className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
-            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /><div><b>My Amuwa</b><small>Customer dashboard</small></div></div>
+            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /></div>
             <nav className="cd-stack" style={{ gap: 2 }}>
               {SECTIONS.map(({ slug: s, label, Icon }) => (
                 <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
@@ -106,19 +106,19 @@ const Inner: React.FC = () => {
               <button className="cd-bell cd-burger" onClick={() => setNav(true)} aria-label="Open menu"><Menu size={20} /></button>
               <div className="grow">
                 <p className="cd-small cd-muted">{greeting()}</p>
-                <p className="cd-ellipsis" style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 18 }}>{me.businessName}</p>
+                <p className="cd-ellipsis" style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 18 }}>{me.name}</p>
               </div>
               <button className="cd-bell" onClick={() => to(dashboardPath('notifications'))} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
                 <Bell size={20} />{unread > 0 ? <span className="dot" /> : null}
               </button>
               <div ref={menuRef}>
                 <button className="cd-account" onClick={() => setMenu(m => !m)} aria-haspopup="menu" aria-expanded={menu} aria-label="Account menu">
-                  <span className="cd-avatar">{initials(me.businessName)}</span>
+                  <span className="cd-avatar">{initials(me.name)}</span>
                 </button>
                 {menu && (
                   <div className="cd-menu" role="menu">
                     <div style={{ padding: '8px 12px 10px' }}>
-                      <p style={{ fontWeight: 700 }}>{me.businessName}</p>
+                      <p style={{ fontWeight: 700 }}>{me.name}</p>
                       <p className="cd-small cd-muted cd-ellipsis">{me.loginEmail}</p>
                     </div>
                     <hr className="cd-divider" style={{ margin: '4px 0' }} />
@@ -146,7 +146,7 @@ const FONTS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght
 export const ClientApp: React.FC = () => {
   useEffect(() => {
     const prevTitle = document.title;
-    document.title = 'My Amuwa';
+    document.title = 'Amuwa';
     let link = document.getElementById('cd-fonts') as HTMLLinkElement | null;
     if (!link) { link = document.createElement('link'); link.id = 'cd-fonts'; link.rel = 'stylesheet'; link.href = FONTS; document.head.appendChild(link); }
     // the staff shell sets Tailwind colours on <body>; the client app paints its own page
