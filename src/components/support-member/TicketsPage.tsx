@@ -438,7 +438,8 @@ const KIND_TEXT: Record<string, string> = {
   STATUS_CHANGED: 'changed the status',
   ASSIGNED: 'assigned the ticket',
   ESCALATED: 'escalated the ticket',
-  NOTE: 'added a note'
+  NOTE: 'added a note',
+  CLIENT_REPLY: 'replied (customer)'
 };
 
 export const TicketDetail: React.FC<{
@@ -458,6 +459,7 @@ export const TicketDetail: React.FC<{
   const [status, setStatus] = useState<TicketStatus>(ticket.status);
   useEffect(() => setStatus(ticket.status), [ticket.status]);
   const [note, setNote] = useState('');
+  const [clientReply, setClientReply] = useState('');
   const [resolution, setResolution] = useState('');
   const [assignee, setAssignee] = useState('');
   const [busy, setBusy] = useState(false);
@@ -588,6 +590,29 @@ export const TicketDetail: React.FC<{
           </form>
         )}
 
+        {canAct && ticket.status !== 'CLOSED' && ticket.createdBy === null && (
+          <form
+            className="p-4 rounded-xl border border-teal-200 bg-teal-50/40 space-y-2"
+            onSubmit={e => {
+              e.preventDefault();
+              if (!clientReply.trim()) return;
+              void run(async () => {
+                await ticketApi.replyToClient(ticket.id, clientReply.trim());
+                setClientReply('');
+              }, 'Reply sent to the customer.');
+            }}
+          >
+            <div className="text-xs font-bold text-slate-800">Reply to the customer</div>
+            <p className="text-[11px] text-slate-500">The customer raised this in their dashboard. This reply appears there. Notes above stay internal.</p>
+            <textarea rows={3} value={clientReply} onChange={e => setClientReply(e.target.value)} maxLength={4000} aria-label="Reply to the customer" className={inputClass} placeholder="Write your reply to the customer" />
+            <div className="flex justify-end">
+              <button type="submit" disabled={busy || !clientReply.trim()} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-700 text-white text-xs font-bold hover:bg-teal-800 disabled:opacity-50">
+                <Send className="w-3.5 h-3.5" aria-hidden="true" /> Send reply
+              </button>
+            </div>
+          </form>
+        )}
+
         {canManage && ticket.status !== 'CLOSED' && (
           <div className="p-4 rounded-xl border border-slate-200 space-y-2">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
@@ -634,7 +659,7 @@ export const TicketDetail: React.FC<{
               <li key={u.id} className="text-xs relative">
                 <span className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-blue-400" aria-hidden="true" />
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-semibold text-slate-800">{personName(people, u.authorId)}</span>
+                  <span className="font-semibold text-slate-800">{u.kind === 'CLIENT_REPLY' ? 'Customer' : personName(people, u.authorId)}</span>
                   <span className="text-slate-500">{KIND_TEXT[u.kind]}</span>
                   {u.kind === 'ASSIGNED' && <span className="text-slate-700">to {personName(people, u.assigneeId)}</span>}
                   {u.kind !== 'ASSIGNED' && u.toStatus && u.fromStatus && u.fromStatus !== u.toStatus && (
@@ -642,6 +667,7 @@ export const TicketDetail: React.FC<{
                       ({TICKET_STATUS_LABELS[u.fromStatus]} → {TICKET_STATUS_LABELS[u.toStatus]})
                     </span>
                   )}
+                  {u.kind === 'NOTE' && u.clientVisible && <span className="px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 text-[10px] font-semibold">Shared with the customer</span>}
                   <span className="text-[10px] text-slate-400">{fmtWhen(u.createdAt)}</span>
                 </div>
                 {u.note && <p className="text-slate-600 mt-0.5 whitespace-pre-line break-words">{u.note}</p>}

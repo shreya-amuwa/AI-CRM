@@ -889,6 +889,24 @@ end $$;
 revoke all on function public.consultant_service_requests(uuid) from public, anon;
 grant execute on function public.consultant_service_requests(uuid) to authenticated;
 
+-- Technical Consultant: every open request from customers they may serve (the Add-ons Services page)
+create or replace function public.consultant_open_service_requests()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  if private.my_support_department_id() is null and not private.is_super_admin() and private.my_role() is distinct from 'DEPARTMENT_HEAD' then
+    raise exception 'FORBIDDEN: Only the Technical Consultants can see these requests.' using errcode = '42501';
+  end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', r.id, 'customerId', r.customer_id, 'customer', coalesce(c.company, c.name), 'contact', c.name,
+                                                       'serviceCode', r.service_code, 'serviceName', s.name, 'status', r.status, 'note', r.note,
+                                                       'createdAt', r.created_at) order by r.created_at)
+                     from public.service_requests r
+                     join public.customers c on c.id = r.customer_id
+                     join public.crm_services s on s.code = r.service_code
+                    where r.status in ('REQUESTED', 'IN_REVIEW') and private.can_manage_addons(r.customer_id)), '[]'::jsonb);
+end $$;
+revoke all on function public.consultant_open_service_requests() from public, anon;
+grant execute on function public.consultant_open_service_requests() to authenticated;
+
 create or replace function public.consultant_decide_service_request(p_request uuid, p_decision text, p_note text default null)
 returns void language plpgsql security definer set search_path = '' as $$
 declare

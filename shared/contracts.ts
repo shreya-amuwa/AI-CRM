@@ -1175,6 +1175,17 @@ export interface ConsultantServiceRequest {
   createdAt: string;
   addonRequestId: string | null;
 }
+export interface ConsultantOpenServiceRequest {
+  id: string;
+  customerId: string;
+  customer: string;
+  contact: string;
+  serviceCode: string;
+  serviceName: string;
+  status: ServiceRequestStatus;
+  note: string | null;
+  createdAt: string;
+}
 export interface AccountsPlanRequest {
   id: string;
   customerId: string;

@@ -131,6 +131,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/accounts/invoices/:id/details', handler: addons.updateInvoiceDetails, options: S },
   { method: 'PATCH', path: '/accounts/invoices/:id', handler: addons.setInvoiceStatus, options: S },
   { method: 'GET', path: '/accounts/invoice-customers', handler: addons.invoiceCustomers },
+  { method: 'GET', path: '/pipeline/service-requests', handler: clientWork.openServiceRequests },
   { method: 'GET', path: '/pipeline/customers/:id/service-requests', handler: clientWork.serviceRequests },
   { method: 'POST', path: '/pipeline/service-requests/:id/decision', handler: clientWork.decideServiceRequest, options: S },
   { method: 'GET', path: '/accounts/plans', handler: clientWork.plans },

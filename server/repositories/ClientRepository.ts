@@ -11,6 +11,7 @@ import type {
   ClientServiceRequest,
   ClientTicket,
   ClientTicketDetail,
+  ConsultantOpenServiceRequest,
   ConsultantServiceRequest
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -58,6 +59,7 @@ export class ClientRepository {
   markRead(ids: string[] | null) { return this.rpc<number>('client_mark_notifications_read', { p_ids: ids }); }
 
   // ---- the internal sides (Technical Consultant, Accounts)
+  openServiceRequests() { return this.rpc<ConsultantOpenServiceRequest[]>('consultant_open_service_requests'); }
   consultantServiceRequests(customerId: string) { return this.rpc<ConsultantServiceRequest[]>('consultant_service_requests', { p_customer: customerId }); }
   async decideServiceRequest(id: string, decision: string, note: string | null): Promise<void> {
     await this.rpc('consultant_decide_service_request', { p_request: id, p_decision: decision, p_note: note });

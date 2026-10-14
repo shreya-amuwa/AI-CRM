@@ -78,6 +78,10 @@ select test.check((select count(*) >= 1 from notifications where type = 'CLIENT_
 set role authenticated;
 select test.login('late_consultant');
 select test.check((select jsonb_array_length(consultant_service_requests((select id from cl where name = 'B'))) = 1), 'the Technical Consultant sees the request');
+select test.check((select count(*) = 1 from jsonb_array_elements(consultant_open_service_requests()) r where r ->> 'customerId' = (select id::text from cl where name = 'B') and r ->> 'serviceCode' = 'AI_CALLING'), 'and finds it in the list of open customer requests');
+select test.login('cdash_a');
+select test.must_fail($$select consultant_open_service_requests()$$, 'a client cannot list the staff requests', 'FORBIDDEN|Only');
+select test.login('late_consultant');
 select consultant_decide_service_request((select (r ->> 'id')::uuid from jsonb_array_elements(consultant_service_requests((select id from cl where name = 'B'))) r limit 1), 'IN_REVIEW', null);
 select test.check((select r ->> 'status' = 'IN_REVIEW' from jsonb_array_elements(consultant_service_requests((select id from cl where name = 'B'))) r limit 1), 'the consultant takes it in review');
 select test.must_fail($$select consultant_decide_service_request((select (r ->> 'id')::uuid from jsonb_array_elements(consultant_service_requests((select id from cl where name = 'B'))) r limit 1), 'REJECTED', null)$$, 'declining needs a reason for the client', 'reason');

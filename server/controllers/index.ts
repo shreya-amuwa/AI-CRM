@@ -232,6 +232,7 @@ export const documentsController = {
 
 /** Staff side of the client dashboard: service requests (Technical Consultant), plans (Accounts), replies (Support). */
 export const clientWorkflowController = {
+  openServiceRequests: (async ctx => ok(await svc(ctx).client.openServiceRequests())) as Handler,
   serviceRequests: (async ctx => ok(await svc(ctx).client.consultantServiceRequests(ctx.params.id))) as Handler,
   decideServiceRequest: (async ctx => (await svc(ctx).client.decideServiceRequest(ctx.params.id, ctx.req.body), ok(null))) as Handler,
   plans: (async ctx => ok(await svc(ctx).client.accountsPlans())) as Handler,

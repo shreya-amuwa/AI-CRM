@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BadgeCheck, Bell, Building2, FileText, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
+import { BadgeCheck, Bell, Building2, FileText, LayoutDashboard, LogOut, Menu, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -9,6 +9,7 @@ import { AmuwaLogo } from '../common/AmuwaLogo';
 import { AccountsConfirmations } from './AccountsConfirmations';
 import { BusinessVerification } from './BusinessVerification';
 import { AccountsInvoices } from './AccountsInvoices';
+import { AccountsPlans } from './AccountsPlans';
 import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
@@ -16,7 +17,7 @@ import { AccountsExpenses } from './finance/AccountsExpenses';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -83,6 +84,7 @@ export const AccountsDashboard: React.FC = () => {
                 ['confirmations', 'Confirmation', ReceiptIndianRupee, (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0)],
                 ['business-verification', 'Business Verification', BadgeCheck, addonsWaiting],
                 ['invoices', 'Invoices', FileText, 0],
+                ['plans', 'Monthly Plans', Sparkles, 0],
                 ['part-payments', 'Part Payment', Wallet, counts?.followUpsDue ?? 0],
                 ['department-income', 'Department Income', Building2, 0],
                 ['expenses', 'Expenses', WalletCards, 0],
@@ -170,6 +172,7 @@ export const AccountsDashboard: React.FC = () => {
           {page === 'confirmations' && <AccountsConfirmations onCountsChanged={refreshCounts} />}
           {page === 'business-verification' && <BusinessVerification onCountsChanged={refreshCounts} />}
           {page === 'invoices' && <AccountsInvoices />}
+          {page === 'plans' && <AccountsPlans />}
           {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
           {page === 'department-income' && <AccountsDepartmentIncome />}
           {page === 'expenses' && <AccountsExpenses />}

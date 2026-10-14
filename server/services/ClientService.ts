@@ -70,6 +70,7 @@ export class ClientService {
   }
 
   // ---- internal sides
+  openServiceRequests() { return this.repo.openServiceRequests(); }
   consultantServiceRequests(customerId: string) { return this.repo.consultantServiceRequests(parse(uuidSchema, customerId)); }
   decideServiceRequest(id: string, body: unknown) {
     const i = parse(serviceRequestDecisionSchema, body);

@@ -108,7 +108,7 @@ export const ClientLoginCard: React.FC<{
             Client panel login
           </h2>
           <p className="text-xs text-slate-500">
-            The e-mail and password the client uses in the app. Use the same ones you set in the internal platform.
+            The e-mail and password the client uses to sign in to their customer dashboard (/client/login) and the app. Use the same ones you set in the internal platform.
             {emailsLogin && ' Creating it sends the customer the "Meta Verification Completed" email with these login details.'}
           </p>
         </div>

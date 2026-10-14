@@ -9,6 +9,7 @@ import {
   Headset,
   ReceiptIndianRupee,
   ShieldCheck,
+  Sparkles,
   UserPlus,
   HelpCircle,
   LogOut,
@@ -20,6 +21,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
+import { AccountsPlans } from '../accounts/AccountsPlans';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
@@ -37,7 +39,7 @@ import {
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 
-type Nav = 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments' | 'notifications';
+type Nav = 'plans' | 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments' | 'notifications';
 
 /**
  * Department Head dashboard.
@@ -62,7 +64,11 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
     { id: 'notifications', label: 'Notification Center', icon: Bell }
   ];
   // The Accounts Department Head also confirms the amount of customers Sales sends.
-  if (profile?.department?.slug === 'accounts') items.unshift({ id: 'payments', label: 'Payment confirmations', icon: ReceiptIndianRupee });
+  if (profile?.department?.slug === 'accounts') {
+    items.unshift({ id: 'payments', label: 'Payment confirmations', icon: ReceiptIndianRupee });
+    // the Accounts head configures the monthly plans customers can choose, and verifies their plan requests
+    items.splice(items.length - 1, 0, { id: 'plans', label: 'Monthly Plans', icon: Sparkles });
+  }
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex font-sans antialiased">
@@ -156,6 +162,7 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'support' && <SupportDeskPage />}
           {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
           {nav === 'payments' && <AccountsConfirmations />}
+          {nav === 'plans' && <AccountsPlans />}
           {nav === 'notifications' && <NotificationsPage />}
           {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}
         </main>
