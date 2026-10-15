@@ -8,10 +8,10 @@
 -- to the customer (customer_services).
 --
 -- Now:
---  * The function no longer depends on that column: if it is missing, the onboarding stage alone decides.
---  * A service is "Live" when the team activated it, or the client's onboarding is completed (or
---    there is no onboarding to wait for); otherwise it is "Setting up". Every service the team added
---    to the customer is returned either way.
+--  * The function no longer depends on that column: if it is missing, services are simply Live.
+--  * Status rule is unchanged: "Live" when the team activated the service, or the Technical Consultant has not
+--    set a client status other than COMPLETED; otherwise "Setting up". Every service the team added to the
+--    customer is returned either way.
 --  * The service's details (e.g. the WhatsApp API package: campaigns, messages bought / sent) are
 --    returned so the client can see what was set up for them.
 -- Idempotent. Nothing is deleted.
@@ -21,23 +21,18 @@ create or replace function public.client_services()
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
   v_customer uuid := private.require_client();
-  v_has_onboarding boolean;
-  v_stage text;
-  v_flag boolean;
   v_complete boolean := true;
 begin
-  select true, o.stage into v_has_onboarding, v_stage
-    from public.customer_onboarding o where o.customer_id = v_customer;
-  if coalesce(v_has_onboarding, false) then
-    v_complete := (v_stage = 'COMPLETED');
-    -- The Technical Consultant's client status (only where the automations migration has been applied).
-    begin
-      execute 'select client_status = ''COMPLETED'' from public.customer_onboarding where customer_id = $1' into v_flag using v_customer;
-      v_complete := v_complete or coalesce(v_flag, false);
-    exception when undefined_column then
-      null;
-    end;
-  end if;
+  -- Same rule as before: a service is Live unless the Technical Consultant set a client status that is not
+  -- COMPLETED (an unset status counts as Live). Where the automations migration has not been applied there
+  -- is no client status, so the column is read dynamically and everything is Live.
+  begin
+    execute 'select coalesce(o.client_status = ''COMPLETED'' or o.stage = ''COMPLETED'', true) from public.customer_onboarding o where o.customer_id = $1'
+      into v_complete using v_customer;
+  exception when undefined_column then
+    v_complete := true;
+  end;
+  v_complete := coalesce(v_complete, true);
 
   return coalesce((
     select jsonb_agg(jsonb_build_object(
