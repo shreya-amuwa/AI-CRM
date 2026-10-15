@@ -11,6 +11,7 @@ import {
   FileText,
   IndianRupee,
   Pencil,
+  RefreshCw,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -50,6 +51,8 @@ import { CustomerAddonDetails } from './CustomerAddonDetails';
 import { ConsultationNotes } from './ConsultationNotes';
 import { useRealtime } from '../../../lib/support';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
+import { EntryDialog } from '../../team-member/pipeline/ChecklistPanel';
+import { acceptFor, MIME_LABEL, uploadChecklistFile } from '../../../lib/checklistUpload';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -732,6 +735,9 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
   const [rejecting, setRejecting] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [editingWebsite, setEditingWebsite] = useState(false);
+  const [editingValue, setEditingValue] = useState(false);
+  const [phase, setPhase] = useState<null | 'checking' | 'uploading' | 'verifying'>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const entry = item.entry;
   const state = entry?.status ?? 'MISSING';
   const S = ROW_STATUS[state];
@@ -764,6 +770,20 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
       setError(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  };
+
+  // The consultant can put right what Sales sent (a wrong detail or file) while the customer is still in onboarding.
+  const canCorrect = !readOnly && customer.lifecycleStage === 'ONBOARDING' && !isWebsite && item.code !== 'INVOICE' && !issuedByAccounts;
+  const replaceFile = async (file: File) => {
+    setError(null);
+    try {
+      await uploadChecklistFile(customer.id, item, file, setPhase);
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      if (fileInput.current) fileInput.current.value = '';
     }
   };
 
@@ -823,6 +843,42 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
         >
           <Eye className="w-3.5 h-3.5" aria-hidden="true" /> View details
         </button>
+        {canCorrect && isFile && (
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              accept={acceptFor(item.allowedMimeTypes || ['application/pdf'])}
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) void replaceFile(f);
+              }}
+            />
+            <button
+              type="button"
+              disabled={!!phase}
+              onClick={() => fileInput.current?.click()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:text-slate-400"
+              aria-label={`${doc ? 'Replace' : 'Upload'} ${item.label}`}
+              title={`Correct a mistake: ${(item.allowedMimeTypes || ['application/pdf']).map(m => MIME_LABEL[m] || m).join(', ')} file`}
+            >
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> {phase ? (phase === 'checking' ? 'Checking…' : phase === 'uploading' ? 'Uploading…' : 'Verifying…') : doc ? 'Replace file' : 'Upload file'}
+            </button>
+          </>
+        )}
+        {canCorrect && !isFile && (
+          <button
+            type="button"
+            onClick={() => setEditingValue(true)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700"
+            aria-label={`Edit ${item.label}`}
+          >
+            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
+          </button>
+        )}
         {isWebsite && !readOnly && (
           <button
             type="button"
@@ -955,6 +1011,17 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
             </button>
           </div>
         </Dialog>
+      )}
+      {editingValue && (
+        <EntryDialog
+          item={item}
+          customerId={customer.id}
+          onClose={() => setEditingValue(false)}
+          onSaved={() => {
+            setEditingValue(false);
+            onChanged();
+          }}
+        />
       )}
       {editingWebsite && (
         <WebsiteEditDialog

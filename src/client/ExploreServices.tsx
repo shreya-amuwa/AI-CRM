@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Check, Info, Search } from 'lucide-react';
 import type { ClientCatalogService } from '../../shared/contracts';
 import { clientApi } from './api';
@@ -13,6 +13,16 @@ export const ExploreServices: React.FC = () => {
   const [detail, setDetail] = useState<ClientCatalogService | null>(null);
   const [adding, setAdding] = useState<ClientCatalogService | null>(null);
   const [notice, setNotice] = useState('');
+
+  // A new-service notice opens its service here: /client/dashboard/explore?service=CODE
+  useEffect(() => {
+    if (!q.data) return;
+    const code = new URLSearchParams(window.location.search).get('service');
+    if (!code) return;
+    const found = q.data.find(s => s.code === code);
+    if (found) { setCategory('All'); setSearch(''); setDetail(found); }
+    window.history.replaceState({}, '', window.location.pathname);
+  }, [q.data]);
 
   const categories = useMemo(() => ['All', ...Array.from(new Set((q.data ?? []).map(s => s.category))).sort()], [q.data]);
   const list = useMemo(() => (q.data ?? []).filter(s =>

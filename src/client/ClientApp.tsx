@@ -5,6 +5,7 @@ import { clientApi } from './api';
 import { ClientAuthProvider, useClientAuth } from './auth';
 import { usePath } from './hooks';
 import { Login } from './Login';
+import { NewServicePopup, NoticeBanners, useAnnouncements } from './Announcements';
 import { Overview } from './Overview';
 import { MyServices } from './MyServices';
 import { ExploreServices } from './ExploreServices';
@@ -33,6 +34,7 @@ const Inner: React.FC = () => {
   const [nav, setNav] = useState(false);
   const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const notices = useAnnouncements(status === 'ready');
 
   const refreshUnread = useCallback(() => {
     clientApi.notifications(1, 0).then(n => setUnread(n.unread), () => { /* the bell is a convenience; pages show their own errors */ });
@@ -90,29 +92,23 @@ const Inner: React.FC = () => {
         <div className="cd-shell">
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={() => setNav(false)} />
           <aside className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
-            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /><span className="tag">Client</span></div>
+            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /></div>
             <nav className="cd-stack" style={{ gap: 2 }}>
               {SECTIONS.map(({ slug: s, label, Icon }) => (
                 <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
-                  <span className="ni"><Icon size={18} aria-hidden /></span>
+                  <Icon size={20} aria-hidden />
                   <span>{label}</span>
                   {s === 'notifications' && unread > 0 ? <span className="cd-nav-count" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span> : null}
                 </button>
               ))}
             </nav>
-            <div className="cd-help">
-              <LifeBuoy size={22} aria-hidden />
-              <p>Need help? Raise a ticket and our team will reply here.</p>
-              <button onClick={() => to(dashboardPath('tickets'))}>Raise a ticket</button>
-            </div>
           </aside>
 
           <div className="cd-main">
             <header className="cd-top">
               <button className="cd-bell cd-burger" onClick={() => setNav(true)} aria-label="Open menu"><Menu size={20} /></button>
               <div className="grow">
-                <p className="cd-small cd-muted">{greeting()}</p>
-                <p className="cd-ellipsis" style={{ fontFamily: 'var(--font-head)', fontWeight: 700, fontSize: 18 }}>{me.name}</p>
+                <p className="cd-small cd-muted cd-ellipsis">{greeting()}, <b style={{ color: 'var(--text)' }}>{me.name}</b></p>
               </div>
               <button className="cd-bell" onClick={() => to(dashboardPath('notifications'))} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
                 <Bell size={20} />{unread > 0 ? <span className="dot" /> : null}
@@ -134,7 +130,11 @@ const Inner: React.FC = () => {
                 )}
               </div>
             </header>
-            <main className="cd-content" id="cd-main">{page}</main>
+            <main className="cd-content" id="cd-main">
+              <NoticeBanners items={notices.items} onDismiss={notices.dismiss} />
+              {page}
+            </main>
+            <NewServicePopup items={notices.items} onDismiss={notices.dismiss} go={to} />
           </div>
         </div>
       </div>

@@ -18,10 +18,9 @@ import {
   XCircle
 } from 'lucide-react';
 import { CUSTOMER_DOCUMENT_MAX_BYTES, type ChecklistItem, type CustomerDocument, type PipelineCustomerDetail, type ServiceCatalogItem } from '../../../../shared/contracts';
-import type { UploadMimeType } from '../../../../shared/validation';
 import { errorMessage } from '../../../lib/api/client';
 import { documentsApi, pipelineApi } from '../../../lib/api/endpoints';
-import { uploadToTicket } from '../../../lib/uploadToTicket';
+import { acceptFor, MIME_LABEL, uploadChecklistFile } from '../../../lib/checklistUpload';
 import { btn, categoryDot, Dialog, ErrorBanner, inputCls, money, Pill, shortDate } from './shared';
 import { CustomerInvoices } from '../../invoices/invoiceShared';
 
@@ -45,29 +44,6 @@ const ACTION_LABEL: Record<ChecklistItem['kind'], string> = {
   ACCESS: 'Mark granted',
   AMOUNT: 'Add amount',
   CHOICE: 'Choose'
-};
-const MIME_LABEL: Record<string, string> = {
-  'application/pdf': 'PDF',
-  'image/jpeg': 'JPG',
-  'image/png': 'PNG',
-  'image/webp': 'WEBP',
-  'text/csv': 'CSV',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',
-  'audio/mpeg': 'MP3',
-  'audio/wav': 'WAV',
-  'audio/mp4': 'M4A'
-};
-const EXT_MIME: Record<string, UploadMimeType> = {
-  pdf: 'application/pdf',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-  csv: 'text/csv',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
-  m4a: 'audio/mp4'
 };
 
 export const isDone = (i: ChecklistItem) => i.entry?.status === 'SAVED' || i.entry?.status === 'VERIFIED';
@@ -122,7 +98,7 @@ export const ChecklistPanel: React.FC<{
         <div>
           <h2 className="text-sm font-bold text-slate-900">Documents &amp; details</h2>
           <p className="text-xs text-slate-500">
-            {mode !== 'sales' ? 'Verify each item, or send it back with a note' : 'Checklist built from the services sold'}
+            {mode === 'review' ? 'Verify each item, fix a mistake yourself, or send it back with a note' : mode === 'addon' ? 'Verify each item, or send it back with a note' : 'Checklist built from the services sold'}
           </p>
         </div>
         <div role="tablist" aria-label="Show items" className="flex p-1 rounded-xl bg-slate-100 text-xs font-semibold">
@@ -187,32 +163,6 @@ export const ChecklistPanel: React.FC<{
 // ---------------------------------------------------------------------------
 // One checklist card
 // ---------------------------------------------------------------------------
-async function looksLike(file: File, mime: string): Promise<boolean> {
-  const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
-  const ascii = (a: number, b: number) => String.fromCharCode(...head.subarray(a, b));
-  switch (mime) {
-    case 'application/pdf':
-      return String.fromCharCode(...head).includes('%PDF-');
-    case 'image/png':
-      return head[0] === 0x89 && ascii(1, 4) === 'PNG';
-    case 'image/jpeg':
-      return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
-    case 'image/webp':
-      return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
-    case 'audio/wav':
-      return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WAVE';
-    case 'audio/mp4':
-      return ascii(4, 8) === 'ftyp';
-    case 'audio/mpeg':
-      return ascii(0, 3) === 'ID3' || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0);
-    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
-      return head[0] === 0x50 && head[1] === 0x4b && head[2] === 3 && head[3] === 4;
-    case 'text/csv':
-      return head.length > 0 && !head.includes(0);
-    default:
-      return false;
-  }
-}
 
 const fmtSize = (n: number | null) =>
   n === null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(1)} MB`;
@@ -246,44 +196,23 @@ const ChecklistCard: React.FC<{
   const history = isFile && item.code !== 'INVOICE' ? customer.documents.filter(d => d.documentType === item.code && d.status === 'SUPERSEDED') : [];
   // The Invoice item is filled by the invoice the Accounts department issues: nobody uploads it here.
   const issuedByAccounts = item.code === 'INVOICE';
-  const collects = (mode === 'sales' || mode === 'addon') && !issuedByAccounts;
+  // The consultant can correct what Sales sent (a wrong file or detail); only Sales deletes a file.
+  const collects = !issuedByAccounts && (mode !== 'review' || customer.lifecycleStage === 'ONBOARDING');
+  const mayDelete = mode !== 'review';
   const reviews = mode === 'review' || mode === 'addon';
   const allowed = item.allowedMimeTypes || ['application/pdf'];
   const maxSize = fmtSize(item.maxSizeBytes || CUSTOMER_DOCUMENT_MAX_BYTES);
   const typesText = allowed.map(m => MIME_LABEL[m] || m).join(', ');
-  const accept = allowed.flatMap(m => [m, ...Object.entries(EXT_MIME).filter(([, v]) => v === m).map(([e]) => `.${e}`)]).join(',');
+  const accept = acceptFor(allowed);
 
   const upload = async (file: File) => {
     setError(null);
-    const ext = file.name.split('.').pop()?.toLowerCase() || '';
-    const mime = (allowed.includes(file.type) ? file.type : EXT_MIME[ext]) as UploadMimeType | undefined;
-    if (!mime || !allowed.includes(mime)) return setError(`Accepted: ${typesText}. Upload a single file.`);
-    if (file.size === 0) return setError('This file is empty.');
-    if (file.size > (item.maxSizeBytes || 0)) return setError(`The file is larger than ${maxSize}. Please compress it and try again.`);
-    setPhase('checking');
-    if (!(await looksLike(file, mime))) {
-      setPhase(null);
-      return setError(
-        mime === 'application/pdf'
-          ? 'Only a single PDF file is accepted. Please combine the documents into one PDF.'
-          : `This file is not a real ${MIME_LABEL[mime]} file.`
-      );
-    }
-    let documentId: string | null = null;
     try {
-      const ticket = await documentsApi.beginUpload(customer.id, { documentType: item.code, fileName: file.name, mimeType: mime, sizeBytes: file.size });
-      documentId = ticket.document.id;
-      setPhase('uploading');
-      await uploadToTicket(ticket, file, mime);
-      setPhase('verifying');
-      await documentsApi.complete(documentId);
-      documentId = null;
+      await uploadChecklistFile(customer.id, item, file, setPhase);
       onChanged();
     } catch (e) {
       setError(errorMessage(e));
-      if (documentId) await documentsApi.abort(documentId).catch(() => undefined);
     } finally {
-      setPhase(null);
       if (inputRef.current) inputRef.current.value = '';
     }
   };
@@ -476,7 +405,7 @@ const ChecklistCard: React.FC<{
                   >
                     {currentDoc ? <RefreshCw className="w-3.5 h-3.5" /> : <Upload className="w-3.5 h-3.5" />} {currentDoc ? 'Replace' : 'Upload'}
                   </button>
-                  {currentDoc && !locked && (
+                  {currentDoc && !locked && mayDelete && (
                     <button type="button" className={btn.danger} onClick={() => setConfirmDelete(currentDoc)} aria-label={`Delete ${item.label}`}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -525,7 +454,7 @@ const ChecklistCard: React.FC<{
                     <button type="button" className="underline" onClick={() => open(d, 'view')}>
                       View
                     </button>
-                    {collects && (
+                    {collects && mayDelete && (
                       <button type="button" className="underline text-rose-700" onClick={() => setConfirmDelete(d)}>
                         Delete
                       </button>
@@ -583,7 +512,7 @@ const ChecklistCard: React.FC<{
 // ---------------------------------------------------------------------------
 // Dialogs
 // ---------------------------------------------------------------------------
-const EntryDialog: React.FC<{ item: ChecklistItem; customerId: string; onClose: () => void; onSaved: () => void }> = ({
+export const EntryDialog: React.FC<{ item: ChecklistItem; customerId: string; onClose: () => void; onSaved: () => void }> = ({
   item,
   customerId,
   onClose,

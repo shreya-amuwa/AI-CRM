@@ -5,16 +5,18 @@ plan, invoices, tickets and notifications. Nothing here lets a customer change a
 switch anything on by themselves.
 
 Design: the Amuwa customer app (warm cream page, white rounded cards, brand teal `#0E5A53`, Bricolage Grotesque headings
-and DM Sans body, pill status badges, a teal "hero" card for the current plan), adapted to a desktop dashboard with a
-sidebar. It follows the device's light/dark setting and works on desktop, tablet and phone (the sidebar becomes a menu).
+and DM Sans body, pill status badges), adapted to a desktop dashboard with a slim sidebar. It is always light, spacious
+(few boxes per page, generous spacing) and works on desktop, tablet and phone (the sidebar becomes a menu).
 
 ## Sidebar (in this order)
 
-1. **Overview** - business and contact, active services, current plan, invoices to pay, open tickets, upcoming renewals,
-   recent invoices / tickets / notifications. Empty sections say so (no sample data).
+1. **Overview** - the customer's name, business, phone, e-mail and "customer since", four counters (active services,
+   current plan, invoices to pay, open tickets), a renewal reminder when one is near, and short lists (3-4 rows each) of
+   services, tickets, invoices and the latest updates. Each block loads on its own and shows the real reason with a
+   "Try again" button if it fails. Empty blocks say so (no sample data).
 2. **My Services** - every service in `customer_services` for that customer (whatever the Sales team added, with no
-   extra step): name, description, category, start date, activation date, plan, valid-until/renewal, status
-   (`Live` / `Setting up`) and the details the team recorded (e.g. the WhatsApp API package shows a message-usage bar).
+   extra step), as simple cards (name, category, status, since / renews). **View details** shows start, activation, plan,
+   valid-until and the details the team recorded (e.g. the WhatsApp API package shows a message-usage bar).
    `client_services()` does not depend on optional onboarding columns, so a database that is behind on migrations
    still shows the services (migration `20261020000100_client_services_resilient.sql`).
 3. **Explore Services** - the company's service catalogue (`crm_services`) with price (when configured) and features,
@@ -88,7 +90,12 @@ Customers can withdraw a request while it is still `REQUESTED`.
 ## Tickets
 
 Reuses the Support ticket system (`support_tickets`, `support_ticket_updates`). A ticket raised by a customer has
-`created_by = null` and goes to the department's Support team (its head and Technical Consultants are notified).
+`created_by = null`. It is **assigned to the customer's own Team Member** and placed in their Team Lead's team (from the
+hand-over: `customer_onboarding.team_member_id` / `team_lead_id`); the Team Member, the Team Lead and the Department Head
+each get a bell notification, and the assignment is on the ticket history (not shown to the customer). Customers not yet
+handed over go to the department's Support team lead as before, and the ticket follows the customer to their Team Member
+as soon as one is assigned. Team Member -> Team Lead -> Department Head see it through the existing ticket rules; the
+Department Head also sees every ticket of a customer, with its status and who is working on it, on **Customers**.
 Support replies from the ticket pop-up (**Reply to the customer** box, only on customer-raised tickets): that reply is
 marked client-visible. **Internal notes are never shown to the customer**; status changes are shown as plain status lines.
 A customer reply on a *Resolved*/*Waiting* ticket reopens it; a *Closed* ticket cannot be replied to.
@@ -99,11 +106,30 @@ A customer reply on a *Resolved*/*Waiting* ticket reopens it; a *Closed* ticket 
 add-on and service-request updates, plan request/approval/activation, ticket replies and status changes. Each has a
 `dedupe_key` (unique) so the same event never notifies twice.
 
+## Notices: office closed and new services
+
+* A **Department Head** (for the clients of their department) or the **Super Admin / HR head** (one department or all
+  clients; the **Client notices** button in the top bar) publishes a notice: **Office closed** (a day, a run of days, or the
+  same date every month - for example the monthly performance review - and how many days ahead clients start seeing it) or
+  **New service** (pick a service; clients get a pop-up).
+* Clients see "office closed" notices as a banner at the top of every page ("Our office will be closed in 3 days"; "closed
+  today" on the day), with the Department Head's message, and in their Notification Center. Each client can dismiss a notice;
+  it is remembered per client and per occurrence (next month's closure shows again).
+* A **new service** pop-up has **Know more**, which opens that service's details in Explore Services
+  (`/client/dashboard/explore?service=CODE`), and **Maybe later**. It is shown once per client and not at all to a client
+  who already has the service.
+* **Adding a service to the catalogue** (`crm_services`) announces it to every client automatically and tells all
+  Department Heads.
+* Data: `client_announcements`, `client_announcement_dismissals` (RLS on, no direct access). Staff use
+  `publish_client_announcement`, `client_announcements_overview`, `end_client_announcement`; clients use
+  `client_announcements()` and `client_dismiss_announcement()` (API: `GET /client/announcements`,
+  `POST /client/announcements/:id/dismiss`). Dates use the office's time zone (India).
+
 ## Where things are
 
 | What | Where |
 | --- | --- |
-| Migration | `supabase/migrations/20261018000100_client_dashboard.sql` |
+| Migrations | `supabase/migrations/20261018000100_client_dashboard.sql`, `20261022000100_dashboard_v2_leads_onboarding.sql` (notices, ticket routing) |
 | DB tests | `supabase/tests/client_test.sql` (run by `npm run test:db`) |
 | API tests | `supabase/tests/api_integration.test.ts` ("client dashboard API" block, `npm run test:api`) |
 | API | `server/clientRoutes.ts` (client side), `server/controllers/index.ts` -> `clientWorkflowController` (staff side), `server/services/ClientService.ts`, `server/repositories/ClientRepository.ts` |
@@ -115,7 +141,7 @@ add-on and service-request updates, plan request/approval/activation, ticket rep
 
 `GET /me` `GET /overview` `GET /services` `GET /catalog` `GET|POST /service-requests` `DELETE /service-requests/:id`
 `GET /plans` `POST /plan-requests` `GET /invoices` `GET /invoices/:id/url?action=view|download` `GET|POST /tickets`
-`GET /tickets/:id` `POST /tickets/:id/replies` `GET /notifications?limit&offset` `POST /notifications/read`
+`GET /tickets/:id` `POST /tickets/:id/replies` `GET /announcements` `POST /announcements/:id/dismiss` `GET /notifications?limit&offset` `POST /notifications/read`
 
 Staff side: `GET /pipeline/service-requests` (open requests), `GET /pipeline/customers/:id/service-requests`,
 `POST /pipeline/service-requests/:id/decision` (Technical Consultant); `GET|POST /accounts/plans`,
@@ -124,8 +150,8 @@ lead); `POST /support/tickets/:id/client-reply` (Support).
 
 ## Deploying it
 
-1. Run `supabase/migrations/20261018000100_client_dashboard.sql` in the Supabase SQL editor (re-runnable). It needs the
-   earlier migrations already applied.
+1. Run `supabase/migrations/20261018000100_client_dashboard.sql` and then `20261022000100_dashboard_v2_leads_onboarding.sql`
+   in the Supabase SQL editor (both re-runnable). They need the earlier migrations already applied.
 2. Redeploy the app. Set **`APP_URL`** to the public address if you want links in emails to point at the right place.
 3. In **Accounts -> Monthly Plans**, add the plans you sell. Optionally set `description`, `starting_price`, `price_note`
    and `features` on the services in `crm_services` so Explore Services can show them (otherwise it says "Price confirmed

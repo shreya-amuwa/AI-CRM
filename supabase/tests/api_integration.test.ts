@@ -516,8 +516,8 @@ await put(ticket, PDF);
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 const importantDoc = r.json.data.id;
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=COLLECTING');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2 && r.json.data.items[0].onboarding.itemsSaved === 2,
-  'onboarding filter: still collecting (2 of 14 items)', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.mandatorySaved === 2 && r.json.data.items[0].onboarding.itemsSaved === 5 && r.json.data.items[0].onboarding.itemsTotal === 15,
+  'onboarding filter: still collecting (name, mobile and business name come from the lead; 5 of 15 items)', r);
 
 // a pending upload abandoned by the browser
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'abandoned.pdf');
@@ -531,9 +531,9 @@ check(!keys.some(k => k.includes(abandoned.document.id)), 'aborted upload object
 // --- service checklist (Starter Package + AI Calling) -----------------------------------
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const checklist = r.json.data.checklist as any[];
-check(checklist.length === 14 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
+check(checklist.length === 15 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
   'checklist built from the services sold (basics first, mandatory documents last)', checklist.map((c: any) => c.code));
-check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'the uploaded documents and the Accounts invoice already count as saved');
+check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 5, 'the lead details (name, mobile, business name), the uploaded documents and the Accounts invoice already count as saved');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
 check(r.status === 422 && /Complete these items first/.test(r.json.error.message), 'forward blocked until every checklist item is saved', r);
 // (the AI Calling checklist has no choice item any more: map one for this check only)
@@ -544,7 +544,7 @@ await db.query(`delete from public.onboarding_item_services where item_code = 'A
 r = await api('b', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '15000' });
 check(r.status === 404, "member B cannot fill A's checklist", r);
 for (const [code, value] of Object.entries({
-  BUSINESS_NAME_ADDRESS: 'Galaxy Jewellers, Thane', CUSTOMER_NAME: 'Siddhesh', CUSTOMER_MOBILE: '+91 98200 11111',
+  BUSINESS_NAME: 'Galaxy Jewellers', BUSINESS_ADDRESS: 'Station Road, Thane', CUSTOMER_NAME: 'Siddhesh', CUSTOMER_MOBILE: '+91 98200 11111',
   SMM_BUSINESS_AUDIENCE: 'Jewellery store, families in Thane', FACEBOOK_PAGE_ACCESS: 'Partner access granted', INSTAGRAM_PAGE_ACCESS: 'Connected',
   META_TARGET_AUDIENCE: 'Thane, 25-45', META_AD_BUDGET: '15000', SMM_CONTENT_LIBRARY: 'https://drive.example/galaxy', SMM_POSTING_PREFS: 'Daily, gold hashtags',
   AI_CALL_BUSINESS_ROLE: 'Jeweller; agent speaks as store manager', AI_CALL_CUSTOMER_NUMBER: '+91 98200 11111'
@@ -567,7 +567,7 @@ check(r.status === 200, 'real PNG certificate accepted', r);
 r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/consultant-items/WABA_ID`, { value: '123' });
 check(r.status === 404, 'sales cannot use the consultant-only endpoint', r);
 r = await api('a', 'GET', '/pipeline/customers?stage=ONBOARDING&onboarding=READY_FOR_HANDOVER');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 14, 'ready for handover once all 14 items are saved', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsSaved === 15, 'ready for handover once all 15 items are saved', r);
 
 r = await api('b', 'DELETE', `/documents/${importantDoc}`);
 check(r.status === 404, "member B cannot delete A's document", r);
@@ -667,7 +667,7 @@ r = await api('accm', 'GET', '/accounts/addon-requests');
 check(r.status === 200 && r.json.data.total === 0, 'a draft is not in Business Verification', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}/addon-checklist`);
 check(r.status === 200 && r.json.data.length === 0, 'no add-on documents before the add-on payment is confirmed', r);
-r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_BUSINESS_ROLE`, { value: 'Receptionist' });
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/GBP_LISTING_DETAILS`, { value: 'Station Road, 9-9' });
 check(r.status === 404, 'the consultant cannot collect add-on details before payment', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request`, { items: addonLines, submit: true, expectedVersion: addonReq.version + 5 });
 check(r.status === 409, 'a submit from a stale form is refused', r);
@@ -776,8 +776,10 @@ r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&intake=true');
 check(r.json.data.total === 1, 'the original onboarding is not blocked: the customer still waits for Send for onboarding', r);
 r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_BUSINESS_ROLE`, { value: 'Receptionist' });
 check(r.status === 200, 'the consultant collects an add-on detail', r);
-r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '5' });
-check(r.status === 404, 'but not a normal onboarding item', r);
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/WABA_ID`, { value: '5' });
+check(r.status === 404, 'but not an item that is not on the customer\'s checklist', r);
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/INVOICE`, { value: '5' });
+check(r.status === 403 || r.status === 404, 'and never the invoice, which belongs to Accounts', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request/complete`);
 check(r.status === 409 || r.status === 422, 'add-ons complete only when every add-on item is verified', r);
 {
@@ -817,7 +819,7 @@ check(r.status === 409, 'cannot send for onboarding twice', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&forwarded=true');
 check(r.json.data.total === 1 && r.json.data.items[0].id === leadA, 'consultant sees forwarded customers of their department', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
-check(r.status === 200 && r.json.data.checklist.length === 14, 'consultant opens the full checklist', r);
+check(r.status === 200 && r.json.data.checklist.length === 15, 'consultant opens the full checklist', r);
 r = await api('tc', 'GET', `/documents/${importantDoc}/url?action=view`);
 check(r.status === 200, 'consultant can view the documents', r);
 
@@ -992,8 +994,10 @@ check(invItem.entry?.status === 'SAVED' && invItem.entry.documentId && r.json.da
 const { rows: invAudit } = await db.query(`select action, count(*)::int n from public.audit_logs where action in ('INVOICE_UPLOADED', 'INVOICE_REPLACED', 'INVOICE_UPDATED') group by action`);
 const ia = Object.fromEntries(invAudit.map((x: any) => [x.action, x.n]));
 check(ia.INVOICE_UPLOADED === 3 && ia.INVOICE_REPLACED === 1 && ia.INVOICE_UPDATED === 1, 'upload, replacement and edit are audited', ia);
-r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '1' });
-check(r.status === 404, 'consultant cannot change sales data', r);
+r = await api('tc', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '15000' });
+check(r.status === 200, 'the consultant can correct a detail Sales entered (it is saved under their name)', r);
+r = await api('tc', 'GET', `/pipeline/customers/${leadA}`);
+check(r.json.data.checklist.find((c: any) => c.code === 'META_AD_BUDGET').entry.savedBy === 'Tech Consultant', 'and shows who changed it', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DOCUMENTS/review`, { decision: 'REJECTED' });
 check(r.status === 422, 'rejection requires a note', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DOCUMENTS/review`, { decision: 'REJECTED', note: 'Certificate is blurred' });
@@ -1038,7 +1042,7 @@ for (const item of r.json.data.checklist as any[]) {
   if (rv.status !== 200) check(false, `verify ${item.code}`, rv);
 }
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=VERIFIED');
-check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 14, 'all items verified', r);
+check(r.json.data.total === 1 && r.json.data.items[0].onboarding.itemsVerified === 15, 'all items verified', r);
 r = await api('a', 'GET', '/notifications');
 check(r.json.data.items.some((n: any) => n.type === 'ONBOARDING_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'ONBOARDING_RETURNED'),
   'salesperson notified of the send-back and of full verification', r.json.data.items.map((n: any) => n.type));
@@ -1805,6 +1809,36 @@ provider.close();
   r = await api('cl1', 'POST', '/client/notifications/read', { ids });
   r = await api('cl1', 'GET', '/client/notifications');
   check(r.json.data.unread === 0, 'client API: the owner marks them read', r);
+
+  // notices from the Department Head: an office-closed day, and a new service
+  await db.query(`insert into public.client_announcements (kind, title, body, event_date) values ('OFFICE_CLOSED', 'Office closed - review meeting', 'Back on the next working day.', ((now() at time zone 'Asia/Kolkata')::date + 2))`);
+  r = await api('cl1', 'GET', '/client/announcements');
+  const closure = r.json.data?.find((a: any) => a.kind === 'OFFICE_CLOSED');
+  check(r.status === 200 && closure && closure.daysAway === 2 && closure.title === 'Office closed - review meeting' && typeof closure.occurrence === 'string', 'client API: the client sees the closure notice', r);
+  r = await api('cl2', 'GET', '/client/announcements');
+  check(r.json.data.some((a: any) => a.kind === 'OFFICE_CLOSED'), 'client API: every client of that department sees it', r);
+  r = await api('cl1', 'POST', `/client/announcements/${closure.id}/dismiss`, { occurrence: closure.occurrence });
+  check(r.status === 200, 'client API: dismissing a notice', r);
+  r = await api('cl1', 'GET', '/client/announcements');
+  check(!r.json.data.some((a: any) => a.id === closure.id), 'client API: a dismissed notice stays dismissed', r);
+  r = await api('cl2', 'GET', '/client/announcements');
+  check(r.json.data.some((a: any) => a.id === closure.id), 'client API: dismissing is per client', r);
+  r = await api('cl1', 'POST', `/client/announcements/${closure.id}/dismiss`, { occurrence: 'x'.repeat(40) });
+  check(r.status === 422, 'client API: the dismiss body is validated', r);
+  r = await api('cl1', 'POST', '/client/announcements/not-a-uuid/dismiss', {});
+  check(r.status === 422, 'client API: and the notice id', r);
+  r = await api('sa', 'GET', '/client/announcements');
+  check(r.status === 403, 'client API: staff cannot read the client notices', r);
+  await db.query(`insert into public.crm_services (code, name, category, description, is_active, sort_order) values ('API_NEW_SVC', 'API New Service', 'Creative', 'Brand new.', true, 998)`);
+  r = await api('cl1', 'GET', '/client/announcements');
+  const fresh = r.json.data.find((a: any) => a.kind === 'NEW_SERVICE' && a.serviceCode === 'API_NEW_SVC');
+  check(fresh && fresh.serviceName === 'API New Service', 'client API: a service added to the catalogue is announced to the client', r);
+  r = await api('cl1', 'GET', '/client/notifications');
+  check(r.json.data.items.some((n: any) => n.type === 'NEW_SERVICE' && n.entityType === 'announcement'), 'client API: and it is in the Notification Center', r);
+  r = await api('cl1', 'GET', '/client/catalog');
+  check(r.json.data.some((c: any) => c.code === 'API_NEW_SVC'), 'client API: the new service is in Explore Services for the client to open', r);
+  r = await api('cl1', 'GET', '/client/services');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.every((x: any) => typeof x.details === 'object'), 'client API: My Services loads', r);
 
   // staff side of the same workflows
   r = await api('tc', 'GET', `/pipeline/customers/${leadA}/service-requests`);

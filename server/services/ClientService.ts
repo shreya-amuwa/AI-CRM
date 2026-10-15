@@ -1,5 +1,6 @@
 import type { ClientDocumentUrl } from '../../shared/contracts.js';
 import {
+  clientDismissSchema,
   clientFileQuerySchema,
   clientMarkReadSchema,
   clientNotificationsQuerySchema,
@@ -58,6 +59,13 @@ export class ClientService {
   createTicket(body: unknown) { return this.repo.createTicket(parse(clientTicketCreateSchema, body)); }
   replyTicket(id: string, body: unknown) {
     return this.repo.replyTicket(parse(uuidSchema, id), parse(clientTicketReplySchema, body).message);
+  }
+
+  announcements() { return this.repo.announcements(); }
+  async dismissAnnouncement(id: string, body: unknown) {
+    const { occurrence } = parse(clientDismissSchema, body ?? {});
+    await this.repo.dismissAnnouncement(parse(uuidSchema, id), occurrence || 'ONCE');
+    return null;
   }
 
   notifications(query: unknown) {

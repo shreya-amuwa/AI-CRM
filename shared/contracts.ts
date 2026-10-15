@@ -258,6 +258,7 @@ export interface PipelineCustomer {
   whatsapp: string | null;
   email: string | null;
   city: string | null;
+  address: string | null;
   businessCategory: string | null;
   leadSource: string | null;
   notes: string | null;
@@ -1150,11 +1151,30 @@ export interface ClientNotification {
   type: string;
   title: string;
   body: string | null;
-  entityType: 'invoice' | 'service' | 'plan' | 'ticket' | 'service_request' | 'plan_request' | 'addon' | null;
+  entityType: 'invoice' | 'service' | 'plan' | 'ticket' | 'service_request' | 'plan_request' | 'addon' | 'announcement' | null;
   entityId: string | null;
   readAt: string | null;
   createdAt: string;
 }
+/** A notice for the client: an "office closed" day or a new service (what the signed-in client sees right now). */
+export interface ClientAnnouncement {
+  id: string;
+  kind: 'OFFICE_CLOSED' | 'NEW_SERVICE';
+  title: string;
+  body: string | null;
+  serviceCode: string | null;
+  serviceName: string | null;
+  serviceDescription: string | null;
+  /** The day the office is closed (the next one, for a repeating closure). */
+  eventDate: string | null;
+  eventEnd: string | null;
+  daysAway: number | null;
+  recurrence: 'NONE' | 'MONTHLY';
+  /** Identifies this occurrence, so dismissing one month's notice does not hide next month's. */
+  occurrence: string;
+  createdAt: string;
+}
+
 export interface ClientNotifications {
   unread: number;
   total: number;

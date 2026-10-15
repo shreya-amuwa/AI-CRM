@@ -1,16 +1,18 @@
-import React from 'react';
-import { CalendarClock, CheckCircle2, Package, Clock3 } from 'lucide-react';
+import React, { useState } from 'react';
+import { LifeBuoy, Package } from 'lucide-react';
+import type { ClientService } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useLoad } from './hooks';
 import { dashboardPath, useShell } from './shell';
-import { Badge, Button, Card, EmptyState, PageHeader, Query, fmtDate, hueOf, serviceDetails, tagOf } from './ui';
+import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, fmtDate, serviceDetails, tagOf } from './ui';
 
 export const MyServices: React.FC = () => {
   const { go } = useShell();
   const q = useLoad(() => clientApi.services());
+  const [open, setOpen] = useState<ClientService | null>(null);
   return (
     <>
-      <PageHeader title="My Services" subtitle="Every service our team has set up for you, with its status and details." />
+      <PageHeader title="My Services" subtitle="The services Amuwa runs for you." />
       <Query
         q={q}
         empty={d => d.length === 0 ? (
@@ -18,61 +20,62 @@ export const MyServices: React.FC = () => {
             action={<Button small onClick={() => go(dashboardPath('explore'))}>Explore services</Button>} /></Card>
         ) : null}
       >
-        {services => {
-          const live = services.filter(s => s.status === 'LIVE').length;
-          return (
-            <>
-              <div className="cd-summary">
-                <span className="pill"><b>{services.length}</b> service{services.length === 1 ? '' : 's'}</span>
-                <span className="pill"><CheckCircle2 size={15} color="var(--primary)" /><b>{live}</b> live</span>
-                {services.length - live > 0 && <span className="pill"><Clock3 size={15} color="var(--attention-text)" /><b>{services.length - live}</b> being set up</span>}
-              </div>
-              <div className="cd-grid auto">
-                {services.map(s => {
-                  const { usage, rows } = serviceDetails(s.code, s.details);
-                  return (
-                    <Card key={s.code} className={`cd-svc cd-hue-${hueOf(s.category)}`}>
-                      <div className="cd-svc-top">
-                        <span className="cd-svc-ico">{tagOf(s.name)}</span>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ fontSize: 18 }}>{s.name}</h3>
-                          <p className="cd-small" style={{ color: 'var(--h-fg)', fontWeight: 600 }}>{s.category}</p>
-                        </div>
-                        <Badge tone={s.status === 'LIVE' ? 'success' : 'attention'}>{s.status === 'LIVE' ? 'Live' : 'Setting up'}</Badge>
-                      </div>
-                      <div className="cd-svc-body">
-                        {s.description ? <p className="cd-small">{s.description}</p> : null}
-                        <dl className="cd-kv">
-                          <Detail label="Started" value={fmtDate(s.purchasedAt)} />
-                          <Detail label="Activated" value={s.activatedAt ? fmtDate(s.activatedAt) : 'Not yet'} />
-                          <Detail label="Plan" value={s.plan ?? 'Not set'} />
-                          <Detail label="Renews / valid until" value={s.renewsOn ? fmtDate(s.renewsOn) : 'Not set'} />
-                          {rows.map(r => <Detail key={r.label} label={r.label} value={r.value} />)}
-                        </dl>
-                        {usage && (
-                          <div className="cd-usage">
-                            <div className="cd-between"><span className="cd-label" style={{ margin: 0 }}>Message usage</span><b>{usage.pct}% used</b></div>
-                            <div className="cd-meter" style={{ margin: '10px 0' }} role="progressbar" aria-valuenow={usage.pct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${usage.pct}%` }} /></div>
-                            <div className="cd-between cd-small cd-muted"><span>{usage.sent.toLocaleString('en-IN')} sent</span><span>{usage.remaining.toLocaleString('en-IN')} left of {usage.bought.toLocaleString('en-IN')}</span></div>
-                          </div>
-                        )}
-                        <div className={`cd-banner ${s.status === 'LIVE' ? 'success' : 'attention'}`}>
-                          {s.status === 'LIVE' ? <CheckCircle2 size={16} /> : <CalendarClock size={16} />}
-                          <span>{s.status === 'LIVE' ? 'Setup and verification are complete. This service is running.' : 'Your consultant is still setting this up. We will tell you when it goes live.'}</span>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            </>
-          );
-        }}
+        {services => (
+          <div className="cd-grid auto">
+            {services.map(s => (
+              <Card key={s.code}>
+                <div className="cd-row" style={{ alignItems: 'flex-start' }}>
+                  <span className="cd-tag">{tagOf(s.name)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ fontSize: 17 }}>{s.name}</h3>
+                    <p className="cd-small cd-muted">{s.category}</p>
+                  </div>
+                  <Badge tone={s.status === 'LIVE' ? 'success' : 'attention'}>{s.status === 'LIVE' ? 'Live' : 'Setting up'}</Badge>
+                </div>
+                {s.description ? <p className="cd-small cd-muted" style={{ marginTop: 14, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.description}</p> : null}
+                <p className="cd-small cd-muted" style={{ marginTop: 14 }}>
+                  Since {fmtDate(s.purchasedAt)}{s.renewsOn ? ` · renews ${fmtDate(s.renewsOn)}` : ''}
+                </p>
+                <div className="cd-row" style={{ marginTop: 16 }}>
+                  <Button variant="outline" small onClick={() => setOpen(s)}>View details</Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </Query>
+      {open && (
+        <Modal title={open.name} onClose={() => setOpen(null)}>
+          <div className="cd-stack" style={{ gap: 18 }}>
+            <p className="cd-muted">{open.description || open.category}</p>
+            <dl className="cd-kv">
+              <div><dt>Status</dt><dd>{open.status === 'LIVE' ? 'Live - running now' : 'Setting up - we will tell you when it goes live'}</dd></div>
+              <div><dt>Category</dt><dd>{open.category}</dd></div>
+              <div><dt>Started</dt><dd>{fmtDate(open.purchasedAt)}</dd></div>
+              <div><dt>Went live</dt><dd>{open.activatedAt ? fmtDate(open.activatedAt) : 'Not yet'}</dd></div>
+              <div><dt>Monthly plan</dt><dd>{open.plan ?? 'Not part of a plan'}</dd></div>
+              <div><dt>Valid until / renews</dt><dd>{open.renewsOn ? fmtDate(open.renewsOn) : 'Not set'}</dd></div>
+              {serviceDetails(open.code, open.details).rows.map(r => <div key={r.label}><dt>{r.label}</dt><dd>{r.value}</dd></div>)}
+            </dl>
+            {(() => {
+              const { usage } = serviceDetails(open.code, open.details);
+              return usage ? (
+                <div style={{ border: '1px solid var(--divider)', background: 'var(--surface)', borderRadius: 14, padding: 14 }}>
+                  <div className="cd-between"><span className="cd-label">Message usage</span><b>{usage.pct}% used</b></div>
+                  <div role="progressbar" aria-valuenow={usage.pct} aria-valuemin={0} aria-valuemax={100} style={{ height: 9, borderRadius: 99, background: 'var(--segment)', overflow: 'hidden', margin: '10px 0' }}>
+                    <i style={{ display: 'block', height: '100%', width: `${usage.pct}%`, background: 'var(--primary)', borderRadius: 99 }} />
+                  </div>
+                  <div className="cd-between cd-small cd-muted"><span>{usage.sent.toLocaleString('en-IN')} sent</span><span>{usage.remaining.toLocaleString('en-IN')} left of {usage.bought.toLocaleString('en-IN')}</span></div>
+                </div>
+              ) : null;
+            })()}
+            <div className="cd-row" style={{ justifyContent: 'flex-end' }}>
+              <Button variant="outline" onClick={() => { setOpen(null); go(dashboardPath('tickets')); }}><LifeBuoy size={16} /> Need help with this?</Button>
+              <Button onClick={() => setOpen(null)}>Close</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </>
   );
 };
-
-const Detail: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div style={{ minWidth: 0 }}><dt>{label}</dt><dd style={{ overflowWrap: 'anywhere' }}>{value}</dd></div>
-);

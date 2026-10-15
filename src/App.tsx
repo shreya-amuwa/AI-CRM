@@ -58,8 +58,7 @@ const MainAppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
   const [route, setRoute] = useState(parseCurrentRoute());
-  // Department heads land on their task dashboard; the department hub is one click away.
-  const [deptHubOpen, setDeptHubOpen] = useState(false);
+  // Department heads land on their own dashboard; only the Super Admin sees the all-departments hub.
 
   // Listen for browser navigation (popstate)
   React.useEffect(() => {
@@ -151,6 +150,11 @@ const MainAppContent: React.FC = () => {
     }
   }, [activeDepartmentId, user]);
 
+  // The HR head has no hub to pick from: open their own department straight away.
+  React.useEffect(() => {
+    if (user?.role === 'hr' && user.departmentId && activeDepartmentId !== user.departmentId) selectDepartment(user.departmentId as any);
+  }, [user, activeDepartmentId]);
+
   // Reset tab and sub-department whenever active department changes or user session changes
   const prevDeptIdRef = React.useRef(activeDepartmentId);
   const prevUserIdRef = React.useRef(user?.id);
@@ -223,23 +227,14 @@ const MainAppContent: React.FC = () => {
   }
 
   // Step 1.7: Department Head Dashboard (Assign / Reports / Daily Tasks)
-  if (user.role === 'admin' && !deptHubOpen) {
+  // A Department Head only ever sees their own department: the all-departments hub is for the Super Admin.
+  if (user.role === 'admin') {
     return (
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
-        <DepartmentHeadDashboard onOpenHub={() => setDeptHubOpen(true)} />
+        <DepartmentHeadDashboard />
       </Suspense>
     );
   }
-  const backToDeptHead =
-    user.role === 'admin' ? (
-      <button
-        type="button"
-        onClick={() => setDeptHubOpen(false)}
-        className="fixed bottom-4 left-4 z-[70] px-3.5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold shadow-lg hover:bg-slate-800"
-      >
-        ← Department Head Dashboard
-      </button>
-    ) : null;
 
   // Determine active department and tab info
   let currentDeptId = activeDepartmentId || '';
@@ -261,14 +256,13 @@ const MainAppContent: React.FC = () => {
     }
   }
 
-  // Step 2: Home / Department Selector Screen if no department is selected
-  // SuperAdmin goes directly to dashboard, Admin/HR see locked departments they must unlock
+  // Step 2: Home / Department Selector Screen if no department is selected (Super Admin only)
   if ((!currentDeptId || !currentDept) && tabs.length === 0) {
+    if (user.role !== 'superadmin') return <ScreenLoader />;
     return (
       <div className="bg-slate-50 text-slate-900 min-h-screen">
         <DepartmentSelector />
         <SessionEvictionModal />
-        {backToDeptHead}
       </div>
     );
   }
@@ -306,7 +300,7 @@ const MainAppContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Top Persistent Header */}
       <Header
-        onNavigateHome={handleReturnToHub}
+        onNavigateHome={user.role === 'superadmin' ? handleReturnToHub : undefined}
       />
 
       {/* Tab Bar - shows when multiple departments are open */}
@@ -318,7 +312,7 @@ const MainAppContent: React.FC = () => {
           <Sidebar
             activeTab={currentActiveTab}
             onSelectTab={(tab) => handleTabUpdate(tab)}
-            onNavigateHome={handleReturnToHub}
+            onNavigateHome={user.role === 'superadmin' ? handleReturnToHub : undefined}
             subDept={currentSubDept}
             departmentId={currentDeptId}
           />
@@ -484,7 +478,6 @@ const MainAppContent: React.FC = () => {
 
       {/* Session Eviction Modal */}
       <SessionEvictionModal />
-      {backToDeptHead}
     </div>
   );
 };

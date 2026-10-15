@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   BarChart3,
   Bell,
-  Building2,
   CalendarCheck,
   ChevronDown,
   ClipboardList,
@@ -13,13 +12,17 @@ import {
   UserPlus,
   HelpCircle,
   LogOut,
+  Megaphone,
   Menu,
   Plus,
   UserCheck,
+  Users,
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
+import { DepartmentCustomers } from '../handover/DepartmentCustomers';
+import { ClientNotices } from '../notices/ClientNotices';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { AccountsPlans } from '../accounts/AccountsPlans';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
@@ -39,7 +42,7 @@ import {
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 
-type Nav = 'plans' | 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments' | 'notifications';
+type Nav = 'notices' | 'customers' | 'plans' | 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments' | 'notifications';
 
 /**
  * Department Head dashboard.
@@ -48,7 +51,7 @@ type Nav = 'plans' | 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 't
  *   Reports     - how much work is completed / not, per team lead and member.
  *   Daily Tasks - what was due on a day and how much of it is completed.
  */
-export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ onOpenHub }) => {
+export const DepartmentHeadDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const [nav, setNav] = useState<Nav>(profile?.department?.slug === 'accounts' ? 'payments' : 'assign');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -60,6 +63,8 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
     { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
     { id: 'support', label: 'Support Desk', icon: Headset },
     { id: 'clients', label: 'Client Hand-overs', icon: UserCheck },
+    { id: 'customers', label: 'Customers', icon: Users },
+    { id: 'notices', label: 'Client Notices', icon: Megaphone },
     { id: 'team', label: 'Team Members & Access', icon: UserPlus },
     { id: 'notifications', label: 'Notification Center', icon: Bell }
   ];
@@ -114,16 +119,6 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
                 </button>
               );
             })}
-            {onOpenHub && (
-              <button
-                type="button"
-                onClick={onOpenHub}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-left text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <Building2 className="w-4 h-4 text-slate-400" aria-hidden="true" />
-                Department Hub
-              </button>
-            )}
           </nav>
         </div>
         <div className="space-y-2 pt-4 border-t border-slate-100">
@@ -161,6 +156,8 @@ export const DepartmentHeadDashboard: React.FC<{ onOpenHub?: () => void }> = ({ 
           {nav === 'daily' && <DailyPage data={data} />}
           {nav === 'support' && <SupportDeskPage />}
           {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
+          {nav === 'customers' && <DepartmentCustomers />}
+          {nav === 'notices' && <ClientNotices />}
           {nav === 'payments' && <AccountsConfirmations />}
           {nav === 'plans' && <AccountsPlans />}
           {nav === 'notifications' && <NotificationsPage />}

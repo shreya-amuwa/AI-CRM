@@ -71,11 +71,22 @@ const ServicePicker: React.FC<{
     return [...m.entries()];
   }, [services]);
   const toggle = (code: string) => onChange(value.includes(code) ? value.filter(c => c !== code) : [...value, code]);
+  const allCodes = services.map(s => s.code);
+  const allOn = allCodes.length > 0 && allCodes.every(c => value.includes(c));
+  const setMany = (codes: string[], on: boolean) =>
+    onChange(on ? [...value, ...codes.filter(c => !value.includes(c))] : value.filter(c => !codes.includes(c)));
+  const linkCls = 'text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 rounded';
 
   if (variant === 'chips') {
     const ordered = [...services].sort((a, b) => Number(value.includes(b.code)) - Number(value.includes(a.code)));
     return (
       <div className="flex flex-wrap gap-2">
+        <div className="w-full flex items-center gap-3">
+          <button type="button" disabled={disabled} className={linkCls} onClick={() => setMany(allCodes, !allOn)}>
+            {allOn ? 'Clear all' : 'Select all services'}
+          </button>
+          <span className="text-[11px] text-slate-500">{value.length} of {services.length} selected</span>
+        </div>
         {ordered.map(s => {
           const on = value.includes(s.code);
           return (
@@ -108,12 +119,24 @@ const ServicePicker: React.FC<{
   return (
     <fieldset aria-describedby={error ? 'services-error' : undefined}>
       <legend className="sr-only">Services interested in</legend>
+      <div className="flex items-center gap-3 mb-3">
+        <button type="button" disabled={disabled} className={linkCls} onClick={() => setMany(allCodes, !allOn)}>
+          {allOn ? 'Clear all services' : 'Select all services'}
+        </button>
+        <span className="text-[11px] text-slate-500">{value.length} of {services.length} selected</span>
+      </div>
       <div className="space-y-4">
-        {groups.map(([category, items]) => (
+        {groups.map(([category, items]) => {
+          const codes = items.map(i => i.code);
+          const sectionOn = codes.every(c => value.includes(c));
+          return (
           <div key={category}>
             <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-2">
               <span className={`w-1.5 h-1.5 rounded-full ${categoryDot(category)}`} />
               {category}
+              <button type="button" disabled={disabled} className={`${linkCls} ml-2 font-medium`} onClick={() => setMany(codes, !sectionOn)}>
+                {sectionOn ? 'Clear section' : 'Select all in section'}
+              </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
               {items.map(s => {
@@ -132,7 +155,8 @@ const ServicePicker: React.FC<{
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       {error && (
         <p id="services-error" className="mt-2 text-[11px] text-rose-600">
@@ -153,6 +177,7 @@ const EMPTY = {
   whatsapp: '',
   email: '',
   city: '',
+  address: '',
   businessCategory: '',
   leadSource: 'Walk-in',
   leadStatus: 'NEW' as LeadStatus,
@@ -187,6 +212,7 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
       whatsapp: form.whatsapp || null,
       email: form.email || null,
       city: form.city || null,
+      address: form.address || null,
       businessCategory: form.businessCategory === 'Other' ? otherCategory.trim() || 'Other' : form.businessCategory || null,
       nextFollowUpAt: fromLocalInput(form.nextFollowUpAt),
       expectedBudget: form.expectedBudget === '' ? null : form.expectedBudget,
@@ -255,6 +281,9 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
           </Field>
           <Field label="City" htmlFor="lead-city" error={errors.city}>
             {input('city', { placeholder: 'e.g. Mumbai' })}
+          </Field>
+          <Field label="Business address" htmlFor="lead-address" error={errors.address}>
+            {input('address', { placeholder: 'Shop / office address', autoComplete: 'street-address' })}
           </Field>
           <Field label="Business category" htmlFor="lead-businessCategory">
             <select id="lead-businessCategory" className={inputCls} value={form.businessCategory} onChange={set('businessCategory')}>
@@ -372,7 +401,7 @@ export const EditLeadView: React.FC<{
   const { items: services } = useServiceCatalog();
   const [lead, setLead] = useState<PipelineCustomerDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', company: '', phone: '', email: '', city: '', leadSource: '', nextFollowUpAt: '' });
+  const [form, setForm] = useState({ name: '', company: '', phone: '', email: '', city: '', address: '', leadSource: '', nextFollowUpAt: '' });
   const [status, setStatus] = useState<LeadStatus>('NEW');
   const [selected, setSelected] = useState<string[]>([]);
   const [errors, setErrors] = useState<Errors>({});
@@ -393,6 +422,7 @@ export const EditLeadView: React.FC<{
       phone: l.phone || '',
       email: l.email || '',
       city: l.city || '',
+      address: l.address || '',
       leadSource: l.leadSource || '',
       nextFollowUpAt: toLocalInput(l.nextFollowUpAt)
     });
@@ -447,6 +477,7 @@ export const EditLeadView: React.FC<{
     cmp('phone', form.phone.trim(), lead.phone);
     cmp('email', form.email.trim() || null, lead.email);
     cmp('city', form.city.trim() || null, lead.city);
+    cmp('address', form.address.trim() || null, lead.address);
     cmp('leadSource', form.leadSource, lead.leadSource);
     cmp('nextFollowUpAt', fromLocalInput(form.nextFollowUpAt), lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt).toISOString() : null);
     if (status !== lead.leadStatus) body.leadStatus = status;
@@ -656,6 +687,7 @@ export const EditLeadView: React.FC<{
           {detailField('Mobile', 'phone', { type: 'tel' })}
           {detailField('Email', 'email', { type: 'email' })}
           {detailField('City', 'city')}
+          {detailField('Business address', 'address')}
           <div>
             <label htmlFor="edit-leadSource" className="block text-xs font-medium text-slate-500 mb-1">
               Lead source

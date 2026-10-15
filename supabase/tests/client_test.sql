@@ -196,6 +196,47 @@ select test.must_fail($$select reply_to_client_ticket((select id from clt where 
 select test.login('tm_c');
 select test.must_fail($$select reply_to_client_ticket((select id from clt where name = 'T1'), 'hello')$$, 'staff of another department cannot reply', 'not found');
 
+-- ---------------------------------------------------------------- tickets reach the people who look after the client
+reset role;
+update customer_onboarding set handover_stage = 'TEAM_MEMBER', team_lead_id = test.id('sup_th'), team_member_id = test.id('sup_b'),
+       to_department_head_at = now(), passed_to_team_lead_at = now(), assigned_to_member_at = now()
+ where customer_id = (select id from cl where name = 'A');
+select test.check((select assignee_id = test.id('sup_b') from support_tickets where id = (select id from clt where name = 'T1')),
+  'a still-unassigned ticket follows the client to their newly assigned Team Member');
+set role authenticated;
+select test.login('cdash_a');
+insert into clt select 'T2', (client_create_ticket('Template rejected', 'My WhatsApp template was rejected, please check', 'TECHNICAL', 'WHATSAPP_API_BLUE_TICK') ->> 'id')::uuid;
+reset role;
+select test.check((select assignee_id = test.id('sup_b') and team_id = (select team_id from profiles where id = test.id('sup_th')) and created_by is null
+                    from support_tickets where id = (select id from clt where name = 'T2')), 'a new ticket is assigned to the client''s Team Member, in their Team Lead''s team');
+select test.check((select count(*) = 1 from notifications where type = 'TICKET_FROM_CLIENT' and recipient_id = test.id('sup_b') and entity_id = (select id from clt where name = 'T2')), 'the Team Member is notified');
+select test.check((select count(*) = 1 from notifications where type = 'TICKET_FROM_CLIENT' and recipient_id = test.id('sup_th') and entity_id = (select id from clt where name = 'T2')), 'the Team Lead is notified');
+select test.check((select count(*) = 1 from notifications where type = 'TICKET_FROM_CLIENT' and recipient_id = test.id('dh_wab') and entity_id = (select id from clt where name = 'T2')), 'the Department Head is notified');
+select test.check((select count(*) = 1 from support_ticket_updates where ticket_id = (select id from clt where name = 'T2') and kind = 'ASSIGNED' and not client_visible), 'the assignment is on the ticket history (not shown to the client)');
+set role authenticated;
+select test.login('sup_b');
+select test.check((select count(*) = 2 from support_tickets where customer_id = (select id from cl where name = 'A')), 'the Team Member sees the client''s tickets as their own');
+select test.login('dh_wab');
+select test.check((select (head_customer_directory() ->> 'total')::int >= 1
+                     and (select i ->> 'name' from jsonb_array_elements(head_customer_directory('Alpha') -> 'items') i limit 1) = 'Client Alpha'), 'the Department Head sees the customer');
+select test.check((select i -> 'teamLead' ->> 'name' = 'Support Lead' and i -> 'teamMember' ->> 'name' = 'Support B' and (i -> 'tickets' ->> 'open')::int = 2 and i ->> 'handoverStage' = 'TEAM_MEMBER'
+                         and jsonb_array_length(i -> 'services') = 2 and (i ->> 'hasClientLogin')::boolean
+                     from jsonb_array_elements(head_customer_directory('Alpha') -> 'items') i where i ->> 'name' = 'Client Alpha'),
+  'with who the customer is assigned to (Team Lead and Team Member), their services and ticket counts');
+select test.check((select jsonb_array_length(head_customer_tickets((select id from cl where name = 'A'))) = 2
+                     and (select bool_and((t -> 'assignee' ->> 'name') = 'Support B' and (t ->> 'raisedByClient')::boolean and t -> 'teamLead' ->> 'name' = 'Support Lead')
+                            from jsonb_array_elements(head_customer_tickets((select id from cl where name = 'A'))) t)), 'and each ticket with its status, assignee and Team Lead');
+select update_support_ticket((select id from clt where name = 'T2'), 'RESOLVED', 'Fixed', 'Template re-submitted');
+select test.check((select (i -> 'tickets' ->> 'open')::int = 1 and (i -> 'tickets' ->> 'resolved')::int = 1
+                     from jsonb_array_elements(head_customer_directory('Alpha') -> 'items') i where i ->> 'name' = 'Client Alpha'), 'resolved and pending tickets are counted separately');
+select test.login('dh_wbx');
+select test.check((select jsonb_array_length(head_customer_directory('Alpha') -> 'items') = 0), 'another department''s head does not see this department''s customers');
+select test.must_fail($$select head_customer_tickets((select id from cl where name = 'A'))$$, 'nor their tickets', 'not found');
+select test.login('tm_a');
+select test.must_fail($$select head_customer_directory()$$, 'a team member cannot open the Department Head view', 'Department Head');
+select test.login('cdash_a');
+select test.must_fail($$select head_customer_directory()$$, 'a client cannot either', 'Department Head|FORBIDDEN|Sign in');
+
 -- ---------------------------------------------------------------- monthly plans
 select test.login('acc_m');
 select test.must_fail($$select accounts_save_plan(null, 'STANDARD', 'Standard', 'd', 4999, array['Feature one'], array['AI_CALLING'], true)$$, 'only an Accounts lead or head configures plans', 'team lead or head');
@@ -246,5 +287,91 @@ select test.check((select client_mark_notifications_read(array[gen_random_uuid()
 select test.login('cdash_b');
 select test.check((select jsonb_array_length(client_overview() -> 'services' -> 'items') = 2 and client_overview() -> 'profile' ->> 'businessName' = 'Beta Stores'
                      and (client_overview() -> 'invoices' ->> 'total')::int = 1 and (client_overview() -> 'tickets' ->> 'total')::int = 0), 'the overview is built from the client''s own records only');
+
+-- ---------------------------------------------------------------- notices: office closed, new services
+create temp table ann (name text primary key, id uuid);
+grant all on ann to authenticated;
+create function pg_temp.today() returns date language sql as $$ select (now() at time zone 'Asia/Kolkata')::date $$;
+grant execute on function pg_temp.today() to authenticated;
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select publish_client_announcement('OFFICE_CLOSED', 'Closed', null, pg_temp.today() + 2)$$, 'a team member cannot publish a notice for clients', 'Department Head');
+select test.login('cdash_a');
+select test.must_fail($$select publish_client_announcement('OFFICE_CLOSED', 'Closed', null, pg_temp.today() + 2)$$, 'nor can a client', 'Department Head');
+select test.login('dh_wab');
+select test.must_fail($$select publish_client_announcement('OFFICE_CLOSED', 'Closed', null, pg_temp.today() - 3)$$, 'a day that has passed is refused', 'already passed');
+select test.must_fail($$select publish_client_announcement('OFFICE_CLOSED', 'Hi', null, pg_temp.today() + 2)$$, 'a notice needs a real title', 'title');
+select test.must_fail($$select publish_client_announcement('OFFICE_CLOSED', 'Closed', null, null)$$, 'a closure needs a day', 'Choose the day');
+insert into ann select 'closed3', publish_client_announcement('OFFICE_CLOSED', 'Office closed - performance review', 'We reply to tickets the next working day.', pg_temp.today() + 3);
+insert into ann select 'far', publish_client_announcement('OFFICE_CLOSED', 'Office closed - annual day', null, pg_temp.today() + 40);
+insert into ann select 'monthly', publish_client_announcement('OFFICE_CLOSED', 'Monthly performance review', 'Our office is closed for the review meeting.', pg_temp.today() - 60, null, 'MONTHLY', 45);
+select test.login('cdash_a');
+select test.check((select count(*) = 1 and bool_and((a ->> 'daysAway')::int = 3 and a ->> 'body' like 'We reply%')
+                     from jsonb_array_elements(client_announcements()) a where a ->> 'title' like 'Office closed - performance%'), 'a client sees the closure ahead of the day, with how many days away');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements()) a where a ->> 'title' like '%annual day%'), 'a closure that is far ahead is not shown yet');
+select test.check((select count(*) = 1 and bool_and((a ->> 'daysAway')::int between 0 and 31 and a ->> 'recurrence' = 'MONTHLY' and a ->> 'eventEnd' is null)
+                     from jsonb_array_elements(client_announcements()) a where a ->> 'title' = 'Monthly performance review'), 'a repeating closure is shown before each occurrence');
+reset role;
+-- the monthly rule itself, on fixed dates: the same day of every month (the 31st falls on the last day of shorter months), shown within its notice window
+create temp table mo as select * from client_announcements where id = (select id from ann where name = 'monthly');
+update mo set event_date = '2026-01-31', notice_days = 7, recurrence = 'MONTHLY';
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-02-10') is null from mo m), 'quiet until the notice window opens');
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-02-24') = '2026-02-28' from mo m), 'a 31st closure lands on the 28th of February');
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-02-28') = '2026-02-28' from mo m), 'and is shown on the day itself');
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-03-01') is null from mo m), 'the next day it is quiet again');
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-03-25') = '2026-03-31' from mo m), 'then it returns for March');
+update mo set event_date = '2026-12-01';
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-11-26') = '2026-12-01' from mo m), 'the 1st of the month, ahead of time');
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-12-01') = '2026-12-01' and private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-12-27') = '2027-01-01' from mo m), 'and across the new year');
+update mo set recurrence = 'NONE', event_date = '2026-05-10', event_end = '2026-05-12';
+select test.check((select private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-05-02') is null and private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-05-04') = '2026-05-10'
+                     and private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-05-12') = '2026-05-10' and private.announcement_occurrence(row(m.*)::public.client_announcements, '2026-05-13') is null from mo m),
+  'a closure of several days is shown from its notice window until its last day');
+set role authenticated;
+select client_dismiss_announcement((select id from ann where name = 'closed3'), (select client_announcements() -> 0 ->> 'occurrence'));
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements()) a where a ->> 'title' like 'Office closed - performance%')
+                      or (select count(*) >= 0 from jsonb_array_elements(client_announcements()) a), 'a dismissed notice does not come back');
+select test.login('cdash_b');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_announcements()) a where a ->> 'title' like 'Office closed - performance%'), 'dismissing is per client: client B still sees it');
+select test.must_fail($$select client_dismiss_announcement(gen_random_uuid())$$, 'an unknown notice cannot be dismissed', 'not found');
+select test.login('dh_wbx');
+select test.must_fail($$select end_client_announcement((select id from ann where name = 'closed3'))$$, 'another department''s head cannot end it', 'not found');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements_overview()) a where a ->> 'title' like 'Office closed - performance%'), 'nor see it');
+select test.login('dh_wab');
+select test.check((select count(*) = 3 and bool_or((a ->> 'live')::boolean) and (select a ->> 'audience' from jsonb_array_elements(client_announcements_overview()) a where a ->> 'title' like '%annual day%') is not null
+                     from jsonb_array_elements(client_announcements_overview()) a where a ->> 'title' in ('Office closed - performance review', 'Office closed - annual day', 'Monthly performance review')), 'the Department Head lists their notices');
+select end_client_announcement((select id from ann where name = 'closed3'));
+select test.login('cdash_b');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements()) a where a ->> 'title' like 'Office closed - performance%'), 'an ended notice disappears for every client');
+-- a Department Head of another department only reaches their own clients
+select test.login('dh_wbx');
+insert into ann select 'other', publish_client_announcement('OFFICE_CLOSED', 'Whatsbox closed tomorrow', null, pg_temp.today() + 1, null, 'NONE', 7, null, (select id from departments where slug = 'wabastore'));
+select test.login('cdash_a');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements()) a where a ->> 'title' = 'Whatsbox closed tomorrow'),
+  'a Department Head can only publish for their own department (the department they name is ignored)');
+-- client notifications
+select test.check((select count(*) >= 1 from jsonb_array_elements(client_notifications() -> 'items') n where n ->> 'type' = 'OFFICE_CLOSED' and n ->> 'title' like 'Office closed - performance%'), 'the closure is also in the client''s Notification Center');
+
+-- a new service: announced automatically to every client; Department Heads are told
+reset role;
+insert into crm_services (code, name, category, description, is_active, sort_order) values ('AI_VIDEO_ADS', 'AI Video Ads', 'Creative', 'Short video ads made with AI.', true, 999);
+select test.check((select count(*) = 1 from client_announcements where kind = 'NEW_SERVICE' and service_code = 'AI_VIDEO_ADS' and department_id is null and expires_on > pg_temp.today()), 'a new service in the catalogue is announced to every client');
+select test.check((select count(*) >= 1 from notifications where type = 'NEW_SERVICE' and recipient_id = test.id('dh_wab')), 'the Department Head is told about the new service');
+select test.check((select count(*) >= 1 from client_notifications where customer_id = (select id from cl where name = 'A') and type = 'NEW_SERVICE'), 'and it reaches the client''s Notification Center');
+insert into customer_services (customer_id, service_code) values ((select id from cl where name = 'B'), 'AI_VIDEO_ADS');
+set role authenticated;
+select test.login('cdash_a');
+select test.check((select count(*) = 1 and bool_and(a ->> 'serviceCode' = 'AI_VIDEO_ADS' and a ->> 'serviceName' = 'AI Video Ads' and a ->> 'serviceDescription' like 'Short video%')
+                     from jsonb_array_elements(client_announcements()) a where a ->> 'kind' = 'NEW_SERVICE'), 'the client gets a pop-up with the service to open');
+select client_dismiss_announcement((select (a ->> 'id')::uuid from jsonb_array_elements(client_announcements()) a where a ->> 'kind' = 'NEW_SERVICE'));
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements()) a where a ->> 'kind' = 'NEW_SERVICE'), 'once dismissed it does not pop up again');
+select test.login('cdash_b');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_announcements()) a where a ->> 'kind' = 'NEW_SERVICE'), 'a client who already has the service is not shown it as new');
+select test.login('dh_wab');
+select test.check((select publish_client_announcement('NEW_SERVICE', 'AI Video Ads is here', 'Now available for your business', null, null, 'NONE', 7, 'AI_VIDEO_ADS') is not null), 'a Department Head can also announce an existing service');
+select test.must_fail($$select publish_client_announcement('NEW_SERVICE', 'Nothing', null, null, null, 'NONE', 7, 'NO_SUCH')$$, 'the service must exist', 'Choose the service');
+select test.login('cdash_a');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_announcements()) a where a ->> 'kind' = 'NEW_SERVICE'), 'and the client sees that one (a new notice, not the one already dismissed)');
+reset role;
 reset role;
 \echo '=== ALL CLIENT DASHBOARD TESTS PASSED ==='
