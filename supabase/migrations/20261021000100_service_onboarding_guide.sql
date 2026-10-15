@@ -89,9 +89,9 @@ update public.onboarding_items set hint = 'Confirm the content library the clien
 update public.onboarding_items set label = 'Website URL', hint = 'Optional - the business website, if they have one' where code = 'WA_WEBSITE_URL';
 
 -- 4. Which items each service needs: exactly the guide's steps -------------------------------------
-drop table if exists pg_temp.guide_items;
-create temporary table guide_items (service_code text, item_code text);
-insert into guide_items values
+-- One statement (no temporary table), so it also runs in the Supabase SQL editor, which may use a
+-- different connection for each statement.
+with guide (service_code, item_code) as (values
   -- RCS Registration + Platform
   ('RCS_REGISTRATION', 'RCS_DOMAIN_NAME'), ('RCS_REGISTRATION', 'RCS_DOMAIN_EMAIL'), ('RCS_REGISTRATION', 'RCS_BRAND_NAME'),
   ('RCS_REGISTRATION', 'BRAND_LOGO'), ('RCS_REGISTRATION', 'RCS_BANNER'), ('RCS_REGISTRATION', 'RCS_WEBSITE_URL'),
@@ -125,15 +125,14 @@ insert into guide_items values
   ('VIDEO_PROMOTION', 'BRAND_LOGO'), ('VIDEO_PROMOTION', 'BRAND_NAME'), ('VIDEO_PROMOTION', 'VIDEO_INSTAGRAM'), ('VIDEO_PROMOTION', 'VIDEO_CONTENT_TYPE'),
   -- AI CRM
   ('AI_CRM', 'BUSINESS_EMAIL'), ('AI_CRM', 'BUSINESS_LOCATION'), ('AI_CRM', 'AICRM_SERVICES'),
-  ('AI_CRM', 'AICRM_CURRENT_CRM'), ('AI_CRM', 'AICRM_STAFF_COUNT'), ('AI_CRM', 'BRAND_LOGO');
-
--- Drop what the guide does not ask for, for the services it covers (other services are not touched).
-delete from public.onboarding_item_services m
- where m.service_code in (select distinct service_code from guide_items)
-   and not exists (select 1 from guide_items g where g.service_code = m.service_code and g.item_code = m.item_code);
-
+  ('AI_CRM', 'AICRM_CURRENT_CRM'), ('AI_CRM', 'AICRM_STAFF_COUNT'), ('AI_CRM', 'BRAND_LOGO')
+),
+removed as (
+  delete from public.onboarding_item_services m
+   where m.service_code in (select service_code from guide)
+     and not exists (select 1 from guide g where g.service_code = m.service_code and g.item_code = m.item_code)
+  returning 1
+)
 insert into public.onboarding_item_services (item_code, service_code)
-select item_code, service_code from guide_items
+select item_code, service_code from guide
 on conflict do nothing;
-
-drop table if exists pg_temp.guide_items;
