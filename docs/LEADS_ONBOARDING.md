@@ -172,3 +172,29 @@ it is never sent to the browser.
   review once filled in. *Facebook Business Manager access* is now a details item (*Add details*).
 - Every card in *Documents & details* opens when clicked (edit dialog, file view, or details).
 
+
+## Per-service documents (Service Onboarding - Step-by-Step Guide)
+
+Migration `20261021000100_service_onboarding_guide.sql` makes each service's checklist follow the guide. Name, business
+name and mobile number are asked for every customer (Business basics) and GST / Udyam / Aadhaar go in the mandatory
+"All Important Documents" PDF, so a service lists only what is specific to it:
+
+| Service | Collected |
+| --- | --- |
+| WhatsApp API + Blue Tick | Facebook Business Manager, website (optional), number to register, number not on the app, WABA ID (Technical Consultant) |
+| RCS Registration + Platform | domain, domain e-mail, brand name, brand logo, banner, website, Privacy Policy / Terms / Contact Us links |
+| AI Calling | customer number, business details & caller's role |
+| Voice Message (Bulk) | WhatsApp mobile number, website (optional) |
+| AI QR | Instagram / Facebook / WhatsApp URLs, e-mail & website, brand logo, brand name, Google Map location, payment QR |
+| Crocodile (Call CRM) | employee details, domain (optional), monthly / yearly billing |
+| Google Business Profile - Setup | no existing profile, address / phone / category / timings, photos |
+| Meta Ads Management | e-mail, brand logo, location, Facebook / Instagram / WhatsApp access |
+| Social Media Management | business model & audience, Facebook / Instagram access, content library |
+| Appointo (new) | e-mail access |
+| AI Website (new) | brand logo, brand name, location, e-mail, images |
+| GMB Ranking (new) | brand logo, brand name, latitude & longitude, social URLs, industry images, open & close time |
+| Video Promotion (new) | brand logo, brand name, Instagram account, type of content |
+| AI CRM | e-mail, location, services, current CRM (optional), number of staff, company logo |
+
+Items shared by several services (brand logo, brand name, e-mail, location, social URLs) are collected once. Services not
+in the guide keep their existing checklist. The four new services are added to the catalogue so they can be selected on a lead.
