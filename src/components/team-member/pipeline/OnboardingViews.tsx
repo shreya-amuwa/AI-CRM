@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   MessageCircle,
   Search
 } from 'lucide-react';
@@ -30,7 +29,7 @@ import type { LeadsViewScope } from './LeadsView';
 import { PaymentStatusBadge } from '../../payments/PaymentBits';
 import { getStartedBlockers } from '../../../../shared/contracts';
 import { HandoverBanner } from '../../support/consultant/HandoverPanel';
-import { ADDON_STATUS_LABEL, AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
+import { ADDON_STATUS_LABEL, AddonStatusPill } from '../../invoices/invoiceShared';
 import {
   ChecklistPanel,
   isDone,
@@ -479,138 +478,66 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card className="lg:col-span-2 p-5">
-          <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
-          {paying && (
-            <PaymentDialog
-              mode="part"
-              customer={c}
-              onClose={() => setPaying(false)}
-              onDone={() => {
-                setPaying(false);
-                changed();
-              }}
-            />
-          )}
-        </Card>
-
-        <div className="space-y-4">
-          <Card className="p-5 text-center">
-            {mode === 'review' ? (
-              <>
-                <ProgressRing pct={pct} label={`${verified.length} of ${items.length} verified`} />
-                <div className="mt-3 text-sm font-bold text-slate-900">
-                  {verified.length === items.length
-                    ? 'Everything verified'
-                    : rejected.length
-                      ? `${rejected.length} sent back to sales`
-                      : `${items.length - verified.length} item${items.length - verified.length === 1 ? '' : 's'} to verify`}
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  {verified.length === items.length
-                    ? 'The sales owner has been notified.'
-                    : 'Verify each item, or send it back with a note. The salesperson is notified and the item returns here once fixed.'}
-                </p>
-              </>
-            ) : (
-              <>
-                <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} />
-                {forwarded ? (
-                  <>
-                    <div className="mt-3 text-sm font-bold text-emerald-700">Sent to the Technical Consultant</div>
-                    <p className="text-xs text-slate-500">
-                      on {longDate(c.onboarding?.forwardedToSupportAt)} · {verified.length} of {items.length} verified
-                      {rejected.length ? ` · ${rejected.length} need fixing` : ''}
-                    </p>
-                  </>
-                ) : withAccounts ? (
-                  <>
-                    <div className="mt-3 text-sm font-bold text-amber-700">With Accounts · awaiting confirmation</div>
-                    <p className="text-xs text-slate-500">
-                      Sent on {longDate(c.onboarding?.sentToAccountsAt)}. Accounts confirms the amount, then the customer goes to the Technical Consultant.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <div className="mt-3 text-sm font-bold text-slate-900">
-                      {missing.length === 0 ? 'All items saved' : `${missing.length} item${missing.length === 1 ? '' : 's'} still needed`}
-                    </div>
-                    {missing.length > 0 && <p className="text-xs text-slate-500">{missing.map(m => m.label).join(', ')}</p>}
-                  </>
-                )}
-                <div className="mt-4 space-y-2">
-                  <button type="button" className={`${btn.primary} w-full py-2.5`} onClick={askOnWhatsApp} disabled={!phoneDigits || missing.length === 0}>
-                    <MessageCircle className="w-4 h-4" /> Ask client on WhatsApp
-                  </button>
-                  {confirmSend && !forwarded && !withAccounts ? (
-                    <div role="alertdialog" aria-labelledby="send-confirm-title" className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2">
-                      <div id="send-confirm-title" className="text-xs font-bold text-emerald-900">
-                        Send {c.company || c.name} {returned && !toAccounts ? 'back ' : ''}to {toAccounts ? 'Accounts' : 'the Technical Consultant'}?
-                      </div>
-                      <p className="text-[11px] text-emerald-800">
-                        {toAccounts
-                          ? 'Accounts checks the business details and confirms the amount. Then it goes to the Technical Consultant to verify the documents.'
-                          : 'They will verify every document. After sending, current files can be replaced but not deleted.'}
-                      </p>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          className="flex-1 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600"
-                          onClick={() => setConfirmSend(false)}
-                          disabled={forwarding}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          className="flex-1 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 disabled:opacity-60"
-                          onClick={forward}
-                          disabled={forwarding}
-                        >
-                          {forwarding ? 'Sending…' : 'Yes, send'}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${
-                        missing.length === 0 && !forwarded && !withAccounts ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                      }`}
-                      disabled={missing.length > 0 || forwarded || withAccounts}
-                      aria-describedby="forward-hint"
-                      onClick={() => setConfirmSend(true)}
-                    >
-                      {forwarded ? 'Sent to Technical Consultant' : withAccounts ? 'Sent to Accounts' : toAccounts ? 'Send to Accounts' : returned ? 'Send again to Technical Consultant' : 'Send to Technical Consultant'}
-                    </button>
-                  )}
-                  <p id="forward-hint" className="text-[11px] text-slate-500">
-                    {forwarded
-                      ? 'The Technical Consultant verifies each item. Fix anything marked not authorized; current files can be replaced, not deleted.'
+      {mode === 'sales' && (
+        <>
+          {/* Progress (circle only) with the two actions beside it, between the business details and the documents */}
+          <Card className="p-4 sm:p-5">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-10">
+              <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} />
+              <div className="flex flex-col sm:flex-row items-stretch gap-3 w-full sm:w-auto sm:min-w-[26rem]">
+                <button
+                  type="button"
+                  className={`${btn.primary} flex-1 justify-center py-3 whitespace-nowrap`}
+                  onClick={askOnWhatsApp}
+                  disabled={!phoneDigits || missing.length === 0}
+                  title={missing.length > 0 ? `Still needed: ${missing.map(m => m.label).join(', ')}` : undefined}
+                >
+                  <MessageCircle className="w-4 h-4" /> Ask client on WhatsApp
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+                    missing.length === 0 && !forwarded && !withAccounts ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                  }`}
+                  disabled={missing.length > 0 || forwarded || withAccounts}
+                  title={
+                    forwarded
+                      ? 'The Technical Consultant verifies each item. Fix anything marked not authorized.'
                       : withAccounts
-                        ? 'Accounts is confirming the amount. You will be notified, and the customer then goes to the Technical Consultant.'
+                        ? 'Accounts is confirming the amount.'
                         : missing.length > 0
-                          ? `Save every item above to unlock. ${toAccounts ? 'Accounts confirms the amount first, then the Technical Consultant gets the customer.' : 'The Technical Consultant only sees this customer after you send it.'}`
-                          : toAccounts
-                            ? 'Accounts confirms the amount first, then the Technical Consultant gets the customer.'
-                            : 'The Technical Consultant only sees this customer after you send it.'}
-                  </p>
+                          ? 'Save every item below to unlock.'
+                          : undefined
+                  }
+                  onClick={() => setConfirmSend(true)}
+                >
+                  {forwarded ? 'Sent to Technical Consultant' : withAccounts ? 'Sent to Accounts' : toAccounts ? 'Send to Accounts' : returned ? 'Send again to Technical Consultant' : 'Send to Technical Consultant'}
+                </button>
+              </div>
+            </div>
+            {confirmSend && !forwarded && !withAccounts && (
+              <div role="alertdialog" aria-labelledby="send-confirm-title" className="mt-4 p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2 max-w-xl mx-auto">
+                <div id="send-confirm-title" className="text-xs font-bold text-emerald-900">
+                  Send {c.company || c.name} {returned && !toAccounts ? 'back ' : ''}to {toAccounts ? 'Accounts' : 'the Technical Consultant'}?
                 </div>
-              </>
+                <p className="text-[11px] text-emerald-800">
+                  {toAccounts
+                    ? 'Accounts checks the business details and confirms the amount. Then it goes to the Technical Consultant to verify the documents.'
+                    : 'They will verify every document. After sending, current files can be replaced but not deleted.'}
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" className="flex-1 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-600" onClick={() => setConfirmSend(false)} disabled={forwarding}>
+                    Cancel
+                  </button>
+                  <button type="button" className="flex-1 py-2 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 disabled:opacity-60" onClick={forward} disabled={forwarding}>
+                    {forwarding ? 'Sending…' : 'Yes, send'}
+                  </button>
+                </div>
+              </div>
             )}
           </Card>
 
-          {mode === 'sales' && <GetStartedCard o={c.onboarding} />}
-
-          {mode === 'sales' && (
-            <Card className="p-5 space-y-3">
-              <h2 className="text-sm font-bold text-slate-900">Invoices</h2>
-              <p className="text-[11px] text-slate-500">Uploaded or issued by the Accounts department. Read-only: open or download the PDF.</p>
-              <CustomerInvoices customerId={c.id} compact />
-            </Card>
-          )}
-          {mode === 'sales' && c.onboarding?.addonRequestStatus && (
+          {c.onboarding?.addonRequestStatus && (
             <Card className="p-5 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-bold text-slate-900">Add-on services</h2>
@@ -626,11 +553,67 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
             </Card>
           )}
 
-          <OnboardingStageCard o={c.onboarding} savedCount={savedTypes.length} totalCount={types.length} />
+          <Card className="p-5">
+            <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
+            {paying && (
+              <PaymentDialog
+                mode="part"
+                customer={c}
+                onClose={() => setPaying(false)}
+                onDone={() => {
+                  setPaying(false);
+                  changed();
+                }}
+              />
+            )}
+          </Card>
+        </>
+      )}
 
-          <ActivityCard activities={c.activities} />
+      {mode !== 'sales' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="lg:col-span-2 p-5">
+            <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
+            {paying && (
+              <PaymentDialog
+                mode="part"
+                customer={c}
+                onClose={() => setPaying(false)}
+                onDone={() => {
+                  setPaying(false);
+                  changed();
+                }}
+              />
+            )}
+          </Card>
+
+          <div className="space-y-4">
+            <Card className="p-5 text-center">
+              {mode === 'review' ? (
+                <>
+                  <ProgressRing pct={pct} label={`${verified.length} of ${items.length} verified`} />
+                  <div className="mt-3 text-sm font-bold text-slate-900">
+                    {verified.length === items.length
+                      ? 'Everything verified'
+                      : rejected.length
+                        ? `${rejected.length} sent back to sales`
+                        : `${items.length - verified.length} item${items.length - verified.length === 1 ? '' : 's'} to verify`}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {verified.length === items.length
+                      ? 'The sales owner has been notified.'
+                      : 'Verify each item, or send it back with a note. The salesperson is notified and the item returns here once fixed.'}
+                  </p>
+                </>
+              ) : null}
+            </Card>
+
+            <OnboardingStageCard o={c.onboarding} savedCount={savedTypes.length} totalCount={types.length} />
+
+            <ActivityCard activities={c.activities} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -649,47 +632,6 @@ const GetStartedHint: React.FC<{ o: PipelineCustomer['onboarding'] }> = ({ o }) 
           ? 'Awaiting payment confirmation'
           : '';
   return text ? <span className="text-[11px] text-slate-500">{text}</span> : null;
-};
-
-/** The three things that make a customer ready to get started, and which are done. */
-const GetStartedCard: React.FC<{ o: PipelineCustomer['onboarding'] }> = ({ o }) => {
-  if (!o) return null;
-  const blockers = getStartedBlockers(o);
-  const rows: { label: string; detail: string; done: boolean }[] = [
-    { label: 'Documents collected', detail: `${o.itemsSaved} of ${o.itemsTotal} saved`, done: o.itemsTotal > 0 && o.itemsSaved >= o.itemsTotal },
-    { label: 'Documents verified', detail: `${o.itemsVerified} of ${o.itemsTotal} verified${o.itemsRejected ? ` · ${o.itemsRejected} need fixing` : ''}`, done: o.itemsTotal > 0 && o.itemsVerified >= o.itemsTotal },
-    { label: 'Payment verified by Accounts', detail: o.paymentVerified ? 'Part or full payment verified' : 'Waiting for Accounts to verify a payment', done: o.paymentVerified && !!o.accountsConfirmedAt }
-  ];
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-slate-900">Get started</h2>
-        {o.getStarted ? <Pill tone="green">Ready</Pill> : <Pill tone="orange">Not yet</Pill>}
-      </div>
-      <ul className="mt-3 space-y-2" aria-label="Get started requirements">
-        {rows.map(r => (
-          <li key={r.label} className="flex items-start gap-2 text-xs">
-            <span className={`mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${r.done ? 'bg-emerald-600 text-white' : 'border border-slate-300 text-transparent'}`} aria-hidden="true">
-              <Check className="w-3 h-3" />
-            </span>
-            <span>
-              <span className={`font-semibold ${r.done ? 'text-slate-900' : 'text-slate-700'}`}>{r.label}</span>
-              <span className="block text-[11px] text-slate-500">{r.detail}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 text-[11px] text-slate-500">
-        {o.getStarted
-          ? 'Everything is in place. Continue the onboarding below.'
-          : blockers.includes('DOCUMENTS_MISSING')
-            ? 'Still awaiting documents.'
-            : blockers.includes('DOCUMENTS_UNVERIFIED')
-              ? 'Documents are saved and awaiting verification by the Technical Consultant.'
-              : 'Awaiting payment confirmation from Accounts.'}
-      </p>
-    </Card>
-  );
 };
 
 const InfoTile: React.FC<{ label: string; value: string }> = ({ label, value }) => (
