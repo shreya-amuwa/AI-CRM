@@ -164,6 +164,9 @@ const EMPTY = {
 export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string) => void }> = ({ onCancel, onSaved }) => {
   const { items: services, error: catalogError } = useServiceCatalog();
   const [form, setForm] = useState(EMPTY);
+  // "Other" opens a text box right under the dropdown so the member types the value in place.
+  const [otherCategory, setOtherCategory] = useState('');
+  const [otherSource, setOtherSource] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
@@ -173,12 +176,18 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (form.leadSource === 'Other' && !otherSource.trim()) {
+      setErrors({ leadSource: 'Type the lead source.' });
+      setError('Please fix the highlighted fields.');
+      return;
+    }
     const payload = {
       ...form,
+      leadSource: form.leadSource === 'Other' ? otherSource.trim() : form.leadSource,
       whatsapp: form.whatsapp || null,
       email: form.email || null,
       city: form.city || null,
-      businessCategory: form.businessCategory || null,
+      businessCategory: form.businessCategory === 'Other' ? otherCategory.trim() || 'Other' : form.businessCategory || null,
       nextFollowUpAt: fromLocalInput(form.nextFollowUpAt),
       expectedBudget: form.expectedBudget === '' ? null : form.expectedBudget,
       notes: form.notes || null,
@@ -254,6 +263,18 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
                 <option key={c}>{c}</option>
               ))}
             </select>
+            {form.businessCategory === 'Other' && (
+              <input
+                id="lead-businessCategory-other"
+                className={`${inputCls} mt-2`}
+                value={otherCategory}
+                onChange={e => setOtherCategory(e.target.value)}
+                placeholder="Type the business category"
+                maxLength={120}
+                aria-label="Other business category"
+                autoFocus
+              />
+            )}
           </Field>
           <Field label="Lead source" required htmlFor="lead-leadSource" error={errors.leadSource}>
             <select id="lead-leadSource" className={inputCls} value={form.leadSource} onChange={set('leadSource')}>
@@ -261,6 +282,18 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
                 <option key={c}>{c}</option>
               ))}
             </select>
+            {form.leadSource === 'Other' && (
+              <input
+                id="lead-leadSource-other"
+                className={`${inputCls} mt-2 ${errors.leadSource ? 'border-rose-400' : ''}`}
+                value={otherSource}
+                onChange={e => setOtherSource(e.target.value)}
+                placeholder="Type the lead source"
+                maxLength={60}
+                aria-label="Other lead source"
+                autoFocus
+              />
+            )}
           </Field>
         </div>
       </Card>

@@ -3,7 +3,6 @@ import {
   Home,
   UserCheck,
   Users,
-  Handshake,
   CheckSquare,
   Calendar as CalendarIcon,
   FileText,
@@ -13,7 +12,6 @@ import {
   LogOut,
   Menu,
   X,
-  Navigation,
   ChevronDown,
   ClipboardList
 } from 'lucide-react';
@@ -28,9 +26,7 @@ export type TeamMemberNav =
   | 'potential'
   | 'onboarding'
   | 'part-payments'
-  | 'field-visits'
   | 'customers'
-  | 'deals'
   | 'tasks'
   | 'work-tasks'
   | 'my-clients'
@@ -69,9 +65,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   const navItems = [
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
     { id: 'leads' as TeamMemberNav, label: 'My Leads', icon: UserCheck },
-    { id: 'field-visits' as TeamMemberNav, label: 'Field Visits (GPS)', icon: Navigation },
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
-    { id: 'deals' as TeamMemberNav, label: 'Deals', icon: Handshake },
     { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },

@@ -23,11 +23,9 @@ import { MemberFollowUpsTable } from './MemberFollowUpsTable';
 import { MemberRightSidebar } from './MemberRightSidebar';
 import { HomeClock } from './HomeClock';
 import { MemberCustomersDashboard } from './MemberCustomersDashboard';
-import { MemberDealsDashboard } from './MemberDealsDashboard';
 import { MemberCalendarDashboard } from './MemberCalendarDashboard';
 import { MemberInvoicesDashboard } from './MemberInvoicesDashboard';
 import { MemberSettingsDashboard } from './MemberSettingsDashboard';
-import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
 import { usePipelineCounts } from './pipeline/shared';
 import { NotificationsPage } from '../notifications/NotificationsPage';
@@ -331,12 +329,11 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             </div>
 
             {/* The member's own numbers */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 { label: 'Total Leads', value: kpis.totalLeads, note: `${kpis.newLeadsThisWeek} new in last 7 days`, icon: Users, tone: 'bg-blue-50 text-blue-600' },
                 { label: 'Follow-ups Due', value: kpis.followUpsDue, note: 'Open follow-ups', icon: Clock, tone: 'bg-amber-50 text-amber-600' },
-                { label: 'Converted Leads', value: kpis.convertedLeads, note: `${kpis.conversionRate}% conversion`, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' },
-                { label: 'Deals in Progress', value: kpis.dealsInProgress, note: 'Contacted to proposal', icon: Handshake, tone: 'bg-purple-50 text-purple-600' }
+                { label: 'Converted Leads', value: kpis.convertedLeads, note: `${kpis.conversionRate}% conversion`, icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600' }
               ].map(card => {
                 const Icon = card.icon;
                 return (
@@ -376,17 +373,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             startWithAdd={openAddLead}
             resetKey={navNonce}
             onNavigate={nav => setActiveNav(nav)}
-          />
-        )}
-
-        {/* ========================================================================= */}
-        {/* VIEW: FIELD VISITS (LIVE GPS TRACKING) */}
-        {/* ========================================================================= */}
-        {activeNav === 'field-visits' && (
-          <FieldVisitTrackerView
-            viewerRole="team-member"
-            currentUserId={currentUserId}
-            userName={userName}
           />
         )}
 
@@ -442,13 +428,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             }}
             onViewInvoices={() => setActiveNav('invoices')}
           />
-        )}
-
-        {/* ========================================================================= */}
-        {/* VIEW 5: DEALS WORKSPACE */}
-        {/* ========================================================================= */}
-        {activeNav === 'deals' && (
-          <MemberDealsDashboard />
         )}
 
         {/* ========================================================================= */}
