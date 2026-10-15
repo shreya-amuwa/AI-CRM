@@ -269,9 +269,9 @@ tokens.set('b', tokenFor(orphanId)); // second sales team member
 const GW = process.env.GATEWAY_URL!;
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 r = await api('a', 'GET', '/pipeline/services');
-check(r.status === 200 && r.json.data.length === 21 && r.json.data[0].category, 'service catalogue comes from the database', r);
+check(r.status === 200 && r.json.data.length === 25 && r.json.data[0].category, 'service catalogue comes from the database', r);
 
-const leadBody = { name: 'Siddhesh', company: 'Galaxy Jewellers', phone: '+91 98200 11111', leadSource: 'Instagram', services: ['META_ADS_MANAGEMENT', 'AI_CALLING'], expectedBudget: 35000 };
+const leadBody = { name: 'Siddhesh', company: 'Galaxy Jewellers', phone: '+91 98200 11111', leadSource: 'Instagram', services: ['STARTER_PACKAGE', 'AI_CALLING'], expectedBudget: 35000 };
 r = await api('a', 'POST', '/pipeline/leads', { ...leadBody, services: [] });
 check(r.status === 422, 'lead requires at least one service', r);
 r = await api('a', 'POST', '/pipeline/leads', { ...leadBody, services: ['NOT_A_SERVICE'] });
@@ -476,7 +476,7 @@ check(r.status === 201 && r.json.data.defaultDashboard === 'accounts-staff', 'an
 tokens.set('accm', tokenFor(r.json.data.id));
 const pdfOfSize = (n: number, tag = 'x') => Buffer.concat([Buffer.from(`%PDF-1.4\n% ${tag}\n`), Buffer.alloc(Math.max(0, n - 40), 0x20), Buffer.from('\n%%EOF\n')]);
 // Invoices are uploaded by Accounts, never generated: the generating endpoints are gone.
-r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [{ serviceCode: 'META_ADS_MANAGEMENT', quantity: 1, unitPrice: 30000 }] });
+r = await api('accm', 'POST', '/accounts/invoices', { customerId: leadA, items: [{ serviceCode: 'STARTER_PACKAGE', quantity: 1, unitPrice: 30000 }] });
 check(r.status === 404 || r.status === 405, 'there is no endpoint that generates an invoice', r);
 r = await api('a', 'GET', '/accounts/invoice-customers');
 check(r.status === 403, 'Sales cannot list the customers to invoice', r);
@@ -528,7 +528,7 @@ check(r.status === 200, 'aborted upload acknowledged');
 keys = await fetch(`${GW}/storage/v1/__objects`, { headers: { authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }).then(x => x.json()) as string[];
 check(!keys.some(k => k.includes(abandoned.document.id)), 'aborted upload object cleaned up');
 
-// --- service checklist (Meta Ads + AI Calling) -----------------------------------
+// --- service checklist (Starter Package + AI Calling) -----------------------------------
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const checklist = r.json.data.checklist as any[];
 check(checklist.length === 14 && !checklist.some((c: any) => c.code === 'GST_CERTIFICATE') && checklist[0].section === 'BUSINESS_BASICS' && checklist[checklist.length - 1].code === 'IMPORTANT_DOCUMENTS',
@@ -536,15 +536,18 @@ check(checklist.length === 14 && !checklist.some((c: any) => c.code === 'GST_CER
 check(checklist.filter((c: any) => c.entry?.status === 'SAVED').length === 2, 'the uploaded documents and the Accounts invoice already count as saved');
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/forward-to-support`);
 check(r.status === 422 && /Complete these items first/.test(r.json.error.message), 'forward blocked until every checklist item is saved', r);
+// (the AI Calling checklist has no choice item any more: map one for this check only)
+await db.query(`insert into public.onboarding_item_services (item_code, service_code) values ('AI_CALL_PLAN', 'AI_CALLING')`);
 r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/checklist/AI_CALL_PLAN`, { value: 'Weekly' });
 check(r.status === 422, 'choice items only accept listed options', r);
+await db.query(`delete from public.onboarding_item_services where item_code = 'AI_CALL_PLAN' and service_code = 'AI_CALLING'`);
 r = await api('b', 'PATCH', `/pipeline/customers/${leadA}/checklist/META_AD_BUDGET`, { value: '15000' });
 check(r.status === 404, "member B cannot fill A's checklist", r);
 for (const [code, value] of Object.entries({
-  BUSINESS_NAME_ADDRESS: 'Galaxy Jewellers, Thane', CUSTOMER_NAME: 'Siddhesh', CUSTOMER_MOBILE: '+91 98200 11111', META_CAMPAIGN_GOAL: 'Diwali walk-ins',
-  FACEBOOK_PAGE_ACCESS: 'Partner access granted', INSTAGRAM_PAGE_ACCESS: 'Connected', META_TARGET_AUDIENCE: 'Thane, 25-45', META_AD_BUDGET: '15000',
-  AI_CALL_BUSINESS_ROLE: 'Jeweller; agent speaks as store manager', AI_CALL_CUSTOMER_NUMBER: '+91 98200 11111', AI_CALL_SCRIPT: 'Gold rate offers',
-  AI_CALL_PLAN: 'Credit-based'
+  BUSINESS_NAME_ADDRESS: 'Galaxy Jewellers, Thane', CUSTOMER_NAME: 'Siddhesh', CUSTOMER_MOBILE: '+91 98200 11111',
+  SMM_BUSINESS_AUDIENCE: 'Jewellery store, families in Thane', FACEBOOK_PAGE_ACCESS: 'Partner access granted', INSTAGRAM_PAGE_ACCESS: 'Connected',
+  META_TARGET_AUDIENCE: 'Thane, 25-45', META_AD_BUDGET: '15000', SMM_CONTENT_LIBRARY: 'https://drive.example/galaxy', SMM_POSTING_PREFS: 'Daily, gold hashtags',
+  AI_CALL_BUSINESS_ROLE: 'Jeweller; agent speaks as store manager', AI_CALL_CUSTOMER_NUMBER: '+91 98200 11111'
 })) {
   r = await api('a', 'PATCH', `/pipeline/customers/${leadA}/checklist/${code}`, { value });
   if (r.status !== 200) check(false, `save ${code}`, r);
@@ -764,7 +767,7 @@ r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 check(r.json.data.dealAmount === 50000 && r.json.data.amountReceived === 15000 && r.json.data.amountVerified === 15000 && r.json.data.paymentStatus === 'PARTIALLY_PAID',
   "add-on money stays out of the original deal's payments", r.json.data);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}/addon-checklist`);
-check(r.status === 200 && r.json.data.length === 4 && r.json.data.every((i: any) => i.serviceCode === 'AI_CALLING'), "after payment the add-on checklist lists the add-on service's own items", r);
+check(r.status === 200 && r.json.data.length === 2 && r.json.data.every((i: any) => i.serviceCode === 'AI_CALLING'), "after payment the add-on checklist lists the add-on service's own items", r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/addon-request/start-documents`);
 check(r.status === 200 && r.json.data.status === 'IN_PROGRESS', 'the consultant starts add-on document collection', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&addons=true');
@@ -997,7 +1000,7 @@ r = await api('tc', 'POST', `/pipeline/customers/${leadA}/checklist/IMPORTANT_DO
 check(r.status === 200, 'consultant rejects an item with a note', r);
 r = await api('tc', 'GET', '/pipeline/customers?stage=ONBOARDING&review=NEEDS_FIX');
 check(r.json.data.total === 1, 'review queue filter: needs fixing', r);
-r = await api('b', 'POST', `/pipeline/customers/${leadA}/checklist/AI_CALL_PLAN/review`, { decision: 'VERIFIED' });
+r = await api('b', 'POST', `/pipeline/customers/${leadA}/checklist/AI_CALL_BUSINESS_ROLE/review`, { decision: 'VERIFIED' });
 check(r.status === 404, 'sales members cannot verify', r);
 r = await api('a', 'GET', `/pipeline/customers/${leadA}`);
 const gst = r.json.data.checklist.find((c: any) => c.code === 'IMPORTANT_DOCUMENTS');
@@ -1068,7 +1071,7 @@ check(r.status === 404, 'sales member cannot trigger automations', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/automations/WHATSAPP`);
 check(r.status === 200 && r.json.data.lastRun.status === 'SENT' && r.json.data.lastRun.triggeredBy === 'Tech Consultant', 'WhatsApp automation sent to its sheet', r);
 check(sheetRows.length === 1 && sheetRows[0].secret === 'sheet-secret' && sheetRows[0].customer.company === 'Galaxy Jewellers'
-  && sheetRows[0].services.includes('Meta Ads Management'), 'sheet receives the customer, services and secret', sheetRows[0]);
+  && sheetRows[0].services.includes('Starter Package'), 'sheet receives the customer, services and secret', sheetRows[0]);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/automations/WHATSAPP`);
 check(r.status === 409, 'no double trigger within a minute', r);
 await db.query(`update public.onboarding_automation_runs set triggered_at = now() - interval '2 minutes'`);

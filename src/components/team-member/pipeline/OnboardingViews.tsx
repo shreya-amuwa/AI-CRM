@@ -480,14 +480,42 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
 
       {mode === 'sales' && (
         <>
-          {/* Progress (circle only) with the two actions beside it, between the business details and the documents */}
+          {/* Progress circle at the side, what is still missing in the middle, the two actions at the other side */}
           <Card className="p-4 sm:p-5">
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-10">
-              <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} />
-              <div className="flex flex-col sm:flex-row items-stretch gap-3 w-full sm:w-auto sm:min-w-[26rem]">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8">
+              <ProgressRing pct={pct} label={`${savedTypes.length} of ${types.length} saved`} start />
+              <div className="flex-1 min-w-0 w-full" aria-live="polite">
+                {forwarded ? (
+                  <>
+                    <div className="text-sm font-bold text-emerald-700">Sent to the Technical Consultant</div>
+                    <p className="text-xs text-slate-500 mt-0.5">on {longDate(c.onboarding?.forwardedToSupportAt)}</p>
+                  </>
+                ) : withAccounts ? (
+                  <>
+                    <div className="text-sm font-bold text-amber-700">With Accounts · awaiting confirmation</div>
+                    <p className="text-xs text-slate-500 mt-0.5">Sent on {longDate(c.onboarding?.sentToAccountsAt)}</p>
+                  </>
+                ) : missing.length === 0 ? (
+                  <div className="text-sm font-bold text-emerald-700">All items saved</div>
+                ) : (
+                  <>
+                    <div className="text-sm font-bold text-slate-900">
+                      {missing.length} item{missing.length === 1 ? '' : 's'} still needed
+                    </div>
+                    <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Items still needed">
+                      {missing.map(m => (
+                        <li key={m.code} className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-[11px] font-semibold text-amber-800">
+                          {m.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch gap-3 w-full lg:w-auto shrink-0">
                 <button
                   type="button"
-                  className={`${btn.primary} flex-1 justify-center py-3 whitespace-nowrap`}
+                  className={`${btn.primary} justify-center py-3 whitespace-nowrap`}
                   onClick={askOnWhatsApp}
                   disabled={!phoneDigits || missing.length === 0}
                   title={missing.length > 0 ? `Still needed: ${missing.map(m => m.label).join(', ')}` : undefined}
@@ -496,7 +524,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                 </button>
                 <button
                   type="button"
-                  className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
+                  className={`py-3 px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap ${
                     missing.length === 0 && !forwarded && !withAccounts ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'bg-slate-100 text-slate-500 cursor-not-allowed'
                   }`}
                   disabled={missing.length > 0 || forwarded || withAccounts}
@@ -671,11 +699,11 @@ const HandoverEditor: React.FC<{ customerId: string; value: string; onDone: () =
   );
 };
 
-const ProgressRing: React.FC<{ pct: number; label: string }> = ({ pct, label }) => {
+const ProgressRing: React.FC<{ pct: number; label: string; start?: boolean }> = ({ pct, label, start }) => {
   const r = 42;
   const circ = 2 * Math.PI * r;
   return (
-    <div className="relative w-28 h-28 mx-auto" role="img" aria-label={`${pct}% - ${label}`}>
+    <div className={`relative w-28 h-28 shrink-0 ${start ? 'mx-auto lg:mx-0' : 'mx-auto'}`} role="img" aria-label={`${pct}% - ${label}`}>
       <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90" aria-hidden="true">
         <circle cx="50" cy="50" r={r} fill="none" stroke="#E2E8F0" strokeWidth="8" />
         <circle

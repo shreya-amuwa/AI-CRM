@@ -594,7 +594,7 @@ select test.check((select path like '%/onboarding/%' from docs where name = 'A_k
 select complete_document_upload((select id from docs where name = 'A_kyc'), 5000);
 -- Service checklist: Meta Ads + Gold Rate package for customer A.
 select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 14),
-  'checklist = 3 basics + 5 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
+  'checklist = 3 basics + 6 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
 select test.check((select items_total = 14 and items_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'the uploaded mandatory document counts as a saved checklist item; the invoice is still missing');
 -- The Invoice item is filled by the invoice PDF Accounts uploads (Sales cannot create invoices).
@@ -631,12 +631,19 @@ select test.must_fail($$select forward_onboarding_to_support((select id from pip
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'WABA_ID', '123')$$,
   'items of services not sold are rejected', 'not part of');
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'GOLD_CONFIRM_JEWELLER', 'maybe')$$, 'yes/no validated', 'yes or no');
+-- (no service of customer A has an amount item any more: map one for this check only)
+reset role;
+insert into onboarding_item_services (item_code, service_code) values ('META_AD_BUDGET', 'META_ADS_MANAGEMENT');
+set role authenticated;
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'META_AD_BUDGET', 'lots')$$, 'amount validated', 'amount');
+reset role;
+delete from onboarding_item_services where item_code = 'META_AD_BUDGET' and service_code = 'META_ADS_MANAGEMENT';
+set role authenticated;
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x')$$, 'file items need an upload', 'Upload a file');
 select save_onboarding_entry((select id from pipeline where name = 'A'), c, v) from (values
   ('BUSINESS_NAME_ADDRESS', 'Shree Ganesh Jewellers, Zaveri Bazaar, Mumbai'), ('CUSTOMER_NAME', 'Ankit Shah'), ('CUSTOMER_MOBILE', '+91 98765 11111'),
-  ('META_CAMPAIGN_GOAL', 'Walk-in leads for Diwali'), ('FACEBOOK_PAGE_ACCESS', 'Partner access to Amuwa BM'),
-  ('INSTAGRAM_PAGE_ACCESS', 'Connected'), ('META_TARGET_AUDIENCE', 'Women 25-50, Mumbai, 200 leads'), ('META_AD_BUDGET', '15000'),
+  ('BUSINESS_EMAIL', 'shree@example.com'), ('FACEBOOK_PAGE_ACCESS', 'Partner access to Amuwa BM'),
+  ('INSTAGRAM_PAGE_ACCESS', 'Connected'), ('BUSINESS_LOCATION', 'Zaveri Bazaar, Mumbai'), ('WHATSAPP_ACCESS', 'Granted'),
   ('GOLD_CONFIRM_JEWELLER', 'YES'), ('BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C'), ('GOLD_TEMPLATE_APPROVAL', 'Approved on call')) v(c, v);
 insert into docs select 'A_logo', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo.png', 'image/png', 3000);
 select test.check((select path like '%.png' from docs where name = 'A_logo'), 'stored file keeps an extension matching its type');
@@ -816,21 +823,28 @@ select test.check((select c.amount_verified = b.amount_verified and c.payment_st
 select test.check((select count(*) = 2 from member_invoices where customer_id = (select id from pipeline where name = 'A')), 'Sales sees both invoices (service and add-on), read-only');
 -- Add-on documents, only now
 select test.login('tm_b');
-select test.check((select jsonb_array_length(customer_addon_checklist((select id from pipeline where name = 'A'))) = 7
-                     and not exists (select 1 from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' not in ('GBP_NO_EXISTING','GBP_LISTING_DETAILS','GBP_PHOTOS','AI_CALL_BUSINESS_ROLE','AI_CALL_CUSTOMER_NUMBER','AI_CALL_SCRIPT','AI_CALL_PLAN'))
+select test.check((select jsonb_array_length(customer_addon_checklist((select id from pipeline where name = 'A'))) = 5
+                     and not exists (select 1 from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' not in ('GBP_NO_EXISTING','GBP_LISTING_DETAILS','GBP_PHOTOS','AI_CALL_BUSINESS_ROLE','AI_CALL_CUSTOMER_NUMBER'))
                      and (select e ->> 'serviceCode' from jsonb_array_elements(customer_addon_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' = 'GBP_PHOTOS') = 'GBP_SETUP'),
   'after payment, each paid add-on service lists its own required documents');
 select test.check((select not exists (select 1 from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e where e ->> 'code' in ('GBP_PHOTOS','AI_CALL_BUSINESS_ROLE'))), 'the normal onboarding checklist is unchanged by add-ons');
 select consultant_start_addon_documents((select id from pipeline where name = 'A'));
 select test.must_fail($$select consultant_start_addon_documents((select id from pipeline where name = 'A'))$$, 'started once', 'already started');
-select test.check((select addon_items_total = 7 and addon_items_saved = 0 and addon_request_status = 'IN_PROGRESS' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-on progress starts at 0 of 7');
+select test.check((select addon_items_total = 5 and addon_items_saved = 0 and addon_request_status = 'IN_PROGRESS' from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'add-on progress starts at 0 of 5');
 select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_BUSINESS_ROLE', 'Receptionist');
+-- (the AI Calling checklist has no choice item any more: map one for this check only)
+reset role;
+insert into onboarding_item_services (item_code, service_code) values ('AI_CALL_PLAN', 'AI_CALLING');
+set role authenticated;
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'AI_CALL_PLAN', 'not an option')$$, 'a value outside the options is refused', 'Choose one');
-select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'META_AD_BUDGET', '1')$$, 'the TC cannot overwrite a normal onboarding item', 'Customer not found');
+reset role;
+delete from onboarding_item_services where item_code = 'AI_CALL_PLAN' and service_code = 'AI_CALLING';
+set role authenticated;
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BUSINESS_EMAIL', '1')$$, 'the TC cannot overwrite a normal onboarding item', 'Customer not found');
 insert into docs select 'A_gbp', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'shop.png', 'image/png', 3000);
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 1000)$$, 'the TC cannot upload a document that is not an add-on item', 'Customer not found');
 select complete_document_upload((select id from docs where name = 'A_gbp'), 3000);
-select test.check((select addon_items_total = 7 and addon_items_saved = 2 and addon_items_verified = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'saved details and the uploaded document count towards the add-on progress');
+select test.check((select addon_items_total = 5 and addon_items_saved = 2 and addon_items_verified = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'saved details and the uploaded document count towards the add-on progress');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'VERIFIED', null);
 select test.check((select addon_items_verified = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'verification of an add-on item is tracked');
 select test.must_fail($$select consultant_complete_addons((select id from pipeline where name = 'A'))$$, 'add-ons complete only when every add-on document is verified', 'Verify every add-on document');
