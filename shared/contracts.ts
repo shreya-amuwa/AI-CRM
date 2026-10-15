@@ -1061,6 +1061,8 @@ export interface ClientService {
   renewsOn: string | null;
   status: ClientServiceStatus;
   plan: string | null;
+  /** What the team set up for this service (e.g. WhatsApp API: campaigns sent, message package bought / sent). */
+  details?: Record<string, unknown> | null;
 }
 export type ServiceRequestStatus = 'REQUESTED' | 'IN_REVIEW' | 'IN_ADDON_WORKFLOW' | 'ACTIVATED' | 'REJECTED' | 'CANCELLED';
 export interface ClientCatalogService {

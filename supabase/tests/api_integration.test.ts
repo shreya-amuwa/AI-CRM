@@ -1817,6 +1817,20 @@ provider.close();
   r = await api('cl1', 'GET', '/client/services');
   check(r.status === 200 && !r.json.data.some((x: any) => x.code === cat.code && !cat.owned), 'and the service is not in My Services', r);
 
+  // A production DB may not have customer_onboarding.client_status yet: My Services / Overview must still load the services.
+  r = await api('cl1', 'GET', '/client/services');
+  const svcBefore = r.json.data;
+  await db.query(`alter table public.customer_onboarding rename column client_status to client_status_off`);
+  try {
+    r = await api('cl1', 'GET', '/client/services');
+    check(r.status === 200 && r.json.data.length === svcBefore.length, 'client API: services still load when customer_onboarding.client_status is missing', r);
+    r = await api('cl1', 'GET', '/client/overview');
+    check(r.status === 200, 'client API: the overview still loads when that column is missing', r);
+  } finally {
+    await db.query(`alter table public.customer_onboarding rename column client_status_off to client_status`);
+  }
+  check(svcBefore.every((x: any) => x.details && typeof x.details === 'object'), 'client API: every service carries its details object', svcBefore);
+
   r = await api('cl1', 'GET', '/accounts/plans');
   check(r.status === 401 || r.status === 403, 'a client cannot open the Accounts plans', r);
   r = await api('accm', 'POST', '/accounts/plans', { code: 'GROWTH', name: 'Growth', monthlyPrice: 4999, features: ['Priority support'], services: [] });

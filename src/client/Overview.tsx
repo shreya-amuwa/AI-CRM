@@ -1,10 +1,10 @@
 import React from 'react';
-import { Bell, CalendarClock, FileText, LifeBuoy, Package, RefreshCw } from 'lucide-react';
+import { Bell, CalendarClock, CreditCard, FileText, LifeBuoy, Mail, Package, Phone, Receipt, RefreshCw, Sparkles } from 'lucide-react';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
 import { useLoad, type Loaded } from './hooks';
 import { dashboardPath, notificationTarget, useShell } from './shell';
-import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, inr, tagOf } from './ui';
+import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, hueOf, inr, tagOf } from './ui';
 
 /** One card of the overview: its own loading, error (with the real reason and a retry) and empty state. */
 function Section<T>({ title, q, onViewAll, children }: { title: string; q: Loaded<T>; onViewAll?: () => void; children: (d: T) => React.ReactNode }) {
@@ -41,47 +41,65 @@ export const Overview: React.FC = () => {
     ...(services.data ?? []).filter(s => s.renewsOn && daysUntil(s.renewsOn) >= 0).map(s => ({ kind: 'Service', name: s.name, renewsOn: s.renewsOn as string })),
     ...(current?.renewsOn && daysUntil(current.renewsOn) >= 0 ? [{ kind: 'Monthly plan', name: current.name, renewsOn: current.renewsOn }] : [])
   ].sort((a, b) => a.renewsOn.localeCompare(b.renewsOn));
-  const stat = (q: Loaded<unknown>, v: number | string) => (q.loading && !q.data ? '-' : q.error && !q.data ? '!' : v);
+  const stat = (q: Loaded<unknown>, v: number | string) => (q.loading && !q.data ? '-' : q.error && !q.data ? '–' : v);
+  const failed = (q: Loaded<unknown>) => !!q.error && !q.data;
+  const hello = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
     <>
       <PageHeader title="Overview" subtitle="A quick look at your services, plan, invoices and support." />
       <div className="cd-stack" style={{ gap: 18 }}>
-        <Card>
-          <div className="cd-between" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-            <div style={{ minWidth: 0 }}>
-              <p className="cd-label">Welcome</p>
-              <h2 style={{ fontSize: 26 }}>{me.name}</h2>
-              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px 28px', margin: '14px 0 0' }}>
-                {me.businessName && me.businessName !== me.name && <Info label="Business" value={me.businessName} />}
-                <Info label="Phone" value={me.phone || '-'} />
-                <Info label="E-mail" value={me.email || me.loginEmail} />
-                <Info label="Customer since" value={fmtDate(me.clientSince)} />
-              </dl>
-            </div>
+        <section className="cd-hero2">
+          <p className="eyebrow">{hello}</p>
+          <h2>{me.name}</h2>
+          <p style={{ marginTop: 6, color: 'var(--on-primary-subtle)' }}>
+            {me.businessName && me.businessName !== me.name ? `${me.businessName} · ` : ''}Customer since {fmtDate(me.clientSince)}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+            <span className="cd-chip2"><Phone size={14} />{me.phone || 'No phone on file'}</span>
+            <span className="cd-chip2"><Mail size={14} />{me.email || me.loginEmail}</span>
           </div>
-        </Card>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 }}>
+            <button className="cd-hero-btn" onClick={() => go(dashboardPath('services'))}><Package size={16} /> My services</button>
+            <button className="cd-hero-btn ghost" onClick={() => go(dashboardPath('explore'))}><Sparkles size={16} /> Explore more</button>
+            <button className="cd-hero-btn ghost" onClick={() => go(dashboardPath('tickets'))}><LifeBuoy size={16} /> Get help</button>
+          </div>
+        </section>
 
         <div className="cd-grid c4">
-          <Card small onClick={() => go(dashboardPath('services'))}>
-            <p className="cd-label">Active services</p>
-            <p className="cd-big">{stat(services, live)}</p>
-            <p className="cd-small cd-muted">{services.data && services.data.length > live ? `${services.data.length - live} being set up` : 'Running now'}</p>
+          <Card small className="cd-stat cd-hue-1" onClick={() => go(dashboardPath('services'))}>
+            <span className="ico"><Package size={22} /></span>
+            <div>
+              <p className="cd-label">Active services</p>
+              <p className="cd-big">{stat(services, live)}</p>
+              {failed(services) ? <span className="cd-stat-err">Could not load</span>
+                : <p className="cd-small cd-muted">{services.data && services.data.length > live ? `${services.data.length - live} being set up` : services.data?.length === 0 ? 'None added yet' : 'Running now'}</p>}
+            </div>
           </Card>
-          <Card small onClick={() => go(dashboardPath('plans'))}>
-            <p className="cd-label">Current plan</p>
-            <p className="cd-big" style={{ fontSize: 22, lineHeight: 1.3 }}>{plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</p>
-            <p className="cd-small cd-muted">{current ? `${inr(current.price)} / month` : 'Pick one in Monthly Plans'}</p>
+          <Card small className="cd-stat cd-hue-2" onClick={() => go(dashboardPath('plans'))}>
+            <span className="ico"><CreditCard size={22} /></span>
+            <div style={{ minWidth: 0 }}>
+              <p className="cd-label">Current plan</p>
+              <p className="cd-big" style={{ fontSize: 22, lineHeight: 1.3 }}>{plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</p>
+              {failed(plans) ? <span className="cd-stat-err">Could not load</span>
+                : <p className="cd-small cd-muted">{current ? `${inr(current.price)} / month` : 'Pick one in Monthly Plans'}</p>}
+            </div>
           </Card>
-          <Card small onClick={() => go(dashboardPath('invoices'))}>
-            <p className="cd-label">Invoices to pay</p>
-            <p className="cd-big">{stat(invoices, pending)}</p>
-            <p className="cd-small cd-muted">{invoices.data ? `${invoices.data.length} in total` : ''}</p>
+          <Card small className="cd-stat cd-hue-3" onClick={() => go(dashboardPath('invoices'))}>
+            <span className="ico"><Receipt size={22} /></span>
+            <div>
+              <p className="cd-label">Invoices to pay</p>
+              <p className="cd-big">{stat(invoices, pending)}</p>
+              {failed(invoices) ? <span className="cd-stat-err">Could not load</span> : <p className="cd-small cd-muted">{invoices.data ? `${invoices.data.length} in total` : ''}</p>}
+            </div>
           </Card>
-          <Card small onClick={() => go(dashboardPath('tickets'))}>
-            <p className="cd-label">Open tickets</p>
-            <p className="cd-big">{stat(tickets, open)}</p>
-            <p className="cd-small cd-muted">{tickets.data ? `${tickets.data.length} in total` : ''}</p>
+          <Card small className="cd-stat cd-hue-4" onClick={() => go(dashboardPath('tickets'))}>
+            <span className="ico"><LifeBuoy size={22} /></span>
+            <div>
+              <p className="cd-label">Open tickets</p>
+              <p className="cd-big">{stat(tickets, open)}</p>
+              {failed(tickets) ? <span className="cd-stat-err">Could not load</span> : <p className="cd-small cd-muted">{tickets.data ? `${tickets.data.length} in total` : ''}</p>}
+            </div>
           </Card>
         </div>
 
@@ -109,9 +127,9 @@ export const Overview: React.FC = () => {
               <EmptyState icon={<Package size={22} />} title="No services yet" text="Services show up here once your consultant has set them up." />
             ) : (
               <div className="cd-list">
-                {list.slice(0, 5).map(s => (
-                  <div className="cd-li" key={s.code}>
-                    <span className="cd-tag">{tagOf(s.name)}</span>
+                {list.slice(0, 6).map(s => (
+                  <div className={`cd-li cd-hue-${hueOf(s.category)}`} key={s.code}>
+                    <span className="cd-li-ico">{tagOf(s.name)}</span>
                     <div className="grow"><p style={{ fontWeight: 600 }} className="cd-ellipsis">{s.name}</p><p className="cd-small cd-muted">{s.category}</p></div>
                     <Badge tone={s.status === 'LIVE' ? 'success' : 'attention'}>{s.status === 'LIVE' ? 'Live' : 'Setting up'}</Badge>
                   </div>
@@ -170,6 +188,3 @@ export const Overview: React.FC = () => {
   );
 };
 
-const Info: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div style={{ minWidth: 0 }}><dt className="cd-label">{label}</dt><dd style={{ margin: 0, fontWeight: 600, overflowWrap: 'anywhere' }}>{value}</dd></div>
-);

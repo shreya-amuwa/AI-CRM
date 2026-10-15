@@ -20,6 +20,33 @@ export const fmtDateTime = (v: string | null | undefined): string => {
 export const daysUntil = (v: string): number => Math.ceil((new Date(`${v.slice(0, 10)}T00:00:00`).getTime() - Date.now()) / 86_400_000);
 export const initials = (name: string): string => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('') || '?';
 export const tagOf = (name: string): string => initials(name).slice(0, 2);
+/** A stable accent (1-6) per category so each kind of service looks distinct. */
+export const hueOf = (category: string | null | undefined): number => {
+  let h = 0;
+  for (const ch of category || '') h = (h * 31 + ch.charCodeAt(0)) % 6;
+  return h + 1;
+};
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const humanize = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').replace(/^./, c => c.toUpperCase()).trim();
+export interface DetailView { label: string; value: string }
+/** What the team set up for a service, in plain words (the WhatsApp API package gets a usage bar). */
+export function serviceDetails(code: string, details: Record<string, unknown> | null | undefined) {
+  const d = details ?? {};
+  const bought = num(d.packageMessages);
+  const sent = num(d.messagesSent);
+  const campaigns = num(d.campaignsSent);
+  const usage = code.startsWith('WHATSAPP_API') && bought !== null && bought > 0
+    ? { bought, sent: sent ?? 0, remaining: Math.max(0, bought - (sent ?? 0)), pct: Math.min(100, Math.round(((sent ?? 0) / bought) * 100)) }
+    : null;
+  const rows: DetailView[] = [];
+  if (campaigns !== null) rows.push({ label: 'Campaigns sent', value: String(campaigns) });
+  const known = new Set(['packageMessages', 'messagesSent', 'campaignsSent']);
+  for (const [k, v] of Object.entries(d)) {
+    if (known.has(k) || v === null || v === '' || typeof v === 'object') continue;
+    rows.push({ label: humanize(k), value: String(v) });
+  }
+  return { usage, rows };
+}
 
 // ---- status labels ----
 export type Tone = 'success' | 'attention' | 'info' | 'neutral' | 'danger';
