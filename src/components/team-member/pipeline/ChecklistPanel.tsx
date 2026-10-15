@@ -17,11 +17,11 @@ import {
   Upload,
   XCircle
 } from 'lucide-react';
-import type { ChecklistItem, CustomerDocument, PipelineCustomerDetail, ServiceCatalogItem } from '../../../../shared/contracts';
+import { CUSTOMER_DOCUMENT_MAX_BYTES, type ChecklistItem, type CustomerDocument, type PipelineCustomerDetail, type ServiceCatalogItem } from '../../../../shared/contracts';
 import type { UploadMimeType } from '../../../../shared/validation';
 import { errorMessage } from '../../../lib/api/client';
 import { documentsApi, pipelineApi } from '../../../lib/api/endpoints';
-import { requireSupabase } from '../../../services/supabaseClient';
+import { uploadToTicket } from '../../../lib/uploadToTicket';
 import { btn, categoryDot, Dialog, ErrorBanner, inputCls, money, Pill, shortDate } from './shared';
 import { CustomerInvoices } from '../../invoices/invoiceShared';
 
@@ -249,7 +249,7 @@ const ChecklistCard: React.FC<{
   const collects = (mode === 'sales' || mode === 'addon') && !issuedByAccounts;
   const reviews = mode === 'review' || mode === 'addon';
   const allowed = item.allowedMimeTypes || ['application/pdf'];
-  const maxSize = fmtSize(item.maxSizeBytes || 512000);
+  const maxSize = fmtSize(item.maxSizeBytes || CUSTOMER_DOCUMENT_MAX_BYTES);
   const typesText = allowed.map(m => MIME_LABEL[m] || m).join(', ');
   const accept = allowed.flatMap(m => [m, ...Object.entries(EXT_MIME).filter(([, v]) => v === m).map(([e]) => `.${e}`)]).join(',');
 
@@ -274,10 +274,7 @@ const ChecklistCard: React.FC<{
       const ticket = await documentsApi.beginUpload(customer.id, { documentType: item.code, fileName: file.name, mimeType: mime, sizeBytes: file.size });
       documentId = ticket.document.id;
       setPhase('uploading');
-      const { error: upErr } = await requireSupabase()
-        .storage.from(ticket.bucket)
-        .uploadToSignedUrl(ticket.path, ticket.token, await file.arrayBuffer(), { contentType: mime, upsert: false });
-      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      await uploadToTicket(ticket, file, mime);
       setPhase('verifying');
       await documentsApi.complete(documentId);
       documentId = null;

@@ -7,6 +7,7 @@ import http from 'node:http';
 import net from 'node:net';
 import crypto from 'node:crypto';
 import pg from 'pg';
+import { startFakeR2 } from './fake-r2.js';
 
 const SECRET = process.env.JWT_SECRET!;
 const sign = (payload: Record<string, unknown>) => {
@@ -400,8 +401,11 @@ r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'x.png', { mimeType: 'image/p
 check(r.status === 422, 'non-PDF declared type rejected', r);
 r = await begin('a', leadA, 'INVOICE', 'invoice.pdf');
 check(r.status === 403 && /Accounts/.test(r.json.error.message), 'Sales cannot upload an invoice (Accounts issues invoices)', r);
-r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'big.pdf', { sizeBytes: 501 * 1024 });
-check(r.status === 422, 'any other document over 500 KB is refused', r);
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'big.pdf', { sizeBytes: 2 * 1024 * 1024 + 1 });
+check(r.status === 422, 'any other document over 2 MB is refused', r);
+r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'two-mb.pdf', { sizeBytes: 2 * 1024 * 1024 });
+check(r.status === 201, 'a customer document of exactly 2 MB is accepted', r);
+await api('a', 'POST', `/documents/${r.json.data.document.id}/abort`);
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'big.pdf', { sizeBytes: 30 * 1024 * 1024 });
 check(r.status === 422, 'oversize file rejected before upload', r);
 r = await begin('b', leadA, 'IMPORTANT_DOCUMENTS');
@@ -865,13 +869,12 @@ check(r.status === 201 && upInv.kind === 'UPLOADED' && upInv.number === 'GST/26-
 r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: 'gst/26-27/001' }));
 check(r.status === 409, 'the same invoice number cannot be used twice (case-insensitive)', r);
 
-// the same limit cannot be bypassed: a file larger than declared is stopped by storage itself
+// the same limit cannot be bypassed: a file larger than declared is checked again by the server when the upload completes
 r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: 'OVERSIZE-1', sizeBytes: 1000 }));
 const tkBig = r.json.data;
 up = await put(tkBig, pdfOf(MAX_PDF + 1, 'big'));
-check(up.status !== 200, 'storage refuses an object over 500 KB even when the request declared less');
 r = await api('accm', 'POST', `/accounts/invoice-uploads/${tkBig.document.id}/complete`);
-check(r.status === 422 && /did not finish/.test(r.json.error.message), 'completing it fails', r);
+check(r.status === 422 && /500 KB|did not finish/.test(r.json.error.message), 'an invoice object over 500 KB fails on completion even when the request declared less', r);
 check((await countInvoices('OVERSIZE-1')) === 0, 'no invoice record is left behind');
 // the accountant only chooses the PDF: a blank invoice number is numbered by the system, a blank issue date is today
 r = await api('accm', 'POST', '/accounts/invoice-uploads', upBody({ invoiceNumber: '  ' }));
@@ -1859,6 +1862,72 @@ provider.close();
   check(r.json.data.current?.name === 'Growth' && r.json.data.current.price === 4999, 'the plan is now the client current plan', r.json.data);
   r = await api('cl2', 'GET', '/client/plans');
   check(r.json.data.current === null, 'and not another client\'s', r.json.data);
+}
+
+// --- Cloudflare R2: new files go to R2, the file reference is kept in Supabase ------------------------
+{
+  const R2 = { key: 'r2-test-key', secret: 'r2-test-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  const objects = fake.objects;
+  const r2 = fake.server;
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket });
+
+  const invoicePdf = Buffer.concat([Buffer.from('%PDF-1.4\n% r2\n'), Buffer.alloc(4000, 0x20), Buffer.from('\n%%EOF\n')]);
+  r = await api('accm', 'POST', '/accounts/invoice-uploads', { customerId: autoA, invoiceNumber: 'R2/0001', issueDate: '2026-10-05', dueDate: '2026-10-25', amount: 5900, fileName: 'R2 invoice.pdf', mimeType: 'application/pdf', sizeBytes: invoicePdf.length });
+  check(r.status === 201 && r.json.data.provider === 'R2' && r.json.data.upload?.url.startsWith('http://127.0.0.1') && !r.json.data.token, 'R2: the upload ticket is a presigned PUT to Cloudflare R2', r);
+  const t = r.json.data;
+  const wrong = await fetch(t.upload.url, { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: invoicePdf });
+  check(wrong.status === 403, 'R2: the presigned URL only works with the declared content type');
+  const row0 = (await db.query(`select storage_provider, storage_ref, storage_etag from customer_documents where id = $1`, [t.document.id])).rows[0];
+  check(row0.storage_provider === 'R2' && row0.storage_ref === `r2://${R2.bucket}/customer-documents/${t.path}` && row0.storage_etag === null, 'R2: the provider and reference are recorded in Supabase as soon as the upload starts', row0);
+  const sent = await fetch(t.upload.url, { method: 'PUT', headers: t.upload.headers, body: invoicePdf });
+  check(sent.status === 200 && objects.has(`customer-documents/${t.path}`), 'R2: the browser PUTs the file straight to R2', sent.status);
+  r = await api('accm', 'POST', `/accounts/invoice-uploads/${t.document.id}/complete`);
+  check(r.status === 201 && r.json.data.status === 'Pending', 'R2: completing the upload finishes the invoice', r);
+  const md5 = crypto.createHash('md5').update(invoicePdf).digest('hex');
+  const row = (await db.query(`select storage_provider, storage_ref, storage_etag, size_bytes, status from customer_documents where id = $1`, [t.document.id])).rows[0];
+  check(row.status === 'UPLOADED' && row.storage_provider === 'R2' && row.storage_etag === md5 && Number(row.size_bytes) === invoicePdf.length && row.storage_ref.startsWith(`r2://${R2.bucket}/customer-documents/customers/`),
+    'R2: Supabase keeps the file reference (provider, object key, ETag, size) read back from R2', row);
+
+  const invId = r.json.data.id;
+  r = await api('cl2', 'GET', `/client/invoices/${invId}/url?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith('http://127.0.0.1') && /attachment/.test(decodeURIComponent(r.json.data.url)), 'R2: the client downloads their own invoice through a short-lived R2 link', r);
+  const got = await fetch(r.json.data.url);
+  check(got.status === 200 && Buffer.from(await got.arrayBuffer()).equals(invoicePdf), 'R2: the downloaded bytes are the uploaded file');
+  r = await api('accm', 'GET', `/documents/${t.document.id}/url?action=view`);
+  check(r.status === 200 && r.json.data.url.startsWith('http://127.0.0.1') && /inline/.test(decodeURIComponent(r.json.data.url)), 'R2: staff open it inline through a signed R2 link', r);
+  r = await api('cl1', 'GET', `/client/invoices/${invId}/url`);
+  check(r.status === 404, 'R2: another client cannot get a link to it', r);
+  const tamper = new URL((await api('accm', 'GET', `/documents/${t.document.id}/url`)).json.data.url);
+  tamper.pathname = tamper.pathname.replace(/\/[^/]+$/, '/other.pdf');
+  check((await fetch(tamper)).status === 403, 'R2: a signed link cannot be pointed at another file');
+
+  // a file whose content is not a PDF is refused and removed from R2
+  r = await api('accm', 'POST', '/accounts/invoice-uploads', { customerId: autoA, invoiceNumber: 'R2/0002', fileName: 'fake.pdf', mimeType: 'application/pdf', sizeBytes: 40 });
+  const bad = r.json.data;
+  await fetch(bad.upload.url, { method: 'PUT', headers: bad.upload.headers, body: Buffer.from('MZ this is not a pdf at all, just text') });
+  r = await api('accm', 'POST', `/accounts/invoice-uploads/${bad.document.id}/complete`);
+  check(r.status === 422 && !objects.has(`customer-documents/${bad.path}`), 'R2: content that is not a PDF is refused and deleted from R2', r);
+  // an upload that never reached R2
+  r = await api('accm', 'POST', '/accounts/invoice-uploads', { customerId: autoA, invoiceNumber: 'R2/0003', fileName: 'missing.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+  r = await api('accm', 'POST', `/accounts/invoice-uploads/${r.json.data.document.id}/complete`);
+  check(r.status === 422, 'R2: completing without uploading is refused', r);
+
+  // files stored before R2 stay in Supabase Storage and still open
+  r = await api('a', 'GET', `/documents/${importantDoc}/url?action=view`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW), 'a file stored before R2 still opens from Supabase Storage', r);
+  const oldRow = (await db.query(`select storage_provider, storage_ref from customer_documents where id = $1`, [importantDoc])).rows[0];
+  check(oldRow.storage_provider === 'SUPABASE' && /^supabase:\/\//.test(oldRow.storage_ref), 'and is recorded as stored in Supabase', oldRow);
+
+  r = await api('accm', 'POST', '/accounts/invoice-uploads', { customerId: autoA, invoiceNumber: 'R2/0004', fileName: 'cancel.pdf', mimeType: 'application/pdf', sizeBytes: invoicePdf.length });
+  const cancelled = r.json.data;
+  await fetch(cancelled.upload.url, { method: 'PUT', headers: cancelled.upload.headers, body: invoicePdf });
+  check(objects.has(`customer-documents/${cancelled.path}`), 'R2: a started upload reached R2');
+  r = await api('accm', 'POST', `/documents/${cancelled.document.id}/abort`);
+  check(r.status === 200 && !objects.has(`customer-documents/${cancelled.path}`), 'R2: cancelling an upload deletes the partial object from R2', r);
+
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']) delete process.env[k];
+  r2.close();
 }
 
 // A project missing an earlier migration must still let people sign in.

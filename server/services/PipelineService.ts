@@ -73,7 +73,7 @@ import { automationSettings, liveChannels } from '../automations/config.js';
 import { encryptSecret } from '../automations/secrets.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
-import type { StorageRepository } from '../repositories/StorageRepository.js';
+import type { StorageProviderName, StorageRepository } from '../repositories/StorageRepository.js';
 
 /** Signed URLs for viewing/downloading a document live this long. */
 export const DOCUMENT_URL_TTL_SECONDS = 120;
@@ -379,8 +379,15 @@ export class PipelineService {
   /** The single signed upload path for a PENDING row; the row is failed if storage cannot issue it. */
   private async ticket(row: any): Promise<DocumentUploadTicket> {
     try {
-      const token = await this.storage.createUploadToken(row.storage_bucket, row.storage_path);
-      return { document: mapDocument(row), bucket: row.storage_bucket, path: row.storage_path, token };
+      const target = await this.storage.createUploadTarget(row.id, row.storage_bucket, row.storage_path, row.mime_type);
+      return {
+        document: mapDocument(row),
+        bucket: row.storage_bucket,
+        path: row.storage_path,
+        provider: target.provider,
+        token: target.token ?? '',
+        ...(target.url ? { upload: { url: target.url, headers: target.headers ?? {} } } : {})
+      };
     } catch (err) {
       await this.repo.failUpload(row.id).catch(() => undefined);
       throw err;
@@ -419,13 +426,13 @@ export class PipelineService {
     if (!doc) throw new AppError('NOT_FOUND', 'Document not found.');
     if (doc.status !== 'PENDING') throw new AppError('CONFLICT', 'This upload is no longer in progress.');
 
-    const object = await this.storage.inspectFile(doc.storage_bucket, doc.storage_path, doc.mime_type);
+    const object = await this.storage.inspectFile(doc.storage_provider, doc.storage_bucket, doc.storage_path, doc.mime_type);
     if (!object.exists) {
-      await this.discard(id, doc.storage_bucket);
+      await this.discard(id, doc.storage_bucket, doc.storage_provider);
       throw new AppError('VALIDATION_ERROR', 'The file did not finish uploading. Please try again.');
     }
     if (!object.matches) {
-      await this.discard(id, doc.storage_bucket);
+      await this.discard(id, doc.storage_bucket, doc.storage_provider);
       throw new AppError(
         'VALIDATION_ERROR',
         doc.mime_type === 'application/pdf'
@@ -438,9 +445,11 @@ export class PipelineService {
     try {
       await this.repo.completeUpload(id, object.size);
     } catch (err) {
-      await this.discard(id, doc.storage_bucket);
+      await this.discard(id, doc.storage_bucket, doc.storage_provider);
       throw err;
     }
+    // The stored file's reference (provider, key, ETag) is kept in Supabase next to the document.
+    await this.storage.recordStored(id, doc.storage_provider, { reference: object.reference, etag: object.etag });
     // Old versions stay in Storage (versioned history); only metadata changes.
     this.storage.expireStaleUploads(doc.storage_bucket).catch(() => undefined);
     return this.repo.document(id);
@@ -451,7 +460,7 @@ export class PipelineService {
     const id = parse(uuidSchema, documentId);
     const doc = await this.repo.pendingDocument(id);
     if (!doc) throw new AppError('NOT_FOUND', 'Document not found.');
-    await this.discard(id, doc.storage_bucket);
+    await this.discard(id, doc.storage_bucket, doc.storage_provider);
   }
 
   async documentUrl(documentId: string, query: unknown): Promise<DocumentUrl> {
@@ -462,7 +471,8 @@ export class PipelineService {
       access.storage_bucket,
       access.storage_path,
       DOCUMENT_URL_TTL_SECONDS,
-      action === 'download' ? access.original_file_name : undefined
+      action === 'download' ? access.original_file_name : undefined,
+      await this.repo.providerOf(id)
     );
     return { url, expiresInSeconds: DOCUMENT_URL_TTL_SECONDS, fileName: access.original_file_name };
   }
@@ -474,12 +484,12 @@ export class PipelineService {
     // Metadata first (permission + lock checks happen in the database); the
     // object is removed only after the database accepted the deletion.
     const path = await this.repo.deleteDocument(id);
-    await this.storage.remove(doc.storage_bucket, [path]);
+    await this.storage.remove(doc.storage_bucket, [path], doc.storage_provider);
   }
 
-  private async discard(documentId: string, bucket: string): Promise<void> {
+  private async discard(documentId: string, bucket: string, provider?: StorageProviderName | null): Promise<void> {
     const path = await this.repo.failUpload(documentId);
-    if (path) await this.storage.remove(bucket, [path]);
+    if (path) await this.storage.remove(bucket, [path], provider);
   }
   // -------------------------------------------------------------------------
   // Conversations (Sales)

@@ -3,7 +3,7 @@ import { Download, Eye, FileText, RefreshCw, Search, UploadCloud } from 'lucide-
 import { INVOICE_PDF_MAX_BYTES, INVOICE_PDF_MAX_LABEL, type DocumentUploadTicket, type Invoice, type InvoiceCustomer, type InvoiceFile } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { addonsApi, documentsApi, invoicesApi } from '../../lib/api/endpoints';
-import { requireSupabase } from '../../services/supabaseClient';
+import { uploadToTicket } from '../../lib/uploadToTicket';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, money, Spinner, useDebounced } from '../team-member/pipeline/shared';
 
 // ---------------------------------------------------------------------------
@@ -33,11 +33,11 @@ async function uploadInvoicePdf(file: File, begin: () => Promise<DocumentUploadT
   let finished = false;
   try {
     phase('uploading');
-    const { error } = await requireSupabase()
-      .storage.from(ticket.bucket)
-      .uploadToSignedUrl(ticket.path, ticket.token, await file.arrayBuffer(), { contentType: 'application/pdf', upsert: false });
-    if (error) {
-      throw new Error(/exceed|too large|size/i.test(error.message) ? `File size exceeds the ${INVOICE_PDF_MAX_LABEL} limit. Please upload a smaller PDF.` : `Upload failed: ${error.message}`);
+    try {
+      await uploadToTicket(ticket, file, 'application/pdf');
+    } catch (e) {
+      const message = (e as Error).message;
+      throw new Error(/exceed|too large|size/i.test(message) ? `File size exceeds the ${INVOICE_PDF_MAX_LABEL} limit. Please upload a smaller PDF.` : message);
     }
     phase('saving');
     const invoice = await invoicesApi.completeUpload(ticket.document.id);
