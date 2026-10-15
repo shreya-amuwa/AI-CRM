@@ -12,8 +12,11 @@ sidebar. It follows the device's light/dark setting and works on desktop, tablet
 
 1. **Overview** - business and contact, active services, current plan, invoices to pay, open tickets, upcoming renewals,
    recent invoices / tickets / notifications. Empty sections say so (no sample data).
-2. **My Services** - only services the customer bought or that were activated: name, description, category, start date,
-   activation date, plan, valid-until/renewal, status (`Live` / `Setting up`).
+2. **My Services** - every service in `customer_services` for that customer (whatever the Sales team added, with no
+   extra step): name, description, category, start date, activation date, plan, valid-until/renewal, status
+   (`Live` / `Setting up`) and the details the team recorded (e.g. the WhatsApp API package shows a message-usage bar).
+   `client_services()` does not depend on optional onboarding columns, so a database that is behind on migrations
+   still shows the services (migration `20261020000100_client_services_resilient.sql`).
 3. **Explore Services** - the company's service catalogue (`crm_services`) with price (when configured) and features,
    **View details** and **Add service**.
 4. **Monthly Plans** - current plan, price, features, start, next renewal, status, payment status, history, and the plans

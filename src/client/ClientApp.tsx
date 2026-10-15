@@ -90,17 +90,21 @@ const Inner: React.FC = () => {
         <div className="cd-shell">
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={() => setNav(false)} />
           <aside className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
-            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /></div>
+            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /><span className="tag">Client</span></div>
             <nav className="cd-stack" style={{ gap: 2 }}>
               {SECTIONS.map(({ slug: s, label, Icon }) => (
                 <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
-                  <Icon size={20} aria-hidden />
+                  <span className="ni"><Icon size={18} aria-hidden /></span>
                   <span>{label}</span>
                   {s === 'notifications' && unread > 0 ? <span className="cd-nav-count" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span> : null}
                 </button>
               ))}
             </nav>
-            <div style={{ marginTop: 'auto', padding: '14px 10px 0' }} className="cd-small cd-muted">Need help? Raise a ticket and our team will reply here.</div>
+            <div className="cd-help">
+              <LifeBuoy size={22} aria-hidden />
+              <p>Need help? Raise a ticket and our team will reply here.</p>
+              <button onClick={() => to(dashboardPath('tickets'))}>Raise a ticket</button>
+            </div>
           </aside>
 
           <div className="cd-main">
