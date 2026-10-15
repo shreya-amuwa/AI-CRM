@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AccountsPlans,
+  ClientAnnouncement,
   ClientCatalogService,
   ClientInvoice,
   ClientNotifications,
@@ -54,6 +55,9 @@ export class ClientRepository {
     return this.rpc<ClientTicket>('client_create_ticket', { p_subject: i.subject, p_description: i.description, p_category: i.category, p_service: i.serviceCode });
   }
   replyTicket(id: string, message: string) { return this.rpc<ClientTicketDetail>('client_reply_ticket', { p_ticket: id, p_message: message }); }
+
+  announcements() { return this.rpc<ClientAnnouncement[]>('client_announcements'); }
+  async dismissAnnouncement(id: string, occurrence: string): Promise<void> { await this.rpc('client_dismiss_announcement', { p_id: id, p_occurrence: occurrence }); }
 
   notifications(limit: number, offset: number) { return this.rpc<ClientNotifications>('client_notifications', { p_limit: limit, p_offset: offset }); }
   markRead(ids: string[] | null) { return this.rpc<number>('client_mark_notifications_read', { p_ids: ids }); }

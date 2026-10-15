@@ -280,12 +280,13 @@ const serviceCodes = z.array(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/)).max(40)
 const datetime = z.string().datetime({ offset: true });
 
 const leadFields = {
-  name: trimmed(200).min(1, 'Contact person is required.'),
+  name: trimmed(200).min(1, 'Customer name is required.'),
   company: trimmed(200).min(1, 'Business name is required.'),
   phone: mobileSchema,
   whatsapp: z.preprocess(v => (v === '' ? null : v), mobileSchema.nullable().optional()),
   email: z.preprocess(v => (v === '' ? null : v), emailSchema.nullable().optional()),
   city: optionalText(120),
+  address: optionalText(500),
   businessCategory: optionalText(120),
   leadSource: trimmed(60).min(1, 'Lead source is required.'),
   leadStatus: z.enum(LEAD_STATUSES).optional(),
@@ -731,6 +732,7 @@ export const clientNotificationsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0)
 });
 export const clientMarkReadSchema = z.object({ ids: z.array(uuidSchema).min(1).max(100).optional() }).strict();
+export const clientDismissSchema = z.object({ occurrence: z.string().trim().max(20).optional() }).strict();
 export const clientFileQuerySchema = z.object({ action: z.enum(['view', 'download']).default('view') });
 
 export const serviceRequestDecisionSchema = z

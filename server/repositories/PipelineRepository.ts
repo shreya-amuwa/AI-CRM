@@ -24,7 +24,7 @@ import type {
 import type { LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
 import { likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, whatsapp, email, city, business_category,
+const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, whatsapp, email, city, address, business_category,
   lead_source, notes, next_follow_up_at, expected_budget, deal_amount, amount_received, amount_verified, payment_status, payment_workflow, payment_due_date,
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
@@ -58,6 +58,7 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
     whatsapp: r.whatsapp,
     email: r.email,
     city: r.city,
+    address: r.address ?? null,
     businessCategory: r.business_category,
     leadSource: r.lead_source,
     notes: r.notes,

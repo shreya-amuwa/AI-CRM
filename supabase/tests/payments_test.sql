@@ -152,7 +152,8 @@ create temp table gs_items as select code from private.customer_items((select id
 select test.check((select count(*) > 0 from gs_items), 'the customer has required checklist items');
 select test.admin_check($Q$select (select not get_started from customer_onboarding where customer_id = (select id from pt where name = 'L2'))$Q$, 'no documents yet: not Get started');
 insert into customer_onboarding_entries (customer_id, item_code, value, status, saved_by, saved_at)
-  select (select id from pt where name = 'L2'), code, 'filled', 'SAVED', test.id('tm_a'), now() from gs_items;
+  select (select id from pt where name = 'L2'), code, 'filled', 'SAVED', test.id('tm_a'), now() from gs_items
+  on conflict (customer_id, item_code) do update set value = excluded.value;
 select private.refresh_onboarding_progress((select id from pt where name = 'L2'));
 select test.admin_check($Q$select (select not get_started and items_saved = items_total from customer_onboarding where customer_id = (select id from pt where name = 'L2'))$Q$, 'documents uploaded but not verified: not Get started (payment verified)');
 update customer_onboarding_entries set status = 'VERIFIED', reviewed_by = test.id('tm_b'), reviewed_at = now()

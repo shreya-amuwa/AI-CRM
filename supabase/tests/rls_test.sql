@@ -593,10 +593,20 @@ insert into docs select 'A_kyc', id, storage_path from begin_document_upload((se
 select test.check((select path like '%/onboarding/%' from docs where name = 'A_kyc'), 'important documents stored under onboarding/');
 select complete_document_upload((select id from docs where name = 'A_kyc'), 5000);
 -- Service checklist: Meta Ads + Gold Rate package for customer A.
-select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 14),
-  'checklist = 3 basics + 6 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
-select test.check((select items_total = 14 and items_saved = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
-  'the uploaded mandatory document counts as a saved checklist item; the invoice is still missing');
+select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 15),
+  'checklist = 4 basics + 6 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
+select test.check((select items_total = 15 and items_saved = 4 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'customer name, mobile and business name come from the lead; the uploaded mandatory document counts too; the invoice is still missing');
+select test.check((select count(*) = 3 and bool_and(status = 'SAVED') from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A')
+                    and item_code in ('CUSTOMER_NAME', 'CUSTOMER_MOBILE', 'BUSINESS_NAME')), 'the lead details are already in the onboarding cards');
+select test.check((select count(*) = 0 from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'BUSINESS_ADDRESS'),
+  'no address on the lead yet, so that card is still empty');
+update customers set address = '12 Zaveri Bazaar, Mumbai' where id = (select id from pipeline where name = 'A');
+select test.check((select value = '12 Zaveri Bazaar, Mumbai' and status = 'SAVED' from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'BUSINESS_ADDRESS'),
+  'editing the lead''s address fills the onboarding card');
+update customers set company = 'Galaxy Jewellers Pvt Ltd' where id = (select id from pipeline where name = 'A');
+select test.check((select value = 'Galaxy Jewellers Pvt Ltd' from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'BUSINESS_NAME'),
+  'editing the business name updates the onboarding card, not a second copy');
 -- The Invoice item is filled by the invoice PDF Accounts uploads (Sales cannot create invoices).
 select test.must_fail($$insert into member_invoices (invoice_number, customer_name, amount, customer_id) values ('INV-SALES', 'Ankit Shah', 1, (select id from pipeline where name = 'A'))$$,
   'Sales cannot create an invoice directly', 'permission denied');
@@ -620,7 +630,7 @@ select test.check((select count(*) = 1 and bool_and(kind = 'UPLOADED' and amount
   'Sales sees the invoice Accounts uploaded for its customer (read-only)');
 select test.must_fail($$update member_invoices set amount = 1 where customer_id = (select id from pipeline where name = 'A')$$, 'Sales cannot edit an invoice', 'permission denied');
 select test.must_fail($$delete from member_invoices where customer_id = (select id from pipeline where name = 'A')$$, 'Sales cannot delete an invoice', 'permission denied');
-select test.check((select items_saved = 2 and (select status = 'SAVED' and value = 'Galaxy Oct.pdf' and document_id is not null
+select test.check((select items_saved = 6 and (select status = 'SAVED' and value = 'Galaxy Oct.pdf' and document_id is not null
                      from customer_onboarding_entries where customer_id = (select id from pipeline where name = 'A') and item_code = 'INVOICE')
                    from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
   'the uploaded invoice fills the Invoice item of the onboarding checklist');
@@ -641,14 +651,16 @@ delete from onboarding_item_services where item_code = 'META_AD_BUDGET' and serv
 set role authenticated;
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x')$$, 'file items need an upload', 'Upload a file');
 select save_onboarding_entry((select id from pipeline where name = 'A'), c, v) from (values
-  ('BUSINESS_NAME_ADDRESS', 'Shree Ganesh Jewellers, Zaveri Bazaar, Mumbai'), ('CUSTOMER_NAME', 'Ankit Shah'), ('CUSTOMER_MOBILE', '+91 98765 11111'),
+  ('BUSINESS_NAME', 'Shree Ganesh Jewellers'), ('BUSINESS_ADDRESS', 'Zaveri Bazaar, Mumbai'), ('CUSTOMER_NAME', 'Ankit Shah'), ('CUSTOMER_MOBILE', '+91 98765 11111'),
   ('BUSINESS_EMAIL', 'shree@example.com'), ('FACEBOOK_PAGE_ACCESS', 'Partner access to Amuwa BM'),
   ('INSTAGRAM_PAGE_ACCESS', 'Connected'), ('BUSINESS_LOCATION', 'Zaveri Bazaar, Mumbai'), ('WHATSAPP_ACCESS', 'Granted'),
   ('GOLD_CONFIRM_JEWELLER', 'YES'), ('BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C'), ('GOLD_TEMPLATE_APPROVAL', 'Approved on call')) v(c, v);
 insert into docs select 'A_logo', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo.png', 'image/png', 3000);
 select test.check((select path like '%.png' from docs where name = 'A_logo'), 'stored file keeps an extension matching its type');
 select complete_document_upload((select id from docs where name = 'A_logo'), 3000);
-select test.check((select items_saved = 14 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 14 items saved');
+select test.check((select items_saved = 15 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 15 items saved');
+select test.check((select name = 'Ankit Shah' and company = 'Shree Ganesh Jewellers' and address = 'Zaveri Bazaar, Mumbai' and phone = '+91 98765 11111' from customers where id = (select id from pipeline where name = 'A')),
+  'editing the onboarding cards updates the customer record (one source of truth)');
 select test.login('tm_b');
 select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'A')),
   'consultant does not see a customer before sales sends it');
@@ -840,7 +852,7 @@ select test.must_fail($$select save_onboarding_entry((select id from pipeline wh
 reset role;
 delete from onboarding_item_services where item_code = 'AI_CALL_PLAN' and service_code = 'AI_CALLING';
 set role authenticated;
-select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BUSINESS_EMAIL', '1')$$, 'the TC cannot overwrite a normal onboarding item', 'Customer not found');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'WABA_ID', '1')$$, 'the TC cannot fill an item that is not on this customer''s checklist', 'Customer not found|not part of');
 insert into docs select 'A_gbp', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'shop.png', 'image/png', 3000);
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 1000)$$, 'the TC cannot upload a document that is not an add-on item', 'Customer not found');
 select complete_document_upload((select id from docs where name = 'A_gbp'), 3000);
@@ -892,14 +904,31 @@ select test.check((select count(*) = 1 from customers where id = (select id from
 select test.check((select count(*) = 0 from customers where id = (select id from pipeline where name = 'B')), 'support does not see an onboarding customer that was not sent');
 select test.check((select (onboarding_review_counts() ->> 'TO_REVIEW')::int >= 1), 'review counts include the sent customer');
 select test.check((select count(*) = 1 from authorize_document_access((select id from docs where name = 'A_logo'), 'VIEW')), 'support can open the forwarded customer''s files');
-select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Blue')$$, 'support cannot edit sales details', 'NOT_FOUND');
-select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x.png', 'image/png', 10)$$, 'support cannot upload', 'NOT_FOUND');
+-- the consultant may correct what Sales sent (a wrong detail, a wrong file), but nothing outside this customer's checklist
+select save_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C, Cream');
+select test.check((select value like '%Cream' and status = 'SAVED' and saved_by = test.id('tm_b') from customer_onboarding_entries
+                    where customer_id = (select id from pipeline where name = 'A') and item_code = 'BRAND_COLOURS'), 'the consultant corrects a detail; it shows who changed it');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'WABA_ID', '123')$$, 'not an item of this customer', 'NOT_FOUND|not part of');
+select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'INVOICE', 'x')$$, 'the invoice stays with Accounts', 'Accounts|not found');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 10)$$, 'the consultant cannot upload an invoice', 'Accounts|not found');
+select test.must_fail($$select delete_customer_document((select id from docs where name = 'A_logo'))$$, 'the consultant replaces a file, it does not delete it', 'NOT_FOUND|locked');
 select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', '')$$, 'rejection needs a note', 'needs fixing');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_COLOURS', 'REJECTED', 'Gold hex code is missing');
-select test.check((select verify_all_onboarding_entries((select id from pipeline where name = 'A')) = 13), 'authorize all verifies the 13 saved items');
+select test.check((select verify_all_onboarding_entries((select id from pipeline where name = 'A')) = 14), 'authorize all verifies the 14 saved items');
 select test.must_fail($$select verify_all_onboarding_entries((select id from pipeline where name = 'A'))$$, 'authorize all with nothing pending', 'Nothing is waiting');
-select test.check((select items_verified = 13 and items_rejected = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
-  'review progress tracked (12 verified, 1 needs fixing)');
+select test.check((select items_verified = 14 and items_rejected = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')),
+  'review progress tracked (14 verified, 1 needs fixing)');
+-- the consultant replaces a wrong document: a new version, back to "to review"
+insert into docs select 'A_logo_tc', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo-fixed.png', 'image/png', 3500);
+select complete_document_upload((select id from docs where name = 'A_logo_tc'), 3500);
+select test.check((select e.status = 'SAVED' and e.saved_by = test.id('tm_b') and (select count(*) = 1 from customer_documents d where d.customer_id = e.customer_id and d.document_type = 'BRAND_LOGO' and d.status = 'UPLOADED')
+                   and (select count(*) = 1 from customer_documents d where d.customer_id = e.customer_id and d.document_type = 'BRAND_LOGO' and d.status = 'SUPERSEDED')
+                   from customer_onboarding_entries e where e.customer_id = (select id from pipeline where name = 'A') and e.item_code = 'BRAND_LOGO'),
+  'the consultant replaces a document: new version, old one kept as history');
+select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null);
+select test.login('tm_c');
+select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'x.png', 'image/png', 10)$$, 'another department cannot upload', 'NOT_FOUND');
+select test.login('tm_b');
 select test.login('tm_c');
 select test.must_fail($$select review_onboarding_entry((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'VERIFIED', null)$$, 'other department cannot review', 'NOT_FOUND');
 select test.login('pending_d');
@@ -925,8 +954,8 @@ select test.check((select count(*) = 1 from audit_logs where action = 'DOCUMENT_
 select test.check((select count(*) >= 1 from audit_logs where action = 'DOCUMENT_DELETED'), 'deletion audited');
 select test.check((select count(*) = 0 from notifications where type = 'ONBOARDING_ITEM_REJECTED' and recipient_id = test.id('tm_a')), 'a single Not authorized does not notify on its own');
 select test.check((select count(*) = 1 from notifications where type = 'ONBOARDING_VERIFIED' and recipient_id = test.id('tm_a')), 'owner notified when everything is verified');
--- 2 single verifications: one add-on item (Add-ons Services test above) and the one verified here.
-select test.check((select count(*) = 2 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
+-- 3 single verifications: one add-on item (Add-ons Services test above), the corrected logo and the one verified here.
+select test.check((select count(*) = 3 from audit_logs where action = 'ONBOARDING_ITEM_VERIFIED' and actor_id = test.id('tm_b'))
                    and (select count(*) = 1 from audit_logs where action = 'ONBOARDING_ITEMS_VERIFIED' and actor_id = test.id('tm_b')), 'verifications audited');
 
 \echo '--- 13b2. Uploaded invoice PDFs (Accounts uploads; everyone who may see the customer reads)'

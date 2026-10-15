@@ -78,7 +78,7 @@ export type ActiveTab =
 interface SidebarProps {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
-  onNavigateHome: () => void;
+  onNavigateHome?: () => void;
   subDept?: 'sales' | 'support' | 'education_training' | 'product_training' | null;
   departmentId?: string;
 }
@@ -317,17 +317,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Top Nav Section */}
       <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-6rem)]">
         
-        {/* Back to Department Selector Button */}
-        <button
-          onClick={onNavigateHome}
-          className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold flex items-center justify-between transition-all group"
-        >
-          <span className="flex items-center gap-2">
-            <ArrowLeft className="w-3.5 h-3.5 text-blue-600 group-hover:-translate-x-1 transition-transform" />
-            <span>Department Hub</span>
-          </span>
-          <span className="text-[10px] text-slate-500 font-bold">10 Units</span>
-        </button>
+        {/* Back to the Department Hub: Super Admin only */}
+        {onNavigateHome && (
+          <button
+            onClick={onNavigateHome}
+            className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold flex items-center justify-between transition-all group"
+          >
+            <span className="flex items-center gap-2">
+              <ArrowLeft className="w-3.5 h-3.5 text-blue-600 group-hover:-translate-x-1 transition-transform" />
+              <span>Department Hub</span>
+            </span>
+            <span className="text-[10px] text-slate-500 font-bold">10 Units</span>
+          </button>
+        )}
 
         {/* Dedicated Navigation Items for current Department */}
         <div className="space-y-1">

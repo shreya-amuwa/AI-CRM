@@ -8,10 +8,11 @@ export const useShell = (): Shell => { const v = useContext(ShellCtx); if (!v) t
 export const dashboardPath = (slug: SectionSlug, rest = '') => `/client/dashboard/${slug}${rest}`;
 
 /** Where a notification leads. */
-export function notificationTarget(n: { entityType: string | null; entityId: string | null }): string {
+export function notificationTarget(n: { type?: string; entityType: string | null; entityId: string | null }): string {
   switch (n.entityType) {
     case 'invoice': return dashboardPath('invoices');
     case 'service': return dashboardPath('services');
+    case 'announcement': return n.type === 'NEW_SERVICE' ? dashboardPath('explore') : dashboardPath('overview');
     case 'plan': case 'plan_request': return dashboardPath('plans');
     case 'ticket': return n.entityId ? dashboardPath('tickets', `/${n.entityId}`) : dashboardPath('tickets');
     case 'service_request': case 'addon': return dashboardPath('explore');

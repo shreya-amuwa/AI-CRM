@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Users, LogOut, ShieldCheck } from 'lucide-react';
+import { Users, LogOut, Megaphone, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { sessionManager } from '../../services/sessionManager';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { ClientNotices } from '../notices/ClientNotices';
+import { Dialog } from '../team-member/pipeline/shared';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
@@ -10,6 +12,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
   const { activeDepartment, user, logout } = useAuth();
+  const [noticesOpen, setNoticesOpen] = useState(false);
 
   if (!activeDepartment) return null;
 
@@ -62,6 +65,17 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
         {/* Right Side Tools */}
         <div className="flex items-center gap-2.5">
           
+          {/* The Super Admin and the HR head tell clients about closures and new services */}
+          {(user?.role === 'superadmin' || user?.role === 'hr') && (
+            <button
+              type="button"
+              onClick={() => setNoticesOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Megaphone className="w-3.5 h-3.5 text-indigo-600" aria-hidden="true" /> Client notices
+            </button>
+          )}
+
           {/* User Profile & Logout */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
             <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center font-mono shadow-xs">
@@ -86,7 +100,11 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
 
         </div>
       </header>
-
+      {noticesOpen && (
+        <Dialog title="Client notices" onClose={() => setNoticesOpen(false)} wide>
+          <ClientNotices />
+        </Dialog>
+      )}
     </>
   );
 };
