@@ -1275,3 +1275,75 @@ export interface AccountsPlans {
   plans: (MonthlyPlan & { isActive: boolean })[];
   requests: AccountsPlanRequest[];
 }
+
+// ---------------------------------------------------------------------------
+// HR: attendance, personal details, leave
+// ---------------------------------------------------------------------------
+export interface AttendanceRow {
+  id: string;
+  profileId: string;
+  name: string;
+  email: string;
+  role: Role;
+  designation: string | null;
+  departmentName: string | null;
+  /** ISO time of the first CRM (RM system) login of the day. */
+  rmLoginAt: string | null;
+  /** ISO time of the first biometric punch of the day. */
+  biometricLoginAt: string | null;
+  /** Whole minutes between the two, null while either is missing. */
+  diffMinutes: number | null;
+  /** More than 15 minutes apart. */
+  discrepancy: boolean;
+}
+export interface AttendanceDay {
+  date: string;
+  rows: AttendanceRow[];
+}
+export interface PersonalDetails {
+  profileId: string;
+  designation: string | null;
+  joiningDate: string | null;
+  dateOfBirth: string | null;
+  bloodGroup: string | null;
+  emergencyContact: string | null;
+}
+export type LeaveStatus = 'PENDING_DEPARTMENT_HEAD' | 'PENDING_HR' | 'APPROVED' | 'REJECTED_BY_DEPARTMENT_HEAD' | 'REJECTED_BY_HR';
+export interface LeaveDecision {
+  name: string | null;
+  at: string;
+  note: string | null;
+}
+export interface LeaveRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  departmentName: string | null;
+  leaveType: 'FULL_DAY' | 'HALF_DAY';
+  startDate: string;
+  endDate: string;
+  halfDayShift: 'MORNING' | 'AFTERNOON' | null;
+  /** Working days (Sundays excluded); 0.5 for a half day. */
+  days: number;
+  reason: string;
+  status: LeaveStatus;
+  createdAt: string;
+  departmentHead: LeaveDecision | null;
+  hr: LeaveDecision | null;
+}
+export interface LeaveReview {
+  awaiting: LeaveRequest[];
+  decided: LeaveRequest[];
+  canReviewAsDepartmentHead: boolean;
+  canReviewAsHr: boolean;
+}
+export interface LeaveMonthEmployee {
+  profileId: string;
+  halfDays: number;
+  leaveDays: number;
+  records: { id: string; leaveType: 'FULL_DAY' | 'HALF_DAY'; startDate: string; endDate: string; halfDayShift: string | null; reason: string }[];
+}
+export interface LeaveMonthlySummary {
+  month: string;
+  employees: LeaveMonthEmployee[];
+}

@@ -13,6 +13,7 @@ import { TicketsPage } from './TicketsPage';
 import { InvoicesPage } from './InvoicesPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HandoverBoard } from '../handover/HandoverBoard';
+import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications';
 
@@ -160,6 +161,7 @@ export const SupportMemberDashboard: React.FC = () => {
             {teamName ? ` · ${teamName}` : ''}
           </div>
           <div className="flex items-center gap-3 sm:gap-5">
+            <LeaveCenter />
             <div className="relative" ref={bellRef}>
               <button
                 type="button"

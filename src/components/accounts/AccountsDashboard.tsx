@@ -16,6 +16,7 @@ import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
+import { LeaveCenter } from '../leave/LeaveCenter';
 
 type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
 
@@ -120,6 +121,7 @@ export const AccountsDashboard: React.FC = () => {
           </button>
           <div className="hidden lg:block text-xs text-slate-400">{profile?.department?.name || 'Accounts Department'}</div>
           <div className="flex items-center gap-3 sm:gap-5">
+            <LeaveCenter />
             <div className="relative" ref={bellRef}>
               <button
                 type="button"

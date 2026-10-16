@@ -75,6 +75,19 @@ export const organizationController = {
   }) as Handler
 };
 
+export const hrController = {
+  recordRmLogin: (async ctx => (await svc(ctx).hr.recordRmLogin(), ok(null))) as Handler,
+  attendance: (async ctx => ok(await svc(ctx).hr.attendance(ctx.req.query))) as Handler,
+  manualPunch: (async ctx => (await svc(ctx).hr.manualPunch(ctx.req.body), ok(null, 201))) as Handler,
+  personalDetails: (async ctx => ok(await svc(ctx).hr.personalDetails())) as Handler,
+  submitLeave: (async ctx => ok(await svc(ctx).hr.submitLeave(ctx.req.body), 201)) as Handler,
+  myLeave: (async ctx => ok(await svc(ctx).hr.myLeave())) as Handler,
+  leaveToReview: (async ctx => ok(await svc(ctx).hr.leaveToReview())) as Handler,
+  decideAsDepartmentHead: (async ctx => ok(await svc(ctx).hr.decideAsDepartmentHead(ctx.params.id, ctx.req.body))) as Handler,
+  decideAsHr: (async ctx => ok(await svc(ctx).hr.decideAsHr(ctx.params.id, ctx.req.body))) as Handler,
+  monthlySummary: (async ctx => ok(await svc(ctx).hr.monthlySummary(ctx.req.query))) as Handler
+};
+
 export const auditController = {
   list: (async ctx => ok(await svc(ctx).audit.list(ctx.actor, ctx.req.query))) as Handler
 };

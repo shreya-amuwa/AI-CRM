@@ -13,12 +13,14 @@ import { assertCanAssignRole, assertManager } from '../authz/policies.js';
 import { parse } from '../http/validate.js';
 import { AppError } from '../http/errors.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
+import type { HrRepository } from '../repositories/HrRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 
 export class UserService {
   constructor(
     private readonly profiles: ProfileRepository,
-    private readonly authAdmin = new AuthAdminRepository()
+    private readonly authAdmin = new AuthAdminRepository(),
+    private readonly hr?: HrRepository
   ) {}
 
   /** Own profile - available to every authenticated user, whatever the status. */
@@ -51,7 +53,19 @@ export class UserService {
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }
-    const id = await this.authAdmin.createProvisionedUser({ ...input, provisionedBy: actor.id });
+    const { details, ...account } = input;
+    const id = await this.authAdmin.createProvisionedUser({ ...account, provisionedBy: actor.id });
+    if (details) {
+      try {
+        await this.authAdmin.savePersonalDetails(id, details);
+      } catch (err) {
+        // Never leave an account without the details that were asked for.
+        await this.authAdmin.deleteUser(id).catch(() => undefined);
+        throw err;
+      }
+    }
+    // Tell HR about the new member (once). A failed notification never fails the creation.
+    await this.hr?.notifyMemberCreated(id).catch(() => undefined);
     return this.profiles.findById(id);
   }
 

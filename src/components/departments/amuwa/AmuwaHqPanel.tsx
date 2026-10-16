@@ -14,6 +14,8 @@ import {
 import { Employee, OfferLetter, LeaveApplication } from '../../../types/amuwaHq';
 import { AmuwaOfficialOfferLetter } from './AmuwaOfficialOfferLetter';
 import { EmployeeProfileModal } from './EmployeeProfileModal';
+import { MonthlyLeaveFilter } from '../../hr/MonthlyLeaveFilter';
+import { useMonthlyLeave } from '../../../hooks/useMonthlyLeave';
 import { AccountsPanel } from './AccountsPanel';
 import { AmuwaSettingsPanel } from './AmuwaSettingsPanel';
 import { AmuwaHRStaffManagement } from './AmuwaHRStaffManagement';
@@ -30,6 +32,8 @@ export const AmuwaHqPanel: React.FC<AmuwaHqPanelProps> = ({ activeTab = 'dashboa
 
   // State Management
   const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
+  // These employee records are kept in the browser (no CRM account), so their month comes from their own leave records.
+  const monthlyLeave = useMonthlyLeave({ database: false });
   const [offerLetters, setOfferLetters] = useState<OfferLetter[]>(INITIAL_OFFER_LETTERS);
   const [leaves, setLeaves] = useState<LeaveApplication[]>(INITIAL_LEAVE_APPLICATIONS);
 
@@ -319,6 +323,11 @@ export const AmuwaHqPanel: React.FC<AmuwaHqPanelProps> = ({ activeTab = 'dashboa
 
               {/* Employee Table */}
               <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                <MonthlyLeaveFilter
+                  month={monthlyLeave.month}
+                  onChange={monthlyLeave.setMonth}
+                  withLeave={employees.filter(e => { const c = monthlyLeave.countsFor(e); return c.halfDays + c.leaveDays > 0; }).length}
+                />
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono uppercase">
@@ -394,8 +403,8 @@ export const AmuwaHqPanel: React.FC<AmuwaHqPanelProps> = ({ activeTab = 'dashboa
                           </td>
 
                           <td className="p-3.5 font-mono text-xs">
-                            <span className="text-slate-800 block">Half-Days: <strong>{emp.halfDaysCount}</strong></span>
-                            <span className="text-slate-500 text-[11px]">Full-Days: {emp.totalLeavesCount}</span>
+                            <span className="text-slate-800 block">Half-Days: <strong>{monthlyLeave.countsFor(emp).halfDays}</strong></span>
+                            <span className="text-slate-500 text-[11px]">Leaves: {monthlyLeave.countsFor(emp).leaveDays}</span>
                           </td>
 
                           <td className="p-3.5 text-right">

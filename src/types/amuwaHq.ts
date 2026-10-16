@@ -61,6 +61,11 @@ export interface Employee {
   accountStatus?: 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED' | 'REJECTED';
   approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
   approvedBy?: string;
+  // Collected when the member is added (HR and the employee only)
+  dateOfBirth?: string;
+  bloodGroup?: string;
+  emergencyContact?: string;
+  designationType?: string;
 }
 
 export interface OfferLetter {

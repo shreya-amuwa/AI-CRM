@@ -16,6 +16,7 @@ import { TicketsPage } from '../support-member/TicketsPage';
 import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type SupportLeadPage = 'dashboard' | 'customers' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
 
@@ -185,6 +186,7 @@ export const SupportLeadDashboard: React.FC = () => {
             {teamName ? ` · ${teamName}` : ''}
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
+            <LeaveCenter />
             <div className="relative" ref={bellRef}>
               <button
                 type="button"

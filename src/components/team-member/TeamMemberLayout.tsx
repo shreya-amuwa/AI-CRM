@@ -19,6 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type TeamMemberNav =
   | 'home'
@@ -294,6 +295,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {/* Right actions: notifications and user profile */}
           <div className="flex items-center gap-3 sm:gap-5">
             {/* Notification Bell (live notifications from the database) */}
+            <LeaveCenter />
             <div className="relative" ref={bellRef}>
               <button
                 type="button"

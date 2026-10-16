@@ -22,3 +22,5 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/automations_test.sql 2>&1 | sed -E
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/client_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/tickets_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

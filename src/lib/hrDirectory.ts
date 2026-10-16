@@ -108,6 +108,21 @@ export async function fetchHrDirectory(): Promise<HrDirectory> {
   const { data, error } = await db().rpc('hr_employee_directory');
   if (error) throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
   const rows = ((data?.employees ?? []) as DirectoryRow[]).map(toEmployee);
+  // Details collected when a member is added (joining date, birth date, blood group, emergency contact, designation).
+  // A database that has not applied that migration yet simply has none.
+  const details = await db().rpc('hr_personal_details');
+  const byProfile = new Map<string, Record<string, string | null>>(
+    ((details.error ? [] : details.data) as Record<string, string | null>[]).map(d => [d.profileId as string, d])
+  );
+  for (const e of rows) {
+    const d = e.profileId ? byProfile.get(e.profileId) : undefined;
+    if (!d) continue;
+    if (d.joiningDate) e.joiningDate = d.joiningDate;
+    e.dateOfBirth = d.dateOfBirth ?? undefined;
+    e.bloodGroup = d.bloodGroup ?? undefined;
+    e.emergencyContact = d.emergencyContact ?? undefined;
+    e.designationType = d.designation ?? undefined;
+  }
   return {
     employees: rows.filter(e => e.approvalStatus === 'APPROVED'),
     pending: rows.filter(e => e.approvalStatus === 'PENDING'),
