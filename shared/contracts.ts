@@ -246,6 +246,15 @@ export interface ServiceCatalogItem {
   code: string;
   name: string;
   category: string;
+  /** What onboarding collects for this service (labels only, in checklist order). */
+  requirements?: ServiceRequirement[];
+}
+export interface ServiceRequirement {
+  label: string;
+  kind: ChecklistKind;
+  optional: boolean;
+  /** Shown only after another answer (e.g. Meta Ads: only when creatives are required). */
+  conditional: boolean;
 }
 
 export interface PipelineCustomer {

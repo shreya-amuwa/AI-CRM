@@ -19,7 +19,8 @@ import type {
   Paginated,
   PipelineCounts,
   PipelineCustomer,
-  ServiceCatalogItem
+  ServiceCatalogItem,
+  ServiceRequirement
 } from '../../shared/contracts.js';
 import type { LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
 import { likePattern, pageRange, unwrap, unwrapOne } from './base.js';
@@ -156,8 +157,22 @@ export class PipelineRepository {
   constructor(private readonly db: SupabaseClient) {}
 
   async services(): Promise<ServiceCatalogItem[]> {
-    const rows = unwrap(await this.db.from('crm_services').select('code, name, category').eq('is_active', true).order('sort_order'));
-    return rows as ServiceCatalogItem[];
+    const [rows, links] = await Promise.all([
+      this.db.from('crm_services').select('code, name, category').eq('is_active', true).order('sort_order'),
+      this.db.from('onboarding_item_services')
+        .select('service_code, item:onboarding_items!inner(label, kind, is_optional, sort_order, shown_when_item)')
+        .eq('item.is_active', true).eq('item.filled_by', 'SALES')
+    ]);
+    const byService = new Map<string, (ServiceRequirement & { sort: number })[]>();
+    for (const l of unwrap(links) as unknown as { service_code: string; item: { label: string; kind: ServiceRequirement['kind']; is_optional: boolean; sort_order: number; shown_when_item: string | null } }[]) {
+      const list = byService.get(l.service_code) ?? [];
+      list.push({ label: l.item.label, kind: l.item.kind, optional: l.item.is_optional, conditional: !!l.item.shown_when_item, sort: l.item.sort_order });
+      byService.set(l.service_code, list);
+    }
+    return (unwrap(rows) as ServiceCatalogItem[]).map(s => ({
+      ...s,
+      requirements: (byService.get(s.code) ?? []).sort((a, b) => a.sort - b.sort).map(({ sort: _sort, ...r }) => r)
+    }));
   }
 
   async checklist(customerId: string): Promise<ChecklistItem[]> {

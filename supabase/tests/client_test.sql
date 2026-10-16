@@ -403,4 +403,87 @@ select test.login('tm_a');
 select test.must_fail($$select client_services()$$, 'a staff member still cannot use it', 'clients only');
 rollback;
 reset role;
+
+-- ---------------------------------------------------------------- Amuwa Design Studio services (migration 20261024000100)
+\echo '--- 30. Amuwa Design Studio services and their own requirements'
+select test.check((select count(*) = 6 and count(distinct name) = 6 and bool_and(is_active)
+                     and array_agg(name order by sort_order) = array['Social Media Marketing', 'Google My Business Ranking', 'Meta Ads', 'AI Video Production', 'Yearly Creative Package', 'Graphic Design']
+                     from crm_services where category = 'Amuwa Design Studio'), 'the six services are in the catalogue under Amuwa Design Studio');
+select test.check((select count(*) = 0 from crm_services where category = 'Amuwa Design Studio' and code not like 'DS\_%'), 'no existing service was moved into the new category');
+select test.check((select name = 'Meta Ads Management' and category = 'Google & Social' and is_active from crm_services where code = 'META_ADS_MANAGEMENT')
+                  and (select count(*) from onboarding_item_services where service_code = 'META_ADS_MANAGEMENT') = 6, 'the existing Meta Ads Management service and its checklist are unchanged');
+select test.check((select count(*) = 0 from client_announcements where service_code like 'DS\_%'), 'adding them did not pop up six announcements for every client');
+select test.check((select count(*) = 0 from onboarding_item_services m join onboarding_item_services o on o.item_code = m.item_code and o.service_code <> m.service_code
+                    where m.service_code like 'DS\_%'), 'every Design Studio item belongs to exactly one service (saving one never overwrites another)');
+
+set role authenticated;
+select test.login('tm_a');
+insert into cl select 'DS', create_lead('{"name":"Design Client","company":"Pixel Bakery","email":"pixel@example.com","phone":"9819900103","leadSource":"Walk-in"}',
+                                        array['DS_META_ADS', 'DS_GRAPHIC_DESIGN']);
+reset role;
+update customers set lifecycle_stage = 'ONBOARDING' where id = (select id from cl where name = 'DS');
+insert into customer_onboarding (customer_id) select id from cl where name = 'DS' on conflict (customer_id) do nothing;
+select private.refresh_onboarding_progress((select id from cl where name = 'DS'));
+create temp table dsck as select null::jsonb as c;
+grant all on dsck to authenticated;
+set role authenticated;
+select test.login('tm_a');
+update dsck set c = customer_onboarding_checklist((select id from cl where name = 'DS'));
+select test.check((select count(*) filter (where i ->> 'serviceCode' = 'DS_META_ADS') = 5 and count(*) filter (where i ->> 'serviceCode' = 'DS_GRAPHIC_DESIGN') = 4
+                     and count(*) filter (where i ->> 'code' like 'DS\_AIV\_%' or i ->> 'code' like 'DS\_SMM\_%') = 0
+                     from dsck, jsonb_array_elements(c) i), 'onboarding lists the items of each selected service, grouped under that service, and nothing for the others');
+select test.check((select count(*) = 0 from dsck, jsonb_array_elements(c) i where i ->> 'code' in ('DS_META_CREATIVE_BRIEF', 'DS_META_CREATIVE_ASSETS')),
+  'Meta Ads: no creative fields until creatives are required');
+create temp table dstotal as select items_total as n from customer_onboarding where customer_id = (select id from cl where name = 'DS');
+grant select on dstotal to authenticated;
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_CREATIVES_REQUIRED', 'YES');
+update dsck set c = customer_onboarding_checklist((select id from cl where name = 'DS'));
+select test.check((select count(*) = 2 from dsck, jsonb_array_elements(c) i where i ->> 'code' in ('DS_META_CREATIVE_BRIEF', 'DS_META_CREATIVE_ASSETS')),
+  'Meta Ads: answering Yes shows the creative brief and assets');
+select test.check((select items_total = (select n from dstotal) + 1 from customer_onboarding where customer_id = (select id from cl where name = 'DS')),
+  'and the creative brief becomes required (the assets stay optional)');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_CREATIVE_BRIEF', '6 posts, 1080x1080, Diwali offer, English');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_CREATIVES_REQUIRED', 'NO');
+update dsck set c = customer_onboarding_checklist((select id from cl where name = 'DS'));
+select test.check((select count(*) = 0 from dsck, jsonb_array_elements(c) i where i ->> 'code' in ('DS_META_CREATIVE_BRIEF', 'DS_META_CREATIVE_ASSETS'))
+                  and (select items_total = (select n from dstotal) from customer_onboarding where customer_id = (select id from cl where name = 'DS')),
+  'answering No hides them again and they no longer count');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_CREATIVE_BRIEF', 'x')$$,
+  'a hidden creative field cannot be saved', 'not part of this customer');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_CREATIVES_REQUIRED', 'YES');
+update dsck set c = customer_onboarding_checklist((select id from cl where name = 'DS'));
+select test.check((select i -> 'entry' ->> 'value' = '6 posts, 1080x1080, Diwali offer, English' from dsck, jsonb_array_elements(c) i where i ->> 'code' = 'DS_META_CREATIVE_BRIEF'),
+  'switching back to Yes keeps the brief that was entered');
+
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_INSTAGRAM', 'user: pixelbakery password: hunter2')$$,
+  'a password is never stored for account access', 'Do not enter passwords');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_FACEBOOK_PAGE', 'pwd=abc')$$,
+  'in any spelling', 'Do not enter passwords');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_INSTAGRAM', '@pixelbakery - partner access via Meta Business (BM 1234)');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_GD_PHONE', '12345')$$, 'a phone number is checked', 'valid phone');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_GD_ADDRESS', 'Mumbai')$$, 'an address needs the full address', 'full business address');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_GD_PHONE', '+91 98199 00103');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_GD_ADDRESS', 'Shop 4, Lake Road, Andheri East, Mumbai, Pin: 400069');
+select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_GD_BRAND_DETAILS', 'Pixel Bakery - warm brown and cream, playful tone');
+select test.check((select count(*) = 1 from customer_onboarding_entries where customer_id = (select id from cl where name = 'DS') and item_code like 'DS\_%\_PHONE'),
+  'the Graphic Design phone is saved for Graphic Design only');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_SMM_INSTAGRAM', '@pixelbakery')$$,
+  'details of a service the customer did not take cannot be saved', 'not part of this customer');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_META_BUSINESS_DOCS', 'text')$$, 'a document item needs a file', 'Upload a file');
+select test.must_fail($$select begin_document_upload((select id from cl where name = 'DS'), 'DS_GD_LOGO', 'logo.exe', 'application/x-msdownload', 1000)$$,
+  'a logo must be an image or PDF', 'not accepted');
+select test.must_fail($$select begin_document_upload((select id from cl where name = 'DS'), 'DS_GD_LOGO', 'logo.png', 'image/png', 5000000)$$,
+  'and at most 2 MB', 'smaller than');
+select test.check((select (begin_document_upload((select id from cl where name = 'DS'), 'DS_GD_LOGO', 'logo.png', 'image/png', 20000)).storage_path
+                     like 'customers/' || (select id from cl where name = 'DS') || '/onboarding/%'), 'a logo upload is filed under this customer');
+
+select test.login('tm_b');
+select test.must_fail($$select customer_onboarding_checklist((select id from cl where name = 'DS'))$$, 'another salesperson cannot read these details', 'not found');
+select test.must_fail($$select save_onboarding_entry((select id from cl where name = 'DS'), 'DS_GD_PHONE', '+91 98199 00999')$$, 'nor change them', 'not found');
+select test.login('cdash_a');
+select test.must_fail($$select customer_onboarding_checklist((select id from cl where name = 'DS'))$$, 'a client cannot read another customer''s details', 'not found');
+select test.check((select count(*) = 0 from customer_onboarding_entries where customer_id = (select id from cl where name = 'DS')), 'nor read the entries directly');
+reset role;
+select test.check((select value = '+91 98199 00103' from customer_onboarding_entries where customer_id = (select id from cl where name = 'DS') and item_code = 'DS_GD_PHONE'),
+  'the details are stored against this customer');
 \echo '=== ALL CLIENT DASHBOARD TESTS PASSED ==='
