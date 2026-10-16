@@ -235,6 +235,92 @@ update customer_onboarding set handover_stage = 'TEAM_MEMBER', team_lead_id = te
 select test.check((select assignee_id = test.id('sup_plain') and escalation_level = 'RM' and escalated_to is null from support_tickets where id = (select id from tk where name = 'N1')),
   'a ticket that waited with the Team Lead for lack of an RM follows the customer to their new RM');
 
--- re-running the migration keeps everything
+
+-- ---------------------------------------------------------------- chat (migration 20261026000100)
+\echo '--- 30. Ticket chat: one thread per ticket, no duplicates, read state'
+set role authenticated;
+select test.login('tk_r');
+insert into tk select 'C1', (client_create_ticket('Chat ticket', 'Hello, my campaign stopped', 'GENERAL') ->> 'id')::uuid;
+select test.check((select count(*) = 1 and bool_and(m ->> 'from' = 'CLIENT' and m ->> 'text' = 'Hello, my campaign stopped')
+                     from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'kind' = 'MESSAGE'),
+  'the opening message is the first message of the conversation, once');
+select test.check((select count(*) >= 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m
+                    where m ->> 'kind' = 'EVENT' and m ->> 'event' = 'ASSIGNED' and m ->> 'author' = 'Support B'), 'the assignment is a timeline event');
+select client_send_ticket_message((select id from tk where name = 'C1'), 'First follow-up', '11111111-1111-1111-1111-111111111111');
+select client_send_ticket_message((select id from tk where name = 'C1'), 'First follow-up', '11111111-1111-1111-1111-111111111111');
+select client_send_ticket_message((select id from tk where name = 'C1'), 'Second follow-up', '22222222-2222-2222-2222-222222222222');
+select test.check((select count(*) = 3 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'from' = 'CLIENT'),
+  'several client messages, the retried one stored once');
+select test.check((select jsonb_array_length(client_tickets()) = 3), 'messages never create tickets');
+select test.check((select (t -> 'lastMessage' ->> 'text') = 'Second follow-up' and t -> 'lastMessage' ->> 'from' = 'CLIENT'
+                     from jsonb_array_elements(client_tickets()) t where (t ->> 'id')::uuid = (select id from tk where name = 'C1')), 'the inbox shows the last message');
+select test.check((select not (m ->> 'seen')::boolean from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m
+                    where m ->> 'text' = 'Second follow-up'), 'not seen by Support yet');
+
+select test.login('sup_b');
+select test.check((select count(*) = 3 from support_ticket_updates where ticket_id = (select id from tk where name = 'C1') and client_author and kind in ('CREATED', 'CLIENT_REPLY')),
+  'the RM reads every customer message');
+select test.check((select coalesce((select read_at from support_ticket_reads where ticket_id = (select id from tk where name = 'C1')), '-infinity') < last_message_at
+                     from support_tickets where id = (select id from tk where name = 'C1')), 'they are unread for the RM');
+select mark_support_ticket_read((select id from tk where name = 'C1'));
+select test.check((select read_at >= (select last_message_at from support_tickets where id = (select id from tk where name = 'C1'))
+                     from support_ticket_reads where ticket_id = (select id from tk where name = 'C1') and profile_id = test.id('sup_b')), 'opening the chat marks it read');
+select send_ticket_message((select id from tk where name = 'C1'), 'Looking at it now', false, '33333333-3333-3333-3333-333333333333');
+select send_ticket_message((select id from tk where name = 'C1'), 'Looking at it now', false, '33333333-3333-3333-3333-333333333333');
+select send_ticket_message((select id from tk where name = 'C1'), 'Customer seems to have paused billing', true, '44444444-4444-4444-4444-444444444444');
+select test.check((select count(*) = 1 from support_ticket_updates where ticket_id = (select id from tk where name = 'C1') and note = 'Looking at it now'), 'a staff reply sent twice is stored once');
+select test.check((select author_label = 'Relationship Manager' from support_ticket_updates where ticket_id = (select id from tk where name = 'C1') and note = 'Looking at it now'),
+  'the sender''s role is recorded');
+select test.check((select last_message_preview = 'Looking at it now' and last_message_from = 'STAFF' from support_tickets where id = (select id from tk where name = 'C1')),
+  'internal notes are not the conversation preview');
+select test.login('tk_r');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m
+                    where m ->> 'from' = 'STAFF' and m ->> 'text' = 'Looking at it now' and m ->> 'author' = 'Support B' and m ->> 'role' = 'Relationship Manager'),
+  'the customer sees the reply with name and role');
+select test.check((select not exists (select 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'text' like '%paused billing%')),
+  'internal notes stay internal');
+select test.check((select (m ->> 'seen')::boolean from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'text' = 'Second follow-up'),
+  'the customer sees their message was read');
+select test.check((select (client_ticket((select id from tk where name = 'C1')) ->> 'unread')::int = 1), 'one unread reply for the customer');
+select client_ticket_seen((select id from tk where name = 'C1'));
+select test.check((select (client_ticket((select id from tk where name = 'C1')) ->> 'unread')::int = 0), 'opening the ticket reads it');
+select test.check((select (m.j ->> 'kind') = 'MESSAGE' and (m.j ->> 'from') = 'CLIENT'
+                     from (select x as j, row_number() over () as n from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') x) m
+                    where m.n = (select min(n) from (select row_number() over () as n, x from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') x) y where y.x ->> 'kind' = 'MESSAGE')),
+  'messages come in order, the opening message first');
+
+-- the reported bug: a reply that reopens a resolved ticket showed twice
+select test.login('sup_b');
+select update_support_ticket((select id from tk where name = 'C1'), 'RESOLVED', 'done', 'Billing resumed');
+select test.login('tk_r');
+select client_send_ticket_message((select id from tk where name = 'C1'), 'It stopped again', '55555555-5555-5555-5555-555555555555');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'kind' = 'MESSAGE' and m ->> 'text' = 'It stopped again')
+                  and (select count(*) = 0 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'kind' = 'MESSAGE' and m ->> 'text' is null),
+  'a reply that reopens a ticket is shown once (no empty second bubble)');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'event' = 'REOPENED')
+                  and (select count(*) = 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m ->> 'event' = 'RESOLVED'),
+  'resolved and reopened are timeline events');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'updates') u where u ->> 'type' = 'CLIENT' and u ->> 'message' is null),
+  'the older reply list has no empty client entries either');
+select test.check((select client_ticket((select id from tk where name = 'C1')) ->> 'status' = 'OPEN'), 'and the ticket is open again');
+
+-- who may write
+select test.login('tk_n');
+select test.must_fail($$select client_send_ticket_message((select id from tk where name = 'C1'), 'not mine', null)$$, 'another client cannot write in the ticket', 'not found');
+select test.login('th_gen');
+select test.must_fail($$select send_ticket_message((select id from tk where name = 'C1'), 'hi', false, null)$$, 'a Team Lead of another team cannot write', 'not found');
+select test.must_fail($$select mark_support_ticket_read((select id from tk where name = 'C1'))$$, 'nor mark it read', 'not found');
+select test.login('sup_plain');
+select test.must_fail($$select send_ticket_message((select id from tk where name = 'C1'), 'hi', true, null)$$, 'another member cannot add notes', 'not found');
+select test.check((select count(*) = 0 from support_ticket_reads where ticket_id = (select id from tk where name = 'C1')), 'nor see who read it');
+select test.login('sup_th');
+select send_ticket_message((select id from tk where name = 'C1'), 'Team Lead here, we are on it.', false, null);
+select test.check((select author_label = 'Team Lead' from support_ticket_updates where note = 'Team Lead here, we are on it.'), 'the Team Lead can step in, labelled as Team Lead');
+select test.check((select assignee_id = test.id('sup_b') from support_tickets where id = (select id from tk where name = 'C1')), 'stepping in does not take the ticket over');
+select test.must_fail($$select escalate_support_ticket((select id from tk where name = 'C1'), '  ')$$, 'a manual escalation needs a reason', 'reason');
 reset role;
-\echo '=== ALL TICKET HIERARCHY TESTS PASSED ==='
+select test.check((select count(*) >= 1 from notifications where type = 'TICKET_STAFF_REPLY' and recipient_id = test.id('sup_b') and entity_id = (select id from tk where name = 'C1')),
+  'the RM is told when the Team Lead replies');
+
+reset role;
+\echo '=== ALL TICKET HIERARCHY AND CHAT TESTS PASSED ==='

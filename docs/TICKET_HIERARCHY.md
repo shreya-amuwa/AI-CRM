@@ -51,3 +51,14 @@ This change extends the existing ticket system (`support_tickets`, `support_tick
   - Their Relationship Manager's name, an escalation banner and an *Escalated* status.
   - Unread markers.
   - Live replies.
+
+## Ticket chat (migration `20261026000100_ticket_chat.sql`)
+
+- Every ticket's conversation is its existing history (`support_ticket_updates`). Customer messages, replies from the RM / Team Lead / Department Head, internal notes and system events (opened, assigned, escalated, reopened, resolved) share one thread.
+- **No duplicates:** every message sent from a screen carries a `client_msg_id`; the same id is stored once (unique per ticket), so double clicks and retries never create a second copy. A client reply that reopens a resolved ticket is shown as one message plus a "reopened" event (this used to show an extra empty bubble).
+- **Read state:** `support_ticket_reads` (staff, own rows only) and `support_tickets.client_read_at` (the client) give unread counts and "Sent" / "Seen" ticks.
+- **Inbox previews:** `last_message_at`, `last_message_preview` and `last_message_from` on the ticket (internal notes are never the preview).
+- **New functions:** `send_ticket_message` (staff reply or internal note), `mark_support_ticket_read`, `client_send_ticket_message`. `client_ticket` returns `messages` (messages and events). Manual escalation now needs a reason.
+- **API:** `POST /client/tickets/:id/messages` `{ message, clientMsgId }`.
+- **Screens:** staff Tickets pages are an inbox (tabs: All, Unread, Open, In progress, Pending, Escalated, Resolved), a chat, and a details panel with Resolve / Change status / Escalate / Reassign / Reopen. The client Tickets page is an inbox plus chat. On phones, one panel shows at a time.
+- **Scheduled escalation:** the migration switches on `pg_cron` when the database offers it, so overdue tickets escalate every 5 minutes without anyone online.

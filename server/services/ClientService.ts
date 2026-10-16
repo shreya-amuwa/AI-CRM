@@ -7,6 +7,7 @@ import {
   clientPlanRequestSchema,
   clientServiceRequestSchema,
   clientTicketCreateSchema,
+  clientTicketMessageSchema,
   clientTicketReplySchema,
   planRequestDecisionSchema,
   planSaveSchema,
@@ -59,6 +60,10 @@ export class ClientService {
   createTicket(body: unknown) { return this.repo.createTicket(parse(clientTicketCreateSchema, body)); }
   replyTicket(id: string, body: unknown) {
     return this.repo.replyTicket(parse(uuidSchema, id), parse(clientTicketReplySchema, body).message);
+  }
+  sendTicketMessage(id: string, body: unknown) {
+    const { message, clientMsgId } = parse(clientTicketMessageSchema, body);
+    return this.repo.sendTicketMessage(parse(uuidSchema, id), message, clientMsgId);
   }
   async ticketSeen(id: string) { return { marked: await this.repo.ticketSeen(parse(uuidSchema, id)) }; }
 

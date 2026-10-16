@@ -387,6 +387,9 @@ export interface SupportTicket {
   customerId: string;
   customerName: string;
   customerCode: string;
+  customerCompany: string | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
   departmentId: string;
   teamId: string | null;
   subject: string;
@@ -410,6 +413,12 @@ export interface SupportTicket {
   lastClientMessageAt: string | null;
   lastStaffReplyAt: string | null;
   resolvedBy: string | null;
+  /** The latest conversation message (customer or a reply to them; internal notes are not included). */
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastMessageFrom: 'CLIENT' | 'STAFF' | null;
+  /** Up to when the customer has read the conversation (their dashboard). */
+  clientReadAt: string | null;
 }
 
 export interface TicketUpdateRow {
@@ -424,14 +433,39 @@ export interface TicketUpdateRow {
   assigneeId: string | null;
   note: string | null;
   createdAt: string;
+  /** Written by the customer (their messages, or a reply that reopened the ticket). */
+  clientAuthor: boolean;
+  /** The sender's role on the ticket when they wrote (Relationship Manager, Team Lead, ...). */
+  authorLabel: string | null;
+  clientMsgId: string | null;
 }
 
-export const toTicket = (r: any, cust: Map<string, { name: string; code: string }>): SupportTicket => ({
+export const toUpdateRow = (r: any): TicketUpdateRow => ({
+  id: r.id,
+  ticketId: r.ticket_id,
+  authorId: r.author_id,
+  kind: r.kind,
+  clientVisible: !!r.client_visible || r.kind === 'CLIENT_REPLY',
+  fromStatus: r.from_status,
+  toStatus: r.to_status,
+  assigneeId: r.assignee_id,
+  note: r.note,
+  createdAt: r.created_at,
+  clientAuthor: !!r.client_author,
+  authorLabel: r.author_label ?? null,
+  clientMsgId: r.client_msg_id ?? null
+});
+
+type CustomerInfo = { name: string; code: string; company?: string | null; phone?: string | null; email?: string | null };
+export const toTicket = (r: any, cust: Map<string, CustomerInfo>): SupportTicket => ({
   id: r.id,
   ticketNo: r.ticket_no,
   customerId: r.customer_id,
   customerName: cust.get(r.customer_id)?.name ?? 'Customer',
   customerCode: cust.get(r.customer_id)?.code ?? '',
+  customerCompany: cust.get(r.customer_id)?.company ?? null,
+  customerPhone: cust.get(r.customer_id)?.phone ?? null,
+  customerEmail: cust.get(r.customer_id)?.email ?? null,
   departmentId: r.department_id,
   teamId: r.team_id,
   subject: r.subject,
@@ -452,12 +486,18 @@ export const toTicket = (r: any, cust: Map<string, { name: string; code: string 
   firstResponseAt: r.first_response_at ?? null,
   lastClientMessageAt: r.last_client_message_at ?? null,
   lastStaffReplyAt: r.last_staff_reply_at ?? null,
-  resolvedBy: r.resolved_by ?? null
+  resolvedBy: r.resolved_by ?? null,
+  lastMessageAt: r.last_message_at ?? null,
+  lastMessagePreview: r.last_message_preview ?? null,
+  lastMessageFrom: r.last_message_from ?? null,
+  clientReadAt: r.client_read_at ?? null
 });
 
 export interface TicketData {
   tickets: SupportTicket[];
   updates: TicketUpdateRow[];
+  /** ticket id -> up to when the signed-in user read its conversation */
+  reads: Map<string, string>;
   loading: boolean;
   error: string | null;
   reload: () => Promise<void>;
@@ -468,6 +508,7 @@ export function useTickets(teamIds?: string[]): TicketData {
   const teamKey = teamIds?.join(',');
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [updates, setUpdates] = useState<TicketUpdateRow[]>([]);
+  const [reads, setReads] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -489,26 +530,16 @@ export function useTickets(teamIds?: string[]): TicketData {
       if (firstError) throw new Error(cleanDbError(firstError.message));
       const rows = t.data || [];
       const ids = [...new Set(rows.map((r: any) => r.customer_id))];
-      const cust = new Map<string, { name: string; code: string }>();
+      const cust = new Map<string, CustomerInfo>();
       if (ids.length) {
-        const { data } = await db().from('customers').select('id, name, customer_code').in('id', ids);
-        (data || []).forEach((c: any) => cust.set(c.id, { name: c.name, code: c.customer_code }));
+        const { data } = await db().from('customers').select('id, name, customer_code, company, phone, email').in('id', ids);
+        (data || []).forEach((c: any) => cust.set(c.id, { name: c.name, code: c.customer_code, company: c.company, phone: c.phone, email: c.email }));
       }
+      // own read markers (RLS: a person only sees their own rows)
+      const r = await db().from('support_ticket_reads').select('ticket_id, read_at');
+      setReads(new Map((r.data || []).map((x: any) => [x.ticket_id as string, x.read_at as string])));
       setTickets(rows.map((r: any) => toTicket(r, cust)));
-      setUpdates(
-        (u.data || []).map((r: any) => ({
-          id: r.id,
-          ticketId: r.ticket_id,
-          authorId: r.author_id,
-          kind: r.kind,
-          clientVisible: !!r.client_visible || r.kind === 'CLIENT_REPLY',
-          fromStatus: r.from_status,
-          toStatus: r.to_status,
-          assigneeId: r.assignee_id,
-          note: r.note,
-          createdAt: r.created_at
-        }))
-      );
+      setUpdates((u.data || []).map(toUpdateRow));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load tickets.');
@@ -523,6 +554,7 @@ export function useTickets(teamIds?: string[]): TicketData {
   }, [reload]);
   useRealtime('support_tickets', () => void reload());
   useRealtime('support_ticket_updates', () => void reload());
+  useRealtime('support_ticket_reads', () => void reload());
   // No timer: a tab that comes back into view catches up (SLA deadlines may have passed meanwhile).
   useEffect(() => {
     const onVisible = () => document.visibilityState === 'visible' && void reload();
@@ -533,7 +565,13 @@ export function useTickets(teamIds?: string[]): TicketData {
       window.removeEventListener('focus', onVisible);
     };
   }, [reload]);
-  return { tickets, updates, loading, error, reload };
+  return { tickets, updates, reads, loading, error, reload };
+}
+
+/** Customer messages the signed-in staff member has not read yet. */
+export function unreadCount(t: SupportTicket, updates: TicketUpdateRow[], reads: Map<string, string>): number {
+  const since = reads.get(t.id) ?? t.lastStaffReplyAt ?? '';
+  return updates.filter(u => u.ticketId === t.id && u.clientAuthor && (u.kind === 'CLIENT_REPLY' || u.kind === 'CREATED') && u.createdAt > since).length;
 }
 
 export const ticketApi = {
@@ -552,6 +590,10 @@ export const ticketApi = {
   replyToClient: (ticketId: string, message: string) => rpc<void>('reply_to_client_ticket', { p_ticket: ticketId, p_message: message }),
   assign: (ticketId: string, assigneeId: string, note?: string) =>
     rpc<void>('assign_support_ticket', { p_ticket: ticketId, p_assignee: assigneeId, p_note: note || null }),
+  /** A chat message: a reply the customer reads, or an internal note (internal) only staff see. */
+  send: (ticketId: string, message: string, internal: boolean, clientMsgId: string) =>
+    rpc<unknown>('send_ticket_message', { p_ticket: ticketId, p_message: message, p_internal: internal, p_client_msg_id: clientMsgId }),
+  markRead: (ticketId: string) => rpc<string>('mark_support_ticket_read', { p_ticket: ticketId }),
   /** Hand the ticket to the next level (Team Lead, then Department Head). The RM stays assigned. */
   escalate: (ticketId: string, note?: string) => rpc<unknown>('escalate_support_ticket', { p_ticket: ticketId, p_note: note || null })
 };

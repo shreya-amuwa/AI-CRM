@@ -1,50 +1,254 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, LifeBuoy, Plus, Send } from 'lucide-react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check, CheckCheck, ChevronDown, LifeBuoy, Plus, RotateCcw, Send } from 'lucide-react';
+import type { ClientTicket, ClientTicketMessage } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
 import { dashboardPath, useShell } from './shell';
-import { Badge, Button, Card, EmptyState, ErrorState, Field, LoadingBlock, Modal, PageHeader, Query, TICKET_CATEGORIES, TICKET_LABEL, categoryLabel, fmtDate, fmtDateTime } from './ui';
+import { Badge, Button, Card, EmptyState, ErrorState, Field, LoadingBlock, Modal, PageHeader, TICKET_CATEGORIES, TICKET_LABEL, categoryLabel, fmtDateTime } from './ui';
 
-export const Tickets: React.FC = () => {
-  const { sub } = useShell();
-  return sub ? <TicketDetail id={sub.split('/')[0]} /> : <TicketList />;
+const newKey = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16); });
+const timeShort = (iso: string) => {
+  const d = new Date(iso); const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
+const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+const dayLabel = (iso: string) => {
+  const d = new Date(iso); const now = new Date(); const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+};
+const PRIORITY: Record<string, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
+const isDone = (s: string) => s === 'RESOLVED' || s === 'CLOSED';
 
-const TicketList: React.FC = () => {
-  const { go } = useShell();
+type Filter = 'ALL' | 'UNREAD' | 'OPEN' | 'DONE';
+
+/** Tickets: the client's inbox on the left, the conversation of the open ticket on the right (one at a time on phones). */
+export const Tickets: React.FC = () => {
+  const { sub, go } = useShell();
+  const openId = sub ? sub.split('/')[0] : null;
   const q = useLoad(() => clientApi.tickets());
   const services = useLoad(() => clientApi.services());
   useClientLive(q.reload);
   const [creating, setCreating] = useState(false);
-  const [filter, setFilter] = useState<'ALL' | 'OPEN' | 'DONE'>('ALL');
-  const list = useMemo(() => (q.data ?? []).filter(t => filter === 'ALL' || (filter === 'OPEN' ? !['RESOLVED', 'CLOSED'].includes(t.status) : ['RESOLVED', 'CLOSED'].includes(t.status))), [q.data, filter]);
+  const [filter, setFilter] = useState<Filter>('ALL');
+  const [search, setSearch] = useState('');
+  const all = q.data ?? [];
+  const list = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return all
+      .filter(t => filter === 'ALL' || (filter === 'UNREAD' ? t.unread > 0 : filter === 'OPEN' ? !isDone(t.status) : isDone(t.status)))
+      .filter(t => !s || [t.subject, t.ticketNo, t.lastMessage?.text ?? ''].some(v => v.toLowerCase().includes(s)))
+      .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  }, [all, filter, search]);
+  const open = (id: string) => go(dashboardPath('tickets', `/${id}`));
 
+  const header = <PageHeader title="Tickets" subtitle="Chat with our support team about anything you need. Only you can see your tickets." action={<Button onClick={() => setCreating(true)}><Plus size={18} /> New ticket</Button>} />;
+  const modal = creating && <NewTicket services={services.data ?? []} onClose={() => setCreating(false)} onCreated={id => { setCreating(false); q.reload(); open(id); }} />;
+
+  if (q.loading && !q.data) return <>{header}<LoadingBlock rows={3} /></>;
+  if (q.error && !q.data) return <>{header}<Card><ErrorState message={q.error} forbidden={q.forbidden} onRetry={q.reload} /></Card></>;
+  if (all.length === 0 && !openId) {
+    return (
+      <>
+        {header}
+        <Card><EmptyState icon={<LifeBuoy size={24} />} title="No tickets yet" text="If something is not working or you have a question, raise a ticket and chat with our support team here."
+          action={<Button small onClick={() => setCreating(true)}>Raise a ticket</Button>} /></Card>
+        {modal}
+      </>
+    );
+  }
   return (
     <>
-      <PageHeader title="Tickets" subtitle="Ask our support team for help. You only see your own tickets."
-        action={<Button onClick={() => setCreating(true)}><Plus size={18} /> New ticket</Button>} />
-      <Query q={q} empty={d => d.length === 0 ? (
-        <Card><EmptyState icon={<LifeBuoy size={24} />} title="No tickets yet" text="If something is not working or you have a question, raise a ticket and our support team will reply here."
-          action={<Button small onClick={() => setCreating(true)}>Raise a ticket</Button>} /></Card>) : null}>
-        {() => (
-          <div className="cd-stack">
+      <div className={`cd-tk-head ${openId ? 'is-open' : ''}`}>{header}</div>
+      <div className={`cd-tk ${openId ? 'is-open' : ''}`}>
+        <section className="cd-tk-list" aria-label="Your tickets">
+          <div className="cd-tk-tools">
+            <input type="search" className="cd-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your tickets" aria-label="Search your tickets" />
             <div className="cd-chips" role="group" aria-label="Filter tickets">
-              {([['ALL', 'All'], ['OPEN', 'Open'], ['DONE', 'Resolved']] as const).map(([v, l]) => <button key={v} className="cd-chip" aria-pressed={filter === v} onClick={() => setFilter(v)}>{l}</button>)}
+              {([['ALL', 'All'], ['UNREAD', 'Unread'], ['OPEN', 'Open'], ['DONE', 'Resolved']] as const).map(([v, l]) => (
+                <button key={v} className="cd-chip sm" aria-pressed={filter === v} onClick={() => setFilter(v)}>
+                  {l}{v === 'UNREAD' && all.some(t => t.unread > 0) ? ` (${all.filter(t => t.unread > 0).length})` : ''}
+                </button>
+              ))}
             </div>
-            {list.length === 0 ? <Card><EmptyState title="No tickets here" text="Nothing matches this filter." /></Card> : list.map(t => (
-              <Card key={t.id} small onClick={() => go(dashboardPath('tickets', `/${t.id}`))}>
-                <div className="cd-between"><span className="cd-small cd-muted">{t.ticketNo}{t.serviceName ? ` · ${t.serviceName}` : ''}</span>
-                  <span className="cd-row" style={{ gap: 6 }}>{t.unread > 0 && <Badge tone="new">{t.unread === 1 ? 'New reply' : `${t.unread} new`}</Badge>}<Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge></span></div>
-                <p style={{ fontWeight: 700, marginTop: 4 }}>{t.subject}</p>
-                <p className="cd-small cd-muted">{categoryLabel(t.category)} · updated {fmtDate(t.updatedAt)}{t.relationshipManager ? ` · ${t.relationshipManager}` : ''}{t.escalated && !['RESOLVED', 'CLOSED'].includes(t.status) ? ' · escalated' : ''}</p>
-              </Card>
-            ))}
           </div>
-        )}
-      </Query>
-      {creating && <NewTicket services={services.data ?? []} onClose={() => setCreating(false)} onCreated={id => { setCreating(false); go(dashboardPath('tickets', `/${id}`)); }} />}
+          <ul className="cd-tk-items">
+            {list.length === 0 && <li className="cd-small cd-muted" style={{ padding: 20, textAlign: 'center' }}>No tickets match.</li>}
+            {list.map(t => <TicketRow key={t.id} t={t} active={t.id === openId} onOpen={() => open(t.id)} />)}
+          </ul>
+        </section>
+        <section className="cd-tk-chat" aria-label="Conversation">
+          {openId ? <TicketChat key={openId} id={openId} onChanged={q.reload} onBack={() => go(dashboardPath('tickets'))} />
+            : <div className="cd-tk-placeholder"><LifeBuoy size={28} /><p>Choose a ticket to see the conversation.</p></div>}
+        </section>
+      </div>
+      {modal}
     </>
+  );
+};
+
+const TicketRow: React.FC<{ t: ClientTicket; active: boolean; onOpen: () => void }> = ({ t, active, onOpen }) => (
+  <li>
+    <button className={`cd-tk-item ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`} onClick={onOpen} aria-current={active ? 'true' : undefined}>
+      <span className="top">
+        <span className="subject">{t.subject}</span>
+        <span className="time">{timeShort(t.lastActivityAt)}</span>
+      </span>
+      <span className="preview">
+        <span>{t.lastMessage ? `${t.lastMessage.from === 'CLIENT' ? 'You: ' : ''}${t.lastMessage.text}` : t.description}</span>
+        {t.unread > 0 && <span className="count" aria-label={`${t.unread} unread`}>{t.unread}</span>}
+      </span>
+      <span className="meta">
+        <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
+        <span className="cd-small cd-muted">{t.ticketNo}</span>
+      </span>
+    </button>
+  </li>
+);
+
+interface Pending { key: string; text: string; state: 'sending' | 'failed'; error?: string }
+
+const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => void }> = ({ id, onChanged, onBack }) => {
+  const q = useLoad(() => clientApi.ticket(id), [id]);
+  useClientLive(q.reload, id);
+  const [text, setText] = useState('');
+  const [pending, setPending] = useState<Pending[]>([]);
+  const [info, setInfo] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  const t = q.data;
+  const messages = t?.messages ?? [];
+
+  // Opening the ticket (and every new reply that arrives while it is open) marks it read.
+  const unread = t?.unread ?? 0;
+  useEffect(() => {
+    if (unread > 0 && document.visibilityState === 'visible') clientApi.ticketSeen(id).then(onChanged, () => { /* the badge is a convenience */ });
+  }, [id, unread, onChanged]);
+  // A stored message replaces its "sending" bubble.
+  useEffect(() => {
+    const stored = new Set(messages.map(m => m.clientMsgId).filter(Boolean));
+    setPending(p => p.filter(x => !stored.has(x.key)));
+  }, [messages]);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && atBottom.current) el.scrollTop = el.scrollHeight;
+  }, [messages.length, pending.length, t?.id]);
+
+  const deliver = useCallback(async (p: Pending) => {
+    setPending(l => l.map(x => (x.key === p.key ? { ...x, state: 'sending', error: undefined } : x)));
+    try { await clientApi.sendTicketMessage(id, p.text, p.key); q.reload(); onChanged(); }
+    catch (e) { setPending(l => l.map(x => (x.key === p.key ? { ...x, state: 'failed', error: errorMessage(e) } : x))); }
+  }, [id, q, onChanged]);
+  const send = () => {
+    const body = text.trim();
+    if (!body) return;
+    const p: Pending = { key: newKey(), text: body, state: 'sending' };
+    setPending(l => [...l, p]); setText(''); atBottom.current = true;
+    void deliver(p);
+  };
+
+  if (q.loading && !t) return <div style={{ padding: 20 }}><LoadingBlock rows={2} /></div>;
+  if (q.error && !t) return <div style={{ padding: 20 }}><button className="cd-link cd-tk-back" onClick={onBack}><ArrowLeft size={16} /> All tickets</button><ErrorState message={q.forbidden ? 'This ticket was not found.' : q.error} onRetry={q.forbidden ? undefined : q.reload} /></div>;
+  if (!t) return null;
+  const closed = t.status === 'CLOSED';
+  const level = t.handledBy === 'DEPARTMENT_HEAD' ? 2 : t.handledBy === 'TEAM_LEAD' ? 1 : 0;
+  let day = '';
+  return (
+    <div className="cd-chat">
+      <header className="cd-chat-head">
+        <button className="cd-link cd-tk-back" onClick={onBack} aria-label="All tickets"><ArrowLeft size={16} /></button>
+        <div className="cd-chat-titles">
+          <p className="cd-small cd-muted">{t.ticketNo} · {categoryLabel(t.category)}{t.serviceName ? ` · ${t.serviceName}` : ''}</p>
+          <h2 className="cd-chat-title">{t.subject}</h2>
+          <p className="cd-small cd-muted">{t.relationshipManager ? `Your Relationship Manager: ${t.relationshipManager}` : 'Our support team will pick this up'}</p>
+        </div>
+        <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
+        <button className="cd-link" onClick={() => setInfo(v => !v)} aria-expanded={info} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          Details <ChevronDown size={14} style={{ transform: info ? 'rotate(180deg)' : undefined }} />
+        </button>
+      </header>
+      {info && (
+        <div className="cd-chat-info">
+          <dl>
+            <div><dt>Status</dt><dd>{TICKET_LABEL[t.status].label}</dd></div>
+            <div><dt>Priority</dt><dd>{PRIORITY[t.priority] ?? t.priority}</dd></div>
+            <div><dt>Relationship Manager</dt><dd>{t.relationshipManager ?? 'Being assigned'}</dd></div>
+            <div><dt>Opened</dt><dd>{fmtDateTime(t.createdAt)}</dd></div>
+            <div><dt>Last activity</dt><dd>{fmtDateTime(t.lastActivityAt)}</dd></div>
+          </dl>
+          {!isDone(t.status) && (
+            <ol className="cd-steps" aria-label="Who is looking after your ticket">
+              {['Relationship Manager', 'Team Lead', 'Department Head'].map((s, i) => <li key={s} className={i < level ? 'done' : i === level ? 'now' : ''}>{s}</li>)}
+            </ol>
+          )}
+        </div>
+      )}
+      {t.escalated && !isDone(t.status) && <div className="cd-banner info cd-chat-banner"><span>Escalated: {t.handledBy === 'DEPARTMENT_HEAD' ? 'our Department Head' : 'a Team Lead'} is now looking after it{t.relationshipManager ? `, and ${t.relationshipManager} stays informed` : ''}.</span></div>}
+      {t.resolution && <div className="cd-banner success cd-chat-banner"><span><b>Resolution:</b> {t.resolution}</span></div>}
+
+      <div className="cd-chat-scroll" ref={scroller} aria-live="polite"
+        onScroll={e => { const el = e.currentTarget; atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48; }}>
+        {messages.map(m => {
+          const d = new Date(m.at).toDateString();
+          const sep = d !== day ? (day = d, <div className="cd-chat-day" key={`d-${m.id}`}><span>{dayLabel(m.at)}</span></div>) : null;
+          return <React.Fragment key={m.id}>{sep}<Entry m={m} /></React.Fragment>;
+        })}
+        {pending.map(p => (
+          <div key={p.key} className={`cd-msg me ${p.state}`}>
+            <div className="bubble">{p.text}</div>
+            <div className="foot">
+              {p.state === 'sending' ? 'Sending…' : (
+                <span className="failed">{p.error || 'Not sent.'} <button className="cd-link" onClick={() => void deliver(p)}><RotateCcw size={12} /> Retry</button></span>
+              )}
+            </div>
+          </div>
+        ))}
+        {messages.length === 0 && pending.length === 0 && <p className="cd-small cd-muted" style={{ textAlign: 'center' }}>Our support team will reply here.</p>}
+      </div>
+
+      {closed ? <div className="cd-banner attention cd-chat-banner">This ticket is closed. Please raise a new ticket if you need more help.</div> : (
+        <form className="cd-composer" onSubmit={e => { e.preventDefault(); send(); }}>
+          <textarea className="cd-textarea" rows={1} maxLength={4000} value={text} onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
+            aria-label={t.status === 'RESOLVED' ? 'Not solved? Write to reopen the ticket' : 'Your message'}
+            placeholder={t.status === 'RESOLVED' ? 'Not solved? Write here to reopen the ticket' : 'Write a message'} />
+          <button type="submit" className="cd-btn cd-send" disabled={!text.trim()} aria-label="Send"><Send size={18} /></button>
+        </form>
+      )}
+    </div>
+  );
+};
+
+const EVENT_TEXT = (m: ClientTicketMessage) => {
+  switch (m.event) {
+    case 'CREATED': return 'Ticket opened';
+    case 'ASSIGNED': return m.author ? `${m.author} (${m.role ?? 'Relationship Manager'}) is looking after your ticket` : 'Ticket assigned';
+    case 'ESCALATED': return `Escalated to ${m.role === 'Department Head' ? 'our Department Head' : 'a Team Lead'}`;
+    case 'REOPENED': return 'Ticket reopened';
+    case 'RESOLVED': return 'Ticket resolved';
+    case 'CLOSED': return 'Ticket closed';
+    default: return `Status: ${m.status ? TICKET_LABEL[m.status].label : '-'}`;
+  }
+};
+
+const Entry: React.FC<{ m: ClientTicketMessage }> = ({ m }) => {
+  if (m.kind === 'EVENT') return <div className="cd-chat-event"><span>{EVENT_TEXT(m)} · {clock(m.at)}</span>{m.event === 'CREATED' && m.text ? <p>{m.text}</p> : null}</div>;
+  const mine = m.from === 'CLIENT';
+  return (
+    <div className={`cd-msg ${mine ? 'me' : 'them'}`}>
+      {!mine && <div className="who">{m.author ?? 'Amuwa Support'}{m.role ? <span> · {m.role}</span> : null}</div>}
+      <div className="bubble">{m.text}</div>
+      <div className="foot">
+        {clock(m.at)}
+        {mine && (m.seen ? <span className="seen"><CheckCheck size={13} /> Seen</span> : <span><Check size={13} /> Sent</span>)}
+      </div>
+    </div>
   );
 };
 
@@ -78,63 +282,3 @@ const NewTicket: React.FC<{ services: { code: string; name: string }[]; onClose:
   );
 };
 
-const TicketDetail: React.FC<{ id: string }> = ({ id }) => {
-  const { go } = useShell();
-  const q = useLoad(() => clientApi.ticket(id), [id]);
-  useClientLive(q.reload, id);
-  // Opening the ticket (and every new reply seen here) marks its notifications read.
-  const unread = q.data?.unread ?? 0;
-  useEffect(() => { if (unread > 0) clientApi.ticketSeen(id).catch(() => { /* the badge is a convenience */ }); }, [id, unread, q.data?.updates.length]);
-  const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [q.data?.updates.length]);
-
-  const send = async () => {
-    if (!message.trim()) return;
-    setBusy(true); setError('');
-    try { await clientApi.replyTicket(id, message.trim()); setMessage(''); q.reload(); }
-    catch (e) { setError(errorMessage(e)); }
-    finally { setBusy(false); }
-  };
-  const back = <button className="cd-link" onClick={() => go(dashboardPath('tickets'))} style={{ marginBottom: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}><ArrowLeft size={16} /> All tickets</button>;
-
-  if (q.loading && !q.data) return <>{back}<LoadingBlock rows={2} /></>;
-  if (q.error && !q.data) return <>{back}<Card><ErrorState message={q.forbidden ? 'This ticket was not found.' : q.error} forbidden={false} onRetry={q.forbidden ? undefined : q.reload} /></Card></>;
-  const t = q.data!;
-  const closed = t.status === 'CLOSED';
-  return (
-    <>
-      {back}
-      <Card>
-        <div className="cd-between" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 0 }}><p className="cd-small cd-muted">{t.ticketNo} · {categoryLabel(t.category)}{t.serviceName ? ` · ${t.serviceName}` : ''}</p><h1 style={{ fontSize: 22, marginTop: 2 }}>{t.subject}</h1><p className="cd-small cd-muted">Opened {fmtDateTime(t.createdAt)}{t.relationshipManager ? ` · Your Relationship Manager: ${t.relationshipManager}` : ''}</p></div>
-          <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
-        </div>
-        {t.escalated && !['RESOLVED', 'CLOSED'].includes(t.status) && (
-          <div className="cd-banner info" style={{ marginTop: 12 }}><span>This ticket was escalated. {t.handledBy === 'DEPARTMENT_HEAD' ? 'Our Department Head' : 'A Team Lead'} is now looking after it{t.relationshipManager ? `, and ${t.relationshipManager} stays informed` : ''}.</span></div>
-        )}
-        {t.resolution && <div className="cd-banner success" style={{ marginTop: 12 }}><span><b>Resolution:</b> {t.resolution}</span></div>}
-        <hr className="cd-divider" />
-        <div className="cd-stack" style={{ gap: 10 }} aria-live="polite">
-          {t.description && <div className="cd-bubble me">{t.description}<div className="cd-small" style={{ opacity: .7, marginTop: 4 }}>You · {fmtDateTime(t.createdAt)}</div></div>}
-          {t.updates.map(u => u.type === 'STATUS'
-            ? <div key={u.id} className="cd-bubble status">{u.message ?? `Status changed to ${u.status ? TICKET_LABEL[u.status].label : ''}`} · {fmtDateTime(u.at)}</div>
-            : <div key={u.id} className={`cd-bubble ${u.type === 'CLIENT' ? 'me' : 'them'}`}>{u.message}<div className="cd-small" style={{ opacity: .7, marginTop: 4 }}>{u.type === 'CLIENT' ? 'You' : u.author ? `${u.author} · Amuwa Support` : 'Amuwa Support'} · {fmtDateTime(u.at)}</div></div>)}
-          {t.updates.length === 0 && <p className="cd-small cd-muted" style={{ textAlign: 'center' }}>Our support team will reply here.</p>}
-          <div ref={end} />
-        </div>
-        <hr className="cd-divider" />
-        {closed ? <div className="cd-banner attention">This ticket is closed. Please raise a new ticket if you need more help.</div> : (
-          <div className="cd-stack" style={{ gap: 10 }}>
-            <label className="cd-label" htmlFor="cd-reply">{t.status === 'RESOLVED' ? 'Not solved? Reply to reopen this ticket' : 'Your reply'}</label>
-            <textarea id="cd-reply" className="cd-textarea" style={{ minHeight: 90 }} maxLength={4000} value={message} onChange={e => setMessage(e.target.value)} placeholder="Write your message" />
-            {error && <div className="cd-banner danger" role="alert">{error}</div>}
-            <div className="cd-row" style={{ justifyContent: 'flex-end' }}><Button loading={busy} disabled={!message.trim()} onClick={send}><Send size={16} /> Send reply</Button></div>
-          </div>
-        )}
-      </Card>
-    </>
-  );
-};

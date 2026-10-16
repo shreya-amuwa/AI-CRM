@@ -1821,6 +1821,25 @@ provider.close();
   check(r.json.data.updates.filter((u: any) => u.message === 'Still happening.').length === 1, 'client API: the same reply sent twice is stored once', r);
   r = await api('cl1', 'POST', '/client/tickets', { subject: 'Cannot log in', description: 'I get an error when I open the panel.', category: 'TECHNICAL' });
   check(r.status === 201 && r.json.data.id === ticketId, 'client API: the same ticket submitted twice is created once', r);
+  // chat: one message per key, in order, never a new ticket
+  const key1 = '6f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f';
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/messages`, { message: 'Chat message one', clientMsgId: key1 });
+  check(r.status === 201 && r.json.data.messages.some((m: any) => m.text === 'Chat message one' && m.from === 'CLIENT' && m.clientMsgId === key1), 'client API: send a chat message', r);
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/messages`, { message: 'Chat message one', clientMsgId: key1 });
+  check(r.status === 201 && r.json.data.messages.filter((m: any) => m.clientMsgId === key1).length === 1, 'client API: a retried message is stored once', r);
+  check(r.json.data.messages.every((m: any, i: number, a: any[]) => i === 0 || a[i - 1].at <= m.at), 'client API: the conversation is in order', r.json.data.messages);
+  check(r.json.data.messages.filter((m: any) => m.kind === 'MESSAGE' && !m.text).length === 0, 'client API: no empty message bubbles', r.json.data.messages);
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/messages`, { message: '   ' });
+  check(r.status === 422, 'client API: an empty chat message is refused', r);
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/messages`, { message: 'x', clientMsgId: 'not-a-uuid' });
+  check(r.status === 422, 'client API: a bad message key is refused', r);
+  r = await api('sa', 'POST', `/client/tickets/${ticketId}/messages`, { message: 'staff here' });
+  check(r.status === 403, 'client API: a staff login cannot use the client chat', r);
+  r = await api('cl2', 'POST', `/client/tickets/${ticketId}/messages`, { message: 'not mine', clientMsgId: '7f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f' });
+  check(r.status === 404, 'client API: another client cannot write in the ticket', r);
+  r = await api('cl1', 'GET', '/client/tickets');
+  check(r.json.data.filter((x: any) => x.subject === 'Cannot log in').length === 1 && r.json.data.find((x: any) => x.id === ticketId)?.lastMessage?.text === 'Chat message one',
+    'client API: still one ticket, with the last message as its preview', r);
   r = await api('cl1', 'POST', `/client/tickets/${ticketId}/seen`, {});
   check(r.status === 200 && typeof r.json.data.marked === 'number', 'client API: opening a ticket marks it read', r);
   r = await api('cl2', 'POST', `/client/tickets/${ticketId}/seen`, {});
