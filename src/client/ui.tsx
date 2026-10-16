@@ -125,10 +125,10 @@ export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; text?
   </div>
 );
 
-export const ErrorState: React.FC<{ message: string; forbidden?: boolean; onRetry?: () => void }> = ({ message, forbidden, onRetry }) => (
+export const ErrorState: React.FC<{ message: string; forbidden?: boolean; onRetry?: () => void; title?: string }> = ({ message, forbidden, onRetry, title }) => (
   <div className="cd-empty" role="alert">
     <div className="ic" style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>{forbidden ? <ShieldAlert size={24} /> : <AlertTriangle size={24} />}</div>
-    <h3>{forbidden ? 'You do not have access to this' : 'Something went wrong'}</h3>
+    <h3>{forbidden ? 'You do not have access to this' : title || 'Something went wrong'}</h3>
     <p className="cd-small" style={{ maxWidth: 380 }}>{message}</p>
     {onRetry && !forbidden ? <Button variant="outline" small onClick={onRetry}><RefreshCw size={14} /> Try again</Button> : null}
   </div>
@@ -141,10 +141,18 @@ export const LoadingBlock: React.FC<{ rows?: number }> = ({ rows = 3 }) => (
   </div>
 );
 
-/** Loading / error / (optional) empty / content for one loaded resource. */
-export function Query<T>({ q, empty, children, rows }: { q: Loaded<T>; empty?: (d: T) => React.ReactNode | null; children: (d: T) => React.ReactNode; rows?: number }) {
+/**
+ * Loading / error / (optional) empty / content for one loaded resource. `errorTitle` names what failed to load, and
+ * `unavailableText` replaces the server's generic message when the failure is on the server's side (5xx / unreachable).
+ */
+export function Query<T>({ q, empty, children, rows, errorTitle, unavailableText }: {
+  q: Loaded<T>; empty?: (d: T) => React.ReactNode | null; children: (d: T) => React.ReactNode; rows?: number; errorTitle?: string; unavailableText?: string;
+}) {
   if (q.loading && !q.data) return <LoadingBlock rows={rows} />;
-  if (q.error && !q.data) return <div className="cd-card"><ErrorState message={q.error} forbidden={q.forbidden} onRetry={q.reload} /></div>;
+  if (q.error && !q.data) {
+    const message = q.unavailable && unavailableText ? unavailableText : q.error;
+    return <div className="cd-card"><ErrorState title={errorTitle} message={message} forbidden={q.forbidden} onRetry={q.reload} /></div>;
+  }
   if (!q.data) return null;
   const e = empty?.(q.data);
   if (e) return <>{e}</>;

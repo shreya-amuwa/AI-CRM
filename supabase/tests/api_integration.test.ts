@@ -1871,6 +1871,35 @@ provider.close();
   }
   check(svcBefore.every((x: any) => x.details && typeof x.details === 'object'), 'client API: every service carries its details object', svcBefore);
 
+  // My Services: each client gets only their own list; an empty list is a 200 with []; a database failure is a controlled error.
+  r = await api('cl2', 'GET', '/client/services');
+  const cl2Codes = (r.json.data as any[]).map(x => x.code).sort();
+  check(r.status === 200 && JSON.stringify(cl2Codes) !== JSON.stringify(svcBefore.map((x: any) => x.code).sort()), 'client API: another client gets a different, own list of services', r);
+  await db.query(`create table public._cs_backup as select * from public.customer_services where customer_id = $1`, [autoA]);
+  try {
+    await db.query(`delete from public.customer_services where customer_id = $1`, [autoA]);
+    r = await api('cl2', 'GET', '/client/services');
+    check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'client API: a client with no services gets an empty list', r);
+    r = await api('cl1', 'GET', '/client/services');
+    check(r.status === 200 && r.json.data.length === svcBefore.length, 'client API: and the other client is unaffected', r);
+  } finally {
+    await db.query(`insert into public.customer_services select * from public._cs_backup; drop table public._cs_backup`);
+  }
+  await db.query(`alter table public.crm_services rename column description to description_off`);
+  try {
+    r = await api('cl1', 'GET', '/client/services');
+    check(r.status === 500 && r.json.success === false && r.json.error.code === 'INTERNAL' && !/description|crm_services|column|select/i.test(JSON.stringify(r.json)),
+      'client API: a database failure is a controlled error without database details', r);
+  } finally {
+    await db.query(`alter table public.crm_services rename column description_off to description`);
+  }
+  r = await api('cl1', 'GET', '/client/services');
+  check(r.status === 200 && r.json.data.length === svcBefore.length, 'client API: My Services loads again once the database is fine', r);
+  r = await api('sa', 'GET', '/client/services');
+  check(r.status === 403, 'client API: a staff token cannot read My Services', r);
+  r = await api('forged', 'GET', '/client/services');
+  check(r.status === 401, 'client API: an invalid or expired session cannot read My Services', r);
+
   r = await api('cl1', 'GET', '/accounts/plans');
   check(r.status === 401 || r.status === 403, 'a client cannot open the Accounts plans', r);
   r = await api('accm', 'POST', '/accounts/plans', { code: 'GROWTH', name: 'Growth', monthlyPrice: 4999, features: ['Priority support'], services: [] });

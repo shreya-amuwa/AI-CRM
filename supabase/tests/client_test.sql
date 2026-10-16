@@ -374,4 +374,33 @@ select test.login('cdash_a');
 select test.check((select count(*) = 1 from jsonb_array_elements(client_announcements()) a where a ->> 'kind' = 'NEW_SERVICE'), 'and the client sees that one (a new notice, not the one already dismissed)');
 reset role;
 reset role;
+
+-- ---------------------------------------------------------------- My Services (migration 20261023000100)
+\echo '--- 29. My Services: empty list, isolation, and a database that is behind on migrations'
+begin;
+delete from customer_services where customer_id = (select id from cl where name = 'A');
+set role authenticated;
+select test.login('cdash_a');
+select test.check((select client_services() = '[]'::jsonb), 'a client with no services gets an empty list, not an error');
+select test.check((select (client_overview() -> 'services' ->> 'total')::int = 0), 'and the overview counts none');
+select test.login('cdash_b');
+select test.check((select jsonb_array_length(client_services()) >= 1), 'another client still sees their own services');
+rollback;
+begin;
+-- the columns client_services() reads may be missing where an older migration was skipped in the SQL editor
+alter table customer_services drop column details, drop column activated_at, drop column renews_on;
+alter table customer_onboarding rename column client_status to client_status_off;
+\i supabase/migrations/20261023000100_client_services_contract.sql
+\i supabase/migrations/20261023000100_client_services_contract.sql
+create temp table cs_a on commit drop as select count(*)::int as n from customer_services where customer_id = (select id from cl where name = 'A');
+grant select on cs_a to authenticated;
+set role authenticated;
+select test.login('cdash_a');
+select test.check((select jsonb_array_length(client_services()) = (select n from cs_a) and (select n from cs_a) > 0
+                     and (select bool_and(jsonb_typeof(s -> 'details') = 'object' and s ? 'renewsOn' and s ->> 'status' = 'LIVE') from jsonb_array_elements(client_services()) s)),
+  'the migration restores the missing columns (and can be run twice): My Services loads every service');
+select test.login('tm_a');
+select test.must_fail($$select client_services()$$, 'a staff member still cannot use it', 'clients only');
+rollback;
+reset role;
 \echo '=== ALL CLIENT DASHBOARD TESTS PASSED ==='
