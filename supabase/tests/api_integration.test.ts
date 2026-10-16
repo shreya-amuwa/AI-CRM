@@ -2045,6 +2045,165 @@ provider.close();
   r2.close();
 }
 
+// ---------------------------------------------------------------------------
+// HR: employee details, attendance (RM login vs biometric), leave approval Department Head -> HR, monthly totals, notifications
+// ---------------------------------------------------------------------------
+{
+  r = await api('sa', 'GET', '/departments');
+  const hrDept = r.json.data.find((d: any) => d.slug === 'hr');
+  const details = { designation: 'Department Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', emergencyContact: '+91 98765 43210' };
+  const hrBody = { email: 'hr.api@amuwa.com', fullName: 'HR Api', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id };
+
+  // Add Member: the new details are validated before any account exists
+  for (const [label, bad] of [
+    ['an unknown blood group', { ...details, bloodGroup: 'Z+' }],
+    ['a bad emergency number', { ...details, emergencyContact: 'call me' }],
+    ['a birth date in the future', { ...details, dateOfBirth: '2999-01-01' }],
+    ['a joining date that is not a date', { ...details, joiningDate: '2026-13-45' }],
+    ['an unknown designation', { ...details, designation: 'Boss' }],
+    ['a missing field', { designation: 'Department Head', joiningDate: '2026-01-05' }]
+  ] as const) {
+    r = await api('sa', 'POST', '/users', { ...hrBody, details: bad });
+    check(r.status === 422, `Add Member refuses ${label}`, r);
+  }
+  check((await db.query(`select 1 from public.profiles where email = 'hr.api@amuwa.com'`)).rowCount === 0, 'and no account is created for an invalid form');
+  r = await api('sa', 'POST', '/users', { ...hrBody, details });
+  check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.department.slug === 'hr', 'a member is created with the new details', r);
+  const hrId = r.json.data.id;
+  tokens.set('hr', tokenFor(hrId));
+  check(JSON.stringify(r.json).indexOf('B+') === -1 && JSON.stringify(r.json).indexOf('98765') === -1, 'the details are not part of the ordinary profile everyone can read');
+  r = await api('sa', 'POST', '/users', { ...hrBody, details });
+  check(r.status === 409, 'a second account with the same e-mail is refused', r);
+  r = await api('hr', 'GET', '/hr/personal-details');
+  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
+  r = await api('a', 'GET', '/hr/personal-details');
+  check(r.status === 403, 'an ordinary employee cannot read employee details', r);
+  r = await api('dh', 'GET', '/hr/personal-details');
+  check(r.status === 403, 'nor can another department\'s head', r);
+  r = await api('dh', 'POST', '/users', { email: 'plain.api@amuwa.com', fullName: 'Plain', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: (await api('sa', 'GET', `/teams?departmentId=${wab.id}`)).json.data.find((t: any) => t.name === 'Sales').id });
+  check(r.status === 201, 'the API still creates members without the new details (existing callers keep working)', r);
+
+  // Attendance
+  r = await api('a', 'POST', '/attendance/rm-login');
+  check(r.status === 200, 'signing in records the RM login', r);
+  r = await api(null, 'POST', '/attendance/rm-login');
+  check(r.status === 401, 'an anonymous call records nothing', r);
+  r = await api('hr', 'GET', '/hr/attendance');
+  const rowA = r.json.data.rows.find((x: any) => x.name === 'Member A');
+  check(r.status === 200 && rowA && rowA.rmLoginAt && rowA.biometricLoginAt === null && rowA.diffMinutes === null && rowA.discrepancy === false, 'HR sees the RM login with no difference while the biometric punch is missing', r);
+  r = await api('a', 'GET', '/hr/attendance');
+  check(r.status === 403, 'an employee cannot read the attendance register', r);
+  r = await api('hr', 'GET', '/hr/attendance?date=not-a-date');
+  check(r.status === 422, 'a bad date is refused', r);
+
+  const punchHeaders = (secret?: string) => ({ 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}) });
+  const punch = (secret: string | undefined, body: unknown) => fetch(`${base}/integrations/biometric/punch`, { method: 'POST', headers: punchHeaders(secret), body: JSON.stringify(body) }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  const { rows: [rm] } = await db.query(`select rm_login_at from public.attendance_records where profile_id = (select id from public.profiles where email = 'a@amuwa.com') and attendance_date = (now() at time zone 'Asia/Kolkata')::date`);
+  const punchAt = new Date(new Date(rm.rm_login_at).getTime() - 22 * 60_000).toISOString();
+  delete process.env.BIOMETRIC_INGEST_SECRET;
+  r = await punch('x'.repeat(24), { email: 'a@amuwa.com', punchedAt: punchAt });
+  check(r.status === 503, 'biometric punches are refused until a secret is configured', r);
+  process.env.BIOMETRIC_INGEST_SECRET = 'biometric-test-secret-0123456789';
+  r = await punch(undefined, { email: 'a@amuwa.com', punchedAt: punchAt });
+  check(r.status === 401, 'a punch without the secret is refused', r);
+  r = await punch('wrong-secret-wrong-secret-12', { email: 'a@amuwa.com', punchedAt: punchAt });
+  check(r.status === 401, 'and so is a wrong secret', r);
+  r = await punch(process.env.BIOMETRIC_INGEST_SECRET, { email: 'a@amuwa.com', punchedAt: 'yesterday' });
+  check(r.status === 422, 'a punch needs a real time', r);
+  r = await punch(process.env.BIOMETRIC_INGEST_SECRET, { email: 'nobody@amuwa.com', punchedAt: punchAt });
+  check(r.status === 404, 'a punch for an unknown e-mail is refused', r);
+  r = await punch(process.env.BIOMETRIC_INGEST_SECRET, { email: 'a@amuwa.com', punchedAt: punchAt });
+  check(r.status === 200 && r.json.data.recorded === true, 'the device gateway records a biometric punch', r);
+  r = await api('hr', 'GET', '/hr/attendance');
+  const rowA2 = r.json.data.rows.find((x: any) => x.name === 'Member A');
+  check(rowA2.diffMinutes === 22 && rowA2.discrepancy === true && rowA2.biometricLoginAt, 'the difference (22 min, earlier biometric punch) is calculated from the records and flagged', rowA2);
+  r = await api('hr', 'GET', '/notifications');
+  check(r.json.data.items.filter((n: any) => n.type === 'ATTENDANCE_GAP' && n.data.employeeId === rowA2.profileId).length === 1, 'HR got one notification about it', r);
+  await punch(process.env.BIOMETRIC_INGEST_SECRET, { email: 'a@amuwa.com', punchedAt: punchAt });
+  r = await api('hr', 'GET', '/notifications');
+  check(r.json.data.items.filter((n: any) => n.type === 'ATTENDANCE_GAP' && n.data.employeeId === rowA2.profileId).length === 1, 'the same punch again does not notify twice', r);
+  delete process.env.BIOMETRIC_INGEST_SECRET;
+
+  // Leave: Team Member -> Department Head -> HR
+  r = await api('a', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2026-11-02', endDate: '2026-11-04', reason: 'Family function' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD' && r.json.data.days === 3, 'a team member submits leave: it waits for the Department Head', r);
+  const leaveId = r.json.data.id;
+  r = await api('a', 'POST', '/leave', { leaveType: 'HALF_DAY', startDate: '2026-11-10', reason: 'x' });
+  check(r.status === 422, 'a half day needs a shift and a reason', r);
+  r = await api('a', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2026-11-04', endDate: '2026-11-02', reason: 'backwards' });
+  check(r.status === 422, 'dates must be in order', r);
+  r = await api('a', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2026-11-03', reason: 'overlap' });
+  check(r.status === 409, 'overlapping requests are refused', r);
+  r = await api('a', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: true });
+  check(r.status === 404, 'the employee cannot approve their own leave', r);
+  r = await api('a', 'POST', `/leave/${leaveId}/hr-decision`, { approve: true });
+  check(r.status === 403, 'nor give the HR approval', r);
+  r = await api('hr', 'POST', `/leave/${leaveId}/hr-decision`, { approve: true });
+  check(r.status === 409 && /not approved/i.test(r.json.error.message), 'HR cannot finalize before the Department Head', r);
+  r = await api('hr', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: true });
+  check(r.status === 404, 'HR cannot take the Department Head\'s step', r);
+  r = await api('accdh', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: true });
+  check(r.status === 404, 'another department\'s head cannot decide', r);
+  r = await api('th', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: true });
+  check(r.status === 404, 'a Team Lead is not the approver', r);
+  r = await api('dh', 'GET', '/leave/review');
+  check(r.status === 200 && r.json.data.awaiting.some((x: any) => x.id === leaveId) && r.json.data.canReviewAsDepartmentHead === true, 'the Department Head sees it', r);
+  r = await api('hr', 'GET', '/leave/review');
+  check(!r.json.data.awaiting.some((x: any) => x.id === leaveId), 'HR does not see it yet', r);
+  r = await api('dh', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: false });
+  check(r.status === 422, 'a rejection needs a reason', r);
+  r = await api('dh', 'GET', '/notifications');
+  const dhNote = r.json.data.items.find((n: any) => n.type === 'LEAVE_AWAITING_DEPARTMENT_HEAD' && n.entityId === leaveId);
+  check(dhNote && dhNote.readAt === null, 'the Department Head was notified', r);
+  r = await api('dh', 'GET', '/notifications/unread-count');
+  const unreadBefore = r.json.data.count;
+  r = await api('dh', 'PATCH', `/notifications/${dhNote.id}/read`, {});
+  check(r.status === 200 && r.json.data.readAt, 'a notification can be marked read', r);
+  r = await api('dh', 'GET', '/notifications/unread-count');
+  check(r.json.data.count === unreadBefore - 1, 'the unread count follows', r);
+  r = await api('dh', 'GET', '/notifications?unreadOnly=true');
+  check(!r.json.data.items.some((n: any) => n.id === dhNote.id), 'and it stays read after reloading', r);
+  r = await api('b', 'PATCH', `/notifications/${dhNote.id}/read`, {});
+  check(r.status === 404, 'someone else cannot touch that notification', r);
+  r = await api('b', 'GET', '/notifications');
+  check(!r.json.data.items.some((n: any) => n.entityId === leaveId), 'nor see it', r);
+  r = await api('dh', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: true, note: 'Fine' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_HR' && r.json.data.departmentHead.note === 'Fine', 'the Department Head approves: it goes to HR', r);
+  r = await api('dh', 'POST', `/leave/${leaveId}/department-head-decision`, { approve: true });
+  check(r.status === 409, 'it cannot be approved twice', r);
+  r = await api('hr', 'GET', '/leave/review');
+  check(r.json.data.awaiting.some((x: any) => x.id === leaveId && x.status === 'PENDING_HR') && r.json.data.canReviewAsHr === true, 'HR now sees it', r);
+  r = await api('hr', 'GET', '/notifications');
+  check(r.json.data.items.filter((n: any) => n.type === 'LEAVE_AWAITING_HR' && n.entityId === leaveId).length === 1, 'and was notified once', r);
+  r = await api('hr', 'POST', `/leave/${leaveId}/hr-decision`, { approve: true });
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.hr.name === 'HR Api' && r.json.data.hr.at, 'HR gives the final approval; who and when are recorded', r);
+  r = await api('a', 'GET', '/leave/mine');
+  check(r.json.data.length === 1 && r.json.data[0].status === 'APPROVED' && r.json.data[0].departmentHead.name === 'Dept Head', 'the employee sees the result with the approval history', r);
+  r = await api('a', 'GET', '/notifications');
+  check(['LEAVE_DEPARTMENT_HEAD_APPROVED', 'LEAVE_APPROVED'].every(t => r.json.data.items.some((n: any) => n.type === t && n.entityId === leaveId)), 'and was told at each step', r);
+
+  // a rejection by the Department Head, with the reason
+  r = await api('a', 'POST', '/leave', { leaveType: 'HALF_DAY', startDate: '2026-12-07', halfDayShift: 'MORNING', reason: 'Appointment' });
+  const rejId = r.json.data.id;
+  r = await api('dh', 'POST', `/leave/${rejId}/department-head-decision`, { approve: false, note: 'Busy week' });
+  check(r.status === 200 && r.json.data.status === 'REJECTED_BY_DEPARTMENT_HEAD' && r.json.data.departmentHead.note === 'Busy week', 'the Department Head can reject with a reason', r);
+  r = await api('hr', 'POST', `/leave/${rejId}/hr-decision`, { approve: true });
+  check(r.status === 409, 'HR cannot approve what was rejected', r);
+
+  // Monthly totals
+  r = await api('hr', 'GET', '/leave/monthly-summary?month=2026-11');
+  const emp = r.json.data.employees.find((e: any) => e.profileId === rowA2.profileId);
+  check(r.status === 200 && r.json.data.month === '2026-11' && emp && emp.leaveDays === 3 && emp.halfDays === 0, 'November shows 3 approved leave days', r);
+  r = await api('hr', 'GET', '/leave/monthly-summary?month=2026-12');
+  check(r.json.data.employees.length === 0, 'December shows none (the half day was rejected)', r);
+  r = await api('hr', 'GET', '/leave/monthly-summary?month=2026-1');
+  check(r.status === 422, 'a bad month is refused', r);
+  r = await api('a', 'GET', '/leave/monthly-summary?month=2026-11');
+  check(r.status === 403, 'an employee cannot read the monthly totals', r);
+  r = await api('accdh', 'GET', '/leave/monthly-summary?month=2026-11');
+  check(r.status === 200 && r.json.data.employees.length === 0, 'another department\'s head sees none of Wabastore\'s', r);
+}
+
 // A project missing an earlier migration must still let people sign in.
 await db.query(`alter function public.rate_limit_consume(jsonb) rename to rate_limit_consume_hidden`);
 r = await api('sa', 'GET', '/me');

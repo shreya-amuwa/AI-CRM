@@ -41,6 +41,8 @@ import {
   type WorkTaskData
 } from '../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
+import { LeaveCenter } from '../leave/LeaveCenter';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 type Nav = 'notices' | 'customers' | 'plans' | 'assign' | 'reports' | 'daily' | 'support' | 'clients' | 'team' | 'payments' | 'notifications';
 
@@ -140,7 +142,11 @@ export const DepartmentHeadDashboard: React.FC = () => {
           <button type="button" onClick={() => setMobileOpen(true)} className="lg:hidden p-2 rounded-xl text-slate-500" aria-label="Open menu">
             <Menu className="w-5 h-5" />
           </button>
-          <div className="ml-auto pl-3 border-l border-slate-200">
+          <div className="ml-auto flex items-center gap-1 mr-3">
+            <LeaveCenter />
+            <NotificationBell />
+          </div>
+          <div className="pl-3 border-l border-slate-200">
             <div className="text-xs font-bold text-slate-900 leading-none">{user?.name}</div>
             <div className="text-[11px] text-slate-500 mt-0.5">Department Head</div>
           </div>

@@ -6,6 +6,7 @@ import {
   clientWorkflowController as clientWork,
   customersController as customers,
   documentsController as documents,
+  hrController as hr,
   meController as me,
   notificationsController as notifications,
   organizationController as org,
@@ -170,6 +171,17 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/teams', handler: org.createTeam, options: S },
   { method: 'PATCH', path: '/teams/:id', handler: org.updateTeam, options: S },
   { method: 'DELETE', path: '/teams/:id', handler: org.deleteTeam, options: S },
+
+  { method: 'POST', path: '/attendance/rm-login', handler: hr.recordRmLogin },
+  { method: 'GET', path: '/hr/attendance', handler: hr.attendance },
+  { method: 'POST', path: '/hr/attendance/punch', handler: hr.manualPunch, options: S },
+  { method: 'GET', path: '/hr/personal-details', handler: hr.personalDetails },
+  { method: 'GET', path: '/leave/mine', handler: hr.myLeave },
+  { method: 'POST', path: '/leave', handler: hr.submitLeave, options: S },
+  { method: 'GET', path: '/leave/review', handler: hr.leaveToReview },
+  { method: 'POST', path: '/leave/:id/department-head-decision', handler: hr.decideAsDepartmentHead, options: S },
+  { method: 'POST', path: '/leave/:id/hr-decision', handler: hr.decideAsHr, options: S },
+  { method: 'GET', path: '/leave/monthly-summary', handler: hr.monthlySummary },
 
   { method: 'GET', path: '/audit-logs', handler: audit.list }
 ];

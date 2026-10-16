@@ -4,7 +4,7 @@ import {
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import type { Profile, Role, Team, TeamDivision } from '../../../shared/contracts';
-import { userCreateSchema } from '../../../shared/validation';
+import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
@@ -86,6 +86,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [position, setPosition] = useState('');
+  const [joiningDate, setJoiningDate] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [bloodGroup, setBloodGroup] = useState('');
+  const [emergencyContact, setEmergencyContact] = useState('');
+  const [designation, setDesignation] = useState<string>('Team Member');
   const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
   const [teamId, setTeamId] = useState('');
   const [formOpen, setFormOpen] = useState(false);
@@ -120,6 +125,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   );
   const consultant = choice === 'TECHNICAL_CONSULTANT';
   const role: StaffRole = consultant ? 'TEAM_MEMBER' : choice;
+  // The designation starts as the matching one for the role (they stay separate fields: the role decides access).
+  useEffect(() => {
+    setDesignation(role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member');
+  }, [role]);
 
   useEffect(() => {
     if (!choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
@@ -185,6 +194,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setEmail('');
     setPassword('');
     setPosition('');
+    setJoiningDate('');
+    setDateOfBirth('');
+    setBloodGroup('');
+    setEmergencyContact('');
     setShowPassword(false);
   };
 
@@ -200,7 +213,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       departmentId: role === 'DEPARTMENT_HEAD' ? departmentId : undefined,
       teamId: needsTeam ? teamId || undefined : undefined,
       position: position || undefined,
-      technicalConsultant: consultant || undefined
+      technicalConsultant: consultant || undefined,
+      details: { designation, joiningDate, dateOfBirth, bloodGroup, emergencyContact }
     });
     if (!parsed.success) {
       setFormError(parsed.error.issues[0]?.message || 'Please check the form.');
@@ -422,6 +436,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           </label>
 
           <label className="block text-xs font-semibold text-slate-700">
+            Department
+            <input className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={department?.name || departmentSlug} readOnly aria-readonly="true" />
+          </label>
+
+          <label className="block text-xs font-semibold text-slate-700">
             Role *
             <select
               id="staff-role"
@@ -451,6 +470,35 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               </select>
             </label>
           )}
+
+          <label className="block text-xs font-semibold text-slate-700">
+            Designation *
+            <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
+              {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-xs font-semibold text-slate-700">
+              Joining date *
+              <input type="date" className={`${inputClass} mt-1`} value={joiningDate} onChange={e => setJoiningDate(e.target.value)} required />
+            </label>
+            <label className="block text-xs font-semibold text-slate-700">
+              Date of birth *
+              <input type="date" className={`${inputClass} mt-1`} value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} required />
+            </label>
+            <label className="block text-xs font-semibold text-slate-700">
+              Blood group *
+              <select className={`${inputClass} mt-1 cursor-pointer`} value={bloodGroup} onChange={e => setBloodGroup(e.target.value)} required>
+                <option value="">Select…</option>
+                {BLOOD_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-semibold text-slate-700">
+              Emergency contact number *
+              <input type="tel" inputMode="tel" className={`${inputClass} mt-1`} value={emergencyContact} onChange={e => setEmergencyContact(e.target.value)} placeholder="+91 98765 43210" autoComplete="off" required />
+            </label>
+          </div>
 
           <label className="block text-xs font-semibold text-slate-700">
             Position (optional)

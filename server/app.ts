@@ -10,7 +10,9 @@ import type { ApiResponse } from '../shared/contracts.js';
 import { assertActive, authenticateRequest, type Actor } from './auth/authenticate.js';
 import { ConfigurationError, getEnv } from './config/env.js';
 import { healthCheck } from './health.js';
-import { AppError } from './http/errors.js';
+import { AppError, fromDatabaseError } from './http/errors.js';
+import { parse } from './http/validate.js';
+import { biometricPunchSchema } from '../shared/validation.js';
 import { enforce, ipBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HttpMethod, RouteDef } from './http/types.js';
 import { routes } from './routes.js';
@@ -95,6 +97,22 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     else ticketsEscalated = Number(data) || 0;
   }
   return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated }));
+});
+
+// Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".
+// The first punch of the office day for that e-mail counts. Unknown or inactive e-mails are refused (404).
+app.post('/integrations/biometric/punch', async c => {
+  const secrets = (process.env.BIOMETRIC_INGEST_SECRET || '').split(',').map(s => s.trim()).filter(s => s.length >= 16);
+  if (!secrets.length) throw new AppError('SERVICE_UNAVAILABLE', 'Biometric punches are not configured.');
+  const given = Buffer.from((c.req.header('authorization') || '').replace(/^Bearer\s+/i, ''));
+  if (!secrets.some(sec => { const want = Buffer.from(sec); return want.length === given.length && timingSafeEqual(want, given); })) {
+    throw new AppError('UNAUTHENTICATED');
+  }
+  const input = parse(biometricPunchSchema, await readJson(c));
+  const { data, error } = await getServiceClient().rpc('record_biometric_punch', { p_email: input.email, p_punched_at: input.punchedAt });
+  if (error) throw fromDatabaseError(error);
+  if (data === 'UNKNOWN_EMPLOYEE') throw new AppError('NOT_FOUND', 'No active employee has this e-mail.');
+  return c.json(ok({ recorded: true }));
 });
 
 // The client dashboard: the customer's own login, their own records only.

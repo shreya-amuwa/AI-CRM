@@ -4,6 +4,7 @@ import { AddonInvoiceRepository } from '../repositories/AddonInvoiceRepository.j
 import { ApprovalRepository } from '../repositories/ApprovalRepository.js';
 import { AuditRepository } from '../repositories/AuditRepository.js';
 import { ClientRepository } from '../repositories/ClientRepository.js';
+import { HrRepository } from '../repositories/HrRepository.js';
 import { CustomerRepository } from '../repositories/CustomerRepository.js';
 import { NotificationRepository } from '../repositories/NotificationRepository.js';
 import { OrganizationRepository } from '../repositories/OrganizationRepository.js';
@@ -16,6 +17,7 @@ import { ApprovalService } from './ApprovalService.js';
 import { AuditService } from './AuditService.js';
 import { ClientService } from './ClientService.js';
 import { CustomerService } from './CustomerService.js';
+import { HrService } from './HrService.js';
 import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
@@ -25,7 +27,8 @@ import { UserService } from './UserService.js';
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
   return {
-    users: new UserService(new ProfileRepository(db)),
+    users: new UserService(new ProfileRepository(db), undefined, new HrRepository(db)),
+    hr: new HrService(new HrRepository(db)),
     customers: new CustomerService(new CustomerRepository(db)),
     approvals: new ApprovalService(new ApprovalRepository(db)),
     notifications: new NotificationService(new NotificationRepository(db)),

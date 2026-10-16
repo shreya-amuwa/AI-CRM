@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { formatDay } from '../../../lib/officeTime';
 import { 
   X, User, ShieldCheck, AlertCircle, Upload, Download, 
   FileText, Calendar, CheckCircle2, UserMinus, Clock, Mail, Paperclip,
@@ -258,6 +259,22 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
               </span>
             </div>
           </div>
+
+          {(emp.dateOfBirth || emp.bloodGroup || emp.emergencyContact || emp.designationType) && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200" aria-label="Personal details">
+              {[
+                ['DESIGNATION', emp.designationType],
+                ['DATE OF BIRTH', emp.dateOfBirth ? formatDay(emp.dateOfBirth) : undefined],
+                ['BLOOD GROUP', emp.bloodGroup],
+                ['EMERGENCY CONTACT', emp.emergencyContact]
+              ].map(([label, value]) => (
+                <div key={label as string}>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase block">{label}</span>
+                  <span className="text-xs font-bold font-mono text-slate-900 mt-0.5 block">{value || '-'}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* e] DOCUMENTS SECTION (With Preview & Download options) */}
           <div className="space-y-3">

@@ -322,5 +322,46 @@ reset role;
 select test.check((select count(*) >= 1 from notifications where type = 'TICKET_STAFF_REPLY' and recipient_id = test.id('sup_b') and entity_id = (select id from tk where name = 'C1')),
   'the RM is told when the Team Lead replies');
 
+-- ---------------------------------------------------------------- priority control + picking a ticket up (migration 20261027000100)
+\echo '--- 31. Ticket header controls: priority, pick up'
+set role authenticated;
+select test.login('sup_th');
+select test.check((select set_ticket_priority((select id from tk where name = 'C1'), 'HIGH') ->> 'priority' = 'HIGH'), 'a Team Lead sets the priority');
+select test.check((select priority = 'HIGH' from support_tickets where id = (select id from tk where name = 'C1')), 'and it is stored');
+select test.check((select count(*) = 1 from support_ticket_updates where ticket_id = (select id from tk where name = 'C1') and kind = 'PRIORITY_CHANGED' and note = 'Priority changed from Medium to High'),
+  'the change is on the ticket timeline');
+select test.check((select assignee_id = test.id('sup_b') from support_tickets where id = (select id from tk where name = 'C1')), 'changing priority does not take the ticket over');
+select set_ticket_priority((select id from tk where name = 'C1'), 'HIGH');
+select test.check((select count(*) = 1 from support_ticket_updates where ticket_id = (select id from tk where name = 'C1') and kind = 'PRIORITY_CHANGED'), 'setting the same priority again changes nothing');
+select test.must_fail($$select set_ticket_priority((select id from tk where name = 'C1'), 'SOON')$$, 'an unknown priority is refused', 'Unknown priority');
+select test.login('sup_b');
+select test.check((select set_ticket_priority((select id from tk where name = 'C1'), 'URGENT') ->> 'priority' = 'URGENT'), 'the Relationship Manager can set it too');
+select test.login('sup_plain');
+select test.must_fail($$select set_ticket_priority((select id from tk where name = 'C1'), 'LOW')$$, 'another member cannot', 'not found');
+select test.login('th_gen');
+select test.must_fail($$select set_ticket_priority((select id from tk where name = 'C1'), 'LOW')$$, 'nor a Team Lead of another team', 'not found');
+select test.login('tk_r');
+select test.must_fail($$select set_ticket_priority((select id from tk where name = 'C1'), 'LOW')$$, 'nor the customer', 'not found');
+select test.check((select not exists (select 1 from jsonb_array_elements(client_ticket((select id from tk where name = 'C1')) -> 'messages') m where m::text like '%Priority changed%')
+                      and client_ticket((select id from tk where name = 'C1')) ->> 'priority' = 'URGENT'), 'the customer sees the priority but not the internal event');
+reset role;
+select test.check((select count(*) = 1 from notifications where type = 'TICKET_UPDATE' and recipient_id = test.id('sup_b') and title like '%priority%high%'), 'the Relationship Manager is told when someone else changes the priority');
+select test.check((select count(*) = 2 from audit_logs where action = 'TICKET_PRIORITY_CHANGED' and entity_id = (select id from tk where name = 'C1')), 'priority changes are audited');
+
+-- a ticket nobody is working on: the Team Lead picks it up (existing assignment path), nobody else may take it
+update support_tickets set assignee_id = null, escalation_level = 'TL', escalated_to = test.id('sup_th'), status = 'OPEN'
+ where id = (select id from tk where name = 'N1');
+set role authenticated;
+select test.login('sup_b');
+select test.check((select count(*) = 0 from support_tickets where id = (select id from tk where name = 'N1')), 'a team member cannot even see an unassigned ticket of the Team Lead');
+select test.must_fail($$select assign_support_ticket((select id from tk where name = 'N1'), test.id('sup_b'), 'taking it')$$, 'and cannot take it', 'Only a team lead|FORBIDDEN');
+select test.login('th_gen');
+select test.must_fail($$select assign_support_ticket((select id from tk where name = 'N1'), test.id('th_gen'), 'taking it')$$, 'a Team Lead of another team cannot', 'Only a team lead|FORBIDDEN');
+select test.login('sup_th');
+select assign_support_ticket((select id from tk where name = 'N1'), test.id('sup_th'), 'Picked up');
+select test.check((select assignee_id = test.id('sup_th') from support_tickets where id = (select id from tk where name = 'N1')), 'the Team Lead picks it up');
+select test.check((select count(*) = 1 from support_ticket_updates where ticket_id = (select id from tk where name = 'N1') and kind = 'ASSIGNED' and author_id = test.id('sup_th') and assignee_id = test.id('sup_th')),
+  'the pick-up is on the ticket history');
+
 reset role;
 \echo '=== ALL TICKET HIERARCHY AND CHAT TESTS PASSED ==='

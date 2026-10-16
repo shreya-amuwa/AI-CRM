@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowUpCircle, Check, CheckCheck, Clock, Info, Lock, RotateCcw, Search, Send, UserCog, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUpCircle, Check, CheckCheck, ChevronDown, Clock, Lock, RotateCcw, Search, Send, SlidersHorizontal, UserCog } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import type { Person } from '../../lib/workTasks';
+import type { Person, TeamRef } from '../../lib/workTasks';
 import {
   fmtWhen,
   isAwaitingReply,
@@ -21,7 +21,8 @@ import {
   type TicketStatus,
   type TicketUpdateRow
 } from '../../lib/support';
-import { FormField, inputClass, TicketPriorityPill, TicketStatusPill } from './SupportParts';
+import { ago, displayTicketNo, initialsOf, newMessageKey, ticketNoSearchText } from '../../lib/ticketFormat';
+import { inputClass, TicketPriorityPill, TicketStatusPill } from './SupportParts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,29 +32,7 @@ const PRIORITY_RANK: Record<TicketPriority, number> = { URGENT: 0, HIGH: 1, MEDI
 /** Who handles the ticket now: the RM (assignee) until it is escalated to a Team Lead / Department Head. */
 export const handlerId = (t: SupportTicket) => (t.escalationLevel === 'RM' ? t.assigneeId : t.escalatedTo);
 const lastActivity = (t: SupportTicket) => (t.lastMessageAt && t.lastMessageAt > t.updatedAt ? t.lastMessageAt : t.updatedAt);
-const newKey = () =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const r = (Math.random() * 16) | 0;
-        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-      });
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(w => w[0]?.toUpperCase())
-    .join('') || '?';
-const timeShort = (iso: string) => {
-  const d = new Date(iso);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-  const y = new Date(now);
-  y.setDate(now.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Yesterday';
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-};
+const isEscalatedNow = (t: SupportTicket) => isTicketOpen(t.status) && (t.status === 'ESCALATED' || t.escalationLevel !== 'RM');
 const dayLabel = (iso: string) => {
   const d = new Date(iso);
   const now = new Date();
@@ -64,8 +43,36 @@ const dayLabel = (iso: string) => {
   return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 };
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+const teamName = (teams: TeamRef[] | undefined, id: string | null) => (id ? teams?.find(t => t.id === id)?.name ?? null : null);
 
-/** Small markers on a ticket: escalation level, waiting for our reply, SLA. */
+const Avatar: React.FC<{ name: string; size?: 'sm' | 'md'; tone?: 'green' | 'grey' }> = ({ name, size = 'sm', tone = 'green' }) => (
+  <span
+    className={`shrink-0 inline-flex items-center justify-center rounded-full font-bold ${size === 'sm' ? 'w-5 h-5 text-[9px]' : 'w-9 h-9 text-xs'} ${
+      tone === 'green' ? 'bg-emerald-700 text-white' : 'bg-slate-200 text-slate-600'
+    }`}
+    aria-hidden="true"
+  >
+    {initialsOf(name)}
+  </span>
+);
+
+const Chip: React.FC<{ children: React.ReactNode; tone?: 'grey' | 'amber' | 'rose' | 'green' }> = ({ children, tone = 'grey' }) => (
+  <span
+    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
+      tone === 'amber'
+        ? 'bg-amber-50 border-amber-200 text-amber-900'
+        : tone === 'rose'
+          ? 'bg-rose-50 border-rose-200 text-rose-800'
+          : tone === 'green'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+            : 'bg-slate-50 border-slate-200 text-slate-600'
+    }`}
+  >
+    {children}
+  </span>
+);
+
+/** Small markers on a ticket: escalation level and overdue SLA. */
 export const TicketFlags: React.FC<{ ticket: SupportTicket }> = ({ ticket: t }) => (
   <span className="inline-flex flex-wrap items-center gap-1">
     {t.escalationLevel !== 'RM' && isTicketOpen(t.status) && (
@@ -76,59 +83,103 @@ export const TicketFlags: React.FC<{ ticket: SupportTicket }> = ({ ticket: t }) 
 );
 
 // ---------------------------------------------------------------------------
-// Inbox
+// Inbox (left panel)
 // ---------------------------------------------------------------------------
-type Tab = 'ALL' | 'UNREAD' | 'OPEN' | 'IN_PROGRESS' | 'PENDING' | 'ESCALATED' | 'RESOLVED';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'ALL', label: 'All' },
-  { id: 'UNREAD', label: 'Unread' },
-  { id: 'OPEN', label: 'Open' },
-  { id: 'IN_PROGRESS', label: 'In progress' },
-  { id: 'PENDING', label: 'Pending' },
-  { id: 'ESCALATED', label: 'Escalated' },
-  { id: 'RESOLVED', label: 'Resolved' }
-];
-const inTab = (tab: Tab, t: SupportTicket, unread: number) => {
+type Tab = 'OPEN' | 'UNASSIGNED' | 'MINE' | 'TEAM' | 'ESCALATED' | 'DONE';
+interface Scope {
+  me: string | undefined;
+  role: string | undefined;
+  teamId: string | null | undefined;
+}
+/** The tabs a role gets. A plain team member only ever sees their own tickets, so "Unassigned" and "My team" would be empty. */
+const tabsFor = (role: string | undefined): { id: Tab; label: string }[] => {
+  const all = { id: 'OPEN' as Tab, label: 'All open' };
+  const unassigned = { id: 'UNASSIGNED' as Tab, label: 'Unassigned' };
+  const mine = { id: 'MINE' as Tab, label: 'My tickets' };
+  const team = { id: 'TEAM' as Tab, label: 'My team' };
+  const esc = { id: 'ESCALATED' as Tab, label: 'Escalated' };
+  const done = { id: 'DONE' as Tab, label: 'Resolved / closed' };
+  if (role === 'TEAM_HEAD') return [all, unassigned, mine, team, esc, done];
+  if (role === 'DEPARTMENT_HEAD' || role === 'SUPER_ADMIN') return [all, unassigned, mine, esc, done];
+  return [all, mine, esc, done];
+};
+const inTab = (tab: Tab, t: SupportTicket, s: Scope) => {
   switch (tab) {
-    case 'UNREAD':
-      return unread > 0;
     case 'OPEN':
-      return t.status === 'OPEN';
-    case 'IN_PROGRESS':
-      return t.status === 'IN_PROGRESS';
-    case 'PENDING':
-      return t.status === 'WAITING_CUSTOMER';
+      return isTicketOpen(t.status);
+    case 'UNASSIGNED':
+      return isTicketOpen(t.status) && !t.assigneeId;
+    case 'MINE':
+      return isTicketOpen(t.status) && !!s.me && handlerId(t) === s.me;
+    case 'TEAM':
+      return isTicketOpen(t.status) && !!s.teamId && t.teamId === s.teamId;
     case 'ESCALATED':
-      return isTicketOpen(t.status) && (t.status === 'ESCALATED' || t.escalationLevel !== 'RM');
-    case 'RESOLVED':
-      return !isTicketOpen(t.status);
+      return isEscalatedNow(t);
     default:
-      return true;
+      return !isTicketOpen(t.status);
   }
 };
 const PAGE = 30;
 
+/** "Sneha Rao is working on this" - who has the ticket now. */
+const OwnerLine: React.FC<{ ticket: SupportTicket; people: Person[] }> = ({ ticket: t, people }) => {
+  if (!isTicketOpen(t.status)) {
+    return t.resolvedBy ? (
+      <span className="flex items-center gap-1.5 text-xs text-slate-500">
+        <Avatar name={personName(people, t.resolvedBy)} tone="grey" /> Resolved by {personName(people, t.resolvedBy)}
+      </span>
+    ) : null;
+  }
+  const owner = handlerId(t);
+  if (!t.assigneeId || !owner) {
+    return (
+      <span className="text-xs font-medium text-amber-700">
+        Nobody is working on this yet{owner ? ` · with ${TICKET_LEVEL_LABELS[t.escalationLevel]} ${personName(people, owner)}` : ''}
+      </span>
+    );
+  }
+  const name = personName(people, owner);
+  return (
+    <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-800 min-w-0">
+      <Avatar name={name} />
+      <span className="truncate">
+        {name}
+        {t.escalationLevel !== 'RM' ? ` (${TICKET_LEVEL_LABELS[t.escalationLevel]})` : ''} is working on this
+      </span>
+    </span>
+  );
+};
+
 export const TicketInbox: React.FC<{
   data: TicketData;
   people: Person[];
+  teams?: TeamRef[];
   manager: boolean;
   selectedId: string | null;
   onSelect: (id: string) => void;
-}> = ({ data, people, manager, selectedId, onSelect }) => {
-  const [tab, setTab] = useState<Tab>('ALL');
+}> = ({ data, people, teams, manager, selectedId, onSelect }) => {
+  const { profile } = useAuth();
+  const scope: Scope = useMemo(() => ({ me: profile?.id, role: profile?.role, teamId: profile?.teamId }), [profile?.id, profile?.role, profile?.teamId]);
+  const tabs = useMemo(() => tabsFor(scope.role), [scope.role]);
+  const [tab, setTab] = useState<Tab>('OPEN');
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [sort, setSort] = useState<'activity' | 'created' | 'priority' | 'sla'>('activity');
-  const [level, setLevel] = useState<TicketLevel | 'ALL'>('ALL');
-  const [person, setPerson] = useState('ALL');
+  const [status, setStatus] = useState<TicketStatus | 'ANY'>('ANY');
+  const [priority, setPriority] = useState<TicketPriority | 'ANY'>('ANY');
+  const [level, setLevel] = useState<TicketLevel | 'ANY'>('ANY');
+  const [person, setPerson] = useState('ANY');
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [shown, setShown] = useState(PAGE);
-  useEffect(() => setShown(PAGE), [tab, search, sort, level, person, overdueOnly]);
+  useEffect(() => setShown(PAGE), [tab, search, sort, status, priority, level, person, unreadOnly, overdueOnly]);
 
   const unread = useMemo(() => {
     const m = new Map<string, number>();
     data.tickets.forEach(t => m.set(t.id, unreadCount(t, data.updates, data.reads)));
     return m;
   }, [data.tickets, data.updates, data.reads]);
+  const counts = useMemo(() => Object.fromEntries(tabs.map(x => [x.id, data.tickets.filter(t => inTab(x.id, t, scope)).length])) as Record<Tab, number>, [tabs, data.tickets, scope]);
   const staffIds = useMemo(
     () =>
       [...new Set(data.tickets.flatMap(t => [t.assigneeId, t.escalatedTo, t.resolvedBy]).filter((x): x is string => !!x))].sort((a, b) =>
@@ -136,166 +187,219 @@ export const TicketInbox: React.FC<{
       ),
     [data.tickets, people]
   );
+  const activeFilters = [status !== 'ANY', priority !== 'ANY', level !== 'ANY', person !== 'ANY', unreadOnly, overdueOnly].filter(Boolean).length;
 
-  const base = useMemo(() => {
+  const list = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return data.tickets.filter(t => {
-      if (level !== 'ALL' && (t.escalationLevel !== level || !isTicketOpen(t.status))) return false;
-      if (person !== 'ALL' && t.assigneeId !== person && t.escalatedTo !== person && t.resolvedBy !== person) return false;
-      if (overdueOnly && !isTicketOverdue(t)) return false;
-      if (!q) return true;
-      return [t.ticketNo, t.subject, t.customerName, t.customerCode, t.customerCompany || '', t.lastMessagePreview || ''].some(v => v.toLowerCase().includes(q));
-    });
-  }, [data.tickets, search, level, person, overdueOnly]);
-  const counts = useMemo(() => Object.fromEntries(TABS.map(x => [x.id, base.filter(t => inTab(x.id, t, unread.get(t.id) || 0)).length])), [base, unread]);
-  const list = useMemo(
-    () =>
-      base
-        .filter(t => inTab(tab, t, unread.get(t.id) || 0))
-        .sort((a, b) =>
-          sort === 'priority'
-            ? PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || lastActivity(b).localeCompare(lastActivity(a))
-            : sort === 'created'
-              ? b.createdAt.localeCompare(a.createdAt)
-              : sort === 'sla'
-                ? (a.slaDueAt || '9999').localeCompare(b.slaDueAt || '9999') || lastActivity(b).localeCompare(lastActivity(a))
-                : lastActivity(b).localeCompare(lastActivity(a))
-        ),
-    [base, tab, sort, unread]
-  );
+    return data.tickets
+      .filter(t => {
+        if (!inTab(tab, t, scope)) return false;
+        if (status !== 'ANY' && t.status !== status) return false;
+        if (priority !== 'ANY' && t.priority !== priority) return false;
+        if (level !== 'ANY' && (t.escalationLevel !== level || !isTicketOpen(t.status))) return false;
+        if (person !== 'ANY' && t.assigneeId !== person && t.escalatedTo !== person && t.resolvedBy !== person) return false;
+        if (unreadOnly && !(unread.get(t.id) || 0)) return false;
+        if (overdueOnly && !isTicketOverdue(t)) return false;
+        if (!q) return true;
+        return (
+          ticketNoSearchText(t.ticketNo).includes(q) ||
+          [t.subject, t.customerName, t.customerCode, t.customerCompany || '', t.lastMessagePreview || ''].some(v => v.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) =>
+        sort === 'priority'
+          ? PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || lastActivity(b).localeCompare(lastActivity(a))
+          : sort === 'created'
+            ? b.createdAt.localeCompare(a.createdAt)
+            : sort === 'sla'
+              ? (a.slaDueAt || '9999').localeCompare(b.slaDueAt || '9999') || lastActivity(b).localeCompare(lastActivity(a))
+              : lastActivity(b).localeCompare(lastActivity(a))
+      );
+  }, [data.tickets, tab, scope, status, priority, level, person, unreadOnly, overdueOnly, search, sort, unread]);
 
+  const sel = 'text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white min-w-0';
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-3 space-y-2.5 border-b border-slate-100">
-        <div className="relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
-          <input
-            type="search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search tickets, customers, messages"
-            aria-label="Search tickets"
-            className={`${inputClass} pl-9`}
-          />
-        </div>
-        <div className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-0.5" role="tablist" aria-label="Ticket filters">
-          {TABS.map(x => (
+      <div className="px-3 pt-3 pb-2 space-y-2.5 border-b border-slate-100">
+        <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Ticket filters">
+          {tabs.map(x => (
             <button
               key={x.id}
               type="button"
               role="tab"
               aria-selected={tab === x.id}
               onClick={() => setTab(x.id)}
-              className={`shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold transition ${
-                tab === x.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+              className={`px-3 py-1.5 rounded-full text-[13px] font-semibold transition ${
+                tab === x.id ? 'bg-emerald-100 text-emerald-900' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {x.label}
-              <span className={`ml-1 ${tab === x.id ? 'text-white/70' : 'text-slate-400'}`}>{counts[x.id]}</span>
+              {x.label} <span className={tab === x.id ? 'text-emerald-800' : 'text-slate-400'}>{counts[x.id]}</span>
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select value={sort} onChange={e => setSort(e.target.value as any)} aria-label="Sort tickets" className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-            <option value="activity">Last activity</option>
-            <option value="created">Newest</option>
-            <option value="priority">Priority</option>
-            <option value="sla">SLA deadline</option>
-          </select>
-          {manager && (
-            <>
-              <select value={level} onChange={e => setLevel(e.target.value as any)} aria-label="Filter by level" className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
-                <option value="ALL">Any level</option>
-                {(Object.keys(TICKET_LEVEL_LABELS) as TicketLevel[]).map(l => (
-                  <option key={l} value={l}>
-                    With {TICKET_LEVEL_LABELS[l]}
-                  </option>
-                ))}
-              </select>
-              <select value={person} onChange={e => setPerson(e.target.value)} aria-label="Filter by team member" className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white max-w-[9rem]">
-                <option value="ALL">Everyone</option>
-                {staffIds.map(id => (
-                  <option key={id} value={id}>
-                    {personName(people, id)}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-          <label className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-            <input type="checkbox" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} className="rounded border-slate-300" />
-            Overdue
-          </label>
+        <div className="flex gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
+            <input
+              type="search"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search ticket, customer, message"
+              aria-label="Search tickets"
+              className={`${inputClass} pl-9`}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(o => !o)}
+            aria-expanded={filtersOpen}
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3 rounded-xl border text-xs font-semibold ${
+              filtersOpen || activeFilters ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" /> Filters{activeFilters ? ` (${activeFilters})` : ''}
+          </button>
         </div>
+        {filtersOpen && (
+          <div className="grid grid-cols-2 gap-2">
+            <select value={status} onChange={e => setStatus(e.target.value as any)} aria-label="Filter by status" className={sel}>
+              <option value="ANY">Any status</option>
+              {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).map(s => (
+                <option key={s} value={s}>
+                  {TICKET_STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            <select value={priority} onChange={e => setPriority(e.target.value as any)} aria-label="Filter by priority" className={sel}>
+              <option value="ANY">Any priority</option>
+              {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map(p => (
+                <option key={p} value={p}>
+                  {TICKET_PRIORITY_LABELS[p]}
+                </option>
+              ))}
+            </select>
+            {manager && (
+              <>
+                <select value={level} onChange={e => setLevel(e.target.value as any)} aria-label="Filter by escalation level" className={sel}>
+                  <option value="ANY">Any level</option>
+                  {(Object.keys(TICKET_LEVEL_LABELS) as TicketLevel[]).map(l => (
+                    <option key={l} value={l}>
+                      With {TICKET_LEVEL_LABELS[l]}
+                    </option>
+                  ))}
+                </select>
+                <select value={person} onChange={e => setPerson(e.target.value)} aria-label="Filter by team member" className={sel}>
+                  <option value="ANY">Everyone</option>
+                  {staffIds.map(id => (
+                    <option key={id} value={id}>
+                      {personName(people, id)}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <select value={sort} onChange={e => setSort(e.target.value as any)} aria-label="Sort tickets" className={sel}>
+              <option value="activity">Last activity</option>
+              <option value="created">Newest</option>
+              <option value="priority">Priority</option>
+              <option value="sla">SLA deadline</option>
+            </select>
+            <div className="flex items-center gap-3 text-xs text-slate-600">
+              <label className="inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={unreadOnly} onChange={e => setUnreadOnly(e.target.checked)} className="rounded border-slate-300" /> Unread
+              </label>
+              <label className="inline-flex items-center gap-1.5">
+                <input type="checkbox" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} className="rounded border-slate-300" /> Overdue
+              </label>
+            </div>
+            {activeFilters > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStatus('ANY');
+                  setPriority('ANY');
+                  setLevel('ANY');
+                  setPerson('ANY');
+                  setUnreadOnly(false);
+                  setOverdueOnly(false);
+                }}
+                className="col-span-2 text-xs font-semibold text-emerald-800 hover:underline text-left"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto" aria-label="Tickets">
         {data.loading && data.tickets.length === 0 ? (
           <div className="p-3 space-y-2" aria-busy="true">
             {[0, 1, 2, 3].map(i => (
-              <div key={i} className="h-16 rounded-xl bg-slate-100 animate-pulse" />
+              <div key={i} className="h-28 rounded-xl bg-slate-100 animate-pulse" />
             ))}
           </div>
         ) : list.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-sm font-semibold text-slate-700">{data.tickets.length === 0 ? 'No tickets yet' : 'Nothing here'}</p>
-            <p className="text-xs text-slate-500 mt-1">{data.tickets.length === 0 ? 'Customer tickets you can see appear here.' : 'Try another filter or search.'}</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {data.tickets.length === 0 ? 'Customer tickets you can see appear here.' : 'Try another tab, filter or search.'}
+            </p>
           </div>
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul>
             {list.slice(0, shown).map(t => {
               const n = unread.get(t.id) || 0;
               const active = t.id === selectedId;
+              const team = teamName(teams, t.teamId);
               return (
-                <li key={t.id}>
+                <li key={t.id} className="border-b border-slate-100">
                   <button
                     type="button"
                     onClick={() => onSelect(t.id)}
                     aria-current={active ? 'true' : undefined}
-                    className={`w-full text-left px-3 py-3 flex gap-3 transition ${active ? 'bg-blue-50/80' : 'hover:bg-slate-50'}`}
+                    className={`w-full text-left px-4 py-3 border-l-4 transition ${
+                      active ? 'bg-emerald-50 border-emerald-600' : n ? 'border-emerald-400 bg-white hover:bg-slate-50' : 'border-transparent hover:bg-slate-50'
+                    }`}
                   >
-                    <span className="relative shrink-0 w-9 h-9 rounded-full bg-slate-200 text-slate-700 text-xs font-bold flex items-center justify-center" aria-hidden="true">
-                      {initials(t.customerName)}
-                      {isTicketOverdue(t) && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-rose-600 ring-2 ring-white" />}
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="font-bold text-sm text-slate-900 tracking-tight">{displayTicketNo(t.ticketNo)}</span>
+                      <span className={`shrink-0 text-xs ${n ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>{ago(lastActivity(t))}</span>
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className={`truncate text-sm ${n ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}`}>
-                          {t.customerName}
-                          {t.customerCompany && <span className="font-normal text-slate-400"> · {t.customerCompany}</span>}
-                        </span>
-                        <span className={`shrink-0 text-[11px] ${n ? 'text-blue-700 font-semibold' : 'text-slate-400'}`}>{timeShort(lastActivity(t))}</span>
-                      </span>
-                      <span className="block truncate text-xs text-slate-700 mt-0.5">
-                        <span className="font-mono text-[10px] text-slate-400 mr-1">{t.ticketNo}</span>
-                        {t.subject}
-                      </span>
-                      <span className="flex items-center justify-between gap-2 mt-0.5">
-                        <span className={`truncate text-xs ${n ? 'text-slate-800' : 'text-slate-500'}`}>
-                          {t.lastMessagePreview ? (
-                            <>
-                              {t.lastMessageFrom === 'STAFF' && <span className="text-slate-400">You: </span>}
-                              {t.lastMessagePreview}
-                            </>
-                          ) : (
-                            <span className="italic text-slate-400">{t.description || 'No messages yet'}</span>
-                          )}
-                        </span>
-                        {n > 0 && (
-                          <span className="shrink-0 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center" aria-label={`${n} unread`}>
-                            {n}
-                          </span>
+                    <span className="block truncate text-sm font-semibold text-slate-800 mt-0.5">
+                      {t.customerName}
+                      {t.customerCompany && <span className="font-normal text-slate-500"> · {t.customerCompany}</span>}
+                    </span>
+                    <span className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className={`truncate text-[13px] ${n ? 'text-slate-800 font-medium' : 'text-slate-500'}`}>
+                        <span className="text-slate-700">{t.subject}</span>
+                        {t.lastMessagePreview && (
+                          <>
+                            {' · '}
+                            {t.lastMessageFrom === 'STAFF' ? 'You: ' : ''}
+                            {t.lastMessagePreview}
+                          </>
                         )}
                       </span>
-                      <span className="flex flex-wrap items-center gap-1 mt-1.5">
-                        <TicketStatusPill status={t.status} />
-                        {(t.priority === 'HIGH' || t.priority === 'URGENT') && <TicketPriorityPill priority={t.priority} />}
-                        <TicketFlags ticket={t} />
-                        <span className="text-[10px] text-slate-400 truncate">
-                          RM {personName(people, t.assigneeId)}
-                          {t.escalationLevel !== 'RM' && isTicketOpen(t.status) ? ` · with ${personName(people, t.escalatedTo)}` : ''}
+                      {n > 0 && (
+                        <span className="shrink-0 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold flex items-center justify-center" aria-label={`${n} unread`}>
+                          {n}
                         </span>
+                      )}
+                    </span>
+                    <span className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <TicketStatusPill status={t.status} />
+                      <TicketPriorityPill priority={t.priority} />
+                      <span className="inline-flex px-2 py-0.5 rounded-full border border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-600">
+                        {team || TICKET_CATEGORY_LABELS[t.category]}
                       </span>
+                      <TicketFlags ticket={t} />
+                    </span>
+                    <span className="block mt-2 space-y-1">
+                      <OwnerLine ticket={t} people={people} />
+                      {t.escalationLevel !== 'RM' && isTicketOpen(t.status) && t.assigneeId && (
+                        <span className="block text-[11px] text-slate-400">Relationship Manager: {personName(people, t.assigneeId)}</span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -316,7 +420,7 @@ export const TicketInbox: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
-// Conversation
+// Conversation entries
 // ---------------------------------------------------------------------------
 interface Pending {
   key: string;
@@ -359,9 +463,11 @@ function buildEntries(ticket: SupportTicket, history: TicketUpdateRow[], people:
     } else if (u.kind === 'CREATED') {
       out.push({ type: 'event', id: u.id, text: `${u.authorId ? who : 'Support'} opened the ticket`, detail: u.note, at: u.createdAt, tone: 'neutral' });
     } else if (u.kind === 'ASSIGNED') {
-      out.push({ type: 'event', id: u.id, text: `Assigned to ${personName(people, u.assigneeId)}`, detail: u.authorId ? `by ${who}` : u.note, at: u.createdAt, tone: 'neutral' });
+      out.push({ type: 'event', id: u.id, text: `Assigned to ${personName(people, u.assigneeId)}`, detail: u.authorId ? `by ${who}${u.note ? `: ${u.note}` : ''}` : u.note, at: u.createdAt, tone: 'neutral' });
     } else if (u.kind === 'ESCALATED') {
       out.push({ type: 'event', id: u.id, text: u.note?.split(':')[0] || 'Escalated', detail: u.note?.includes(':') ? u.note.slice(u.note.indexOf(':') + 1).trim() : null, at: u.createdAt, tone: 'warn' });
+    } else if (u.kind === 'PRIORITY_CHANGED') {
+      out.push({ type: 'event', id: u.id, text: u.note || 'Priority changed', detail: u.authorId ? `by ${who}` : null, at: u.createdAt, tone: 'neutral' });
     } else if (u.kind === 'STATUS_CHANGED') {
       const by = u.authorId ? who : u.clientAuthor ? ticket.customerName : 'System';
       const text =
@@ -378,17 +484,90 @@ function buildEntries(ticket: SupportTicket, history: TicketUpdateRow[], people:
   return out;
 }
 
-export const TicketConversation: React.FC<{
+// ---------------------------------------------------------------------------
+// The selected ticket (right panel): header, context banner, controls, chat, composer
+// ---------------------------------------------------------------------------
+type Banner = { tone: 'attention' | 'info' | 'good' | 'danger'; text: string };
+const BANNER_CLS: Record<Banner['tone'], string> = {
+  attention: 'bg-amber-50 border-amber-200 text-amber-900',
+  info: 'bg-slate-50 border-slate-200 text-slate-700',
+  good: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+  danger: 'bg-rose-50 border-rose-200 text-rose-900'
+};
+
+function contextBanner(t: SupportTicket, people: Person[], me: string | undefined, updates: TicketUpdateRow[]): Banner {
+  const owner = handlerId(t);
+  const ownerName = personName(people, owner);
+  const level = TICKET_LEVEL_LABELS[t.escalationLevel];
+  if (!isTicketOpen(t.status)) {
+    return {
+      tone: 'good',
+      text: `${t.status === 'CLOSED' ? 'Closed' : 'Resolved'}${t.resolvedBy ? ` by ${personName(people, t.resolvedBy)}` : ''}${t.resolvedAt ? ` on ${fmtWhen(t.resolvedAt)}` : ''}. The conversation stays here${t.status === 'CLOSED' ? '.' : '; a reply from the customer reopens it.'}`
+    };
+  }
+  const overdue = isTicketOverdue(t);
+  const awaiting = isAwaitingReply(t);
+  if (t.escalationLevel !== 'RM') {
+    const esc = [...updates].reverse().find(u => u.ticketId === t.id && u.kind === 'ESCALATED');
+    const rm = t.assigneeId && t.assigneeId !== owner ? ` ${personName(people, t.assigneeId)} (Relationship Manager) stays informed.` : '';
+    const attention = owner === me && awaiting ? ' A new customer message requires your attention.' : owner === me ? ' It is with you.' : '';
+    if (!esc) {
+      // never escalated: the customer had no Relationship Manager, so the ticket started with the Team Lead / Department Head
+      if (!t.assigneeId) {
+        return { tone: owner === me && awaiting ? 'attention' : 'info', text: `This customer has no Relationship Manager yet, so the ticket is with ${level} ${ownerName}.${attention}` };
+      }
+      return { tone: owner === me && awaiting ? 'attention' : 'info', text: `This ticket is currently assigned to ${ownerName}${owner === me ? ' (you)' : ''}.${attention}` };
+    }
+    const why = esc.authorId ? ` by ${personName(people, esc.authorId)}` : ' because the response SLA was exceeded';
+    return { tone: owner === me && awaiting ? 'attention' : overdue ? 'danger' : 'info', text: `Escalated to ${level} ${ownerName}${why}.${attention}${rm}` };
+  }
+  if (!owner) return { tone: 'attention', text: 'Nobody is working on this yet. If it is for your team, pick it up or just reply.' };
+  if (t.status === 'WAITING_CUSTOMER') return { tone: 'info', text: `Waiting for the customer to reply. ${ownerName} is handling this ticket.` };
+  if (awaiting) {
+    if (owner === me) return { tone: overdue ? 'danger' : 'attention', text: `A new customer message requires your attention${overdue ? ` (reply ${slaText(t.slaDueAt)})` : ''}.` };
+    return { tone: overdue ? 'danger' : 'info', text: `Waiting for the Relationship Manager ${ownerName} to respond${overdue ? ` (reply ${slaText(t.slaDueAt)})` : ''}.` };
+  }
+  return { tone: 'info', text: `This ticket is currently assigned to ${ownerName}${owner === me ? ' (you)' : ''}.` };
+}
+
+export const TicketPane: React.FC<{
   ticket: SupportTicket;
   data: TicketData;
   people: Person[];
-  canWrite: boolean;
+  teams?: TeamRef[];
+  /** View only (e.g. a Team Lead reading another team's ticket on one of their customers). */
+  readOnly?: boolean;
+  /** Shown in a dialog: leave room for its close button. */
+  inModal?: boolean;
   onBack?: () => void;
-  onToggleInfo?: () => void;
-}> = ({ ticket, data, people, canWrite, onBack, onToggleInfo }) => {
+  onOpenCustomer?: (customerId: string) => void;
+}> = ({ ticket, data, people, teams, readOnly = false, inModal = false, onBack, onOpenCustomer }) => {
   const { profile } = useAuth();
+  const me = profile?.id;
+  const role = profile?.role;
+  const managerRole = role === 'TEAM_HEAD' || role === 'DEPARTMENT_HEAD' || role === 'SUPER_ADMIN';
+  const canAct = !readOnly && (managerRole || ticket.assigneeId === me || ticket.escalatedTo === me);
+  const open = isTicketOpen(ticket.status);
+  const customerConversation = !ticket.createdBy;
   const history = useMemo(() => data.updates.filter(u => u.ticketId === ticket.id), [data.updates, ticket.id]);
-  const entries = useMemo(() => buildEntries(ticket, history, people, profile?.id), [ticket, history, people, profile?.id]);
+  const entries = useMemo(() => buildEntries(ticket, history, people, me), [ticket, history, people, me]);
+  const banner = contextBanner(ticket, people, me, data.updates);
+  const nextLevel: TicketLevel | null = ticket.escalationLevel === 'RM' ? 'TL' : ticket.escalationLevel === 'TL' ? 'DH' : null;
+  const escalations = history.filter(u => u.kind === 'ESCALATED');
+  const teamPeople = people.filter(p => (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.status === 'ACTIVE' && p.teamId === ticket.teamId);
+  // Only a Team Lead of the ticket's own team may pick up an unassigned ticket (the database enforces it as well).
+  const canClaim = canAct && role === 'TEAM_HEAD' && !ticket.assigneeId && open && !!profile?.teamId && ticket.teamId === profile.teamId;
+  const canAssign = canAct && managerRole && open;
+
+  const [panel, setPanel] = useState<null | 'resolve' | 'escalate' | 'assign'>(null);
+  const [details, setDetails] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<TicketStatus>('RESOLVED');
+  const [resolution, setResolution] = useState('');
+  const [reason, setReason] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [internal, setInternal] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -396,19 +575,24 @@ export const TicketConversation: React.FC<{
   const [atBottom, setAtBottom] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
   const unread = unreadCount(ticket, data.updates, data.reads);
-  const customerConversation = !ticket.createdBy;
 
+  useEffect(() => {
+    setPanel(null);
+    setDetails(false);
+    setError(null);
+    setDone(null);
+    setResolution('');
+    setReason('');
+    setAssignee('');
+    setText('');
+    setPending([]);
+    setInternal(!customerConversation);
+  }, [ticket.id, customerConversation]);
   // Drop pending bubbles once the stored message arrives (Realtime / reload).
   useEffect(() => {
     const stored = new Set(history.map(u => u.clientMsgId).filter(Boolean));
     setPending(p => p.filter(x => !stored.has(x.key)));
   }, [history]);
-  // A new ticket: fresh composer, scroll to the latest message.
-  useEffect(() => {
-    setText('');
-    setPending([]);
-    setInternal(!customerConversation);
-  }, [ticket.id, customerConversation]);
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -434,6 +618,33 @@ export const TicketConversation: React.FC<{
     });
   }, [unread, ticket.id, ticket.lastMessageAt]);
 
+  const run = async (fn: () => Promise<unknown>, message: string) => {
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      await fn();
+      await data.reload();
+      setPanel(null);
+      setResolution('');
+      setReason('');
+      setDone(message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the change.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const onStatusChange = (s: TicketStatus) => {
+    if (s === ticket.status) return;
+    if (s === 'RESOLVED' || s === 'CLOSED') {
+      setTargetStatus(s);
+      setPanel('resolve');
+      return;
+    }
+    void run(() => ticketApi.update(ticket.id, { status: s }), `Status set to ${TICKET_STATUS_LABELS[s]}.`);
+  };
+
   const deliver = useCallback(
     async (p: Pending) => {
       setPending(list => list.map(x => (x.key === p.key ? { ...x, state: 'sending', error: undefined } : x)));
@@ -449,7 +660,7 @@ export const TicketConversation: React.FC<{
   const send = () => {
     const body = text.trim();
     if (!body) return;
-    const p: Pending = { key: newKey(), text: body, internal: internal || !customerConversation, state: 'sending' };
+    const p: Pending = { key: newMessageKey(), text: body, internal: internal || !customerConversation, state: 'sending' };
     setPending(list => [...list, p]);
     setText('');
     setAtBottom(true);
@@ -457,37 +668,281 @@ export const TicketConversation: React.FC<{
   };
 
   const owner = handlerId(ticket);
+  const ctl = 'text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:bg-slate-50 disabled:text-slate-500';
+  const statusOptions = (Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).filter(s => s === ticket.status || (s !== 'ESCALATED' && (s !== 'CLOSED' || managerRole)));
+  const team = teamName(teams, ticket.teamId);
+
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <header className="flex items-start gap-2 px-4 py-3 border-b border-slate-100">
-        {onBack && (
-          <button type="button" onClick={onBack} className="lg:hidden p-1.5 -ml-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Back to tickets">
-            <ArrowLeft className="w-4 h-4" />
+    <div className="flex flex-col h-full min-h-0 bg-white">
+      <header className={`pl-4 ${inModal ? 'pr-12' : 'pr-4'} pt-3 pb-3 border-b border-slate-100 space-y-2.5`}>
+        <div className="flex items-center gap-2 flex-wrap">
+          {onBack && (
+            <button type="button" onClick={onBack} className="lg:hidden p-1.5 -ml-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Back to tickets">
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+          )}
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight" title={ticket.ticketNo}>
+            {displayTicketNo(ticket.ticketNo)}
+          </h2>
+          <TicketStatusPill status={ticket.status} />
+          {ticket.customerPhone && <span className="text-sm text-slate-500">{ticket.customerPhone}</span>}
+          <TicketFlags ticket={ticket} />
+          <button
+            type="button"
+            onClick={() => setDetails(d => !d)}
+            aria-expanded={details}
+            className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 hover:underline"
+          >
+            Details <ChevronDown className={`w-3.5 h-3.5 transition ${details ? 'rotate-180' : ''}`} aria-hidden="true" />
           </button>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="font-mono font-bold text-blue-700">{ticket.ticketNo}</span>
-            <span>·</span>
-            <span className="truncate">
-              {ticket.customerName}
-              {ticket.customerCompany ? ` · ${ticket.customerCompany}` : ''}
-            </span>
-          </div>
-          <h2 className="text-base font-bold text-slate-900 truncate">{ticket.subject}</h2>
-          <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            <TicketStatusPill status={ticket.status} />
-            <TicketPriorityPill priority={ticket.priority} />
-            <TicketFlags ticket={ticket} />
-            <span className="text-[11px] text-slate-500">
-              {isTicketOpen(ticket.status) ? `${TICKET_LEVEL_LABELS[ticket.escalationLevel]}: ${personName(people, owner)}` : `RM: ${personName(people, ticket.assigneeId)}`}
-            </span>
-          </div>
         </div>
-        {onToggleInfo && (
-          <button type="button" onClick={onToggleInfo} className="xl:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Ticket details">
-            <Info className="w-4 h-4" />
-          </button>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900 truncate">{ticket.subject}</p>
+          <p className="text-xs text-slate-500 truncate">
+            {onOpenCustomer ? (
+              <button type="button" className="text-emerald-800 hover:underline font-medium" onClick={() => onOpenCustomer(ticket.customerId)}>
+                {ticket.customerName}
+              </button>
+            ) : (
+              ticket.customerName
+            )}
+            {ticket.customerCompany ? ` · ${ticket.customerCompany}` : ''}
+            {ticket.customerEmail ? ` · ${ticket.customerEmail}` : ''}
+          </p>
+        </div>
+
+        <div className={`rounded-xl border px-3.5 py-3 ${BANNER_CLS[banner.tone]}`} role="status">
+          <p className="text-sm">{banner.text}</p>
+          {canClaim && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run(() => ticketApi.assign(ticket.id, me!, 'Picked up'), 'You picked up this ticket.')}
+              className="mt-2.5 px-4 py-2 rounded-xl bg-emerald-700 text-white text-sm font-bold hover:bg-emerald-800 disabled:opacity-50"
+            >
+              {busy ? 'Picking up…' : 'Pick up this ticket'}
+            </button>
+          )}
+          {!open && canAct && ticket.status === 'RESOLVED' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run(() => ticketApi.update(ticket.id, { status: 'OPEN', note: 'Reopened' }), 'Ticket reopened.')}
+              className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-300 bg-white text-emerald-900 text-sm font-bold hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Reopen
+            </button>
+          )}
+          {!open && canAct && ticket.status === 'CLOSED' && managerRole && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run(() => ticketApi.update(ticket.id, { status: 'OPEN', note: 'Reopened' }), 'Ticket reopened.')}
+              className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-300 bg-white text-emerald-900 text-sm font-bold hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Reopen
+            </button>
+          )}
+        </div>
+
+        <div className={`${details ? 'flex' : 'hidden'} lg:flex flex-wrap items-center gap-2`}>
+          {(team || teams) && <Chip>{team || 'No team yet'}</Chip>}
+          <Chip tone={ticket.assigneeId ? 'grey' : 'amber'}>{ticket.assigneeId ? `RM: ${personName(people, ticket.assigneeId)}` : 'Unassigned'}</Chip>
+          {open && owner && ticket.escalationLevel !== 'RM' && <Chip tone="rose">With {TICKET_LEVEL_LABELS[ticket.escalationLevel]}: {personName(people, owner)}</Chip>}
+          <label className="sr-only" htmlFor="tp-priority">
+            Priority
+          </label>
+          <select
+            id="tp-priority"
+            value={ticket.priority}
+            disabled={!canAct || busy || ticket.status === 'CLOSED'}
+            onChange={e => void run(() => ticketApi.setPriority(ticket.id, e.target.value as TicketPriority), `Priority set to ${TICKET_PRIORITY_LABELS[e.target.value as TicketPriority]}.`)}
+            className={ctl}
+          >
+            {(Object.keys(TICKET_PRIORITY_LABELS) as TicketPriority[]).map(p => (
+              <option key={p} value={p}>
+                {TICKET_PRIORITY_LABELS[p]}
+              </option>
+            ))}
+          </select>
+          <label className="sr-only" htmlFor="tp-status">
+            Status
+          </label>
+          <select id="tp-status" value={ticket.status} disabled={!canAct || busy} onChange={e => onStatusChange(e.target.value as TicketStatus)} className={ctl}>
+            {statusOptions.map(s => (
+              <option key={s} value={s} disabled={s === 'ESCALATED'}>
+                {TICKET_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+          {canAct && open && nextLevel && (
+            <button
+              type="button"
+              onClick={() => setPanel(panel === 'escalate' ? null : 'escalate')}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-rose-200 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+            >
+              <ArrowUpCircle className="w-4 h-4" aria-hidden="true" /> Escalate
+            </button>
+          )}
+          {canAssign && (
+            <button
+              type="button"
+              onClick={() => setPanel(panel === 'assign' ? null : 'assign')}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <UserCog className="w-4 h-4" aria-hidden="true" /> {ticket.assigneeId ? 'Reassign' : 'Assign'}
+            </button>
+          )}
+        </div>
+
+        {panel === 'resolve' && (
+          <form
+            className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-2"
+            onSubmit={e => {
+              e.preventDefault();
+              if (!ticket.resolutionNotes && !resolution.trim()) return setError('Add the resolution notes first.');
+              void run(() => ticketApi.update(ticket.id, { status: targetStatus, resolution: resolution.trim() || undefined }), `Ticket ${targetStatus === 'CLOSED' ? 'closed' : 'resolved'}.`);
+            }}
+          >
+            <label className="text-xs font-bold text-slate-800" htmlFor="tp-res">
+              Resolution notes {ticket.resolutionNotes ? '(optional)' : ''}
+            </label>
+            <textarea id="tp-res" rows={2} value={resolution} onChange={e => setResolution(e.target.value)} maxLength={4000} className={inputClass} placeholder="How was it resolved?" />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button type="submit" disabled={busy} className="px-4 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-bold disabled:opacity-50">
+                {busy ? 'Saving…' : targetStatus === 'CLOSED' ? 'Close ticket' : 'Resolve ticket'}
+              </button>
+            </div>
+          </form>
+        )}
+        {panel === 'escalate' && nextLevel && (
+          <form
+            className="p-3 rounded-xl border border-rose-200 bg-rose-50/60 space-y-2"
+            onSubmit={e => {
+              e.preventDefault();
+              if (!reason.trim()) return setError('Give the reason for escalating.');
+              void run(() => ticketApi.escalate(ticket.id, reason.trim()), `Escalated to the ${TICKET_LEVEL_LABELS[nextLevel]}.`);
+            }}
+          >
+            <label className="text-xs font-bold text-slate-800" htmlFor="tp-esc">
+              Reason for escalating to the {TICKET_LEVEL_LABELS[nextLevel]}
+            </label>
+            <textarea id="tp-esc" rows={2} value={reason} onChange={e => setReason(e.target.value)} maxLength={4000} className={inputClass} />
+            <p className="text-[11px] text-slate-500">The Relationship Manager stays on the ticket and keeps getting updates.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button type="submit" disabled={busy} className="px-4 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold disabled:opacity-50">
+                {busy ? 'Escalating…' : 'Escalate'}
+              </button>
+            </div>
+          </form>
+        )}
+        {panel === 'assign' && canAssign && (
+          <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row gap-2">
+            <select value={assignee} onChange={e => setAssignee(e.target.value)} aria-label="Assign ticket to" className={`${inputClass} flex-1`}>
+              <option value="">Choose a team member</option>
+              {teamPeople
+                .filter(p => p.id !== ticket.assigneeId)
+                .map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.fullName}
+                  </option>
+                ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy || !assignee}
+                onClick={() => void run(() => ticketApi.assign(ticket.id, assignee), 'Ticket assigned.')}
+                className="px-4 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold disabled:opacity-40"
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        )}
+        {error && (
+          <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" role="alert">
+            {error}
+          </p>
+        )}
+        {done && (
+          <p className="text-xs text-emerald-700" role="status">
+            {done}
+          </p>
+        )}
+
+        {details && (
+          <div className="rounded-xl border border-slate-200 p-3 max-h-56 overflow-y-auto space-y-3 text-xs">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
+              <div>
+                <dt className="text-slate-400">Customer ID</dt>
+                <dd className="font-mono text-slate-800">{ticket.customerCode}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-400">Category</dt>
+                <dd className="text-slate-800">{TICKET_CATEGORY_LABELS[ticket.category]}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-400">Relationship Manager</dt>
+                <dd className="text-slate-800">{personName(people, ticket.assigneeId)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-400">Escalation level</dt>
+                <dd className="text-slate-800">{TICKET_LEVEL_LABELS[ticket.escalationLevel]}</dd>
+              </div>
+              {open && (
+                <div>
+                  <dt className="text-slate-400">Reply due (SLA)</dt>
+                  <dd className={`inline-flex items-center gap-1 ${isTicketOverdue(ticket) ? 'text-rose-700 font-bold' : 'text-slate-800'}`}>
+                    <Clock className="w-3 h-3" aria-hidden="true" />
+                    {ticket.slaDueAt ? `${fmtWhen(ticket.slaDueAt)} (${slaText(ticket.slaDueAt)})` : isAwaitingReply(ticket) ? 'No deadline' : 'Nobody waiting'}
+                  </dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-slate-400">Created</dt>
+                <dd className="text-slate-800">{fmtWhen(ticket.createdAt)}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-400">Last activity</dt>
+                <dd className="text-slate-800">{fmtWhen(lastActivity(ticket))}</dd>
+              </div>
+              {(ticket.resolvedBy || ticket.resolvedAt) && (
+                <div>
+                  <dt className="text-slate-400">Resolved</dt>
+                  <dd className="text-emerald-700">
+                    {ticket.resolvedBy ? personName(people, ticket.resolvedBy) : '-'} · {fmtWhen(ticket.resolvedAt)}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            {ticket.resolutionNotes && <p className="text-emerald-800 bg-emerald-50 rounded-lg p-2.5 whitespace-pre-line">{ticket.resolutionNotes}</p>}
+            {escalations.length > 0 && (
+              <div>
+                <div className="font-bold text-slate-700 mb-1">Escalation history</div>
+                <ol className="space-y-1.5 border-l border-rose-200 pl-3">
+                  {escalations.map(u => (
+                    <li key={u.id}>
+                      <div className="font-semibold text-slate-800">{u.note?.split(':')[0]}</div>
+                      <div className="text-slate-500">
+                        {u.authorId ? `by ${personName(people, u.authorId)}` : 'Automatic (SLA)'} · {fmtWhen(u.createdAt)}
+                        {u.note?.includes(':') ? ` · ${u.note.slice(u.note.indexOf(':') + 1).trim()}` : ''}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </div>
         )}
       </header>
 
@@ -499,21 +954,21 @@ export const TicketConversation: React.FC<{
           setAtBottom(bottom);
           if (bottom) setNewBelow(false);
         }}
-        className="relative flex-1 min-h-0 overflow-y-auto bg-slate-50/60 px-4 py-4 space-y-2"
+        className="relative flex-1 min-h-0 overflow-y-auto bg-[#e9efec] px-3 sm:px-5 py-4 space-y-2"
         aria-live="polite"
         aria-label="Conversation"
       >
-        {entries.length === 0 && <p className="text-center text-xs text-slate-400 py-10">No messages yet.</p>}
+        {entries.length === 0 && pending.length === 0 && <p className="text-center text-xs text-slate-500 py-10">No messages yet.</p>}
         {entries.map(e =>
           e.type === 'day' ? (
             <div key={e.id} className="flex justify-center py-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 bg-white border border-slate-200 rounded-full px-2.5 py-0.5">{e.label}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-white/80 rounded-full px-2.5 py-0.5 shadow-sm">{e.label}</span>
             </div>
           ) : e.type === 'event' ? (
             <div key={e.id} className="flex flex-col items-center py-0.5 text-center">
               <span
                 className={`text-[11px] rounded-full px-2.5 py-0.5 ${
-                  e.tone === 'warn' ? 'bg-rose-50 text-rose-700' : e.tone === 'good' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                  e.tone === 'warn' ? 'bg-rose-100 text-rose-800' : e.tone === 'good' ? 'bg-emerald-100 text-emerald-800' : 'bg-white/80 text-slate-600'
                 }`}
               >
                 {e.text} · {clock(e.at)}
@@ -522,38 +977,32 @@ export const TicketConversation: React.FC<{
             </div>
           ) : (
             <div key={e.id} className={`flex ${e.side === 'customer' ? 'justify-start' : 'justify-end'}`}>
-              <div className={`max-w-[85%] sm:max-w-[70%] ${e.side === 'customer' ? '' : 'text-right'}`}>
-                <div className="text-[10px] text-slate-400 mb-0.5 px-1">
-                  <span className="font-semibold text-slate-600">{e.mine ? 'You' : e.name}</span>
-                  {e.role && <span> · {e.role}</span>}
+              <div
+                className={`max-w-[88%] sm:max-w-[68%] rounded-xl px-3 py-2 shadow-sm ${
+                  e.side === 'customer'
+                    ? 'bg-white text-slate-900 rounded-tl-sm'
+                    : e.side === 'note'
+                      ? 'bg-amber-50 border border-amber-200 text-amber-950 rounded-tr-sm'
+                      : 'bg-[#d9f2e3] text-slate-900 rounded-tr-sm'
+                }`}
+              >
+                <div className={`text-xs font-bold ${e.side === 'customer' ? 'text-slate-600' : e.side === 'note' ? 'text-amber-800' : 'text-emerald-800'}`}>
+                  {e.mine ? 'You' : e.name}
+                  {e.role && <span className="font-medium"> · {e.role}</span>}
                   {e.side === 'note' && (
-                    <span className="inline-flex items-center gap-0.5 ml-1 text-amber-700">
+                    <span className="inline-flex items-center gap-0.5 ml-1.5 font-semibold">
                       <Lock className="w-2.5 h-2.5" aria-hidden="true" /> Internal note
                     </span>
                   )}
                 </div>
-                <div
-                  className={`inline-block text-left text-sm whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 ${
-                    e.side === 'customer'
-                      ? 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm'
-                      : e.side === 'note'
-                        ? 'bg-amber-50 border border-amber-200 text-amber-900 rounded-tr-sm'
-                        : 'bg-blue-600 text-white rounded-tr-sm'
-                  }`}
-                >
-                  {e.text}
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5 px-1 inline-flex items-center gap-1">
+                <div className="text-sm whitespace-pre-wrap break-words mt-0.5">{e.text}</div>
+                <div className="flex items-center justify-end gap-1 text-[11px] text-slate-500 mt-1">
                   {clock(e.at)}
                   {e.seen !== undefined &&
                     (e.seen ? (
-                      <span className="inline-flex items-center gap-0.5 text-blue-600" title="Seen by the customer">
-                        <CheckCheck className="w-3 h-3" aria-hidden="true" /> Seen
-                      </span>
+                      <CheckCheck className="w-3.5 h-3.5 text-sky-600" aria-label="Seen by the customer" />
                     ) : (
-                      <span className="inline-flex items-center gap-0.5" title="Delivered">
-                        <Check className="w-3 h-3" aria-hidden="true" /> Sent
-                      </span>
+                      <Check className="w-3.5 h-3.5" aria-label="Sent" />
                     ))}
                 </div>
               </div>
@@ -562,17 +1011,15 @@ export const TicketConversation: React.FC<{
         )}
         {pending.map(p => (
           <div key={p.key} className="flex justify-end">
-            <div className="max-w-[85%] sm:max-w-[70%] text-right">
-              <div
-                className={`inline-block text-left text-sm whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm px-3.5 py-2 ${
-                  p.internal ? 'bg-amber-50 border border-amber-200 text-amber-900' : 'bg-blue-600 text-white'
-                } ${p.state === 'sending' ? 'opacity-60' : ''} ${p.state === 'failed' ? 'ring-2 ring-rose-400' : ''}`}
-              >
-                {p.text}
-              </div>
-              <div className="text-[10px] mt-0.5 px-1">
+            <div
+              className={`max-w-[88%] sm:max-w-[68%] rounded-xl rounded-tr-sm px-3 py-2 shadow-sm ${p.internal ? 'bg-amber-50 border border-amber-200' : 'bg-[#d9f2e3]'} ${
+                p.state === 'sending' ? 'opacity-70' : 'ring-2 ring-rose-400'
+              }`}
+            >
+              <div className="text-sm whitespace-pre-wrap break-words text-slate-900">{p.text}</div>
+              <div className="text-[11px] mt-1 text-right">
                 {p.state === 'sending' ? (
-                  <span className="text-slate-400">Sending…</span>
+                  <span className="text-slate-500">Sending…</span>
                 ) : (
                   <span className="inline-flex items-center gap-2 text-rose-700">
                     {p.error || 'Not sent.'}
@@ -605,7 +1052,7 @@ export const TicketConversation: React.FC<{
         </div>
       )}
 
-      {canWrite ? (
+      {canAct ? (
         ticket.status === 'CLOSED' && !internal ? (
           <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500 flex items-center justify-between gap-2">
             This ticket is closed. Reopen it to reply to the customer.
@@ -615,34 +1062,46 @@ export const TicketConversation: React.FC<{
           </div>
         ) : (
           <form
-            className="border-t border-slate-100 p-3 bg-white"
+            className="border-t border-slate-200 px-3 sm:px-4 pt-2.5 pb-3 bg-white"
             onSubmit={e => {
               e.preventDefault();
               send();
             }}
           >
-            {customerConversation && (
-              <div className="flex gap-1 mb-2" role="radiogroup" aria-label="Message type">
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={!internal}
-                  onClick={() => setInternal(false)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-semibold ${!internal ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-100'}`}
-                >
-                  Reply to customer
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={internal}
-                  onClick={() => setInternal(true)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${internal ? 'bg-amber-50 text-amber-800' : 'text-slate-500 hover:bg-slate-100'}`}
-                >
-                  <Lock className="w-3 h-3" aria-hidden="true" /> Internal note
-                </button>
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2 text-xs">
+              {customerConversation ? (
+                <div className="flex gap-1" role="radiogroup" aria-label="Message type">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={!internal}
+                    onClick={() => setInternal(false)}
+                    className={`px-2.5 py-1 rounded-full font-semibold ${!internal ? 'bg-emerald-100 text-emerald-900' : 'text-slate-500 hover:bg-slate-100'}`}
+                  >
+                    Reply to customer
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={internal}
+                    onClick={() => setInternal(true)}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-semibold ${internal ? 'bg-amber-100 text-amber-900' : 'text-slate-500 hover:bg-slate-100'}`}
+                  >
+                    <Lock className="w-3 h-3" aria-hidden="true" /> Internal note
+                  </button>
+                </div>
+              ) : (
+                <span className="font-semibold text-amber-800 inline-flex items-center gap-1">
+                  <Lock className="w-3 h-3" aria-hidden="true" /> Internal ticket: notes are visible to staff only
+                </span>
+              )}
+              {open && customerConversation && !internal && (
+                <span className="inline-flex items-center gap-1 text-emerald-800 font-medium">
+                  <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+                  {ticket.slaDueAt ? `Reply due ${slaText(ticket.slaDueAt)}` : 'Replies reach the customer’s dashboard'}
+                </span>
+              )}
+            </div>
             <div className="flex items-end gap-2">
               <textarea
                 rows={2}
@@ -657,18 +1116,17 @@ export const TicketConversation: React.FC<{
                 maxLength={4000}
                 aria-label={internal ? 'Internal note' : 'Reply to the customer'}
                 placeholder={internal ? 'Note for the team (the customer does not see it)' : `Reply to ${ticket.customerName}`}
-                className={`${inputClass} resize-none max-h-40 ${internal ? 'bg-amber-50/40 border-amber-200' : ''}`}
+                className={`${inputClass} resize-none max-h-40 ${internal ? 'bg-amber-50/50 border-amber-200' : ''}`}
               />
               <button
                 type="submit"
                 disabled={!text.trim()}
-                className={`shrink-0 h-10 w-10 rounded-xl flex items-center justify-center text-white disabled:opacity-40 ${internal ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                aria-label="Send"
+                className={`shrink-0 h-12 px-5 rounded-xl text-sm font-bold text-white disabled:opacity-40 inline-flex items-center gap-1.5 ${internal ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-700 hover:bg-emerald-800'}`}
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-4 h-4" aria-hidden="true" /> Send
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">Enter to send, Shift+Enter for a new line.</p>
+            <p className="text-[10px] text-slate-400 mt-1 hidden sm:block">Enter to send, Shift+Enter for a new line.</p>
           </form>
         )
       ) : (
@@ -679,317 +1137,36 @@ export const TicketConversation: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
-// Details and actions
-// ---------------------------------------------------------------------------
-export const TicketInfoPanel: React.FC<{
-  ticket: SupportTicket;
-  data: TicketData;
-  people: Person[];
-  canAct: boolean;
-  canManage: boolean;
-  onClose?: () => void;
-  onOpenCustomer?: (customerId: string) => void;
-}> = ({ ticket, data, people, canAct, canManage, onClose, onOpenCustomer }) => {
-  const [panel, setPanel] = useState<null | 'status' | 'escalate' | 'assign'>(null);
-  const [status, setStatus] = useState<TicketStatus>(ticket.status);
-  const [resolution, setResolution] = useState('');
-  const [note, setNote] = useState('');
-  const [assignee, setAssignee] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  useEffect(() => {
-    setPanel(null);
-    setError(null);
-    setDone(null);
-    setNote('');
-    setResolution('');
-  }, [ticket.id]);
-  useEffect(() => setStatus(ticket.status), [ticket.status]);
-
-  const nextLevel: TicketLevel | null = ticket.escalationLevel === 'RM' ? 'TL' : ticket.escalationLevel === 'TL' ? 'DH' : null;
-  const escalations = data.updates.filter(u => u.ticketId === ticket.id && u.kind === 'ESCALATED');
-  const teamPeople = people.filter(p => (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.status === 'ACTIVE' && p.teamId === ticket.teamId);
-  const open = isTicketOpen(ticket.status);
-
-  const run = async (fn: () => Promise<unknown>, message: string) => {
-    setBusy(true);
-    setError(null);
-    setDone(null);
-    try {
-      await fn();
-      await data.reload();
-      setPanel(null);
-      setNote('');
-      setResolution('');
-      setDone(message);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the change.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-    <div className="flex justify-between gap-3 py-1.5 text-xs">
-      <dt className="text-slate-500 shrink-0">{label}</dt>
-      <dd className="text-slate-800 font-medium text-right min-w-0 break-words">{children}</dd>
-    </div>
-  );
-
-  return (
-    <div className="h-full min-h-0 overflow-y-auto">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-        <h3 className="text-sm font-bold text-slate-900">Details</h3>
-        {onClose && (
-          <button type="button" onClick={onClose} className="xl:hidden p-1 rounded text-slate-400 hover:text-slate-700" aria-label="Close details">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-      <div className="p-4 space-y-5">
-        <section>
-          <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Customer</h4>
-          <dl className="divide-y divide-slate-50">
-            <Row label="Name">
-              {onOpenCustomer ? (
-                <button type="button" className="text-blue-700 hover:underline" onClick={() => onOpenCustomer(ticket.customerId)}>
-                  {ticket.customerName}
-                </button>
-              ) : (
-                ticket.customerName
-              )}
-            </Row>
-            {ticket.customerCompany && <Row label="Company">{ticket.customerCompany}</Row>}
-            <Row label="Customer ID">
-              <span className="font-mono">{ticket.customerCode}</span>
-            </Row>
-            {ticket.customerPhone && <Row label="Phone">{ticket.customerPhone}</Row>}
-            {ticket.customerEmail && <Row label="E-mail">{ticket.customerEmail}</Row>}
-          </dl>
-        </section>
-
-        <section>
-          <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Ticket</h4>
-          <dl className="divide-y divide-slate-50">
-            <Row label="Status">
-              <TicketStatusPill status={ticket.status} />
-            </Row>
-            <Row label="Priority">{TICKET_PRIORITY_LABELS[ticket.priority]}</Row>
-            <Row label="Category">{TICKET_CATEGORY_LABELS[ticket.category]}</Row>
-            <Row label="Relationship Manager">{personName(people, ticket.assigneeId)}</Row>
-            {open && (
-              <Row label="Handled by">
-                <span className={ticket.escalationLevel === 'RM' ? '' : 'text-rose-700'}>
-                  {personName(people, handlerId(ticket))} ({TICKET_LEVEL_LABELS[ticket.escalationLevel]})
-                </span>
-              </Row>
-            )}
-            {open && (
-              <Row label="Reply due">
-                <span className={`inline-flex items-center gap-1 ${isTicketOverdue(ticket) ? 'text-rose-700 font-bold' : ''}`}>
-                  <Clock className="w-3 h-3" aria-hidden="true" />
-                  {ticket.slaDueAt ? slaText(ticket.slaDueAt) : isAwaitingReply(ticket) ? 'No deadline' : 'Nobody waiting'}
-                </span>
-              </Row>
-            )}
-            <Row label="Created">{fmtWhen(ticket.createdAt)}</Row>
-            <Row label="Last activity">{fmtWhen(lastActivity(ticket))}</Row>
-            {(ticket.resolvedBy || ticket.resolvedAt) && (
-              <Row label="Resolved">
-                {ticket.resolvedBy ? personName(people, ticket.resolvedBy) : '-'}
-                <span className="block text-[10px] text-slate-400 font-normal">{fmtWhen(ticket.resolvedAt)}</span>
-              </Row>
-            )}
-          </dl>
-          {ticket.resolutionNotes && <p className="mt-2 text-xs text-emerald-800 bg-emerald-50 rounded-lg p-2.5 whitespace-pre-line">{ticket.resolutionNotes}</p>}
-        </section>
-
-        {escalations.length > 0 && (
-          <section>
-            <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Escalation history</h4>
-            <ol className="space-y-2 border-l border-rose-200 pl-3">
-              {escalations.map(u => (
-                <li key={u.id} className="text-xs">
-                  <div className="font-semibold text-slate-800">{u.note?.split(':')[0]}</div>
-                  <div className="text-slate-500">
-                    {u.authorId ? `by ${personName(people, u.authorId)}` : 'Automatic (SLA)'} · {fmtWhen(u.createdAt)}
-                  </div>
-                  {u.note?.includes(':') && <div className="text-slate-600 mt-0.5">{u.note.slice(u.note.indexOf(':') + 1).trim()}</div>}
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
-
-        {canAct && (
-          <section className="space-y-2">
-            <h4 className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Actions</h4>
-            <div className="flex flex-wrap gap-2">
-              {open ? (
-                <>
-                  <button type="button" onClick={() => { setStatus('RESOLVED'); setPanel('status'); }} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700">
-                    Resolve
-                  </button>
-                  <button type="button" onClick={() => setPanel(panel === 'status' ? null : 'status')} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                    Change status
-                  </button>
-                  {nextLevel && (
-                    <button type="button" onClick={() => setPanel(panel === 'escalate' ? null : 'escalate')} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-rose-200 text-xs font-semibold text-rose-700 hover:bg-rose-50">
-                      <ArrowUpCircle className="w-3.5 h-3.5" aria-hidden="true" /> Escalate
-                    </button>
-                  )}
-                  {canManage && (
-                    <button type="button" onClick={() => setPanel(panel === 'assign' ? null : 'assign')} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                      <UserCog className="w-3.5 h-3.5" aria-hidden="true" /> Reassign
-                    </button>
-                  )}
-                </>
-              ) : (
-                <button
-                  type="button"
-                  disabled={busy || (ticket.status === 'CLOSED' && !canManage)}
-                  onClick={() => void run(() => ticketApi.update(ticket.id, { status: 'OPEN', note: 'Reopened' }), 'Ticket reopened.')}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Reopen
-                </button>
-              )}
-            </div>
-
-            {panel === 'status' && (
-              <form
-                className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2.5"
-                onSubmit={e => {
-                  e.preventDefault();
-                  void run(() => ticketApi.update(ticket.id, { status, note, resolution }), 'Status saved.');
-                }}
-              >
-                <FormField label="Status" htmlFor="ti-status">
-                  <select id="ti-status" value={status} onChange={e => setStatus(e.target.value as TicketStatus)} className={inputClass}>
-                    {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[])
-                      .filter(s => s !== 'ESCALATED' && (s !== 'CLOSED' || canManage))
-                      .map(s => (
-                        <option key={s} value={s}>
-                          {TICKET_STATUS_LABELS[s]}
-                        </option>
-                      ))}
-                  </select>
-                </FormField>
-                {(status === 'RESOLVED' || status === 'CLOSED') && (
-                  <FormField label="Resolution notes" htmlFor="ti-res" required={!ticket.resolutionNotes}>
-                    <textarea id="ti-res" rows={2} value={resolution} onChange={e => setResolution(e.target.value)} maxLength={4000} className={inputClass} placeholder="How was it resolved?" />
-                  </FormField>
-                )}
-                <FormField label="Internal note (optional)" htmlFor="ti-note">
-                  <textarea id="ti-note" rows={2} value={note} onChange={e => setNote(e.target.value)} maxLength={4000} className={inputClass} />
-                </FormField>
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50">
-                    {busy ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {panel === 'escalate' && nextLevel && (
-              <form
-                className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 space-y-2.5"
-                onSubmit={e => {
-                  e.preventDefault();
-                  if (!note.trim()) return setError('Give the reason for escalating.');
-                  void run(() => ticketApi.escalate(ticket.id, note.trim()), `Escalated to the ${TICKET_LEVEL_LABELS[nextLevel]}.`);
-                }}
-              >
-                <FormField label={`Reason for escalating to the ${TICKET_LEVEL_LABELS[nextLevel]}`} htmlFor="ti-esc" required>
-                  <textarea id="ti-esc" rows={2} value={note} onChange={e => setNote(e.target.value)} maxLength={4000} className={inputClass} />
-                </FormField>
-                <p className="text-[11px] text-slate-500">The Relationship Manager stays on the ticket and keeps getting updates.</p>
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy} className="px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold disabled:opacity-50">
-                    {busy ? 'Escalating…' : 'Escalate'}
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {panel === 'assign' && canManage && (
-              <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 space-y-2">
-                <select value={assignee} onChange={e => setAssignee(e.target.value)} aria-label="Assign ticket to" className={inputClass}>
-                  <option value="">Choose a team member</option>
-                  {teamPeople
-                    .filter(p => p.id !== ticket.assigneeId)
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.fullName}
-                      </option>
-                    ))}
-                </select>
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !assignee}
-                    onClick={() => void run(() => ticketApi.assign(ticket.id, assignee), 'Ticket reassigned.')}
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold disabled:opacity-40"
-                  >
-                    Assign
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {error && (
-              <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" role="alert">
-                {error}
-              </p>
-            )}
-            {done && (
-              <p className="text-xs text-emerald-700" role="status">
-                {done}
-              </p>
-            )}
-          </section>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// The workspace: inbox | conversation | details (collapses on small screens)
+// The workspace: inbox | selected ticket (collapses to one panel on small screens)
 // ---------------------------------------------------------------------------
 export const TicketWorkspace: React.FC<{
   data: TicketData;
   people: Person[];
+  teams?: TeamRef[];
   manager: boolean;
+  /** The page shows a summary strip above the workspace, so it gets a little less height. */
+  compactTop?: boolean;
   onOpenCustomer?: (customerId: string) => void;
-}> = ({ data, people, manager, onOpenCustomer }) => {
-  const { profile } = useAuth();
+}> = ({ data, people, teams, manager, compactTop, onOpenCustomer }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [infoOpen, setInfoOpen] = useState(false);
   const ticket = data.tickets.find(t => t.id === selectedId) || null;
-  const managerRole = profile?.role === 'TEAM_HEAD' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'SUPER_ADMIN';
-  const canAct = !!ticket && (managerRole || ticket.assigneeId === profile?.id || ticket.escalatedTo === profile?.id);
-
   return (
-    <div className="relative bg-white rounded-2xl border border-slate-200/80 overflow-hidden h-[calc(100vh-11rem)] min-h-[520px] grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)_300px]">
-      <div className={`${ticket ? 'hidden lg:flex' : 'flex'} flex-col min-h-0 border-r border-slate-100`}>
-        <TicketInbox data={data} people={people} manager={manager} selectedId={selectedId} onSelect={id => { setSelectedId(id); setInfoOpen(false); }} />
+    <div
+      className={`bg-white overflow-hidden grid grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[380px_minmax(0,1fr)] lg:rounded-2xl lg:border lg:border-slate-200/80 lg:min-h-[560px] ${
+        compactTop ? 'lg:h-[calc(100vh-15rem)]' : 'lg:h-[calc(100vh-11rem)]'
+      } ${
+        // on a phone an open conversation takes the whole screen (Back returns to the list)
+        ticket ? 'fixed inset-0 z-[60] lg:static lg:z-auto' : 'rounded-2xl border border-slate-200/80 h-[calc(100vh-14rem)] min-h-[420px]'
+      }`}
+    >
+      <div className={`${ticket ? 'hidden lg:flex' : 'flex'} flex-col min-h-0 border-r border-slate-200`}>
+        <TicketInbox data={data} people={people} teams={teams} manager={manager} selectedId={selectedId} onSelect={setSelectedId} />
       </div>
       <div className={`${ticket ? 'flex' : 'hidden lg:flex'} flex-col min-h-0`}>
         {ticket ? (
-          <TicketConversation ticket={ticket} data={data} people={people} canWrite={canAct} onBack={() => setSelectedId(null)} onToggleInfo={() => setInfoOpen(o => !o)} />
+          <TicketPane key={ticket.id} ticket={ticket} data={data} people={people} teams={teams} onBack={() => setSelectedId(null)} onOpenCustomer={onOpenCustomer} />
         ) : (
-          <div className="flex-1 flex items-center justify-center p-8 text-center">
+          <div className="flex-1 flex items-center justify-center p-8 text-center bg-[#e9efec]">
             <div>
               <p className="text-sm font-semibold text-slate-700">Select a ticket</p>
               <p className="text-xs text-slate-500 mt-1">The conversation with the customer opens here.</p>
@@ -997,14 +1174,6 @@ export const TicketWorkspace: React.FC<{
           </div>
         )}
       </div>
-      {ticket && (
-        <aside
-          className={`${infoOpen ? 'flex' : 'hidden'} xl:flex flex-col min-h-0 border-l border-slate-100 bg-white absolute inset-y-0 right-0 w-full sm:w-80 z-10 shadow-xl xl:static xl:w-auto xl:shadow-none`}
-          aria-label="Ticket details"
-        >
-          <TicketInfoPanel ticket={ticket} data={data} people={people} canAct={canAct} canManage={managerRole} onClose={() => setInfoOpen(false)} onOpenCustomer={onOpenCustomer} />
-        </aside>
-      )}
     </div>
   );
 };

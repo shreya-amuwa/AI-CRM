@@ -3,9 +3,9 @@ import type { Profile } from '../../shared/contracts';
 import { AuthUser, DepartmentId, UserSession, Department } from '../types/crm';
 import { sessionManager } from '../services/sessionManager';
 import { useDepartments } from './DepartmentContext';
-import { attendanceStore } from '../services/attendanceStore';
 import { getSupabase } from '../services/supabaseClient';
-import { meApi } from '../lib/api/endpoints';
+import { hrApi, meApi } from '../lib/api/endpoints';
+import { officeToday } from '../lib/officeTime';
 import { errorMessage } from '../lib/api/client';
 import { toAuthUser } from '../lib/auth/roleMapping';
 import { purgeInsecureLegacyKeys } from '../lib/legacyStorage';
@@ -108,6 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   /** Load the trusted profile. Non-active accounts are signed out with a notice. */
+  const attendanceRecordedFor = useRef<string | null>(null);
   const loadProfile = useCallback(async (): Promise<AuthResult & { profile?: Profile }> => {
     try {
       const me = await meApi.get();
@@ -119,6 +120,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { ok: false, message };
       }
       loadedUserId.current = me.id;
+      // The first CRM sign-in / app opening of the office day is the employee's RM login time (recorded once a day).
+      const dayKey = `${me.id}:${officeToday()}`;
+      if (attendanceRecordedFor.current !== dayKey) {
+        attendanceRecordedFor.current = dayKey;
+        void hrApi.recordRmLogin().catch(() => { attendanceRecordedFor.current = null; });
+      }
       setProfile(me);
       setUser(toAuthUser(me));
       setAccountNotice(null);
@@ -196,20 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { ok: false, message: /confirm/i.test(error.message) ? 'Please confirm your e-mail address first.' : 'Invalid email or password.' };
     }
     if (await sendClientToDashboard()) return { ok: true };
-    const { profile: me, ...result } = await loadProfile();
-    if (me) {
-      // TODO(db-migration): HR attendance is still a browser-local register.
-      attendanceStore.recordMemberLogin({
-        empId: me.id,
-        name: me.fullName,
-        email: me.email,
-        role: me.position || me.role.replace('_', ' '),
-        department: me.department?.name || 'Amuwa Corporation',
-        avatar: me.fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
-        authMethod: 'Supabase Auth (Email & Password)',
-        device: 'CRM Web Client'
-      });
-    }
+    const { profile: _me, ...result } = await loadProfile();
     return result;
   };
 

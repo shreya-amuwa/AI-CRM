@@ -5,6 +5,8 @@ import { sessionManager } from '../../services/sessionManager';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { ClientNotices } from '../notices/ClientNotices';
 import { Dialog } from '../team-member/pipeline/shared';
+import { LeaveCenter } from '../leave/LeaveCenter';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
@@ -72,9 +74,12 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
               onClick={() => setNoticesOpen(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              <Megaphone className="w-3.5 h-3.5 text-indigo-600" aria-hidden="true" /> Client notices
+              <Megaphone className="w-3.5 h-3.5 text-indigo-600" aria-hidden="true" /> <span className="hidden sm:inline">Client notices</span><span className="sr-only sm:hidden">Client notices</span>
             </button>
           )}
+
+          <LeaveCenter />
+          <NotificationBell />
 
           {/* User Profile & Logout */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200">

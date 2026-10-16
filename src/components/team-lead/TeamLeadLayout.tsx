@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type TeamLeadNav =
   | 'overview'
@@ -147,6 +148,8 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
               <span>Distribute {unassignedCount} Leads</span>
             </button>
           )}
+
+          <LeaveCenter />
 
           {/* Notifications Bell */}
           <div className="relative">

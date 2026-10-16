@@ -3,6 +3,11 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  AttendanceDay,
+  LeaveMonthlySummary,
+  LeaveRequest,
+  LeaveReview,
+  PersonalDetails,
   AccountsPlans,
   ConsultantOpenServiceRequest,
   ConsultantServiceRequest,
@@ -70,7 +75,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -336,7 +341,7 @@ export const usersApi = {
   list: (q: { page?: number; pageSize?: number; status?: string; role?: Role; departmentId?: string; teamId?: string; division?: TeamDivision; search?: string } = {}) =>
     api.get<Paginated<Profile>>('/users', { ...q }),
   get: (id: string) => api.get<Profile>(`/users/${id}`),
-  create: (body: { email: string; fullName: string; password: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string | null }) =>
+  create: (body: { email: string; fullName: string; password: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string | null; technicalConsultant?: boolean; details?: MemberDetailsInput }) =>
     api.post<Profile>('/users', body),
   assign: (id: string, body: { role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string }) => api.patch<Profile>(`/users/${id}`, body),
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
@@ -359,6 +364,21 @@ export const notificationsApi = {
   remove: (id: string) => api.delete<null>(`/notifications/${id}`),
   broadcast: (body: { title: string; body: string; priority?: NotificationPriority; departmentId?: string; division?: TeamDivision }) =>
     api.post<{ recipients: number }>('/announcements', body)
+};
+
+/** Attendance, employee details and the Department Head -> HR leave approval. */
+export const hrApi = {
+  recordRmLogin: () => api.post<null>('/attendance/rm-login'),
+  attendance: (date?: string) => api.get<AttendanceDay>('/hr/attendance', { date }),
+  manualPunch: (body: { profileId: string; kind: 'RM' | 'BIOMETRIC'; at: string }) => api.post<null>('/hr/attendance/punch', body),
+  personalDetails: () => api.get<PersonalDetails[]>('/hr/personal-details'),
+  myLeave: () => api.get<LeaveRequest[]>('/leave/mine'),
+  leaveToReview: () => api.get<LeaveReview>('/leave/review'),
+  submitLeave: (body: { leaveType: 'FULL_DAY' | 'HALF_DAY'; startDate: string; endDate?: string; halfDayShift?: 'MORNING' | 'AFTERNOON'; reason: string }) =>
+    api.post<LeaveRequest>('/leave', body),
+  decideAsDepartmentHead: (id: string, approve: boolean, note?: string) => api.post<LeaveRequest>(`/leave/${id}/department-head-decision`, { approve, note: note || undefined }),
+  decideAsHr: (id: string, approve: boolean, note?: string) => api.post<LeaveRequest>(`/leave/${id}/hr-decision`, { approve, note: note || undefined }),
+  monthlySummary: (month: string) => api.get<LeaveMonthlySummary>('/leave/monthly-summary', { month })
 };
 
 export const organizationApi = {

@@ -1,4 +1,5 @@
 import type { Role } from '../../shared/contracts.js';
+import type { MemberDetailsInput } from '../../shared/validation.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { AppError } from '../http/errors.js';
 
@@ -65,6 +66,23 @@ export class AuthAdminRepository {
       throw new AppError('INTERNAL', 'Could not create the client login.');
     }
     return data.user.id;
+  }
+
+  /** Joining date, date of birth, blood group, emergency contact and designation (not readable by ordinary users). */
+  async savePersonalDetails(userId: string, d: MemberDetailsInput): Promise<void> {
+    const { error } = await getServiceClient().from('employee_personal_details').upsert({
+      profile_id: userId,
+      designation: d.designation,
+      joining_date: d.joiningDate,
+      date_of_birth: d.dateOfBirth,
+      blood_group: d.bloodGroup,
+      emergency_contact: d.emergencyContact,
+      updated_at: new Date().toISOString()
+    });
+    if (error) {
+      console.error('[api] saving personal details failed', error.code);
+      throw new AppError('INTERNAL', 'Could not save the employee details.');
+    }
   }
 
   async deleteUser(userId: string): Promise<void> {

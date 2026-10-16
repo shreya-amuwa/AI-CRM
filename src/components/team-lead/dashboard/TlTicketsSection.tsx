@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { displayTicketNo } from '../../../lib/ticketFormat';
 import { Eye, RotateCcw, Search } from 'lucide-react';
 import { fmtWhen, TICKET_PRIORITY_LABELS, TICKET_STATUS_LABELS, type TicketPriority, type TicketStatus } from '../../../lib/support';
 import { rowOpen } from '../../../lib/rowClick';
@@ -148,7 +149,7 @@ export const TlTicketsSection: React.FC<{
                 return (
                   <tr key={t.id} {...rowOpen(() => onOpenTicket(t))} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/50 focus-visible:bg-blue-50/50 focus-visible:outline-none">
                     <td className={`px-5 py-3 ${urgent ? 'border-l-2 border-l-rose-300' : ''}`}>
-                      <div className="font-mono text-[11px] text-slate-400">{t.ticketNo}</div>
+                      <div className="font-mono text-[11px] text-slate-400">{displayTicketNo(t.ticketNo)}</div>
                       <div className="font-semibold text-slate-900">{t.subject}</div>
                       <div className="text-xs text-slate-500 md:hidden">{t.customerName}</div>
                     </td>
@@ -170,7 +171,7 @@ export const TlTicketsSection: React.FC<{
                         type="button"
                         onClick={() => onOpenTicket(t)}
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        aria-label={`Open ticket ${t.ticketNo}`}
+                        aria-label={`Open ticket ${displayTicketNo(t.ticketNo)}`}
                       >
                         <Eye className="w-3.5 h-3.5" aria-hidden="true" /> {t.manageable ? 'Open' : 'View'}
                       </button>

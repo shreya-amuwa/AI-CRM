@@ -16,6 +16,7 @@ import { TicketsPage } from '../support-member/TicketsPage';
 import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type SupportLeadPage = 'dashboard' | 'customers' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
 
@@ -50,7 +51,7 @@ const LeadTickets: React.FC = () => {
   if (customerId) {
     return <CustomerProfile customerId={customerId} tickets={tickets} tasks={tasks} invoices={invoices.invoices} people={tasks.people} onBack={() => setCustomerId(null)} />;
   }
-  return <TicketsPage mode="manager" data={tickets} people={tasks.people} onOpenCustomer={setCustomerId} />;
+  return <TicketsPage mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />;
 };
 
 /** Invoices of the Support team's customers (read-only) and the team's invoice requests. */
@@ -185,6 +186,7 @@ export const SupportLeadDashboard: React.FC = () => {
             {teamName ? ` · ${teamName}` : ''}
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
+            <LeaveCenter />
             <div className="relative" ref={bellRef}>
               <button
                 type="button"

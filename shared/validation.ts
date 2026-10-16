@@ -114,6 +114,38 @@ export const customerActivityCreateSchema = z
 // ---------------------------------------------------------------------------
 export const assignableRoleSchema = z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']);
 
+export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+export const DESIGNATIONS = ['Department Head', 'Team Lead', 'Team Member'] as const;
+
+/** A real calendar date (YYYY-MM-DD) as days since 1970, or null. */
+function dayNumber(v: string): number | null {
+  const t = Date.parse(`${v}T00:00:00Z`);
+  return Number.isNaN(t) || new Date(t).toISOString().slice(0, 10) !== v ? null : Math.floor(t / 86_400_000);
+}
+const today = () => Math.floor(Date.now() / 86_400_000);
+
+/** Employee details collected when a member is added (all required once sent). */
+export const memberDetailsSchema = z
+  .object({
+    designation: z.enum(DESIGNATIONS, { errorMap: () => ({ message: 'Choose a designation.' }) }),
+    joiningDate: isoDate.refine(v => {
+      const d = dayNumber(v);
+      return d !== null && d <= today() + 366 && d >= today() - 365 * 60;
+    }, 'Enter a valid joining date.'),
+    dateOfBirth: isoDate.refine(v => {
+      const d = dayNumber(v);
+      return d !== null && d <= today() - 365 * 14 && d >= today() - 365 * 100;
+    }, 'Enter a valid date of birth (age 14 to 100).'),
+    bloodGroup: z.enum(BLOOD_GROUPS, { errorMap: () => ({ message: 'Choose a blood group.' }) }),
+    emergencyContact: z
+      .string()
+      .trim()
+      .regex(/^\+?[0-9 ()-]{7,20}$/, 'Enter a valid emergency contact number.')
+      .refine(v => v.replace(/\D/g, '').length >= 10 && v.replace(/\D/g, '').length <= 15, 'Enter a valid emergency contact number (10 to 15 digits).')
+  })
+  .strict();
+export type MemberDetailsInput = z.infer<typeof memberDetailsSchema>;
+
 export const userCreateSchema = z
   .object({
     email: emailSchema,
@@ -124,7 +156,9 @@ export const userCreateSchema = z
     teamId: uuidSchema.optional(),
     position: optionalText(120),
     /** Team member of a support team who opens the Technical Consultant dashboard. */
-    technicalConsultant: z.boolean().optional()
+    technicalConsultant: z.boolean().optional(),
+    /** Joining date, date of birth, blood group, emergency contact, designation. */
+    details: memberDetailsSchema.optional()
   })
   .strict()
   .refine(u => (u.role === 'DEPARTMENT_HEAD' ? !!u.departmentId && !u.teamId : !!u.teamId), {
@@ -764,3 +798,35 @@ export const planRequestDecisionSchema = z
     renewsOn: isoDate.optional().nullable().transform(v => v || null)
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// HR: attendance and leave
+// ---------------------------------------------------------------------------
+export const attendanceQuerySchema = z.object({ date: isoDate.optional() }).strict();
+export const manualPunchSchema = z
+  .object({ profileId: uuidSchema, kind: z.enum(['RM', 'BIOMETRIC']), at: z.string().datetime({ offset: true, message: 'Enter a valid time.' }) })
+  .strict();
+/** A punch from the biometric device gateway. */
+export const biometricPunchSchema = z
+  .object({ email: emailSchema, punchedAt: z.string().datetime({ offset: true, message: 'punchedAt must be an ISO date-time with an offset.' }) })
+  .strict();
+
+export const leaveSubmitSchema = z
+  .object({
+    leaveType: z.enum(['FULL_DAY', 'HALF_DAY']),
+    startDate: isoDate,
+    endDate: isoDate.optional(),
+    halfDayShift: z.enum(['MORNING', 'AFTERNOON']).optional(),
+    reason: trimmed(1000).min(3, 'Enter the reason for the leave.')
+  })
+  .strict()
+  .refine(v => dayNumber(v.startDate) !== null && (!v.endDate || dayNumber(v.endDate) !== null), { message: 'Enter valid dates.', path: ['startDate'] })
+  .refine(v => v.leaveType !== 'HALF_DAY' || !!v.halfDayShift, { message: 'Choose the morning or the afternoon for a half day.', path: ['halfDayShift'] })
+  .refine(v => !v.endDate || v.endDate >= v.startDate, { message: 'The end date cannot be before the start date.', path: ['endDate'] });
+export type LeaveSubmitInput = z.infer<typeof leaveSubmitSchema>;
+
+export const leaveDecisionSchema = z
+  .object({ approve: z.boolean(), note: optionalText(1000) })
+  .strict()
+  .refine(v => v.approve || (!!v.note && v.note.length >= 3), { message: 'Give a reason for rejecting the request.', path: ['note'] });
+export const leaveMonthQuerySchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM.').optional() }).strict();

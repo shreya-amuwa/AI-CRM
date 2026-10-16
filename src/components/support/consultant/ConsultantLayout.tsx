@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, HelpCircle, LogOut, Menu, PackagePlus, UserPlus, Users, X } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
 import { AmuwaLogo } from '../../common/AmuwaLogo';
+import { LeaveCenter } from '../../leave/LeaveCenter';
 
 export type ConsultantPage = 'customers' | 'addons' | 'onboarding' | 'notifications';
 
@@ -103,7 +104,10 @@ export const ConsultantLayout: React.FC<{
           <button type="button" onClick={() => setOpen(true)} className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100" aria-label="Open menu" aria-expanded={open}>
             <Menu className="w-5 h-5" />
           </button>
-          <div className="ml-auto pl-4 border-l border-slate-200 text-left">
+          <div className="ml-auto flex items-center gap-1 mr-3">
+            <LeaveCenter />
+          </div>
+          <div className="pl-4 border-l border-slate-200 text-left">
             <div className="text-sm font-bold text-slate-900 leading-none">{userName}</div>
             <div className="text-xs text-slate-500 mt-1">Technical Consultant</div>
           </div>

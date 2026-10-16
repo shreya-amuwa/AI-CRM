@@ -137,7 +137,7 @@ export const SupportDeskPage: React.FC = () => {
         </div>
       </div>
 
-      <TicketsPage mode="manager" data={tickets} people={tasks.people} onOpenCustomer={setCustomerId} />
+      <TicketsPage mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />
       <InvoiceRequests canRequest={false} onOpenCustomer={setCustomerId} />
     </div>
   );

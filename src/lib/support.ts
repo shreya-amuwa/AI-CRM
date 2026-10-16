@@ -425,7 +425,7 @@ export interface TicketUpdateRow {
   id: string;
   ticketId: string;
   authorId: string | null;
-  kind: 'CREATED' | 'STATUS_CHANGED' | 'ASSIGNED' | 'ESCALATED' | 'NOTE' | 'CLIENT_REPLY';
+  kind: 'CREATED' | 'STATUS_CHANGED' | 'ASSIGNED' | 'ESCALATED' | 'NOTE' | 'CLIENT_REPLY' | 'PRIORITY_CHANGED';
   /** A note the customer can read in their dashboard (a reply to them), or the customer's own reply. */
   clientVisible: boolean;
   fromStatus: TicketStatus | null;
@@ -594,6 +594,8 @@ export const ticketApi = {
   send: (ticketId: string, message: string, internal: boolean, clientMsgId: string) =>
     rpc<unknown>('send_ticket_message', { p_ticket: ticketId, p_message: message, p_internal: internal, p_client_msg_id: clientMsgId }),
   markRead: (ticketId: string) => rpc<string>('mark_support_ticket_read', { p_ticket: ticketId }),
+  /** Change the priority from the ticket header (the handlers, the Team Lead, the Department Head, the Super Admin). */
+  setPriority: (ticketId: string, priority: TicketPriority) => rpc<unknown>('set_ticket_priority', { p_ticket: ticketId, p_priority: priority }),
   /** Hand the ticket to the next level (Team Lead, then Department Head). The RM stays assigned. */
   escalate: (ticketId: string, note?: string) => rpc<unknown>('escalate_support_ticket', { p_ticket: ticketId, p_note: note || null })
 };
