@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { displayTicketNo } from '../../../lib/ticketFormat';
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, Headset, Plus, UserCheck, Users, UserRound } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { customerApi, fmtWhen, useSupportInvoices, useTickets } from '../../../lib/support';
@@ -334,7 +335,7 @@ const Attention: React.FC<{ d: TlDashboard; onDecide: () => void; onOpenCustomer
                   {t.subject}
                 </span>
                 <span className="block text-[11px] text-slate-500">
-                  {t.ticketNo} · {t.customerName}
+                  {displayTicketNo(t.ticketNo)} · {t.customerName}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
@@ -433,14 +434,14 @@ const TicketModal: React.FC<{ ticket: TlTicket; people: Person[]; onClose: () =>
 
   if (!state) {
     return (
-      <Modal title={`${ticket.ticketNo} · ${ticket.subject}`} onClose={onClose} wide>
+      <Modal title={`${displayTicketNo(ticket.ticketNo)} · ${ticket.subject}`} onClose={onClose} wide>
         <Loading label="Loading ticket…" />
       </Modal>
     );
   }
   if (!state.data) {
     return (
-      <Modal title={`${ticket.ticketNo} · ${ticket.subject}`} onClose={onClose} wide>
+      <Modal title={`${displayTicketNo(ticket.ticketNo)} · ${ticket.subject}`} onClose={onClose} wide>
         <ErrorBanner message={state.error || 'This ticket is no longer available.'} onRetry={() => void load()} />
       </Modal>
     );

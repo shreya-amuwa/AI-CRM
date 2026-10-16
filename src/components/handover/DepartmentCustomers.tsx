@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { displayTicketNo } from '../../lib/ticketFormat';
 import { Search, Users } from 'lucide-react';
 import { getSupabase } from '../../services/supabaseClient';
 import { cleanDbError, fmtWhen, isTicketOpen, TICKET_STATUS_LABELS, useRealtime, type TicketStatus } from '../../lib/support';
@@ -231,7 +232,7 @@ const CustomerDialog: React.FC<{ customer: DirectoryItem; onClose: () => void }>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-slate-900 truncate">{t.subject}</div>
                   <div className="text-[11px] text-slate-500">
-                    <span className="font-mono">{t.ticketNo}</span> · {t.raisedByClient ? 'Raised by the client' : 'Raised by staff'} · {fmtWhen(t.createdAt)}
+                    <span className="font-mono">{displayTicketNo(t.ticketNo)}</span> · {t.raisedByClient ? 'Raised by the client' : 'Raised by staff'} · {fmtWhen(t.createdAt)}
                     {t.serviceName ? ` · ${t.serviceName}` : ''}
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { displayTicketNo } from '../lib/ticketFormat';
 import { Bell, CalendarClock, CreditCard, FileText, LifeBuoy, Package, RefreshCw } from 'lucide-react';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
@@ -110,7 +111,7 @@ export const Overview: React.FC = () => {
               <div className="cd-list">
                 {list.slice(0, 3).map(t => (
                   <div className="cd-li" key={t.id} style={{ cursor: 'pointer' }} onClick={() => go(dashboardPath('tickets', `/${t.id}`))}>
-                    <div className="grow"><p style={{ fontWeight: 600 }} className="cd-ellipsis">{t.subject}</p><p className="cd-small cd-muted">{t.ticketNo} · {fmtDate(t.updatedAt)}</p></div>
+                    <div className="grow"><p style={{ fontWeight: 600 }} className="cd-ellipsis">{t.subject}</p><p className="cd-small cd-muted">{displayTicketNo(t.ticketNo)} · {fmtDate(t.updatedAt)}</p></div>
                     <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
                   </div>
                 ))}

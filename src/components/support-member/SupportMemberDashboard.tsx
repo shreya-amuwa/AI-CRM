@@ -261,7 +261,7 @@ export const SupportMemberDashboard: React.FC = () => {
               }}
             />
           ) : page === 'tickets' ? (
-            <TicketsPage mode="member" data={tickets} people={tasks.people} onOpenCustomer={openCustomer} />
+            <TicketsPage mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
           ) : page === 'notifications' ? (
             <NotificationsPage />
           ) : (

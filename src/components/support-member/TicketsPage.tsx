@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Settings2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import type { Person } from '../../lib/workTasks';
+import type { Person, TeamRef } from '../../lib/workTasks';
 import {
   fmtWhen,
   isAwaitingReply,
@@ -18,19 +18,21 @@ import {
   type TicketPriority,
   type TicketSla
 } from '../../lib/support';
-import { ErrorBanner, FormField, inputClass, KpiCard, Loading, Modal, PageHeader } from './SupportParts';
-import { personName, TicketConversation, TicketInfoPanel, TicketWorkspace } from './TicketChat';
+import { ErrorBanner, FormField, inputClass, Loading, Modal, PageHeader } from './SupportParts';
+import { personName, TicketPane, TicketWorkspace } from './TicketChat';
 
 interface TicketsPageProps {
   /** member: own tickets; manager: the team's / department's tickets (team lead, department head). */
   mode: 'member' | 'manager';
   data: TicketData;
   people: Person[];
+  /** Team names for the ticket list and header (optional). */
+  teams?: TeamRef[];
   onOpenCustomer?: (customerId: string) => void;
 }
 
 /** Customer tickets as conversations: inbox, chat and details. Managers also get counts and the team's workload. */
-export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, onOpenCustomer }) => {
+export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, teams, onOpenCustomer }) => {
   const { profile } = useAuth();
   const [creating, setCreating] = useState(false);
   const [slaOpen, setSlaOpen] = useState(false);
@@ -83,17 +85,25 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
       {data.error && <ErrorBanner message={data.error} onRetry={() => void data.reload()} />}
 
       {mode === 'manager' && (
-        <div className="hidden md:grid grid-cols-3 lg:grid-cols-6 gap-3">
-          <KpiCard label="Open" value={count(t => isTicketOpen(t.status))} tone="text-blue-700" hint={`${count(isAwaitingReply)} waiting for our reply`} />
-          <KpiCard label="In progress" value={count(t => t.status === 'IN_PROGRESS')} tone="text-indigo-700" />
-          <KpiCard label="Pending customer" value={count(t => t.status === 'WAITING_CUSTOMER')} tone="text-amber-700" />
-          <KpiCard label="Escalated" value={count(t => isTicketOpen(t.status) && (t.status === 'ESCALATED' || t.escalationLevel !== 'RM'))} tone="text-rose-700" />
-          <KpiCard label="Overdue (SLA)" value={count(t => isTicketOverdue(t))} tone="text-rose-700" />
-          <KpiCard label="Resolved / closed" value={count(t => !isTicketOpen(t.status))} tone="text-emerald-700" />
-        </div>
+        <dl className="hidden md:flex flex-wrap items-center gap-x-6 gap-y-1 px-4 py-2.5 bg-white rounded-xl border border-slate-200/80 text-xs" aria-label="Ticket summary">
+          {[
+            ['Open', count(t => isTicketOpen(t.status)), 'text-blue-700', `${count(isAwaitingReply)} waiting for our reply`],
+            ['In progress', count(t => t.status === 'IN_PROGRESS'), 'text-indigo-700', ''],
+            ['Pending customer', count(t => t.status === 'WAITING_CUSTOMER'), 'text-amber-700', ''],
+            ['Escalated', count(t => isTicketOpen(t.status) && (t.status === 'ESCALATED' || t.escalationLevel !== 'RM')), 'text-rose-700', ''],
+            ['Overdue (SLA)', count(t => isTicketOverdue(t)), 'text-rose-700', ''],
+            ['Resolved / closed', count(t => !isTicketOpen(t.status)), 'text-emerald-700', '']
+          ].map(([label, value, tone, hint]) => (
+            <div key={label as string} className="flex items-baseline gap-1.5">
+              <dt className="text-slate-500">{label}</dt>
+              <dd className={`text-base font-bold ${tone}`}>{value}</dd>
+              {hint ? <span className="text-slate-400">({hint})</span> : null}
+            </div>
+          ))}
+        </dl>
       )}
 
-      <TicketWorkspace data={data} people={people} manager={mode === 'manager'} onOpenCustomer={onOpenCustomer} />
+      <TicketWorkspace data={data} people={people} teams={teams} manager={mode === 'manager'} compactTop={mode === 'manager'} onOpenCustomer={onOpenCustomer} />
 
       {mode === 'manager' && byMember.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200/80 p-5">
@@ -286,20 +296,18 @@ export const NewTicketModal: React.FC<{
   );
 };
 
-/** One ticket's conversation and details in a dialog (used where a ticket opens from another list). */
+/** One ticket's conversation and controls in a dialog (used where a ticket opens from another list). */
 export const TicketDetail: React.FC<{
   ticket: SupportTicket;
   data: TicketData;
   people: Person[];
-  manager: boolean;
+  teams?: TeamRef[];
+  manager?: boolean;
   onClose: () => void;
   onOpenCustomer?: (customerId: string) => void;
   /** View only (e.g. a team lead reading another team's ticket on one of their customers). */
   readOnly?: boolean;
-}> = ({ ticket, data, people, manager, onClose, onOpenCustomer, readOnly = false }) => {
-  const { profile } = useAuth();
-  const managerRole = profile?.role === 'TEAM_HEAD' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'SUPER_ADMIN';
-  const canAct = !readOnly && (manager || managerRole || ticket.assigneeId === profile?.id || ticket.escalatedTo === profile?.id);
+}> = ({ ticket, data, people, teams, onClose, onOpenCustomer, readOnly = false }) => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -308,16 +316,11 @@ export const TicketDetail: React.FC<{
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-label={`${ticket.ticketNo} ${ticket.subject}`}>
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative bg-white sm:rounded-2xl shadow-2xl w-full max-w-5xl h-full sm:h-[85vh] grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px] overflow-hidden">
+      <div className="relative bg-white sm:rounded-2xl shadow-2xl w-full max-w-4xl h-full sm:h-[88vh] overflow-hidden flex flex-col">
         <button type="button" onClick={onClose} className="absolute top-2.5 right-3 z-20 text-slate-400 hover:text-slate-700 text-xl leading-none px-1" aria-label="Close">
           ×
         </button>
-        <div className="flex flex-col min-h-0">
-          <TicketConversation ticket={ticket} data={data} people={people} canWrite={canAct} />
-        </div>
-        <aside className="hidden md:flex flex-col min-h-0 border-l border-slate-100">
-          <TicketInfoPanel ticket={ticket} data={data} people={people} canAct={canAct} canManage={!readOnly && (manager || managerRole)} onOpenCustomer={onOpenCustomer} />
-        </aside>
+        <TicketPane ticket={ticket} data={data} people={people} teams={teams} readOnly={readOnly} inModal onOpenCustomer={onOpenCustomer} />
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { displayTicketNo } from '../../lib/ticketFormat';
 import { ArrowLeft, ClipboardList, Headset, MessageCircle, Pencil, Plus, Search, UserCheck, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { WorkTaskData } from '../../lib/workTasks';
@@ -497,7 +498,7 @@ export const CustomerProfile: React.FC<{
                   <div key={t.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-slate-800">
-                        <span className="font-mono text-xs text-blue-700 mr-2">{t.ticketNo}</span>
+                        <span className="font-mono text-xs text-blue-700 mr-2">{displayTicketNo(t.ticketNo)}</span>
                         {t.subject}
                       </div>
                       <div className="text-[11px] text-slate-400 mt-0.5">Updated {fmtWhen(t.updatedAt)}</div>

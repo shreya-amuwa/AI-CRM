@@ -17,7 +17,7 @@ export const SupportLeadTickets: React.FC<{ teamIds?: string[] }> = ({ teamIds }
   }
   return (
     <div className="space-y-6">
-      <TicketsPage mode="manager" data={tickets} people={tasks.people} onOpenCustomer={setCustomerId} />
+      <TicketsPage mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />
       <InvoiceRequests canRequest={false} onOpenCustomer={setCustomerId} />
     </div>
   );

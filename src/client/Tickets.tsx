@@ -4,18 +4,10 @@ import type { ClientTicket, ClientTicketMessage } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
+import { ago, displayTicketNo, newMessageKey, ticketNoSearchText } from '../lib/ticketFormat';
 import { dashboardPath, useShell } from './shell';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, LoadingBlock, Modal, PageHeader, TICKET_CATEGORIES, TICKET_LABEL, categoryLabel, fmtDateTime } from './ui';
 
-const newKey = () =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = (Math.random() * 16) | 0; return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16); });
-const timeShort = (iso: string) => {
-  const d = new Date(iso); const now = new Date();
-  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-};
 const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
 const dayLabel = (iso: string) => {
   const d = new Date(iso); const now = new Date(); const y = new Date(now); y.setDate(now.getDate() - 1);
@@ -26,7 +18,9 @@ const dayLabel = (iso: string) => {
 const PRIORITY: Record<string, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
 const isDone = (s: string) => s === 'RESOLVED' || s === 'CLOSED';
 
-type Filter = 'ALL' | 'UNREAD' | 'OPEN' | 'DONE';
+const inFilter = (f: Filter, t: ClientTicket) =>
+  f === 'ALL' ? true : f === 'UNREAD' ? t.unread > 0 : f === 'ESCALATED' ? t.escalated && !isDone(t.status) : f === 'DONE' ? isDone(t.status) : !isDone(t.status);
+type Filter = 'OPEN' | 'UNREAD' | 'ESCALATED' | 'DONE' | 'ALL';
 
 /** Tickets: the client's inbox on the left, the conversation of the open ticket on the right (one at a time on phones). */
 export const Tickets: React.FC = () => {
@@ -36,14 +30,14 @@ export const Tickets: React.FC = () => {
   const services = useLoad(() => clientApi.services());
   useClientLive(q.reload);
   const [creating, setCreating] = useState(false);
-  const [filter, setFilter] = useState<Filter>('ALL');
+  const [filter, setFilter] = useState<Filter>('OPEN');
   const [search, setSearch] = useState('');
   const all = q.data ?? [];
   const list = useMemo(() => {
     const s = search.trim().toLowerCase();
     return all
-      .filter(t => filter === 'ALL' || (filter === 'UNREAD' ? t.unread > 0 : filter === 'OPEN' ? !isDone(t.status) : isDone(t.status)))
-      .filter(t => !s || [t.subject, t.ticketNo, t.lastMessage?.text ?? ''].some(v => v.toLowerCase().includes(s)))
+      .filter(t => inFilter(filter, t))
+      .filter(t => !s || ticketNoSearchText(t.ticketNo).includes(s) || [t.subject, t.lastMessage?.text ?? ''].some(v => v.toLowerCase().includes(s)))
       .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
   }, [all, filter, search]);
   const open = (id: string) => go(dashboardPath('tickets', `/${id}`));
@@ -71,9 +65,9 @@ export const Tickets: React.FC = () => {
           <div className="cd-tk-tools">
             <input type="search" className="cd-input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search your tickets" aria-label="Search your tickets" />
             <div className="cd-chips" role="group" aria-label="Filter tickets">
-              {([['ALL', 'All'], ['UNREAD', 'Unread'], ['OPEN', 'Open'], ['DONE', 'Resolved']] as const).map(([v, l]) => (
+              {([['OPEN', 'All open'], ['UNREAD', 'Unread'], ['ESCALATED', 'Escalated'], ['DONE', 'Resolved'], ['ALL', 'All']] as const).map(([v, l]) => (
                 <button key={v} className="cd-chip sm" aria-pressed={filter === v} onClick={() => setFilter(v)}>
-                  {l}{v === 'UNREAD' && all.some(t => t.unread > 0) ? ` (${all.filter(t => t.unread > 0).length})` : ''}
+                  {l} <span className="n">{all.filter(t => inFilter(v, t)).length}</span>
                 </button>
               ))}
             </div>
@@ -93,21 +87,33 @@ export const Tickets: React.FC = () => {
   );
 };
 
+/** Who is looking after the ticket, in the client's words. */
+const ownerLine = (t: ClientTicket) => {
+  if (isDone(t.status)) return t.relationshipManager ? `Handled by ${t.relationshipManager}` : 'Resolved';
+  if (t.handledBy === 'DEPARTMENT_HEAD') return 'Our Department Head is working on this';
+  if (t.handledBy === 'TEAM_LEAD') return 'Our Team Lead is working on this';
+  return t.relationshipManager ? `${t.relationshipManager} is working on this` : 'Our team will pick this up shortly';
+};
+const initialsOf = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('') || '?';
+
 const TicketRow: React.FC<{ t: ClientTicket; active: boolean; onOpen: () => void }> = ({ t, active, onOpen }) => (
   <li>
     <button className={`cd-tk-item ${active ? 'active' : ''} ${t.unread ? 'unread' : ''}`} onClick={onOpen} aria-current={active ? 'true' : undefined}>
       <span className="top">
-        <span className="subject">{t.subject}</span>
-        <span className="time">{timeShort(t.lastActivityAt)}</span>
+        <span className="id">{displayTicketNo(t.ticketNo)}</span>
+        <span className="time">{ago(t.lastActivityAt)}</span>
       </span>
+      <span className="subject">{t.subject}</span>
       <span className="preview">
         <span>{t.lastMessage ? `${t.lastMessage.from === 'CLIENT' ? 'You: ' : ''}${t.lastMessage.text}` : t.description}</span>
         {t.unread > 0 && <span className="count" aria-label={`${t.unread} unread`}>{t.unread}</span>}
       </span>
-      <span className="meta">
+      <span className="badges">
         <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
-        <span className="cd-small cd-muted">{t.ticketNo}</span>
+        <span className="cd-pill">{PRIORITY[t.priority] ?? t.priority}</span>
+        <span className="cd-pill">{categoryLabel(t.category)}</span>
       </span>
+      <span className="owner"><span className="av" aria-hidden="true">{initialsOf(t.relationshipManager ?? 'A')}</span>{ownerLine(t)}</span>
     </button>
   </li>
 );
@@ -148,7 +154,7 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
   const send = () => {
     const body = text.trim();
     if (!body) return;
-    const p: Pending = { key: newKey(), text: body, state: 'sending' };
+    const p: Pending = { key: newMessageKey(), text: body, state: 'sending' };
     setPending(l => [...l, p]); setText(''); atBottom.current = true;
     void deliver(p);
   };
@@ -159,20 +165,38 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
   const closed = t.status === 'CLOSED';
   const level = t.handledBy === 'DEPARTMENT_HEAD' ? 2 : t.handledBy === 'TEAM_LEAD' ? 1 : 0;
   let day = '';
+  const lastFromClient = t.lastMessage?.from === 'CLIENT';
+  const banner: { tone: 'info' | 'attention' | 'success'; text: string } = isDone(t.status)
+    ? { tone: 'success', text: t.resolution ? `Resolved: ${t.resolution}` : 'This ticket is resolved. Write below if it is not solved and we will reopen it.' }
+    : t.status === 'WAITING_CUSTOMER'
+      ? { tone: 'attention', text: 'We are waiting for your reply.' }
+      : t.escalated
+        ? { tone: 'info', text: `Escalated: ${t.handledBy === 'DEPARTMENT_HEAD' ? 'our Department Head' : 'our Team Lead'} is now looking after it${t.relationshipManager ? `, and ${t.relationshipManager} stays informed` : ''}.` }
+        : t.relationshipManager
+          ? { tone: 'info', text: lastFromClient ? `Waiting for ${t.relationshipManager} to respond.` : `${t.relationshipManager} is looking after your ticket.` }
+          : { tone: 'info', text: 'Our support team will pick this up shortly.' };
   return (
     <div className="cd-chat">
       <header className="cd-chat-head">
         <button className="cd-link cd-tk-back" onClick={onBack} aria-label="All tickets"><ArrowLeft size={16} /></button>
         <div className="cd-chat-titles">
-          <p className="cd-small cd-muted">{t.ticketNo} · {categoryLabel(t.category)}{t.serviceName ? ` · ${t.serviceName}` : ''}</p>
-          <h2 className="cd-chat-title">{t.subject}</h2>
-          <p className="cd-small cd-muted">{t.relationshipManager ? `Your Relationship Manager: ${t.relationshipManager}` : 'Our support team will pick this up'}</p>
+          <div className="cd-chat-idrow">
+            <h2 className="cd-chat-id" title={t.ticketNo}>{displayTicketNo(t.ticketNo)}</h2>
+            <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
+          </div>
+          <p className="cd-chat-title">{t.subject}</p>
         </div>
-        <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
         <button className="cd-link" onClick={() => setInfo(v => !v)} aria-expanded={info} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           Details <ChevronDown size={14} style={{ transform: info ? 'rotate(180deg)' : undefined }} />
         </button>
       </header>
+      <div className={`cd-banner ${banner.tone} cd-chat-banner`} role="status"><span>{banner.text}</span></div>
+      <div className="cd-chat-chips">
+        <span className="cd-pill">{categoryLabel(t.category)}</span>
+        {t.serviceName && <span className="cd-pill">{t.serviceName}</span>}
+        <span className="cd-pill">{PRIORITY[t.priority] ?? t.priority} priority</span>
+        <span className="cd-pill">{t.relationshipManager ? `Your Relationship Manager: ${t.relationshipManager}` : 'Relationship Manager: being assigned'}</span>
+      </div>
       {info && (
         <div className="cd-chat-info">
           <dl>
@@ -189,9 +213,6 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
           )}
         </div>
       )}
-      {t.escalated && !isDone(t.status) && <div className="cd-banner info cd-chat-banner"><span>Escalated: {t.handledBy === 'DEPARTMENT_HEAD' ? 'our Department Head' : 'a Team Lead'} is now looking after it{t.relationshipManager ? `, and ${t.relationshipManager} stays informed` : ''}.</span></div>}
-      {t.resolution && <div className="cd-banner success cd-chat-banner"><span><b>Resolution:</b> {t.resolution}</span></div>}
-
       <div className="cd-chat-scroll" ref={scroller} aria-live="polite"
         onScroll={e => { const el = e.currentTarget; atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48; }}>
         {messages.map(m => {
@@ -201,11 +222,14 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
         })}
         {pending.map(p => (
           <div key={p.key} className={`cd-msg me ${p.state}`}>
-            <div className="bubble">{p.text}</div>
-            <div className="foot">
-              {p.state === 'sending' ? 'Sending…' : (
-                <span className="failed">{p.error || 'Not sent.'} <button className="cd-link" onClick={() => void deliver(p)}><RotateCcw size={12} /> Retry</button></span>
-              )}
+            <div className="bubble">
+              <div className="who">You</div>
+              <div className="txt">{p.text}</div>
+              <div className="foot">
+                {p.state === 'sending' ? 'Sending…' : (
+                  <span className="failed">{p.error || 'Not sent.'} <button className="cd-link" onClick={() => void deliver(p)}><RotateCcw size={12} /> Retry</button></span>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -218,7 +242,7 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
             aria-label={t.status === 'RESOLVED' ? 'Not solved? Write to reopen the ticket' : 'Your message'}
             placeholder={t.status === 'RESOLVED' ? 'Not solved? Write here to reopen the ticket' : 'Write a message'} />
-          <button type="submit" className="cd-btn cd-send" disabled={!text.trim()} aria-label="Send"><Send size={18} /></button>
+          <button type="submit" className="cd-btn cd-send" disabled={!text.trim()}><Send size={16} /> Send</button>
         </form>
       )}
     </div>
@@ -242,11 +266,13 @@ const Entry: React.FC<{ m: ClientTicketMessage }> = ({ m }) => {
   const mine = m.from === 'CLIENT';
   return (
     <div className={`cd-msg ${mine ? 'me' : 'them'}`}>
-      {!mine && <div className="who">{m.author ?? 'Amuwa Support'}{m.role ? <span> · {m.role}</span> : null}</div>}
-      <div className="bubble">{m.text}</div>
-      <div className="foot">
-        {clock(m.at)}
-        {mine && (m.seen ? <span className="seen"><CheckCheck size={13} /> Seen</span> : <span><Check size={13} /> Sent</span>)}
+      <div className="bubble">
+        <div className="who">{mine ? 'You' : m.author ?? 'Amuwa Support'}{!mine && m.role ? <span> · {m.role}</span> : null}</div>
+        <div className="txt">{m.text}</div>
+        <div className="foot">
+          {clock(m.at)}
+          {mine && (m.seen ? <span className="seen" aria-label="Seen"><CheckCheck size={14} /></span> : <span aria-label="Sent"><Check size={14} /></span>)}
+        </div>
       </div>
     </div>
   );

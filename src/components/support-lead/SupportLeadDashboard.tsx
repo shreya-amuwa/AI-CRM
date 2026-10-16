@@ -50,7 +50,7 @@ const LeadTickets: React.FC = () => {
   if (customerId) {
     return <CustomerProfile customerId={customerId} tickets={tickets} tasks={tasks} invoices={invoices.invoices} people={tasks.people} onBack={() => setCustomerId(null)} />;
   }
-  return <TicketsPage mode="manager" data={tickets} people={tasks.people} onOpenCustomer={setCustomerId} />;
+  return <TicketsPage mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />;
 };
 
 /** Invoices of the Support team's customers (read-only) and the team's invoice requests. */
