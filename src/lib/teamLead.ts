@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSupabase } from '../services/supabaseClient';
-import { cleanDbError, toTicket, useRealtime, type SupportTicket, type TicketData, type TicketPriority, type TicketStatus, type TicketUpdateRow } from './support';
+import { cleanDbError, toTicket, toUpdateRow, useRealtime, type SupportTicket, type TicketData, type TicketPriority, type TicketStatus, type TicketUpdateRow } from './support';
 
 /**
  * Team Leader dashboard data (migration 20261009100000_team_leader_dashboard.sql).
@@ -151,18 +151,7 @@ export const teamLeadApi = {
     if (!t.data) return null;
     return {
       ticket: toTicket(t.data, new Map([[t.data.customer_id, customer]])),
-      updates: (u.data || []).map((r: any) => ({
-        id: r.id,
-        ticketId: r.ticket_id,
-        authorId: r.author_id,
-        kind: r.kind,
-        clientVisible: !!r.client_visible || r.kind === 'CLIENT_REPLY',
-        fromStatus: r.from_status,
-        toStatus: r.to_status,
-        assigneeId: r.assignee_id,
-        note: r.note,
-        createdAt: r.created_at
-      }))
+      updates: (u.data || []).map(toUpdateRow)
     };
   }
 };
@@ -214,5 +203,5 @@ export function useTeamLeadDashboard(version: number) {
 
 /** A TicketData for one ticket, so the existing ticket detail can be reused. */
 export function singleTicketData(ticket: SupportTicket, updates: TicketUpdateRow[], reload: () => Promise<void>): TicketData {
-  return { tickets: [ticket], updates, loading: false, error: null, reload };
+  return { tickets: [ticket], updates, reads: new Map(), loading: false, error: null, reload };
 }

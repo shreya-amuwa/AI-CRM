@@ -1157,10 +1157,34 @@ export interface ClientTicket {
   /** Replies and updates the client has not opened yet. */
   unread: number;
   lastReplyAt: string | null;
+  /** The latest message of the conversation (internal staff notes are never part of it). */
+  lastMessage: { text: string; from: 'CLIENT' | 'STAFF'; at: string } | null;
+  lastActivityAt: string;
   createdAt: string;
   updatedAt: string;
 }
+/** One entry of a ticket conversation: a message, or a system event shown on the timeline. */
+export interface ClientTicketMessage {
+  id: string;
+  at: string;
+  kind: 'MESSAGE' | 'EVENT';
+  /** MESSAGE: who wrote it. */
+  from?: 'CLIENT' | 'STAFF';
+  text?: string | null;
+  /** Staff name (MESSAGE from STAFF), or the person an event names (ASSIGNED). */
+  author?: string | null;
+  /** Relationship Manager / Team Lead / Department Head / Support. */
+  role?: string | null;
+  /** The client's own messages: read by Support. */
+  seen?: boolean;
+  clientMsgId?: string | null;
+  event?: 'CREATED' | 'ASSIGNED' | 'ESCALATED' | 'STATUS' | 'REOPENED' | 'RESOLVED' | 'CLOSED';
+  status?: ClientTicketStatus | null;
+}
 export interface ClientTicketDetail extends ClientTicket {
+  messages: ClientTicketMessage[];
+  staffReadAt: string | null;
+  /** Older shape, kept for compatibility. */
   updates: { id: string; at: string; type: 'CLIENT' | 'SUPPORT' | 'STATUS'; status: ClientTicketStatus | null; message: string | null; author?: string | null }[];
 }
 export interface ClientNotification {

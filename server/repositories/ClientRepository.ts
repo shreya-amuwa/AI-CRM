@@ -55,6 +55,9 @@ export class ClientRepository {
     return this.rpc<ClientTicket>('client_create_ticket', { p_subject: i.subject, p_description: i.description, p_category: i.category, p_service: i.serviceCode });
   }
   replyTicket(id: string, message: string) { return this.rpc<ClientTicketDetail>('client_reply_ticket', { p_ticket: id, p_message: message }); }
+  sendTicketMessage(id: string, message: string, clientMsgId: string | null) {
+    return this.rpc<ClientTicketDetail>('client_send_ticket_message', { p_ticket: id, p_message: message, p_client_msg_id: clientMsgId });
+  }
   ticketSeen(id: string) { return this.rpc<number>('client_ticket_seen', { p_ticket: id }); }
 
   announcements() { return this.rpc<ClientAnnouncement[]>('client_announcements'); }

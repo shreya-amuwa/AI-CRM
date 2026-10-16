@@ -727,6 +727,13 @@ export const clientTicketCreateSchema = z
   })
   .strict();
 export const clientTicketReplySchema = z.object({ message: z.string().trim().min(1, 'Write your reply.').max(4000, 'The reply is too long.') }).strict();
+/** A chat message in a ticket. clientMsgId makes a retry / double click store the message once. */
+export const clientTicketMessageSchema = z
+  .object({
+    message: z.string().trim().min(1, 'Write your message.').max(4000, 'The message is too long.'),
+    clientMsgId: uuidSchema.optional().nullable().transform(v => v || null)
+  })
+  .strict();
 export const clientNotificationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   offset: z.coerce.number().int().min(0).default(0)
