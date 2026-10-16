@@ -62,7 +62,7 @@ export const TICKET_LABEL: Record<ClientTicketStatus, { label: string; tone: Ton
   OPEN: { label: 'Open', tone: 'attention' },
   IN_PROGRESS: { label: 'In progress', tone: 'info' },
   WAITING_CUSTOMER: { label: 'Waiting for you', tone: 'attention' },
-  ESCALATED: { label: 'In progress', tone: 'info' },
+  ESCALATED: { label: 'Escalated', tone: 'info' },
   RESOLVED: { label: 'Resolved', tone: 'success' },
   CLOSED: { label: 'Closed', tone: 'neutral' }
 };

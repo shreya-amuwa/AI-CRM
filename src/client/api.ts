@@ -22,6 +22,7 @@ export const clientApi = {
   createTicket: (input: { subject: string; description: string; category: string; serviceCode?: string | null }) =>
     api.post<ClientTicket>('/client/tickets', { ...input, serviceCode: input.serviceCode || undefined }),
   replyTicket: (id: string, message: string) => api.post<unknown>(`/client/tickets/${id}/replies`, { message }),
+  ticketSeen: (id: string) => api.post<{ marked: number }>(`/client/tickets/${id}/seen`, {}),
   announcements: () => api.get<ClientAnnouncement[]>('/client/announcements'),
   dismissAnnouncement: (id: string, occurrence: string) => api.post<null>(`/client/announcements/${id}/dismiss`, { occurrence }),
   notifications: (limit = 20, offset = 0) => api.get<ClientNotifications>('/client/notifications', { limit, offset }),

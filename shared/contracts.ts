@@ -1149,11 +1149,19 @@ export interface ClientTicket {
   serviceCode: string | null;
   serviceName: string | null;
   resolution: string | null;
+  /** The customer's Relationship Manager (the Team Member the ticket is assigned to). */
+  relationshipManager: string | null;
+  /** True once the ticket was escalated to a Team Lead / Department Head. */
+  escalated: boolean;
+  handledBy: 'RELATIONSHIP_MANAGER' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD';
+  /** Replies and updates the client has not opened yet. */
+  unread: number;
+  lastReplyAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 export interface ClientTicketDetail extends ClientTicket {
-  updates: { id: string; at: string; type: 'CLIENT' | 'SUPPORT' | 'STATUS'; status: ClientTicketStatus | null; message: string | null }[];
+  updates: { id: string; at: string; type: 'CLIENT' | 'SUPPORT' | 'STATUS'; status: ClientTicketStatus | null; message: string | null; author?: string | null }[];
 }
 export interface ClientNotification {
   id: string;

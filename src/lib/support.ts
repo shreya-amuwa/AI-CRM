@@ -362,6 +362,25 @@ export const TICKET_CATEGORY_LABELS: Record<TicketCategory, string> = {
 };
 export const isTicketOpen = (s: TicketStatus) => s !== 'RESOLVED' && s !== 'CLOSED';
 
+/** Who handles a ticket now: the customer's Relationship Manager, then the Team Lead, then the Department Head. */
+export type TicketLevel = 'RM' | 'TL' | 'DH';
+export const TICKET_LEVEL_LABELS: Record<TicketLevel, string> = { RM: 'Relationship Manager', TL: 'Team Lead', DH: 'Department Head' };
+/** The customer wrote last and has not had an answer yet. */
+export const isAwaitingReply = (t: SupportTicket) =>
+  isTicketOpen(t.status) && !!t.lastClientMessageAt && (!t.lastStaffReplyAt || t.lastClientMessageAt > t.lastStaffReplyAt);
+export const isTicketOverdue = (t: SupportTicket, now = Date.now()) => isTicketOpen(t.status) && !!t.slaDueAt && new Date(t.slaDueAt).getTime() <= now;
+/** "in 3h 10m" / "overdue by 25m" */
+export function slaText(due: string | null, now = Date.now()): string {
+  if (!due) return '-';
+  const diff = new Date(due).getTime() - now;
+  const mins = Math.max(1, Math.round(Math.abs(diff) / 60000));
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  const span = d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  return diff <= 0 ? `overdue by ${span}` : `in ${span}`;
+}
+
 export interface SupportTicket {
   id: string;
   ticketNo: string;
@@ -382,6 +401,15 @@ export interface SupportTicket {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** RM = with the assignee (the customer's Relationship Manager); TL / DH = escalated to escalatedTo. */
+  escalationLevel: TicketLevel;
+  escalatedTo: string | null;
+  /** When the current level must answer the customer (null: nobody is waiting). */
+  slaDueAt: string | null;
+  firstResponseAt: string | null;
+  lastClientMessageAt: string | null;
+  lastStaffReplyAt: string | null;
+  resolvedBy: string | null;
 }
 
 export interface TicketUpdateRow {
@@ -417,7 +445,14 @@ export const toTicket = (r: any, cust: Map<string, { name: string; code: string 
   escalatedAt: r.escalated_at,
   resolvedAt: r.resolved_at,
   createdAt: r.created_at,
-  updatedAt: r.updated_at
+  updatedAt: r.updated_at,
+  escalationLevel: r.escalation_level || 'RM',
+  escalatedTo: r.escalated_to ?? null,
+  slaDueAt: r.sla_due_at ?? null,
+  firstResponseAt: r.first_response_at ?? null,
+  lastClientMessageAt: r.last_client_message_at ?? null,
+  lastStaffReplyAt: r.last_staff_reply_at ?? null,
+  resolvedBy: r.resolved_by ?? null
 });
 
 export interface TicketData {
@@ -438,6 +473,9 @@ export function useTickets(teamIds?: string[]): TicketData {
 
   const reload = useCallback(async () => {
     try {
+      // Overdue tickets move up a level (RM -> Team Lead -> Department Head) before the list is read. The database
+      // also does this on its own schedule; this only makes a screen that opens exactly at the deadline current.
+      await db().rpc('escalate_overdue_tickets').then(() => undefined, () => undefined);
       // With teamIds (Super Admin / Department Head looking at one sub-department): only those teams' tickets.
       const none = ['00000000-0000-0000-0000-000000000000'];
       let tq = db().from('support_tickets').select('*').order('updated_at', { ascending: false }).limit(1000);
@@ -485,6 +523,16 @@ export function useTickets(teamIds?: string[]): TicketData {
   }, [reload]);
   useRealtime('support_tickets', () => void reload());
   useRealtime('support_ticket_updates', () => void reload());
+  // No timer: a tab that comes back into view catches up (SLA deadlines may have passed meanwhile).
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === 'visible' && void reload();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [reload]);
   return { tickets, updates, loading, error, reload };
 }
 
@@ -503,7 +551,21 @@ export const ticketApi = {
   /** A reply the customer reads in their own dashboard (internal notes stay internal). */
   replyToClient: (ticketId: string, message: string) => rpc<void>('reply_to_client_ticket', { p_ticket: ticketId, p_message: message }),
   assign: (ticketId: string, assigneeId: string, note?: string) =>
-    rpc<void>('assign_support_ticket', { p_ticket: ticketId, p_assignee: assigneeId, p_note: note || null })
+    rpc<void>('assign_support_ticket', { p_ticket: ticketId, p_assignee: assigneeId, p_note: note || null }),
+  /** Hand the ticket to the next level (Team Lead, then Department Head). The RM stays assigned. */
+  escalate: (ticketId: string, note?: string) => rpc<unknown>('escalate_support_ticket', { p_ticket: ticketId, p_note: note || null })
+};
+
+export interface TicketSla {
+  rmMinutes: number;
+  tlMinutes: number;
+  scope: 'DEFAULT' | 'DEPARTMENT';
+  canEdit: boolean;
+  updatedAt: string;
+}
+export const ticketSlaApi = {
+  get: () => rpc<TicketSla>('ticket_sla_settings', {}),
+  set: (rmMinutes: number, tlMinutes: number) => rpc<TicketSla>('set_ticket_sla', { p_rm_minutes: rmMinutes, p_tl_minutes: tlMinutes })
 };
 
 // ---------------------------------------------------------------------------

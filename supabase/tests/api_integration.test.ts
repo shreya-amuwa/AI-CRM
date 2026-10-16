@@ -1814,6 +1814,19 @@ provider.close();
   check(r.status === 201, 'client API: reply to own ticket', r);
   r = await api('cl1', 'GET', `/client/tickets/${ticketId}`);
   check(r.status === 200 && r.json.data.updates.some((u: any) => u.message === 'Still happening.'), 'client API: ticket history', r);
+  check(['RELATIONSHIP_MANAGER', 'TEAM_LEAD', 'DEPARTMENT_HEAD'].includes(r.json.data.handledBy) && typeof r.json.data.unread === 'number' && r.json.data.escalated === false,
+    'client API: the ticket says who handles it and whether it was escalated', r);
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/replies`, { message: 'Still happening.' });
+  r = await api('cl1', 'GET', `/client/tickets/${ticketId}`);
+  check(r.json.data.updates.filter((u: any) => u.message === 'Still happening.').length === 1, 'client API: the same reply sent twice is stored once', r);
+  r = await api('cl1', 'POST', '/client/tickets', { subject: 'Cannot log in', description: 'I get an error when I open the panel.', category: 'TECHNICAL' });
+  check(r.status === 201 && r.json.data.id === ticketId, 'client API: the same ticket submitted twice is created once', r);
+  r = await api('cl1', 'POST', `/client/tickets/${ticketId}/seen`, {});
+  check(r.status === 200 && typeof r.json.data.marked === 'number', 'client API: opening a ticket marks it read', r);
+  r = await api('cl2', 'POST', `/client/tickets/${ticketId}/seen`, {});
+  check(r.status === 404, 'client API: another client cannot mark it', r);
+  r = await api('cl1', 'POST', '/client/tickets/not-a-uuid/seen', {});
+  check(r.status === 422, 'client API: bad ticket id on seen', r);
 
   r = await api('cl1', 'GET', '/client/notifications');
   check(r.status === 200 && r.json.data.items.some((n: any) => n.type === 'SERVICE_REQUEST_SENT') && r.json.data.unread > 0, 'client API: notifications from real events', r);

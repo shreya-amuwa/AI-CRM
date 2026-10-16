@@ -60,6 +60,7 @@ export class ClientService {
   replyTicket(id: string, body: unknown) {
     return this.repo.replyTicket(parse(uuidSchema, id), parse(clientTicketReplySchema, body).message);
   }
+  async ticketSeen(id: string) { return { marked: await this.repo.ticketSeen(parse(uuidSchema, id)) }; }
 
   announcements() { return this.repo.announcements(); }
   async dismissAnnouncement(id: string, body: unknown) {

@@ -46,6 +46,7 @@ export const clientRoutes: ClientRouteDef[] = [
   { method: 'POST', path: '/tickets', handler: async c => ok(await c.services.client.createTicket(c.req.body), 201) },
   { method: 'GET', path: '/tickets/:id', handler: async c => ok(await c.services.client.ticket(c.params.id)) },
   { method: 'POST', path: '/tickets/:id/replies', handler: async c => ok(await c.services.client.replyTicket(c.params.id, c.req.body), 201) },
+  { method: 'POST', path: '/tickets/:id/seen', handler: async c => ok(await c.services.client.ticketSeen(c.params.id)) },
   { method: 'GET', path: '/announcements', handler: async c => ok(await c.services.client.announcements()) },
   { method: 'POST', path: '/announcements/:id/dismiss', handler: async c => ok(await c.services.client.dismissAnnouncement(c.params.id, c.req.body)) },
   { method: 'GET', path: '/notifications', handler: async c => ok(await c.services.client.notifications(c.req.query)) },
