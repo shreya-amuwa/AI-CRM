@@ -28,7 +28,7 @@ export class ClientService {
 
   me() { return this.repo.me(); }
   overview() { return this.repo.overview(); }
-  services() { return this.repo.services(); }
+  async services() { return (await this.repo.services()) ?? []; }
   catalog() { return this.repo.catalog(); }
   serviceRequests() { return this.repo.serviceRequests(); }
   requestService(body: unknown) {

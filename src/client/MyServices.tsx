@@ -15,7 +15,9 @@ export const MyServices: React.FC = () => {
       <PageHeader title="My Services" subtitle="The services Amuwa runs for you." />
       <Query
         q={q}
-        empty={d => d.length === 0 ? (
+        errorTitle="We could not load your services"
+        unavailableText="This is a problem on our side, not with your account or your services. Please try again in a moment. If it keeps happening, raise a ticket and our team will look into it."
+        empty={d => !Array.isArray(d) || d.length === 0 ? (
           <Card><EmptyState icon={<Package size={24} />} title="No services yet" text="Once your consultant sets up your services, they will appear here. You can also look at what else Amuwa offers."
             action={<Button small onClick={() => go(dashboardPath('explore'))}>Explore services</Button>} /></Card>
         ) : null}

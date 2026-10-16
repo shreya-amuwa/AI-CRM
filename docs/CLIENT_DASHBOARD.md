@@ -18,7 +18,10 @@ and DM Sans body, pill status badges), adapted to a desktop dashboard with a sli
    extra step), as simple cards (name, category, status, since / renews). **View details** shows start, activation, plan,
    valid-until and the details the team recorded (e.g. the WhatsApp API package shows a message-usage bar).
    `client_services()` does not depend on optional onboarding columns, so a database that is behind on migrations
-   still shows the services (migration `20261020000100_client_services_resilient.sql`).
+   still shows the services (migration `20261020000100_client_services_resilient.sql`). Migration
+   `20261023000100_client_services_contract.sql` also adds any column the function reads that an older migration
+   should have added, and reloads the API's schema cache (rerunnable). An empty list shows "No services yet"; a server
+   failure shows "We could not load your services" with **Try again** (no database details are shown).
 3. **Explore Services** - the company's service catalogue (`crm_services`) with price (when configured) and features,
    **View details** and **Add service**.
 4. **Monthly Plans** - current plan, price, features, start, next renewal, status, payment status, history, and the plans
