@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Eye, EyeOff, Lock, Mail, MessageCircle, Megaphone, Phone, QrCode } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, FileText, Layers, Lock, Mail, MessageCircle } from 'lucide-react';
 import { Button, Field } from './ui';
 import { useClientAuth } from './auth';
 
-const FLOATERS = [
-  { Icon: MessageCircle, color: '#1F7A45', left: '14%', top: '34%' }, { Icon: Megaphone, color: '#1F4E8C', left: '78%', top: '26%' },
-  { Icon: QrCode, color: '#A8480F', left: '22%', top: '72%' }, { Icon: Phone, color: '#5B3FA0', left: '70%', top: '70%' }
+const POINTS = [
+  { Icon: Layers, text: 'Your services, plan and renewal dates' },
+  { Icon: FileText, text: 'Every invoice, ready to download' },
+  { Icon: MessageCircle, text: 'Tickets answered by your own Team Member' }
 ];
 
 export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
@@ -27,24 +28,22 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
   return (
     <div className="cd-login">
-      <div className="cd-login-hero" aria-hidden={false}>
-        {[420, 300, 200].map((s, i) => <span key={s} className="ring" style={{ width: s, height: s, opacity: 0.5 + i * 0.25 }} />)}
-        {FLOATERS.map(({ Icon, color, left, top }, i) => (
-          <span key={i} aria-hidden style={{ position: 'absolute', left, top, width: 48, height: 48, borderRadius: 16, background: '#fff', display: 'grid', placeItems: 'center', color, boxShadow: '0 8px 20px rgba(0,0,0,.18)' }}>
-            <Icon size={22} />
-          </span>
-        ))}
-        <span style={{ alignSelf: 'flex-start', position: 'relative', background: '#fff', borderRadius: 18, padding: 8, display: 'inline-flex' }}><img src="/amuwa-logo.png" alt="Amuwa" style={{ height: 52, width: 52, objectFit: 'contain' }} /></span>
-        <div style={{ position: 'relative' }}>
-          <h1 style={{ fontSize: 34, lineHeight: 1.1, maxWidth: 420 }}>Everything about your Amuwa services, in one place.</h1>
-          <p className="muted" style={{ marginTop: 10, maxWidth: 420, color: 'var(--on-primary-subtle)' }}>Your services, plan, invoices and support, all in one place.</p>
+      <section className="cd-login-hero" aria-label="About the client dashboard">
+        <div className="cd-brand" style={{ padding: 0 }}>
+          <span className="cd-brand-tile"><img src="/amuwa-logo.png" alt="Amuwa Corporation logo" /></span>
+          <span><b>Amuwa</b><small>Client dashboard</small></span>
         </div>
-      </div>
+        <h2 style={{ marginTop: 'auto' }}>Everything you have with Amuwa, in one place.</h2>
+        <p className="cd-login-lead">Check your services, pay what’s due and talk to your Support team — without waiting on email.</p>
+        <ul className="cd-login-points">
+          {POINTS.map(({ Icon, text }) => <li key={text}><Icon size={20} aria-hidden />{text}</li>)}
+        </ul>
+      </section>
       <div className="cd-login-form">
         <form className="cd-login-card" onSubmit={submit} noValidate>
           <div>
-            <h2 style={{ fontSize: 28 }}>Welcome back</h2>
-            <p className="cd-sub">Sign in with the e-mail and password your Amuwa consultant gave you.</p>
+            <h1>Sign in</h1>
+            <p className="cd-sub">Use the e-mail your Technical Consultant registered for you.</p>
           </div>
           {(error || notice) && (
             <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>{error || notice}</span></div>
@@ -68,7 +67,7 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
             </div>
           </Field>
           <Button type="submit" loading={busy}>Sign in</Button>
-          <p className="cd-small cd-muted">Forgot your password? Ask your Amuwa Technical Consultant to reset it for you.</p>
+          <p className="cd-small cd-muted" style={{ textAlign: 'center' }}>Forgot your password? Your Technical Consultant can reset it for you.</p>
         </form>
       </div>
     </div>

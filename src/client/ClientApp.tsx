@@ -92,7 +92,7 @@ const Inner: React.FC = () => {
         <div className="cd-shell">
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={() => setNav(false)} />
           <aside className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
-            <div className="cd-brand"><img src="/amuwa-logo.png" alt="Amuwa" /></div>
+            <div className="cd-brand"><span className="cd-brand-tile"><img src="/amuwa-logo.png" alt="" /></span><span><b>Amuwa</b><small>Client dashboard</small></span></div>
             <nav className="cd-stack" style={{ gap: 2 }}>
               {SECTIONS.map(({ slug: s, label, Icon }) => (
                 <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
@@ -147,7 +147,7 @@ function greeting(): string {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-const FONTS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=DM+Sans:wght@400;500;600;700;800&display=swap';
+const FONTS = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap';
 
 export const ClientApp: React.FC = () => {
   useEffect(() => {
@@ -157,7 +157,7 @@ export const ClientApp: React.FC = () => {
     if (!link) { link = document.createElement('link'); link.id = 'cd-fonts'; link.rel = 'stylesheet'; link.href = FONTS; document.head.appendChild(link); }
     // the staff shell sets Tailwind colours on <body>; the client app paints its own page
     const prevBg = document.body.style.background;
-    document.body.style.background = 'var(--cd-body-bg, #f5f3ee)';
+    document.body.style.background = 'var(--cd-body-bg, #f2f0eb)';
     return () => { document.title = prevTitle; document.body.style.background = prevBg; };
   }, []);
   return <ClientAuthProvider><Inner /></ClientAuthProvider>;
