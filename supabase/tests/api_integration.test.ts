@@ -269,7 +269,24 @@ tokens.set('b', tokenFor(orphanId)); // second sales team member
 const GW = process.env.GATEWAY_URL!;
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 r = await api('a', 'GET', '/pipeline/services');
-check(r.status === 200 && r.json.data.length === 25 && r.json.data[0].category, 'service catalogue comes from the database', r);
+check(r.status === 200 && r.json.data.length === 31 && r.json.data[0].category, 'service catalogue comes from the database', r);
+{
+  const ds = r.json.data.filter((s: any) => s.category === 'Amuwa Design Studio');
+  check(ds.length === 6 && ds.map((s: any) => s.name).join('|') === 'Social Media Marketing|Google My Business Ranking|Meta Ads|AI Video Production|Yearly Creative Package|Graphic Design',
+    'the catalogue lists the six Amuwa Design Studio services', ds);
+  const meta = ds.find((s: any) => s.code === 'DS_META_ADS');
+  check(meta.requirements.length === 7 && meta.requirements.filter((q: any) => q.conditional).length === 2
+    && meta.requirements.some((q: any) => q.label === 'Creatives required?' && q.kind === 'YES_NO'), 'each service carries its own requirements (Meta Ads: creative fields are conditional)', meta);
+  const gd = ds.find((s: any) => s.code === 'DS_GRAPHIC_DESIGN');
+  check(gd.requirements.map((q: any) => q.label).join('|') === 'Business logo|Brand details|Business phone number|Business address', 'Graphic Design asks for logo, brand details, phone and address', gd);
+  const old = r.json.data.find((s: any) => s.code === 'META_ADS_MANAGEMENT');
+  check(old && old.name === 'Meta Ads Management' && old.category === 'Google & Social', 'the existing Meta Ads Management service is unchanged', old);
+  const dsLead = await api('a', 'POST', '/pipeline/leads', { name: 'Studio Lead', company: 'Studio Co', phone: '+91 98200 22222', leadSource: 'Instagram', services: ['DS_SOCIAL_MEDIA_MARKETING', 'AI_CALLING'] });
+  check(dsLead.status === 201 && [...dsLead.json.data.services].sort().join() === 'AI_CALLING,DS_SOCIAL_MEDIA_MARKETING', 'a lead saves Design Studio and other services together', dsLead);
+  const again = await api('a', 'GET', `/pipeline/customers/${dsLead.json.data.id}`);
+  check(again.status === 200 && again.json.data.services.includes('DS_SOCIAL_MEDIA_MARKETING'), 'and they are there when the record is opened again', again);
+  await db.query(`delete from public.customers where id = $1`, [dsLead.json.data.id]); // later checks count member A's leads
+}
 
 const leadBody = { name: 'Siddhesh', company: 'Galaxy Jewellers', phone: '+91 98200 11111', leadSource: 'Instagram', services: ['STARTER_PACKAGE', 'AI_CALLING'], expectedBudget: 35000 };
 r = await api('a', 'POST', '/pipeline/leads', { ...leadBody, services: [] });

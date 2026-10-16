@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Building2, Check, Clock, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
-import type { Conversation, LeadStatus, PaymentOverview, PipelineCustomerDetail, ServiceCatalogItem } from '../../../../shared/contracts';
+import type { Conversation, LeadStatus, PaymentOverview, PipelineCustomerDetail, ServiceCatalogItem, ServiceRequirement } from '../../../../shared/contracts';
 import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { leadCreateSchema } from '../../../../shared/validation';
 import { ApiError, errorMessage } from '../../../lib/api/client';
@@ -113,6 +113,7 @@ const ServicePicker: React.FC<{
           );
         })}
         {error && <p className="w-full text-[11px] text-rose-600">{error}</p>}
+        <RequirementsPreview services={services} value={value} />
       </div>
     );
   }
@@ -163,7 +164,50 @@ const ServicePicker: React.FC<{
           {error}
         </p>
       )}
+      <RequirementsPreview services={services} value={value} />
     </fieldset>
+  );
+};
+
+/** Services whose own requirements are listed as soon as they are selected. */
+const PREVIEW_CATEGORIES = new Set(['Amuwa Design Studio']);
+const REQUIREMENT_TAG: Partial<Record<ServiceRequirement['kind'], string>> = { FILE: 'Upload', ACCESS: 'Access', YES_NO: 'Yes / No' };
+
+/**
+ * What Customer onboarding will collect for each selected Amuwa Design Studio service, one card per service.
+ * Display only: the details are entered (and checked) in the onboarding checklist, where they are saved per service.
+ */
+const RequirementsPreview: React.FC<{ services: ServiceCatalogItem[]; value: string[] }> = ({ services, value }) => {
+  const shown = services.filter(s => PREVIEW_CATEGORIES.has(s.category) && value.includes(s.code) && s.requirements?.length);
+  if (!shown.length) return null;
+  return (
+    <section className="w-full mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3" aria-label="What onboarding will collect">
+      <h3 className="text-xs font-bold text-slate-800">What onboarding will collect</h3>
+      <p className="text-[11px] text-slate-500 mt-0.5">
+        Filled in Customer onboarding, separately for each service. Account access is given as partner / manager access - never a password.
+      </p>
+      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+        {shown.map(s => (
+          <div key={s.code} className="rounded-lg border border-slate-200 bg-white p-3">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-900">
+              <span className={`w-1.5 h-1.5 rounded-full ${categoryDot(s.category)}`} />
+              {s.name}
+            </div>
+            <ul className="mt-2 space-y-1">
+              {s.requirements!.map(r => (
+                <li key={r.label} className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-700">
+                  <span>{r.label}</span>
+                  {!r.optional && !r.conditional && <span className="text-rose-600" aria-label="required">*</span>}
+                  {REQUIREMENT_TAG[r.kind] && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-semibold">{REQUIREMENT_TAG[r.kind]}</span>}
+                  {r.conditional && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-semibold">If creatives are required</span>}
+                  {r.optional && <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-semibold">Optional</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 };
 

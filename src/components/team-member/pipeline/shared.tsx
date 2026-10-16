@@ -80,7 +80,8 @@ const CATEGORY_DOT: Record<string, string> = {
   'Messaging & AI': 'bg-teal-500',
   'Google & Social': 'bg-pink-500',
   'Video & Content': 'bg-violet-500',
-  'Creative & Branding': 'bg-emerald-600'
+  'Creative & Branding': 'bg-emerald-600',
+  'Amuwa Design Studio': 'bg-red-500'
 };
 export const categoryDot = (category?: string) => CATEGORY_DOT[category || ''] || 'bg-slate-400';
 
