@@ -1,11 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, Send, UserCog } from 'lucide-react';
+import { ArrowUpCircle, Clock, Plus, Search, Send, Settings2, UserCog } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { Person } from '../../lib/workTasks';
 import {
   fmtWhen,
+  isAwaitingReply,
   isTicketOpen,
+  isTicketOverdue,
+  slaText,
   ticketApi,
+  ticketSlaApi,
+  TICKET_LEVEL_LABELS,
   TICKET_CATEGORY_LABELS,
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
@@ -13,7 +18,9 @@ import {
   type SupportTicket,
   type TicketCategory,
   type TicketData,
+  type TicketLevel,
   type TicketPriority,
+  type TicketSla,
   type TicketStatus
 } from '../../lib/support';
 import {
@@ -33,6 +40,23 @@ import {
 const personName = (people: Person[], id: string | null) => (id ? people.find(p => p.id === id)?.fullName || 'Team member' : 'Unassigned');
 const PRIORITY_RANK: Record<TicketPriority, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 const PAGE_SIZE = 10;
+/** Who handles the ticket now: the RM (assignee) until it is escalated to a Team Lead / Department Head. */
+const handlerId = (t: SupportTicket) => (t.escalationLevel === 'RM' ? t.assigneeId : t.escalatedTo);
+
+/** Small markers on a ticket row / card: escalation level, waiting for our reply, SLA. */
+const TicketFlags: React.FC<{ ticket: SupportTicket }> = ({ ticket: t }) => (
+  <span className="inline-flex flex-wrap items-center gap-1">
+    {isAwaitingReply(t) && (
+      <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold" title="The customer is waiting for a reply">
+        Awaiting reply
+      </span>
+    )}
+    {t.escalationLevel !== 'RM' && isTicketOpen(t.status) && (
+      <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-bold">With {TICKET_LEVEL_LABELS[t.escalationLevel]}</span>
+    )}
+    {isTicketOverdue(t) && <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">Overdue</span>}
+  </span>
+);
 
 interface TicketsPageProps {
   /** member: own tickets; manager: the team's / department's tickets (team lead, department head). */
@@ -46,9 +70,12 @@ interface TicketsPageProps {
 export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, onOpenCustomer }) => {
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<TicketStatus | 'ALL' | 'OPEN_ONLY'>('OPEN_ONLY');
+  const [status, setStatus] = useState<TicketStatus | 'ALL' | 'OPEN_ONLY' | 'OVERDUE' | 'AWAITING'>('OPEN_ONLY');
   const [priority, setPriority] = useState<TicketPriority | 'ALL'>('ALL');
-  const [sort, setSort] = useState<'updated' | 'created' | 'priority'>('updated');
+  const [level, setLevel] = useState<TicketLevel | 'ALL'>('ALL');
+  const [person, setPerson] = useState<string>('ALL');
+  const [slaOpen, setSlaOpen] = useState(false);
+  const [sort, setSort] = useState<'updated' | 'created' | 'priority' | 'sla'>('updated');
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -57,8 +84,13 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = tickets.filter(t => {
-      if (status === 'OPEN_ONLY' ? !isTicketOpen(t.status) : status !== 'ALL' && t.status !== status) return false;
+      if (status === 'OPEN_ONLY' ? !isTicketOpen(t.status)
+        : status === 'OVERDUE' ? !isTicketOverdue(t)
+        : status === 'AWAITING' ? !isAwaitingReply(t)
+        : status !== 'ALL' && t.status !== status) return false;
       if (priority !== 'ALL' && t.priority !== priority) return false;
+      if (level !== 'ALL' && (t.escalationLevel !== level || !isTicketOpen(t.status))) return false;
+      if (person !== 'ALL' && t.assigneeId !== person && t.escalatedTo !== person && t.resolvedBy !== person) return false;
       if (!q) return true;
       return [t.ticketNo, t.subject, t.customerName, t.customerCode].some(v => v.toLowerCase().includes(q));
     });
@@ -67,14 +99,23 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
         ? PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || b.updatedAt.localeCompare(a.updatedAt)
         : sort === 'created'
           ? b.createdAt.localeCompare(a.createdAt)
-          : b.updatedAt.localeCompare(a.updatedAt)
+          : sort === 'sla'
+            ? (a.slaDueAt || '9999').localeCompare(b.slaDueAt || '9999') || b.updatedAt.localeCompare(a.updatedAt)
+            : b.updatedAt.localeCompare(a.updatedAt)
     );
-  }, [tickets, search, status, priority, sort]);
+  }, [tickets, search, status, priority, level, person, sort]);
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const open = tickets.find(t => t.id === openId) || null;
 
   const count = (s: TicketStatus) => tickets.filter(t => t.status === s).length;
   const unassigned = tickets.filter(t => !t.assigneeId && isTicketOpen(t.status)).length;
+  const overdue = tickets.filter(t => isTicketOverdue(t)).length;
+  const awaiting = tickets.filter(t => isAwaitingReply(t)).length;
+  const staffIds = useMemo(
+    () => [...new Set(tickets.flatMap(t => [t.assigneeId, t.escalatedTo, t.resolvedBy]).filter((x): x is string => !!x))]
+      .sort((a, b) => personName(people, a).localeCompare(personName(people, b))),
+    [tickets, people]
+  );
   const byMember = useMemo(() => {
     const map = new Map<string, SupportTicket[]>();
     tickets.forEach(t => map.set(t.assigneeId || 'none', [...(map.get(t.assigneeId || 'none') || []), t]));
@@ -82,8 +123,11 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
       id,
       name: id === 'none' ? 'Unassigned' : personName(people, id),
       open: list.filter(t => isTicketOpen(t.status)).length,
-      escalated: list.filter(t => t.status === 'ESCALATED').length,
+      overdue: list.filter(t => isTicketOverdue(t)).length,
+      escalated: list.filter(t => t.status === 'ESCALATED' || (t.escalationLevel !== 'RM' && isTicketOpen(t.status))).length,
       resolved: list.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length,
+      // tickets this person closed themselves (wherever they were assigned)
+      resolvedByThem: id === 'none' ? 0 : tickets.filter(t => t.resolvedBy === id).length,
       total: list.length
     }));
   }, [tickets, people]);
@@ -98,14 +142,25 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
             : 'Monitor, assign and escalate your support team’s tickets.'
         }
         action={
-          mode === 'manager' && profile?.role !== 'DEPARTMENT_HEAD' && (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 self-start"
-            >
-              <Plus className="w-4 h-4" aria-hidden="true" /> New ticket
-            </button>
+          mode === 'manager' && (
+            <div className="flex flex-wrap gap-2 self-start">
+              <button
+                type="button"
+                onClick={() => setSlaOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-bold hover:bg-slate-50"
+              >
+                <Settings2 className="w-4 h-4" aria-hidden="true" /> SLA
+              </button>
+              {profile?.role !== 'DEPARTMENT_HEAD' && (
+                <button
+                  type="button"
+                  onClick={() => setCreating(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700"
+                >
+                  <Plus className="w-4 h-4" aria-hidden="true" /> New ticket
+                </button>
+              )}
+            </div>
           )
         }
       />
@@ -115,10 +170,11 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
         <TicketBoard tickets={tickets} loading={data.loading} people={people} onOpen={setOpenId} />
       ) : (
         <>
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <KpiCard label="Open" value={count('OPEN')} tone="text-blue-700" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <KpiCard label="Open" value={count('OPEN')} tone="text-blue-700" hint={`${awaiting} waiting for our reply`} />
         <KpiCard label="In progress" value={count('IN_PROGRESS') + count('WAITING_CUSTOMER')} tone="text-indigo-700" hint={`${count('WAITING_CUSTOMER')} waiting for customer`} />
         <KpiCard label="Escalated" value={count('ESCALATED')} tone="text-rose-700" />
+        <KpiCard label="Overdue (SLA)" value={overdue} tone="text-rose-700" />
         <KpiCard label="Resolved / closed" value={count('RESOLVED') + count('CLOSED')} tone="text-emerald-700" />
         {mode === 'manager' ? <KpiCard label="Unassigned" value={unassigned} tone="text-amber-700" /> : <KpiCard label="All my tickets" value={tickets.length} />}
       </div>
@@ -149,6 +205,8 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
             className={`${inputClass} lg:w-48`}
           >
             <option value="OPEN_ONLY">Open tickets</option>
+            <option value="OVERDUE">Overdue (SLA)</option>
+            <option value="AWAITING">Waiting for our reply</option>
             <option value="ALL">All statuses</option>
             {(Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).map(s => (
               <option key={s} value={s}>
@@ -172,10 +230,43 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
               </option>
             ))}
           </select>
+          <select
+            value={level}
+            onChange={e => {
+              setLevel(e.target.value as any);
+              setPage(1);
+            }}
+            aria-label="Filter by who handles the ticket"
+            className={`${inputClass} lg:w-44`}
+          >
+            <option value="ALL">Any level</option>
+            {(Object.keys(TICKET_LEVEL_LABELS) as TicketLevel[]).map(l => (
+              <option key={l} value={l}>
+                With {TICKET_LEVEL_LABELS[l]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={person}
+            onChange={e => {
+              setPerson(e.target.value);
+              setPage(1);
+            }}
+            aria-label="Filter by team member"
+            className={`${inputClass} lg:w-44`}
+          >
+            <option value="ALL">Everyone</option>
+            {staffIds.map(id => (
+              <option key={id} value={id}>
+                {personName(people, id)}
+              </option>
+            ))}
+          </select>
           <select value={sort} onChange={e => setSort(e.target.value as any)} aria-label="Sort tickets" className={`${inputClass} lg:w-44`}>
             <option value="updated">Last updated</option>
             <option value="created">Newest first</option>
             <option value="priority">Priority</option>
+            <option value="sla">SLA deadline</option>
           </select>
         </div>
 
@@ -199,7 +290,10 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
                   <th className="py-2.5 px-3 font-semibold">Category</th>
                   <th className="py-2.5 px-3 font-semibold">Priority</th>
                   <th className="py-2.5 px-3 font-semibold">Status</th>
-                  <th className="py-2.5 px-3 font-semibold">Assigned to</th>
+                  <th className="py-2.5 px-3 font-semibold">Relationship Manager</th>
+                  <th className="py-2.5 px-3 font-semibold">Handled by</th>
+                  <th className="py-2.5 px-3 font-semibold">SLA</th>
+                  <th className="py-2.5 px-3 font-semibold">Resolved by</th>
                   <th className="py-2.5 px-3 font-semibold">Updated</th>
                 </tr>
               </thead>
@@ -215,7 +309,10 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
                       <div className="font-semibold text-slate-800">{t.customerName}</div>
                       <div className="text-[11px] text-slate-400 font-mono">{t.customerCode}</div>
                     </td>
-                    <td className="py-3 px-3 max-w-[16rem] truncate text-slate-700">{t.subject}</td>
+                    <td className="py-3 px-3 max-w-[16rem] text-slate-700">
+                      <div className="truncate">{t.subject}</div>
+                      <TicketFlags ticket={t} />
+                    </td>
                     <td className="py-3 px-3 text-xs text-slate-600">{TICKET_CATEGORY_LABELS[t.category]}</td>
                     <td className="py-3 px-3">
                       <TicketPriorityPill priority={t.priority} />
@@ -224,6 +321,29 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
                       <TicketStatusPill status={t.status} />
                     </td>
                     <td className="py-3 px-3 text-xs text-slate-600">{personName(people, t.assigneeId)}</td>
+                    <td className="py-3 px-3 text-xs text-slate-600">
+                      {isTicketOpen(t.status) ? (
+                        <>
+                          <div className="font-semibold text-slate-700">{TICKET_LEVEL_LABELS[t.escalationLevel]}</div>
+                          <div>{personName(people, handlerId(t))}</div>
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                    <td className={`py-3 px-3 text-xs whitespace-nowrap ${isTicketOverdue(t) ? 'text-rose-700 font-bold' : 'text-slate-500'}`}>
+                      {isTicketOpen(t.status) ? slaText(t.slaDueAt) : '-'}
+                    </td>
+                    <td className="py-3 px-3 text-xs text-slate-600">
+                      {t.resolvedBy || t.resolvedAt ? (
+                        <>
+                          <div>{t.resolvedBy ? personName(people, t.resolvedBy) : '-'}</div>
+                          <div className="text-[10px] text-slate-400">{fmtWhen(t.resolvedAt)}</div>
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                     <td className="py-3 px-3 text-xs text-slate-500 whitespace-nowrap">{fmtWhen(t.updatedAt)}</td>
                   </tr>
                 ))}
@@ -246,8 +366,10 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
                   <th className="py-2 pr-3 font-semibold">Team member</th>
                   <th className="py-2 px-3 font-semibold text-right">Open</th>
+                  <th className="py-2 px-3 font-semibold text-right">Overdue</th>
                   <th className="py-2 px-3 font-semibold text-right">Escalated</th>
                   <th className="py-2 px-3 font-semibold text-right">Resolved / closed</th>
+                  <th className="py-2 px-3 font-semibold text-right">Resolved by them</th>
                   <th className="py-2 pl-3 font-semibold text-right">Total</th>
                 </tr>
               </thead>
@@ -256,8 +378,10 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
                   <tr key={r.id}>
                     <td className="py-2 pr-3 font-medium text-slate-800">{r.name}</td>
                     <td className="py-2 px-3 text-right">{r.open}</td>
+                    <td className="py-2 px-3 text-right text-rose-700">{r.overdue}</td>
                     <td className="py-2 px-3 text-right text-rose-700">{r.escalated}</td>
                     <td className="py-2 px-3 text-right text-emerald-700">{r.resolved}</td>
+                    <td className="py-2 px-3 text-right text-emerald-700">{r.resolvedByThem}</td>
                     <td className="py-2 pl-3 text-right">{r.total}</td>
                   </tr>
                 ))}
@@ -277,6 +401,7 @@ export const TicketsPage: React.FC<TicketsPageProps> = ({ mode, data, people, on
           onOpenCustomer={onOpenCustomer}
         />
       )}
+      {slaOpen && <SlaSettingsModal onClose={() => setSlaOpen(false)} />}
       {creating && (
         <NewTicketModal
           people={people}
@@ -455,7 +580,8 @@ export const TicketDetail: React.FC<{
   const { profile } = useAuth();
   const history = data.updates.filter(u => u.ticketId === ticket.id);
   const canManage = !readOnly && (manager || profile?.role === 'TEAM_HEAD' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'SUPER_ADMIN');
-  const canAct = !readOnly && (canManage || ticket.assigneeId === profile?.id);
+  const canAct = !readOnly && (canManage || ticket.assigneeId === profile?.id || ticket.escalatedTo === profile?.id);
+  const nextLevel: TicketLevel | null = ticket.escalationLevel === 'RM' ? 'TL' : ticket.escalationLevel === 'TL' ? 'DH' : null;
   const [status, setStatus] = useState<TicketStatus>(ticket.status);
   useEffect(() => setStatus(ticket.status), [ticket.status]);
   const [note, setNote] = useState('');
@@ -492,6 +618,7 @@ export const TicketDetail: React.FC<{
           <TicketStatusPill status={ticket.status} />
           <TicketPriorityPill priority={ticket.priority} />
           <span className="text-xs text-slate-500">{TICKET_CATEGORY_LABELS[ticket.category]}</span>
+          <TicketFlags ticket={ticket} />
         </div>
         <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 text-xs">
           <div>
@@ -508,9 +635,35 @@ export const TicketDetail: React.FC<{
             </dd>
           </div>
           <div>
-            <dt className="text-slate-400">Assigned to</dt>
+            <dt className="text-slate-400">Relationship Manager</dt>
             <dd className="font-semibold text-slate-800 mt-0.5">{personName(people, ticket.assigneeId)}</dd>
           </div>
+          {isTicketOpen(ticket.status) && (
+            <div>
+              <dt className="text-slate-400">Handled by now</dt>
+              <dd className={`font-semibold mt-0.5 ${ticket.escalationLevel === 'RM' ? 'text-slate-800' : 'text-rose-700'}`}>
+                {TICKET_LEVEL_LABELS[ticket.escalationLevel]} · {personName(people, handlerId(ticket))}
+              </dd>
+            </div>
+          )}
+          {isTicketOpen(ticket.status) && (
+            <div>
+              <dt className="text-slate-400">Reply due (SLA)</dt>
+              <dd className={`font-semibold mt-0.5 inline-flex items-center gap-1 ${isTicketOverdue(ticket) ? 'text-rose-700' : 'text-slate-800'}`}>
+                <Clock className="w-3 h-3" aria-hidden="true" />
+                {ticket.slaDueAt ? `${fmtWhen(ticket.slaDueAt)} (${slaText(ticket.slaDueAt)})` : isAwaitingReply(ticket) ? 'No deadline' : 'Nobody waiting'}
+              </dd>
+            </div>
+          )}
+          {(ticket.resolvedBy || ticket.resolvedAt) && (
+            <div>
+              <dt className="text-slate-400">Resolved by</dt>
+              <dd className="font-semibold text-emerald-700 mt-0.5">
+                {ticket.resolvedBy ? personName(people, ticket.resolvedBy) : '-'}
+                <span className="block font-normal text-slate-400">{fmtWhen(ticket.resolvedAt)}</span>
+              </dd>
+            </div>
+          )}
           <div>
             <dt className="text-slate-400">Created by</dt>
             <dd className="font-semibold text-slate-800 mt-0.5">{personName(people, ticket.createdBy)}</dd>
@@ -577,11 +730,17 @@ export const TicketDetail: React.FC<{
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
-                disabled={busy || ticket.status === 'ESCALATED'}
-                onClick={() => void run(() => ticketApi.update(ticket.id, { status: 'ESCALATED', note }), 'Ticket escalated.')}
-                className="px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 disabled:opacity-40"
+                disabled={busy || !nextLevel || !isTicketOpen(ticket.status)}
+                title={nextLevel ? undefined : 'Already with the Department Head'}
+                onClick={() =>
+                  void run(async () => {
+                    await ticketApi.escalate(ticket.id, note);
+                  }, `Ticket escalated to the ${nextLevel ? TICKET_LEVEL_LABELS[nextLevel] : ''}.`)
+                }
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-rose-200 text-rose-700 text-xs font-bold hover:bg-rose-50 disabled:opacity-40"
               >
-                Escalate
+                <ArrowUpCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                {nextLevel ? `Escalate to ${TICKET_LEVEL_LABELS[nextLevel]}` : 'With the Department Head'}
               </button>
               <button type="submit" disabled={busy} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50">
                 <Send className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Saving…' : 'Save update'}
@@ -659,7 +818,15 @@ export const TicketDetail: React.FC<{
               <li key={u.id} className="text-xs relative">
                 <span className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-blue-400" aria-hidden="true" />
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="font-semibold text-slate-800">{u.kind === 'CLIENT_REPLY' ? 'Customer' : personName(people, u.authorId)}</span>
+                  <span className="font-semibold text-slate-800">
+                    {u.authorId
+                      ? personName(people, u.authorId)
+                      : u.kind === 'CLIENT_REPLY' || (u.kind === 'CREATED' && !ticket.createdBy) || u.kind === 'STATUS_CHANGED'
+                        ? 'Customer'
+                        : u.kind === 'ESCALATED'
+                          ? 'SLA (no reply in time)'
+                          : 'System'}
+                  </span>
                   <span className="text-slate-500">{KIND_TEXT[u.kind]}</span>
                   {u.kind === 'ASSIGNED' && <span className="text-slate-700">to {personName(people, u.assigneeId)}</span>}
                   {u.kind !== 'ASSIGNED' && u.toStatus && u.fromStatus && u.fromStatus !== u.toStatus && (
@@ -735,6 +902,12 @@ const TicketBoard: React.FC<{ tickets: SupportTicket[]; loading: boolean; people
                       <div className="text-[11px] text-slate-500 mt-1">
                         {t.customerName} · <span className="font-mono">{t.customerCode}</span>
                       </div>
+                      <div className="mt-1.5">
+                        <TicketFlags ticket={t} />
+                      </div>
+                      {isTicketOpen(t.status) && t.slaDueAt && (
+                        <div className={`text-[10px] mt-1 ${isTicketOverdue(t) ? 'text-rose-700 font-bold' : 'text-slate-500'}`}>Reply {slaText(t.slaDueAt)}</div>
+                      )}
                       <div className="flex items-center justify-between gap-2 mt-2">
                         <TicketStatusPill status={t.status} />
                         <span className="text-[10px] text-slate-400">{fmtWhen(t.updatedAt)}</span>
@@ -751,5 +924,89 @@ const TicketBoard: React.FC<{ tickets: SupportTicket[]; loading: boolean; people
         <p className="text-xs text-slate-500 text-center">No tickets assigned to you yet. Tickets your team lead assigns, or that you open from a customer’s profile, appear here.</p>
       )}
     </div>
+  );
+};
+
+/** How long the Relationship Manager, then the Team Lead, may take to answer the customer. */
+const SlaSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [sla, setSla] = useState<TicketSla | null>(null);
+  const [rmHours, setRmHours] = useState('');
+  const [tlHours, setTlHours] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    ticketSlaApi.get().then(
+      s => {
+        setSla(s);
+        setRmHours(String(+(s.rmMinutes / 60).toFixed(2)));
+        setTlHours(String(+(s.tlMinutes / 60).toFixed(2)));
+      },
+      e => setError(e instanceof Error ? e.message : 'Could not load the SLA.')
+    );
+  }, []);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rm = Math.round(Number(rmHours) * 60);
+    const tl = Math.round(Number(tlHours) * 60);
+    if (!Number.isFinite(rm) || !Number.isFinite(tl) || rm < 5 || tl < 5) return setError('Enter the hours for each level (at least 5 minutes).');
+    setBusy(true);
+    setError(null);
+    try {
+      setSla(await ticketSlaApi.set(rm, tl));
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the SLA.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Ticket SLA" onClose={onClose}>
+      {!sla && !error ? (
+        <Loading label="Loading SLA…" />
+      ) : (
+        <form onSubmit={save} className="space-y-4">
+          <p className="text-xs text-slate-500">
+            A customer ticket goes to the customer's Relationship Manager. If the customer has no answer in time, it moves to the Team Lead, and then to the
+            Department Head. The clock restarts with every new customer message and stops when the team replies, asks the customer something or resolves the ticket.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="Relationship Manager (hours)" htmlFor="sla-rm">
+              <input id="sla-rm" type="number" min={0.1} step={0.25} value={rmHours} disabled={!sla?.canEdit} onChange={e => setRmHours(e.target.value)} className={inputClass} />
+            </FormField>
+            <FormField label="Then the Team Lead (hours)" htmlFor="sla-tl">
+              <input id="sla-tl" type="number" min={0.1} step={0.25} value={tlHours} disabled={!sla?.canEdit} onChange={e => setTlHours(e.target.value)} className={inputClass} />
+            </FormField>
+          </div>
+          {sla && (
+            <p className="text-[11px] text-slate-400">
+              {sla.scope === 'DEPARTMENT' ? 'Set for your department.' : 'The default for every department.'} Last changed {fmtWhen(sla.updatedAt)}.
+              {!sla.canEdit && ' Only a Department Head or the Super Admin can change it.'}
+            </p>
+          )}
+          {error && (
+            <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2" role="alert">
+              {error}
+            </p>
+          )}
+          {done && (
+            <p className="text-xs text-emerald-700" role="status">
+              SLA saved. New deadlines use it from now on.
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+              Close
+            </button>
+            {sla?.canEdit && (
+              <button type="submit" disabled={busy} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+                {busy ? 'Saving…' : 'Save SLA'}
+              </button>
+            )}
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 };

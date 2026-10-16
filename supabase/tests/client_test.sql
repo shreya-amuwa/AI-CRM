@@ -47,7 +47,7 @@ select test.check((select count(*) = 0 from customers), 'a client sees no custom
 select test.check((select count(*) = 0 from member_invoices), 'nor invoices');
 select test.check((select count(*) = 0 from support_tickets), 'nor tickets');
 select test.check((select count(*) = 0 from customer_documents), 'nor documents');
-select test.must_fail($$select * from client_notifications$$, 'notifications are not readable directly', 'permission denied');
+select test.check((select count(*) = 0 from client_notifications where customer_id <> (select id from cl where name = 'A')), 'a client reads only their own notifications directly (for live updates)');
 select test.must_fail($$select * from customer_plans$$, 'plans are not readable directly', 'permission denied');
 select test.must_fail($$select * from service_requests$$, 'service requests are not readable directly', 'permission denied');
 select test.must_fail($$insert into client_notifications (customer_id, type, title, dedupe_key) values ((select id from cl where name = 'A'), 'X', 'forged', 'x')$$, 'a client cannot write a notification', 'permission denied');

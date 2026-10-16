@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getSupabase } from '../services/supabaseClient';
 import { ApiError, errorMessage } from '../lib/api/client';
 
 export interface Loaded<T> {
@@ -57,4 +58,35 @@ export function usePath(): [string, (to: string, replace?: boolean) => void] {
     window.scrollTo({ top: 0 });
   }, []);
   return [path, go];
+}
+
+/**
+ * Live updates without a timer: calls onChange when a new notification for this client arrives (Supabase Realtime;
+ * the database only lets a client read their own rows) and when the tab comes back into view.
+ */
+export function useClientLive(onChange: () => void, entityId?: string) {
+  const cb = useRef(onChange);
+  cb.current = onChange;
+  useEffect(() => {
+    const supabase = getSupabase();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const fire = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => cb.current(), 250);
+    };
+    const channel = supabase
+      ?.channel(`client-live-${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'client_notifications' }, payload => {
+        const row = payload.new as { entity_id?: string | null } | undefined;
+        if (!entityId || row?.entity_id === entityId) fire();
+      })
+      .subscribe();
+    const onVisible = () => document.visibilityState === 'visible' && fire();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+      if (channel) void supabase?.removeChannel(channel);
+    };
+  }, [entityId]);
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, LifeBuoy, Plus, Send } from 'lucide-react';
 import { clientApi } from './api';
-import { useLoad } from './hooks';
+import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
 import { dashboardPath, useShell } from './shell';
 import { Badge, Button, Card, EmptyState, ErrorState, Field, LoadingBlock, Modal, PageHeader, Query, TICKET_CATEGORIES, TICKET_LABEL, categoryLabel, fmtDate, fmtDateTime } from './ui';
@@ -15,6 +15,7 @@ const TicketList: React.FC = () => {
   const { go } = useShell();
   const q = useLoad(() => clientApi.tickets());
   const services = useLoad(() => clientApi.services());
+  useClientLive(q.reload);
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState<'ALL' | 'OPEN' | 'DONE'>('ALL');
   const list = useMemo(() => (q.data ?? []).filter(t => filter === 'ALL' || (filter === 'OPEN' ? !['RESOLVED', 'CLOSED'].includes(t.status) : ['RESOLVED', 'CLOSED'].includes(t.status))), [q.data, filter]);
@@ -33,9 +34,10 @@ const TicketList: React.FC = () => {
             </div>
             {list.length === 0 ? <Card><EmptyState title="No tickets here" text="Nothing matches this filter." /></Card> : list.map(t => (
               <Card key={t.id} small onClick={() => go(dashboardPath('tickets', `/${t.id}`))}>
-                <div className="cd-between"><span className="cd-small cd-muted">{t.ticketNo}{t.serviceName ? ` · ${t.serviceName}` : ''}</span><Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge></div>
+                <div className="cd-between"><span className="cd-small cd-muted">{t.ticketNo}{t.serviceName ? ` · ${t.serviceName}` : ''}</span>
+                  <span className="cd-row" style={{ gap: 6 }}>{t.unread > 0 && <Badge tone="new">{t.unread === 1 ? 'New reply' : `${t.unread} new`}</Badge>}<Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge></span></div>
                 <p style={{ fontWeight: 700, marginTop: 4 }}>{t.subject}</p>
-                <p className="cd-small cd-muted">{categoryLabel(t.category)} · updated {fmtDate(t.updatedAt)}</p>
+                <p className="cd-small cd-muted">{categoryLabel(t.category)} · updated {fmtDate(t.updatedAt)}{t.relationshipManager ? ` · ${t.relationshipManager}` : ''}{t.escalated && !['RESOLVED', 'CLOSED'].includes(t.status) ? ' · escalated' : ''}</p>
               </Card>
             ))}
           </div>
@@ -79,6 +81,10 @@ const NewTicket: React.FC<{ services: { code: string; name: string }[]; onClose:
 const TicketDetail: React.FC<{ id: string }> = ({ id }) => {
   const { go } = useShell();
   const q = useLoad(() => clientApi.ticket(id), [id]);
+  useClientLive(q.reload, id);
+  // Opening the ticket (and every new reply seen here) marks its notifications read.
+  const unread = q.data?.unread ?? 0;
+  useEffect(() => { if (unread > 0) clientApi.ticketSeen(id).catch(() => { /* the badge is a convenience */ }); }, [id, unread, q.data?.updates.length]);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -103,16 +109,19 @@ const TicketDetail: React.FC<{ id: string }> = ({ id }) => {
       {back}
       <Card>
         <div className="cd-between" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ minWidth: 0 }}><p className="cd-small cd-muted">{t.ticketNo} · {categoryLabel(t.category)}{t.serviceName ? ` · ${t.serviceName}` : ''}</p><h1 style={{ fontSize: 22, marginTop: 2 }}>{t.subject}</h1><p className="cd-small cd-muted">Opened {fmtDateTime(t.createdAt)}</p></div>
+          <div style={{ minWidth: 0 }}><p className="cd-small cd-muted">{t.ticketNo} · {categoryLabel(t.category)}{t.serviceName ? ` · ${t.serviceName}` : ''}</p><h1 style={{ fontSize: 22, marginTop: 2 }}>{t.subject}</h1><p className="cd-small cd-muted">Opened {fmtDateTime(t.createdAt)}{t.relationshipManager ? ` · Your Relationship Manager: ${t.relationshipManager}` : ''}</p></div>
           <Badge tone={TICKET_LABEL[t.status].tone}>{TICKET_LABEL[t.status].label}</Badge>
         </div>
+        {t.escalated && !['RESOLVED', 'CLOSED'].includes(t.status) && (
+          <div className="cd-banner info" style={{ marginTop: 12 }}><span>This ticket was escalated. {t.handledBy === 'DEPARTMENT_HEAD' ? 'Our Department Head' : 'A Team Lead'} is now looking after it{t.relationshipManager ? `, and ${t.relationshipManager} stays informed` : ''}.</span></div>
+        )}
         {t.resolution && <div className="cd-banner success" style={{ marginTop: 12 }}><span><b>Resolution:</b> {t.resolution}</span></div>}
         <hr className="cd-divider" />
         <div className="cd-stack" style={{ gap: 10 }} aria-live="polite">
           {t.description && <div className="cd-bubble me">{t.description}<div className="cd-small" style={{ opacity: .7, marginTop: 4 }}>You · {fmtDateTime(t.createdAt)}</div></div>}
           {t.updates.map(u => u.type === 'STATUS'
             ? <div key={u.id} className="cd-bubble status">{u.message ?? `Status changed to ${u.status ? TICKET_LABEL[u.status].label : ''}`} · {fmtDateTime(u.at)}</div>
-            : <div key={u.id} className={`cd-bubble ${u.type === 'CLIENT' ? 'me' : 'them'}`}>{u.message}<div className="cd-small" style={{ opacity: .7, marginTop: 4 }}>{u.type === 'CLIENT' ? 'You' : 'Amuwa Support'} · {fmtDateTime(u.at)}</div></div>)}
+            : <div key={u.id} className={`cd-bubble ${u.type === 'CLIENT' ? 'me' : 'them'}`}>{u.message}<div className="cd-small" style={{ opacity: .7, marginTop: 4 }}>{u.type === 'CLIENT' ? 'You' : u.author ? `${u.author} · Amuwa Support` : 'Amuwa Support'} · {fmtDateTime(u.at)}</div></div>)}
           {t.updates.length === 0 && <p className="cd-small cd-muted" style={{ textAlign: 'center' }}>Our support team will reply here.</p>}
           <div ref={end} />
         </div>

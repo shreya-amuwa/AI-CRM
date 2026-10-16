@@ -18,6 +18,7 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { timingSafeEqual } from 'node:crypto';
+import { getServiceClient, hasServiceClient } from './db/supabase.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
@@ -86,7 +87,14 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     return want.length === given.length && timingSafeEqual(want, given);
   });
   if (!okSecret) throw new AppError('UNAUTHENTICATED');
-  return c.json(ok(await runDispatch({ limit: 50, budgetMs: 25_000 })));
+  // The same safety-net run moves overdue tickets up (RM -> Team Lead -> Department Head) when pg_cron is not set up.
+  let ticketsEscalated = 0;
+  if (hasServiceClient()) {
+    const { data, error } = await getServiceClient().rpc('escalate_overdue_tickets');
+    if (error) log('error', 'ticket escalation failed', c, { message: error.message });
+    else ticketsEscalated = Number(data) || 0;
+  }
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated }));
 });
 
 // The client dashboard: the customer's own login, their own records only.
