@@ -29,6 +29,7 @@ import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
 import { usePipelineCounts } from './pipeline/shared';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { DeliveryQueue } from '../delivery/DeliveryQueue';
 
 interface TeamMemberDashboardProps {
   currentUserId: string;
@@ -453,6 +454,8 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             userName={userName}
           />
         )}
+
+        {activeNav === 'delivery' && <DeliveryQueue />}
 
         {activeNav === 'notifications' && <NotificationsPage />}
 

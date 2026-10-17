@@ -43,9 +43,13 @@ class FakeRepo {
     this.calls.push('issue');
     return { id: INVOICE_ID, replayed: false };
   }
+  /** What the next confirmation returns: settled (the balance is zero) or a part payment. */
+  settled = true;
   async confirmPayment() {
     this.calls.push('confirmPayment');
-    return { id: INVOICE_ID, replayed: false };
+    return this.settled
+      ? { id: INVOICE_ID, replayed: false, settled: true }
+      : { id: INVOICE_ID, replayed: false, settled: false, generated: { paymentSummary: { balance: 6800 } } };
   }
   async claim(_id: string, stage: string) {
     this.calls.push(`claim:${stage}`);
@@ -255,6 +259,13 @@ console.log('--- 7. The paid stage: a second, separate document');
   check(r.steps[0].step === 'PAYMENT' && r.steps[0].status === 'DONE' && r.steps[1].status === 'FAILED', 'a failed paid PDF is reported, the payment stays confirmed');
   const retry = await t.service.confirmPayment(INVOICE_ID, { method: 'CASH' });
   check(retry.steps.map(s => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE' && t.repo.calls.filter(c => c === 'confirmPayment').length === 2, 'clicking again finishes the paid stage (the payment confirmation itself is idempotent in the database)');
+
+  // a part payment: recorded, and no paid invoice, PDF or e-mail is made until the balance is zero
+  const part = setup(sentOk);
+  part.repo.settled = false;
+  const pr = await part.service.confirmPayment(INVOICE_ID, { method: 'UPI', reference: 'P1', amount: '5000' });
+  check(pr.steps.length === 1 && pr.steps[0].step === 'PAYMENT' && /Part payment recorded/.test(pr.steps[0].message ?? '') && /6,800\.00/.test(pr.steps[0].message ?? '')
+    && !part.repo.calls.some(c => c.startsWith('claim')) && part.mails.length === 0, 'a part payment is recorded and nothing else happens: no claim, no PDF, no e-mail');
 }
 
 console.log('--- 8. Nothing that was already done is repeated');

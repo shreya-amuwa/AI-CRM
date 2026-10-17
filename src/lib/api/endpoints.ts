@@ -3,6 +3,9 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  CustomerJourneyInfo,
+  DeliveryQueueItem,
+  ServiceJourneySetting,
   AttendanceDay,
   LeaveMonthlySummary,
   LeaveRequest,
@@ -170,6 +173,19 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
   recordPayment: (id: string, body: { amount: number; method?: PaymentMethod }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/payments`, body),
+  /** Where the customer is on its journey, and what the signed-in person may do next. */
+  customerJourney: (id: string) => api.get<CustomerJourneyInfo>(`/pipeline/customers/${id}/journey`),
+  /** Accounts: create the dashboard login of a customer whose services need no Technical Consultant. */
+  accountsCreateClientLogin: (id: string, body: { email: string; password: string }) =>
+    api.post<{ email: string }>(`/pipeline/customers/${id}/accounts/client-login`, body),
+  /** Sales / Support: send the verified services to the department that delivers them. */
+  sendToDelivery: (id: string, note?: string | null) =>
+    api.post<{ sent: number; remaining: number; departments: string | null }>(`/pipeline/customers/${id}/send-to-delivery`, { note: note || null }),
+  deliveryQueue: (q: { search?: string; page?: number; pageSize?: number } = {}) => api.get<Paginated<DeliveryQueueItem>>('/pipeline/delivery-queue', { ...q }),
+  serviceJourneys: () => api.get<ServiceJourneySetting[]>('/pipeline/service-journeys'),
+  /** Super Admin only. */
+  setServiceJourney: (code: string, body: { requiresTechnicalConsultant: boolean; deliveryDepartmentId?: string | null }) =>
+    api.patch<ServiceJourneySetting[]>(`/pipeline/service-journeys/${code}`, body),
   createClientAccount: (id: string, body: { email: string; password: string }) =>
     api.post<{ email: string }>(`/pipeline/customers/${id}/client-account`, body),
   sendToDepartmentHead: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/handover/department-head`, { note: note || null }),
@@ -308,7 +324,7 @@ export const generatedInvoicesApi = {
     api.get<InvoicePrefill>(`/accounts/customers/${customerId}/invoice-prefill`, { purpose: q.purpose, addonRequestId: q.addonRequestId }),
   /** `body.requestId` is created once per builder session: repeating the request never creates a second invoice. */
   issue: (body: Record<string, unknown>) => api.post<InvoiceRunResult>('/accounts/generated-invoices', body),
-  confirmPayment: (id: string, body: { method: PaymentMethod; reference?: string | null; note?: string | null; paidOn?: string | null }) =>
+  confirmPayment: (id: string, body: { method?: PaymentMethod | null; reference?: string | null; note?: string | null; paidOn?: string | null; amount?: string | null; requestId?: string }) =>
     api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/confirm-payment`, body),
   /** Retry what is left of a stage (a missing PDF or e-mail). */
   deliver: (id: string, stage: InvoiceStage) => api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/deliver`, { stage }),

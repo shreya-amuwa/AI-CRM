@@ -36,13 +36,21 @@ export interface InvoicePdfInput {
     inWords: string;
     breakdown: { rate: number; base: number; gst: number; cgst: number; sgst: number; igst: number }[];
   };
+  /** What has been paid and what is left (from the confirmed payments; calculated by the database). Absent: the block is not drawn. */
+  paymentSummary?: {
+    total: number;
+    confirmed: number;
+    balance: number;
+    state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+    payments?: { amount: number }[];
+  } | null;
   /** Fixes the PDF's creation date (so the same invoice always gives the same file). */
   issuedAt?: string | null;
 }
 
 export interface LayoutBox {
   page: number;
-  kind: 'header' | 'footer' | 'title' | 'customer' | 'meta' | 'tableHeading' | 'row' | 'total' | 'bank' | 'state' | 'words' | 'terms' | 'summary' | 'address' | 'signatory' | 'stamp' | 'note';
+  kind: 'header' | 'footer' | 'title' | 'customer' | 'meta' | 'tableHeading' | 'row' | 'total' | 'bank' | 'state' | 'words' | 'terms' | 'summary' | 'payment' | 'address' | 'signatory' | 'stamp' | 'note';
   x: number;
   /** Top edge, measured down from the top of the page. */
   y: number;
@@ -565,6 +573,30 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
       p.box('words', MX, y, LW, h);
     }
   };
+  // Payment status: what the invoice came to, what was confirmed, what is left. On the paid invoice it is settled by definition.
+  const ps = inv.paymentSummary;
+  const settled = stage === 'PAID';
+  const payRows: [string, string][] = ps
+    ? [
+        ['Invoice Total:', money(ps.total)],
+        ['Payments Received:', money(settled ? ps.total : ps.confirmed)],
+        ...(settled && ps.payments && ps.payments.length ? ([['This Payment:', money(ps.payments[ps.payments.length - 1].amount)]] as [string, string][]) : []),
+        ['Balance Outstanding:', money(settled ? 0 : ps.balance)],
+        ['Payment Status:', settled || ps.state === 'FULLY_PAID' ? 'Fully Paid' : ps.state === 'PARTIALLY_PAID' ? 'Partially Paid' : 'Unpaid']
+      ]
+    : [];
+  const payment: Block = {
+    h: ps ? 12 + payRows.length * 13.2 : 0,
+    draw: (y, h) => {
+      p.rect(MX, y, LW, h, { border: BLUE });
+      payRows.forEach(([k, v], i) => {
+        const bold = k === 'Balance Outstanding:' || k === 'Payment Status:';
+        p.text(k, MX + 7, y + 14 + i * 13.2, { font: f.bold, size: 8.4 });
+        p.text(v, MX + LW - 8, y + 14 + i * 13.2, { font: bold ? f.bold : f.regular, size: 8.4, align: 'right' });
+      });
+      p.box('payment', MX, y, LW, h);
+    }
+  };
   const termLines = f.wrap(f.regular, inv.terms || '', 8, LW - 14);
   const terms: Block = {
     h: 30 + Math.max(2, termLines.length) * 10.4,
@@ -575,7 +607,7 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
       p.box('terms', MX, y, LW, h);
     }
   };
-  const left = [bank, state, words, terms];
+  const left = ps ? [bank, state, words, payment, terms] : [bank, state, words, terms];
 
   // ---- right: the tax summary (only the components that apply; one row per rate when rates differ)
   type SumRow = { label: string; rate?: string; amount: string; bold?: boolean; fill?: RGB };

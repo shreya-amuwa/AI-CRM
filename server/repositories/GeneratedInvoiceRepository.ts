@@ -53,12 +53,16 @@ export class GeneratedInvoiceRepository {
     return unwrap(await this.db.rpc('accounts_invoice_record_failure', { p_invoice: invoiceId, p_stage: stage, p_step: step, p_error: error })) as Invoice;
   }
 
-  async confirmPayment(invoiceId: string, p: { method: string; reference?: string | null; note?: string | null; paidOn?: string | null }): Promise<Invoice & { replayed: boolean }> {
+  async confirmPayment(
+    invoiceId: string,
+    p: { method?: string | null; reference?: string | null; note?: string | null; paidOn?: string | null; amount?: string | null; requestId?: string | null }
+  ): Promise<Invoice & { replayed: boolean; settled: boolean }> {
     return unwrap(
       await this.db.rpc('accounts_confirm_invoice_payment', {
-        p_invoice: invoiceId, p_method: p.method, p_reference: p.reference ?? null, p_note: p.note ?? null, p_paid_on: p.paidOn ?? null
+        p_invoice: invoiceId, p_method: p.method ?? null, p_reference: p.reference ?? null, p_note: p.note ?? null, p_paid_on: p.paidOn ?? null,
+        p_amount: p.amount ?? null, p_request: p.requestId ?? null
       })
-    ) as Invoice & { replayed: boolean };
+    ) as Invoice & { replayed: boolean; settled: boolean };
   }
 
   /** One invoice the caller may read (the existing function, which now includes the generated snapshot). */

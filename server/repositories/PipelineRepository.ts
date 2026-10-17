@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  CustomerJourneyInfo,
+  DeliveryQueueItem,
+  ServiceJourneySetting,
   AccountsConfirmation,
   AccountsPaymentCounts,
   DivisionLeadsOverview,
@@ -654,6 +657,35 @@ export class PipelineRepository {
     return unwrap(
       await this.db.rpc('accounts_payment_requests', { p_status: q.status, p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })
     ) as Paginated<PaymentRequestItem>;
+  }
+
+  // ---- service journeys, client-login provisioning and delivery departments ----
+  async customerJourney(customerId: string): Promise<CustomerJourneyInfo> {
+    return unwrap(await this.db.rpc('customer_journey_info', { p_customer: customerId })) as CustomerJourneyInfo;
+  }
+
+  async accountsClientLoginBegin(customerId: string, email: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_client_login_begin', { p_customer: customerId, p_email: email }));
+  }
+
+  async accountsClientLoginFailed(customerId: string, message: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_client_login_failed', { p_customer: customerId, p_message: message }));
+  }
+
+  async sendToDelivery(customerId: string, note: string | null): Promise<{ sent: number; remaining: number; departments: string | null }> {
+    return unwrap(await this.db.rpc('send_to_delivery_departments', { p_customer: customerId, p_note: note })) as { sent: number; remaining: number; departments: string | null };
+  }
+
+  async deliveryQueue(q: { search?: string; page: number; pageSize: number }): Promise<Paginated<DeliveryQueueItem>> {
+    return unwrap(await this.db.rpc('delivery_queue', { p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })) as Paginated<DeliveryQueueItem>;
+  }
+
+  async serviceJourneys(): Promise<ServiceJourneySetting[]> {
+    return (unwrap(await this.db.rpc('service_journeys')) as ServiceJourneySetting[] | null) ?? [];
+  }
+
+  async setServiceJourney(code: string, requiresTechnicalConsultant: boolean, departmentId: string | null): Promise<void> {
+    unwrap(await this.db.rpc('set_service_journey', { p_service: code, p_requires_technical_consultant: requiresTechnicalConsultant, p_delivery_department: departmentId }));
   }
 
   async accountsCounts(): Promise<AccountsPaymentCounts> {

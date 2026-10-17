@@ -29,6 +29,9 @@ import {
   todayIso,
   useServiceCatalog
 } from './shared';
+import { WhatsAppField } from './WhatsAppField';
+import { JourneyStrip, useJourney } from '../../journey/JourneyPanel';
+import { startsSameAsMobile, whatsappValue } from '../../../../shared/whatsapp';
 
 type Errors = Record<string, string>;
 
@@ -233,6 +236,8 @@ const EMPTY = {
 export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string) => void }> = ({ onCancel, onSaved }) => {
   const { items: services, error: catalogError } = useServiceCatalog();
   const [form, setForm] = useState(EMPTY);
+  // Ticked: the WhatsApp number follows the mobile number. Only the final number is saved.
+  const [sameWhatsapp, setSameWhatsapp] = useState(false);
   // "Other" opens a text box right under the dropdown so the member types the value in place.
   const [otherCategory, setOtherCategory] = useState('');
   const [otherSource, setOtherSource] = useState('');
@@ -253,7 +258,7 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
     const payload = {
       ...form,
       leadSource: form.leadSource === 'Other' ? otherSource.trim() : form.leadSource,
-      whatsapp: form.whatsapp || null,
+      whatsapp: whatsappValue(sameWhatsapp, form.phone, form.whatsapp).trim() || null,
       email: form.email || null,
       city: form.city || null,
       address: form.address || null,
@@ -317,9 +322,17 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
           <Field label="Mobile number" required htmlFor="lead-phone" error={errors.phone}>
             {input('phone', { type: 'tel', placeholder: '+91', autoComplete: 'tel', required: true })}
           </Field>
-          <Field label="WhatsApp number" htmlFor="lead-whatsapp" error={errors.whatsapp}>
-            {input('whatsapp', { type: 'tel', placeholder: 'Same as mobile' })}
-          </Field>
+          <WhatsAppField
+            id="lead-whatsapp"
+            phone={form.phone}
+            whatsapp={form.whatsapp}
+            same={sameWhatsapp}
+            error={errors.whatsapp}
+            onChange={n => {
+              setSameWhatsapp(n.same);
+              setForm(f => ({ ...f, whatsapp: n.whatsapp }));
+            }}
+          />
           <Field label="Email" htmlFor="lead-email" error={errors.email}>
             {input('email', { type: 'email', placeholder: 'name@business.com', autoComplete: 'email' })}
           </Field>
@@ -445,7 +458,8 @@ export const EditLeadView: React.FC<{
   const { items: services } = useServiceCatalog();
   const [lead, setLead] = useState<PipelineCustomerDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', company: '', phone: '', email: '', city: '', address: '', leadSource: '', nextFollowUpAt: '' });
+  const [form, setForm] = useState({ name: '', company: '', phone: '', whatsapp: '', email: '', city: '', address: '', leadSource: '', nextFollowUpAt: '' });
+  const [sameWhatsapp, setSameWhatsapp] = useState(true);
   const [status, setStatus] = useState<LeadStatus>('NEW');
   const [selected, setSelected] = useState<string[]>([]);
   const [errors, setErrors] = useState<Errors>({});
@@ -456,6 +470,8 @@ export const EditLeadView: React.FC<{
   const [sendOpen, setSendOpen] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [overview, setOverview] = useState<PaymentOverview | null>(null);
+  // Which journey the selected services follow, and where the customer is on it
+  const { journey } = useJourney(id);
 
   const hydrate = (l: PipelineCustomerDetail) => {
     setLead(l);
@@ -464,12 +480,14 @@ export const EditLeadView: React.FC<{
       name: l.name,
       company: l.company || '',
       phone: l.phone || '',
+      whatsapp: l.whatsapp || '',
       email: l.email || '',
       city: l.city || '',
       address: l.address || '',
       leadSource: l.leadSource || '',
       nextFollowUpAt: toLocalInput(l.nextFollowUpAt)
     });
+    setSameWhatsapp(startsSameAsMobile(l.phone, l.whatsapp));
     setStatus(l.leadStatus);
     setSelected(l.services);
   };
@@ -519,6 +537,10 @@ export const EditLeadView: React.FC<{
     cmp('name', form.name.trim(), lead.name);
     cmp('company', form.company.trim(), lead.company);
     cmp('phone', form.phone.trim(), lead.phone);
+    // An empty saved WhatsApp number already means "the mobile number": nothing to save until one of them changes.
+    if (!(sameWhatsapp && !lead.whatsapp && form.phone.trim() === (lead.phone ?? ''))) {
+      cmp('whatsapp', whatsappValue(sameWhatsapp, form.phone, form.whatsapp).trim() || null, lead.whatsapp);
+    }
     cmp('email', form.email.trim() || null, lead.email);
     cmp('city', form.city.trim() || null, lead.city);
     cmp('address', form.address.trim() || null, lead.address);
@@ -721,6 +743,11 @@ export const EditLeadView: React.FC<{
       </Card>
 
       {lead.paymentWorkflow !== 'NONE' && lead.paymentWorkflow !== 'PAYMENT_CONFIRMED' && <AccountsStateCard workflow={lead.paymentWorkflow} overview={overview} />}
+      {journey && journey.journey !== 'NONE' && (
+        <Card className="p-4">
+          <JourneyStrip journey={journey} />
+        </Card>
+      )}
 
       {/* 2 · Customer details - full width */}
       <Card className="p-5">
@@ -729,6 +756,19 @@ export const EditLeadView: React.FC<{
           {detailField('Customer Name', 'name')}
           {detailField('Business name', 'company')}
           {detailField('Mobile', 'phone', { type: 'tel' })}
+          <WhatsAppField
+            id="edit-whatsapp"
+            phone={form.phone}
+            whatsapp={form.whatsapp}
+            same={sameWhatsapp}
+            error={errors.whatsapp}
+            disabled={locked}
+            inputClassName={`${inputCls} bg-slate-50 border-transparent focus:bg-white`}
+            onChange={n => {
+              setSameWhatsapp(n.same);
+              setForm(f => ({ ...f, whatsapp: n.whatsapp }));
+            }}
+          />
           {detailField('Email', 'email', { type: 'email' })}
           {detailField('City', 'city')}
           {detailField('Business address', 'address')}

@@ -731,6 +731,11 @@ export interface PaymentRequestItem {
   balance: number;
   paymentStatus: PaymentStatus;
   stage: LifecycleStage;
+  /** Who sent it: the Sales or the Support team (the person is `sentBy`). */
+  sentFrom: 'SALES' | 'SUPPORT' | 'GENERAL' | null;
+  /** The journey the services follow (see CustomerJourneyInfo). */
+  journey: JourneyKind;
+  clientLogin: ClientLoginStatus;
 }
 
 export interface AccountsPaymentCounts {
@@ -1049,6 +1054,20 @@ export interface GeneratedInvoiceStageState {
   /** Another run is working on this stage right now. */
   busy: boolean;
 }
+export type InvoicePaymentState = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+export interface InvoicePaymentSummary {
+  total: number;
+  /** Confirmed (verified) payments applied to this invoice. Pending or rejected payments are never counted. */
+  confirmed: number;
+  balance: number;
+  state: InvoicePaymentState;
+  /** Recorded but not yet verified: shown apart, not counted. */
+  pending: number;
+  /** Where this invoice's payments are recorded: the customer's payment ledger, the add-on's payments, or the invoice itself. */
+  ledger: 'CUSTOMER' | 'ADDON' | 'INVOICE';
+  payments: { amount: number; method: PaymentMethod | null; reference: string | null; paidAt: string }[];
+}
+
 export interface GeneratedInvoice {
   number: string;
   invoiceDate: string;
@@ -1064,6 +1083,8 @@ export interface GeneratedInvoice {
   lines: GeneratedInvoiceLine[];
   totals: GeneratedInvoiceTotals;
   lifecycle: 'ISSUED' | 'PAID';
+  /** Total - confirmed payments applied to this invoice. Worked out by the database from the payment records, never typed or sent by the browser. */
+  paymentSummary: InvoicePaymentSummary | null;
   payment: { confirmedAt: string; confirmedBy: string | null; method: PaymentMethod | null; reference: string | null; note: string | null; paidOn: string | null } | null;
   unpaid: GeneratedInvoiceStageState;
   paid: GeneratedInvoiceStageState;
@@ -1275,6 +1296,7 @@ export interface ClientInvoice {
   paidFilePending?: boolean;
   paymentConfirmedAt?: string | null;
   taxSummary?: { cgst: number; sgst: number; igst: number } | null;
+  paymentSummary?: InvoicePaymentSummary | null;
 }
 export type ClientTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
 export interface ClientTicket {
@@ -1485,4 +1507,71 @@ export interface LeaveMonthEmployee {
 export interface LeaveMonthlySummary {
   month: string;
   employees: LeaveMonthEmployee[];
+}
+
+
+// ---------------------------------------------------------------------------
+// Service journeys, client-login provisioning and delivery departments
+// ---------------------------------------------------------------------------
+/** TECHNICAL: every service needs the Technical Consultant. DIRECT: none does. MIXED: some do (the customer follows the Technical Consultant journey). NONE: no service yet. */
+export type JourneyKind = 'TECHNICAL' | 'DIRECT' | 'MIXED' | 'NONE';
+export type ClientLoginStatus = 'NOT_STARTED' | 'PENDING' | 'CREATED' | 'FAILED';
+/** Where a customer is, for display. Payment, login, documents and delivery stay separate facts (below); this is only the label. */
+export type JourneyStep =
+  | 'LEAD' | 'PENDING_PAYMENT' | 'PAYMENT_PARTIAL' | 'PAYMENT_CONFIRMED' | 'LOGIN_PENDING' | 'LOGIN_FAILED' | 'LOGIN_CREATED'
+  | 'RETURNED_TO_SALES' | 'DOCUMENTS_PENDING' | 'DOCUMENTS_VERIFIED' | 'PARTLY_SENT_TO_DELIVERY' | 'SENT_TO_DELIVERY'
+  | 'TECHNICAL_CONSULTANT' | 'CUSTOMER' | 'LOST';
+
+export interface ServiceJourneySetting {
+  code: string;
+  name: string;
+  category: string;
+  isActive: boolean;
+  requiresTechnicalConsultant: boolean;
+  deliveryDepartmentId: string | null;
+  deliveryDepartment: string | null;
+}
+
+export interface CustomerJourneyInfo {
+  customerId: string;
+  journey: JourneyKind;
+  followsTechnicalConsultant: boolean;
+  step: JourneyStep;
+  lifecycleStage: LifecycleStage;
+  services: {
+    code: string;
+    name: string;
+    category: string;
+    requiresTechnicalConsultant: boolean;
+    deliveryDepartment: { id: string; name: string } | null;
+    sentToDeliveryAt: string | null;
+    sentToDeliveryBy: string | null;
+  }[];
+  referrer: { id: string; name: string; division: 'SALES' | 'SUPPORT' | 'GENERAL' | null; department: string | null } | null;
+  payment: { workflow: string; dealAmount: number | null; verified: number; balance: number; status: PaymentStatus };
+  clientLogin: { status: ClientLoginStatus; email: string | null; attempts: number; lastError: string | null; updatedAt: string | null; createdAt: string | null; createdBy: string | null };
+  documents: { total: number; saved: number; verified: number; rejected: number };
+  delivery: { sent: number; total: number; unsentDirect: number; allSent: boolean };
+  /** What the signed-in person may do now (the server decides; the screen only offers these). */
+  can: { createLogin: boolean; returnToSales: boolean; verifyDocuments: boolean; sendToDelivery: boolean };
+}
+
+export interface DeliveryQueueItem {
+  id: string;
+  code: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  city: string | null;
+  address: string | null;
+  referredBy: string | null;
+  referredFrom: 'SALES' | 'SUPPORT' | 'GENERAL' | null;
+  services: { code: string; name: string; sentAt: string; sentBy: string | null; note: string | null; department: string | null }[];
+  dealAmount: number | null;
+  amountVerified: number;
+  balance: number;
+  paymentStatus: PaymentStatus;
+  clientLogin: boolean;
 }

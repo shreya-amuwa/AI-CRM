@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, ClipboardList, FileText, Gauge, Headset, LogOut, Menu, ShieldCheck, UserCheck, UserPlus, Users, X } from 'lucide-react';
+import { Bell, ClipboardList, FileText, Gauge, Headset, LogOut, Menu, PackageCheck, ShieldCheck, Target, UserCheck, UserPlus, Users, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -17,8 +17,17 @@ import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { PipelineWorkspace } from '../team-member/pipeline/PipelineWorkspace';
+import { usePipelineCounts } from '../team-member/pipeline/shared';
+import { DeliveryQueue } from '../delivery/DeliveryQueue';
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
+/** The team's leads: a team lead sees every lead of their team's members (the database decides), without the inbound enquiries strip. */
+const SupportTeamLeads: React.FC = () => {
+  const { counts } = usePipelineCounts();
+  return <PipelineWorkspace section="leads" counts={counts} ownOnly onNavigate={() => undefined} />;
+};
+
+export type SupportLeadPage = 'dashboard' | 'customers' | 'leads' | 'delivery' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -27,6 +36,9 @@ export type SupportLeadPage = 'dashboard' | 'customers' | 'tasks' | 'tickets' | 
 const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: Gauge },
   { id: 'customers', label: 'Customers', icon: Users },
+  // the leads the team's members pitch (referrals and other channels): the same lead pages Sales uses
+  { id: 'leads', label: 'Team Leads', icon: Target },
+  { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
@@ -265,6 +277,8 @@ export const SupportLeadDashboard: React.FC = () => {
         <main className="flex-1 p-4 sm:p-6 lg:p-8 min-w-0">
           {page === 'dashboard' && <TeamLeaderDashboard />}
           {page === 'customers' && <SupportLeadCustomers />}
+          {page === 'leads' && <SupportTeamLeads />}
+          {page === 'delivery' && <DeliveryQueue />}
           {page === 'tasks' && <TeamLeadTasksView />}
           {page === 'tickets' && <LeadTickets />}
           {page === 'invoices' && <LeadInvoices />}

@@ -504,6 +504,24 @@ export const conversationSchema = z.object({ note: trimmed(5000).min(1, 'Write w
 
 const wholeRupees = (message: string) => z.coerce.number().positive(message).int('Enter the amount in whole rupees (no paise).').max(1e12);
 
+/** Accounts creates the dashboard login of a customer whose services need no Technical Consultant. */
+export const accountsClientLoginSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254),
+    password: z.string().min(10, 'The password must be at least 10 characters.').max(72)
+  })
+  .strict();
+export const sendToDeliverySchema = z.object({ note: optionalText(1000) }).strict();
+export const deliveryQueueQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+export const serviceJourneySchema = z
+  .object({ requiresTechnicalConsultant: z.boolean(), deliveryDepartmentId: uuidSchema.nullable().optional() })
+  .strict()
+  .refine(v => v.requiresTechnicalConsultant || !!v.deliveryDepartmentId, { path: ['deliveryDepartmentId'], message: 'Choose the department that delivers this service.' });
+
 export const sendToAccountsSchema = z
   .object({ amount: wholeRupees('Enter the agreed amount.'), note: optionalText(1000) })
   .strict();
@@ -805,10 +823,26 @@ export type GeneratedInvoiceIssueInput = z.infer<typeof generatedInvoiceIssueSch
 export const invoicePrefillQuerySchema = z.object({ purpose: z.enum(INVOICE_PURPOSES).default('SERVICES'), addonRequestId: uuidSchema.optional() });
 export const invoiceConfirmPaymentSchema = z
   .object({
-    method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Choose how the payment was received.' }) }),
+    /** Needed only when a payment is recorded on the invoice itself; otherwise the verified payments on record decide. */
+    method: z.preprocess(v => (v === '' ? null : v), z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Choose how the payment was received.' }) }).nullable().optional()),
     reference: optionalText(120),
     note: optionalText(1000),
-    paidOn: isoDate.nullable().optional()
+    paidOn: isoDate.nullable().optional(),
+    /** Rupees received now (up to 2 decimals); blank: the whole remaining balance. */
+    amount: z.preprocess(
+      v => (v === '' || v === null ? undefined : v),
+      z.union([z.string(), z.number()]).optional().transform((v, ctx) => {
+        if (v === undefined) return undefined;
+        const paise = toPaise(v);
+        if (paise === null || paise <= 0) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter the amount received in rupees (more than zero, up to 2 decimals).' });
+          return z.NEVER;
+        }
+        return paiseToDecimal(paise);
+      })
+    ),
+    /** One per click: a retry with the same id records the payment once. */
+    requestId: uuidSchema.optional()
   })
   .strict();
 export const invoiceDeliverSchema = z.object({ stage: z.enum(INVOICE_STAGES) }).strict();

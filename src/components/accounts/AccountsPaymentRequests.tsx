@@ -7,6 +7,7 @@ import { Empty, ErrorBanner, inputClass, Loading, Modal } from '../support-membe
 import { fmtDate, fmtDateTime, PaymentStatusBadge, rupees } from '../payments/PaymentBits';
 import { AccountsPaymentPanel, ReasonDialog } from './AccountsPaymentPanel';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
+import { ClientLoginCard, JourneyStrip, useJourney } from '../journey/JourneyPanel';
 
 type Tab = 'PENDING' | 'CONFIRMED' | 'RETURNED';
 
@@ -30,7 +31,10 @@ const RequestDetail: React.FC<{
   const pending = item.status === 'PENDING';
   const name = item.company || item.name;
   const hasVerified = (overview?.verified ?? 0) > 0;
-  const canConfirm = pending && hasVerified;
+  const { journey, reload: reloadJourney } = useJourney(pending || item.status === 'CONFIRMED' ? item.id : null);
+  // A direct-journey customer needs its dashboard login first (the database enforces it; this only tells the person why).
+  const needsLogin = journey?.journey === 'DIRECT' && journey.clientLogin.status !== 'CREATED';
+  const canConfirm = pending && hasVerified && (journey ? journey.can.returnToSales : true);
 
   return (
     <section aria-label={`Details of ${name}`} className={bare ? '' : 'bg-white rounded-2xl border border-slate-200/80'}>
@@ -69,7 +73,7 @@ const RequestDetail: React.FC<{
             <Row k="WhatsApp" v={item.whatsapp} />
             <Row k="E-mail" v={item.email} />
             <Row k="City" v={item.city} />
-            <Row k="Sold by" v={item.salesperson} />
+            <Row k={item.sentFrom === 'SUPPORT' ? 'Referred by (Support)' : 'Sold by'} v={item.salesperson} />
             <Row k="Customer ID" v={item.code} />
             <Row k="Services" v={item.services.length ? item.services.join(', ') : null} />
             <Row k="Agreed amount" v={rupees(item.agreedAmount)} />
@@ -89,7 +93,12 @@ const RequestDetail: React.FC<{
           )}
         </div>
 
-        <AccountsPaymentPanel customerId={item.id} customerLabel={item.company || item.name} readOnly={item.status === 'RETURNED'} onLoaded={setOverview} onChanged={onChanged} />
+        {journey && <JourneyStrip journey={journey} />}
+        {journey && journey.journey === 'DIRECT' && item.status !== 'RETURNED' && (
+          <ClientLoginCard journey={journey} customerId={item.id} defaultEmail={item.email} onChanged={() => { reloadJourney(); onChanged(); }} />
+        )}
+
+        <AccountsPaymentPanel customerId={item.id} customerLabel={item.company || item.name} readOnly={item.status === 'RETURNED'} onLoaded={setOverview} onChanged={() => { reloadJourney(); onChanged(); }} />
 
         {item.resolvedAt && (
           <p className={`text-xs rounded-xl px-3 py-2 border ${item.status === 'CONFIRMED' ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-rose-800 bg-rose-50 border-rose-200'}`}>
@@ -128,8 +137,14 @@ const RequestDetail: React.FC<{
           )}
           <p className="text-[11px] text-slate-500 sm:text-right">
             {canConfirm
-              ? 'The customer moves to Sales → Customer onboarding. A balance still due stays with you under Part payments.'
-              : 'Record the payment and verify it first. Only verified money counts as received.'}
+              ? journey?.journey === 'DIRECT'
+                ? 'The customer goes back to Sales, who verify the documents and send the services to their department. A balance still due stays with you under Part payments.'
+                : 'The customer moves to Sales → Customer onboarding. A balance still due stays with you under Part payments.'
+              : !hasVerified
+                ? 'Record the payment and verify it first. Only verified money counts as received.'
+                : needsLogin
+                  ? 'Create the client dashboard login above first. The customer returns to Sales once it exists.'
+                  : 'Record the payment and verify it first. Only verified money counts as received.'}
           </p>
         </div>
       )}
