@@ -1,14 +1,5 @@
 import React from 'react';
-import {
-  LayoutDashboard, Users, GraduationCap, Settings,
-  ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send,
-  ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall,
-  PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones,
-  Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus,
-  Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign,
-  Handshake, Filter, Award, FileText,  LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork,
-  Navigation, TrendingUp, Receipt, Wallet
-} from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -73,6 +64,8 @@ export type ActiveTab =
   | 'support_reports'
   | 'support_flow'
   | 'staff_access'
+  | 'staff_add'
+  | 'client_notices'
   | 'notifications';
 
 interface SidebarProps {
@@ -298,10 +291,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const anchored = baseNavItems[1]?.id === 'confirmations' ? (baseNavItems[2]?.id === 'part_payments' ? 3 : 2) : 1;
   const isSalesSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_sales';
   const isSupportSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_support';
+  // HR: adding a member and managing access are two separate pages; Client notices sit below HR & Operations.
+  const canSendClientNotices = user?.role === 'superadmin' || user?.role === 'hr';
+  const hrNav: typeof baseNavItems = [
+    baseNavItems[0],
+    { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
+    { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
+    ...baseNavItems.slice(1, -1),
+    ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
+    baseNavItems[baseNavItems.length - 1]
+  ];
   const navItems = isSalesSuperAdmin
     ? WABASTORE_SALES_SUPERADMIN_NAV
     : isSupportSuperAdmin
     ? WABASTORE_SUPPORT_SUPERADMIN_NAV
+    : key === 'hr' && canManageStaff
+    ? hrNav
     : canManageStaff
     ? [
         ...baseNavItems.slice(0, anchored),

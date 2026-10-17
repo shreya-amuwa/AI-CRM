@@ -14,8 +14,13 @@ Migration: `supabase/migrations/20261027000100_hr_attendance_leave_workflow.sql`
   and a text alternative; **either time missing** = grey `N/A`.
 * A difference above 15 minutes notifies the HR department once per employee and day.
 
+## HR side panel
+Dashboard, **Add Member**, **Access Control**, **HR & Operations**, **Client Notices**, Notification Center. Add Member (create an account) and Access Control (roles, suspend, restore, remove) are separate pages; Client Notices moved out of the header into the side panel under HR & Operations.
+
+**HR & Operations** shows a simple staff directory: a search box, one status filter, and department cards; opening a department lists its people (name, designation, status, and this month's leave when there is any). Everything else (salary, documents, leave history, personal details, "Make permanent employee", "Mark as left") is in the person's profile.
+
 ## Add Member
-HR Dashboard -> Team Members & Access. New required fields: designation (Department Head / Team Lead / Team Member), joining date, date of birth,
+HR Dashboard -> Add Member. New required fields: designation (Department Head / Team Lead / Team Member), joining date, date of birth,
 blood group, emergency contact. Department is shown from the department database. The **role** (access) and **designation** stay separate.
 They are stored in `employee_personal_details`, readable only by the employee, HR staff and the Super Admin (`hr_personal_details()` /
 `my_personal_details()`), and appear in the employee profile in HR & Operations. Invalid details create no account. Existing members are untouched.

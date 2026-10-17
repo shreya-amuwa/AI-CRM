@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
         <div className="flex items-center gap-2.5">
           
           {/* The Super Admin and the HR head tell clients about closures and new services */}
-          {(user?.role === 'superadmin' || user?.role === 'hr') && (
+          {(user?.role === 'superadmin' || user?.role === 'hr') && activeDepartment.id !== 'hr' && (
             <button
               type="button"
               onClick={() => setNoticesOpen(true)}
