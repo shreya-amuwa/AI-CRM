@@ -270,8 +270,9 @@ function restoreRewrittenPath(req: Request): Request {
   url.searchParams.delete('__path');
   // Vercel's rewrite also adds the matched route parameter (:path*) as a plain `path` query parameter. It is routing data, not
   // something the caller sent, and endpoints that accept only their own parameters (the client calendar, attendance, leave
-  // months) refuse an unknown one: "Unrecognized key(s) in object: 'path'".
-  if (url.searchParams.get('path') === original) url.searchParams.delete('path');
+  // months) refuse an unknown one, whatever its value is encoded as: "Unrecognized key(s) in object: 'path'".
+  // (Only on a rewritten request: a direct call to /api/v1/... that sends its own `path` is still refused.)
+  url.searchParams.delete('path');
   url.pathname = `${API_PREFIX}/${original.replace(/^\/+/, '')}`;
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
   return new Request(url, {

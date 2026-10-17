@@ -1961,6 +1961,8 @@ provider.close();
     const viaRewrite = await fetch(base.replace(/\/api\/v1$/, '') + `/api/crm?__path=client%2Fcalendar&path=client%2Fcalendar&from=${today}&to=${today}`, { headers: { authorization: `Bearer ${tokens.get('cl1')}` } });
     const j = (await viaRewrite.json()) as any;
     check(viaRewrite.status === 200 && Array.isArray(j.data), 'client API: the calendar loads behind the Vercel rewrite (its extra `path` parameter is not rejected)', j);
+    const other = await fetch(base.replace(/\/api\/v1$/, '') + `/api/crm?__path=client%2Fcalendar&path=anything-else&from=${today}&to=${today}`, { headers: { authorization: `Bearer ${tokens.get('cl1')}` } });
+    check(other.status === 200, 'client API: behind the rewrite, whatever value the extra `path` has is ignored', await other.clone().json());
     const own = await fetch(base + `/client/calendar?path=something&from=${today}&to=${today}`, { headers: { authorization: `Bearer ${tokens.get('cl1')}` } });
     check(own.status === 422, 'client API: a `path` the caller sent itself is still refused', await own.json());
   }
