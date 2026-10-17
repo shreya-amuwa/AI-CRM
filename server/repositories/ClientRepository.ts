@@ -1,8 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   AccountsPlans,
+  ClientActivityInput,
+  ClientActivityList,
   ClientAnnouncement,
+  ClientCalendarEvent,
   ClientCatalogService,
+  ClientDocumentQueueItem,
+  ClientDocuments,
   ClientInvoice,
   ClientNotifications,
   ClientOverview,
@@ -66,6 +71,40 @@ export class ClientRepository {
 
   notifications(limit: number, offset: number) { return this.rpc<ClientNotifications>('client_notifications', { p_limit: limit, p_offset: offset }); }
   markRead(ids: string[] | null) { return this.rpc<number>('client_mark_notifications_read', { p_ids: ids }); }
+
+  // ---- calendar and documents (the client)
+  calendar(from: string, to: string) { return this.rpc<ClientCalendarEvent[]>('client_calendar', { p_from: from, p_to: to }); }
+  documents() { return this.rpc<ClientDocuments>('client_documents'); }
+  beginDocumentUpload(item: string, fileName: string, mime: string, size: number) {
+    return this.rpc<any>('client_begin_document_upload', { p_item: item, p_file_name: fileName, p_mime: mime, p_size: size });
+  }
+  pendingDocument(id: string) { return this.rpc<any>('client_pending_document', { p_document: id }); }
+  completeDocumentUpload(id: string, size: number) { return this.rpc<any>('client_complete_document_upload', { p_document: id, p_size: size }); }
+  async abortDocumentUpload(id: string): Promise<void> { await this.rpc('client_abort_document_upload', { p_document: id }); }
+  async saveDetail(item: string, value: string): Promise<void> { await this.rpc('client_save_detail', { p_item: item, p_value: value }); }
+  async documentFile(id: string) {
+    const rows = await this.rpc<{ storage_provider: 'SUPABASE' | 'R2'; storage_bucket: string; storage_path: string; original_file_name: string; mime_type: string }[]>('client_document_download', { p_document: id });
+    return rows[0];
+  }
+
+  // ---- calendar and documents (the support team)
+  activityCustomers(search: string | null) { return this.rpc<{ id: string; code: string | null; name: string; company: string | null; hasClientLogin: boolean }[]>('client_activity_customers', { p_search: search }); }
+  activityList(customerId: string) { return this.rpc<ClientActivityList>('client_activity_list', { p_customer: customerId }); }
+  logActivity(customerId: string, i: ClientActivityInput) {
+    return this.rpc<ClientCalendarEvent>('log_client_activity', { p_customer: customerId, p_service: i.serviceCode, p_date: i.date, p_kind: i.kind, p_title: i.title, p_summary: i.summary, p_metrics: i.metrics });
+  }
+  updateActivity(id: string, i: ClientActivityInput) {
+    return this.rpc<ClientCalendarEvent>('update_client_activity', { p_id: id, p_service: i.serviceCode, p_date: i.date, p_kind: i.kind, p_title: i.title, p_summary: i.summary, p_metrics: i.metrics });
+  }
+  async deleteActivity(id: string): Promise<void> { await this.rpc('delete_client_activity', { p_id: id }); }
+  documentQueue(status: 'PENDING' | 'REVIEWED') { return this.rpc<ClientDocumentQueueItem[]>('client_document_queue', { p_status: status }); }
+  async reviewDocument(customerId: string, item: string, decision: string, note: string | null): Promise<void> {
+    await this.rpc('review_client_document', { p_customer: customerId, p_item: item, p_decision: decision, p_note: note });
+  }
+  async uploadFile(id: string) {
+    const rows = await this.rpc<{ storage_provider: 'SUPABASE' | 'R2'; storage_bucket: string; storage_path: string; original_file_name: string; mime_type: string }[]>('client_upload_download', { p_document: id });
+    return rows[0];
+  }
 
   // ---- the internal sides (Technical Consultant, Accounts)
   openServiceRequests() { return this.rpc<ConsultantOpenServiceRequest[]>('consultant_open_service_requests'); }

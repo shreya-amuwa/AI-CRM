@@ -1393,6 +1393,89 @@ export interface ClientOverview {
   notifications: { unread: number; recent: ClientNotification[] };
   renewals: { kind: 'SERVICE' | 'PLAN'; name: string; renewsOn: string }[];
 }
+// ---- Client calendar (what the team did, with insights) and documents the client provides ----
+export const CLIENT_ACTIVITY_KINDS = ['CAMPAIGN', 'CALL_CAMPAIGN', 'POST', 'AD', 'SETUP', 'REPORT', 'MEETING', 'OTHER'] as const;
+export type ClientActivityKind = (typeof CLIENT_ACTIVITY_KINDS)[number];
+export interface ClientMetric {
+  label: string;
+  value: string;
+}
+/** One thing on the client's calendar: logged by the team (ACTIVITY) or recorded by the system. */
+export interface ClientCalendarEvent {
+  id: string;
+  source: 'ACTIVITY' | 'SERVICE' | 'INVOICE' | 'TICKET' | 'DOCUMENT';
+  /** ACTIVITY: a ClientActivityKind; others: SERVICE_STARTED, SERVICE_ACTIVATED, SERVICE_RENEWAL, INVOICE_ISSUED, INVOICE_PAID, TICKET_RAISED, TICKET_RESOLVED, DOCUMENT_VERIFIED. */
+  kind: string;
+  /** YYYY-MM-DD (office time). */
+  date: string;
+  title: string;
+  summary?: string | null;
+  serviceCode?: string | null;
+  serviceName?: string | null;
+  metrics: ClientMetric[];
+  createdBy?: string | null;
+}
+/** Staff side: an activity the team logged for a client. */
+export interface ClientActivityList {
+  hasClientLogin: boolean;
+  services: { code: string; name: string }[];
+  events: ClientCalendarEvent[];
+}
+export interface ClientActivityInput {
+  serviceCode: string | null;
+  date: string;
+  kind: ClientActivityKind;
+  title: string;
+  summary: string | null;
+  metrics: ClientMetric[];
+}
+export type ClientDocumentStatus = 'MISSING' | 'SAVED' | 'VERIFIED' | 'REJECTED';
+export interface ClientDocumentItem {
+  code: string;
+  label: string;
+  hint: string;
+  kind: 'FILE' | 'DETAILS' | 'CHOICE';
+  options: string[] | null;
+  optional: boolean;
+  section: 'BUSINESS_BASICS' | 'SERVICE' | 'MANDATORY_DOCUMENTS';
+  sortOrder: number;
+  services: { code: string; name: string }[];
+  status: ClientDocumentStatus;
+  /** FILE: the file name; DETAILS / CHOICE: what was typed. */
+  value: string | null;
+  documentId: string | null;
+  savedAt: string | null;
+  byClient: boolean;
+  reviewedAt: string | null;
+  /** Why the team sent it back (only while REJECTED). */
+  reviewNote: string | null;
+  /** False once the team verified it. */
+  canEdit: boolean;
+  allowedMimeTypes: string[] | null;
+  maxSizeBytes: number | null;
+}
+export interface ClientDocuments {
+  items: ClientDocumentItem[];
+  summary: { total: number; provided: number; verified: number; needed: number };
+}
+/** Support / Technical Consultant: one thing a client provided, waiting to be verified (or already reviewed). */
+export interface ClientDocumentQueueItem {
+  customerId: string;
+  customer: string;
+  contact: string;
+  itemCode: string;
+  label: string;
+  kind: 'FILE' | 'DETAILS' | 'CHOICE';
+  status: 'SAVED' | 'VERIFIED' | 'REJECTED';
+  value: string | null;
+  documentId: string | null;
+  fileName: string | null;
+  savedAt: string;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+  reviewedBy: string | null;
+  services: string[];
+}
 export interface ClientDocumentUrl {
   url: string;
   expiresInSeconds: number;

@@ -1859,6 +1859,119 @@ provider.close();
   r = await api('cl1', 'GET', '/client/notifications');
   check(r.json.data.unread === 0, 'client API: the owner marks them read', r);
 
+  // --- client documents: upload what was missed, the team verifies -------------------------
+  await db.query(`insert into public.customer_services (customer_id, service_code) values ($1, 'RCS_REGISTRATION') on conflict do nothing`, [leadA]);
+  r = await api('cl1', 'GET', '/client/documents');
+  const banner = r.json.data.items?.find((i: any) => i.code === 'RCS_BANNER');
+  check(r.status === 200 && banner?.status === 'MISSING' && banner.kind === 'FILE' && banner.allowedMimeTypes.includes('image/png')
+    && !r.json.data.items.some((i: any) => i.code === 'INVOICE'), 'client API: documents lists what the client can provide (a service bought later adds its own), never the invoice', r);
+  r = await api('a', 'GET', '/client/documents');
+  check(r.status === 403, 'client API: staff cannot use the client documents', r);
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'RCS_BANNER', fileName: 'banner.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
+  check(r.status === 422, 'client API: only accepted file types', r);
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'GBP_PHOTOS', fileName: 'p.png', mimeType: 'image/png', sizeBytes: PNG.length });
+  check(r.status === 422 && /not part/.test(r.json.error.message), 'client API: a document of a service the client does not have is refused', r);
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'RCS_BANNER', fileName: 'big.png', mimeType: 'image/png', sizeBytes: 3 * 1024 * 1024 });
+  check(r.status === 422, 'client API: over 2 MB is refused', r);
+  // a file whose content is not what it says is refused and does not count
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'RCS_BANNER', fileName: 'fake.png', mimeType: 'image/png', sizeBytes: PDF.length });
+  check(r.status === 201, 'client API: an upload is booked', r);
+  let cticket = r.json.data;
+  await put(cticket, PDF, 'image/png');
+  r = await api('cl1', 'POST', `/client/documents/uploads/${cticket.document.id}/complete`);
+  check(r.status === 422 && /does not match/.test(r.json.error.message), 'client API: a PDF renamed to .png is refused by its content', r);
+  r = await api('cl1', 'GET', '/client/documents');
+  check(r.json.data.items.find((i: any) => i.code === 'RCS_BANNER').status === 'MISSING', 'client API: ... and nothing was saved', r);
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'RCS_BANNER', fileName: 'banner.png', mimeType: 'image/png', sizeBytes: PNG.length });
+  cticket = r.json.data;
+  r = await api('cl2', 'POST', `/client/documents/uploads/${cticket.document.id}/complete`);
+  check(r.status === 404, "client API: another client cannot finish this client's upload", r);
+  await put(cticket, PNG, 'image/png');
+  r = await api('cl1', 'POST', `/client/documents/uploads/${cticket.document.id}/complete`);
+  check(r.status === 200 && r.json.data.status === 'UPLOADED', 'client API: the real file is accepted', r);
+  const bannerDoc = cticket.document.id;
+  r = await api('cl1', 'GET', '/client/documents');
+  check(r.json.data.items.find((i: any) => i.code === 'RCS_BANNER').status === 'SAVED' && r.json.data.items.find((i: any) => i.code === 'RCS_BANNER').byClient, 'client API: the upload fills the checklist', r);
+  r = await api('cl1', 'POST', '/client/documents/details', { itemCode: 'RCS_DOMAIN_NAME', value: 'galaxy.example' });
+  check(r.status === 200, 'client API: a typed detail is saved', r);
+  r = await api('a', 'POST', '/client/documents/details', { itemCode: 'RCS_DOMAIN_NAME', value: 'x' });
+  check(r.status === 403, 'client API: staff cannot save client details', r);
+  r = await api('cl1', 'GET', `/client/documents/${bannerDoc}/url?action=view`);
+  check(r.status === 200 && r.json.data.url, 'client API: the client opens their own file', r);
+  r = await api('cl2', 'GET', `/client/documents/${bannerDoc}/url?action=view`);
+  check(r.status === 404, "client API: not another client's", r);
+
+  // the team verifies
+  r = await api('tc', 'GET', '/pipeline/client-documents');
+  check(r.status === 200 && r.json.data.filter((q: any) => q.customerId === leadA).map((q: any) => q.itemCode).sort().join() === 'RCS_BANNER,RCS_DOMAIN_NAME', 'the Technical Consultant sees what the client provided', r);
+  r = await api('b', 'GET', '/pipeline/client-documents');
+  check(r.status === 200 && r.json.data.every((q: any) => q.customerId !== leadA), 'a salesperson of another team does not see them', r);
+  r = await api('tc', 'GET', `/pipeline/client-documents/${bannerDoc}/url`);
+  check(r.status === 200 && r.json.data.url, 'the Technical Consultant opens the uploaded file', r);
+  r = await api('b', 'GET', `/pipeline/client-documents/${bannerDoc}/url`);
+  check(r.status === 404, 'others cannot', r);
+  r = await api('b', 'POST', `/pipeline/customers/${leadA}/client-documents/RCS_BANNER/review`, { decision: 'VERIFIED' });
+  check(r.status === 404, 'others cannot verify it', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-documents/RCS_BANNER/review`, { decision: 'REJECTED' });
+  check(r.status === 422, 'sending it back needs a reason', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-documents/RCS_BANNER/review`, { decision: 'REJECTED', note: 'The banner is cropped. Please upload the full banner.' });
+  check(r.status === 200, 'the Technical Consultant sends it back with a note', r);
+  r = await api('cl1', 'GET', '/client/documents');
+  const sentBack = r.json.data.items.find((i: any) => i.code === 'RCS_BANNER');
+  check(sentBack.status === 'REJECTED' && /cropped/.test(sentBack.reviewNote) && sentBack.canEdit, 'client API: the client sees why and can upload again', r);
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'RCS_BANNER', fileName: 'banner2.png', mimeType: 'image/png', sizeBytes: PNG.length });
+  cticket = r.json.data;
+  await put(cticket, PNG, 'image/png');
+  r = await api('cl1', 'POST', `/client/documents/uploads/${cticket.document.id}/complete`);
+  check(r.status === 200, 'client API: the corrected file is uploaded', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-documents/RCS_BANNER/review`, { decision: 'VERIFIED' });
+  check(r.status === 200, 'the Technical Consultant verifies it', r);
+  r = await api('cl1', 'GET', '/client/notifications');
+  check(r.json.data.items.some((n: any) => n.type === 'DOCUMENT_VERIFIED') && r.json.data.items.some((n: any) => n.type === 'DOCUMENT_REJECTED'), 'client API: the client is told about both', r);
+  r = await api('cl1', 'POST', '/client/documents/uploads', { itemCode: 'RCS_BANNER', fileName: 'again.png', mimeType: 'image/png', sizeBytes: PNG.length });
+  check(r.status === 409, 'client API: a verified document is locked', r);
+
+  // --- client calendar: what the team did, with insights ---------------------------------
+  const today = new Date().toISOString().slice(0, 10);
+  const calBody = { serviceCode: 'AI_CALLING', date: today, kind: 'CALL_CAMPAIGN', title: 'Gold rate calling campaign', summary: 'Called the customers who asked for the gold rate.',
+    metrics: [{ label: 'Calls made', value: '320' }, { label: 'Answered', value: '210' }] };
+  r = await api('b', 'POST', `/pipeline/customers/${leadA}/client-activity`, calBody);
+  check(r.status === 404, 'others cannot log activity for this client', r);
+  r = await api('cl1', 'POST', `/pipeline/customers/${leadA}/client-activity`, calBody);
+  check(r.status === 401 || r.status === 403, 'a client cannot log activity', r);
+  r = await api('tc', 'GET', '/pipeline/client-customers?search=galaxy');
+  check(r.status === 200 && r.json.data.some((c: any) => c.id === leadA && c.hasClientLogin), 'the support team finds the client to log activity for', r);
+  r = await api('b', 'GET', '/pipeline/client-customers?search=galaxy');
+  check(r.status === 200 && !r.json.data.some((c: any) => c.id === leadA), 'others do not', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-activity`, { ...calBody, serviceCode: 'GBP_SETUP' });
+  check(r.status === 422, 'the service must be one of the customer\'s', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-activity`, { ...calBody, metrics: [{ label: 'Calls', value: '' }] });
+  check(r.status === 422, 'an insight needs a name and a value', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-activity`, calBody);
+  check(r.status === 201 && r.json.data.metrics.length === 2, 'the support team logs a campaign with its insights', r);
+  const actId = r.json.data.id;
+  r = await api('cl1', 'GET', `/client/calendar?from=${today}&to=${today}`);
+  check(r.status === 200 && r.json.data.some((e: any) => e.id === actId && e.title === 'Gold rate calling campaign' && e.metrics.length === 2 && e.serviceName === 'AI Calling'),
+    'client API: the client sees it on that date with the insights', r);
+  r = await api('cl2', 'GET', `/client/calendar?from=${today}&to=${today}`);
+  check(r.status === 200 && !r.json.data.some((e: any) => e.id === actId), "client API: not on another client's calendar", r);
+  r = await api('cl1', 'GET', '/client/calendar?from=2026-02-01&to=2026-01-01');
+  check(r.status === 422, 'client API: a backwards range is refused', r);
+  r = await api('cl1', 'GET', '/client/calendar?from=2020-01-01&to=2026-01-01');
+  check(r.status === 422, 'client API: a range of many years is refused', r);
+  r = await api('a', 'GET', `/client/calendar?from=${today}&to=${today}`);
+  check(r.status === 403, 'client API: staff cannot use the client calendar', r);
+  r = await api('tc', 'PATCH', `/pipeline/client-activity/${actId}`, { ...calBody, title: 'Gold rate calling campaign (final)', metrics: [{ label: 'Calls made', value: '330' }] });
+  check(r.status === 200 && r.json.data.title.endsWith('(final)'), 'an entry can be corrected', r);
+  r = await api('tc', 'GET', `/pipeline/customers/${leadA}/client-activity`);
+  check(r.status === 200 && r.json.data.events.length === 1 && r.json.data.services.some((x: any) => x.code === 'AI_CALLING'), 'the team sees what it logged and the services to choose from', r);
+  r = await api('b', 'DELETE', `/pipeline/client-activity/${actId}`);
+  check(r.status === 404, 'others cannot delete it', r);
+  r = await api('tc', 'DELETE', `/pipeline/client-activity/${actId}`);
+  check(r.status === 200, 'a wrong entry can be removed', r);
+  r = await api('cl1', 'GET', `/client/calendar?from=${today}&to=${today}`);
+  check(!r.json.data.some((e: any) => e.id === actId), 'client API: and it is gone from the calendar', r);
+
   // notices from the Department Head: an office-closed day, and a new service
   await db.query(`insert into public.client_announcements (kind, title, body, event_date) values ('OFFICE_CLOSED', 'Office closed - review meeting', 'Back on the next working day.', ((now() at time zone 'Asia/Kolkata')::date + 2))`);
   r = await api('cl1', 'GET', '/client/announcements');

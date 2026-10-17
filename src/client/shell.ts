@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-export type SectionSlug = 'overview' | 'services' | 'explore' | 'plans' | 'invoices' | 'tickets' | 'notifications';
+export type SectionSlug = 'overview' | 'services' | 'explore' | 'plans' | 'calendar' | 'documents' | 'invoices' | 'tickets' | 'notifications';
 
 export interface Shell { go: (to: string) => void; unread: number; refreshUnread: () => void; sub: string }
 export const ShellCtx = createContext<Shell | null>(null);
@@ -11,6 +11,8 @@ export const dashboardPath = (slug: SectionSlug, rest = '') => `/client/dashboar
 export function notificationTarget(n: { type?: string; entityType: string | null; entityId: string | null }): string {
   switch (n.entityType) {
     case 'invoice': return dashboardPath('invoices');
+    case 'calendar': return dashboardPath('calendar');
+    case 'document': return dashboardPath('documents');
     case 'service': return dashboardPath('services');
     case 'announcement': return n.type === 'NEW_SERVICE' ? dashboardPath('explore') : dashboardPath('overview');
     case 'plan': case 'plan_request': return dashboardPath('plans');

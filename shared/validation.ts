@@ -954,3 +954,45 @@ export const leaveDecisionSchema = z
   .strict()
   .refine(v => v.approve || (!!v.note && v.note.length >= 3), { message: 'Give a reason for rejecting the request.', path: ['note'] });
 export const leaveMonthQuerySchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM.').optional() }).strict();
+
+// ---- Client calendar and documents ----
+export const clientCalendarQuerySchema = z
+  .object({ from: isoDate, to: isoDate })
+  .strict()
+  .refine(v => v.to >= v.from, { message: 'The end date must be on or after the start date.', path: ['to'] });
+
+export const clientDocumentUploadSchema = z
+  .object({
+    itemCode: checklistItemCodeSchema,
+    fileName: trimmed(255).min(1),
+    mimeType: z.enum(UPLOAD_MIME_TYPES, { errorMap: () => ({ message: 'This file type is not accepted.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CUSTOMER_DOCUMENT_MAX_BYTES, `File size exceeds the ${CUSTOMER_DOCUMENT_MAX_LABEL} limit.`)
+  })
+  .strict();
+
+export const clientDetailSchema = z.object({ itemCode: checklistItemCodeSchema, value: trimmed(4000).min(1, 'Enter a value.') }).strict();
+
+export const clientActivitySchema = z
+  .object({
+    serviceCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.').nullable().optional(),
+    date: isoDate,
+    kind: z.enum(['CAMPAIGN', 'CALL_CAMPAIGN', 'POST', 'AD', 'SETUP', 'REPORT', 'MEETING', 'OTHER']),
+    title: trimmed(160).min(3, 'Enter a title (at least 3 characters).'),
+    summary: trimmed(2000).nullable().optional(),
+    metrics: z
+      .array(z.object({ label: z.string().trim().max(60), value: z.string().trim().max(60) }).strict())
+      .max(12, 'Add at most 12 insights.')
+      .default([])
+  })
+  .strict();
+
+export const clientDocumentReviewSchema = z
+  .object({
+    decision: z.enum(['VERIFIED', 'REJECTED']),
+    note: trimmed(1000).nullable().optional()
+  })
+  .strict();
+
+export const clientDocumentQueueQuerySchema = z.object({ status: z.enum(['PENDING', 'REVIEWED']).default('PENDING') });
+
+export const clientActivityCustomersQuerySchema = z.object({ search: trimmed(100).optional() });

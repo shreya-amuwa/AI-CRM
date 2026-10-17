@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, ClipboardList, FileText, Gauge, Headset, PackageCheck, Target, UserCheck, UserPlus, Users } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileText, FolderCheck, Gauge, Headset, PackageCheck, Target, UserCheck, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -17,6 +17,8 @@ import { TicketsPage } from '../support-member/TicketsPage';
 import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
+import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { PipelineWorkspace } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
@@ -28,7 +30,7 @@ const SupportTeamLeads: React.FC = () => {
   return <PipelineWorkspace section="leads" counts={counts} ownOnly onNavigate={() => undefined} />;
 };
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'leads' | 'delivery' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
+export type SupportLeadPage = 'dashboard' | 'customers' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -40,6 +42,8 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   // the leads the team's members pitch (referrals and other channels): the same lead pages Sales uses
   { id: 'leads', label: 'Team Leads', icon: Target },
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
+  { id: 'client-documents', label: 'Client documents', icon: FolderCheck },
+  { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
@@ -140,6 +144,8 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'customers' && <SupportLeadCustomers />}
       {page === 'leads' && <SupportTeamLeads />}
       {page === 'delivery' && <DeliveryQueue />}
+      {page === 'client-documents' && <ClientDocumentsReview />}
+      {page === 'client-calendar' && <ClientActivityManager />}
       {page === 'tasks' && <TeamLeadTasksView />}
       {page === 'tickets' && <LeadTickets />}
       {page === 'invoices' && <LeadInvoices />}
