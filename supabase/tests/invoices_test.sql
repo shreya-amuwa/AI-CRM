@@ -264,7 +264,7 @@ select test.check((select owner_id = test.id('acc_m') and issued_by = test.id('a
                      from member_invoices where id = (select (data ->> 'id')::uuid from res where name = 'P1')), 'the invoice row carries the trusted totals');
 set role authenticated;
 select test.login('acc_m');
-select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'P2'), (select body from pl where name = 'base'))$$, 'a second invoice for the original services is refused', 'already issued');
+-- (a second invoice for the agreed services is now allowed, for the next part payment: see journeys_test.sql, section 47)
 select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'P1'), (select jsonb_set(body, '{customerId}', to_jsonb((select id::text from iv where name = 'Q'))) from pl where name = 'base'))$$,
   'a request reference cannot be reused for another customer', 'already used');
 

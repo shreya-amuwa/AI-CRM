@@ -1109,6 +1109,8 @@ export interface InvoicePrefill {
   lines: { serviceCode: string | null; particulars: string; hsnSac: string; taxRate: number; quantity: string; baseAmount: number | null }[];
   /** What Sales agreed for all the original services together (a reference only: the price per service is not recorded). */
   dealAmount: number | null;
+  /** What the invoices already issued for the agreed services come to (each part payment can have its own invoice). */
+  servicesInvoiced: number;
   addonTotal: number | null;
   existingInvoices: { id: string; number: string; kind: InvoiceKind; status: string; total: number | null }[];
   catalog: { code: string; name: string; category: string }[];

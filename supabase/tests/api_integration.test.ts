@@ -2764,6 +2764,25 @@ provider.close();
   check(r.json.data.step === 'SENT_TO_DELIVERY' && r.json.data.lifecycleStage === 'CUSTOMER' && r.json.data.delivery.allSent, 'journey: sent to the delivery department, no Technical Consultant step', r.json.data);
   check((await db.query(`select count(*)::int n from customer_onboarding where customer_id = $1 and (forwarded_to_support_at is not null or with_consultant)`, [lead])).rows[0].n === 0, 'the Technical Consultant step was skipped');
 
+  // ---- an invoice for each part payment (the agreed amount is 10,000; 4,000 verified)
+  {
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    const inv = (base: number) => ({
+      requestId: crypto.randomUUID(), customerId: lead, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
+      customer: { name: 'Sushma Rao', businessName: 'Rao Boutique', address: 'Shop 2, FC Road, Pune 411004, Maharashtra', contactPerson: 'Sushma Rao', contactNumber: '9820000201', gstin: null, stateCode: '27' },
+      taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+      lines: [{ particulars: 'Meta Ads management, first instalment', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: base }]
+    });
+    r = await api('accm', 'POST', '/accounts/generated-invoices', inv(3000));
+    check(r.status === 201 && r.json.data.invoice.total === 3540 && r.json.data.invoice.generated.paymentSummary.confirmed === 3540, 'part payments: the first invoice (3,540) is covered by the 4,000 verified', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', inv(3000));
+    check(r.status === 201 && r.json.data.invoice.generated.paymentSummary.confirmed === 460 && r.json.data.invoice.generated.paymentSummary.balance === 3080, 'part payments: a second invoice for the same customer is allowed and gets what is left (460)', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', inv(5000));
+    check(r.status === 422 && /would total/.test(r.json.error.message), 'part payments: together the invoices cannot exceed the agreed amount', r);
+    r = await api('accm', 'GET', `/accounts/customers/${lead}/invoice-prefill?purpose=SERVICES`);
+    check(r.status === 200 && r.json.data.servicesInvoiced === 7080 && r.json.data.warnings.some((w: string) => /already issued/.test(w)), 'part payments: the builder is told what is already invoiced', r.json.data.warnings);
+  }
+
   // ---- service journey settings
   r = await api('sm', 'GET', '/pipeline/service-journeys');
   check(r.status === 200 && r.json.data.filter((x: any) => !x.requiresTechnicalConsultant).length === 6 && r.json.data.find((x: any) => x.code === 'WHATSAPP_API_BLUE_TICK').requiresTechnicalConsultant === true, 'settings: one catalogue; only the six Design Studio services skip the consultant', r);

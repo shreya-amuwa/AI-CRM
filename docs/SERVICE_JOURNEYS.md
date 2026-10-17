@@ -1,8 +1,8 @@
 # Service journeys, Support leads, delivery departments and invoice balances
 
-Migration: `supabase/migrations/20261029000100_service_journeys_support_balance.sql` (run it after `20261028000100_dynamic_invoices_two_stage.sql`; safe to run again).
+Migrations: `20261029000100_service_journeys_support_balance.sql` and `20261030000100_part_payment_invoices.sql` (run them in this order after `20261028000100_dynamic_invoices_two_stage.sql`; safe to run again).
 
-Order matters: `20261028000100_dynamic_invoices_two_stage.sql` redefines some functions this migration replaces (the invoice JSON, the PDF claim, the payment confirmation). If you ever run that file again, run this one again afterwards.
+Order matters: `20261028000100_dynamic_invoices_two_stage.sql` redefines some functions this migration replaces (the invoice JSON, the PDF claim, the payment confirmation). If you ever run that file again, run these two again afterwards.
 
 ## One catalogue, a journey per service
 `crm_services` is the only service catalogue (Sales, Support and every department read the same rows). Two columns say how a service is delivered:
@@ -39,7 +39,7 @@ Support members get My Leads / Potential / Customer Onboarding / Part Payments (
 ## Invoice balance
 Remaining balance = invoice total - **confirmed** payments applied to that invoice (calculated by the database on every read; never typed, never sent by the browser). Where an invoice's payments live follows what exists, so nothing is counted twice:
 
-* `CUSTOMER` - the agreed-services invoice uses the customer's payment ledger. The invoice total may not exceed the agreed amount (it could never be paid in full).
+* `CUSTOMER` - the invoices of the agreed services use the customer's payment ledger. **An invoice can be made for each part payment**: the invoices together may not exceed the agreed amount, and the verified payments pay them in the order they were issued (the first invoice takes the first money; the next gets what is left).
 * `ADDON` - the add-on request's payments.
 * `INVOICE` - payments recorded on the invoice itself (`invoice_payments`; an additional invoice, or a customer with no agreed amount). They count as income.
 
