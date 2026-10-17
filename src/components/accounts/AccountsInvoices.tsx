@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, Search, UploadCloud } from 'lucide-react';
+import { FilePlus2, FileText, Search, UploadCloud } from 'lucide-react';
 import type { Invoice, InvoiceCustomer, InvoiceKind, InvoicePage } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { invoicesApi } from '../../lib/api/endpoints';
@@ -21,6 +21,7 @@ import {
   useServiceCatalog
 } from '../team-member/pipeline/shared';
 import { fmtBytes, UploadInvoiceDialog } from '../invoices/invoiceFiles';
+import { InvoiceBuilder } from '../invoices/InvoiceBuilder';
 import {
   INVOICE_KIND_LABEL,
   InvoiceDetail,
@@ -51,6 +52,7 @@ export const AccountsInvoices: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Invoice | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -92,10 +94,13 @@ export const AccountsInvoices: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Invoices</h1>
-          <p className="text-sm text-slate-500 mt-1">Upload the invoice PDFs of your customers here. Only Accounts uploads and manages them; every employee who may see the customer can view and download them.</p>
+          <p className="text-sm text-slate-500 mt-1">Generate an invoice for a customer (it is e-mailed to them and shown on their dashboard), or upload an existing invoice PDF. Only Accounts issues and manages invoices; every employee who may see the customer can view and download them.</p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          <button type="button" className={btn.primary} onClick={() => setUploading(true)}>
+          <button type="button" className={btn.primary} onClick={() => setBuilding(true)}>
+            <FilePlus2 className="w-4 h-4" aria-hidden="true" /> Generate Invoice
+          </button>
+          <button type="button" className={btn.secondary} onClick={() => setUploading(true)}>
             <UploadCloud className="w-4 h-4" aria-hidden="true" /> Upload Invoice PDF
           </button>
         </div>
@@ -117,6 +122,7 @@ export const AccountsInvoices: React.FC = () => {
           <option value="">All types</option>
           <option value="SERVICE">Services</option>
           <option value="ADDON">Add-on services</option>
+          <option value="GENERATED">Generated invoices</option>
           <option value="UPLOADED">Uploaded PDFs</option>
           <option value="MANUAL">Earlier invoices</option>
         </select>
@@ -139,7 +145,7 @@ export const AccountsInvoices: React.FC = () => {
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <FileText className="w-6 h-6 mx-auto text-slate-300" aria-hidden="true" />
           <div className="text-sm font-bold text-slate-800 mt-2">{debounced || kind || status ? 'No invoice matches' : 'No invoices yet'}</div>
-          <p className="text-xs text-slate-500 mt-1">{debounced || kind || status ? 'Try another search or filter.' : 'Upload the first invoice with Upload Invoice PDF.'}</p>
+          <p className="text-xs text-slate-500 mt-1">{debounced || kind || status ? 'Try another search or filter.' : 'Create the first invoice with Generate Invoice.'}</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">
@@ -223,7 +229,7 @@ export const AccountsInvoices: React.FC = () => {
           actions={
             <>
               {actionError && <span className="w-full"><ErrorBanner message={actionError} /></span>}
-              {open.kind === 'ADDON' ? (
+              {open.kind === 'GENERATED' ? null : open.kind === 'ADDON' ? (
                 <span className="text-[11px] text-slate-500 self-center">Add-on invoices are paid through the payment confirmation in Business Verification.</span>
               ) : open.status === 'Paid' ? (
                 <button type="button" className={btn.secondary} disabled={busy} onClick={() => void setPaid(open, 'Pending')}>
@@ -236,6 +242,18 @@ export const AccountsInvoices: React.FC = () => {
               )}
             </>
           }
+        />
+      )}
+      {building && (
+        <InvoiceBuilder
+          onClose={() => setBuilding(false)}
+          onDone={r => {
+            setBuilding(false);
+            setNotice(`Invoice ${r.invoice.number} was saved for ${r.invoice.customer}.`);
+            notifyPipelineChanged();
+            load();
+            setOpen(r.invoice);
+          }}
         />
       )}
       {uploading && (

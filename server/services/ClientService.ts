@@ -51,7 +51,7 @@ export class ClientService {
     const { action } = parse(clientFileQuerySchema, query);
     const file = await this.repo.invoiceFile(invoiceId);
     if (!file) throw new AppError('NOT_FOUND', 'Invoice not found.');
-    const url = await this.storage.signedDownloadUrl(file.storage_bucket, file.storage_path, FILE_URL_TTL_SECONDS, action === 'download' ? file.original_file_name : undefined);
+    const url = await this.storage.signedDownloadUrl(file.storage_bucket, file.storage_path, FILE_URL_TTL_SECONDS, action === 'download' ? file.original_file_name : undefined, file.storage_provider);
     return { url, expiresInSeconds: FILE_URL_TTL_SECONDS, fileName: file.original_file_name };
   }
 

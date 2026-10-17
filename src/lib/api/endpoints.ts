@@ -22,6 +22,11 @@ import type {
   InvoiceCustomer,
   InvoiceKind,
   InvoicePage,
+  InvoicePrefill,
+  InvoicePurpose,
+  InvoiceRunResult,
+  InvoiceStage,
+  ClientDocumentUrl,
   AccountsPaymentCounts,
   ChecklistItem,
   ConsultantNote,
@@ -295,6 +300,20 @@ export const invoicesApi = {
   completeUpload: (documentId: string) => api.post<Invoice>(`/accounts/invoice-uploads/${documentId}/complete`),
   updateDetails: (id: string, body: { issueDate?: string | null; dueDate?: string | null; amount?: number | null; reference?: string | null; note?: string | null }) =>
     api.post<Invoice>(`/accounts/invoices/${id}/details`, body)
+};
+
+/** The Accounts invoice builder: prefill -> issue (+ unpaid PDF + e-mail) -> confirm payment (+ paid PDF + e-mail). */
+export const generatedInvoicesApi = {
+  prefill: (customerId: string, q: { purpose: InvoicePurpose; addonRequestId?: string | null }) =>
+    api.get<InvoicePrefill>(`/accounts/customers/${customerId}/invoice-prefill`, { purpose: q.purpose, addonRequestId: q.addonRequestId }),
+  /** `body.requestId` is created once per builder session: repeating the request never creates a second invoice. */
+  issue: (body: Record<string, unknown>) => api.post<InvoiceRunResult>('/accounts/generated-invoices', body),
+  confirmPayment: (id: string, body: { method: PaymentMethod; reference?: string | null; note?: string | null; paidOn?: string | null }) =>
+    api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/confirm-payment`, body),
+  /** Retry what is left of a stage (a missing PDF or e-mail). */
+  deliver: (id: string, stage: InvoiceStage) => api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/deliver`, { stage }),
+  /** A short-lived link to a stored PDF (anyone who may read the invoice). */
+  fileUrl: (id: string, stage: InvoiceStage, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/invoices/${id}/pdf`, { stage, action })
 };
 
 export const financeApi = {

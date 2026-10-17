@@ -44,8 +44,9 @@ export class ClientRepository {
   }
 
   invoices() { return this.rpc<ClientInvoice[]>('client_invoices'); }
+  /** Where the file of one of MY invoices lives (uploaded or generated; a generated invoice offers its paid file only once it is stored). */
   async invoiceFile(id: string) {
-    const rows = await this.rpc<{ storage_bucket: string; storage_path: string; original_file_name: string; mime_type: string }[]>('client_invoice_file', { p_invoice: id });
+    const rows = await this.rpc<{ storage_provider: 'SUPABASE' | 'R2'; storage_bucket: string; storage_path: string; original_file_name: string; mime_type: string }[]>('client_invoice_download', { p_invoice: id });
     return rows[0];
   }
 

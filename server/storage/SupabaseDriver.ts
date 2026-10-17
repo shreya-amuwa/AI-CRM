@@ -58,6 +58,30 @@ export class SupabaseDriver implements StorageDriver {
     return data.signedUrl;
   }
 
+  async put(bucket: string, path: string, body: Uint8Array, mimeType: string): Promise<void> {
+    // the same single-path signed upload the browser uses, so nothing but this one object can be written
+    // (upsert: a retry stores the same object again instead of failing because it exists)
+    const signed = await this.bucket(bucket).createSignedUploadUrl(path, { upsert: true });
+    if (signed.error || !signed.data) {
+      console.error('[storage] createSignedUploadUrl failed', signed.error?.message);
+      throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
+    }
+    const { error } = await this.bucket(bucket).uploadToSignedUrl(path, signed.data.token, body, { contentType: mimeType });
+    if (error) {
+      console.error('[storage] upload failed', error.message);
+      throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
+    }
+  }
+
+  async read(bucket: string, path: string): Promise<Uint8Array> {
+    const { data, error } = await this.bucket(bucket).download(path);
+    if (error || !data) {
+      console.error('[storage] download failed', error?.message);
+      throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
+    }
+    return new Uint8Array(await data.arrayBuffer());
+  }
+
   async remove(bucket: string, paths: string[]): Promise<boolean> {
     const { error } = await this.bucket(bucket).remove(paths);
     if (error) console.error('[storage] remove failed', { paths, message: error.message });

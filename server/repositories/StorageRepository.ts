@@ -1,4 +1,5 @@
 import { getServiceClient } from '../db/supabase.js';
+import { AppError } from '../http/errors.js';
 import { activeProviderName } from '../storage/config.js';
 import { R2Driver } from '../storage/R2Driver.js';
 import { SupabaseDriver } from '../storage/SupabaseDriver.js';
@@ -66,6 +67,26 @@ export class StorageRepository {
       .limit(1)
       .maybeSingle();
     return (data as { storage_provider?: string } | null)?.storage_provider === 'R2' ? 'R2' : 'SUPABASE';
+  }
+
+  /**
+   * Stores a file the server made (a generated invoice PDF) at exactly this object, then asks the provider what it holds:
+   * the object must exist, be the size we sent and start like a PDF. Returns what the database keeps next to the invoice.
+   * Storing the same bytes again gives the same object (and the same ETag).
+   */
+  async storeGenerated(bucket: string, path: string, bytes: Uint8Array, mimeType: string): Promise<{ provider: StorageProviderName; reference: string; etag: string | null; size: number }> {
+    const driver = this.active();
+    await driver.put(bucket, path, bytes, mimeType);
+    const seen = await driver.inspect(bucket, path, mimeType);
+    if (!seen.exists || !seen.matches || seen.size !== bytes.length) {
+      throw new AppError('SERVICE_UNAVAILABLE', 'The invoice file could not be stored. Please try again.');
+    }
+    return { provider: driver.provider, reference: driver.reference(bucket, path), etag: seen.etag, size: seen.size };
+  }
+
+  /** The bytes of a stored file, from the provider recorded for it. */
+  readStored(provider: StorageProviderName | null | undefined, bucket: string, path: string): Promise<Uint8Array> {
+    return this.driver(provider).read(bucket, path);
   }
 
   async signedDownloadUrl(bucket: string, path: string, expiresIn: number, downloadName?: string, provider?: StorageProviderName | null): Promise<string> {

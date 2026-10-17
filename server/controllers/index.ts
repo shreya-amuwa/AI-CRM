@@ -254,3 +254,15 @@ export const clientWorkflowController = {
   decidePlanRequest: (async ctx => (await svc(ctx).client.decidePlanRequest(ctx.params.id, ctx.req.body), ok(null))) as Handler,
   replyToTicket: (async ctx => (await svc(ctx).client.replyToClientTicket(ctx.params.id, ctx.req.body), ok(null, 201))) as Handler
 };
+
+/** Accounts: the invoice builder (prefill, issue, confirm payment, retry delivery) and opening the stored PDFs. */
+export const generatedInvoiceController = {
+  prefill: (async ctx => ok(await svc(ctx).generatedInvoices.prefill(ctx.params.id, ctx.req.query))) as Handler,
+  issue: (async ctx => {
+    const r = await svc(ctx).generatedInvoices.issue(ctx.req.body);
+    return ok({ invoice: r.invoice, steps: r.steps }, r.created ? 201 : 200);
+  }) as Handler,
+  confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
+  deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
+  file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler
+};

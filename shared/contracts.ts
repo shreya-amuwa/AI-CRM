@@ -924,7 +924,7 @@ export interface PricedLine {
 }
 
 /** MANUAL: older invoices; SERVICE / ADDON: issued by Accounts; UPLOADED: an existing invoice PDF uploaded by Accounts. */
-export type InvoiceKind = 'MANUAL' | 'SERVICE' | 'ADDON' | 'UPLOADED';
+export type InvoiceKind = 'MANUAL' | 'SERVICE' | 'ADDON' | 'UPLOADED' | 'GENERATED';
 
 /** The one limit for an uploaded invoice PDF (the database and the storage bucket enforce the same). */
 export const INVOICE_PDF_MAX_BYTES = 512000;
@@ -970,10 +970,142 @@ export interface Invoice {
   /** Payment, order or service reference entered with an uploaded invoice. */
   reference: string | null;
   file: InvoiceFile | null;
+  /** Only for a generated invoice (kind GENERATED): the issued snapshot and the state of its two documents. */
+  generated?: GeneratedInvoice | null;
   addonRequestId: string | null;
   issuedBy: string | null;
   issuedAt: string;
   createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Generated invoices (Accounts invoice builder): issue -> unpaid PDF + e-mail -> confirm payment -> paid PDF + e-mail
+// ---------------------------------------------------------------------------
+/** Hard limit for every generated PDF: strictly smaller than this many bytes. */
+export const INVOICE_GENERATED_PDF_LIMIT_BYTES = 500000;
+export const INVOICE_PURPOSES = ['SERVICES', 'ADDON', 'ADDITIONAL'] as const;
+export type InvoicePurpose = (typeof INVOICE_PURPOSES)[number];
+export const INVOICE_STAGES = ['UNPAID', 'PAID'] as const;
+export type InvoiceStage = (typeof INVOICE_STAGES)[number];
+export const TAX_TREATMENTS = ['INTRA_STATE', 'INTER_STATE'] as const;
+export type TaxTreatmentName = (typeof TAX_TREATMENTS)[number];
+export type InvoicePdfStatus = 'NOT_DUE' | 'PENDING' | 'STORED' | 'FAILED';
+export type InvoiceEmailStatus = 'NOT_DUE' | 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'NOT_SENT';
+
+export interface GeneratedInvoiceLine {
+  position: number;
+  serviceCode: string | null;
+  particulars: string;
+  hsnSac: string;
+  taxRate: number;
+  /** Text, so values such as "1 Year", "30K Msg" and "1 Nos" are kept as typed. */
+  quantity: string;
+  baseAmount: number;
+  gstAmount: number;
+  totalAmount: number;
+}
+export interface GeneratedTaxGroup {
+  rate: number;
+  base: number;
+  gst: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+export interface GeneratedInvoiceCustomer {
+  name: string;
+  businessName: string | null;
+  address: string;
+  contactPerson: string | null;
+  contactNumber: string | null;
+  gstin: string | null;
+  state: string;
+  stateCode: string;
+}
+export interface GeneratedInvoiceTotals {
+  subtotal: number;
+  cgstRate: number | null;
+  cgstAmount: number;
+  sgstRate: number | null;
+  sgstAmount: number;
+  igstRate: number | null;
+  igstAmount: number;
+  totalGst: number;
+  total: number;
+  inWords: string;
+  breakdown: GeneratedTaxGroup[];
+}
+/** What happened to one document (the unpaid or the paid invoice) and to its e-mail. Never carries a storage reference. */
+export interface GeneratedInvoiceStageState {
+  pdfStatus: InvoicePdfStatus;
+  pdfError: string | null;
+  sizeBytes: number | null;
+  storedAt: string | null;
+  emailStatus: InvoiceEmailStatus;
+  emailTo: string | null;
+  emailSentAt: string | null;
+  emailError: string | null;
+  emailAttempts: number;
+  /** Another run is working on this stage right now. */
+  busy: boolean;
+}
+export interface GeneratedInvoice {
+  number: string;
+  invoiceDate: string;
+  orderNumber: string;
+  purpose: InvoicePurpose;
+  addonRequestId: string | null;
+  customer: GeneratedInvoiceCustomer;
+  taxTreatment: TaxTreatmentName;
+  taxTreatmentOverridden: boolean;
+  taxOverrideReason: string | null;
+  reverseCharge: boolean;
+  terms: string;
+  lines: GeneratedInvoiceLine[];
+  totals: GeneratedInvoiceTotals;
+  lifecycle: 'ISSUED' | 'PAID';
+  payment: { confirmedAt: string; confirmedBy: string | null; method: PaymentMethod | null; reference: string | null; note: string | null; paidOn: string | null } | null;
+  unpaid: GeneratedInvoiceStageState;
+  paid: GeneratedInvoiceStageState;
+}
+
+export type InvoiceFieldSource = 'ONBOARDING' | 'CUSTOMER' | 'ADDRESS' | 'GSTIN' | 'PREVIOUS_INVOICE' | 'NONE';
+/** The customer's details and the purchase's billable services, ready for the builder. Every value stays editable. */
+export interface InvoicePrefill {
+  customerId: string;
+  customerCode: string | null;
+  purpose: InvoicePurpose;
+  addonRequestId: string | null;
+  customer: { name: string | null; businessName: string | null; address: string | null; contactPerson: string | null; contactNumber: string | null; gstin: string | null; stateCode: string | null; state: string | null };
+  sources: { businessName: InvoiceFieldSource; address: InvoiceFieldSource; contactPerson: InvoiceFieldSource; contactNumber: InvoiceFieldSource; gstin: InvoiceFieldSource; state: InvoiceFieldSource };
+  recipientEmail: string | null;
+  taxTreatment: TaxTreatmentName | null;
+  company: { name: string; stateCode: string; gstin: string };
+  suggestedInvoiceNumber: string;
+  invoiceDate: string;
+  orderNumber: string;
+  terms: string;
+  lines: { serviceCode: string | null; particulars: string; hsnSac: string; taxRate: number; quantity: string; baseAmount: number | null }[];
+  /** What Sales agreed for all the original services together (a reference only: the price per service is not recorded). */
+  dealAmount: number | null;
+  addonTotal: number | null;
+  existingInvoices: { id: string; number: string; kind: InvoiceKind; status: string; total: number | null }[];
+  catalog: { code: string; name: string; category: string }[];
+  warnings: string[];
+}
+
+export type InvoiceStepName = 'ISSUE' | 'PAYMENT' | 'PDF' | 'EMAIL';
+export interface InvoiceStep {
+  step: InvoiceStepName;
+  stage: InvoiceStage | null;
+  /** DONE: it worked (or was already done). FAILED: retry with "deliver". NOT_SENT: nothing was sent (dry run, no address). BUSY: another run is on it. */
+  status: 'DONE' | 'FAILED' | 'NOT_SENT' | 'BUSY';
+  message: string | null;
+}
+/** The result of issuing an invoice, confirming a payment or retrying a stage: the invoice as it stands now and what each step did. */
+export interface InvoiceRunResult {
+  invoice: Invoice;
+  steps: InvoiceStep[];
 }
 export interface InvoicePage extends Paginated<Invoice> {
   sum?: number;
@@ -1134,8 +1266,15 @@ export interface ClientInvoice {
   paidAt: string | null;
   overdue: boolean;
   related: string;
-  items: { name?: string; quantity?: number; unitPrice?: number; lineTotal?: number }[];
+  items: { name?: string; quantity?: number | string; unitPrice?: number; lineTotal?: number; tax?: number; taxPercent?: number }[];
   hasFile: boolean;
+  /** A generated invoice: the paid file is offered only once it is stored; before payment the unpaid file is. */
+  generated?: boolean;
+  fileKind?: 'PAID' | 'UNPAID' | null;
+  /** Paid, but the paid invoice is still being prepared. */
+  paidFilePending?: boolean;
+  paymentConfirmedAt?: string | null;
+  taxSummary?: { cgst: number; sgst: number; igst: number } | null;
 }
 export type ClientTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
 export interface ClientTicket {
