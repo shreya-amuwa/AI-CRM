@@ -21,10 +21,19 @@ const readCollapsed = () => {
   }
 };
 
+/** Lets CSS widen the page content while the sidebar is collapsed (see index.css). */
+const reflect = (collapsed: boolean) => {
+  if (typeof document === 'undefined') return;
+  if (collapsed) document.documentElement.dataset.sidebar = 'collapsed';
+  else delete document.documentElement.dataset.sidebar;
+};
+
 let state: MenuState = { open: false, collapsed: typeof window === 'undefined' ? false : readCollapsed() };
 const listeners = new Set<() => void>();
+reflect(state.collapsed);
 const set = (next: MenuState) => {
   state = next;
+  reflect(next.collapsed);
   listeners.forEach(l => l());
 };
 

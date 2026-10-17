@@ -235,7 +235,7 @@
 
 /* ---- responsive ---- */
 /* the hamburger: a drawer under 1024px, collapses the sidebar above it */
-@media (min-width: 1024px) { .cd-collapsed .cd-side { display: none; } }
+@media (min-width: 1024px) { .cd-collapsed .cd-side { display: none; } .cd-collapsed .cd-content { max-width: none; } }
 @media (max-width: 1279px) { .cd-grid.c3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1023px) {
   .cd { --gutter: 24px; }
