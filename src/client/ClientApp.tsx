@@ -73,7 +73,7 @@ const Inner: React.FC = () => {
   const parts = path.replace('/client/dashboard/', '').split('/');
   const slug = (SECTIONS.find(s => s.slug === parts[0])?.slug ?? 'overview') as SectionSlug;
   const sub = parts.slice(1).join('/');
-  const to = (p: string) => go(p);
+  const to = (p: string) => { closeNav(); go(p); };
 
   const page = (() => {
     switch (slug) {
