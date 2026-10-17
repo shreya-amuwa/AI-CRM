@@ -268,6 +268,10 @@ function restoreRewrittenPath(req: Request): Request {
   const original = url.searchParams.get('__path');
   if (original === null) return req;
   url.searchParams.delete('__path');
+  // Vercel's rewrite also adds the matched route parameter (:path*) as a plain `path` query parameter. It is routing data, not
+  // something the caller sent, and endpoints that accept only their own parameters (the client calendar, attendance, leave
+  // months) refuse an unknown one: "Unrecognized key(s) in object: 'path'".
+  if (url.searchParams.get('path') === original) url.searchParams.delete('path');
   url.pathname = `${API_PREFIX}/${original.replace(/^\/+/, '')}`;
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD';
   return new Request(url, {
