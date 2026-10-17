@@ -1,11 +1,11 @@
 import React from 'react';
 import { displayTicketNo } from '../lib/ticketFormat';
-import { Bell, CalendarClock, CreditCard, FileText, LifeBuoy, Package, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarClock, CreditCard, FileText, LifeBuoy, Package, RefreshCw } from 'lucide-react';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
 import { useLoad, type Loaded } from './hooks';
 import { dashboardPath, notificationTarget, useShell } from './shell';
-import { Badge, Button, Card, EmptyState, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, inr, tagOf } from './ui';
+import { Badge, Button, Card, EmptyState, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, fmtNum, inr, serviceStatus, tagOf, usageBar } from './ui';
 
 /** One block of the overview: its own loading, error (with the real reason and a retry) and empty state. */
 function Section<T>({ title, q, onViewAll, children }: { title: string; q: Loaded<T>; onViewAll?: () => void; children: (d: T) => React.ReactNode }) {
@@ -53,6 +53,11 @@ export const Overview: React.FC = () => {
     ...(services.data ?? []).filter(s => s.renewsOn && daysUntil(s.renewsOn) >= 0).map(s => ({ kind: 'Service', name: s.name, renewsOn: s.renewsOn as string })),
     ...(current?.renewsOn && daysUntil(current.renewsOn) >= 0 ? [{ kind: 'Monthly plan', name: current.name, renewsOn: current.renewsOn }] : [])
   ].sort((a, b) => a.renewsOn.localeCompare(b.renewsOn)).slice(0, 2);
+  // low balance: a package three-quarters used or more
+  const low = (services.data ?? [])
+    .map(s => ({ s, bar: usageBar(s) }))
+    .filter((x): x is { s: (typeof x)['s']; bar: NonNullable<(typeof x)['bar']> } => !!x.bar && x.bar.tone !== 'success')
+    .sort((a, b) => b.bar.pct - a.bar.pct);
   const stat = (q: Loaded<unknown>, v: number | string) => (q.loading && !q.data ? '-' : q.error && !q.data ? '!' : v);
 
   return (
@@ -71,7 +76,7 @@ export const Overview: React.FC = () => {
       <div className="cd-stack" style={{ gap: 24 }}>
         <div className="cd-grid c4">
           <Stat icon={<Package size={18} />} label="Active services" value={stat(services, live)}
-            hint={services.data && services.data.length > live ? `${services.data.length - live} being set up` : 'Running now'} onClick={() => go(dashboardPath('services'))} />
+            hint={services.data && services.data.some(s => s.status === 'SETTING_UP') ? `${services.data.filter(s => s.status === 'SETTING_UP').length} being set up` : 'Running now'} onClick={() => go(dashboardPath('services'))} />
           <Stat icon={<CreditCard size={18} />} label="Current plan" value={<span style={{ fontSize: 22 }}>{plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</span>}
             hint={current ? `${inr(current.price)} / month` : 'Choose one in Monthly Plans'} onClick={() => go(dashboardPath('plans'))} />
           <Stat icon={<FileText size={18} />} label="Invoices to pay" value={stat(invoices, pending)}
@@ -79,6 +84,16 @@ export const Overview: React.FC = () => {
           <Stat icon={<LifeBuoy size={18} />} label="Open tickets" value={stat(tickets, open)}
             hint={tickets.data ? `${tickets.data.length} in total` : undefined} onClick={() => go(dashboardPath('tickets'))} />
         </div>
+
+        {low.map(({ s, bar }) => (
+          <div key={s.code} className={`cd-banner ${bar.tone === 'danger' ? 'danger' : 'attention'}`} role="alert" style={{ alignItems: 'center' }}>
+            <AlertTriangle size={18} aria-hidden style={{ flexShrink: 0 }} />
+            <span className="grow">
+              <b>{s.name}:</b> {bar.left <= 0 ? `no ${bar.unit === '₹' ? 'credit' : bar.unit} left` : `only ${fmtNum(bar.left, bar.unit)} left`} ({bar.pct}% used). Top up so your campaigns and calls do not stop.
+            </span>
+            <Button small variant="outline" onClick={() => go(dashboardPath('tickets'))}>Ask to top up</Button>
+          </div>
+        ))}
 
         {renewals.length > 0 && (
           <div className="cd-banner info" role="note" style={{ alignItems: 'center' }}>
@@ -97,7 +112,7 @@ export const Overview: React.FC = () => {
                   <div className="cd-li" key={s.code}>
                     <span className="cd-tag">{tagOf(s.name)}</span>
                     <div className="grow"><p style={{ fontWeight: 600 }} className="cd-ellipsis">{s.name}</p><p className="cd-small cd-muted cd-ellipsis">{s.category}</p></div>
-                    <Badge tone={s.status === 'LIVE' ? 'success' : 'attention'}>{s.status === 'LIVE' ? 'Live' : 'Setting up'}</Badge>
+                    <Badge tone={serviceStatus(s.status).tone}>{serviceStatus(s.status).label}</Badge>
                   </div>
                 ))}
               </div>

@@ -43,7 +43,10 @@ export const customersController = {
     return ok(null);
   }) as Handler,
   listActivities: (async ctx => ok(await svc(ctx).customers.listActivities(ctx.params.id))) as Handler,
-  addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler
+  addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
+  /** Support: the Excel sheet of existing customers (preview or save) and the client's set-password e-mail. */
+  importExisting: (async ctx => ok(await svc(ctx).customerImport.importExisting(ctx.actor, ctx.req.body, ctx.req.headers.origin))) as Handler,
+  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.params.id, ctx.req.headers.origin))) as Handler
 };
 
 export const notificationsController = {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, CalendarPlus, ClipboardList, FileText, FolderCheck, Gauge, Headset, PackageCheck, Target, UserCheck, UserPlus, Users } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Gauge, Headset, PackageCheck, Target, UserCheck, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -23,6 +23,7 @@ import { LeaveCenter } from '../leave/LeaveCenter';
 import { PipelineWorkspace } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
+import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 
 /** The team's leads: a team lead sees every lead of their team's members (the database decides), without the inbound enquiries strip. */
 const SupportTeamLeads: React.FC = () => {
@@ -30,7 +31,7 @@ const SupportTeamLeads: React.FC = () => {
   return <PipelineWorkspace section="leads" counts={counts} ownOnly onNavigate={() => undefined} />;
 };
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
+export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -39,6 +40,7 @@ export type SupportLeadPage = 'dashboard' | 'customers' | 'leads' | 'delivery' |
 const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: Gauge },
   { id: 'customers', label: 'Customers', icon: Users },
+  { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
   // the leads the team's members pitch (referrals and other channels): the same lead pages Sales uses
   { id: 'leads', label: 'Team Leads', icon: Target },
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
@@ -142,6 +144,7 @@ export const SupportLeadDashboard: React.FC = () => {
     >
       {page === 'dashboard' && <TeamLeaderDashboard />}
       {page === 'customers' && <SupportLeadCustomers />}
+      {page === 'import' && <ExistingCustomerImport />}
       {page === 'leads' && <SupportTeamLeads />}
       {page === 'delivery' && <DeliveryQueue />}
       {page === 'client-documents' && <ClientDocumentsReview />}

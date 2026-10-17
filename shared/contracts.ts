@@ -1223,7 +1223,7 @@ export interface ClientProfile {
   loginEmail: string;
   clientSince: string;
 }
-export type ClientServiceStatus = 'LIVE' | 'SETTING_UP';
+export type ClientServiceStatus = 'LIVE' | 'SETTING_UP' | 'PAUSED' | 'EXPIRED' | 'CANCELLED';
 export interface ClientService {
   code: string;
   name: string;
@@ -1236,6 +1236,63 @@ export interface ClientService {
   plan: string | null;
   /** What the team set up for this service (e.g. WhatsApp API: campaigns sent, message package bought / sent). */
   details?: Record<string, unknown> | null;
+  /** The plan bought (from the team's Excel import or entered by the team). */
+  planName?: string | null;
+  price?: number | null;
+  billingCycle?: string | null;
+  platform?: string | null;
+  panelAccount?: string | null;
+  /** The latest package usage (WhatsApp messages, AI Calling minutes, RCS / Voice messages). */
+  usage?: ClientServiceUsage | null;
+  /** Monthly deliverables, newest month first (at most 6). */
+  monthly?: { month: string; metrics: Record<string, unknown> }[];
+  campaignCount?: number;
+}
+export interface ClientServiceUsage {
+  kind: 'WHATSAPP' | 'AI_CALLING' | 'RCS' | 'VOICE';
+  metrics: Record<string, unknown>;
+  asOf: string | null;
+  validUntil: string | null;
+}
+export interface ClientCampaign {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  name: string;
+  template: string | null;
+  sentOn: string | null;
+  audienceType: string | null;
+  audienceSize: number | null;
+  sent: number | null;
+  delivered: number | null;
+  read: number | null;
+  replied: number | null;
+  failed: number | null;
+  status: string | null;
+}
+
+/** Excel import of existing customers (Support). */
+export interface CustomerDataImportError {
+  sheet: string;
+  row: number;
+  message: string;
+}
+export interface CustomerDataImportLogin {
+  customerId: string;
+  email: string;
+  name: string;
+  businessName?: string;
+  /** CREATED: the login exists; FAILED: see detail. */
+  login: 'CREATED' | 'FAILED';
+  /** SENT: the "Set your password" e-mail went out; NOT_SENT: see detail (it can be sent again later). */
+  mail: 'SENT' | 'NOT_SENT';
+  detail?: string;
+}
+export interface CustomerDataImportResult {
+  committed: boolean;
+  errors: CustomerDataImportError[];
+  summary: { added: number; updated: number; services: number; usage: number; campaigns: number; logins: number };
+  logins: CustomerDataImportLogin[];
 }
 export type ServiceRequestStatus = 'REQUESTED' | 'IN_REVIEW' | 'IN_ADDON_WORKFLOW' | 'ACTIVATED' | 'REJECTED' | 'CANCELLED';
 export interface ClientCatalogService {

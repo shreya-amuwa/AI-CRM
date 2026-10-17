@@ -4,6 +4,7 @@ import {
   Bell,
   CalendarCheck,
   ClipboardList,
+  FileSpreadsheet,
   Headset,
   LayoutDashboard,
   Megaphone,
@@ -17,6 +18,7 @@ import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { DepartmentCustomers } from '../handover/DepartmentCustomers';
 import { ClientNotices } from '../notices/ClientNotices';
+import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { AccountsPlans } from '../accounts/AccountsPlans';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
@@ -68,6 +70,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         items: [
           { id: 'clients', label: 'Client Hand-overs', icon: UserCheck, badge: waiting || 0 },
           { id: 'customers', label: 'Customers', icon: Users },
+          { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
           { id: 'support', label: 'Support Desk', icon: Headset },
           { id: 'notices', label: 'Client Notices', icon: Megaphone }
         ]
@@ -131,6 +134,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
       {nav === 'customers' && <DepartmentCustomers initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
       {nav === 'notices' && <ClientNotices />}
+      {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}
       {nav === 'payments' && <AccountsConfirmations />}
       {nav === 'plans' && <AccountsPlans />}
       {nav === 'notifications' && <NotificationsPage />}

@@ -5,6 +5,7 @@ import type {
   ClientActivityList,
   ClientAnnouncement,
   ClientCalendarEvent,
+  ClientCampaign,
   ClientCatalogService,
   ClientDocumentQueueItem,
   ClientDocuments,
@@ -36,6 +37,7 @@ export class ClientRepository {
   me() { return this.rpc<ClientProfile>('client_me'); }
   overview() { return this.rpc<ClientOverview>('client_overview'); }
   services() { return this.rpc<ClientService[]>('client_services'); }
+  campaigns() { return this.rpc<ClientCampaign[]>('client_campaigns'); }
   catalog() { return this.rpc<ClientCatalogService[]>('client_service_catalog'); }
   serviceRequests() { return this.rpc<ClientServiceRequest[]>('client_service_requests'); }
   requestService(serviceCode: string, note: string | null) {

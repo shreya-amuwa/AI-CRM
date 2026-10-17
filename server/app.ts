@@ -21,9 +21,11 @@ import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices }
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
+import { clientForgotPassword } from './services/CustomerImportService.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
+const IMPORT_BODY_BYTES = 4_000_000;
 
 type Env = { Variables: { requestId: string; actor?: Actor; db?: SupabaseClient } };
 
@@ -50,15 +52,13 @@ app.use('*', async (c, next) => {
   await next();
   c.header('Cache-Control', 'no-store');
 });
-app.use(
-  '*',
-  bodyLimit({
-    maxSize: MAX_BODY_BYTES,
-    onError: () => {
-      throw new AppError('VALIDATION_ERROR', 'Request body is too large.');
-    }
-  })
-);
+const tooLarge = () => {
+  throw new AppError('VALIDATION_ERROR', 'Request body is too large.');
+};
+const defaultBodyLimit = bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge });
+// The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows).
+const importBodyLimit = bodyLimit({ maxSize: IMPORT_BODY_BYTES, onError: tooLarge });
+app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
 // Layer 1: coarse per-IP flood protection before any auth work.
 app.use('*', async (c, next) => {
   if (c.req.method !== 'OPTIONS') await enforce(ipBuckets(clientIp(c)), 'memory');
@@ -113,6 +113,12 @@ app.post('/integrations/biometric/punch', async c => {
   if (error) throw fromDatabaseError(error);
   if (data === 'UNKNOWN_EMPLOYEE') throw new AppError('NOT_FOUND', 'No active employee has this e-mail.');
   return c.json(ok({ recorded: true }));
+});
+
+// "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
+app.post('/client-auth/forgot-password', async c => {
+  await enforce([{ key: `forgot:${clientIp(c)}`, limit: 5, window: 900 }], 'memory');
+  return c.json(ok(await clientForgotPassword(await readJson(c), c.req.header('origin'))));
 });
 
 // The client dashboard: the customer's own login, their own records only.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, CalendarPlus, ClipboardList, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -20,18 +20,20 @@ import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
+import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
-/** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, My Leads (with its stages), Delivery Queue, Tickets, Invoices. */
+/** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, Import Customers, My Leads (with its stages), Delivery Queue, Tickets, Invoices. */
 const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'customers', label: 'Dashboard - Existing Customers', icon: LayoutDashboard },
   // Clients handed over Technical Consultant -> Department Head -> Support Team Lead -> me.
   { id: 'my-clients', label: 'My Clients', icon: UserCheck },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
+  { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
   // Support also pitches services (referrals and other channels): the same lead pipeline Sales uses, limited to their own records
   { id: 'leads', label: 'My Leads', icon: Target },
   { id: 'potential', label: 'Potential', icon: ListChecks },
@@ -144,6 +146,8 @@ export const SupportMemberDashboard: React.FC = () => {
         <HandoverBoard role="TEAM_MEMBER" />
       ) : page === 'tasks' ? (
         <TasksPage tasks={tasks} onOpenCustomer={openCustomer} />
+      ) : page === 'import' ? (
+        <ExistingCustomerImport onDone={() => go('customers')} />
       ) : page === 'add-customer' ? (
         <AddCustomerPage
           people={tasks.people}

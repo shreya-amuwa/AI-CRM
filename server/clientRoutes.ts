@@ -34,6 +34,7 @@ export const clientRoutes: ClientRouteDef[] = [
   { method: 'GET', path: '/me', handler: async c => ok(c.me) },
   { method: 'GET', path: '/overview', handler: async c => ok(await c.services.client.overview()) },
   { method: 'GET', path: '/services', handler: async c => ok(await c.services.client.services()) },
+  { method: 'GET', path: '/campaigns', handler: async c => ok(await c.services.client.campaigns()) },
   { method: 'GET', path: '/catalog', handler: async c => ok(await c.services.client.catalog()) },
   { method: 'GET', path: '/service-requests', handler: async c => ok(await c.services.client.serviceRequests()) },
   { method: 'POST', path: '/service-requests', handler: async c => ok(await c.services.client.requestService(c.req.body), 201) },

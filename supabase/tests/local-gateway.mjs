@@ -48,7 +48,8 @@ const userJson = row => ({
   user_metadata: row.raw_user_meta_data, app_metadata: row.raw_app_meta_data, created_at: row.created_at
 });
 
-async function handleAuth(req, res, path) {
+const recoveryTokens = new Map(); // token → user id (one use)
+async function handleAuth(req, res, path, url) {
   const bearer = (req.headers.authorization || '').replace(/^Bearer /i, '');
   const claims = verifyJwt(bearer);
   const body = req.method === 'GET' ? {} : JSON.parse((await readBody(req)) || '{}');
@@ -75,6 +76,27 @@ async function handleAuth(req, res, path) {
     const token = signJwt({ sub: rows[0].id, role: 'authenticated', email: rows[0].email });
     return json(res, 200, { access_token: token, token_type: 'bearer', expires_in: 3600, refresh_token: 'x', user: userJson(rows[0]) });
   }
+  // "Set your password" link: opens the app signed in (tokens in the URL hash, like Supabase Auth)
+  if (path === '/verify' && req.method === 'GET') {
+    const id = recoveryTokens.get(url.searchParams.get('token'));
+    recoveryTokens.delete(url.searchParams.get('token'));
+    const to = url.searchParams.get('redirect_to') || '/';
+    if (!id) {
+      res.writeHead(303, { location: `${to}#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired` });
+      return res.end();
+    }
+    const { rows } = await db.query('select * from auth.users where id = $1', [id]);
+    const token = signJwt({ sub: id, role: 'authenticated', email: rows[0].email });
+    res.writeHead(303, { location: `${to}#access_token=${token}&expires_at=${Math.floor(Date.now() / 1000) + 3600}&expires_in=3600&refresh_token=x&token_type=bearer&type=recovery` });
+    return res.end();
+  }
+  if (path === '/user' && req.method === 'PUT') {
+    if (!claims?.sub) return json(res, 401, { msg: 'invalid JWT' });
+    const { rows } = await db.query('select * from auth.users where id = $1', [claims.sub]);
+    if (!rows[0]) return json(res, 404, { msg: 'User not found' });
+    if (body.password) passwords.set(rows[0].email, body.password);
+    return json(res, 200, userJson(rows[0]));
+  }
   // Admin endpoints require the service-role key
   if (claims?.role !== 'service_role') return json(res, 403, { msg: 'forbidden' });
   if (path === '/admin/users' && req.method === 'POST') {
@@ -100,6 +122,19 @@ async function handleAuth(req, res, path) {
     } finally {
       client.release();
     }
+  }
+  if (path === '/admin/generate_link' && req.method === 'POST') {
+    const { rows } = await db.query('select * from auth.users where lower(email) = lower($1)', [body.email]);
+    if (!rows[0]) return json(res, 404, { msg: 'User with this email not found' });
+    const t = crypto.randomBytes(16).toString('hex');
+    recoveryTokens.set(t, rows[0].id);
+    const redirect = url.searchParams.get('redirect_to') || body.redirectTo || '';
+    const gw = `http://${req.headers.host}`;
+    return json(res, 200, {
+      ...userJson(rows[0]),
+      action_link: `${gw}/auth/v1/verify?token=${t}&type=${body.type}&redirect_to=${encodeURIComponent(redirect)}`,
+      email_otp: '000000', hashed_token: t, redirect_to: redirect, verification_type: body.type
+    });
   }
   const m = /^\/admin\/users\/([0-9a-f-]{36})$/.exec(path);
   if (m && req.method === 'PUT') {
@@ -203,7 +238,7 @@ http.createServer(async (req, res) => {
         res.writeHead(204, CORS);
         return res.end();
       }
-      return await handleAuth(req, res, url.pathname.slice(8));
+      return await handleAuth(req, res, url.pathname.slice(8), url);
     }
     if (url.pathname.startsWith('/storage/v1')) {
       if (req.method === 'OPTIONS') {

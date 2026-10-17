@@ -1743,6 +1743,85 @@ r = await api('tc', 'POST', `/pipeline/customers/${autoD}/client-messages/resend
 check(r.status === 409, 'and not again within a minute', r);
 const un = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-messages/resend`);
 check(un.status === 409 || un.status === 404, 'not for customers that are not automated', un);
+// --- Excel import of existing customers (Support) + client "Set your password" e-mails ---
+{
+  Object.assign(process.env, { RATE_LIMIT_IMPORT_PER_MIN: '50', AUTOMATION_MODE: 'live', APP_URL: 'https://crm.example.test', AUTOMATION_TEST_RECIPIENTS: 'imp.client@example.com, imp.other@example.com' });
+  const file = {
+    customers: [
+      { row: 3, mobile: '9000000201', name: 'Import Client', businessName: 'Import Traders (TEST)', customerSince: '2025-04-01', loginEmail: 'imp.client@example.com' },
+      { row: 4, mobile: '9000000202', name: 'No Login Client', businessName: 'No Login Co (TEST)' }
+    ],
+    services: [
+      { row: 3, mobile: '9000000201', service: 'WhatsApp API + Blue Tick', plan: '2 Lakh messages', price: 40000, startDate: '2025-04-01', renewsOn: '2027-03-31', status: 'Live' },
+      { row: 4, mobile: '9000000202', service: 'AI Calling', startDate: '2025-05-01', status: 'Setting up' }
+    ],
+    whatsapp: [{ row: 4, mobile: '9000000201', packageMessages: 200000, sent: 190000, delivered: 150000, read: 90000, replied: 4000, failed: 9000, asOf: '2026-10-15' }],
+    campaigns: [{ row: 4, mobile: '9000000201', name: 'Navratri', sentOn: '2026-10-01', audienceSize: 405, sent: 405, delivered: 306, read: 200, replied: 37, failed: 46, status: 'Completed' }]
+  };
+  r = await api('a', 'POST', '/customers/import-existing', { commit: false, data: file });
+  check(r.status === 403, 'import: a Sales member cannot import existing customers', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: { ...file, extra: [] } });
+  check(r.status === 422, 'import: an unknown sheet is refused', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: { customers: [{ row: 3, mobile: { x: 1 } }] } });
+  check(r.status === 422, 'import: a cell that is not text or a number is refused', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: file });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.errors.length === 0 && r.json.data.summary.added === 2 && r.json.data.logins.length === 1 && r.json.data.logins[0].mail === 'NOT_SENT',
+    'import: the preview checks everything and saves nothing', r);
+  check((await db.query(`select count(*)::int as n from public.customers where phone = '9000000201'`)).rows[0].n === 0, 'import: nothing saved by the preview');
+  const bad = { ...file, campaigns: [{ ...file.campaigns[0], mobile: '12' }] };
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: bad });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.errors[0].sheet === '4 WhatsApp Campaigns' && r.json.data.errors[0].row === 4, 'import: a bad row stops the save and is named by sheet and row', r);
+
+  const mailsBefore = outbox.filter(o => o.path === '/emails').length;
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: file });
+  check(r.status === 200 && r.json.data.committed && r.json.data.logins.length === 1 && r.json.data.logins[0].login === 'CREATED' && r.json.data.logins[0].mail === 'SENT',
+    'import: saved; the client login is created and the set-password e-mail sent', r);
+  const impCustomer = r.json.data.logins[0].customerId as string;
+  const mail = outbox.filter(o => o.path === '/emails').slice(mailsBefore).find(o => o.body.to?.[0] === 'imp.client@example.com');
+  check(!!mail && /set your password/i.test(mail.body.subject) && !/password:\s*\S/i.test(mail.body.text), 'import: the e-mail has a set-password link and no password', mail?.body);
+  const link = /href="([^"]+)"/.exec(mail?.body.html ?? '')?.[1]?.replace(/&amp;/g, '&') ?? '';
+  check(decodeURIComponent(link).includes('https://crm.example.test/client/set-password'), 'import: the link opens the client set-password page', link);
+  const acct = (await db.query(`select a.email, u.raw_app_meta_data ->> 'client_customer_id' as cid from public.customer_client_accounts a join auth.users u on u.id = a.auth_user_id where a.customer_id = $1`, [impCustomer])).rows[0];
+  check(acct?.email === 'imp.client@example.com' && acct.cid === impCustomer, 'import: the login is recorded for that customer only', acct);
+
+  // the client opens the link, chooses a password and signs in with it
+  const verify = await fetch(link, { redirect: 'manual' });
+  const hash = new URLSearchParams((verify.headers.get('location') ?? '').split('#')[1] ?? '');
+  check(verify.status === 303 && hash.get('type') === 'recovery' && !!hash.get('access_token'), 'import: the link signs the client in to set the password');
+  await fetch(`${GW}/auth/v1/user`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${hash.get('access_token')}` }, body: JSON.stringify({ password: 'MyOwnPass#2026' }) });
+  const signed = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'imp.client@example.com', password: 'MyOwnPass#2026' }) });
+  tokens.set('imp', ((await signed.json()) as any).access_token);
+  const again = await fetch(link, { redirect: 'manual' });
+  check(/error=access_denied/.test(again.headers.get('location') ?? ''), 'import: the link works only once');
+  r = await api('imp', 'GET', '/client/services');
+  const wa = r.json.data?.find((s: any) => s.code === 'WHATSAPP_API_BLUE_TICK');
+  check(r.status === 200 && wa?.planName === '2 Lakh messages' && wa.usage?.metrics?.packageMessages === 200000 && wa.usage.metrics.sent === 190000, 'import: the client sees the plan and the usage', r);
+  r = await api('imp', 'GET', '/client/campaigns');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].delivered === 306, 'import: the client sees their campaigns', r);
+  r = await api('imp', 'GET', '/client/me');
+  check(r.status === 200 && String(r.json.data.clientSince).startsWith('2025-04-01'), 'import: "customer since" comes from the sheet', r);
+
+  // sent again by the team; "Forgot password?" by the client
+  r = await api('a', 'POST', `/customers/${impCustomer}/client-password-email`);
+  check(r.status === 404, 'import: someone else cannot send the set-password e-mail', r);
+  r = await api('sm', 'POST', `/customers/${impCustomer}/client-password-email`);
+  check(r.status === 200 && r.json.data.sent === true && r.json.data.email === 'imp.client@example.com', 'import: the member sends the set-password e-mail again', r);
+  const n0 = outbox.filter(o => o.path === '/emails').length;
+  const forgot = (email: string) => fetch(`${base}/client-auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ email }) })
+    .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  r = await forgot('IMP.client@example.com');
+  check(r.status === 200 && r.json.data.ok === true, 'forgot password: answers ok', r);
+  const reset = outbox.filter(o => o.path === '/emails').slice(n0).find(o => o.body.to?.[0] === 'imp.client@example.com');
+  check(!!reset && /new password/i.test(reset.body.subject) && reset.body.html.includes(encodeURIComponent('https://crm.example.test/client/set-password')), 'forgot password: the client gets a reset link to the CRM (not to the caller\'s site)', reset?.body);
+  const n1 = outbox.filter(o => o.path === '/emails').length;
+  r = await forgot('imp.other@example.com');
+  check(r.status === 200 && r.json.data.ok === true && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: same answer and no e-mail for an address without a client login', r);
+  r = await forgot('sm@amuwa.com');
+  check(r.status === 200 && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: never for a staff login', r);
+  r = await forgot('not-an-email');
+  check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
+  delete process.env.APP_URL; process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
+}
 for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 provider.close();
 

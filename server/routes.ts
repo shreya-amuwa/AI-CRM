@@ -42,6 +42,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/customers', handler: customers.list },
   { method: 'POST', path: '/customers', handler: customers.create },
   { method: 'POST', path: '/customers/import', handler: customers.import, options: { rate: 'import' } },
+  { method: 'POST', path: '/customers/import-existing', handler: customers.importExisting, options: { rate: 'import' } },
+  { method: 'POST', path: '/customers/:id/client-password-email', handler: customers.sendClientPasswordEmail, options: S },
   { method: 'GET', path: '/customers/summary', handler: customers.summary },
   { method: 'GET', path: '/customers/:id', handler: customers.get },
   { method: 'PATCH', path: '/customers/:id', handler: customers.update },
