@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { Bell, CreditCard, FileText, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Search, Sparkles } from 'lucide-react';
+import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Search, Sparkles } from 'lucide-react';
 import './client.css';
 import { clientApi } from './api';
 import { ClientAuthProvider, useClientAuth } from './auth';
@@ -12,6 +12,8 @@ import { MyServices } from './MyServices';
 import { ExploreServices } from './ExploreServices';
 import { MonthlyPlans } from './MonthlyPlans';
 import { Invoices } from './Invoices';
+import { Calendar } from './Calendar';
+import { Documents } from './Documents';
 import { Tickets } from './Tickets';
 import { Notifications } from './Notifications';
 import { LoadingBlock, initials } from './ui';
@@ -23,6 +25,8 @@ export const SECTIONS = [
   { slug: 'services', label: 'My Services', Icon: Package },
   { slug: 'explore', label: 'Explore Services', Icon: Search },
   { slug: 'plans', label: 'Monthly Plans', Icon: Sparkles },
+  { slug: 'calendar', label: 'Calendar', Icon: CalendarDays },
+  { slug: 'documents', label: 'Documents', Icon: FolderUp },
   { slug: 'invoices', label: 'Invoices', Icon: FileText },
   { slug: 'tickets', label: 'Tickets', Icon: LifeBuoy },
   { slug: 'notifications', label: 'Notification Center', Icon: Bell }
@@ -80,6 +84,8 @@ const Inner: React.FC = () => {
       case 'services': return <MyServices />;
       case 'explore': return <ExploreServices />;
       case 'plans': return <MonthlyPlans />;
+      case 'calendar': return <Calendar />;
+      case 'documents': return <Documents />;
       case 'invoices': return <Invoices />;
       case 'tickets': return <Tickets />;
       case 'notifications': return <Notifications />;

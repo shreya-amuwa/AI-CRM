@@ -1,5 +1,5 @@
 import type {
-  ClientAnnouncement, ClientCatalogService, ClientDocumentUrl, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
+  ClientAnnouncement, ClientCalendarEvent, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
   ClientService, ClientServiceRequest, ClientTicket, ClientTicketDetail
 } from '../../shared/contracts';
 import { api } from '../lib/api/client';
@@ -25,6 +25,13 @@ export const clientApi = {
   sendTicketMessage: (id: string, message: string, clientMsgId: string) =>
     api.post<ClientTicketDetail>(`/client/tickets/${id}/messages`, { message, clientMsgId }),
   ticketSeen: (id: string) => api.post<{ marked: number }>(`/client/tickets/${id}/seen`, {}),
+  calendar: (from: string, to: string) => api.get<ClientCalendarEvent[]>('/client/calendar', { from, to }),
+  documents: () => api.get<ClientDocuments>('/client/documents'),
+  beginDocumentUpload: (input: { itemCode: string; fileName: string; mimeType: string; sizeBytes: number }) => api.post<DocumentUploadTicket>('/client/documents/uploads', input),
+  completeDocumentUpload: (id: string) => api.post<CustomerDocument>(`/client/documents/uploads/${id}/complete`, {}),
+  abortDocumentUpload: (id: string) => api.post<null>(`/client/documents/uploads/${id}/abort`, {}),
+  saveDetail: (itemCode: string, value: string) => api.post<null>('/client/documents/details', { itemCode, value }),
+  documentUrl: (id: string, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/client/documents/${id}/url`, { action }),
   announcements: () => api.get<ClientAnnouncement[]>('/client/announcements'),
   dismissAnnouncement: (id: string, occurrence: string) => api.post<null>(`/client/announcements/${id}/dismiss`, { occurrence }),
   notifications: (limit = 20, offset = 0) => api.get<ClientNotifications>('/client/notifications', { limit, offset }),

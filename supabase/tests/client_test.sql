@@ -486,4 +486,179 @@ select test.check((select count(*) = 0 from customer_onboarding_entries where cu
 reset role;
 select test.check((select value = '+91 98199 00103' from customer_onboarding_entries where customer_id = (select id from cl where name = 'DS') and item_code = 'DS_GD_PHONE'),
   'the details are stored against this customer');
+
+-- =============================================================================
+\echo '--- 29. Client calendar (what the team did) and documents (upload, verify)'
+reset role;
+create temp table calev (name text primary key, id uuid);
+grant all on calev to authenticated, service_role;
+create temp table cdoc (name text primary key, id uuid);
+grant all on cdoc to authenticated, service_role;
+set role authenticated;
+
+-- ---------------------------------------------------------------- the support team logs what was done
+select test.login('sup_th');
+insert into calev select 'c1', (log_client_activity((select id from cl where name = 'A'), 'WHATSAPP_API_BLUE_TICK', current_date - 2, 'CAMPAIGN', 'Diwali offer broadcast',
+  'Sent the Diwali offer template to the customer list.', '[{"label":"Messages sent","value":"4,200"},{"label":"Read","value":"3,150"},{"label":" ","value":" "}]'::jsonb) ->> 'id')::uuid;
+select test.check((select jsonb_array_length(client_activity_list((select id from cl where name = 'A')) -> 'events') = 1
+                     and (client_activity_list((select id from cl where name = 'A')) -> 'events' -> 0 -> 'metrics') @> '[{"label":"Messages sent","value":"4,200"}]'::jsonb
+                     and jsonb_array_length(client_activity_list((select id from cl where name = 'A')) -> 'events' -> 0 -> 'metrics') = 2),
+  'the support team logs a campaign with its insights (blank insight rows are dropped)');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), 'AI_QR', current_date, 'CAMPAIGN', 'Not their service', null, '[]'::jsonb)$$, 'only one of the customer''s services can be chosen', 'customer''s services');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date, 'CAMPAIGN', 'x', null, '[]'::jsonb)$$, 'a title is required', 'title');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date + 800, 'CAMPAIGN', 'Far away', null, '[]'::jsonb)$$, 'a date within a year of today', 'within a year');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date, 'PARTY', 'Wrong kind', null, '[]'::jsonb)$$, 'the kind is validated', 'kind of activity');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date, 'POST', 'Half an insight', null, '[{"label":"Reach","value":""}]'::jsonb)$$, 'an insight needs a name and a value', 'name and a value');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date, 'POST', 'Too many', null,
+  (select jsonb_agg(jsonb_build_object('label', 'm' || g, 'value', g::text)) from generate_series(1, 13) g))$$, 'at most 12 insights', 'at most 12');
+select test.login('tm_c');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date, 'POST', 'Other department', null, '[]'::jsonb)$$, 'another department cannot log for this client', 'not found');
+select test.must_fail($$select client_activity_list((select id from cl where name = 'A'))$$, 'nor read what was logged', 'not found');
+select test.login('cdash_a');
+select test.must_fail($$select log_client_activity((select id from cl where name = 'A'), null, current_date, 'POST', 'By the client', null, '[]'::jsonb)$$, 'a client cannot log activity', 'not found');
+
+-- the customers a staff member can pick when logging activity
+select test.login('sup_th');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_activity_customers('Alpha')) c where c ->> 'id' = (select id::text from cl where name = 'A') and (c ->> 'hasClientLogin')::boolean),
+  'the support team finds the client by name and sees whether they have a login');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_activity_customers('zzz-no-such-client'))), 'a search that matches nothing returns nothing');
+select test.login('tm_c');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_activity_customers('Alpha'))), 'another department does not find them');
+
+-- ---------------------------------------------------------------- the client's calendar
+select test.login('cdash_a');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_calendar(current_date - 30, current_date + 30)) e
+                    where e ->> 'source' = 'ACTIVITY' and e ->> 'title' = 'Diwali offer broadcast' and jsonb_array_length(e -> 'metrics') = 2
+                      and e ->> 'serviceName' = 'WhatsApp API + Blue Tick'),
+  'the client sees the campaign with its insights on that date');
+select test.check((select count(*) >= 2 from jsonb_array_elements(client_calendar(current_date - 30, current_date + 30)) e where e ->> 'source' = 'SERVICE'),
+  'and what the system recorded: the services added to the account');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_calendar(current_date - 1, current_date + 30)) e where e ->> 'source' = 'ACTIVITY'),
+  'a date range hides what happened outside it');
+select test.must_fail($$select client_calendar(current_date, current_date - 1)$$, 'the range must be valid', 'valid date range');
+select test.must_fail($$select client_calendar(current_date - 1000, current_date)$$, 'and at most about a year', 'valid date range');
+select test.check((select count(*) = 1 from client_notifications where type = 'ACTIVITY_LOGGED' and entity_type = 'calendar'), 'the client is told about it in the notification centre');
+select test.login('cdash_b');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_calendar(current_date - 30, current_date + 30)) e where e ->> 'source' = 'ACTIVITY'), 'another client does not see it');
+select test.login('tm_a');
+select test.must_fail($$select client_calendar(current_date - 5, current_date)$$, 'staff cannot use the client calendar', 'clients only');
+
+-- update and delete
+select test.login('sup_th');
+select update_client_activity((select id from calev where name = 'c1'), 'WHATSAPP_API_BLUE_TICK', current_date - 1, 'CAMPAIGN', 'Diwali offer broadcast (final)', 'Updated', '[{"label":"Messages sent","value":"5,000"}]'::jsonb);
+select test.check((select client_activity_list((select id from cl where name = 'A')) -> 'events' -> 0 ->> 'title' = 'Diwali offer broadcast (final)'), 'an entry can be corrected');
+select test.login('tm_c');
+select test.must_fail($$select delete_client_activity((select id from calev where name = 'c1'))$$, 'another department cannot delete it', 'not found');
+select test.login('sup_th');
+select delete_client_activity((select id from calev where name = 'c1'));
+select test.check((jsonb_array_length(client_activity_list((select id from cl where name = 'A')) -> 'events') = 0), 'a wrong entry can be removed');
+select test.login('cdash_a');
+select test.check((select count(*) = 0 from client_notifications where type = 'ACTIVITY_LOGGED'), 'and its notification goes with it');
+
+-- ---------------------------------------------------------------- documents: what the client may provide
+select test.login('cdash_a');
+select test.check((select count(*) > 0 from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'IMPORTANT_DOCUMENTS' and i ->> 'status' = 'MISSING' and i ->> 'kind' = 'FILE'),
+  'the client sees the document they have not uploaded yet');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' in ('INVOICE', 'WABA_ID', 'WA_NUMBER_NOT_ON_APP')),
+  'but not the invoice (Accounts'' own), the consultant''s items or approvals');
+select test.check((select count(*) > 0 from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'AI_CALL_CUSTOMER_NUMBER'), 'details of their own services are listed');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'GOLD_CONFIRM_JEWELLER'), 'and nothing of services they do not have');
+select test.login('tm_a');
+select test.must_fail($$select client_documents()$$, 'staff cannot use the client documents', 'clients only');
+select test.must_fail($$select client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc.pdf', 'application/pdf', 5000)$$, 'nor start a client upload', 'clients only');
+
+select test.login('cdash_a');
+select client_save_detail('AI_CALL_CUSTOMER_NUMBER', '+91 98199 00101');
+select test.check((select i ->> 'status' = 'SAVED' and (i ->> 'byClient')::boolean and i ->> 'value' = '+91 98199 00101'
+                     from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'AI_CALL_CUSTOMER_NUMBER'), 'a detail typed by the client is saved for the team to verify');
+select test.must_fail($$select client_save_detail('WABA_ID', '123456789012')$$, 'a consultant-only item cannot be written', 'not part of your onboarding');
+select test.must_fail($$select client_save_detail('IMPORTANT_DOCUMENTS', 'text')$$, 'a document item needs a file', 'not part of your onboarding');
+select test.must_fail($$select client_save_detail('GOLD_CONFIRM_JEWELLER', 'YES')$$, 'nor an item of a service they do not have', 'not part of your onboarding');
+select test.must_fail($$select client_save_detail('AI_CALL_BUSINESS_ROLE', '   ')$$, 'an empty value is refused', 'Enter a value');
+
+-- upload
+select test.must_fail($$select client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc.exe', 'application/x-msdownload', 5000)$$, 'only accepted file types', 'not accepted');
+select test.must_fail($$select client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc.pdf', 'application/pdf', 9000000)$$, 'at most 2 MB', 'smaller than');
+select test.must_fail($$select client_begin_document_upload('INVOICE', 'inv.pdf', 'application/pdf', 5000)$$, 'a client cannot upload an invoice', 'not part of your onboarding');
+select test.must_fail($$select client_begin_document_upload('GBP_PHOTOS', 'p.pdf', 'application/pdf', 5000)$$, 'nor a document of a service they do not have', 'not part of your onboarding');
+insert into cdoc select 'd1', (client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc.pdf', 'application/pdf', 5000)).id;
+reset role;
+select test.check((select d.status = 'PENDING' and d.uploaded_by is null and d.storage_path like 'customers/' || (select id from cl where name = 'A') || '/onboarding/%'
+                     and not exists (select 1 from customer_onboarding_entries where customer_id = d.customer_id and item_code = 'IMPORTANT_DOCUMENTS')
+                     from customer_documents d where d.id = (select id from cdoc where name = 'd1')),
+  'an upload is booked first (pending, filed under this client, nothing saved yet)');
+set role authenticated;
+select test.login('cdash_b');
+select test.must_fail($$select client_complete_document_upload((select id from cdoc where name = 'd1'), 5000)$$, 'another client cannot finish it', 'not found');
+select test.must_fail($$select client_pending_document((select id from cdoc where name = 'd1'))$$, 'nor look it up', 'not found');
+select test.login('cdash_a');
+select test.check((select (client_pending_document((select id from cdoc where name = 'd1'))).status = 'PENDING'), 'the owner can look it up to check the stored file');
+select test.must_fail($$select client_complete_document_upload((select id from cdoc where name = 'd1'), 9000000)$$, 'the stored size is checked again', 'size');
+select client_complete_document_upload((select id from cdoc where name = 'd1'), 5000);
+select test.check((select i ->> 'status' = 'SAVED' and (i ->> 'byClient')::boolean and i ->> 'value' = 'kyc.pdf' and i ->> 'documentId' is not null
+                     from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'IMPORTANT_DOCUMENTS'), 'the finished upload fills the checklist item');
+select test.must_fail($$select client_complete_document_upload((select id from cdoc where name = 'd1'), 5000)$$, 'an upload finishes once', 'already finished');
+-- replace it
+insert into cdoc select 'd2', (client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc2.pdf', 'application/pdf', 6000)).id;
+select client_complete_document_upload((select id from cdoc where name = 'd2'), 6000);
+reset role;
+select test.check((select count(*) filter (where status = 'UPLOADED') = 1 and count(*) filter (where status = 'SUPERSEDED') = 1 and max(version) = 2
+                     from customer_documents where customer_id = (select id from cl where name = 'A') and document_type = 'IMPORTANT_DOCUMENTS'),
+  'a second upload replaces the first (kept as history)');
+select test.check((select items_saved >= 2 from customer_onboarding where customer_id = (select id from cl where name = 'A')), 'the onboarding progress counts what the client provided');
+set role authenticated;
+
+-- ---------------------------------------------------------------- the team verifies
+select test.login('sup_th');
+select test.check((select count(*) = 2 from jsonb_array_elements(client_document_queue('PENDING')) q
+                    where q ->> 'customerId' = (select id::text from cl where name = 'A') and q ->> 'status' = 'SAVED'),
+  'the support team sees the client''s two items waiting for review');
+select test.check((select count(*) = 1 from client_upload_download((select id from cdoc where name = 'd2'))), 'and can open the uploaded file');
+select test.check((select count(*) = 0 from client_upload_download((select id from cdoc where name = 'd1'))), 'but only the current one');
+select test.login('tm_c');
+select test.check((select jsonb_array_length(client_document_queue('PENDING')) = 0), 'another department sees nothing of this client');
+select test.check((select count(*) = 0 from client_upload_download((select id from cdoc where name = 'd2'))), 'cannot open the file');
+select test.must_fail($$select review_client_document((select id from cl where name = 'A'), 'IMPORTANT_DOCUMENTS', 'VERIFIED', null)$$, 'nor verify it', 'not found');
+select test.login('cdash_a');
+select test.must_fail($$select review_client_document((select id from cl where name = 'A'), 'IMPORTANT_DOCUMENTS', 'VERIFIED', null)$$, 'a client cannot verify their own document', 'not found');
+select test.check((select count(*) = 0 from client_upload_download((select id from cdoc where name = 'd2'))), 'nor use the staff download');
+select test.login('sup_th');
+select test.must_fail($$select review_client_document((select id from cl where name = 'A'), 'IMPORTANT_DOCUMENTS', 'REJECTED', null)$$, 'sending it back needs a reason', 'what needs fixing');
+select test.must_fail($$select review_client_document((select id from cl where name = 'A'), 'INVOICE', 'VERIFIED', null)$$, 'only what the client provided can be reviewed here', 'has not provided');
+select review_client_document((select id from cl where name = 'A'), 'IMPORTANT_DOCUMENTS', 'REJECTED', 'The PDF is blurred. Please upload a clear scan.');
+select review_client_document((select id from cl where name = 'A'), 'AI_CALL_CUSTOMER_NUMBER', 'VERIFIED', null);
+select test.login('cdash_a');
+select test.check((select i ->> 'status' = 'REJECTED' and i ->> 'reviewNote' like 'The PDF is blurred%' and (i ->> 'canEdit')::boolean
+                     from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'IMPORTANT_DOCUMENTS'), 'the client sees what to fix and can upload again');
+select test.check((select count(*) = 1 from client_notifications where type = 'DOCUMENT_REJECTED' and entity_type = 'document' and body like '%blurred%'), 'and is told in the notification centre');
+select test.check((select count(*) = 1 from client_notifications where type = 'DOCUMENT_VERIFIED'), 'a verified item is announced too');
+select test.must_fail($$select client_save_detail('AI_CALL_CUSTOMER_NUMBER', '+91 90000 00000')$$, 'a verified detail is locked', 'already verified');
+insert into cdoc select 'd3', (client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc3.pdf', 'application/pdf', 7000)).id;
+select client_complete_document_upload((select id from cdoc where name = 'd3'), 7000);
+select test.check((select i ->> 'status' = 'SAVED' and i ->> 'value' = 'kyc3.pdf' and i ->> 'reviewNote' is null from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'IMPORTANT_DOCUMENTS'),
+  'uploading again puts it back to waiting for review');
+select test.login('sup_th');
+select review_client_document((select id from cl where name = 'A'), 'IMPORTANT_DOCUMENTS', 'VERIFIED', null);
+select test.check((select count(*) = 2 from jsonb_array_elements(client_document_queue('REVIEWED')) q where q ->> 'customerId' = (select id::text from cl where name = 'A') and q ->> 'status' = 'VERIFIED'),
+  'the reviewed list shows what was verified');
+select test.login('cdash_a');
+select test.must_fail($$select client_begin_document_upload('IMPORTANT_DOCUMENTS', 'again.pdf', 'application/pdf', 5000)$$, 'a verified document is locked', 'already verified');
+select test.check((select count(*) = 1 from client_document_download((select id from cdoc where name = 'd3'))), 'the client can open their own current file');
+select test.check((select (client_documents() -> 'summary' ->> 'verified')::int >= 2), 'the summary counts what is verified');
+select test.check((select count(*) = 1 from jsonb_array_elements(client_calendar(current_date - 1, current_date + 1)) e where e ->> 'kind' = 'DOCUMENT_VERIFIED' and e ->> 'title' like 'All Important Documents%'),
+  'and the calendar records the day it was verified');
+select test.login('cdash_b');
+select test.check((select count(*) = 0 from client_document_download((select id from cdoc where name = 'd3'))), 'another client cannot open the file');
+
+-- ---------------------------------------------------------------- a service bought later brings its own documents
+reset role;
+insert into customer_services (customer_id, service_code) values ((select id from cl where name = 'A'), 'AI_QR');
+set role authenticated;
+select test.login('cdash_a');
+select test.check((select count(*) > 0 from jsonb_array_elements(client_documents() -> 'items') i
+                    where i ->> 'code' = 'SOCIAL_URLS' and i -> 'services' @> '[{"code":"AI_QR"}]'::jsonb and i ->> 'status' = 'MISSING'),
+  'a service bought later adds its own documents to the same page');
+select test.check((select count(*) > 0 from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'AIQR_PAYMENT_SCANNER' and i ->> 'kind' = 'FILE'),
+  'including files to upload');
+
 \echo '=== ALL CLIENT DASHBOARD TESTS PASSED ==='

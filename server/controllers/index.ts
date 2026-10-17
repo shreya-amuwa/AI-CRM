@@ -258,7 +258,15 @@ export const clientWorkflowController = {
   createPlan: (async ctx => ok(await svc(ctx).client.savePlan(null, ctx.req.body), 201)) as Handler,
   updatePlan: (async ctx => ok(await svc(ctx).client.savePlan(ctx.params.id, ctx.req.body))) as Handler,
   decidePlanRequest: (async ctx => (await svc(ctx).client.decidePlanRequest(ctx.params.id, ctx.req.body), ok(null))) as Handler,
-  replyToTicket: (async ctx => (await svc(ctx).client.replyToClientTicket(ctx.params.id, ctx.req.body), ok(null, 201))) as Handler
+  replyToTicket: (async ctx => (await svc(ctx).client.replyToClientTicket(ctx.params.id, ctx.req.body), ok(null, 201))) as Handler,
+  activityCustomers: (async ctx => ok(await svc(ctx).client.activityCustomers(ctx.req.query))) as Handler,
+  activityList: (async ctx => ok(await svc(ctx).client.activityList(ctx.params.id))) as Handler,
+  logActivity: (async ctx => ok(await svc(ctx).client.logActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
+  updateActivity: (async ctx => ok(await svc(ctx).client.updateActivity(ctx.params.id, ctx.req.body))) as Handler,
+  deleteActivity: (async ctx => ok(await svc(ctx).client.deleteActivity(ctx.params.id))) as Handler,
+  documentQueue: (async ctx => ok(await svc(ctx).client.documentQueue(ctx.req.query))) as Handler,
+  reviewDocument: (async ctx => ok(await svc(ctx).client.reviewDocument(ctx.params.id, ctx.params.item, ctx.req.body))) as Handler,
+  uploadUrl: (async ctx => ok(await svc(ctx).client.uploadUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
 /** Accounts: the invoice builder (prefill, issue, confirm payment, retry delivery) and opening the stored PDFs. */

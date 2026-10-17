@@ -3,6 +3,10 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  ClientActivityInput,
+  ClientActivityList,
+  ClientCalendarEvent,
+  ClientDocumentQueueItem,
   CustomerJourneyInfo,
   DeliveryQueueItem,
   ServiceJourneySetting,
@@ -247,6 +251,16 @@ export const pipelineApi = {
   saveConsultantItem: (id: string, item: string, body: { value: string }) =>
     api.patch<null>(`/pipeline/customers/${id}/consultant-items/${item}`, body),
   reviewCounts: () => api.get<ReviewCounts>('/pipeline/review-counts'),
+  // Support / Technical Consultant: the client's calendar activity and the documents clients provide
+  clientCustomers: (search?: string) => api.get<{ id: string; code: string | null; name: string; company: string | null; hasClientLogin: boolean }[]>('/pipeline/client-customers', { search: search || undefined }),
+  clientActivity: (customerId: string) => api.get<ClientActivityList>(`/pipeline/customers/${customerId}/client-activity`),
+  logClientActivity: (customerId: string, input: ClientActivityInput) => api.post<ClientCalendarEvent>(`/pipeline/customers/${customerId}/client-activity`, input),
+  updateClientActivity: (id: string, input: ClientActivityInput) => api.patch<ClientCalendarEvent>(`/pipeline/client-activity/${id}`, input),
+  deleteClientActivity: (id: string) => api.delete<null>(`/pipeline/client-activity/${id}`),
+  clientDocumentQueue: (status: 'PENDING' | 'REVIEWED') => api.get<ClientDocumentQueueItem[]>('/pipeline/client-documents', { status }),
+  reviewClientDocument: (customerId: string, itemCode: string, decision: 'VERIFIED' | 'REJECTED', note?: string) =>
+    api.post<null>(`/pipeline/customers/${customerId}/client-documents/${itemCode}/review`, { decision, note: note || undefined }),
+  clientUploadUrl: (documentId: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/pipeline/client-documents/${documentId}/url`, { action }),
   verifyAll: (id: string) => api.post<{ verified: number }>(`/pipeline/customers/${id}/checklist/verify-all`),
   automations: (id: string) => api.get<AutomationStatus[]>(`/pipeline/customers/${id}/automations`),
   clientMessages: (id: string) => api.get<ClientMessages>(`/pipeline/customers/${id}/client-messages`),

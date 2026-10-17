@@ -26,12 +26,40 @@ and DM Sans body, pill status badges), adapted to a desktop dashboard with a sli
    **View details** and **Add service**.
 4. **Monthly Plans** - current plan, price, features, start, next renewal, status, payment status, history, and the plans
    Accounts configured. Choosing one is a **request**.
-5. **Invoices** - read-only list from Accounts: number, date, amount, GST, due date, status, what it is for, **View** and
+5. **Calendar** - a month calendar of what happened on each day. The support team logs what it did for the client
+   (a campaign, a call campaign, a post, an ad, a setup, a report, a meeting) with the day's **insights** (for example
+   messages sent / delivered / read, calls made / answered, reach, clicks, leads); the client opens a day and sees the
+   details and the result tiles. The same calendar also shows what the system recorded: services added / activated /
+   renewing, invoices issued and paid, tickets raised and resolved, documents verified. Filters: everything, our work
+   for you, services, invoices, tickets, documents. A new entry reaches the client's bell. Entries are made by the
+   support side (below), never by the client.
+6. **Documents** - the client's own checklist, grouped by "About your business", each service and "Important documents":
+   every document to upload and every detail to type, with its state (*Not provided yet*, *Waiting for our team to check*,
+   *Verified*, *Needs your attention* with the team's note). The client uploads a document they missed during onboarding
+   (after receiving their login), replaces a rejected one, types a missing detail, and sees the documents of a **service
+   bought later** appear on the same page. A verified item is locked (raise a ticket to change it). Uploads go straight to
+   storage (R2 / Supabase) like every customer document (2 MB, type and content checked). The invoice, the Technical
+   Consultant's own items (for example the WABA ID), approvals and access grants are not on this page.
+7. **Invoices** - read-only list from Accounts: number, date, amount, GST, due date, status, what it is for, **View** and
    **Download PDF**.
-6. **Tickets** - raise a ticket (subject, description, category, optional service), history, status, Support's replies,
+8. **Tickets** - raise a ticket (subject, description, category, optional service), history, status, Support's replies,
    reply back. The customer sees only their own tickets and only the replies meant for them.
-7. **Notification Center** - the customer's own notifications, unread marker, mark read / mark all read, each one opens the
+9. **Notification Center** - the customer's own notifications, unread marker, mark read / mark all read, each one opens the
    page it is about.
+
+## Calendar activity and client documents (support side)
+
+* **Client calendar** (Technical Consultant, Support Team Lead and a handed-over Team Member / Lead; the Department Head and
+  Super Admin too): choose a client, **Log an activity** (date, what it was, service, title, details, insights) - edit or
+  remove an entry later. Migration `20261031000100_client_calendar_documents.sql` (`log_client_activity`,
+  `update_client_activity`, `delete_client_activity`, `client_activity_list`, `client_activity_customers`).
+* **Client documents**: what clients uploaded or typed lands in a queue (**To verify** / **Reviewed**). The reviewer opens the
+  file, **Verify**s it or **Sends it back** with a note; the client gets a notification either way and can upload again.
+  Verification is available **after the hand-over too** (the normal onboarding review closes then), to the same people who
+  can log activity (`private.can_serve_client`). Functions: `client_documents`, `client_begin_document_upload`,
+  `client_complete_document_upload`, `client_save_detail`, `client_document_queue`, `review_client_document`.
+* An upload is an ordinary onboarding entry (`customer_onboarding_entries`, status `SAVED`, `saved_by_client`), so progress
+  counts, the Technical Consultant's checklist and the add-on counts see it.
 
 ## Sign-in and provisioning (no hard-coded or shared logins)
 

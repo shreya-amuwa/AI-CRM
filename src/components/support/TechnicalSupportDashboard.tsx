@@ -9,6 +9,8 @@ import { ConsultantIntake } from './consultant/ConsultantIntake';
 import { ConsultantCustomerDetail, ConsultantCustomerList } from './consultant/ConsultantViews';
 import { ConsultantAddons } from './consultant/ConsultantAddons';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
+import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 
 interface TechnicalSupportDashboardProps {
   currentUserId?: string;
@@ -55,6 +57,10 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
         />
       ) : page === 'addons' ? (
         <ConsultantAddons onCountsChanged={loadCounts} onGoToOnboarding={() => setPage('onboarding')} />
+      ) : page === 'client-documents' ? (
+        <ClientDocumentsReview />
+      ) : page === 'client-calendar' ? (
+        <ClientActivityManager />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : openId ? (

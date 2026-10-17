@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, ClipboardList, FileText, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -18,8 +18,10 @@ import { LeaveCenter } from '../leave/LeaveCenter';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
+import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
+import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications' | PipelineSection | 'delivery';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
@@ -36,6 +38,8 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'onboarding', label: 'Customer Onboarding', icon: Users },
   { id: 'part-payments', label: 'Part Payments', icon: Wallet },
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
+  { id: 'client-documents', label: 'Client documents', icon: FolderCheck },
+  { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
@@ -132,6 +136,10 @@ export const SupportMemberDashboard: React.FC = () => {
         <SupportPipelinePage section={page as PipelineSection} onNavigate={section => go(section)} />
       ) : page === 'delivery' ? (
         <DeliveryQueue />
+      ) : page === 'client-documents' ? (
+        <ClientDocumentsReview />
+      ) : page === 'client-calendar' ? (
+        <ClientActivityManager />
       ) : page === 'my-clients' ? (
         <HandoverBoard role="TEAM_MEMBER" />
       ) : page === 'tasks' ? (
