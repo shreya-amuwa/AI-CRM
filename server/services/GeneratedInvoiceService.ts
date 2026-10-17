@@ -44,6 +44,7 @@ function toPdfInput(s: Snapshot): InvoicePdfInput {
     terms: s.terms,
     lines: s.lines,
     totals: s.totals,
+    paymentSummary: s.paymentSummary,
     issuedAt: s.issuedAt
   };
 }
@@ -78,10 +79,20 @@ export class GeneratedInvoiceService {
     return { invoice: run.invoice, steps: [first, ...run.steps], created: !issued.replayed };
   }
 
-  /** Stage 2: confirm the payment (idempotent), then the paid PDF with the PAID stamp and its e-mail. */
+  /**
+   * Stage 2: confirm the payment (idempotent). A part payment is recorded and the invoice stays open with its balance; once the
+   * balance is zero the invoice is marked paid and the paid PDF (with the PAID stamp) and its e-mail follow.
+   */
   async confirmPayment(id: unknown, body: unknown): Promise<InvoiceRunResult> {
     const invoiceId = parse(uuidSchema, id);
     const confirmed = await this.repo.confirmPayment(invoiceId, parse(invoiceConfirmPaymentSchema, body));
+    if (!confirmed.settled) {
+      const balance = confirmed.generated?.paymentSummary?.balance;
+      return {
+        invoice: confirmed,
+        steps: [{ step: 'PAYMENT', stage: null, status: 'DONE', message: `Part payment recorded.${balance !== undefined ? ` Balance left: Rs.${balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.` : ''} The paid invoice is made when the balance is zero.` }]
+      };
+    }
     const first: InvoiceStep = { step: 'PAYMENT', stage: null, status: 'DONE', message: confirmed.replayed ? 'The payment was already confirmed.' : null };
     const run = await this.runStage(invoiceId, 'PAID');
     return { invoice: run.invoice, steps: [first, ...run.steps] };

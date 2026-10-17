@@ -13,7 +13,8 @@ import {
   Menu,
   X,
   ChevronDown,
-  ClipboardList
+  ClipboardList,
+  PackageCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
@@ -33,6 +34,7 @@ export type TeamMemberNav =
   | 'my-clients'
   | 'calendar'
   | 'invoices'
+  | 'delivery'
   | 'settings'
   | 'notifications';
 
@@ -71,6 +73,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
+    // services other departments sent here for delivery (empty for most teams)
+    { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
     { id: 'notifications' as TeamMemberNav, label: 'Notification Center', icon: Bell }
   ];

@@ -159,6 +159,12 @@ export const InvoiceBuilder: React.FC<{
       if (!/^[0-9]{4,8}$/.test(l.hsnSac.trim())) problems.push(`Line ${i + 1}: the HSN/SAC code is 4 to 8 digits.`);
     });
     if (calc && !calc.ok) calc.problems.forEach(p => problems.push(p.message));
+    // The payments of the agreed services are recorded against the agreed amount: an invoice for more could never be paid in full
+    // (the database refuses it too).
+    const dealPaise = prefill?.dealAmount ? toPaise(prefill.dealAmount) : null;
+    if (calc && calc.ok && purpose === 'SERVICES' && dealPaise !== null && dealPaise > 0 && calc.totalPaise > dealPaise) {
+      problems.push(`The invoice total (${rs(calc.totalPaise)}) is more than the amount agreed with Sales (${rs(dealPaise)}). Correct the invoice, or ask Sales to correct the agreed amount first.`);
+    }
     if (treatment === null && form.stateCode === '') problems.push('Choose the tax treatment.');
   }
 
@@ -391,7 +397,7 @@ export const InvoiceBuilder: React.FC<{
           <fieldset className="space-y-2">
             <legend className="text-xs font-bold text-slate-800 mb-1">Services</legend>
             {prefill.dealAmount !== null && purpose === 'SERVICES' && (
-              <p className="text-[11px] text-slate-500">Sales agreed {rs(toPaise(prefill.dealAmount) ?? 0)} for all the services together. Enter each service amount below, before tax.</p>
+              <p className="text-[11px] text-slate-500">Sales agreed {rs(toPaise(prefill.dealAmount) ?? 0)} for all the services together (the invoice total, with tax, cannot be more than this). Enter each service amount below, before tax.</p>
             )}
             <div className="space-y-3">
               {form.lines.map((l, i) => (

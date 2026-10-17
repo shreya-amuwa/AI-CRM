@@ -2562,9 +2562,237 @@ provider.close();
     check(JSON.stringify(dbStates) === JSON.stringify(GST_STATES.map(s => ({ code: s.code, name: s.name }))), 'the GST state list in the database and in the code are the same');
   }
 
+  // ---- the balance: what was paid, what is left, part payments, one paid-invoice workflow
+  {
+    const m = mailsBefore();
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/901', lines: [line({ baseAmount: 10000 })] }));
+    const bi = r.json.data?.invoice;
+    check(r.status === 201 && bi.total === 11800 && bi.generated.paymentSummary.total === 11800 && bi.generated.paymentSummary.confirmed === 0 && bi.generated.paymentSummary.balance === 11800
+      && bi.generated.paymentSummary.state === 'UNPAID' && bi.generated.paymentSummary.ledger === 'INVOICE', 'balance: a new invoice shows its full balance (total 11,800, nothing confirmed)', r);
+    const unpaidBytes = fake.objects.get(objectKey(bi.id, 'unpaid'))!.body;
+    const balText = pdfText(unpaidBytes);
+    if (balText) check(/Invoice Total: .*Rs\.11,800\.00/.test(balText) && /Payments Received: .*Rs\.0\.00/.test(balText) && /Balance Outstanding: .*Rs\.11,800\.00/.test(balText) && /Payment Status: Unpaid/.test(balText),
+      'balance: the unpaid PDF prints the total, payments received, balance outstanding and the status');
+    check(unpaidBytes.length < 500000, 'balance: the PDF stays under 500,000 bytes', unpaidBytes.length);
+
+    const mIssued = mailsBefore(); // (issuing sent the unpaid invoice)
+    const confirm = (body: Record<string, unknown>, id = bi.id) => api('accm', 'POST', `/accounts/generated-invoices/${id}/confirm-payment`, body);
+    r = await confirm({ method: 'UPI', reference: 'BAL-1', amount: '0' });
+    check(r.status === 422, 'balance: a zero amount is refused', r);
+    r = await confirm({ method: 'UPI', reference: 'BAL-1', amount: 'abc' });
+    check(r.status === 422, 'balance: a text amount is refused', r);
+    r = await confirm({ method: 'UPI', reference: 'BAL-1', amount: '11800.005' });
+    check(r.status === 422, 'balance: three decimals are refused', r);
+    r = await confirm({ method: 'UPI', reference: 'BAL-1', amount: '12000' });
+    check(r.status === 422 && /more than the balance/.test(r.json.error.message), 'balance: more than the balance is refused', r);
+    r = await confirm({ amount: '5000', reference: 'BAL-1' });
+    check(r.status === 422, 'balance: the payment method is required when a payment is recorded', r);
+    r = await confirm({ method: 'UPI', amount: '5000' });
+    check(r.status === 422 && /reference/.test(r.json.error.message), 'balance: a UPI payment needs its reference', r);
+    check((await db.query(`select count(*)::int n from invoice_payments where invoice_id = $1`, [bi.id])).rows[0].n === 0, 'balance: none of the refused requests recorded a payment');
+
+    const req = crypto.randomUUID();
+    r = await confirm({ method: 'UPI', reference: 'BAL-1', amount: '5000', requestId: req });
+    check(r.status === 200 && r.json.data.steps.length === 1 && r.json.data.steps[0].step === 'PAYMENT' && /Part payment recorded/.test(r.json.data.steps[0].message)
+      && r.json.data.invoice.status === 'Pending' && r.json.data.invoice.generated.paymentSummary.confirmed === 5000 && r.json.data.invoice.generated.paymentSummary.balance === 6800
+      && r.json.data.invoice.generated.paymentSummary.state === 'PARTIALLY_PAID', 'balance: a part payment of 5,000 leaves 6,800, partially paid, the invoice stays open', r);
+    const gb = await row(bi.id);
+    check(gb.lifecycle === 'ISSUED' && gb.paid_pdf_status === 'NOT_DUE' && smtpMail.length === mIssued, 'balance: no paid invoice is made and no e-mail is sent for a part payment');
+    r = await confirm({ method: 'UPI', reference: 'BAL-1', amount: '5000', requestId: req });
+    check(r.status === 200 && r.json.data.invoice.generated.paymentSummary.balance === 6800 && (await db.query(`select count(*)::int n from invoice_payments where invoice_id = $1`, [bi.id])).rows[0].n === 1, 'balance: the same request again records nothing new', r);
+    r = await confirm({ method: 'UPI', reference: 'bal-1', amount: '100' });
+    check(r.status === 409 && /already recorded/.test(r.json.error.message), 'balance: the same reference cannot be recorded twice', r);
+    r = await api('accm', 'PATCH', `/accounts/invoices/${bi.id}`, { status: 'Paid' });
+    check(r.status === 409, 'balance: the old "mark as paid" switch cannot settle a generated invoice (one workflow)', r);
+    r = await api('cl2', 'GET', '/client/invoices');
+    const cb = (r.json.data as any[]).find(i => i.id === bi.id);
+    check(cb.paymentSummary.balance === 6800 && cb.paymentSummary.confirmed === 5000 && cb.status === 'Pending' && !cb.paidFilePending, 'balance: the client sees the same balance', cb);
+
+    r = await confirm({ method: 'CASH', note: 'rest in cash' });
+    check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.invoice.generated.paymentSummary.balance === 0 && r.json.data.invoice.generated.paymentSummary.state === 'FULLY_PAID'
+      && r.json.data.steps.map((x: any) => `${x.step}:${x.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE', 'balance: the last payment (the whole balance by default) settles it: paid invoice stored and e-mailed', r);
+    const paidBytes = fake.objects.get(objectKey(bi.id, 'paid'))!.body;
+    const paidText = pdfText(paidBytes);
+    if (paidText) check(/Balance Outstanding: .*Rs\.0\.00/.test(paidText) && /Payment Status: Fully Paid/.test(paidText) && /This Payment: .*Rs\.6,800\.00/.test(paidText) && /Payments Received: .*Rs\.11,800\.00/.test(paidText),
+      'balance: the paid PDF shows the total, all payments, the current payment, balance 0 and Fully Paid');
+    check(paidBytes.length < 500000 && smtpMail.length === m + 2, 'balance: under 500,000 bytes; one e-mail for the unpaid and one for the paid invoice', paidBytes.length);
+    r = await confirm({ method: 'CASH' });
+    check(r.status === 200 && r.json.data.steps[0].message === 'The payment was already confirmed.' && (await db.query(`select count(*)::int n from invoice_payments where invoice_id = $1`, [bi.id])).rows[0].n === 2 && smtpMail.length === m + 2,
+      'balance: confirming again changes nothing: no second payment, file or e-mail', r);
+    r = await confirm({ method: 'CASH', amount: '10' });
+    check(r.status === 200 && /already confirmed/.test(r.json.data.steps[0].message) && (await db.query(`select count(*)::int n from invoice_payments where invoice_id = $1`, [bi.id])).rows[0].n === 2, 'balance: a late payment on a settled invoice records nothing');
+    const inc = (await db.query(`select amount::numeric a from private.verified_income() where customer_id = $1 and (reference = 'BAL-1' or (method = 'CASH' and amount = 6800))`, [cust])).rows;
+    check(inc.length === 2 && inc.reduce((t: number, x: any) => t + Number(x.a), 0) === 11800, 'balance: both payments count as income', inc);
+    r = await api('a', 'POST', `/accounts/generated-invoices/${bi.id}/confirm-payment`, { method: 'CASH' });
+    check(r.status === 403, 'balance: a salesperson cannot confirm', r);
+  }
+
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
   fake.server.close();
   smtp.close();
+}
+
+// --- Support leads, the direct journey (no Technical Consultant), delivery departments, service settings -------------------
+{
+  const ds = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'designstudio');
+  const dsTeam = (await api('sa', 'GET', `/teams?departmentId=${ds.id}`)).json.data[0];
+  r = await api('sa', 'POST', '/users', { email: 'ds.mem@amuwa.com', fullName: 'DS Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: dsTeam.id });
+  check(r.status === 201, 'journey: the Design Studio gets a team member', r);
+  tokens.set('dsm', tokenFor(r.json.data.id));
+
+  // ---- Support creates and manages its own lead (the Sales pipeline endpoints, same database record)
+  r = await api('sm', 'POST', '/pipeline/leads', { name: 'Sushma Rao', company: 'Rao Boutique', phone: '9820000201', whatsapp: '9820000201', email: 'sushma@raoboutique.example', leadSource: 'Referral', services: ['DS_META_ADS'], notes: 'Referred by a friend' });
+  check(r.status === 201, 'Support: a Support member creates a lead', r);
+  const lead = r.json.data.id;
+  r = await api('sm', 'GET', `/pipeline/customers/${lead}`);
+  check(r.status === 200 && r.json.data.leadSource === 'Referral' && r.json.data.whatsapp === '9820000201' && r.json.data.services.join() === 'DS_META_ADS' && r.json.data.lifecycleStage === 'LEAD', 'Support: the lead keeps its referral source, WhatsApp number and service', r);
+  r = await api('sm', 'GET', '/pipeline/customers?stage=LEAD');
+  check(r.status === 200 && r.json.data.items.some((i: any) => i.id === lead), 'Support: it is in the Support member\'s lead list', r);
+  r = await api('a', 'GET', '/pipeline/customers?stage=LEAD');
+  check(r.status === 200 && !r.json.data.items.some((i: any) => i.id === lead), 'Support: a Sales member does not see it', r);
+  r = await api('a', 'GET', `/pipeline/customers/${lead}`);
+  check(r.status === 404, 'Support: nor open it', r);
+  r = await api('a', 'PATCH', `/pipeline/leads/${lead}`, { leadStatus: 'INTERESTED' });
+  check(r.status === 404, 'Support: nor change it', r);
+  r = await api('sm', 'PATCH', `/pipeline/leads/${lead}`, { leadStatus: 'INTERESTED', whatsapp: '9820000299', activityNote: 'Called back' });
+  check(r.status === 200 && r.json.data.leadStatus === 'INTERESTED' && r.json.data.whatsapp === '9820000299', 'Support: it updates the status and the WhatsApp number', r);
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/conversations`, { note: 'Wants to start this month' });
+  check(r.status === 201 || r.status === 200, 'Support: it records a conversation', r);
+  r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.status === 200 && r.json.data.journey === 'DIRECT' && r.json.data.step === 'LEAD' && r.json.data.services[0].deliveryDepartment.name === 'Amuwa Design Studio', 'journey: a Meta Ads lead follows the direct journey; the service knows its department', r);
+  r = await api('a', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.status === 404, 'journey: a Sales member cannot read it', r);
+
+  // ---- Send to Accounts
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-accounts`, { amount: 10000, note: 'half now' });
+  check(r.status === 200, 'Support: Send to Accounts', r);
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-accounts`, { amount: 10000 });
+  check(r.status === 409, 'Support: a second submission is refused', r);
+  check((await db.query(`select count(*)::int n from customers where phone = '9820000201'`)).rows[0].n === 1, 'Support: still one customer record');
+  r = await api('accm', 'GET', '/pipeline/accounts/payment-requests?status=PENDING');
+  const q = r.json.data.items.find((i: any) => i.id === lead);
+  check(r.status === 200 && q && q.sentFrom === 'SUPPORT' && q.journey === 'DIRECT' && q.clientLogin === 'NOT_STARTED' && q.sentBy === 'Support Member' && q.services.join() === 'Meta Ads', 'Accounts: the queue shows it, sent by Support, direct journey, no login yet', q);
+
+  // ---- Accounts: payment, then the client login, then Return to Sales
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payments`, { type: 'PART', amount: 4000, method: 'UPI', reference: 'JRN-1', verify: false });
+  check(r.status === 201 || r.status === 200, 'Accounts: records the payment (unverified)', r);
+  const payId = (await db.query(`select id from customer_payments where customer_id = $1`, [lead])).rows[0].id;
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
+  check(r.status === 422 && /Record and verify/.test(r.json.error.message), 'Accounts: an unverified payment cannot confirm the customer', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+  check(r.status === 409 && /Verify a payment first/.test(r.json.error.message), 'Accounts: no login before a payment is verified', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payments/${payId}/verify`, {});
+  check(r.status === 200 || r.status === 204, 'Accounts: verifies the payment', r);
+  r = await api('accm', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.status === 200 && r.json.data.step === 'LOGIN_PENDING' && r.json.data.can.createLogin === true && r.json.data.can.returnToSales === false && r.json.data.payment.verified === 4000, 'journey: payment verified, next is the login', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
+  check(r.status === 422 && /dashboard login/.test(r.json.error.message), 'Accounts: Return to Sales is refused until the login exists', r);
+  for (const [who, label] of [['a', 'a Sales member'], ['sm', 'the Support member who owns the customer'], ['tc', 'a Technical Consultant'], ['dh', 'the department head']] as const) {
+    r = await api(who, 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+    check(r.status === 403 || r.status === 404, `Accounts login: ${label} cannot create it`, r);
+  }
+  r = await api(null, 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+  check(r.status === 401, 'Accounts login: no session is refused (401)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'nope', password: 'ClientPass#2026' });
+  check(r.status === 422, 'Accounts login: a bad e-mail is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'short' });
+  check(r.status === 422, 'Accounts login: a short password is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'a@amuwa.com', password: 'ClientPass#2026' });
+  check(r.status === 409, 'Accounts login: an e-mail that already has a login is refused', r);
+  check((await db.query(`select count(*)::int n from customer_client_accounts where customer_id = $1`, [lead])).rows[0].n === 0, 'Accounts login: nothing was created by the refusals');
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+  check(r.status === 201 && r.json.data.email === 'sushma.client@example.com', 'Accounts login: Accounts creates the client login', r);
+  const prov = (await db.query(`select p.status, p.attempts, p.email, a.auth_user_id from customer_client_provisioning p join customer_client_accounts a on a.customer_id = p.customer_id where p.customer_id = $1`, [lead])).rows[0];
+  check(prov.status === 'CREATED' && prov.attempts === 1, 'Accounts login: the provisioning record is settled as created', prov);
+  const stored = (await db.query(`select count(*)::int n from automation_jobs where customer_id = $1 and secret is not null`, [lead])).rows[0].n;
+  check(stored === 0, 'Accounts login: no password is kept or queued for an e-mail');
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'another.sushma@example.com', password: 'ClientPass#2026' });
+  check(r.status === 409, 'Accounts login: a second login for the same customer is refused', r);
+  r = await api('accm', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.json.data.clientLogin.status === 'CREATED' && r.json.data.step === 'LOGIN_CREATED' && r.json.data.can.returnToSales === true && r.json.data.can.createLogin === false, 'journey: login created, Return to Sales offered', r.json.data);
+  tokens.set('sushma', tokenFor(prov.auth_user_id));
+  r = await api('sushma', 'GET', '/client/me');
+  check(r.status === 200 && r.json.data.customerId === lead, 'the customer can sign in to their own client dashboard', r);
+  r = await api('sushma', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.status === 403 || r.status === 401, 'a client token on the staff journey route is refused', r);
+  r = await api('sm', 'GET', '/client/me');
+  check(r.status === 403 || r.status === 401, 'a staff token on the client route is refused', r);
+
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
+  check(r.status === 200 || r.status === 204, 'Accounts: Return to Sales', r);
+  r = await api('sm', 'GET', `/pipeline/customers/${lead}`);
+  check(r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.paymentWorkflow === 'PAYMENT_CONFIRMED' && r.json.data.amountVerified === 4000 && r.json.data.dealAmount === 10000, 'the same customer is back with its owner: onboarding, payment kept', r.json.data);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
+  check(r.status === 409, 'Accounts: a second return is refused', r);
+  r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.json.data.step === 'RETURNED_TO_SALES' && r.json.data.journey === 'DIRECT', 'journey: returned to Sales, the documents are next', r.json.data);
+
+  // ---- documents are verified by Sales, not by Accounts or a Technical Consultant
+  await db.query(`insert into customer_onboarding_entries (customer_id, item_code, value, status, saved_by)
+                  select $1, i.code, 'saved', 'SAVED', (select id from profiles where email = 'sm@amuwa.com') from private.customer_items($1) i where i.code <> 'INVOICE'
+                  on conflict (customer_id, item_code) do nothing`, [lead]);
+  await db.query(`insert into customer_onboarding_entries (customer_id, item_code, value, status) values ($1, 'INVOICE', 'INV', 'SAVED') on conflict (customer_id, item_code) do nothing`, [lead]);
+  await db.query(`select private.refresh_onboarding_progress($1)`, [lead]);
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, {});
+  check(r.status === 422 && /Verify every document/.test(r.json.error.message), 'delivery: cannot be sent before the documents are verified', r);
+  for (const [who, label] of [['accm', 'Accounts'], ['tc', 'a Technical Consultant'], ['a', 'another salesperson'], ['dsm', 'the Design Studio']] as const) {
+    r = await api(who, 'POST', `/pipeline/customers/${lead}/checklist/verify-all`, {});
+    check(r.status === 404 || r.status === 403, `documents: ${label} cannot verify them`, r);
+    r = await api(who, 'POST', `/pipeline/customers/${lead}/send-to-delivery`, {});
+    check(r.status === 404 || r.status === 403, `delivery: ${label} cannot send the services on`, r);
+  }
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/checklist/verify-all`, {});
+  check(r.status === 200 && r.json.data.verified > 0, 'documents: the owner verifies them', r);
+  r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.json.data.step === 'DOCUMENTS_VERIFIED' && r.json.data.can.sendToDelivery === true, 'journey: documents verified, sending offered', r.json.data);
+  r = await api('dsm', 'GET', '/pipeline/delivery-queue');
+  check(r.status === 200 && r.json.data.total === 0, 'delivery: the Design Studio queue is empty before sending', r);
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, { note: 'Start on the ad account' });
+  check(r.status === 200 && r.json.data.sent === 1 && r.json.data.remaining === 0 && r.json.data.departments === 'Amuwa Design Studio', 'delivery: the owner sends the service to the Design Studio', r);
+  r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, {});
+  check(r.status === 409, 'delivery: a second send is refused', r);
+  r = await api('dsm', 'GET', '/pipeline/delivery-queue');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === lead && r.json.data.items[0].referredFrom === 'SUPPORT' && r.json.data.items[0].services[0].code === 'DS_META_ADS' && r.json.data.items[0].balance === 6000,
+    'delivery: the Design Studio sees it with the referrer, the service and the balance', r);
+  r = await api('dsm', 'GET', `/pipeline/customers/${lead}`);
+  check(r.status === 200, 'delivery: the Design Studio can open the customer', r);
+  r = await api('dsm', 'PATCH', `/pipeline/leads/${lead}`, { name: 'Changed' });
+  check(r.status === 404 || r.status === 403, 'delivery: but cannot edit it', r);
+  r = await api('b', 'GET', '/pipeline/delivery-queue');
+  check(r.status === 200 && r.json.data.total === 0, 'delivery: another department\'s queue stays empty', r);
+  r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
+  check(r.json.data.step === 'SENT_TO_DELIVERY' && r.json.data.lifecycleStage === 'CUSTOMER' && r.json.data.delivery.allSent, 'journey: sent to the delivery department, no Technical Consultant step', r.json.data);
+  check((await db.query(`select count(*)::int n from customer_onboarding where customer_id = $1 and (forwarded_to_support_at is not null or with_consultant)`, [lead])).rows[0].n === 0, 'the Technical Consultant step was skipped');
+
+  // ---- service journey settings
+  r = await api('sm', 'GET', '/pipeline/service-journeys');
+  check(r.status === 200 && r.json.data.filter((x: any) => !x.requiresTechnicalConsultant).length === 6 && r.json.data.find((x: any) => x.code === 'WHATSAPP_API_BLUE_TICK').requiresTechnicalConsultant === true, 'settings: one catalogue; only the six Design Studio services skip the consultant', r);
+  for (const who of ['sm', 'a', 'dh', 'accm', 'tc'] as const) {
+    r = await api(who, 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false, deliveryDepartmentId: ds.id });
+    check(r.status === 403, `settings: ${who} cannot change how a service is delivered`, r);
+  }
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false });
+  check(r.status === 422, 'settings: a service without a consultant needs a delivery department', r);
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false, deliveryDepartmentId: ds.id });
+  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').deliveryDepartment === 'Amuwa Design Studio', 'settings: the Super Admin can configure a service', r);
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: true });
+  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').requiresTechnicalConsultant === true, 'settings: and put it back', r);
+
+  // ---- a Technical Consultant service is not routed through the direct journey
+  r = await api('a', 'POST', '/pipeline/leads', { name: 'Tara Iyer', company: 'Iyer Garments', phone: '9820000202', leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'] });
+  const tLead = r.json.data.id;
+  r = await api('a', 'GET', `/pipeline/customers/${tLead}/journey`);
+  check(r.json.data.journey === 'TECHNICAL' && r.json.data.followsTechnicalConsultant === true, 'a WhatsApp API customer follows the Technical Consultant journey', r.json.data);
+  r = await api('a', 'POST', `/pipeline/customers/${tLead}/send-to-accounts`, { amount: 6000 });
+  r = await api('accm', 'POST', `/pipeline/customers/${tLead}/accounts/client-login`, { email: 'tara.client@example.com', password: 'ClientPass#2026' });
+  check(r.status === 409 && /Technical Consultant/.test(r.json.error.message), 'Accounts cannot create the login of a Technical Consultant customer', r);
+  r = await api('a', 'POST', `/pipeline/customers/${tLead}/send-to-delivery`, {});
+  check(r.status === 409 || r.status === 422, 'and Sales cannot route it to a delivery department', r);
+  // mixed order
+  r = await api('a', 'POST', '/pipeline/leads', { name: 'Meera Nair', company: 'Nair Studio', phone: '9820000203', leadSource: 'Walk-in', services: ['AI_CALLING', 'DS_GRAPHIC_DESIGN'] });
+  r = await api('a', 'GET', `/pipeline/customers/${r.json.data.id}/journey`);
+  check(r.json.data.journey === 'MIXED' && r.json.data.services.length === 2 && r.json.data.services.find((x: any) => x.code === 'DS_GRAPHIC_DESIGN').requiresTechnicalConsultant === false && r.json.data.services.find((x: any) => x.code === 'AI_CALLING').requiresTechnicalConsultant === true,
+    'a mixed order keeps each service\'s own setting and follows the Technical Consultant journey', r.json.data);
 }
 
 // A project missing an earlier migration must still let people sign in.

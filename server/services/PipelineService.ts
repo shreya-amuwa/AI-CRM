@@ -1,4 +1,7 @@
 import type {
+  CustomerJourneyInfo,
+  DeliveryQueueItem,
+  ServiceJourneySetting,
   DivisionLeadsOverview,
   DivisionSupportOverview,
   ClientMessages,
@@ -23,6 +26,10 @@ import type {
 } from '../../shared/contracts.js';
 import {
   accountsBackOffSchema,
+  accountsClientLoginSchema,
+  deliveryQueueQuerySchema,
+  sendToDeliverySchema,
+  serviceJourneySchema,
   accountsConfirmReturnSchema,
   accountsQuerySchema,
   accountsRecordPaymentSchema,
@@ -212,6 +219,56 @@ export class PipelineService {
       throw e;
     }
     return { email: input.email };
+  }
+
+  /**
+   * Accounts creates the dashboard login of a customer whose services need no Technical Consultant. The database checks who may
+   * and when (a verified payment; the journey), marks the attempt, and refuses a second click while one is running. The password is
+   * hashed by Supabase Auth and never stored or e-mailed by the CRM. A failure is recorded on the customer with its reason and the
+   * attempt can be repeated; a half-made login (user created, record not saved) is removed so a retry starts clean.
+   */
+  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(accountsClientLoginSchema, body);
+    await this.repo.accountsClientLoginBegin(customerId, input.email);
+    let userId: string | null = null;
+    try {
+      userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
+      await this.repo.recordClientAccount(customerId, userId, input.email, null);
+    } catch (e) {
+      if (userId) await this.authAdmin.deleteUser(userId).catch(() => undefined);
+      const message = e instanceof AppError ? e.message : 'The login could not be created.';
+      await this.repo.accountsClientLoginFailed(customerId, message).catch(() => undefined);
+      throw e;
+    }
+    return { email: input.email };
+  }
+
+  /** Where a customer is: its journey, login, documents and delivery state, and what the caller may do next. */
+  customerJourney(id: string): Promise<CustomerJourneyInfo> {
+    return this.repo.customerJourney(parse(uuidSchema, id));
+  }
+
+  /** Sales / Support: send the verified services to the department that delivers them (each service to its own). */
+  async sendToDelivery(id: string, body: unknown): Promise<{ sent: number; remaining: number; departments: string | null }> {
+    return this.repo.sendToDelivery(parse(uuidSchema, id), parse(sendToDeliverySchema, body ?? {}).note ?? null);
+  }
+
+  /** A delivery department: what it was sent. */
+  deliveryQueue(query: unknown): Promise<Paginated<DeliveryQueueItem>> {
+    return this.repo.deliveryQueue(parse(deliveryQueueQuerySchema, query ?? {}));
+  }
+
+  serviceJourneys(): Promise<ServiceJourneySetting[]> {
+    return this.repo.serviceJourneys();
+  }
+
+  /** Super Admin: whether a service needs a Technical Consultant, and which department delivers it otherwise. */
+  async setServiceJourney(code: string, body: unknown): Promise<ServiceJourneySetting[]> {
+    const service = parse(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.'), code);
+    const input = parse(serviceJourneySchema, body);
+    await this.repo.setServiceJourney(service, input.requiresTechnicalConsultant, input.deliveryDepartmentId ?? null);
+    return this.repo.serviceJourneys();
   }
 
   /** The Technical Consultant saves (or corrects) the customer's website link. */

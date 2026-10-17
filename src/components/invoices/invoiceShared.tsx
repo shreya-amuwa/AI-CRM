@@ -51,7 +51,15 @@ export function addonPaymentState(r: { status: AddonRequestStatus; total: number
 
 const isOverdue = (i: Invoice) => i.status !== 'Paid' && !!i.dueDate && i.dueDate < todayIso();
 export const InvoiceStatusPill: React.FC<{ invoice: Invoice }> = ({ invoice }) =>
-  invoice.status === 'Paid' ? <Pill tone="green">Paid</Pill> : isOverdue(invoice) || invoice.status === 'Overdue' ? <Pill tone="red">Overdue</Pill> : <Pill tone="orange">Pending</Pill>;
+  invoice.status === 'Paid' ? (
+    <Pill tone="green">Paid</Pill>
+  ) : invoice.generated?.paymentSummary?.state === 'PARTIALLY_PAID' ? (
+    <Pill tone="indigo">Partially paid</Pill>
+  ) : isOverdue(invoice) || invoice.status === 'Overdue' ? (
+    <Pill tone="red">Overdue</Pill>
+  ) : (
+    <Pill tone="orange">Pending</Pill>
+  );
 
 export const INVOICE_KIND_LABEL: Record<Invoice['kind'], string> = { SERVICE: 'Services', ADDON: 'Add-on services', MANUAL: 'Earlier invoice', UPLOADED: 'Uploaded PDF', GENERATED: 'Generated invoice' };
 

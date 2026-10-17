@@ -186,6 +186,36 @@ if (HAS_RENDER) {
   check(pngs.length === r.pages, `${r.pages} page image(s) rendered by poppler`);
   check(pngs.every(p => readFileSync(join(dir, p)).length > 3000), 'and none of them is blank');
 }
+// ---------------------------------------------------------------------------
+console.log('--- 4. Payment status and the remaining balance');
+{
+  const base = sampleInvoice(2);
+  const total = base.totals.total; // 18,880
+  const part = { total, confirmed: 5000, balance: total - 5000, state: 'PARTIALLY_PAID' as const, payments: [{ amount: 5000 }] };
+  const full = { total, confirmed: total, balance: 0, state: 'FULLY_PAID' as const, payments: [{ amount: 5000 }, { amount: total - 5000 }] };
+  const none = { total, confirmed: 0, balance: total, state: 'UNPAID' as const, payments: [] };
+  const a = await renderInvoicePdf({ ...base, paymentSummary: part }, { stage: 'UNPAID' });
+  const b = await renderInvoicePdf({ ...base, paymentSummary: full }, { stage: 'PAID' });
+  const c = await renderInvoicePdf({ ...base, paymentSummary: none }, { stage: 'UNPAID' });
+  const many = await renderInvoicePdf({ ...sampleInvoice(30), paymentSummary: part }, { stage: 'UNPAID' });
+  check([a, b, c, many].every(r => r.bytes.length < INVOICE_GENERATED_PDF_LIMIT_BYTES), `all stay below ${INVOICE_GENERATED_PDF_LIMIT_BYTES} bytes (${a.bytes.length}, ${b.bytes.length}, ${many.bytes.length})`);
+  check(a.boxes.filter(x => x.kind === 'payment').length === 1 && b.boxes.filter(x => x.kind === 'payment').length === 1, 'one payment block on the page');
+  const overlapping = (x: LayoutBox, y: LayoutBox) => x.page === y.page && x.x < y.x + y.w && y.x < x.x + x.w && x.y < y.y + y.h && y.y < x.y + x.h;
+  check(!a.boxes.filter(x => x.kind === 'payment').some(p => a.boxes.some(o => o !== p && ['bank', 'state', 'words', 'terms', 'summary', 'address', 'signatory'].includes(o.kind) && overlapping(p, o))), 'the payment block overlaps no other block');
+  check(a.pages === 1 && b.pages === 1, 'and still fits on the page');
+  if (HAS_TEXT) {
+    const ta = flat(text(a.bytes, 'bal-part'));
+    check(/Invoice Total: Rs\.18,880\.00/.test(ta) && /Payments Received: Rs\.5,000\.00/.test(ta) && /Balance Outstanding: Rs\.13,880\.00/.test(ta) && /Payment Status: Partially Paid/.test(ta) && !/This Payment/.test(ta), 'part paid: total, received, balance and status are printed');
+    const tb = flat(text(b.bytes, 'bal-paid'));
+    check(/Payments Received: Rs\.18,880\.00/.test(tb) && /This Payment: Rs\.13,880\.00/.test(tb) && /Balance Outstanding: Rs\.0\.00/.test(tb) && /Payment Status: Fully Paid/.test(tb) && /\bPAID\b/.test(tb), 'paid: everything received, the current payment, zero balance, Fully Paid and the stamp');
+    const tc = flat(text(c.bytes, 'bal-none'));
+    check(/Payments Received: Rs\.0\.00/.test(tc) && /Balance Outstanding: Rs\.18,880\.00/.test(tc) && /Payment Status: Unpaid/.test(tc) && !/\bPAID\b/.test(tc), 'unpaid: nothing received, the whole total outstanding, no PAID stamp');
+    const old = flat(text((await renderInvoicePdf(base, { stage: 'UNPAID' })).bytes, 'bal-absent'));
+    check(!/Balance Outstanding/.test(old), 'a snapshot without payment information draws no payment block');
+  }
+  const again = await renderInvoicePdf({ ...base, paymentSummary: part }, { stage: 'UNPAID' });
+  check(sha(again.bytes) === sha(a.bytes), 'the same invoice and payments give the same file (a retry stores the same bytes)');
+}
 if (!HAS_TEXT || !HAS_RENDER) console.log(`NOTE: pdftotext=${HAS_TEXT} pdftoppm=${HAS_RENDER}: the text and render checks above were skipped`);
 rmSync(dir, { recursive: true, force: true });
 console.log(`=== ALL INVOICE PDF TESTS PASSED (${passed}) ===`);

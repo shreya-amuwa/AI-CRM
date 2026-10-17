@@ -25,6 +25,7 @@ import {
 } from './LeadForms';
 import { PaymentDialog } from './PotentialView';
 import { OnboardingStageCard } from './CustomerJourney';
+import { DirectJourneyCard, useJourney } from '../../journey/JourneyPanel';
 import type { LeadsViewScope } from './LeadsView';
 import { PaymentStatusBadge } from '../../payments/PaymentBits';
 import { getStartedBlockers } from '../../../../shared/contracts';
@@ -328,6 +329,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   }, [id]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
+  // Services that need no Technical Consultant: Sales verifies the documents and sends them to the delivery department.
+  const { journey, reload: reloadJourney } = useJourney(mode === 'sales' ? id : null);
+  const direct = mode === 'sales' && journey?.journey === 'DIRECT';
 
   if (error && !c) return <ErrorBanner message={error} onRetry={load} />;
   if (!c) return <Spinner label="Loading onboarding…" />;
@@ -353,7 +357,10 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const changed = () => {
     notifyPipelineChanged();
     load();
+    reloadJourney();
   };
+  // The checklist offers Verify / Send back to the person the journey allows (here: Sales, for a direct journey)
+  const checklistMode: ChecklistMode = direct && journey?.can.verifyDocuments ? 'review' : mode;
 
   const forward = async () => {
     setForwarding(true);
@@ -480,6 +487,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
 
       {mode === 'sales' && (
         <>
+          {direct && journey && <DirectJourneyCard journey={journey} customerId={c.id} onChanged={changed} />}
+          {!direct && (
+            <>
           {/* Progress circle at the side, what is still missing in the middle, the two actions at the other side */}
           <Card className="p-4 sm:p-5">
             <div className="flex flex-col lg:flex-row lg:items-center gap-5 lg:gap-8">
@@ -564,6 +574,8 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
               </div>
             )}
           </Card>
+            </>
+          )}
 
           {c.onboarding?.addonRequestStatus && (
             <Card className="p-5 space-y-2">
@@ -582,7 +594,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           )}
 
           <Card className="p-5">
-            <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
+            <ChecklistPanel customer={salesView} catalog={byCode} mode={checklistMode} onChanged={changed} />
             {paying && (
               <PaymentDialog
                 mode="part"
@@ -601,7 +613,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
       {mode !== 'sales' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2 p-5">
-            <ChecklistPanel customer={salesView} catalog={byCode} mode={mode} onChanged={changed} />
+            <ChecklistPanel customer={salesView} catalog={byCode} mode={checklistMode} onChanged={changed} />
             {paying && (
               <PaymentDialog
                 mode="part"

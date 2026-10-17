@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, ClipboardList, FileText, Headset, LayoutDashboard, LogOut, Menu, UserCheck, UserPlus, X } from 'lucide-react';
+import { Bell, ClipboardList, FileText, Headset, LayoutDashboard, LogOut, Menu, PackageCheck, UserCheck, UserPlus, Users, X, Wallet, Target, ListChecks } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -14,16 +14,27 @@ import { InvoicesPage } from './InvoicesPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
+import { usePipelineCounts } from '../team-member/pipeline/shared';
+import { DeliveryQueue } from '../delivery/DeliveryQueue';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'tickets' | 'invoices' | 'notifications' | PipelineSection | 'delivery';
 
-/** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, Tickets, Invoices. */
+const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
+
+/** Sidebar order is fixed: Dashboard, My Clients, Assigned Tasks, Add Customer, My Leads (with its stages), Delivery Queue, Tickets, Invoices. */
 const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'customers', label: 'Dashboard - Existing Customers', icon: LayoutDashboard },
   // Clients handed over Technical Consultant -> Department Head -> Support Team Lead -> me.
   { id: 'my-clients', label: 'My Clients', icon: UserCheck },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
+  // Support also pitches services (referrals and other channels): the same lead pipeline Sales uses, limited to their own records
+  { id: 'leads', label: 'My Leads', icon: Target },
+  { id: 'potential', label: 'Potential', icon: ListChecks },
+  { id: 'onboarding', label: 'Customer Onboarding', icon: Users },
+  { id: 'part-payments', label: 'Part Payments', icon: Wallet },
+  { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
@@ -35,6 +46,12 @@ export function parseSupportPage(path: string): SupportPage {
   const seg = path.replace(/\/+$/, '').split('/')[4];
   return NAV.some(n => n.id === seg) ? (seg as SupportPage) : 'customers';
 }
+
+/** My Leads and its stages for a Support member: the Sales pipeline, with only their own records and no inbound enquiries. */
+const SupportPipelinePage: React.FC<{ section: PipelineSection; onNavigate: (s: PipelineSection) => void }> = ({ section, onNavigate }) => {
+  const { counts } = usePipelineCounts();
+  return <PipelineWorkspace section={section} counts={counts} ownOnly onNavigate={onNavigate} />;
+};
 
 /**
  * Support Team Member dashboard: only for team members of a Support team
@@ -249,6 +266,10 @@ export const SupportMemberDashboard: React.FC = () => {
             />
           ) : page === 'customers' ? (
             <CustomersPage mode="member" tickets={tickets} tasks={tasks} notice={notice} onOpenCustomer={openCustomer} onAddCustomer={() => go('add-customer')} />
+          ) : PIPELINE_PAGES.includes(page) ? (
+            <SupportPipelinePage section={page as PipelineSection} onNavigate={section => go(section)} />
+          ) : page === 'delivery' ? (
+            <DeliveryQueue />
           ) : page === 'my-clients' ? (
             <HandoverBoard role="TEAM_MEMBER" />
           ) : page === 'tasks' ? (

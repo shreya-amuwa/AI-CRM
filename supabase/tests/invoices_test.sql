@@ -468,7 +468,7 @@ select test.check((select data ->> 'status' = 'Paid' and data -> 'generated' ->>
                           and data -> 'paidAt' <> 'null'::jsonb
                      from res where name = 'P1paid'), 'payment confirmed: Paid, the paid stage is now due, who and how recorded');
 -- the issued snapshot is exactly what it was
-select test.check((select (a - array['lifecycle', 'payment', 'unpaid', 'paid']) = (b - array['lifecycle', 'payment', 'unpaid', 'paid'])
+select test.check((select (a - array['lifecycle', 'payment', 'unpaid', 'paid', 'paymentSummary']) = (b - array['lifecycle', 'payment', 'unpaid', 'paid', 'paymentSummary'])
                      from (select s.data a, r.data -> 'generated' b from snap s, res r where s.name = 'P1_issued' and r.name = 'P1paid') x),
   'the invoice number, customer, lines, tax rates, totals, terms and words are exactly what was issued');
 select test.check((select (r.data ->> 'number') = (i.data ->> 'number') and (r.data ->> 'total') = (i.data ->> 'total') from res r, res i where r.name = 'P1paid' and i.name = 'P1'), 'same invoice number and amount');
@@ -526,7 +526,7 @@ select test.check((select g -> 'paid' ->> 'emailStatus' = 'SENT' and g -> 'unpai
                      from (select accounts_invoice_record_email((select (data ->> 'id')::uuid from res where name = 'P1'), 'PAID', 'SENT', 'priya@sharmaopticals.example', '<m2@example>', null) -> 'generated' g) x),
   'the paid e-mail is recorded on its own; the unpaid one is untouched');
 select test.check((select not (c ->> 'claimed')::boolean and c ->> 'reason' = 'DONE' from (select accounts_invoice_claim((select (data ->> 'id')::uuid from res where name = 'P1'), 'PAID') c) x), 'the paid stage is DONE');
-select test.check((select (a - array['lifecycle', 'payment', 'unpaid', 'paid']) = (b - array['lifecycle', 'payment', 'unpaid', 'paid'])
+select test.check((select (a - array['lifecycle', 'payment', 'unpaid', 'paid', 'paymentSummary']) = (b - array['lifecycle', 'payment', 'unpaid', 'paid', 'paymentSummary'])
                      from (select s.data a, invoice_detail((select (data ->> 'id')::uuid from res where name = 'P1')) -> 'generated' b from snap s where s.name = 'P1_issued') x),
   'after both stages the issued snapshot is still exactly as issued');
 

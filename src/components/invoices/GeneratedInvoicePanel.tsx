@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { BadgeCheck, Download, Eye, FileText, Mail, RefreshCw } from 'lucide-react';
-import { PAYMENT_METHODS, type GeneratedInvoice, type GeneratedInvoiceStageState, type Invoice, type InvoiceRunResult, type InvoiceStage, type InvoiceStep, type PaymentMethod } from '../../../shared/contracts';
+import { PAYMENT_METHODS, type GeneratedInvoice, type InvoicePaymentState, type InvoicePaymentSummary, type GeneratedInvoiceStageState, type Invoice, type InvoiceRunResult, type InvoiceStage, type InvoiceStep, type PaymentMethod } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { generatedInvoicesApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, notifyPipelineChanged, Pill, selectCls, todayIso, type Tone } from '../team-member/pipeline/shared';
 import { rupees } from './invoiceShared';
+import { toPaise } from '../../../shared/invoiceCalc';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = { UPI: 'UPI', BANK_TRANSFER: 'Bank transfer', CASH: 'Cash', CARD: 'Card', CHEQUE: 'Cheque', OTHER: 'Other' };
 const stamp = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '-');
@@ -66,7 +67,61 @@ const mailPill = (st: GeneratedInvoiceStageState): { tone: Tone; text: string } 
 // ---------------------------------------------------------------------------
 // Confirm payment
 // ---------------------------------------------------------------------------
+const STATE_LABEL: Record<InvoicePaymentState, string> = { UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially paid', FULLY_PAID: 'Fully paid' };
+const STATE_TONE: Record<InvoicePaymentState, Tone> = { UNPAID: 'orange', PARTIALLY_PAID: 'indigo', FULLY_PAID: 'green' };
+
+/** What the invoice came to, what was confirmed, what is left. All of it comes from the database's payment records. */
+export const PaymentSummaryCard: React.FC<{ summary: InvoicePaymentSummary }> = ({ summary: s }) => (
+  <section aria-label="Payment summary" className="rounded-xl border border-slate-200 p-3 space-y-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <h4 className="text-xs font-bold text-slate-800">Payment</h4>
+      <Pill tone={STATE_TONE[s.state]}>{STATE_LABEL[s.state]}</Pill>
+    </div>
+    <dl className="grid grid-cols-3 gap-3 text-xs">
+      <div>
+        <dt className="text-[11px] text-slate-500">Invoice total</dt>
+        <dd className="font-semibold text-slate-900">{rupees(s.total)}</dd>
+      </div>
+      <div>
+        <dt className="text-[11px] text-slate-500">Confirmed payments</dt>
+        <dd className="font-semibold text-slate-900">{rupees(s.confirmed)}</dd>
+      </div>
+      <div>
+        <dt className="text-[11px] text-slate-500">Balance outstanding</dt>
+        <dd className={`font-bold ${s.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.balance)}</dd>
+      </div>
+    </dl>
+    {s.pending > 0 && <p className="text-[11px] text-amber-800">{rupees(s.pending)} is recorded but not verified yet. It is not counted until it is verified.</p>}
+    {s.payments.length > 0 && (
+      <ul className="divide-y divide-slate-100 border border-slate-100 rounded-lg text-[11px]" aria-label="Confirmed payments">
+        {s.payments.map((p, i) => (
+          <li key={i} className="px-2.5 py-1.5 flex flex-wrap gap-x-3">
+            <span className="font-semibold text-slate-800">{rupees(p.amount)}</span>
+            <span className="text-slate-500">
+              {[p.method ? METHOD_LABEL[p.method] : null, p.reference, longDate(p.paidAt)].filter(Boolean).join(' · ')}
+            </span>
+          </li>
+        ))}
+      </ul>
+    )}
+    <p className="text-[11px] text-slate-500">
+      {s.ledger === 'CUSTOMER'
+        ? 'Payments of the agreed services are recorded and verified in Payments.'
+        : s.ledger === 'ADDON'
+          ? 'Add-on payments are recorded and verified in Business Verification.'
+          : 'Payments are recorded on this invoice.'}
+    </p>
+  </section>
+);
+
+// ---------------------------------------------------------------------------
+// Confirm payment: the one workflow for the paid invoice
+// ---------------------------------------------------------------------------
 export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => void; onDone: (r: InvoiceRunResult) => void }> = ({ invoice, onClose, onDone }) => {
+  const summary = invoice.generated?.paymentSummary ?? null;
+  const onInvoice = summary?.ledger === 'INVOICE';
+  const balancePaise = summary ? Math.round(summary.balance * 100) : 0;
+  const [amount, setAmount] = useState(summary && onInvoice ? String(summary.balance) : '');
   const [method, setMethod] = useState<PaymentMethod | ''>('');
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
@@ -74,14 +129,28 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InvoiceRunResult | null>(null);
+  // One id per dialog: a double click or a retry after a timeout records the payment once.
+  const requestId = useRef(crypto.randomUUID());
+  const amountPaise = toPaise(amount);
+  const partial = onInvoice && amountPaise !== null && amountPaise > 0 && amountPaise < balancePaise;
+  const needsMoney = !!summary && !onInvoice && summary.balance > 0;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy || result) return;
-    if (!method) return setError('Choose how the payment was received.');
+    if (busy || result || needsMoney) return;
+    if (onInvoice) {
+      if (amountPaise === null || amountPaise <= 0) return setError('Enter the amount received in rupees (more than zero, up to 2 decimals).');
+      if (amountPaise > balancePaise) return setError(`The amount is more than the balance of this invoice (${rupees(summary?.balance)}).`);
+      if (!method) return setError('Choose how the payment was received.');
+    }
     setBusy(true);
     setError(null);
     try {
-      const r = await generatedInvoicesApi.confirmPayment(invoice.id, { method, reference: reference.trim() || null, note: note.trim() || null, paidOn: paidOn || null });
+      const r = await generatedInvoicesApi.confirmPayment(invoice.id, {
+        ...(onInvoice ? { method: method as PaymentMethod, reference: reference.trim() || null, paidOn: paidOn || null, amount: amount.trim() } : {}),
+        note: note.trim() || null,
+        requestId: requestId.current
+      });
       setResult(r);
       notifyPipelineChanged();
       onDone(r);
@@ -93,8 +162,12 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
   };
   return (
     <Dialog
-      title="Confirm Payment & Send Paid Invoice"
-      description={`Invoice ${invoice.number} for ${rupees(invoice.total)}. Confirming records the payment, creates the paid invoice with the PAID stamp (same number and amounts) and e-mails it to the customer.`}
+      title={partial ? 'Record a part payment' : 'Confirm Payment & Send Paid Invoice'}
+      description={`Invoice ${invoice.number} for ${rupees(invoice.total)}. ${
+        partial
+          ? 'The part payment is recorded and the invoice stays open with its balance. The paid invoice is made when the balance is zero.'
+          : 'Confirming marks the invoice paid, creates the paid invoice with the PAID stamp (same number and amounts) and e-mails it to the customer.'
+      }`}
       onClose={onClose}
       persistent
     >
@@ -109,24 +182,38 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-3" aria-label="Confirm payment">
-          <Field label="How was the payment received?" required htmlFor="cp-method">
-            <select id="cp-method" className={`${inputCls}`} value={method} onChange={e => setMethod(e.target.value as PaymentMethod)} disabled={busy}>
-              <option value="">Choose…</option>
-              {PAYMENT_METHODS.map(m => (
-                <option key={m} value={m}>
-                  {METHOD_LABEL[m]}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Transaction reference" htmlFor="cp-ref">
-              <input id="cp-ref" className={inputCls} value={reference} maxLength={120} onChange={e => setReference(e.target.value)} disabled={busy} />
-            </Field>
-            <Field label="Payment date" htmlFor="cp-date">
-              <input id="cp-date" type="date" className={inputCls} value={paidOn} max={todayIso()} onChange={e => setPaidOn(e.target.value)} disabled={busy} />
-            </Field>
-          </div>
+          {summary && <PaymentSummaryCard summary={summary} />}
+          {needsMoney && (
+            <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              {rupees(summary?.confirmed)} of {rupees(summary?.total)} is confirmed. Record and verify the remaining {rupees(summary?.balance)} in{' '}
+              {summary?.ledger === 'ADDON' ? 'Business Verification' : 'Payments'}, then confirm the payment here.
+            </p>
+          )}
+          {onInvoice && (
+            <>
+              <Field label="Amount received now (Rs.)" required htmlFor="cp-amount">
+                <input id="cp-amount" className={inputCls} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} disabled={busy} />
+              </Field>
+              <Field label="How was the payment received?" required htmlFor="cp-method">
+                <select id="cp-method" className={`${inputCls}`} value={method} onChange={e => setMethod(e.target.value as PaymentMethod)} disabled={busy}>
+                  <option value="">Choose…</option>
+                  {PAYMENT_METHODS.map(m => (
+                    <option key={m} value={m}>
+                      {METHOD_LABEL[m]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Transaction reference" htmlFor="cp-ref">
+                  <input id="cp-ref" className={inputCls} value={reference} maxLength={120} onChange={e => setReference(e.target.value)} disabled={busy} />
+                </Field>
+                <Field label="Payment date" htmlFor="cp-date">
+                  <input id="cp-date" type="date" className={inputCls} value={paidOn} max={todayIso()} onChange={e => setPaidOn(e.target.value)} disabled={busy} />
+                </Field>
+              </div>
+            </>
+          )}
           <Field label="Note" htmlFor="cp-note">
             <input id="cp-note" className={inputCls} value={note} maxLength={1000} onChange={e => setNote(e.target.value)} disabled={busy} />
           </Field>
@@ -135,8 +222,8 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
             <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>
               Cancel
             </button>
-            <button type="submit" className={btn.green} disabled={busy}>
-              <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Confirming…' : 'Confirm Payment & Send Paid Invoice'}
+            <button type="submit" className={btn.green} disabled={busy || needsMoney}>
+              <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Saving…' : partial ? 'Record part payment' : 'Confirm Payment & Send Paid Invoice'}
             </button>
           </div>
         </form>
@@ -305,6 +392,7 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
         <div className="flex justify-between pt-1 border-t border-slate-200 text-sm font-bold text-slate-900"><dt>Final amount after tax</dt><dd>{rupees(t.total)}</dd></div>
         <div className="text-[11px] text-slate-500 text-right">{t.inWords}</div>
       </dl>
+      {g.paymentSummary && <PaymentSummaryCard summary={g.paymentSummary} />}
       {steps && <StepList steps={steps} />}
       <div className="grid sm:grid-cols-2 gap-3">
         <StageCard invoice={invoice} stage="UNPAID" state={g.unpaid} canManage={canManage} onRun={run} />
@@ -312,7 +400,7 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
       </div>
       {canManage && g.lifecycle === 'ISSUED' && (
         <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-          <p className="text-xs text-emerald-900">Payment received? Confirming it creates the paid invoice (the same invoice with the PAID stamp) and e-mails it to the customer.</p>
+          <p className="text-xs text-emerald-900">Payment received? Confirm it here. Once the balance is zero the paid invoice (the same invoice with the PAID stamp) is created and e-mailed to the customer.</p>
           <button type="button" className={btn.green} onClick={() => setConfirming(true)}>
             <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" /> Confirm Payment &amp; Send Paid Invoice
           </button>
