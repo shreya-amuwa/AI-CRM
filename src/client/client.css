@@ -75,7 +75,6 @@
 .cd-top { display: flex; align-items: center; gap: 12px; padding: 12px var(--gutter); background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 30; }
 .cd-top .grow { flex: 1; min-width: 0; }
 .cd-content { padding: 16px var(--gutter) 64px; width: 100%; max-width: calc(var(--content-max) + 2 * var(--gutter)); margin: 0 auto; }
-.cd-bell.cd-burger { display: none; }
 .cd-bell { position: relative; width: var(--tap); height: var(--tap); border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card);
   display: grid; place-items: center; color: var(--fg); flex: none;
   transition: background-color var(--motion-base) var(--ease), transform var(--motion-fast) var(--ease); }
@@ -235,6 +234,8 @@
 .cd-login-card h1 { font-size: 32px; font-weight: 800; color: var(--green-brand); }
 
 /* ---- responsive ---- */
+/* the hamburger: a drawer under 1024px, collapses the sidebar above it */
+@media (min-width: 1024px) { .cd-collapsed .cd-side { display: none; } }
 @media (max-width: 1279px) { .cd-grid.c3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1023px) {
   .cd { --gutter: 24px; }
@@ -242,7 +243,6 @@
     transition: transform 260ms var(--ease), visibility 0s linear 260ms; }
   .cd-side.open { transform: none; visibility: visible; transition: transform 260ms var(--ease); box-shadow: var(--elev-overlay); }
   .cd-scrim.open { display: block; position: fixed; inset: 0; background: var(--scrim); z-index: 80; }
-  .cd-bell.cd-burger { display: grid; }
   .cd-content { padding: 16px var(--gutter) 48px; }
   .cd-login { grid-template-columns: 1fr; }
   .cd-login-hero { padding: 32px var(--gutter); gap: 24px; }

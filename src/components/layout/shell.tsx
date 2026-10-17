@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { HelpCircle, LogOut, Menu, X } from 'lucide-react';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { closeMenu, useMenu } from './menuState';
 
 /**
  * The shared dashboard shell (the Department Head design handoff): a white sidebar with an Amuwa brand block,
@@ -66,42 +67,45 @@ export const NavGroupLabel: React.FC<{ children: React.ReactNode }> = ({ childre
   <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</div>
 );
 
-export const SidebarBrand: React.FC<{ title: string; subtitle?: string; onClose?: () => void }> = ({ title, subtitle, onClose }) => (
+export const SidebarBrand: React.FC<{ title: string; subtitle?: string; onClose?: () => void }> = ({ title, subtitle, onClose = closeMenu }) => (
   <div className="flex items-center gap-2.5 pl-2 pr-1">
     <AmuwaLogo size="sm" />
     <div className="flex-1 min-w-0 leading-tight">
       <span className="block text-base font-extrabold text-slate-900 truncate">{title}</span>
       {subtitle && <span className="block text-xs text-slate-500 truncate">{subtitle}</span>}
     </div>
-    {onClose && (
-      <button type="button" onClick={onClose} className="lg:hidden w-10 h-10 rounded-[9px] text-slate-600 hover:bg-slate-50 flex items-center justify-center" aria-label="Close menu">
-        <X className="w-[18px] h-[18px]" aria-hidden="true" />
-      </button>
-    )}
+    <button type="button" onClick={onClose} className="lg:hidden w-10 h-10 rounded-[9px] text-slate-600 hover:bg-slate-50 flex items-center justify-center" aria-label="Close menu">
+      <X className="w-[18px] h-[18px]" aria-hidden="true" />
+    </button>
   </div>
 );
 
-/** The sidebar: fixed drawer on small screens, sticky column from lg up. */
+/** The sidebar: a drawer on small screens (opened by the hamburger), a sticky column from lg up that the hamburger can collapse. */
 export const SidebarFrame: React.FC<{
   ariaLabel: string;
-  open: boolean;
-  onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
-}> = ({ ariaLabel, open, onClose, children, footer }) => (
-  <>
-    {open && <div className="fixed inset-0 bg-slate-900/35 z-40 lg:hidden" onClick={onClose} aria-hidden="true" />}
-    <aside
-      className={`fixed lg:sticky top-0 left-0 h-screen w-[264px] max-w-[85vw] bg-white border-r border-slate-200 z-50 flex flex-col p-3.5 pb-5 gap-5 overflow-y-auto transition-transform ${
-        open ? 'translate-x-0 shadow-xl' : '-translate-x-full lg:translate-x-0'
-      }`}
-      aria-label={ariaLabel}
-    >
-      {children}
-      {footer && <div className="mt-auto pt-3 border-t border-slate-100 flex flex-col gap-0.5">{footer}</div>}
-    </aside>
-  </>
-);
+  /** Legacy props: the open state now lives in the shared menu store. */
+  open?: boolean;
+  onClose?: () => void;
+}> = ({ ariaLabel, children, footer }) => {
+  const { open, collapsed } = useMenu();
+  return (
+    <>
+      {open && <div className="fixed inset-0 bg-slate-900/35 z-40 lg:hidden" onClick={closeMenu} aria-hidden="true" />}
+      <aside
+        id="app-sidebar"
+        className={`fixed lg:sticky top-0 left-0 h-screen w-[264px] max-w-[85vw] bg-white border-r border-slate-200 z-50 flex flex-col p-3.5 pb-5 gap-5 overflow-y-auto overscroll-contain transition-transform ${
+          open ? 'translate-x-0 shadow-xl' : '-translate-x-full'
+        } ${collapsed ? 'lg:hidden' : 'lg:translate-x-0'}`}
+        aria-label={ariaLabel}
+      >
+        {children}
+        {footer && <div className="mt-auto pt-3 border-t border-slate-100 flex flex-col gap-0.5">{footer}</div>}
+      </aside>
+    </>
+  );
+};
 
 export const SignOutButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <button type="button" onClick={onClick} className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-semibold text-rose-700 hover:bg-rose-50 text-left">
@@ -128,24 +132,35 @@ export const UserChip: React.FC<{ name: string; role: string }> = ({ name, role 
   </div>
 );
 
-/** The top bar: menu button (small screens), a left slot (search or a context line), actions and the person. */
-export const TopBar: React.FC<{
-  onMenu: () => void;
-  left?: React.ReactNode;
-  actions?: React.ReactNode;
-  user?: { name: string; role: string };
-}> = ({ onMenu, left, actions, user }) => (
-  <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-3 flex flex-wrap items-center gap-3 sticky top-0 z-30">
+/** The hamburger: opens the drawer on small screens, collapses / expands the sidebar on desktop. */
+export const MenuButton: React.FC = () => {
+  const { open, collapsed, toggle } = useMenu();
+  return (
     <button
       type="button"
-      onClick={onMenu}
-      className="lg:hidden w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-900 flex items-center justify-center hover:bg-slate-50"
-      aria-label="Open menu"
+      onClick={toggle}
+      className="shrink-0 w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-900 flex items-center justify-center hover:bg-slate-50"
+      aria-label="Toggle menu"
+      aria-controls="app-sidebar"
+      aria-expanded={open || !collapsed}
     >
       <Menu className="w-5 h-5" aria-hidden="true" />
     </button>
+  );
+};
+
+/** The top bar: hamburger, a left slot (search or a context line), actions and the person. */
+export const TopBar: React.FC<{
+  /** Legacy prop: the hamburger now toggles the shared menu itself. */
+  onMenu?: () => void;
+  left?: React.ReactNode;
+  actions?: React.ReactNode;
+  user?: { name: string; role: string };
+}> = ({ left, actions, user }) => (
+  <header className="bg-white border-b border-slate-200 px-3 sm:px-6 lg:px-8 py-3 flex items-center gap-2 sm:gap-3 sticky top-0 z-30">
+    <MenuButton />
     {left && <div className="flex-1 min-w-0 flex items-center">{left}</div>}
-    <div className={`${left ? '' : 'ml-auto'} flex items-center gap-1.5 sm:gap-2`}>
+    <div className={`${left ? '' : 'ml-auto'} flex items-center gap-1 sm:gap-2 shrink-0`}>
       {actions}
       {user && <UserChip name={user.name} role={user.role} />}
     </div>
@@ -200,13 +215,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   wide = false,
   children
 }) => {
-  const [open, setOpen] = useState(false);
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased">
       <SidebarFrame
         ariaLabel={ariaLabel}
-        open={open}
-        onClose={() => setOpen(false)}
         footer={
           <>
             {footerExtra}
@@ -215,7 +227,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           </>
         }
       >
-        <SidebarBrand title={title} subtitle={subtitle} onClose={() => setOpen(false)} />
+        <SidebarBrand title={title} subtitle={subtitle} />
         <nav className="flex flex-col gap-5" aria-label={`${ariaLabel} pages`}>
           {groups.map((g, i) => (
             <div key={g.label || i} className="flex flex-col gap-0.5">
@@ -230,7 +242,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                   active={active === it.id}
                   onClick={() => {
                     onSelect(it.id);
-                    setOpen(false);
+                    closeMenu();
                   }}
                 />
               ))}
@@ -239,7 +251,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         </nav>
       </SidebarFrame>
       <div className="flex-1 min-w-0 flex flex-col">
-        <TopBar onMenu={() => setOpen(true)} left={topLeft} actions={topActions} user={user} />
+        <TopBar left={topLeft} actions={topActions} user={user} />
         <main className={`flex-1 min-w-0 w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}>{children}</main>
       </div>
     </div>

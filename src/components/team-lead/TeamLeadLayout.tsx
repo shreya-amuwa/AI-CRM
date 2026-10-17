@@ -19,6 +19,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, SignOutButton, TopBar, UserChip } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { closeMenu } from '../layout/menuState';
 
 export type TeamLeadNav =
   | 'overview'
@@ -54,7 +55,6 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   onQuickDistribute
 }) => {
   const { user, logout } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   const navItems = [
@@ -100,8 +100,6 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased">
       <SidebarFrame
         ariaLabel="Sales Team Lead navigation"
-        open={isMobileMenuOpen}
-        onClose={() => setIsMobileMenuOpen(false)}
         footer={
           <>
             <SignOutButton onClick={() => void logout()} />
@@ -112,7 +110,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
           </>
         }
       >
-        <SidebarBrand title="Amuwa" subtitle="Team Lead Supervisory Hub" onClose={() => setIsMobileMenuOpen(false)} />
+        <SidebarBrand title="Amuwa" subtitle="Team Lead Supervisory Hub" />
         <div className="px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-blue-700" aria-hidden="true" />
@@ -130,7 +128,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
               active={activeNav === item.id}
               onClick={() => {
                 onSelectNav(item.id);
-                setIsMobileMenuOpen(false);
+                closeMenu();
               }}
             >
               {item.badge && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${activeNav === item.id ? 'bg-white text-blue-700' : item.badgeColor}`}>{item.badge}</span>}
@@ -141,7 +139,6 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
 
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar
-          onMenu={() => setIsMobileMenuOpen(true)}
           left={
             <div className="min-w-0">
               <div className="flex items-center gap-2">
