@@ -9,6 +9,7 @@ reset role;
 -- The invoices suite above re-applies the earlier invoice migration (to prove it is re-runnable), which puts back its older
 -- generated_json / claim / confirm functions. Re-apply this migration too (proving it is re-runnable as well).
 \i supabase/migrations/20261029000100_service_journeys_support_balance.sql
+\i supabase/migrations/20261030000100_part_payment_invoices.sql
 create temp table jc (name text primary key, id uuid);
 create temp table jr (name text primary key, data jsonb);
 create temp table jq (name text primary key, id uuid default gen_random_uuid());
@@ -222,7 +223,7 @@ select test.check((select count(*) = 1 from customers where id = (select id from
 -- Accounts issues the invoice for the agreed services: it satisfies the checklist's Invoice item
 select test.login('acc_m');
 insert into jq (name) values ('S1'), ('S1b'), ('B1'), ('B1x'), ('B2'), ('B3'), ('B4'), ('B5'), ('B6'), ('B7'), ('T1'), ('M1');
-select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'S1b'), test.inv_payload((select id from jc where name = 'S1'), 9000))$$, 'an invoice for more than the agreed amount (10,620 > 10,000) is refused', 'more than the amount agreed');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'S1b'), test.inv_payload((select id from jc where name = 'S1'), 9000))$$, 'an invoice for more than the agreed amount (10,620 > 10,000) is refused', 'would total');
 insert into jr select 'S1inv', accounts_issue_invoice((select id from jq where name = 'S1'), test.inv_payload((select id from jc where name = 'S1'), 8000));
 select test.check((select (data ->> 'total')::numeric = 9440 and data -> 'generated' -> 'paymentSummary' ->> 'ledger' = 'CUSTOMER'
                           and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 3000 and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 6440
@@ -391,7 +392,7 @@ reset role;
 insert into jpay select 'B1p', id from customer_payments where customer_id = (select id from jc where name = 'B1') and status = 'PENDING';
 set role authenticated;
 select test.login('acc_m');
-select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'B1x'), test.inv_payload((select id from jc where name = 'B1'), 20000))$$, 'an invoice above the agreed amount is refused (it could never be paid in full)', 'more than the amount agreed');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'B1x'), test.inv_payload((select id from jc where name = 'B1'), 20000))$$, 'an invoice above the agreed amount is refused (it could never be paid in full)', 'would total');
 insert into jr select 'B1inv', accounts_issue_invoice((select id from jq where name = 'B1'), test.inv_payload((select id from jc where name = 'B1'), 16000));
 select test.check((select (data ->> 'total')::numeric = 18880 and data -> 'generated' -> 'paymentSummary' ->> 'ledger' = 'CUSTOMER'
                           and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 5000 and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 13880
@@ -453,4 +454,40 @@ set role authenticated;
 select test.login('acc_m');
 select test.must_fail($$select * from invoice_payments$$, 'the invoice payments table has no direct access', 'permission denied');
 select test.must_fail($$select * from customer_client_provisioning$$, 'nor the provisioning table', 'permission denied');
+reset role;
+
+-- ---------------------------------------------------------------------------
+\echo '--- 47. An invoice for each part payment'
+-- ---------------------------------------------------------------------------
+insert into jq (name) values ('PP1'), ('PP2'), ('PP3'), ('PP3b'), ('PPx');
+set role authenticated;
+select test.login('tm_a');
+insert into jc select 'PP', create_lead('{"name":"Pooja Pawar","company":"Pawar Foods","email":"pooja@pawarfoods.example","phone":"9820000106","leadSource":"Walk-in"}', array['AI_CALLING']);
+select send_lead_to_accounts((select id from jc where name = 'PP'), 30000, null);
+select test.login('acc_m');
+select accounts_record_payment((select id from jc where name = 'PP'), 'PART', 10000, 'UPI', 'PP-UPI-1', null, null, true);
+insert into jr select 'PP1', accounts_issue_invoice((select id from jq where name = 'PP1'), test.inv_payload((select id from jc where name = 'PP'), 8000));
+select test.check((select (data ->> 'total')::numeric = 9440 and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 9440 and data -> 'generated' -> 'paymentSummary' ->> 'state' = 'FULLY_PAID' from jr where name = 'PP1'),
+  'the first invoice (9,440) is covered by the first verified payment (10,000)');
+insert into jr select 'PP2', accounts_issue_invoice((select id from jq where name = 'PP2'), test.inv_payload((select id from jc where name = 'PP'), 10000));
+select test.check((select (data ->> 'total')::numeric = 11800 and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 560
+                          and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 11240 and data -> 'generated' -> 'paymentSummary' ->> 'state' = 'PARTIALLY_PAID' from jr where name = 'PP2'),
+  'a second invoice for the same customer is allowed: it only gets what is left after the first (560 of 11,800)');
+select test.check((invoice_detail((select (data ->> 'id')::uuid from jr where name = 'PP1')) -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 0, 'the first invoice is not affected by the second');
+select test.check((accounts_invoice_prefill((select id from jc where name = 'PP')) ->> 'servicesInvoiced')::numeric = 21240
+               and exists (select 1 from jsonb_array_elements(accounts_invoice_prefill((select id from jc where name = 'PP')) -> 'warnings') w where w #>> '{}' like 'Invoices already issued for the agreed services total%'),
+  'the builder is told how much is already invoiced, as information (not as a refusal)');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'PP3'), test.inv_payload((select id from jc where name = 'PP'), 15000))$$, 'invoices above the agreed amount together are refused', 'would total .*38,940.*30,000');
+select accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from jr where name = 'PP1'));
+select test.check((invoice_detail((select (data ->> 'id')::uuid from jr where name = 'PP1')) ->> 'status') = 'Paid', 'the first invoice is confirmed paid');
+select test.must_fail($$select accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from jr where name = 'PP2'))$$, 'the second cannot be confirmed until its own share is paid', '560.* of .*11,800');
+select accounts_record_payment((select id from jc where name = 'PP'), 'PART', 12000, 'BANK_TRANSFER', 'PP-NEFT-2', null, null, true);
+select test.check((invoice_detail((select (data ->> 'id')::uuid from jr where name = 'PP2')) -> 'generated' -> 'paymentSummary' ->> 'state') = 'FULLY_PAID'
+               and (invoice_detail((select (data ->> 'id')::uuid from jr where name = 'PP2')) -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 0, 'after the next verified payment the second invoice is covered');
+select test.check((accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from jr where name = 'PP2')) ->> 'settled')::boolean, 'and can be confirmed');
+insert into jr select 'PP3', accounts_issue_invoice((select id from jq where name = 'PP3b'), test.inv_payload((select id from jc where name = 'PP'), 7000));
+select test.check((select (data ->> 'total')::numeric = 8260 and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 760 and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 7500 from jr where name = 'PP3'),
+  'a third invoice within the agreed amount (29,500 of 30,000) is allowed; it gets the 760 left of the 22,000 verified so far');
+select test.login('tm_a');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'PPx'), test.inv_payload((select id from jc where name = 'PP'), 100))$$, 'a salesperson still cannot issue one', 'Only the Accounts');
 reset role;
