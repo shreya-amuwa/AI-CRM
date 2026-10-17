@@ -8,12 +8,15 @@ import { ClientNotices } from '../notices/ClientNotices';
 import { Dialog } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { MenuButton } from './shell';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
+  /** Show the hamburger (the department has a sidebar on this screen). */
+  showMenu?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
+export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false }) => {
   const { activeDepartment, user, logout } = useAuth();
   const [noticesOpen, setNoticesOpen] = useState(false);
 
@@ -23,10 +26,12 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 text-slate-900">
+      <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between gap-2 sticky top-0 z-30 text-slate-900">
         
         {/* Left Side: Main Corporate Logo & Active Department Identifier */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          {showMenu && <MenuButton />}
+          <div className="hidden sm:flex items-center gap-3 sm:gap-4 shrink-0">
           {onNavigateHome ? (
             <button
               type="button"
@@ -40,9 +45,10 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
             <AmuwaLogo layout="horizontal" size="sm" />
           )}
           <span className="text-slate-200 text-lg">|</span>
+          </div>
 
           {/* Active Department Identifier */}
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs min-w-0">
             {activeDepartment.logoUrl ? (
               <img 
                 src={activeDepartment.logoUrl} 
@@ -55,7 +61,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
                 style={{ backgroundColor: activeDepartment.accentColor }} 
               />
             )}
-            <span className="font-bold font-heading text-sm text-slate-900">{activeDepartment.name}</span>
+            <span className="font-bold font-heading text-sm text-slate-900 truncate">{activeDepartment.name}</span>
           </div>
 
           {/* Active Sessions Counter Badge */}
@@ -66,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
         </div>
 
         {/* Right Side Tools */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           
           {/* The Super Admin and the HR head tell clients about closures and new services */}
           {(user?.role === 'superadmin' || user?.role === 'hr') && activeDepartment.id !== 'hr' && (
@@ -83,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
           <NotificationBell />
 
           {/* User Profile & Logout */}
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+          <div className="flex items-center gap-1 sm:gap-2 pl-1.5 sm:pl-2 border-l border-slate-200">
             <div className="w-[38px] h-[38px] rounded-full bg-blue-50 text-blue-700 font-extrabold text-[13px] flex items-center justify-center">
               {user?.name.charAt(0)}
             </div>

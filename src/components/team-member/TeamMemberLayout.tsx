@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { NavButton, SidebarBrand, SidebarFrame, SignOutButton, TopBar } from '../layout/shell';
+import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
@@ -58,7 +59,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   pipelineCounts
 }) => {
   const { user, logout } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
@@ -89,7 +89,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     if (onSelectNav) {
       onSelectNav(id);
     }
-    setIsMobileMenuOpen(false);
+    closeMenu();
   };
 
   const displayName = user?.name || 'Team Member';
@@ -99,8 +99,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 flex font-sans antialiased">
       <SidebarFrame
         ariaLabel="Team Member navigation"
-        open={isMobileMenuOpen}
-        onClose={() => setIsMobileMenuOpen(false)}
         footer={
           <>
             <button
@@ -114,7 +112,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           </>
         }
       >
-        <SidebarBrand title="Amuwa" subtitle="Corporation" onClose={() => setIsMobileMenuOpen(false)} />
+        <SidebarBrand title="Amuwa" subtitle="Corporation" />
         <nav className="flex flex-col gap-0.5" aria-label="Main">
           {navItems.map(item => {
             const Icon = item.icon;
@@ -192,7 +190,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
 
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar
-          onMenu={() => setIsMobileMenuOpen(true)}
           actions={
             <>
               <LeaveCenter />

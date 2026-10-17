@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useMenu } from '../components/layout/menuState';
 import { Bell, CreditCard, FileText, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Search, Sparkles } from 'lucide-react';
 import './client.css';
 import { clientApi } from './api';
@@ -31,7 +32,7 @@ const Inner: React.FC = () => {
   const { status, me, signOut } = useClientAuth();
   const [path, go] = usePath();
   const [menu, setMenu] = useState(false);
-  const [nav, setNav] = useState(false);
+  const { open: nav, collapsed, toggle: toggleNav, close: closeNav } = useMenu();
   const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const notices = useAnnouncements(status === 'ready');
@@ -57,7 +58,7 @@ const Inner: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [status, refreshUnread]);
 
-  useEffect(() => { setNav(false); setMenu(false); }, [path]);
+  useEffect(() => { closeNav(); setMenu(false); }, [path]);
   useEffect(() => {
     if (!menu) return;
     const close = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
@@ -89,8 +90,8 @@ const Inner: React.FC = () => {
   return (
     <ShellCtx.Provider value={{ go: to, unread, refreshUnread, sub }}>
       <div className="cd">
-        <div className="cd-shell">
-          <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={() => setNav(false)} />
+        <div className={`cd-shell ${collapsed ? 'cd-collapsed' : ''}`}>
+          <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={closeNav} />
           <aside className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
             <div className="cd-brand"><span className="cd-brand-tile"><img src="/amuwa-logo.png" alt="" /></span><span><b>Amuwa</b><small>Client dashboard</small></span></div>
             <nav className="cd-stack" style={{ gap: 2 }}>
@@ -106,7 +107,7 @@ const Inner: React.FC = () => {
 
           <div className="cd-main">
             <header className="cd-top">
-              <button className="cd-bell cd-burger" onClick={() => setNav(true)} aria-label="Open menu"><Menu size={20} /></button>
+              <button className="cd-bell cd-burger" onClick={toggleNav} aria-label="Toggle menu" aria-expanded={nav || !collapsed}><Menu size={20} /></button>
               <div className="grow">
                 <p className="cd-small cd-muted cd-ellipsis">{greeting()}, <b style={{ color: 'var(--text)' }}>{me.name}</b></p>
               </div>

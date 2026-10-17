@@ -302,6 +302,7 @@ const MainAppContent: React.FC = () => {
       {/* Top Persistent Header */}
       <Header
         onNavigateHome={user.role === 'superadmin' ? handleReturnToHub : undefined}
+        showMenu={showSidebar}
       />
 
       {/* Tab Bar - shows when multiple departments are open */}
@@ -320,7 +321,7 @@ const MainAppContent: React.FC = () => {
         )}
 
         {/* Main Workspace Panel */}
-        <main className="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className="flex-1 min-w-0 p-3 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full">
           {currentDept && currentDeptId ? (
             /* Sub-department selection screen: ALWAYS show choice cards when no sub-department is selected */
             hasSubDeptChoice && currentSubDept === null ? (

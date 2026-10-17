@@ -3,6 +3,7 @@ import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Pale
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
+import { closeMenu, useMenu } from './menuState';
 
 export type ActiveTab =
   | 'dashboard'
@@ -268,6 +269,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   departmentId
 }) => {
   const { activeDepartment, activeDepartmentId, user } = useAuth();
+  const { open, collapsed } = useMenu();
   const { getUnreadCountForUser } = useNotifications();
   
   // Sidebar only ever renders once a department is active, but guard
@@ -321,7 +323,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const deptTitle = activeDepartment?.name || 'Department';
 
   return (
-    <aside className="w-[264px] bg-white border-r border-slate-200 flex flex-col justify-between h-[calc(100vh-4rem)] sticky top-16 shrink-0" aria-label="Department navigation">
+    <>
+    {open && <div className="fixed inset-0 top-16 bg-slate-900/35 z-30 lg:hidden" onClick={closeMenu} aria-hidden="true" />}
+    <aside
+      id="app-sidebar"
+      // a drawer under the header on small screens (any button inside closes it, except ones that only expand a group)
+      onClick={e => {
+        const b = (e.target as HTMLElement).closest('button');
+        if (b && !b.hasAttribute('aria-expanded')) closeMenu();
+      }}
+      className={`fixed lg:sticky top-16 left-0 z-40 w-[264px] max-w-[85vw] bg-white border-r border-slate-200 flex flex-col justify-between h-[calc(100vh-4rem)] shrink-0 transition-transform ${
+        open ? 'translate-x-0 shadow-xl' : '-translate-x-full'
+      } ${collapsed ? 'lg:hidden' : 'lg:translate-x-0'}`}
+      aria-label="Department navigation"
+    >
       
       {/* Top Nav Section */}
       <div className="p-3.5 space-y-4 overflow-y-auto max-h-[calc(100vh-6rem)]">
@@ -382,5 +397,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
     </aside>
+    </>
   );
 };
