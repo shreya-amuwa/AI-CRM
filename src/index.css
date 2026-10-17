@@ -31,6 +31,16 @@ html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* Sidebar collapsed (hamburger on desktop): the page uses the whole width instead of a capped column. */
+@media (min-width: 1024px) {
+  html[data-sidebar='collapsed'] main {
+    max-width: none !important;
+  }
+  html[data-sidebar='collapsed'] main :where(.max-w-3xl, .max-w-4xl, .max-w-5xl, .max-w-6xl, .max-w-7xl):not(.fixed *) {
+    max-width: none;
+  }
+}
+
 /*
  * A pop-up or overlay (position: fixed) that sits inside a "space-y-*" container would get that
  * container's top margin and start a few pixels below the top of the window, leaving a white strip

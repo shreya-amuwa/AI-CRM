@@ -1955,6 +1955,17 @@ provider.close();
     'client API: the client sees it on that date with the insights', r);
   r = await api('cl2', 'GET', `/client/calendar?from=${today}&to=${today}`);
   check(r.status === 200 && !r.json.data.some((e: any) => e.id === actId), "client API: not on another client's calendar", r);
+  // Behind Vercel's rewrite the request arrives as /api/crm?__path=<path>&path=<path>: the rewrite's own `path` must not reach the
+  // endpoint's strict query check ("Unrecognized key(s) in object: 'path'").
+  {
+    const viaRewrite = await fetch(base.replace(/\/api\/v1$/, '') + `/api/crm?__path=client%2Fcalendar&path=client%2Fcalendar&from=${today}&to=${today}`, { headers: { authorization: `Bearer ${tokens.get('cl1')}` } });
+    const j = (await viaRewrite.json()) as any;
+    check(viaRewrite.status === 200 && Array.isArray(j.data), 'client API: the calendar loads behind the Vercel rewrite (its extra `path` parameter is not rejected)', j);
+    const other = await fetch(base.replace(/\/api\/v1$/, '') + `/api/crm?__path=client%2Fcalendar&path=anything-else&from=${today}&to=${today}`, { headers: { authorization: `Bearer ${tokens.get('cl1')}` } });
+    check(other.status === 200, 'client API: behind the rewrite, whatever value the extra `path` has is ignored', await other.clone().json());
+    const own = await fetch(base + `/client/calendar?path=something&from=${today}&to=${today}`, { headers: { authorization: `Bearer ${tokens.get('cl1')}` } });
+    check(own.status === 422, 'client API: a `path` the caller sent itself is still refused', await own.json());
+  }
   r = await api('cl1', 'GET', '/client/calendar?from=2026-02-01&to=2026-01-01');
   check(r.status === 422, 'client API: a backwards range is refused', r);
   r = await api('cl1', 'GET', '/client/calendar?from=2020-01-01&to=2026-01-01');
