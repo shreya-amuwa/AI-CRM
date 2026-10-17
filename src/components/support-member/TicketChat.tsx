@@ -140,7 +140,7 @@ const OwnerLine: React.FC<{ ticket: SupportTicket; people: Person[] }> = ({ tick
   }
   const name = personName(people, owner);
   return (
-    <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-800 min-w-0">
+    <span className="flex items-center gap-1.5 text-xs font-medium text-blue-800 min-w-0">
       <Avatar name={name} />
       <span className="truncate">
         {name}
@@ -230,10 +230,10 @@ export const TicketInbox: React.FC<{
               aria-selected={tab === x.id}
               onClick={() => setTab(x.id)}
               className={`px-3 py-1.5 rounded-full text-[13px] font-semibold transition ${
-                tab === x.id ? 'bg-emerald-100 text-emerald-900' : 'text-slate-600 hover:bg-slate-100'
+                tab === x.id ? 'bg-blue-100 text-blue-900' : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {x.label} <span className={tab === x.id ? 'text-emerald-800' : 'text-slate-400'}>{counts[x.id]}</span>
+              {x.label} <span className={tab === x.id ? 'text-blue-800' : 'text-slate-400'}>{counts[x.id]}</span>
             </button>
           ))}
         </div>
@@ -254,7 +254,7 @@ export const TicketInbox: React.FC<{
             onClick={() => setFiltersOpen(o => !o)}
             aria-expanded={filtersOpen}
             className={`shrink-0 inline-flex items-center gap-1.5 px-3 rounded-xl border text-xs font-semibold ${
-              filtersOpen || activeFilters ? 'border-emerald-300 bg-emerald-50 text-emerald-900' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              filtersOpen || activeFilters ? 'border-blue-300 bg-blue-50 text-blue-900' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
             }`}
           >
             <SlidersHorizontal className="w-3.5 h-3.5" aria-hidden="true" /> Filters{activeFilters ? ` (${activeFilters})` : ''}
@@ -323,7 +323,7 @@ export const TicketInbox: React.FC<{
                   setUnreadOnly(false);
                   setOverdueOnly(false);
                 }}
-                className="col-span-2 text-xs font-semibold text-emerald-800 hover:underline text-left"
+                className="col-span-2 text-xs font-semibold text-blue-800 hover:underline text-left"
               >
                 Clear filters
               </button>
@@ -359,12 +359,12 @@ export const TicketInbox: React.FC<{
                     onClick={() => onSelect(t.id)}
                     aria-current={active ? 'true' : undefined}
                     className={`w-full text-left px-4 py-3 border-l-4 transition ${
-                      active ? 'bg-emerald-50 border-emerald-600' : n ? 'border-emerald-400 bg-white hover:bg-slate-50' : 'border-transparent hover:bg-slate-50'
+                      active ? 'bg-blue-50 border-blue-600' : n ? 'border-blue-400 bg-white hover:bg-slate-50' : 'border-transparent hover:bg-slate-50'
                     }`}
                   >
                     <span className="flex items-baseline justify-between gap-2">
                       <span className="font-bold text-sm text-slate-900 tracking-tight">{displayTicketNo(t.ticketNo)}</span>
-                      <span className={`shrink-0 text-xs ${n ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>{ago(lastActivity(t))}</span>
+                      <span className={`shrink-0 text-xs ${n ? 'text-blue-700 font-bold' : 'text-slate-400'}`}>{ago(lastActivity(t))}</span>
                     </span>
                     <span className="block truncate text-sm font-semibold text-slate-800 mt-0.5">
                       {t.customerName}
@@ -382,7 +382,7 @@ export const TicketInbox: React.FC<{
                         )}
                       </span>
                       {n > 0 && (
-                        <span className="shrink-0 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold flex items-center justify-center" aria-label={`${n} unread`}>
+                        <span className="shrink-0 min-w-[1.25rem] h-5 px-1.5 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center" aria-label={`${n} unread`}>
                           {n}
                         </span>
                       )}
@@ -668,7 +668,7 @@ export const TicketPane: React.FC<{
   };
 
   const owner = handlerId(ticket);
-  const ctl = 'text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:bg-slate-50 disabled:text-slate-500';
+  const ctl = 'text-sm border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:bg-slate-50 disabled:text-slate-500';
   const statusOptions = (Object.keys(TICKET_STATUS_LABELS) as TicketStatus[]).filter(s => s === ticket.status || (s !== 'ESCALATED' && (s !== 'CLOSED' || managerRole)));
   const team = teamName(teams, ticket.teamId);
 
@@ -691,7 +691,7 @@ export const TicketPane: React.FC<{
             type="button"
             onClick={() => setDetails(d => !d)}
             aria-expanded={details}
-            className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 hover:underline"
+            className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-blue-800 hover:underline"
           >
             Details <ChevronDown className={`w-3.5 h-3.5 transition ${details ? 'rotate-180' : ''}`} aria-hidden="true" />
           </button>
@@ -700,7 +700,7 @@ export const TicketPane: React.FC<{
           <p className="text-sm font-semibold text-slate-900 truncate">{ticket.subject}</p>
           <p className="text-xs text-slate-500 truncate">
             {onOpenCustomer ? (
-              <button type="button" className="text-emerald-800 hover:underline font-medium" onClick={() => onOpenCustomer(ticket.customerId)}>
+              <button type="button" className="text-blue-800 hover:underline font-medium" onClick={() => onOpenCustomer(ticket.customerId)}>
                 {ticket.customerName}
               </button>
             ) : (
@@ -718,7 +718,7 @@ export const TicketPane: React.FC<{
               type="button"
               disabled={busy}
               onClick={() => void run(() => ticketApi.assign(ticket.id, me!, 'Picked up'), 'You picked up this ticket.')}
-              className="mt-2.5 px-4 py-2 rounded-xl bg-emerald-700 text-white text-sm font-bold hover:bg-emerald-800 disabled:opacity-50"
+              className="mt-2.5 px-4 py-2 rounded-xl bg-blue-700 text-white text-sm font-bold hover:bg-blue-800 disabled:opacity-50"
             >
               {busy ? 'Picking up…' : 'Pick up this ticket'}
             </button>
@@ -728,7 +728,7 @@ export const TicketPane: React.FC<{
               type="button"
               disabled={busy}
               onClick={() => void run(() => ticketApi.update(ticket.id, { status: 'OPEN', note: 'Reopened' }), 'Ticket reopened.')}
-              className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-300 bg-white text-emerald-900 text-sm font-bold hover:bg-emerald-50 disabled:opacity-50"
+              className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-blue-300 bg-white text-blue-900 text-sm font-bold hover:bg-blue-50 disabled:opacity-50"
             >
               <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Reopen
             </button>
@@ -738,7 +738,7 @@ export const TicketPane: React.FC<{
               type="button"
               disabled={busy}
               onClick={() => void run(() => ticketApi.update(ticket.id, { status: 'OPEN', note: 'Reopened' }), 'Ticket reopened.')}
-              className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-emerald-300 bg-white text-emerald-900 text-sm font-bold hover:bg-emerald-50 disabled:opacity-50"
+              className="mt-2.5 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-blue-300 bg-white text-blue-900 text-sm font-bold hover:bg-blue-50 disabled:opacity-50"
             >
               <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" /> Reopen
             </button>
@@ -812,7 +812,7 @@ export const TicketPane: React.FC<{
               <button type="button" onClick={() => setPanel(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600">
                 Cancel
               </button>
-              <button type="submit" disabled={busy} className="px-4 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-bold disabled:opacity-50">
+              <button type="submit" disabled={busy} className="px-4 py-1.5 rounded-lg bg-blue-700 text-white text-xs font-bold disabled:opacity-50">
                 {busy ? 'Saving…' : targetStatus === 'CLOSED' ? 'Close ticket' : 'Resolve ticket'}
               </button>
             </div>
@@ -986,7 +986,7 @@ export const TicketPane: React.FC<{
                       : 'bg-[#d9f2e3] text-slate-900 rounded-tr-sm'
                 }`}
               >
-                <div className={`text-xs font-bold ${e.side === 'customer' ? 'text-slate-600' : e.side === 'note' ? 'text-amber-800' : 'text-emerald-800'}`}>
+                <div className={`text-xs font-bold ${e.side === 'customer' ? 'text-slate-600' : e.side === 'note' ? 'text-amber-800' : 'text-blue-800'}`}>
                   {e.mine ? 'You' : e.name}
                   {e.role && <span className="font-medium"> · {e.role}</span>}
                   {e.side === 'note' && (
@@ -1076,7 +1076,7 @@ export const TicketPane: React.FC<{
                     role="radio"
                     aria-checked={!internal}
                     onClick={() => setInternal(false)}
-                    className={`px-2.5 py-1 rounded-full font-semibold ${!internal ? 'bg-emerald-100 text-emerald-900' : 'text-slate-500 hover:bg-slate-100'}`}
+                    className={`px-2.5 py-1 rounded-full font-semibold ${!internal ? 'bg-blue-100 text-blue-900' : 'text-slate-500 hover:bg-slate-100'}`}
                   >
                     Reply to customer
                   </button>
@@ -1096,7 +1096,7 @@ export const TicketPane: React.FC<{
                 </span>
               )}
               {open && customerConversation && !internal && (
-                <span className="inline-flex items-center gap-1 text-emerald-800 font-medium">
+                <span className="inline-flex items-center gap-1 text-blue-800 font-medium">
                   <Clock className="w-3.5 h-3.5" aria-hidden="true" />
                   {ticket.slaDueAt ? `Reply due ${slaText(ticket.slaDueAt)}` : 'Replies reach the customer’s dashboard'}
                 </span>
@@ -1121,7 +1121,7 @@ export const TicketPane: React.FC<{
               <button
                 type="submit"
                 disabled={!text.trim()}
-                className={`shrink-0 h-12 px-5 rounded-xl text-sm font-bold text-white disabled:opacity-40 inline-flex items-center gap-1.5 ${internal ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-700 hover:bg-emerald-800'}`}
+                className={`shrink-0 h-12 px-5 rounded-xl text-sm font-bold text-white disabled:opacity-40 inline-flex items-center gap-1.5 ${internal ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}
               >
                 <Send className="w-4 h-4" aria-hidden="true" /> Send
               </button>

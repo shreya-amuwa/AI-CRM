@@ -197,7 +197,7 @@ export const AiqrScanLandingView: React.FC<AiqrScanLandingViewProps> = ({ qrId }
   };
 
   return (
-    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#F8FAFC] text-slate-900 flex flex-col justify-between font-sans selection:bg-blue-500/20 animate-fade-in touch-manipulation">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-50 text-slate-900 flex flex-col justify-between font-sans selection:bg-blue-500/20 animate-fade-in touch-manipulation">
       
       {/* ========================================================================= */}
       {/* STEP 1: SCANNER DETAILS INPUT FORM */}
@@ -301,7 +301,7 @@ export const AiqrScanLandingView: React.FC<AiqrScanLandingViewProps> = ({ qrId }
       {/* STEP 2: HUGE APP ICONS & HUGE BOLD FONTS WITH SMALL SPACING BETWEEN TILES */}
       {/* ========================================================================= */}
       {step === 'dashboard' && (
-        <div className="min-h-screen w-full bg-[#F8FAFC] flex flex-col justify-between font-sans pb-8 overflow-x-hidden">
+        <div className="min-h-screen w-full bg-slate-50 flex flex-col justify-between font-sans pb-8 overflow-x-hidden">
           
           {/* Header Profile Section */}
           <div className="relative bg-white pb-4 text-center border-b border-slate-200/80 shadow-2xs w-full">

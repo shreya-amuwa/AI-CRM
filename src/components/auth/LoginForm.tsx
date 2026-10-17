@@ -125,7 +125,7 @@ export const LoginForm: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col justify-between items-center px-4 py-4 sm:py-6 relative overflow-hidden selection:bg-blue-500/20 font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col justify-between items-center px-4 py-4 sm:py-6 relative overflow-hidden selection:bg-blue-500/20 font-sans">
       
       {/* 1. Animated Ambient Floating Gradient Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[650px] h-[650px] bg-gradient-to-tr from-purple-300/40 via-fuchsia-200/30 to-pink-300/40 blur-[130px] rounded-full pointer-events-none animate-orb-1" />

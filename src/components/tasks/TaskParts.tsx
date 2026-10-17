@@ -37,7 +37,7 @@ export const ProgressBar: React.FC<{ value: number; label?: string }> = ({ value
     aria-valuemin={0}
     aria-valuemax={100}
   >
-    <div className={`h-full rounded-full ${value >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(100, value)}%` }} />
+    <div className={`h-full rounded-full ${value >= 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${Math.min(100, value)}%` }} />
   </div>
 );
 

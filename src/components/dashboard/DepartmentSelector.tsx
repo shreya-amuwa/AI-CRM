@@ -75,7 +75,7 @@ export const DepartmentSelector: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 p-4 sm:p-8 flex flex-col justify-between relative overflow-hidden selection:bg-blue-500/20">
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-8 flex flex-col justify-between relative overflow-hidden selection:bg-blue-500/20">
 
       {/* 1. Animated Ambient Floating Gradient Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-gradient-to-tr from-purple-300/30 via-fuchsia-200/20 to-pink-300/30 blur-[130px] rounded-full pointer-events-none animate-orb-1" />

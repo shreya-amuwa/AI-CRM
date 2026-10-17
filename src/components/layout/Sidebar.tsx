@@ -321,28 +321,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const deptTitle = activeDepartment?.name || 'Department';
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between h-[calc(100vh-4rem)] sticky top-16 shrink-0 font-mono text-xs shadow-sm">
+    <aside className="w-[264px] bg-white border-r border-slate-200 flex flex-col justify-between h-[calc(100vh-4rem)] sticky top-16 shrink-0" aria-label="Department navigation">
       
       {/* Top Nav Section */}
-      <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100vh-6rem)]">
+      <div className="p-3.5 space-y-4 overflow-y-auto max-h-[calc(100vh-6rem)]">
         
         {/* Back to the Department Hub: Super Admin only */}
         {onNavigateHome && (
           <button
             onClick={onNavigateHome}
-            className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold flex items-center justify-between transition-all group"
+            className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 text-sm font-semibold flex items-center justify-between transition-colors group"
           >
             <span className="flex items-center gap-2">
-              <ArrowLeft className="w-3.5 h-3.5 text-blue-600 group-hover:-translate-x-1 transition-transform" />
+              <ArrowLeft className="w-4 h-4 text-blue-600 group-hover:-translate-x-0.5 transition-transform" />
               <span>Department Hub</span>
             </span>
-            <span className="text-[10px] text-slate-500 font-bold">10 Units</span>
+            <span className="text-[11px] text-slate-500 font-bold">10 Units</span>
           </button>
         )}
 
         {/* Dedicated Navigation Items for current Department */}
-        <div className="space-y-1">
-          <div className="px-3 py-1 text-[10px] text-slate-400 uppercase tracking-wider font-semibold">
+        <div className="space-y-0.5">
+          <div className="px-2.5 pb-1.5 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">
             {subDept ? `${deptTitle} (${subDept})` : deptTitle}
           </div>
 
@@ -357,19 +357,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <React.Fragment key={item.id}>
               <button
                 onClick={() => onSelectTab(item.id)}
-                className={`w-full py-2.5 px-3 rounded-xl flex items-center justify-between text-left font-medium transition-all ${
-                  highlighted
-                    ? 'bg-blue-50 text-blue-700 font-semibold border border-blue-200 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                aria-current={highlighted ? 'page' : undefined}
+                className={`w-full px-2.5 py-2.5 rounded-[9px] flex items-center justify-between text-left text-sm transition-colors ${
+                  highlighted ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <Icon className={`w-4 h-4 shrink-0 ${highlighted ? 'text-blue-600' : 'text-slate-400'}`} />
-                  <span className="font-sans text-xs font-semibold truncate">{item.label}</span>
+                <div className="flex items-center gap-[11px] min-w-0">
+                  <Icon className={`w-[18px] h-[18px] shrink-0 ${highlighted ? '' : 'text-slate-500'}`} strokeWidth={1.9} />
+                  <span className="truncate">{item.label}</span>
                 </div>
 
                 {isNotif && unreadCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white font-mono text-[10px] font-bold animate-pulse">
+                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold">
                     {unreadCount}
                   </span>
                 )}
