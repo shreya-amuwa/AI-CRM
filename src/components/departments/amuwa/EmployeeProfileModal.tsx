@@ -12,14 +12,21 @@ interface EmployeeProfileModalProps {
   employee: Employee;
   onClose: () => void;
   onUpdateEmployee: (updatedEmployee: Employee) => void;
+  /** Offered in the profile (not in the list): make a trainee / intern a permanent employee, or mark as left. */
+  onConvert?: () => void;
+  onMarkLeft?: () => void;
 }
 
 export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   employee,
   onClose,
-  onUpdateEmployee
+  onUpdateEmployee,
+  onConvert,
+  onMarkLeft
 }) => {
   const [emp, setEmp] = useState<Employee>(employee);
+  const isTrainee = emp.status === 'Training / Probation' || emp.status === 'Intern';
+  const hasLeft = emp.status === 'Left';
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<UploadedDocument | null>(null);
 
   // File Inputs Refs
@@ -218,6 +225,20 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
               </div>
 
               <p className="text-xs text-slate-300 font-sans mt-0.5">{emp.designation}</p>
+              {((onConvert && isTrainee) || (onMarkLeft && !hasLeft)) && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {onConvert && isTrainee && (
+                    <button type="button" onClick={onConvert} className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold">
+                      Make permanent employee
+                    </button>
+                  )}
+                  {onMarkLeft && !hasLeft && (
+                    <button type="button" onClick={onMarkLeft} className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold border border-white/20">
+                      Mark as left
+                    </button>
+                  )}
+                </div>
+              )}
               <p className="text-[11px] font-mono text-slate-400 mt-1">
                 ID: {emp.id} &bull; Joined: {emp.joiningDate} {emp.leftDate ? `&bull; Left: ${emp.leftDate}` : ''}
               </p>

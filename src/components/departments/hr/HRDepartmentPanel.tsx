@@ -25,7 +25,7 @@ import { hrApi } from '../../../lib/api/endpoints';
 import { errorMessage } from '../../../lib/api/client';
 import { formatClock, officeInstant, officeToday } from '../../../lib/officeTime';
 import { LoginGapBadge } from '../../hr/LoginGapBadge';
-import { MonthlyLeaveFilter } from '../../hr/MonthlyLeaveFilter';
+import { EmployeeDirectory } from '../../hr/EmployeeDirectory';
 import { useMonthlyLeave } from '../../../hooks/useMonthlyLeave';
 import { LeaveReviewList, useLeaveData } from '../../leave/LeaveCenter';
 
@@ -1664,7 +1664,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-white border border-slate-200 text-slate-900 shadow-sm">
             <div>
               <h3 className="text-base font-bold font-heading text-slate-900">HR &amp; Operations Management</h3>
-              <p className="text-xs font-mono text-slate-500">Employee directory, document vault, automated 7-page offer letters &amp; leave register</p>
+              <p className="text-xs font-mono text-slate-500">Staff directory, offer letters &amp; leave register</p>
             </div>
 
             <div className="flex items-center gap-2 text-xs font-mono text-slate-500">
@@ -1686,7 +1686,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
               }`}
             >
               <Users className="w-4 h-4" />
-              <span>Employee Directory &amp; Roster ({employees.length})</span>
+              <span>Staff ({employees.length})</span>
             </button>
 
             <button
@@ -1718,246 +1718,21 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
           {hrSubTab === 'employees' && (
             <div className="space-y-4">
 
-              {/* Filter Pills */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 overflow-x-auto">
-                  <button
-                    onClick={() => setEmployeeFilter('all')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
-                      employeeFilter === 'all' ? 'bg-slate-900 text-white shadow-2xs' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    All Staff ({employees.length})
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeFilter('fulltime')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
-                      employeeFilter === 'fulltime' ? 'bg-emerald-600 text-white shadow-2xs' : 'bg-white text-emerald-800 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Full Employees ({fulltimeCount})
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeFilter('trainees')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
-                      employeeFilter === 'trainees' ? 'bg-amber-600 text-white shadow-2xs' : 'bg-white text-amber-800 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    In-Training ({traineesCount})
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeFilter('interns')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
-                      employeeFilter === 'interns' ? 'bg-purple-600 text-white shadow-2xs' : 'bg-white text-purple-800 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Interns ({internsCount})
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeFilter('left')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
-                      employeeFilter === 'left' ? 'bg-slate-700 text-white shadow-2xs' : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Left / Inactive ({leftCount})
-                  </button>
-
-                  <button
-                    onClick={() => setEmployeeFilter('pending')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
-                      employeeFilter === 'pending' ? 'bg-blue-700 text-white shadow-2xs' : 'bg-white text-blue-800 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Pending Approval ({pendingEmployees.length})
-                  </button>
-                </div>
-
-                <span className="text-xs text-slate-500 font-mono">
-                  Click any employee row to open full profile &amp; document vault
-                </span>
-              </div>
-
-              {/* Employee Table */}
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <MonthlyLeaveFilter
-                  month={monthlyLeave.month}
-                  onChange={monthlyLeave.setMonth}
-                  loading={monthlyLeave.loading}
-                  error={monthlyLeave.error}
-                  onRetry={monthlyLeave.reload}
-                  withLeave={employees.filter(e => { const c = monthlyLeave.countsFor(e); return c.halfDays + c.leaveDays > 0; }).length}
-                />
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono uppercase">
-                      <tr>
-                        <th className="p-3.5">Employee Name &amp; ID</th>
-                        <th className="p-3.5">Designation &amp; Salary</th>
-                        <th className="p-3.5">Department &amp; Reports To</th>
-                        <th className="p-3.5">Employment Type</th>
-                        <th className="p-3.5">Documents Status</th>
-                        <th className="p-3.5">Half-Days &amp; Leaves</th>
-                        <th className="p-3.5 text-right">Actions / Profile</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredEmployees.map(emp => (
-                        <tr
-                          key={emp.id}
-                          onClick={() => setSelectedProfileEmp(emp)}
-                          className="hover:bg-blue-50/50 cursor-pointer transition-colors group"
-                        >
-                          <td className="p-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center font-mono font-bold text-slate-800 overflow-hidden shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-                                <span>{emp.name.charAt(0)}</span>
-                              </div>
-                              <div>
-                                <span className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors block">{emp.name}</span>
-                                <span className="text-[11px] font-mono text-slate-400">{emp.id} &bull; {emp.email}</span>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="p-3.5 font-medium text-slate-700">
-                            {emp.designation}
-                            <span className="block text-[11px] font-mono font-bold text-emerald-700">{emp.monthlySalary || 'Salary not set'}</span>
-                          </td>
-
-                          <td className="p-3.5 text-slate-700">
-                            <span className="font-semibold block">{emp.departmentName || 'No department'}</span>
-                            <span className="block text-[11px] font-mono text-slate-500">
-                              {[emp.roleLabel, emp.teamName].filter(Boolean).join(' • ') || 'HR record (no CRM login)'}
-                            </span>
-                            {(emp.teamLead || emp.departmentHead) && (
-                              <span className="block text-[11px] font-mono text-slate-400">
-                                {emp.teamLead ? `Team Lead: ${emp.teamLead}` : ''}
-                                {emp.teamLead && emp.departmentHead ? ' • ' : ''}
-                                {emp.departmentHead ? `Dept Head: ${emp.departmentHead}` : ''}
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="p-3.5">
-                            <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold border ${
-                              emp.status === 'Full-Time'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : emp.status === 'Intern'
-                                ? 'bg-purple-50 text-purple-800 border-purple-200'
-                                : emp.status === 'Left'
-                                ? 'bg-slate-100 text-slate-600 border-slate-300'
-                                : 'bg-amber-50 text-amber-800 border-amber-200'
-                            }`}>
-                              {emp.status === 'Full-Time' ? 'Employee' : emp.status === 'Training / Probation' ? 'In-Training' : emp.status}
-                            </span>
-                            {emp.approvalStatus === 'PENDING' ? (
-                              <span className="block mt-1 text-[10px] font-mono font-bold text-blue-700">Awaiting approval</span>
-                            ) : emp.accountStatus && emp.accountStatus !== 'ACTIVE' ? (
-                              <span className="block mt-1 text-[10px] font-mono font-bold text-rose-700">Account {emp.accountStatus.toLowerCase()}</span>
-                            ) : emp.accountStatus ? (
-                              <span className="block mt-1 text-[10px] font-mono text-emerald-700">
-                                Approved{emp.approvedBy ? ` by ${emp.approvedBy}` : ''}
-                              </span>
-                            ) : null}
-                            {emp.joiningDate && (
-                              <span className="block text-[10px] font-mono text-slate-400">Joined {emp.joiningDate}</span>
-                            )}
-                          </td>
-
-                          <td className="p-3.5">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleDocuments(emp.id, e)}
-                              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-[11px] font-mono font-bold transition-all border shadow-2xs ${
-                                emp.documentsCollected
-                                  ? 'bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600'
-                                  : 'bg-rose-600 text-white border-rose-700 hover:bg-rose-700'
-                              }`}
-                            >
-                              {emp.documentsCollected ? (
-                                <>
-                                  <ShieldCheck className="w-3.5 h-3.5" />
-                                  <span>COLLECTED (VERIFIED)</span>
-                                </>
-                              ) : (
-                                <>
-                                  <AlertCircle className="w-3.5 h-3.5" />
-                                  <span>PENDING VERIFICATION</span>
-                                </>
-                              )}
-                            </button>
-                          </td>
-
-                          <td className="p-3.5 font-mono text-xs">
-                            <span className="text-slate-800 block">Half-Days: <strong>{monthlyLeave.countsFor(emp).halfDays}</strong></span>
-                            <span className="text-slate-500 text-[11px]">Leaves: {monthlyLeave.countsFor(emp).leaveDays}</span>
-                          </td>
-
-                          <td className="p-3.5 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {(emp.status === 'Training / Probation' || emp.status === 'Intern') && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleConvertTraineeToEmployee(emp.id, e)}
-                                  className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-mono font-bold shadow-2xs flex items-center gap-1"
-                                  title="Confirm &amp; Convert to Permanent Employee"
-                                >
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  <span>CONVERT TO EMPLOYEE</span>
-                                </button>
-                              )}
-
-                              {emp.status !== 'Left' && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleMarkLeft(emp.id, e)}
-                                  className="px-2 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-rose-600 border border-slate-200 text-[11px] font-mono font-bold flex items-center gap-1"
-                                  title="Mark Employee as Left Company"
-                                >
-                                  <UserMinus className="w-3 h-3" />
-                                  <span>LEFT</span>
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => setSelectedProfileEmp(emp)}
-                                className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-mono font-bold hover:bg-blue-100 flex items-center gap-1"
-                              >
-                                <Eye className="w-3 h-3" />
-                                <span>PROFILE →</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {!filteredEmployees.length && (
-                        <tr>
-                          <td colSpan={7} className="p-10 text-center text-xs text-slate-500">
-                            {directoryLoading
-                              ? 'Loading employees...'
-                              : directoryError
-                              ? (
-                                <span className="text-rose-700">
-                                  Could not load employees: {directoryError}{' '}
-                                  <button type="button" onClick={() => void loadDirectory()} className="underline font-bold">Try again</button>
-                                </span>
-                              )
-                              : employeeFilter === 'pending'
-                              ? 'No members are waiting for approval.'
-                              : 'No employees found.'}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
+              <EmployeeDirectory
+                employees={employees}
+                pending={pendingEmployees}
+                headsBySlug={Object.fromEntries(departments.map(d => [d.slug, d.headName]))}
+                loading={directoryLoading}
+                error={directoryError}
+                onRetry={() => void loadDirectory()}
+                onOpen={setSelectedProfileEmp}
+                month={monthlyLeave.month}
+                onMonthChange={monthlyLeave.setMonth}
+                monthLoading={monthlyLeave.loading}
+                monthError={monthlyLeave.error}
+                onMonthRetry={monthlyLeave.reload}
+                countsFor={monthlyLeave.countsFor}
+              />
             </div>
           )}
 
@@ -2092,6 +1867,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
           employee={selectedProfileEmp}
           onClose={() => setSelectedProfileEmp(null)}
           onUpdateEmployee={handleUpdateEmployee}
+          onConvert={() => { handleConvertTraineeToEmployee(selectedProfileEmp.id); setSelectedProfileEmp(null); }}
+          onMarkLeft={() => { handleMarkLeft(selectedProfileEmp.id); setSelectedProfileEmp(null); }}
         />
       )}
 

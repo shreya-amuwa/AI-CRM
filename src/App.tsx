@@ -8,6 +8,7 @@ import { LoginForm } from './components/auth/LoginForm';
 import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
 import { DepartmentSelector } from './components/dashboard/DepartmentSelector';
 import { Header } from './components/layout/Header';
+import { ClientNotices } from './components/notices/ClientNotices';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { TabBar } from './components/layout/TabBar';
 
@@ -383,8 +384,12 @@ const MainAppContent: React.FC = () => {
             ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'support' && currentActiveTab !== 'notifications' ? (
               /* Super Admin of Wabastore Support: Team Members, Access Control, Team Performance, Customers, Tickets */
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
+            ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
+              <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
+            ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
+              <ClientNotices />
             ) : currentActiveTab === 'staff_access' ? (
-              <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} />
+              <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view={currentDeptId === 'hr' ? 'manage' : 'all'} />
             ) : currentActiveTab === 'notifications' ? (
               <NotificationCenterPanel subDept={currentSubDept} />
             ) : currentActiveTab === 'settings' && currentDeptId === 'amuwa' ? (
