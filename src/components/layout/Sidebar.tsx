@@ -286,13 +286,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // dedicated panels.
   const baseNavItems = DEPARTMENT_NAV_MAP[key] || GENERIC_DEPARTMENT_NAV;
   // Managers get "Team Members & Access" directly under the dashboard entry.
-  const canManageStaff = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'hr' || user?.role === 'team-lead';
+  // HR logins can be team members, who add nobody: Add Member / Access Control need a head or a lead.
+  const profileRole = user?.profile?.role;
+  const canManageStaff = user?.role === 'superadmin' || user?.role === 'admin' || user?.role === 'team-lead'
+    || (user?.role === 'hr' && (profileRole === 'DEPARTMENT_HEAD' || profileRole === 'TEAM_HEAD'));
   // Anchored entries stay together under the dashboard (e.g. Accounts: Confirmations, Part Payments).
   const anchored = baseNavItems[1]?.id === 'confirmations' ? (baseNavItems[2]?.id === 'part_payments' ? 3 : 2) : 1;
   const isSalesSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_sales';
   const isSupportSuperAdmin = user?.role === 'superadmin' && key === 'wabastore_support';
   // HR: adding a member and managing access are two separate pages; Client notices sit below HR & Operations.
-  const canSendClientNotices = user?.role === 'superadmin' || user?.role === 'hr';
+  // (Only a Department Head, or the Super Admin, can publish a client notice: the database refuses anyone else.)
+  const canSendClientNotices = user?.role === 'superadmin' || (user?.role === 'hr' && profileRole === 'DEPARTMENT_HEAD');
   const hrNav: typeof baseNavItems = [
     baseNavItems[0],
     { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
@@ -305,8 +309,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? WABASTORE_SALES_SUPERADMIN_NAV
     : isSupportSuperAdmin
     ? WABASTORE_SUPPORT_SUPERADMIN_NAV
-    : key === 'hr' && canManageStaff
-    ? hrNav
+    : key === 'hr'
+    ? (canManageStaff ? hrNav : [...hrNav.filter(i => i.id !== 'staff_add' && i.id !== 'staff_access')])
     : canManageStaff
     ? [
         ...baseNavItems.slice(0, anchored),
