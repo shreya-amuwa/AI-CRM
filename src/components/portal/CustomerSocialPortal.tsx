@@ -116,7 +116,7 @@ export const CustomerSocialPortal: React.FC<CustomerSocialPortalProps> = ({ onCl
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-blue-500/20">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-blue-500/20">
       
       {/* Background Animated Light Ambient Glow Orbs */}
       <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-gradient-to-tr from-purple-300/30 via-fuchsia-200/20 to-pink-300/30 blur-[130px] rounded-full pointer-events-none animate-orb-1" />

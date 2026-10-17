@@ -1,8 +1,8 @@
-/* Modern Pure Sans-Serif SaaS Theme Styles */
+/* Shared dashboard design language: Manrope, neutral greys, indigo accent (see tailwind.config.js). */
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-heading: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-body: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-sans: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-heading: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-body: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
@@ -12,8 +12,8 @@
 
 body {
   font-family: var(--font-body);
-  background-color: #F8FAFC;
-  color: #0F172A;
+  background-color: #F7F8FA;
+  color: #111827;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
@@ -31,13 +31,29 @@ body {
 
 h1, h2, h3, h4, h5, h6, .font-heading {
   font-family: var(--font-heading) !important;
+  letter-spacing: -0.01em;
+}
+
+/* One visible keyboard focus ring for every dashboard control. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #2F5BEA;
+  outline-offset: 2px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline-offset: 0;
 }
 
 .font-sans, .font-serif {
   font-family: var(--font-body) !important;
 }
 
-.font-mono, code, pre, kbd {
+/* `font-mono` is used for plain UI text and numbers across the panels: it renders in the product font with
+   tabular numerals, so columns still line up. Real code (code, pre, kbd) stays monospaced. */
+.font-mono {
+  font-family: var(--font-body) !important;
+  font-variant-numeric: tabular-nums;
+}
+code, pre, kbd {
   font-family: var(--font-mono) !important;
 }
 
@@ -47,14 +63,14 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: #F1F2F4;
 }
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #C4C9D2;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2563EB;
+  background: #2F5BEA;
 }
 
 /* Glassmorphism Premium Light Panel */
@@ -62,8 +78,8 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(226, 232, 240, 0.9);
-  box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.04), 0 4px 6px -2px rgba(15, 23, 42, 0.02);
+  border: 1px solid #E7E9EE;
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.05);
 }
 
 .glass-panel-hover {
@@ -72,9 +88,9 @@ h1, h2, h3, h4, h5, h6, .font-heading {
 
 .glass-panel-hover:hover {
   background: #FFFFFF;
-  border-color: #3B82F6;
-  transform: translateY(-3px);
-  box-shadow: 0 20px 40px -15px rgba(37, 99, 235, 0.15), 0 8px 16px -6px rgba(37, 99, 235, 0.1);
+  border-color: #A5B4FC;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
 }
 
 /* Floating Ambient Orbs Keyframes */

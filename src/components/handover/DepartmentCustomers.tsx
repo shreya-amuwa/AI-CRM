@@ -68,8 +68,15 @@ const STAGE: Record<DirectoryItem['handoverStage'], { label: string; tone: Tone 
 const statusTone = (s: TicketStatus): Tone => (s === 'RESOLVED' || s === 'CLOSED' ? 'green' : s === 'ESCALATED' ? 'red' : s === 'IN_PROGRESS' ? 'indigo' : 'orange');
 const PAGE_SIZE = 10;
 
-export const DepartmentCustomers: React.FC = () => {
-  const [search, setSearch] = useState('');
+export const DepartmentCustomers: React.FC<{
+  /** Opens the page already filtered (the Department Head's top-bar search). */
+  initialSearch?: string;
+  /** Customers waiting for a Team Lead; when above 0 a banner links to the hand-overs page. */
+  waitingForLead?: number | null;
+  onOpenHandovers?: () => void;
+}> = ({ initialSearch = '', waitingForLead, onOpenHandovers }) => {
+  const [search, setSearch] = useState(initialSearch);
+  useEffect(() => setSearch(initialSearch), [initialSearch]);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Directory | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,11 +104,11 @@ export const DepartmentCustomers: React.FC = () => {
   useRealtime('customer_onboarding', load);
 
   return (
-    <div className="space-y-5 max-w-6xl">
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+    <div className="space-y-5">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">Customers</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5 max-w-2xl">
+          <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Customers</h1>
+          <p className="text-[15px] text-slate-600 mt-1.5 max-w-2xl">
             Every customer of your department, who looks after them (Team Lead and Team Member) and how their tickets are going.
           </p>
         </div>
@@ -113,10 +120,24 @@ export const DepartmentCustomers: React.FC = () => {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search customer or business"
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+            className="w-full h-11 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15"
           />
         </label>
       </div>
+
+      {!!waitingForLead && onOpenHandovers && (
+        <div className="flex flex-wrap items-center gap-3 p-4 rounded-2xl bg-amber-50 border border-amber-100" role="status">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-extrabold text-amber-800">
+              {waitingForLead} customer{waitingForLead === 1 ? ' is' : 's are'} waiting for a team lead
+            </div>
+            <div className="text-[13px] text-amber-800/80">The Technical Consultant handed them over. Pass each one to a Team Lead.</div>
+          </div>
+          <button type="button" onClick={onOpenHandovers} className="h-10 px-4 rounded-xl bg-white border border-amber-200 text-sm font-bold text-amber-800 hover:bg-amber-50">
+            Open hand-overs
+          </button>
+        </div>
+      )}
 
       {error && <ErrorBanner message={error} onRetry={load} />}
       {loading && !data ? (
@@ -154,7 +175,7 @@ export const DepartmentCustomers: React.FC = () => {
                     <div className="font-semibold text-slate-800">{c.teamMember?.name || '-'}</div>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:w-80 shrink-0">
                   <Pill tone={STAGE[c.handoverStage].tone}>{STAGE[c.handoverStage].label}</Pill>
                   <span className="text-xs text-slate-600" title="Pending / resolved tickets">
                     <b className={c.tickets.open ? 'text-orange-700' : 'text-slate-700'}>{c.tickets.open}</b> pending ·{' '}

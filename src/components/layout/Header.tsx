@@ -23,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
 
   return (
     <>
-      <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs text-slate-900">
+      <header className="h-16 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 text-slate-900">
         
         {/* Left Side: Main Corporate Logo & Active Department Identifier */}
         <div className="flex items-center gap-3 sm:gap-4">
@@ -42,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
           <span className="text-slate-200 text-lg">|</span>
 
           {/* Active Department Identifier */}
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono">
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
             {activeDepartment.logoUrl ? (
               <img 
                 src={activeDepartment.logoUrl} 
@@ -59,7 +59,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
           </div>
 
           {/* Active Sessions Counter Badge */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs font-mono">
+          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs">
             <Users className="w-3.5 h-3.5 text-slate-500" />
             <span>Active Sessions: <strong className="text-slate-900">{activeSessions.length}/2</strong></span>
           </div>
@@ -73,9 +73,9 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
             <button
               type="button"
               onClick={() => setNoticesOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 h-10 px-3.5 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 hover:bg-slate-50"
             >
-              <Megaphone className="w-3.5 h-3.5 text-indigo-600" aria-hidden="true" /> <span className="hidden sm:inline">Client notices</span><span className="sr-only sm:hidden">Client notices</span>
+              <Megaphone className="w-4 h-4 text-blue-600" aria-hidden="true" /> <span className="hidden sm:inline">Client notices</span><span className="sr-only sm:hidden">Client notices</span>
             </button>
           )}
 
@@ -84,13 +84,13 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
 
           {/* User Profile & Logout */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-            <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center font-mono shadow-xs">
+            <div className="w-[38px] h-[38px] rounded-full bg-blue-50 text-blue-700 font-extrabold text-[13px] flex items-center justify-center">
               {user?.name.charAt(0)}
             </div>
             
-            <div className="hidden lg:block text-left text-xs font-mono">
-              <span className="text-slate-900 font-semibold block leading-tight">{user?.name}</span>
-              <span className="text-slate-400 text-[10px]">
+            <div className="hidden lg:block text-left">
+              <span className="text-slate-900 text-sm font-bold block leading-tight">{user?.name}</span>
+              <span className="text-slate-500 text-xs">
                 {user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'team-lead' ? 'Team Lead' : user?.role === 'hr' && user.profile ? ROLE_LABELS[user.profile.role] : 'Staff Admin'}
               </span>
             </div>
