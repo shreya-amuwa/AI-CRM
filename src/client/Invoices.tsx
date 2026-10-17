@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Download, Eye, FileText, Info } from 'lucide-react';
 import type { ClientInvoice } from '../../shared/contracts';
 import { clientApi } from './api';
-import { useLoad } from './hooks';
+import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, fmtDate, inr } from './ui';
 
@@ -10,6 +10,8 @@ const statusOf = (i: ClientInvoice) => i.status === 'Paid' ? { label: 'Paid', to
 
 export const Invoices: React.FC = () => {
   const q = useLoad(() => clientApi.invoices());
+  // A new invoice, or the paid copy of one, appears when Accounts finishes it: refreshed by the live feed, never by a timer.
+  useClientLive(q.reload);
   const [open, setOpen] = useState<ClientInvoice | null>(null);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
@@ -53,7 +55,7 @@ export const Invoices: React.FC = () => {
                           {i.hasFile ? <>
                             <Button variant="outline" small loading={busyId === i.id + 'view'} onClick={() => file(i, 'view')} aria-label={`View invoice ${i.number}`}><Eye size={14} /> View</Button>
                             <Button variant="outline" small loading={busyId === i.id + 'download'} onClick={() => file(i, 'download')} aria-label={`Download invoice ${i.number}`}><Download size={14} /> PDF</Button>
-                          </> : <span className="cd-small cd-muted">PDF not uploaded yet</span>}
+                          </> : <span className="cd-small cd-muted">{i.paidFilePending ? 'Your paid invoice is being prepared' : 'PDF not uploaded yet'}</span>}
                         </div>
                       </td>
                     </tr>
@@ -69,6 +71,8 @@ export const Invoices: React.FC = () => {
           <div className="cd-stack">
             <div className="cd-between"><Badge tone={statusOf(open).tone}>{statusOf(open).label}</Badge><span className="cd-small cd-muted">Issued {fmtDate(open.issueDate ?? open.issuedAt)}</span></div>
             <p><b>For:</b> {open.related}</p>
+            {open.paidFilePending && <div className="cd-banner info" role="status"><Info size={18} style={{ flexShrink: 0 }} /><span>Your payment is confirmed. Your paid invoice is being prepared and will appear here shortly.</span></div>}
+            {open.hasFile && open.generated && <p className="cd-small cd-muted">{open.fileKind === 'PAID' ? 'The file below is your paid invoice.' : 'The file below is your invoice. A paid copy is added once your payment is confirmed.'}</p>}
             {open.items.length > 0 && (
               <table className="cd-table"><thead><tr><th>Item</th><th>Qty</th><th style={{ textAlign: 'right' }}>Amount</th></tr></thead>
                 <tbody>{open.items.map((it, k) => <tr key={k}><td>{it.name ?? 'Item'}</td><td>{it.quantity ?? 1}</td><td style={{ textAlign: 'right' }}>{inr(it.lineTotal ?? it.unitPrice ?? null)}</td></tr>)}</tbody></table>
@@ -76,7 +80,9 @@ export const Invoices: React.FC = () => {
             <div className="cd-card sm" style={{ background: 'var(--surface)' }}>
               {open.subtotal !== null && <div className="cd-between"><span className="cd-muted">Subtotal</span><span>{inr(open.subtotal)}</span></div>}
               {open.discount ? <div className="cd-between"><span className="cd-muted">Discount</span><span>- {inr(open.discount)}</span></div> : null}
-              <div className="cd-between"><span className="cd-muted">GST</span><span>{open.tax !== null ? inr(open.tax) : '-'}</span></div>
+              {open.taxSummary && open.taxSummary.igst > 0 ? <div className="cd-between"><span className="cd-muted">IGST</span><span>{inr(open.taxSummary.igst)}</span></div>
+                : open.taxSummary ? <><div className="cd-between"><span className="cd-muted">CGST</span><span>{inr(open.taxSummary.cgst)}</span></div><div className="cd-between"><span className="cd-muted">SGST</span><span>{inr(open.taxSummary.sgst)}</span></div></>
+                : <div className="cd-between"><span className="cd-muted">GST</span><span>{open.tax !== null ? inr(open.tax) : '-'}</span></div>}
               <hr className="cd-divider" />
               <div className="cd-between"><b>Total</b><b style={{ fontSize: 18 }}>{inr(open.amount)}</b></div>
             </div>

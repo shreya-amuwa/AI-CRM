@@ -78,6 +78,37 @@ export class R2Driver implements StorageDriver {
     return this.url('GET', bucket, path, expiresIn, { query: { 'response-content-disposition': disposition } });
   }
 
+  async put(bucket: string, path: string, body: Uint8Array, mimeType: string): Promise<void> {
+    let res: Response;
+    try {
+      res = await fetch(this.url('PUT', bucket, path, UPLOAD_URL_SECONDS, { signedHeaders: { 'content-type': mimeType } }), {
+        method: 'PUT',
+        headers: { 'Content-Type': mimeType },
+        body,
+        signal: AbortSignal.timeout(20_000)
+      });
+    } catch (e) {
+      console.error('[r2] PUT failed', (e as Error).message);
+      throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
+    }
+    if (!res.ok) {
+      console.error('[r2] PUT status', res.status);
+      throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
+    }
+  }
+
+  async read(bucket: string, path: string): Promise<Uint8Array> {
+    let res: Response;
+    try {
+      res = await fetch(this.url('GET', bucket, path, INTERNAL_URL_SECONDS), { signal: AbortSignal.timeout(20_000) });
+    } catch (e) {
+      console.error('[r2] GET failed', (e as Error).message);
+      throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
+    }
+    if (!res.ok) throw new AppError(res.status === 404 ? 'NOT_FOUND' : 'SERVICE_UNAVAILABLE', res.status === 404 ? 'The stored file was not found.' : 'File storage is not available right now. Please try again.');
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
   async remove(bucket: string, paths: string[]): Promise<boolean> {
     let ok = true;
     for (const path of paths) {

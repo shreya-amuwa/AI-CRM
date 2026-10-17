@@ -2,6 +2,14 @@ import nodemailer from 'nodemailer';
 import type { AutomationSettings } from './config.js';
 import type { RenderedEmail } from './templates.js';
 
+/** A file sent with an e-mail (a generated invoice PDF). */
+export interface MailAttachment {
+  filename: string;
+  content: Uint8Array;
+  contentType: string;
+}
+const b64 = (a: MailAttachment) => Buffer.from(a.content).toString('base64');
+
 /** What a provider call ended in. `retry` = worth trying again later (timeout, 5xx, 429). */
 export interface SendResult {
   ok: boolean;
@@ -48,7 +56,7 @@ function networkFailure(err: unknown): SendResult {
  * SMTP through nodemailer, e.g. the meta@amuwa.com Google Workspace mailbox
  * (smtp.gmail.com, an app password). Temporary failures (4xx, network) are retried.
  */
-async function sendSmtp(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail): Promise<SendResult> {
+async function sendSmtp(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
   const smtp = s.email.smtp;
   if (!smtp) return { ok: false, retry: false, code: null, ref: null, detail: 'SMTP is not configured.' };
   const transport = nodemailer.createTransport({
@@ -68,6 +76,7 @@ async function sendSmtp(s: AutomationSettings, to: { email: string; name: string
       subject: mail.subject,
       html: mail.html,
       text: mail.text,
+      ...(attachments?.length ? { attachments: attachments.map(a => ({ filename: a.filename, content: Buffer.from(a.content), contentType: a.contentType })) } : {}),
       ...(s.email.cc.length ? { cc: s.email.cc } : {}),
       ...(s.email.bcc.length ? { bcc: s.email.bcc } : {})
     });
@@ -91,9 +100,9 @@ async function sendSmtp(s: AutomationSettings, to: { email: string; name: string
 }
 
 /** Sends one email through the configured provider: SMTP (nodemailer), Resend or Brevo. */
-export async function sendEmail(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail): Promise<SendResult> {
+export async function sendEmail(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
   const { provider, apiKey } = s.email;
-  if (provider === 'smtp') return sendSmtp(s, to, mail);
+  if (provider === 'smtp') return sendSmtp(s, to, mail, attachments);
   if (!provider || !apiKey) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
   try {
     if (provider === 'resend') {
@@ -103,6 +112,7 @@ export async function sendEmail(s: AutomationSettings, to: { email: string; name
         subject: mail.subject,
         html: mail.html,
         text: mail.text,
+        ...(attachments?.length ? { attachments: attachments.map(a => ({ filename: a.filename, content: b64(a) })) } : {}),
         reply_to: s.email.replyTo,
         ...(s.email.cc.length ? { cc: s.email.cc } : {}),
         ...(s.email.bcc.length ? { bcc: s.email.bcc } : {})
@@ -121,6 +131,7 @@ export async function sendEmail(s: AutomationSettings, to: { email: string; name
       subject: mail.subject,
       htmlContent: mail.html,
       textContent: mail.text,
+      ...(attachments?.length ? { attachment: attachments.map(a => ({ name: a.filename, content: b64(a) })) } : {}),
       replyTo: { email: s.email.replyTo },
       ...(s.email.cc.length ? { cc: s.email.cc.map(email => ({ email })) } : {}),
       ...(s.email.bcc.length ? { bcc: s.email.bcc.map(email => ({ email })) } : {})

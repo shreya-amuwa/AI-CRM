@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { UploadCloud } from 'lucide-react';
+import { FilePlus2, UploadCloud } from 'lucide-react';
 import { btn } from '../team-member/pipeline/shared';
+import { InvoiceBuilder } from './InvoiceBuilder';
 import { UploadInvoiceDialog } from './invoiceFiles';
 import { CustomerInvoices } from './invoiceShared';
 
@@ -11,6 +12,7 @@ import { CustomerInvoices } from './invoiceShared';
  */
 export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLabel: string; canUpload?: boolean }> = ({ customerId, customerLabel, canUpload = true }) => {
   const [uploading, setUploading] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   return (
@@ -20,9 +22,14 @@ export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLa
           Invoices
         </h3>
         {canUpload && (
-          <button type="button" className={btn.primary} onClick={() => setUploading(true)}>
-            <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" /> Upload Invoice PDF
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btn.primary} onClick={() => setBuilding(true)}>
+              <FilePlus2 className="w-3.5 h-3.5" aria-hidden="true" /> Generate Invoice
+            </button>
+            <button type="button" className={btn.secondary} onClick={() => setUploading(true)}>
+              <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" /> Upload Invoice PDF
+            </button>
+          </div>
         )}
       </div>
       {notice && (
@@ -31,6 +38,18 @@ export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLa
         </p>
       )}
       <CustomerInvoices customerId={customerId} compact canManage key={reload} />
+      {building && (
+        <InvoiceBuilder
+          customer={{ id: customerId, label: customerLabel }}
+          onClose={() => setBuilding(false)}
+          onDone={r => {
+            setBuilding(false);
+            setNotice(`Invoice ${r.invoice.number} was saved. Open it from the list to see the PDF and e-mail status.`);
+            window.dispatchEvent(new CustomEvent('crm:pipeline-changed'));
+            setReload(n => n + 1);
+          }}
+        />
+      )}
       {uploading && (
         <UploadInvoiceDialog
           customer={{ id: customerId, label: customerLabel }}

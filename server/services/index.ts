@@ -5,6 +5,7 @@ import { ApprovalRepository } from '../repositories/ApprovalRepository.js';
 import { AuditRepository } from '../repositories/AuditRepository.js';
 import { ClientRepository } from '../repositories/ClientRepository.js';
 import { HrRepository } from '../repositories/HrRepository.js';
+import { GeneratedInvoiceRepository } from '../repositories/GeneratedInvoiceRepository.js';
 import { CustomerRepository } from '../repositories/CustomerRepository.js';
 import { NotificationRepository } from '../repositories/NotificationRepository.js';
 import { OrganizationRepository } from '../repositories/OrganizationRepository.js';
@@ -18,6 +19,7 @@ import { AuditService } from './AuditService.js';
 import { ClientService } from './ClientService.js';
 import { CustomerService } from './CustomerService.js';
 import { HrService } from './HrService.js';
+import { GeneratedInvoiceService } from './GeneratedInvoiceService.js';
 import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
@@ -38,6 +40,7 @@ export function createServices(db: SupabaseClient) {
     automations: new AutomationService(new PipelineRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),
     addons: new AddonInvoiceService(new AddonInvoiceRepository(db)),
+    generatedInvoices: new GeneratedInvoiceService(new GeneratedInvoiceRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };
 }

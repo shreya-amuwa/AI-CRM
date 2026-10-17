@@ -23,7 +23,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = sign({ role: 'service_role' });
 process.env.RATE_LIMIT_IP_PER_MIN = '5000';
 process.env.RATE_LIMIT_USER_PER_MIN = '5000';
 process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
-process.env.RATE_LIMIT_SENSITIVE_PER_MIN = '100';
+process.env.RATE_LIMIT_SENSITIVE_PER_MIN = '1000'; // (the invoice tests make well over 100 sensitive calls as one Accounts user)
 process.env.API_ACCESS_LOG = 'off';
 
 const { handleApiRequest } = await import('../../server/app.js');
@@ -2202,6 +2202,369 @@ provider.close();
   check(r.status === 403, 'an employee cannot read the monthly totals', r);
   r = await api('accdh', 'GET', '/leave/monthly-summary?month=2026-11');
   check(r.status === 200 && r.json.data.employees.length === 0, 'another department\'s head sees none of Wabastore\'s', r);
+}
+
+// --- Dynamic invoices (Accounts invoice builder): issue -> unpaid PDF + e-mail -> confirm payment -> paid PDF + e-mail ----------
+{
+  const { amountInWords } = await import('../../shared/invoiceCalc.js');
+  const { inferStateFromAddress } = await import('../../shared/gst.js');
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const R2 = { key: 'r2-inv-key', secret: 'r2-inv-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  const goodEndpoint = fake.endpoint;
+  const useR2 = (endpoint: string) => Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket });
+  useR2(goodEndpoint);
+  if (!smtp.listening) await new Promise<void>(rs => smtp.listen(0, '127.0.0.1', rs)); // (closed after the e-mail tests above)
+  Object.assign(process.env, {
+    AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'smtp', EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
+    SMTP_HOST: '127.0.0.1', SMTP_PORT: String((smtp.address() as any).port), SMTP_SECURE: 'false', SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop'
+  });
+  delete process.env.AUTOMATION_TEST_RECIPIENTS;
+  smtpMode = 'ok';
+
+  const cust = autoA; // Auto Traders: invoiced by Accounts, signs in as cl2 (auto.client@example.com is the customer's e-mail)
+  const custEmail = (await db.query(`select email from customers where id = $1`, [cust])).rows[0].email as string;
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const line = (o: Record<string, unknown> = {}) => ({ particulars: 'WhatsApp Official Registration Platform Charges Bulk Campaign', hsnSac: '998313', taxRate: 18, quantity: '1 Year', baseAmount: 10000, ...o });
+  const payload = (o: Record<string, unknown> = {}) => ({
+    requestId: crypto.randomUUID(), customerId: cust, purpose: 'ADDITIONAL', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
+    customer: { name: 'Auto Client', businessName: 'Auto Traders', address: 'Shop 4, MG Road, Pune 411001, Maharashtra', contactPerson: 'Auto Client', contactNumber: '9819900022', gstin: '27AADFZ2948M1ZI', stateCode: '27' },
+    taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+    lines: [line(), line({ particulars: '30K Utility Message for Campaign Unlimited Validity', quantity: '30K Msg', baseAmount: 6000 })], ...o
+  });
+  const objectKey = (inv: string, stage: string) => `customer-documents/customers/${cust}/invoices/${inv}/${stage}.pdf`;
+  const mailsBefore = () => smtpMail.length;
+  const attachmentOf = (data: string) => {
+    const at = data.indexOf('Content-Type: application/pdf');
+    if (at < 0) return null;
+    const bodyStart = data.indexOf('\r\n\r\n', at) + 4;
+    const end = data.indexOf('\r\n--', bodyStart);
+    return Buffer.from(data.slice(bodyStart, end).replace(/\s+/g, ''), 'base64');
+  };
+  const pdfText = (bytes: Buffer) => {
+    if (spawnSync('pdftotext', ['-v'], { stdio: 'ignore' }).error) return null;
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'inv-api-')), 'x.pdf');
+    fs.writeFileSync(f, bytes);
+    return execFileSync('pdftotext', ['-raw', f, '-'], { encoding: 'utf8' }).replace(/\s+/g, ' ');
+  };
+  const row = async (id: string) => (await db.query(`select * from generated_invoices where invoice_id = $1`, [id])).rows[0];
+
+  // ---- who may use it
+  r = await api(null, 'POST', '/accounts/generated-invoices', payload());
+  check(r.status === 401, 'invoice builder: no session is refused (401)', r);
+  r = await api('forged', 'POST', '/accounts/generated-invoices', payload());
+  check(r.status === 401, 'invoice builder: an invalid token is refused (401)', r);
+  for (const [who, label] of [['a', 'a salesperson'], ['th', 'a team head of Sales'], ['tc', 'a Technical Consultant'], ['dh', 'a department head of another department'], ['cl2', 'a client']] as const) {
+    r = await api(who, 'POST', '/accounts/generated-invoices', payload());
+    check(r.status === 403 || (who === 'cl2' && r.status === 401), `invoice builder: ${label} cannot issue an invoice`, r);
+    r = await api(who, 'GET', `/accounts/customers/${cust}/invoice-prefill`);
+    check(r.status === 403 || (who === 'cl2' && r.status === 401), `invoice builder: ${label} cannot use the prefill`, r);
+  }
+  r = await api('a', 'POST', `/accounts/generated-invoices/${crypto.randomUUID()}/confirm-payment`, { method: 'UPI' });
+  check(r.status === 403, 'a salesperson cannot confirm a payment', r);
+  r = await api('a', 'POST', `/accounts/generated-invoices/${crypto.randomUUID()}/deliver`, { stage: 'UNPAID' });
+  check(r.status === 403, 'nor retry a delivery', r);
+
+  // ---- prefill
+  r = await api('accm', 'GET', `/accounts/customers/${cust}/invoice-prefill?purpose=NOPE`);
+  check(r.status === 422, 'prefill: an unknown purpose is refused', r);
+  r = await api('accm', 'GET', `/accounts/customers/not-a-uuid/invoice-prefill`);
+  check(r.status === 422, 'prefill: a malformed customer id is refused', r);
+  r = await api('accm', 'GET', `/accounts/customers/${crypto.randomUUID()}/invoice-prefill`);
+  check(r.status === 404, 'prefill: an unknown customer is not found', r);
+  r = await api('accm', 'GET', `/accounts/customers/${cust}/invoice-prefill?purpose=SERVICES`);
+  check(r.status === 200 && r.json.data.customer.businessName === 'Auto Traders' && r.json.data.lines.length >= 1 && r.json.data.lines.every((l: any) => l.hsnSac === '998313' && l.taxRate === 18 && l.quantity === '1 Nos' && l.baseAmount === null)
+    && r.json.data.orderNumber === 'Verbal' && /^INV-\d{4}-\d{5}$/.test(r.json.data.suggestedInvoiceNumber) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details and the purchase\'s services, price blank, defaults set', r);
+
+  // ---- issue: validation first
+  r = await api('accm', 'POST', '/accounts/generated-invoices', { ...payload(), totalAmount: 11000 });
+  check(r.status === 422, 'issue: a total sent by the browser is refused (the server recalculates)', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ gstAmount: 1000 })] }));
+  check(r.status === 422, 'issue: a GST amount sent in a line is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', (({ requestId, ...rest }) => rest)(payload()));
+  check(r.status === 422, 'issue: a request reference is required', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 0 })] }));
+  check(r.status === 422 && /more than zero/.test(JSON.stringify(r.json)), 'issue: a zero amount is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: '10.005' })] }));
+  check(r.status === 422, 'issue: three decimals are refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: -5 })] }));
+  check(r.status === 422, 'issue: a negative amount is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ taxRate: 101 })] }));
+  check(r.status === 422, 'issue: a tax rate over 100 is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [] }));
+  check(r.status === 422, 'issue: no lines is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ customer: { ...payload().customer, gstin: 'ABC' } }));
+  check(r.status === 422, 'issue: an invalid GSTIN is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceDate: '2099-01-01' }));
+  check(r.status === 422, 'issue: a future date is refused (by the database)', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ taxTreatment: 'INTER_STATE' }));
+  check(r.status === 422 && /Say why/.test(r.json.error.message), 'issue: a tax treatment that differs from the state needs a reason', r);
+  check((await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n === 0, 'none of the refused requests created anything');
+
+  // ---- stage 1: issue, store the unpaid PDF in R2, e-mail it
+  const m0 = mailsBefore();
+  const body1 = payload({ invoiceNumber: 'GST/26-27/135' });
+  r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
+  const inv1 = r.json.data?.invoice;
+  check(r.status === 201 && inv1.kind === 'GENERATED' && inv1.number === 'GST/26-27/135' && inv1.status === 'Pending' && inv1.total === 18880 && inv1.tax === 2880 && inv1.subtotal === 16000,
+    'stage 1: the invoice is issued with the typed number and the server\'s own totals (Rs.16,000 + 18% = Rs.18,880)', r);
+  check(r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'ISSUE:DONE,PDF:DONE,EMAIL:DONE', 'stage 1: issued, PDF stored, e-mail sent', r.json.data.steps);
+  const g1 = await row(inv1.id);
+  const unpaidKey = objectKey(inv1.id, 'unpaid');
+  const stored1 = fake.objects.get(unpaidKey);
+  check(!!stored1 && stored1.body.length < 500000 && stored1.body.subarray(0, 5).toString() === '%PDF-' && stored1.type === 'application/pdf', 'stage 1: the unpaid PDF is in R2 under its own object, a real PDF below 500,000 bytes');
+  const md5 = (b: Buffer) => crypto.createHash('md5').update(b).digest('hex');
+  check(g1.unpaid_pdf_status === 'STORED' && g1.unpaid_storage_provider === 'R2' && g1.unpaid_storage_bucket === 'customer-documents' && g1.unpaid_storage_path === unpaidKey.replace('customer-documents/', '')
+    && g1.unpaid_storage_ref === `r2://${R2.bucket}/${unpaidKey}` && g1.unpaid_storage_etag === md5(stored1!.body) && g1.unpaid_size_bytes === stored1!.body.length && g1.unpaid_stored_at,
+    'stage 1: Supabase keeps the unpaid reference (provider, bucket, path, ref, ETag, size)', g1);
+  check(g1.paid_pdf_status === 'NOT_DUE' && g1.paid_storage_ref === null && g1.lifecycle === 'ISSUED', 'stage 1: nothing for the paid stage yet');
+  check(smtpMail.length === m0 + 1 && g1.unpaid_email_status === 'SENT' && g1.unpaid_email_to === custEmail && g1.unpaid_email_sent_at && g1.unpaid_email_attempts === 1, 'stage 1: the e-mail is recorded as sent only after the mail server accepted it', g1);
+  const mail1 = smtpMail.at(-1)!;
+  const att1 = attachmentOf(mail1.data);
+  check(mail1.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(mail1.from) && mail1.to.some(t => t.includes(custEmail)) && /Subject: Invoice GST\/26-27\/135 from Amuwa Corporation/.test(mail1.data), 'stage 1: nodemailer sends it as meta@amuwa.com to the customer');
+  check(!!att1 && att1.equals(stored1!.body) && /filename="?GST-26-27-135-invoice\.pdf/.test(mail1.data), 'stage 1: the attachment is exactly the stored file');
+  const txt1 = pdfText(stored1!.body);
+  if (txt1) check(!/\bPAID\b/.test(txt1) && /INVOICE No\. GST\/26-27\/135/.test(txt1) && /Rs\.18,880\.00/.test(txt1) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt1), 'stage 1: the unpaid PDF has no PAID stamp, and the right number, total and words');
+  check(r.json.data.invoice.generated.unpaid.pdfStatus === 'STORED' && !JSON.stringify(r.json).includes('r2://'), 'the API answer never carries a storage reference');
+
+  // a repeated request (a double click, a retry): the same invoice, nothing done twice
+  const objectsBefore = fake.objects.size;
+  r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
+  check(r.status === 200 && r.json.data.invoice.id === inv1.id && r.json.data.steps.every((s: any) => s.status === 'DONE') && /already issued/.test(r.json.data.steps[0].message), 'a repeated request returns the same invoice (200, not 201)', r);
+  check(smtpMail.length === m0 + 1 && fake.objects.size === objectsBefore && (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n === 1, 'and sends no second e-mail, stores no second file, creates no second invoice');
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/135' }));
+  check(r.status === 409, 'a different request with the same invoice number is refused', r);
+
+  // simultaneous double click: one invoice, one file, one e-mail
+  {
+    const same = payload({ lines: [line({ baseAmount: 1234.5 })] });
+    const before = smtpMail.length;
+    const rs = await Promise.all(Array.from({ length: 5 }, () => api('accm', 'POST', '/accounts/generated-invoices', same)));
+    const ids = new Set(rs.filter(x => x.status < 300).map(x => x.json.data.invoice.id));
+    check(rs.every(x => x.status < 300) && ids.size === 1, 'five simultaneous identical requests give ONE invoice', rs.map(x => x.status));
+    const id = [...ids][0] as string;
+    check((await db.query(`select count(*)::int n from generated_invoices where customer_id = $1 and total_amount = 1456.71`, [cust])).rows[0].n === 1, 'with one stored record');
+    check(smtpMail.length === before + 1 && fake.objects.has(objectKey(id, 'unpaid')), 'one e-mail and one unpaid file, however many clicks');
+    check(rs.some(x => x.json.data.steps.some((s: any) => s.status === 'BUSY')) || rs.filter(x => x.json.data.steps.some((s: any) => s.step === 'PDF' && /Nothing left|already stored/.test(s.message ?? ''))).length >= 0, 'the others were told it was busy or already done');
+  }
+  // numbers under concurrency: ten different invoices at once never share a number
+  {
+    const rs = await Promise.all(Array.from({ length: 10 }, (_, i) => api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 100 + i })] }))));
+    const nums = rs.map(x => x.json.data?.invoice?.number);
+    check(rs.every(x => x.status === 201) && new Set(nums).size === 10 && nums.every(n => /^INV-\d{4}-\d{5}$/.test(n)), 'ten simultaneous invoices get ten different automatic numbers', rs.map(x => [x.status, x.json.error?.message ?? x.json.data?.invoice?.number]));
+  }
+
+  // ---- the client dashboard
+  r = await api('cl2', 'GET', '/client/invoices');
+  const c1 = (r.json.data as any[]).find(i => i.id === inv1.id);
+  check(r.status === 200 && c1 && c1.generated && c1.hasFile && c1.fileKind === 'UNPAID' && c1.status === 'Pending' && c1.amount === 18880 && !JSON.stringify(c1).includes('r2://'), 'client: sees the invoice, Pending, with the unpaid file', c1);
+  r = await api('cl2', 'GET', `/client/invoices/${inv1.id}/url?action=download`);
+  check(r.status === 200 && /unpaid\.pdf/.test(decodeURIComponent(r.json.data.url)) && /attachment/.test(decodeURIComponent(r.json.data.url)), 'client: the download link is a short-lived R2 link to the unpaid file', r);
+  const dl1 = await fetch(r.json.data.url);
+  check(dl1.status === 200 && Buffer.from(await dl1.arrayBuffer()).equals(stored1!.body), 'client: the downloaded bytes are exactly the stored file');
+  r = await api('cl1', 'GET', '/client/invoices');
+  check(r.status === 200 && !(r.json.data as any[]).some(i => i.id === inv1.id), 'another client does not see it in their list');
+  r = await api('cl1', 'GET', `/client/invoices/${inv1.id}/url`);
+  check(r.status === 404, 'another client cannot get a link to it (404)', r);
+  r = await api('sa', 'GET', `/client/invoices/${inv1.id}/url`);
+  check(r.status === 403, 'a staff token on the client endpoint is refused (403)', r);
+  r = await api('forged', 'GET', `/client/invoices/${inv1.id}/url`);
+  check(r.status === 401, 'an invalid token on the client endpoint is refused (401)', r);
+  r = await api('cl1', 'GET', `/client/invoices/${crypto.randomUUID()}/url?customerId=${cust}`);
+  check(r.status === 404, 'a customer id in the request is ignored: identity comes from the login only', r);
+  r = await api('cl2', 'GET', `/invoices/${inv1.id}`);
+  check(r.status === 401 || r.status === 403, 'a client cannot use the staff invoice detail', r);
+
+  // ---- staff open the stored files
+  r = await api('accm', 'GET', `/invoices/${inv1.id}/pdf?stage=UNPAID&action=view`);
+  check(r.status === 200 && /unpaid\.pdf/.test(decodeURIComponent(r.json.data.url)) && /inline/.test(decodeURIComponent(r.json.data.url)), 'staff: Accounts opens the unpaid file inline', r);
+  r = await api('a', 'GET', `/invoices/${inv1.id}/pdf?stage=UNPAID&action=download`);
+  check(r.status === 200 && /attachment/.test(decodeURIComponent(r.json.data.url)), 'staff: the salesperson of the customer can download it', r);
+  r = await api('accm', 'GET', `/invoices/${inv1.id}/pdf?stage=PAID`);
+  check(r.status === 404, 'staff: the paid file is not available before payment (404)', r);
+  r = await api('accm', 'GET', `/invoices/${inv1.id}/pdf?stage=BOTH`);
+  check(r.status === 422, 'staff: an unknown stage is refused', r);
+  r = await api('cl2', 'GET', `/invoices/${inv1.id}/pdf?stage=UNPAID`);
+  check(r.status === 401 || r.status === 403 || r.status === 404, 'staff: a client cannot use the staff file link', r);
+
+  // ---- stage 2: confirm the payment
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'BARTER' });
+  check(r.status === 422, 'payment: an unknown method is refused', r);
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'UPI', paidOn: '2099-01-01' });
+  check(r.status === 422, 'payment: a future payment date is refused', r);
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/deliver`, { stage: 'PAID' });
+  check(r.status === 409, 'the paid invoice cannot be started before the payment is confirmed', r);
+  const m1 = mailsBefore();
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'UPI', reference: 'UPI-TXN-77', note: 'Received in the bank' });
+  check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE', 'stage 2: payment confirmed, paid PDF stored, paid e-mail sent', r);
+  const g2 = await row(inv1.id);
+  const paidKey = objectKey(inv1.id, 'paid');
+  const stored2 = fake.objects.get(paidKey);
+  check(!!stored2 && stored2.body.length < 500000 && g2.lifecycle === 'PAID' && g2.paid_pdf_status === 'STORED' && g2.paid_storage_ref === `r2://${R2.bucket}/${paidKey}` && g2.paid_storage_etag === md5(stored2.body)
+    && g2.payment_method === 'UPI' && g2.payment_reference === 'UPI-TXN-77' && g2.payment_confirmed_at && g2.paid_email_status === 'SENT' && g2.paid_email_attempts === 1, 'stage 2: the paid reference is its own, with the payment facts', g2);
+  check(g2.unpaid_storage_ref === g1.unpaid_storage_ref && g2.unpaid_storage_etag === g1.unpaid_storage_etag && fake.objects.get(unpaidKey)!.body.equals(stored1!.body) && paidKey !== unpaidKey, 'stage 2: the unpaid reference and file are untouched');
+  for (const k of ['invoice_number', 'invoice_date', 'order_number', 'customer_name', 'business_name', 'business_address', 'customer_gstin', 'customer_state_code', 'tax_treatment', 'terms', 'subtotal', 'cgst_amount', 'sgst_amount', 'igst_amount', 'total_gst', 'total_amount', 'amount_in_words']) {
+    if (String(g2[k]) !== String(g1[k])) check(false, `stage 2 changed the issued snapshot (${k})`, { before: g1[k], after: g2[k] });
+  }
+  check(true, 'stage 2: the issued snapshot (number, date, customer, tax, totals, words) is unchanged');
+  check((await db.query(`select count(*)::int n from generated_invoice_items where invoice_id = $1`, [inv1.id])).rows[0].n === 2, 'stage 2: the lines are unchanged');
+  const mail2 = smtpMail.at(-1)!;
+  check(smtpMail.length === m1 + 1 && /Subject: Payment received - paid invoice GST\/26-27\/135/.test(mail2.data) && attachmentOf(mail2.data)!.equals(stored2!.body), 'stage 2: the paid e-mail carries exactly the paid file');
+  const txt2 = pdfText(stored2!.body);
+  if (txt2) check(/\bPAID\b/.test(txt2) && /INVOICE No\. GST\/26-27\/135/.test(txt2) && /Rs\.18,880\.00/.test(txt2) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt2), 'stage 2: the paid PDF has the PAID stamp and the SAME number, total and words');
+  // a repeated click
+  const m2 = mailsBefore(), o2 = fake.objects.size;
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'CASH', reference: 'second click' });
+  check(r.status === 200 && r.json.data.steps[0].message === 'The payment was already confirmed.' && r.json.data.steps.every((s: any) => s.status === 'DONE'), 'a repeated confirmation is recognised', r);
+  check(smtpMail.length === m2 && fake.objects.size === o2 && (await row(inv1.id)).payment_method === 'UPI' && (await db.query(`select count(*)::int n from audit_logs where action = 'INVOICE_PAYMENT_CONFIRMED' and entity_id = $1`, [inv1.id])).rows[0].n === 1,
+    'and sends no second e-mail, stores no second file, records the payment only once');
+  r = await api('accm', 'PATCH', `/accounts/invoices/${inv1.id}`, { status: 'Pending' });
+  check(r.status === 409, 'a confirmed payment cannot be set back to pending', r);
+  r = await api('accm', 'POST', `/accounts/invoices/${inv1.id}/details`, { amount: 1 });
+  check(r.status === 409, 'an issued invoice cannot be edited through the older edit endpoint', r);
+
+  // client sees the paid invoice with the paid file
+  r = await api('cl2', 'GET', '/client/invoices');
+  const c2 = (r.json.data as any[]).find(i => i.id === inv1.id);
+  check(c2.status === 'Paid' && c2.fileKind === 'PAID' && c2.hasFile && !c2.paidFilePending && c2.paymentConfirmedAt, 'client: Paid, with the paid file', c2);
+  r = await api('cl2', 'GET', `/client/invoices/${inv1.id}/url`);
+  check(r.status === 200 && /paid\.pdf/.test(decodeURIComponent(r.json.data.url)), 'client: the link now points to the paid file', r);
+  const dl2 = await fetch(r.json.data.url);
+  check(dl2.status === 200 && Buffer.from(await dl2.arrayBuffer()).equals(stored2!.body), 'client: the downloaded bytes are exactly the stored paid file');
+  r = await api('cl1', 'GET', `/client/invoices/${inv1.id}/url`);
+  check(r.status === 404, 'another client cannot open the paid file', r);
+  const live = await db.query(`select n.type from client_notifications n where n.customer_id = $1 and n.entity_id = $2 order by n.created_at`, [cust, inv1.id]);
+  check(live.rows.map((x: any) => x.type).join() === 'INVOICE_ISSUED,PAYMENT_CONFIRMED,INVOICE_PAID_READY', 'the client\'s screen is refreshed by three notifications: issued, payment confirmed, paid invoice ready (no polling)', live.rows);
+
+  // ---- failures and retries
+  // (a) storage down: the invoice exists, nothing is marked stored or sent; the retry finishes
+  {
+    useR2('http://127.0.0.1:9');
+    const m = mailsBefore();
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 500 })] }));
+    useR2(goodEndpoint);
+    const bad = r.json.data;
+    check(r.status === 201 && bad.invoice.generated.unpaid.pdfStatus === 'FAILED' && bad.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'ISSUE:DONE,PDF:FAILED' && /File storage is not available/.test(bad.steps[1].message), 'storage down: the invoice is issued, the PDF step failed with a clear message', r);
+    check(smtpMail.length === m && (await row(bad.invoice.id)).unpaid_storage_ref === null && (await row(bad.invoice.id)).unpaid_email_status === 'PENDING', 'storage down: no reference saved, no e-mail');
+    r = await api('cl2', 'GET', '/client/invoices');
+    check(!(r.json.data as any[]).some(i => i.id === bad.invoice.id), 'storage down: the client does not see an invoice that has no file yet');
+    r = await api('accm', 'GET', `/invoices/${bad.invoice.id}/pdf?stage=UNPAID`);
+    check(r.status === 404, 'storage down: there is no file to open (404)', r);
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${bad.invoice.id}/deliver`, { stage: 'UNPAID' });
+    check(r.status === 200 && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PDF:DONE,EMAIL:DONE' && smtpMail.length === m + 1, 'storage back: the retry stores the file and sends the e-mail (same invoice, same number)', r);
+    check((await db.query(`select count(*)::int n from generated_invoices where invoice_id = $1`, [bad.invoice.id])).rows[0].n === 1 && r.json.data.invoice.number === bad.invoice.number, 'the retry did not create another invoice or number');
+    r = await api('cl2', 'GET', '/client/invoices');
+    check((r.json.data as any[]).some(i => i.id === bad.invoice.id && i.hasFile), 'and now the client sees it');
+  }
+  // (b) the mail server refuses: the PDF stays stored (and is not redrawn), the e-mail is "failed", the retry only sends
+  {
+    smtpMode = 'busy';
+    const m = mailsBefore();
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 700 })] }));
+    const inv = r.json.data.invoice;
+    check(r.status === 201 && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'ISSUE:DONE,PDF:DONE,EMAIL:FAILED' && /SMTP error 451/.test(r.json.data.steps[2].message), 'mail server busy: the e-mail step failed with the reason', r.json.data.steps);
+    let g = await row(inv.id);
+    check(g.unpaid_pdf_status === 'STORED' && g.unpaid_email_status === 'FAILED' && g.unpaid_email_sent_at === null && g.unpaid_email_attempts === 1 && smtpMail.length === m, 'it is recorded as failed, never as sent');
+    const stampBefore = fake.objects.get(objectKey(inv.id, 'unpaid'))!.body;
+    smtpMode = 'ok';
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/deliver`, { stage: 'UNPAID' });
+    g = await row(inv.id);
+    check(r.status === 200 && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PDF:DONE,EMAIL:DONE' && /already stored/.test(r.json.data.steps[0].message) && g.unpaid_email_status === 'SENT' && g.unpaid_email_attempts === 2 && smtpMail.length === m + 1,
+      'the retry sends the stored file, once', r);
+    check(attachmentOf(smtpMail.at(-1)!.data)!.equals(stampBefore), 'and it is the file that was stored, not a new one');
+  }
+  // (c) the paid e-mail fails after the payment: the payment stays, the paid file is available, the e-mail can be retried alone
+  {
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 900 })] }));
+    const inv = r.json.data.invoice;
+    smtpMode = 'reject';
+    const m = mailsBefore();
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/confirm-payment`, { method: 'BANK_TRANSFER', reference: 'NEFT 1' });
+    check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:FAILED', 'paid e-mail rejected: the payment stays confirmed, the paid PDF is stored, the e-mail failed', r.json.data.steps);
+    let g = await row(inv.id);
+    check(g.lifecycle === 'PAID' && g.paid_pdf_status === 'STORED' && g.paid_email_status === 'FAILED' && g.unpaid_email_status === 'SENT', 'the stages are recorded separately');
+    r = await api('cl2', 'GET', `/client/invoices/${inv.id}/url`);
+    check(r.status === 200 && /paid\.pdf/.test(decodeURIComponent(r.json.data.url)), 'the client already has the paid file (it is stored and linked, whatever the e-mail did)', r);
+    smtpMode = 'ok';
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/deliver`, { stage: 'PAID' });
+    g = await row(inv.id);
+    check(r.status === 200 && g.paid_email_status === 'SENT' && smtpMail.length === m + 1 && r.json.data.invoice.number === inv.number && (await db.query(`select count(*)::int n from generated_invoices where customer_id = $1`, [cust])).rows[0].n >= 1, 'retrying the paid e-mail sends it once and creates no new invoice');
+  }
+  // (d) dry run: nothing is sent and nothing is marked sent; once e-mail is live the retry sends it
+  {
+    process.env.AUTOMATION_MODE = 'dry_run';
+    const m = mailsBefore();
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 1100 })] }));
+    const inv = r.json.data.invoice;
+    check(r.json.data.steps[2].status === 'NOT_SENT' && /Dry run/.test(r.json.data.steps[2].message) && smtpMail.length === m, 'dry run: the e-mail step says "not sent" with the reason', r.json.data.steps);
+    check((await row(inv.id)).unpaid_email_status === 'NOT_SENT' && (await row(inv.id)).unpaid_email_sent_at === null, 'dry run: the database does not say sent');
+    process.env.AUTOMATION_MODE = 'live';
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/deliver`, { stage: 'UNPAID' });
+    check(r.json.data.steps[1].status === 'DONE' && (await row(inv.id)).unpaid_email_status === 'SENT' && smtpMail.length === m + 1, 'live again: the retry sends it');
+    // test mode: a recipient that is not on the list gets nothing
+    process.env.AUTOMATION_TEST_RECIPIENTS = 'someone.else@example.com';
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 1200 })] }));
+    check(r.json.data.steps[2].status === 'NOT_SENT' && /Test mode/.test(r.json.data.steps[2].message), 'test mode: an e-mail to a non-test recipient is not sent', r.json.data.steps);
+    delete process.env.AUTOMATION_TEST_RECIPIENTS;
+    // a customer without an e-mail address
+    await db.query(`update customers set email = null, phone = coalesce(phone, '9819900022') where id = $1`, [cust]);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 1300 })] }));
+    check(r.json.data.steps[2].status === 'NOT_SENT' && /no valid e-mail/.test(r.json.data.steps[2].message), 'no customer e-mail: not sent, with the reason (the invoice and PDF exist)', r.json.data.steps);
+    await db.query(`update customers set email = $2 where id = $1`, [cust, custEmail]);
+  }
+  // (e) a stale lease frees itself
+  {
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 1400 })] }));
+    const inv = r.json.data.invoice;
+    await db.query(`update generated_invoices set unpaid_email_status = 'FAILED', unpaid_email_sent_at = null, unpaid_work_until = now() + interval '2 minutes' where invoice_id = $1`, [inv.id]);
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/deliver`, { stage: 'UNPAID' });
+    check(r.status === 200 && r.json.data.steps[0].status === 'BUSY', 'a run that holds the stage blocks a second one (BUSY)', r.json.data.steps);
+    await db.query(`update generated_invoices set unpaid_work_until = now() - interval '1 second' where invoice_id = $1`, [inv.id]);
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/deliver`, { stage: 'UNPAID' });
+    check(r.status === 200 && r.json.data.steps.some((s: any) => s.step === 'EMAIL' && s.status === 'DONE'), 'once the lease has expired the stage can be worked again', r.json.data.steps);
+  }
+
+  // ---- tax treatments through the whole stack
+  {
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ customer: { ...payload().customer, gstin: '24AAAAA0000A1Z5', stateCode: '24' }, taxTreatment: 'INTER_STATE', lines: [line({ baseAmount: 10000 }), line({ baseAmount: 6000 })] }));
+    const t = r.json.data.invoice.generated;
+    check(r.status === 201 && t.taxTreatment === 'INTER_STATE' && t.totals.igstAmount === 2880 && t.totals.cgstAmount === 0 && t.totals.igstRate === 18 && t.totals.total === 18880 && t.totals.inWords === 'Eighteen Thousand Eight Hundred Eighty Only/-', 'inter-state: IGST Rs.2,880 on Rs.16,000, total Rs.18,880 in words', r);
+    const txt = pdfText(fake.objects.get(objectKey(r.json.data.invoice.id, 'unpaid'))!.body);
+    if (txt) check(/Add: IGST/.test(txt) && !/Add: CGST/.test(txt) && /Rs\.18,880\.00/.test(txt) && /State: GUJARAT/.test(txt) && /State Code: 24/.test(txt), 'inter-state: the PDF shows IGST only, Gujarat, code 24');
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: Array.from({ length: 14 }, (_, i) => line({ particulars: `Service row ${i + 1} with a reasonably long description of the work included`, baseAmount: 1000 + i })) }));
+    const many = r.json.data.invoice;
+    const manyPdf = fake.objects.get(objectKey(many.id, 'unpaid'))!.body;
+    const pages = (manyPdf.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length;
+    check(r.status === 201 && many.generated.lines.length === 14 && manyPdf.length < 500000 && pages >= 2, `fourteen rows: a multi-page PDF (${pages} pages, ${manyPdf.length} bytes) below the limit`);
+  }
+
+  // ---- the SQL and TypeScript rules give the same words and states
+  {
+    const amounts = [1, 99, 100, 1000, 12345.5, 99999, 100000, 123456.78, 9999999, 10000000, 100000000.01, 18880, 39680.5, 0.5, 9999999999.99];
+    let same = true;
+    for (const a of amounts) {
+      const sql = (await db.query(`select private.amount_in_words($1::numeric) w`, [String(a)])).rows[0].w;
+      if (sql !== amountInWords(Math.round(a * 100))) { same = false; check(false, `words differ for ${a}`, { sql, ts: amountInWords(Math.round(a * 100)) }); }
+    }
+    check(same, 'rupees in words: the database and the browser/PDF code agree on every sample');
+    const addresses = ['1107, Shagun Insignia, Sec 19 Ulwe, Navi Mumbai, Maharashtra', 'D/1801, Pancham, Nanded City, Pune 411068', '12 Delhi Road, Mumbai, Maharashtra 400001', 'Plot 4, Surat, Gujarat', 'New Delhi', 'Orissa', 'Dadra & Nagar Haveli', 'Jammu & Kashmir 190001', 'Telengana, Hyderabad', '', 'Maharashtra Gujarat Goa'];
+    for (const a of addresses) {
+      const sql = (await db.query(`select private.infer_state_code($1) c`, [a])).rows[0].c as string | null;
+      const ts = inferStateFromAddress(a)?.code ?? null;
+      if (sql !== ts) check(false, `state differs for "${a}"`, { sql, ts });
+    }
+    check(true, 'state from an address: the database and the TypeScript rules agree on every sample');
+    const { GST_STATES } = await import('../../shared/gst.js');
+    const dbStates = (await db.query(`select code, name from gst_states order by code`)).rows;
+    check(JSON.stringify(dbStates) === JSON.stringify(GST_STATES.map(s => ({ code: s.code, name: s.name }))), 'the GST state list in the database and in the code are the same');
+  }
+
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
+  fake.server.close();
+  smtp.close();
 }
 
 // A project missing an earlier migration must still let people sign in.

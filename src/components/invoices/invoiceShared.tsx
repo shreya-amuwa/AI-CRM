@@ -6,6 +6,7 @@ import { errorMessage } from '../../lib/api/client';
 import { invoicesApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, Pill, Spinner, todayIso, type Tone, usePipelineRealtime } from '../team-member/pipeline/shared';
 import { InvoiceFileButtons, InvoiceFilePanel, openStoredFile } from './invoiceFiles';
+import { GeneratedInvoicePanel, openGeneratedPdf } from './GeneratedInvoicePanel';
 
 // ---------------------------------------------------------------------------
 // Formatting and status labels
@@ -52,7 +53,7 @@ const isOverdue = (i: Invoice) => i.status !== 'Paid' && !!i.dueDate && i.dueDat
 export const InvoiceStatusPill: React.FC<{ invoice: Invoice }> = ({ invoice }) =>
   invoice.status === 'Paid' ? <Pill tone="green">Paid</Pill> : isOverdue(invoice) || invoice.status === 'Overdue' ? <Pill tone="red">Overdue</Pill> : <Pill tone="orange">Pending</Pill>;
 
-export const INVOICE_KIND_LABEL: Record<Invoice['kind'], string> = { SERVICE: 'Services', ADDON: 'Add-on services', MANUAL: 'Earlier invoice', UPLOADED: 'Uploaded PDF' };
+export const INVOICE_KIND_LABEL: Record<Invoice['kind'], string> = { SERVICE: 'Services', ADDON: 'Add-on services', MANUAL: 'Earlier invoice', UPLOADED: 'Uploaded PDF', GENERATED: 'Generated invoice' };
 
 // ---------------------------------------------------------------------------
 // PDF (generated in the browser from the invoice record; text only, standard fonts)
@@ -194,6 +195,7 @@ export const InvoiceDetail: React.FC<{
   const [i, setI] = useState(given);
   useEffect(() => setI(given), [given]);
   const uploaded = i.kind === 'UPLOADED';
+  const generated = i.kind === 'GENERATED';
   return (
     <Dialog title={`Invoice ${i.number}`} description={`${INVOICE_KIND_LABEL[i.kind]} · ${i.customer}`} onClose={onClose} wide>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -219,7 +221,16 @@ export const InvoiceDetail: React.FC<{
           · {uploaded ? 'Uploaded' : 'Issued'} by {i.issuedBy || 'Accounts'} on {longDate(i.issuedAt)}
         </span>
       </div>
-      {uploaded ? (
+      {generated ? (
+        <GeneratedInvoicePanel
+          invoice={i}
+          canManage={canManage}
+          onChanged={inv => {
+            setI(inv);
+            onChanged?.(inv);
+          }}
+        />
+      ) : uploaded ? (
         <InvoiceFilePanel
           invoice={i}
           canManage={canManage}
@@ -270,7 +281,7 @@ export const InvoiceDetail: React.FC<{
       {i.note && <p className="text-xs text-slate-600 whitespace-pre-line">Note: {i.note}</p>}
       <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
         {actions}
-        {!uploaded && (
+        {!uploaded && !generated && (
           <button type="button" className={btn.secondary} onClick={() => downloadInvoice(i)}>
             <Download className="w-3.5 h-3.5" aria-hidden="true" /> Download PDF
           </button>
@@ -285,7 +296,19 @@ export const InvoiceDetail: React.FC<{
 
 /** Per-row actions: the stored PDF (Preview / Download) for an uploaded invoice, a generated PDF otherwise. */
 export const InvoiceRowActions: React.FC<{ invoice: Invoice }> = ({ invoice: i }) =>
-  i.kind === 'UPLOADED' && i.file ? (
+  i.kind === 'GENERATED' ? (
+    <button
+      type="button"
+      className={btn.secondary}
+      onClick={e => {
+        e.stopPropagation();
+        void openGeneratedPdf(i.id, i.generated?.lifecycle === 'PAID' && i.generated.paid.pdfStatus === 'STORED' ? 'PAID' : 'UNPAID', 'download').catch(() => undefined);
+      }}
+      aria-label={`Download ${i.number}`}
+    >
+      <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
+    </button>
+  ) : i.kind === 'UPLOADED' && i.file ? (
     <InvoiceFileButtons file={i.file} number={i.number} compact />
   ) : (
     <button type="button" className={btn.secondary} onClick={e => { e.stopPropagation(); downloadInvoice(i); }} aria-label={`Download ${i.number}`}>

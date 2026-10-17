@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BadgeCheck, CheckCircle2, FileText, IndianRupee, MessageSquareWarning, Search, UploadCloud, XCircle } from 'lucide-react';
+import { BadgeCheck, CheckCircle2, FilePlus2, FileText, IndianRupee, MessageSquareWarning, Search, UploadCloud, XCircle } from 'lucide-react';
 import type { AddonRequest, AddonRequestPage, AddonRequestStatus, PaymentMethod } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { addonsApi } from '../../lib/api/endpoints';
@@ -22,6 +22,7 @@ import {
 } from '../team-member/pipeline/shared';
 import { addonPaymentState, ADDON_STATUS_LABEL, AddonStatusPill, InvoiceDetail, rupees, Totals } from '../invoices/invoiceShared';
 import { UploadInvoiceDialog } from '../invoices/invoiceFiles';
+import { InvoiceBuilder } from '../invoices/InvoiceBuilder';
 import { AddonEvents } from '../support/consultant/AddonRequestPanel';
 
 const PAGE_SIZE = 20;
@@ -234,6 +235,7 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
   const [reason, setReason] = useState('');
   const [confirmApprove, setConfirmApprove] = useState(false);
   const [uploadingInvoice, setUploadingInvoice] = useState(false);
+  const [buildingInvoice, setBuildingInvoice] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const [pay, setPay] = useState({ amount: '', method: 'UPI' as PaymentMethod, reference: '', note: '', verify: true });
   const [rejectPayment, setRejectPayment] = useState<{ id: string; reason: string } | null>(null);
@@ -400,10 +402,13 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
         <section aria-label="Upload the add-on invoice" className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
           <h3 className="text-sm font-bold text-slate-900">Upload the add-on invoice</h3>
           <p className="text-xs text-slate-500">
-            The add-ons are approved ({rupees(r.total)}). Upload the invoice PDF for them (PDF only, up to 500 KB). The consultant is told, and the customer can then pay.
+            The add-ons are approved ({rupees(r.total)}). Generate the invoice (it is e-mailed to the customer and shown on their dashboard), or upload an existing invoice PDF (PDF only, up to 500 KB). The consultant is told, and the customer can then pay.
           </p>
-          <div className="flex justify-end">
-            <button type="button" className={btn.primary} disabled={busy} onClick={() => setUploadingInvoice(true)}>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className={btn.primary} disabled={busy} onClick={() => setBuildingInvoice(true)}>
+              <FilePlus2 className="w-3.5 h-3.5" aria-hidden="true" /> Generate invoice
+            </button>
+            <button type="button" className={btn.secondary} disabled={busy} onClick={() => setUploadingInvoice(true)}>
               <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" /> Upload invoice PDF
             </button>
           </div>
@@ -605,6 +610,17 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
             onChanged();
           }}
           onClose={() => setShowInvoice(false)}
+        />
+      )}
+      {buildingInvoice && (
+        <InvoiceBuilder
+          addon={{ requestId: r.id, customerId: r.customerId, label: r.customer }}
+          onClose={() => setBuildingInvoice(false)}
+          onDone={() => {
+            setBuildingInvoice(false);
+            load();
+            onChanged();
+          }}
         />
       )}
       {uploadingInvoice && (

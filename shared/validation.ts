@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 import { mobileProblem, normalizeWebsite } from './contactValidation.js';
+import { isValidGstinFormat, normalizeGstin } from './gst.js';
+import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
@@ -11,6 +13,9 @@ import {
   CUSTOMER_DOCUMENT_MAX_LABEL,
   INVOICE_PDF_MAX_BYTES,
   INVOICE_PDF_MAX_LABEL,
+  INVOICE_PURPOSES,
+  INVOICE_STAGES,
+  TAX_TREATMENTS,
   LEAD_STATUSES,
   ONBOARDING_FILTERS,
   HANDOVER_STAGES,
@@ -724,6 +729,91 @@ export const invoiceDetailsSchema = z
   .strict();
 export const invoiceStatusSchema = z.object({ status: z.enum(['Paid', 'Pending']) }).strict();
 
+// ---------------------------------------------------------------------------
+// Generated invoices (the Accounts invoice builder). Only what the person types is accepted: no total, GST amount or
+// amount in words - the database recalculates every figure. Unknown fields are refused, not ignored.
+// ---------------------------------------------------------------------------
+/** Rupees typed as a number or text; kept as an exact decimal string for the database (up to 2 decimals, more than zero). */
+const moneyField = (label: string) =>
+  z
+    .union([z.string(), z.number()])
+    .transform((v, ctx) => {
+      const p = toPaise(v);
+      if (p === null || p <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Enter ${label} in rupees (more than zero, up to 2 decimals).` });
+        return z.NEVER;
+      }
+      return paiseToDecimal(p);
+    });
+const taxRateField = z.union([z.string(), z.number()]).transform((v, ctx) => {
+  const bp = toRateBp(v);
+  if (bp === null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter the tax rate as a percentage from 0 to 100 (up to 2 decimals).' });
+    return z.NEVER;
+  }
+  return bp / 100;
+});
+export const invoiceLineSchema = z
+  .object({
+    serviceCode: z.preprocess(v => (v === '' ? null : v), z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.').nullable().optional()),
+    particulars: z.string().trim().min(2, 'Enter the particulars (the service description).').max(500, 'Keep the particulars under 500 characters.'),
+    hsnSac: z.string().trim().regex(/^[0-9]{4,8}$/, 'The HSN/SAC code is 4 to 8 digits.').default('998313'),
+    taxRate: taxRateField,
+    quantity: z.string().trim().min(1, 'Enter the quantity (for example 1 Nos, 1 Year or 30K Msg).').max(30, 'Keep the quantity under 30 characters.'),
+    baseAmount: moneyField('the invoice amount')
+  })
+  .strict();
+export const generatedInvoiceIssueSchema = z
+  .object({
+    /** One per click of "Generate & Send Invoice": a retry with the same id returns the same invoice. */
+    requestId: uuidSchema,
+    customerId: uuidSchema,
+    purpose: z.enum(INVOICE_PURPOSES),
+    addonRequestId: uuidSchema.nullable().optional(),
+    /** Blank: the next number is reserved automatically. */
+    invoiceNumber: z.preprocess(
+      v => (typeof v === 'string' && v.trim() === '' ? null : v),
+      z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9/-]{0,15}$/, 'The invoice number can use letters, numbers, / and - (up to 16 characters).').nullable().optional()
+    ),
+    invoiceDate: isoDate,
+    orderNumber: z.string().trim().min(1).max(60).default('Verbal'),
+    customer: z
+      .object({
+        name: z.string().trim().max(200).default(''),
+        businessName: optionalText(200),
+        address: z.string().trim().min(1, 'Enter the business address.').max(500, 'Keep the address under 500 characters.'),
+        contactPerson: optionalText(200),
+        contactNumber: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? null : v), phoneSchema.nullable().optional()),
+        gstin: z.preprocess(
+          v => (typeof v === 'string' ? normalizeGstin(v) || null : v),
+          z.string().nullable().optional().refine(v => !v || isValidGstinFormat(v), 'The GSTIN is not valid. Check it against the customer\'s GST certificate.')
+        ),
+        stateCode: z.string().trim().regex(/^[0-9]{2}$/, 'Choose the customer\'s state.')
+      })
+      .strict(),
+    taxTreatment: z.enum(TAX_TREATMENTS),
+    taxOverrideReason: optionalText(300),
+    acknowledgeStateMismatch: z.boolean().default(false),
+    reverseCharge: z.boolean().default(false),
+    terms: z.string().trim().max(2000).default('100% Payment Against supply.'),
+    lines: z.array(invoiceLineSchema).min(1, 'Add at least one service line.').max(MAX_LINES, `An invoice can have at most ${MAX_LINES} lines.`)
+  })
+  .strict()
+  .refine(v => !!(v.customer.name || v.customer.businessName), { path: ['customer', 'name'], message: 'Enter the customer or business name.' })
+  .refine(v => v.purpose !== 'ADDON' || !!v.addonRequestId, { path: ['addonRequestId'], message: 'Choose the add-on request.' });
+export type GeneratedInvoiceIssueInput = z.infer<typeof generatedInvoiceIssueSchema>;
+export const invoicePrefillQuerySchema = z.object({ purpose: z.enum(INVOICE_PURPOSES).default('SERVICES'), addonRequestId: uuidSchema.optional() });
+export const invoiceConfirmPaymentSchema = z
+  .object({
+    method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Choose how the payment was received.' }) }),
+    reference: optionalText(120),
+    note: optionalText(1000),
+    paidOn: isoDate.nullable().optional()
+  })
+  .strict();
+export const invoiceDeliverSchema = z.object({ stage: z.enum(INVOICE_STAGES) }).strict();
+export const invoiceFileQuerySchema = z.object({ stage: z.enum(INVOICE_STAGES), action: z.enum(['view', 'download']).default('view') });
+
 const pageQuery = {
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20)
@@ -738,7 +828,7 @@ export const addonRequestsQuerySchema = z.object({
 });
 export const invoicesQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
-  kind: z.enum(['MANUAL', 'SERVICE', 'ADDON', 'UPLOADED']).optional(),
+  kind: z.enum(['MANUAL', 'SERVICE', 'ADDON', 'UPLOADED', 'GENERATED']).optional(),
   status: z.enum(['Paid', 'Pending', 'Overdue']).optional(),
   ...pageQuery
 });
