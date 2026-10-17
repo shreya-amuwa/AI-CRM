@@ -21,6 +21,10 @@ export function toAuthUser(profile: Profile): AuthUser {
         role = 'accounts-staff';
         break;
       }
+      if (isHrStaff(profile)) {
+        role = 'hr';
+        break;
+      }
       // Department decides the dashboard: Support Team Leads have their own
       // dashboard; Sales (and other) Team Leads keep the Sales Team Lead one.
       role = isSupportLead(profile) ? 'support-lead' : 'team-lead';
@@ -28,6 +32,10 @@ export function toAuthUser(profile: Profile): AuthUser {
     default:
       if (isAccountsStaff(profile)) {
         role = 'accounts-staff';
+        break;
+      }
+      if (isHrStaff(profile)) {
+        role = 'hr';
         break;
       }
       // Technical Consultants open the client-onboarding dashboard; other Support
@@ -51,6 +59,15 @@ export function toAuthUser(profile: Profile): AuthUser {
 /** Team members and leads of the Accounts department confirm payments sent by Sales. */
 export function isAccountsStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
   return (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.department?.slug === 'accounts';
+}
+
+/**
+ * Team leads and team members of the HR department open the HR dashboard, the same one the HR head uses.
+ * What they may do inside it is decided by their own role (and enforced by the API and database): HR staff
+ * see HR data; only a Department Head can publish client notices; only leads and heads can add members.
+ */
+export function isHrStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
+  return (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.department?.slug === 'hr';
 }
 
 /**
@@ -108,9 +125,12 @@ export function defaultDashboardLabel(
   role: Role,
   division?: TeamDivision | null,
   departmentName?: string,
-  technicalConsultant = false
+  technicalConsultant = false,
+  departmentSlug?: string
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
+  // HR and Accounts staff open their department's own dashboard.
+  if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   switch (role) {
     case 'SUPER_ADMIN':
       return 'Super Admin Department Hub';

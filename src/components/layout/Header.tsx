@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Users, LogOut, Megaphone, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { sessionManager } from '../../services/sessionManager';
+import { ROLE_LABELS } from '../../lib/auth/roleMapping';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { ClientNotices } from '../notices/ClientNotices';
 import { Dialog } from '../team-member/pipeline/shared';
@@ -90,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome }) => {
             <div className="hidden lg:block text-left text-xs font-mono">
               <span className="text-slate-900 font-semibold block leading-tight">{user?.name}</span>
               <span className="text-slate-400 text-[10px]">
-                {user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'team-lead' ? 'Team Lead' : 'Staff Admin'}
+                {user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'team-lead' ? 'Team Lead' : user?.role === 'hr' && user.profile ? ROLE_LABELS[user.profile.role] : 'Staff Admin'}
               </span>
             </div>
 
