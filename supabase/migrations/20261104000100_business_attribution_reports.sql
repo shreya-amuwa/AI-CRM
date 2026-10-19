@@ -1,4 +1,4 @@
--- Department-wise business attribution and the HR Sales / Support business reports.
+-- Department-wise business attribution and the Accounts Sales / Support business reports.
 --
 -- Safe to run again in the Supabase SQL editor. Run it after 20261103000100_order_tax_basis.sql.
 --
@@ -17,7 +17,8 @@
 --     name the Support member who asked for the invoice (an invoice request), which is how a renewal gets its responsible employee.
 --   * private.business_ledger() / private.business_orders(): the single definition of every figure. The dashboards, the employee
 --     tables and the transaction list all read these, so they always agree.
---   * business_report(), business_report_transactions(): HR (department head / team head of HR) and the Super Admin only.
+--   * business_report(), business_report_transactions(): the Accounts department (it already sees every department's income)
+--     and the Super Admin only.
 --
 -- Accounting basis (unchanged, same as Accounts' income): CASH. A figure counts as collected only when its payment is VERIFIED.
 -- An unpaid or pending invoice is never collected revenue; it is shown as pending / outstanding.
@@ -55,13 +56,11 @@ alter table public.invoice_business_tags enable row level security;
 revoke all on public.invoice_business_tags from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 2. Access: HR managers and the Super Admin
+-- 2. Access: the Accounts department and the Super Admin
 -- ---------------------------------------------------------------------------
 create or replace function private.can_view_business_reports()
 returns boolean language sql stable security definer set search_path = '' as $$
-  select private.is_super_admin() or exists (
-    select 1 from public.profiles p join public.departments d on d.id = p.department_id
-     where p.id = auth.uid() and p.status = 'ACTIVE' and d.slug = 'hr' and p.role in ('DEPARTMENT_HEAD', 'TEAM_HEAD'))
+  select private.is_accounts_staff()
 $$;
 revoke all on function private.can_view_business_reports() from public, anon;
 grant execute on function private.can_view_business_reports() to authenticated;
@@ -70,7 +69,7 @@ create or replace function private.require_business_reports()
 returns void language plpgsql stable security definer set search_path = '' as $$
 begin
   if not private.can_view_business_reports() then
-    raise exception 'FORBIDDEN: Only HR managers and the Super Admin can see the business reports.' using errcode = '42501';
+    raise exception 'FORBIDDEN: Only the Accounts department can see the business reports.' using errcode = '42501';
   end if;
 end $$;
 revoke all on function private.require_business_reports() from public, anon;
@@ -254,6 +253,17 @@ begin
            coalesce(sum(amount) filter (where status = 'REFUNDED'), 0) refunded, count(*) filter (where status = 'COLLECTED') n,
            count(distinct customer_id) filter (where status = 'COLLECTED') customers
       from l where division is not null group by division, employee_id),
+  by_dept as (
+    select department_id,
+           coalesce(sum(amount) filter (where division = 'SALES' and status = 'COLLECTED'), 0) sales_collected,
+           coalesce(sum(amount) filter (where division = 'SALES' and status = 'PENDING'), 0) sales_pending,
+           coalesce(sum(amount) filter (where division = 'SALES' and status = 'REFUNDED'), 0) sales_refunded,
+           count(*) filter (where division = 'SALES' and status = 'COLLECTED') sales_n,
+           coalesce(sum(amount) filter (where division = 'SUPPORT' and status = 'COLLECTED'), 0) support_collected,
+           coalesce(sum(amount) filter (where division = 'SUPPORT' and status = 'PENDING'), 0) support_pending,
+           coalesce(sum(amount) filter (where division = 'SUPPORT' and status = 'REFUNDED'), 0) support_refunded,
+           count(*) filter (where division = 'SUPPORT' and status = 'COLLECTED') support_n
+      from l where division is not null group by department_id),
   ord_type as (
     select division, order_type, count(*) orders, coalesce(sum(billed), 0) billed, coalesce(sum(greatest(billed - collected, 0)), 0) outstanding
       from o group by division, order_type),
@@ -287,6 +297,13 @@ begin
                     left join ord_emp oe on oe.division = e.division and oe.employee_id is not distinct from e.employee_id
                    where e.division = d.division), '[]'::jsonb)))
       from (values ('SALES'), ('SUPPORT')) d(division) where v_div is null or d.division = v_div), '{}'::jsonb),
+    -- income by the customer's business unit (the same departments as Accounts' Department Income), split Sales / Support
+    'departments', coalesce((select jsonb_agg(jsonb_build_object('departmentId', x.department_id, 'name', coalesce(d.name, 'Unknown'),
+          'sales', jsonb_build_object('collected', x.sales_collected, 'pending', x.sales_pending, 'refunded', x.sales_refunded, 'transactions', x.sales_n),
+          'support', jsonb_build_object('collected', x.support_collected, 'pending', x.support_pending, 'refunded', x.support_refunded, 'transactions', x.support_n),
+          'collected', x.sales_collected + x.support_collected)
+          order by x.sales_collected + x.support_collected desc, d.name)
+        from by_dept x left join public.departments d on d.id = x.department_id), '[]'::jsonb),
     'unclassified', jsonb_build_object(
       'collected', coalesce((select sum(amount) from l where tx_type = 'UNCLASSIFIED' and status = 'COLLECTED'), 0),
       'pending', coalesce((select sum(amount) from l where tx_type = 'UNCLASSIFIED' and status = 'PENDING'), 0),

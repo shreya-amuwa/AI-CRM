@@ -3,7 +3,7 @@ import type { BusinessPerson, BusinessReport, BusinessTransactionsPage, InvoiceB
 import type { BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
-/** Business reports: every call is a database function that checks the caller (HR managers / Super Admin, or Accounts for tagging). */
+/** Business reports: every call is a database function that checks the caller (the Accounts department and the Super Admin). */
 export class BusinessReportRepository {
   constructor(private readonly db: SupabaseClient) {}
 

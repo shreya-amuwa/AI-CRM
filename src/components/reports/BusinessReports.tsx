@@ -18,7 +18,7 @@ import { ErrorBanner, money, Pager, Spinner, useDebounced } from '../team-member
 import { Card, CardHead, fieldCls, ghostBtn, StatCard, Tabs } from '../tasks/head/headParts';
 
 /**
- * HR: Sales and Support business, by department and by employee, read from the real payment records.
+ * Accounts: Sales and Support business, by department and by employee, read from the real payment records.
  * Every number comes from the database (business_report / business_report_transactions); nothing is added up here.
  */
 
@@ -277,6 +277,39 @@ const Overview: React.FC<{ report: BusinessReport; onOpen: (p: Page) => void }> 
         <StatCard label="Billed" value={money(o.billed)} foot="Orders in this period" />
         <StatCard label="Outstanding" value={money(o.outstanding)} tone={o.outstanding ? 'amber' : 'neutral'} foot="Still to collect" />
       </div>
+      <Card label="Income by department">
+        <CardHead title="Income by customer department" hint="Where the customers belong, split between what Sales and Support brought in (collected payments)." />
+        {report.departments.length === 0 ? (
+          <p className="px-5 pb-6 text-sm text-slate-500">No income recorded for these filters.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className="text-left text-xs text-slate-500 border-y border-slate-100 bg-slate-50">
+                  <th className="py-2.5 pl-5 pr-3 font-semibold">Department</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Sales</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Support</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Pending</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Refunded</th>
+                  <th className="py-2.5 pl-3 pr-5 font-semibold text-right">Total collected</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.departments.map(d => (
+                  <tr key={d.departmentId ?? 'none'} className="border-b border-slate-100 last:border-0">
+                    <td className="py-3 pl-5 pr-3 font-bold text-slate-900">{d.name}</td>
+                    <td className="py-3 px-3 text-right">{money(d.sales.collected)}</td>
+                    <td className="py-3 px-3 text-right">{money(d.support.collected)}</td>
+                    <td className="py-3 px-3 text-right">{money(d.sales.pending + d.support.pending)}</td>
+                    <td className="py-3 px-3 text-right text-rose-700">{money(d.sales.refunded + d.support.refunded)}</td>
+                    <td className="py-3 pl-3 pr-5 text-right font-bold text-emerald-700">{money(d.collected)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
       <Card label="Departments">
         <CardHead title="Sales and Support" hint="Each payment is counted once, in the department its type belongs to." />
         <div className="overflow-x-auto">

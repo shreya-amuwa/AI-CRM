@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, Bell, Building2, FileText, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
+import { BadgeCheck, BarChart3, Bell, Building2, FileText, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -15,11 +15,12 @@ import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
+import { BusinessReports } from '../reports/BusinessReports';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'expenses' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'business-reports' | 'expenses' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -55,6 +56,7 @@ export const AccountsDashboard: React.FC = () => {
         { id: 'plans', label: 'Monthly Plans', icon: Sparkles },
         { id: 'part-payments', label: 'Part Payment', icon: Wallet, badge: counts?.followUpsDue ?? 0 },
         { id: 'department-income', label: 'Department Income', icon: Building2 },
+        { id: 'business-reports', label: 'Business Reports', icon: BarChart3 },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
         { id: 'notifications', label: 'Notification Center', icon: Bell, badge: unreadCount }
       ]
@@ -88,6 +90,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'plans' && <AccountsPlans />}
       {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
       {page === 'department-income' && <AccountsDepartmentIncome />}
+      {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>

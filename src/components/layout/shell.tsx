@@ -1,7 +1,8 @@
 import React from 'react';
-import { HelpCircle, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, HelpCircle, LogOut, Menu, X } from 'lucide-react';
+import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
-import { closeMenu, useMenu } from './menuState';
+import { closeMenu, toggleMenu, useMenu } from './menuState';
 
 /**
  * The shared dashboard shell (the Department Head design handoff): a white sidebar with an Amuwa brand block,
@@ -67,16 +68,28 @@ export const NavGroupLabel: React.FC<{ children: React.ReactNode }> = ({ childre
   <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</div>
 );
 
-export const SidebarBrand: React.FC<{ title: string; subtitle?: string; onClose?: () => void }> = ({ title, subtitle, onClose = closeMenu }) => (
+/** The hamburger that lives in the sidebar, to the right of the brand: collapses the sidebar on desktop, closes the drawer on small screens. */
+export const SidebarToggle: React.FC = () => (
+  <button
+    type="button"
+    onClick={toggleMenu}
+    className="shrink-0 w-10 h-10 rounded-[9px] text-slate-600 hover:bg-slate-100 flex items-center justify-center"
+    aria-label="Collapse menu"
+    aria-controls="app-sidebar"
+  >
+    <Menu className="w-5 h-5 hidden lg:block" aria-hidden="true" />
+    <X className="w-[18px] h-[18px] lg:hidden" aria-hidden="true" />
+  </button>
+);
+
+export const SidebarBrand: React.FC<{ title: string; subtitle?: string; onClose?: () => void }> = ({ title, subtitle }) => (
   <div className="flex items-center gap-2.5 pl-2 pr-1">
     <AmuwaLogo size="sm" />
     <div className="flex-1 min-w-0 leading-tight">
       <span className="block text-base font-extrabold text-slate-900 truncate">{title}</span>
       {subtitle && <span className="block text-xs text-slate-500 truncate">{subtitle}</span>}
     </div>
-    <button type="button" onClick={onClose} className="lg:hidden w-10 h-10 rounded-[9px] text-slate-600 hover:bg-slate-50 flex items-center justify-center" aria-label="Close menu">
-      <X className="w-[18px] h-[18px]" aria-hidden="true" />
-    </button>
+    <SidebarToggle />
   </div>
 );
 
@@ -101,11 +114,26 @@ export const SidebarFrame: React.FC<{
         aria-label={ariaLabel}
       >
         {children}
-        {footer && <div className="mt-auto pt-3 border-t border-slate-100 flex flex-col gap-0.5">{footer}</div>}
+        <div className="mt-auto pt-3 border-t border-slate-100 flex flex-col gap-0.5">
+          <DocumentationLink />
+          {footer}
+        </div>
       </aside>
     </>
   );
 };
+
+/** "User Documentation": opens /documentation (the help pages) in a new tab, from every dashboard. */
+export const DocumentationLink: React.FC = () => (
+  <a
+    href={DOCUMENTATION_ROUTE}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+  >
+    <BookOpen className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.9} aria-hidden="true" /> User Documentation
+  </a>
+);
 
 export const SignOutButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
   <button type="button" onClick={onClick} className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-semibold text-rose-700 hover:bg-rose-50 text-left">
@@ -132,14 +160,17 @@ export const UserChip: React.FC<{ name: string; role: string }> = ({ name, role 
   </div>
 );
 
-/** The hamburger: opens the drawer on small screens, collapses / expands the sidebar on desktop. */
+/**
+ * The top-bar hamburger: it appears only while the sidebar is out of sight (a phone or tablet, or a collapsed sidebar on
+ * desktop) and brings it back. While the sidebar is open, its own hamburger (next to the brand) is the one to use.
+ */
 export const MenuButton: React.FC = () => {
   const { open, collapsed, toggle } = useMenu();
   return (
     <button
       type="button"
       onClick={toggle}
-      className="shrink-0 w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-900 flex items-center justify-center hover:bg-slate-50"
+      className={`shrink-0 w-11 h-11 rounded-xl border border-slate-200 bg-white text-slate-900 flex items-center justify-center hover:bg-slate-50 ${collapsed ? '' : 'lg:hidden'}`}
       aria-label="Toggle menu"
       aria-controls="app-sidebar"
       aria-expanded={open || !collapsed}

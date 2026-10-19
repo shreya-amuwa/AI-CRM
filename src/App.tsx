@@ -390,7 +390,7 @@ const MainAppContent: React.FC = () => {
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
-            ) : currentActiveTab === 'business_reports' && currentDeptId === 'hr' ? (
+            ) : currentActiveTab === 'business_reports' && currentDeptId === 'accounts' ? (
               <BusinessReports />
             ) : currentActiveTab === 'staff_access' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view={currentDeptId === 'hr' ? 'manage' : 'all'} />

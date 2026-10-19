@@ -11,7 +11,8 @@
     "test:db": "supabase/tests/run.sh",
     "test:api": "supabase/tests/run-api.sh",
     "test:unit": "supabase/tests/run-unit.sh",
-    "bootstrap:super-admin": "node scripts/bootstrap-super-admin.mjs"
+    "bootstrap:super-admin": "node scripts/bootstrap-super-admin.mjs",
+    "create:hr-login": "node scripts/create-hr-login.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",

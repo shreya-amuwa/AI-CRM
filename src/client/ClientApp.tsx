@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, Package, Search, Sparkles } from 'lucide-react';
+import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, Package, Search, Sparkles, BookOpen, X } from 'lucide-react';
 import './client.css';
 import { clientApi } from './api';
 import { ClientAuthProvider, useClientAuth } from './auth';
@@ -104,8 +104,8 @@ const Inner: React.FC = () => {
       <div className="cd">
         <div className={`cd-shell ${collapsed ? 'cd-collapsed' : ''}`}>
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={closeNav} />
-          <aside className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
-            <div className="cd-brand"><span className="cd-brand-tile"><img src="/amuwa-logo.png" alt="" /></span><span><b>Amuwa</b><small>Client dashboard</small></span></div>
+          <aside id="cd-sidebar" className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
+            <div className="cd-brand"><span className="cd-brand-tile"><img src="/amuwa-logo.png" alt="" /></span><span><b>Amuwa</b><small>Client dashboard</small></span><button className="cd-side-toggle" onClick={toggleNav} aria-label="Collapse menu" aria-controls="cd-sidebar"><Menu size={20} className="cd-only-desktop" /><X size={18} className="cd-only-mobile" /></button></div>
             <nav className="cd-stack" style={{ gap: 2 }}>
               {SECTIONS.map(({ slug: s, label, Icon }) => (
                 <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
@@ -115,6 +115,9 @@ const Inner: React.FC = () => {
                 </button>
               ))}
             </nav>
+            <a className="cd-nav-item cd-doc-link" href="/documentation" target="_blank" rel="noopener noreferrer">
+              <BookOpen size={20} aria-hidden /> <span>User Documentation</span>
+            </a>
           </aside>
 
           <div className="cd-main">
