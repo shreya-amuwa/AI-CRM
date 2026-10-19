@@ -156,7 +156,7 @@ select test.login('acc_m');
 select test.check((select (d -> 'sales' ->> 'collected')::numeric - coalesce((select (b -> 'sales' ->> 'collected')::numeric from jsonb_array_elements((select data -> 'departments' from br where name = 'before')) b where b ->> 'departmentId' = d ->> 'departmentId'), 0) = 20000
                       and (d -> 'support' ->> 'collected')::numeric - coalesce((select (b -> 'support' ->> 'collected')::numeric from jsonb_array_elements((select data -> 'departments' from br where name = 'before')) b where b ->> 'departmentId' = d ->> 'departmentId'), 0) = 30000 + 11800 + 1500
                    from jsonb_array_elements((select data -> 'departments' from br where name = 'plan')) d
-                  where d ->> 'departmentId' = (select department_id::text from customers where id = (select id from bc where name = 'K1'))),
+                  where d ->> 'departmentId' = test.dept('wabastore')::text),
   'the customer''s department shows the sale under Sales and the add-on, renewal and plan under Support');
 select test.check((select coalesce(sum((d ->> 'collected')::numeric), 0) = (data -> 'organization' ->> 'collected')::numeric from br, jsonb_array_elements(data -> 'departments') d where name = 'plan' group by data),
   'the department rows add up to the organisation total');
