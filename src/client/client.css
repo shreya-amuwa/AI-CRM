@@ -57,6 +57,10 @@
 .cd-side { width: var(--sidebar-w); flex-shrink: 0; background: var(--card); color: var(--fg); border-right: 1px solid var(--border); padding: 20px 14px;
   display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
 .cd-brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 24px; }
+.cd-brand > span:nth-child(2) { flex: 1; min-width: 0; }
+.cd-side-toggle { flex: none; width: 40px; height: 40px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); display: grid; place-items: center; }
+@media (hover: hover) { .cd-side-toggle:hover { background: var(--surface-warm); color: var(--fg); } }
+.cd-only-mobile { display: none; }
 .cd-brand-tile { width: 48px; height: 48px; border-radius: var(--radius-sm); background: #fff; border: 1px solid var(--border); overflow: hidden; flex: none; display: grid; place-items: center; }
 .cd-brand-tile img { width: 100%; height: auto; display: block; }
 .cd-brand b { display: block; font-weight: 800; font-size: 19px; line-height: 1.2; }
@@ -68,6 +72,8 @@
 .cd-nav-item:focus-visible { border-radius: 9px; box-shadow: var(--focus-ring); }
 @media (hover: hover) { .cd-nav-item:hover { background: var(--surface-warm); color: var(--fg); } }
 .cd-nav-item[aria-current='page'] { background: var(--green-light); color: var(--green-house); font-weight: 800; }
+.cd .cd-doc-link { margin-top: auto; text-decoration: none; color: var(--fg-2); }
+@media (hover: hover) { .cd-doc-link:hover { text-decoration: none; } }
 .cd-nav-count { margin-left: auto; min-width: 24px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-warm); color: var(--fg-2);
   font-size: 13px; font-weight: 800; text-align: center; line-height: 22px; }
 .cd-nav-item[aria-current='page'] .cd-nav-count { background: var(--accent); color: var(--accent-on); }
@@ -234,8 +240,9 @@
 .cd-login-card h1 { font-size: 32px; font-weight: 800; color: var(--green-brand); }
 
 /* ---- responsive ---- */
-/* the hamburger: a drawer under 1024px, collapses the sidebar above it */
-@media (min-width: 1024px) { .cd-collapsed .cd-side { display: none; } .cd-collapsed .cd-content { max-width: none; } }
+/* the hamburger lives in the sidebar next to the brand; the top bar shows one only while the sidebar is out of sight */
+.cd-top .cd-burger { display: none; }
+@media (min-width: 1024px) { .cd-collapsed .cd-side { display: none; } .cd-collapsed .cd-content { max-width: none; } .cd-collapsed .cd-top .cd-burger { display: grid; } }
 @media (max-width: 1279px) { .cd-grid.c3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 1023px) {
   .cd { --gutter: 24px; }
@@ -244,6 +251,9 @@
   .cd-side.open { transform: none; visibility: visible; transition: transform 260ms var(--ease); box-shadow: var(--elev-overlay); }
   .cd-scrim.open { display: block; position: fixed; inset: 0; background: var(--scrim); z-index: 80; }
   .cd-content { padding: 16px var(--gutter) 48px; }
+  .cd-top .cd-burger { display: grid; }
+  .cd-only-desktop { display: none; }
+  .cd-only-mobile { display: block; }
   .cd-login { grid-template-columns: 1fr; }
   .cd-login-hero { padding: 32px var(--gutter); gap: 24px; }
   .cd-login-hero h2 { margin-top: 0 !important; }

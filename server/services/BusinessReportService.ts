@@ -3,7 +3,7 @@ import { businessReportQuerySchema, businessTransactionsQuerySchema, invoiceBusi
 import { parse } from '../http/validate.js';
 import type { BusinessReportRepository } from '../repositories/BusinessReportRepository.js';
 
-/** Sales and Support business, by department and employee, from the real payment records (see docs/BUSINESS_REPORTING.md). */
+/** Sales and Support business, by department and employee, for Accounts, from the real payment records (see docs/BUSINESS_REPORTING.md). */
 export class BusinessReportService {
   constructor(private readonly repo: BusinessReportRepository) {}
 

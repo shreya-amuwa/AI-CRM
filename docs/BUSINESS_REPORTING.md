@@ -1,4 +1,4 @@
-# Business attribution and the HR Sales / Support reports
+# Business attribution and the Accounts Sales / Support reports
 
 Migration: `supabase/migrations/20261104000100_business_attribution_reports.sql`
 Tests: `supabase/tests/business_test.sql` (database) and the "Business reports" block of `supabase/tests/api_integration.test.ts` (API).
@@ -12,7 +12,7 @@ Tests: `supabase/tests/business_test.sql` (database) and the "Business reports" 
 | Support member-wise reporting | None. |
 | Add-on purchases credited to Support | None. Add-on payments (`addon_payments`) were counted in the customer's business unit like any other payment. |
 | Renewals credited to Support | None, and **there was no renewal transaction at all**: the system holds renewal *dates* (`customer_services.renews_on`, `customer_plans.renews_on`) but no record that a renewal was billed or paid. |
-| HR visibility of Sales / Support business | None. |
+| Accounts / management visibility of Sales / Support business | None. Accounts' Income and Department Income pages show payments, not who brought them in. |
 | Paid / pending / outstanding / refunded | The payment tables already hold the statuses (`VERIFIED`, `PENDING`, `REVERSED`, `REJECTED`) and each invoice has its own balance. No department-level view existed. |
 
 The accounting basis already in use is **cash**: Accounts' income is the sum of verified payments from the three ledgers (`private.verified_income()`). That rule is kept unchanged.
@@ -50,15 +50,16 @@ Accounts can mark an *additional* invoice (Invoice → "What is this additional 
 
 Amounts are as invoiced and received (GST included) and dates are India time. All figures come from `private.business_ledger()` and `private.business_orders()`; `business_report()` (summary and employee tables) and `business_report_transactions()` (history) read the same filtered ledger, so they always agree. Filters: date range (Today / Last 7 / Last 30 / This month / All / Custom), department (business unit), division, employee, transaction type, payment status.
 
-## How HR sees it
+## How Accounts sees it
 
-HR → sidebar → **Business Reports** (HR department head or team head, and the Super Admin). Tabs: **Overview**, **Sales**, **Support**.
+Accounts dashboard → sidebar → **Business Reports** (every Accounts member and the Accounts head, and the Super Admin, in the Accounts panel). Tabs: **Overview**, **Sales**, **Support**.
 
+- Overview: totals, **income by customer department** (each business unit's collected income split between Sales and Support) and a Sales / Support summary.
 - Sales: total, pending, outstanding, refunded, salesperson-wise table, transaction history with the salesperson on each row.
 - Support: add-on revenue, renewal revenue, subscription revenue and the combined amount, Support member-wise table, transaction history with customer, service, type, amount, date, status and employee.
-- Access is enforced in the database (`private.require_business_reports()`), not only in the UI; everyone else gets `FORBIDDEN`.
+- Access is enforced in the database (`private.require_business_reports()` = the Accounts department or the Super Admin), not only in the UI; everyone else, HR included, gets `FORBIDDEN`.
 
-API: `GET /api/v1/hr/business-report`, `/hr/business-report/transactions`, `/hr/business-report/people`; Accounts: `GET|POST /api/v1/accounts/invoices/:id/business`.
+API: `GET /api/v1/accounts/business-report`, `/accounts/business-report/transactions`, `/accounts/business-report/people`; Accounts: `GET|POST /api/v1/accounts/invoices/:id/business`.
 
 ## Running the migration manually
 

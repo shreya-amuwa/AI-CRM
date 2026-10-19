@@ -175,9 +175,9 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/accounts/finance/expenses/:id', handler: finance.updateExpense, options: S },
   { method: 'DELETE', path: '/accounts/finance/expenses/:id', handler: finance.deleteExpense, options: S },
   { method: 'GET', path: '/accounts/finance/trend', handler: finance.trend },
-  { method: 'GET', path: '/hr/business-report', handler: business.report },
-  { method: 'GET', path: '/hr/business-report/transactions', handler: business.transactions },
-  { method: 'GET', path: '/hr/business-report/people', handler: business.people },
+  { method: 'GET', path: '/accounts/business-report', handler: business.report },
+  { method: 'GET', path: '/accounts/business-report/transactions', handler: business.transactions },
+  { method: 'GET', path: '/accounts/business-report/people', handler: business.people },
   { method: 'GET', path: '/accounts/invoices/:id/business', handler: business.invoiceBusiness },
   { method: 'POST', path: '/accounts/invoices/:id/business', handler: business.tagInvoice, options: S },
 

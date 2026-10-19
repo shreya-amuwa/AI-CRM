@@ -500,9 +500,9 @@ export interface PlanInput { name: string; description?: string | null; monthlyP
 export type { MonthlyPlan };
 
 export const businessReportApi = {
-  report: (q: BusinessReportQuery = {}) => api.get<BusinessReport>('/hr/business-report', { ...q }),
-  transactions: (q: Partial<BusinessTransactionsQuery> = {}) => api.get<BusinessTransactionsPage>('/hr/business-report/transactions', { ...q }),
-  people: () => api.get<BusinessPerson[]>('/hr/business-report/people'),
+  report: (q: BusinessReportQuery = {}) => api.get<BusinessReport>('/accounts/business-report', { ...q }),
+  transactions: (q: Partial<BusinessTransactionsQuery> = {}) => api.get<BusinessTransactionsPage>('/accounts/business-report/transactions', { ...q }),
+  people: () => api.get<BusinessPerson[]>('/accounts/business-report/people'),
   invoiceBusiness: (invoiceId: string) => api.get<InvoiceBusinessInfo>(`/accounts/invoices/${invoiceId}/business`),
   tagInvoice: (invoiceId: string, body: InvoiceBusinessTagInput) => api.post<null>(`/accounts/invoices/${invoiceId}/business`, body)
 };

@@ -1775,7 +1775,7 @@ export interface DeliveryQueueItem {
 
 
 // ---------------------------------------------------------------------------
-// Business reports (HR / Super Admin): Sales and Support business, from the real payment records
+// Business reports (Accounts / Super Admin): Sales and Support business, from the real payment records
 // (migration 20261104000100_business_attribution_reports.sql). Amounts are rupees (GST included, as invoiced).
 // ---------------------------------------------------------------------------
 export const BUSINESS_DIVISIONS = ['SALES', 'SUPPORT'] as const;
@@ -1814,10 +1814,25 @@ export interface BusinessSection extends BusinessFigures {
   byType: BusinessByType[];
   employees: BusinessEmployeeRow[];
 }
+export interface BusinessDepartmentSide {
+  collected: number;
+  pending: number;
+  refunded: number;
+  transactions: number;
+}
+export interface BusinessDepartmentRow {
+  departmentId: string | null;
+  name: string;
+  sales: BusinessDepartmentSide;
+  support: BusinessDepartmentSide;
+  collected: number;
+}
 export interface BusinessReport {
   range: { from: string | null; to: string | null };
   filters: { departmentId: string | null; division: BusinessDivision | null; employeeId: string | null; type: BusinessTxType | null; status: BusinessPayStatus | null };
   sections: { sales?: BusinessSection; support?: BusinessSection };
+  /** Income by the customer's business unit, split between Sales and Support. */
+  departments: BusinessDepartmentRow[];
   unclassified: { collected: number; pending: number; transactions: number };
   organization: { collected: number; pending: number; refunded: number; billed: number; outstanding: number };
   review: { withoutEmployee: number; withoutEmployeeAmount: number; unclassifiedInvoices: number };

@@ -1,12 +1,12 @@
 -- =============================================================================
--- Business attribution and the HR Sales / Support reports (migration 20261104000100).
+-- Business attribution and the Accounts Sales / Support reports (migration 20261104000100).
 -- Runs after the other suites (same database, reuses the `test` helpers, users and test.inv_payload).
 -- Earlier suites leave their own payments in the database, so every figure is checked as a CHANGE from a baseline.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
 
-\echo '--- 60. Business attribution and the HR reports'
+\echo '--- 60. Business attribution and the Accounts business reports'
 reset role;
 create temp table bc (name text primary key, id uuid);
 create temp table bq (name text primary key, id uuid default gen_random_uuid());
@@ -33,9 +33,9 @@ create function test.bemp(p_report jsonb, p_section text, p_employee uuid, p_key
 $$;
 grant execute on function test.bnum(jsonb, text, text), test.btype(jsonb, text, text, text), test.bemp(jsonb, text, uuid, text) to authenticated;
 
--- ---------------------------------------------------------------- baseline (HR manager)
+-- ---------------------------------------------------------------- baseline (Accounts)
 set role authenticated;
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'before', public.business_report();
 insert into br select 'before_tm_a', public.business_report(p_employee => test.id('tm_a'));
 insert into br select 'before_sup_b', public.business_report(p_employee => test.id('sup_b'));
@@ -54,7 +54,7 @@ set role authenticated;
 select test.login('dh_acc');
 select accounts_reverse_payment((select id from bpay where name = 'k1_part'), 'Cheque bounced');
 
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'sale', public.business_report();
 select test.check(test.bnum((select data from br where name = 'sale'), 'sales', 'collected') - test.bnum((select data from br where name = 'before'), 'sales', 'collected') = 20000,
   'the verified initial-sale payment (20,000) is Sales business; the reversed one is not collected');
@@ -85,7 +85,7 @@ insert into addon_payments (request_id, customer_id, amount, method, reference, 
 select r.id, r.customer_id, 999, 'UPI', 'BZ-AD-3', now(), 'REJECTED' from addon_requests r where r.customer_id = (select id from bc where name = 'K1');
 
 set role authenticated;
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'addon', public.business_report();
 select test.check(test.btype((select data from br where name = 'addon'), 'support', 'ADDON', 'collected') - test.btype((select data from br where name = 'before'), 'support', 'ADDON', 'collected') = 30000,
   'the add-on payment is Support business (the customer was onboarded by Sales)');
@@ -110,7 +110,7 @@ insert into bq (name) values ('issue');
 select test.login('acc_m');
 insert into br select 'inv', accounts_issue_invoice((select id from bq where name = 'issue'), test.inv_payload((select id from bc where name = 'K1'), 10000, 'ADDITIONAL'));
 insert into br select 'p1', accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from br where name = 'inv'), 'UPI', 'BZ-RN-1', null, null, 11800, gen_random_uuid());
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'unclassified', public.business_report();
 select test.check((select (data -> 'unclassified' ->> 'collected')::numeric - (select (data -> 'unclassified' ->> 'collected')::numeric from br where name = 'before') = 11800
   and test.bnum(data, 'support', 'collected') = test.bnum((select data from br where name = 'addon'), 'support', 'collected')
@@ -128,7 +128,7 @@ select test.login('acc_m');
 select test.must_fail($$select accounts_tag_invoice_business((select (data ->> 'id')::uuid from br where name = 'inv'), 'ADDON')$$, 'once money is verified the classification cannot be changed by Accounts', 'can no longer be changed');
 select test.login('tm_a');
 select test.must_fail($$select accounts_tag_invoice_business((select (data ->> 'id')::uuid from br where name = 'inv'), 'RENEWAL')$$, 'a salesperson cannot classify an invoice', 'Only the Accounts');
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'renewal', public.business_report();
 select test.check(test.btype((select data from br where name = 'renewal'), 'support', 'RENEWAL', 'collected') - test.btype((select data from br where name = 'before'), 'support', 'RENEWAL', 'collected') = 11800,
   'once classified as a renewal, the payment is Support renewal business');
@@ -143,13 +143,23 @@ insert into monthly_plans (code, name, monthly_price) values ('BZ_PLAN', 'Busine
 insert into customer_plans (customer_id, plan_id, status, started_at, renews_on, payment_status, price_at_start)
 select (select id from bc where name = 'K1'), (select id from monthly_plans where code = 'BZ_PLAN'), 'ACTIVE', current_date, current_date + 30, 'PAID', 1500;
 set role authenticated;
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'plan', public.business_report();
 select test.check(test.btype((select data from br where name = 'plan'), 'support', 'SUBSCRIPTION', 'collected') - test.btype((select data from br where name = 'before'), 'support', 'SUBSCRIPTION', 'collected') = 1500,
   'a paid monthly plan is Support subscription business');
 select test.check((select count(*) >= 1 from jsonb_array_elements((select data -> 'sections' -> 'support' -> 'employees' from br where name = 'plan')) t
                     where (t ->> 'employeeId') is null and (t ->> 'collected')::numeric >= 1500),
   'with no responsible employee invented for it: it is listed under "Not recorded"');
+
+-- ---------------------------------------------------------------- 4b. income by the customer's business unit
+select test.login('acc_m');
+select test.check((select (d -> 'sales' ->> 'collected')::numeric - coalesce((select (b -> 'sales' ->> 'collected')::numeric from jsonb_array_elements((select data -> 'departments' from br where name = 'before')) b where b ->> 'departmentId' = d ->> 'departmentId'), 0) = 20000
+                      and (d -> 'support' ->> 'collected')::numeric - coalesce((select (b -> 'support' ->> 'collected')::numeric from jsonb_array_elements((select data -> 'departments' from br where name = 'before')) b where b ->> 'departmentId' = d ->> 'departmentId'), 0) = 30000 + 11800 + 1500
+                   from jsonb_array_elements((select data -> 'departments' from br where name = 'plan')) d
+                  where d ->> 'departmentId' = (select department_id::text from customers where id = (select id from bc where name = 'K1'))),
+  'the customer''s department shows the sale under Sales and the add-on, renewal and plan under Support');
+select test.check((select coalesce(sum((d ->> 'collected')::numeric), 0) = (data -> 'organization' ->> 'collected')::numeric from br, jsonb_array_elements(data -> 'departments') d where name = 'plan' group by data),
+  'the department rows add up to the organisation total');
 
 -- ---------------------------------------------------------------- 5. consistency: no double counting, one rule everywhere
 reset role;
@@ -159,7 +169,7 @@ select test.check((select sum(amount) from private.business_ledger() where custo
 select test.check((select count(*) = count(distinct tx_key) from private.business_ledger()), 'every payment appears in the ledger exactly once');
 select test.check((select count(*) = 0 from private.business_ledger() l1 join private.business_ledger() l2 on l1.source_id = l2.source_id and l1.tx_key <> l2.tx_key), 'no payment is counted under two sources');
 set role authenticated;
-select test.login('hr_head');
+select test.login('acc_m');
 select test.check((select test.bnum(data, 'sales', 'collected') + test.bnum(data, 'support', 'collected') = (data -> 'organization' ->> 'collected')::numeric from br where name = 'plan'),
   'the organisation total is Sales + Support, nothing more (unclassified money is left out of both)');
 insert into br select 'k1_all', public.business_report(p_employee => null, p_type => 'ADDON');
@@ -171,7 +181,7 @@ select test.check((select coalesce((select sum((i ->> 'amount')::numeric) from j
   'and they add up to the same amount');
 
 -- ---------------------------------------------------------------- 6. attribution does not follow the reassignment (the customer now belongs to Support)
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'after_reassign', public.business_report(p_employee => test.id('tm_a'));
 select test.check(test.bnum((select data from br where name = 'after_reassign'), 'sales', 'collected') - test.bnum((select data from br where name = 'before_tm_a'), 'sales', 'collected') = 20000,
   'the customer now belongs to a Support member, yet the earlier sale stays with the salesperson who made it');
@@ -194,7 +204,7 @@ select test.check((select jsonb_array_length(public.business_report_people()) >=
 reset role;
 update invoice_payments set status = 'REVERSED' where reference = 'BZ-RN-1';
 set role authenticated;
-select test.login('hr_head');
+select test.login('acc_m');
 insert into br select 'refunded', public.business_report();
 select test.check(test.btype((select data from br where name = 'refunded'), 'support', 'RENEWAL', 'collected') = test.btype((select data from br where name = 'before'), 'support', 'RENEWAL', 'collected')
               and test.btype((select data from br where name = 'refunded'), 'support', 'RENEWAL', 'refunded') - test.btype((select data from br where name = 'before'), 'support', 'RENEWAL', 'refunded') = 11800
@@ -208,22 +218,24 @@ set role authenticated;
 
 -- ---------------------------------------------------------------- 10. who may read it
 select test.login('tm_a');
-select test.must_fail($$select public.business_report()$$, 'a salesperson cannot read the business report', 'Only HR managers');
-select test.must_fail($$select public.business_report_transactions()$$, 'nor the transaction list', 'Only HR managers');
+select test.must_fail($$select public.business_report()$$, 'a salesperson cannot read the business report', 'Only the Accounts department');
+select test.must_fail($$select public.business_report_transactions()$$, 'nor the transaction list', 'Only the Accounts department');
 select test.login('sup_b');
-select test.must_fail($$select public.business_report()$$, 'a Support member cannot', 'Only HR managers');
-select test.login('acc_m');
-select test.must_fail($$select public.business_report()$$, 'an Accounts member cannot (they have Accounts income)', 'Only HR managers');
-select test.login('dh_wab');
-select test.must_fail($$select public.business_report()$$, 'another department''s head cannot', 'Only HR managers');
-select test.must_fail($$select public.business_report_people()$$, 'nor read who is in the records', 'Only HR managers');
+select test.must_fail($$select public.business_report()$$, 'a Support member cannot', 'Only the Accounts department');
 select test.login('hr_head');
-select test.check((select public.business_report() is not null), 'the HR department head can');
+select test.must_fail($$select public.business_report()$$, 'HR cannot (this is Accounts'' report)', 'Only the Accounts department');
+select test.login('dh_wab');
+select test.must_fail($$select public.business_report()$$, 'another department''s head cannot', 'Only the Accounts department');
+select test.must_fail($$select public.business_report_people()$$, 'nor read who is in the records', 'Only the Accounts department');
+select test.login('acc_m');
+select test.check((select public.business_report() is not null), 'an Accounts member can');
+select test.login('dh_acc');
+select test.check((select public.business_report() is not null), 'and the Accounts department head');
 select test.login('sa');
 select test.check((select public.business_report() is not null), 'and the Super Admin can');
 select test.must_fail($$select * from invoice_business_tags$$, 'the tag table has no direct access', 'permission denied');
 reset role;
 set role authenticated;
-select test.login('hr_head');
+select test.login('acc_m');
 select test.must_fail($$select * from private.business_ledger()$$, 'the ledger itself is not callable by a signed-in user (only through the checked report)', 'permission denied');
 reset role;

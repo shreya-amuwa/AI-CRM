@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
 import { closeMenu, useMenu } from './menuState';
+import { DocumentationLink, SidebarToggle } from './shell';
 
 export type ActiveTab =
   | 'dashboard'
@@ -159,6 +160,8 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
     // Customers who paid part of the amount: balance follow-ups.
     { id: 'part_payments' as ActiveTab, label: 'Part Payments', icon: Wallet },
     { id: 'income', label: 'Department Income', icon: TrendingUp },
+    // Sales and Support business, salesperson-wise and Support member-wise
+    { id: 'business_reports' as ActiveTab, label: 'Business Reports', icon: BarChart3 },
     { id: 'expense', label: 'Expenses', icon: Receipt },
     { id: 'invoice', label: 'Invoices & Quotations', icon: FileText },
     NOTIFICATION_TAB // MUST BE LAST!
@@ -300,14 +303,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // HR: adding a member and managing access are two separate pages; Client notices sit below HR & Operations.
   // (Only a Department Head, or the Super Admin, can publish a client notice: the database refuses anyone else.)
   const canSendClientNotices = user?.role === 'superadmin' || (user?.role === 'hr' && profileRole === 'DEPARTMENT_HEAD');
-  // Sales / Support business reports: HR managers and the Super Admin (the database refuses anyone else)
-  const canSeeBusinessReports = user?.role === 'superadmin' || (user?.role === 'hr' && (profileRole === 'DEPARTMENT_HEAD' || profileRole === 'TEAM_HEAD'));
   const hrNav: typeof baseNavItems = [
     baseNavItems[0],
     { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
     { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
     ...baseNavItems.slice(1, -1),
-    ...(canSeeBusinessReports ? [{ id: 'business_reports' as ActiveTab, label: 'Business Reports', icon: BarChart3 }] : []),
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
     baseNavItems[baseNavItems.length - 1]
   ];
@@ -344,7 +344,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       
       {/* Top Nav Section */}
       <div className="p-3.5 space-y-4 overflow-y-auto max-h-[calc(100vh-6rem)]">
-        
+        <div className="flex items-center justify-between gap-2 pl-1">
+          <span className="text-sm font-extrabold text-slate-900 truncate">{deptTitle}</span>
+          <SidebarToggle />
+        </div>
+
         {/* Back to the Department Hub: Super Admin only */}
         {onNavigateHome && (
           <button
@@ -398,6 +402,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </div>
 
+      </div>
+
+      <div className="p-3.5 pt-2 border-t border-slate-100">
+        <DocumentationLink />
       </div>
 
     </aside>
