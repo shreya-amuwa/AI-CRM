@@ -15,6 +15,17 @@ Migration: `supabase/migrations/20261027000100_hr_attendance_leave_workflow.sql`
 * A difference above 15 minutes notifies the HR department once per employee and day.
 
 ## HR logins (ID and password)
+
+**Create the first HR login from a terminal** (the same HR dashboard, behind its own sign-in):
+
+```
+SUPABASE_URL=https://<project>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<service key> \
+npm run create:hr-login -- --email hr@yourcompany.com --name "HR Manager" --super-admin <super admin e-mail> --generate
+```
+It creates the HR Department Head (use `--role TEAM_HEAD` or `TEAM_MEMBER` for an HR lead / member; a department can have only one head)
+exactly as Add Member does, and prints the login ID and a generated password once. Without `--generate` the password is typed without echo
+(or taken from `HR_LOGIN_PASSWORD`); it is never stored or put on the command line.
+
 Like Accounts, the Super Admin creates HR logins: open the **HR Department** panel -> **Add Member**, choose the role (Department Head,
 Team Lead or Team Member) and the team, set the e-mail (the login ID) and a password. Everyone created in the HR department signs in
 and lands on the **same HR dashboard** (attendance, HR & Operations, offer letters, leave). Their role still decides what they can do:
