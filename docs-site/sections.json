@@ -1,0 +1,22 @@
+{
+  "title": "Amuwa AI CRM Documentation",
+  "sections": [
+    { "id": "getting-started", "title": "Getting Started", "audience": "internal" },
+    { "id": "customer-journeys", "title": "Customer Journeys", "audience": "internal" },
+    { "id": "sales", "title": "Sales Guide", "audience": "internal" },
+    { "id": "support", "title": "Support Guide", "audience": "internal" },
+    { "id": "accounts", "title": "Accounts Guide", "audience": "internal" },
+    { "id": "technical-consultant", "title": "Technical Consultant Guide", "audience": "internal" },
+    { "id": "delivery", "title": "Service Departments", "audience": "internal" },
+    { "id": "department-head", "title": "Department Head Guide", "audience": "internal" },
+    { "id": "super-admin", "title": "Super Admin Guide", "audience": "internal" },
+    { "id": "hr", "title": "HR Guide", "audience": "internal" },
+    { "id": "shared", "title": "Shared Features", "audience": "internal" },
+    { "id": "client", "title": "Client Dashboard Guide", "audience": "client" },
+    { "id": "troubleshooting", "title": "Troubleshooting", "audience": "internal" },
+    { "id": "faq", "title": "FAQ", "audience": "internal" },
+    { "id": "reference", "title": "Glossary and Reference", "audience": "internal" },
+    { "id": "changelog", "title": "Changelog", "audience": "internal" },
+    { "id": "maintaining", "title": "Maintaining the Docs", "audience": "internal" }
+  ]
+}

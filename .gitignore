@@ -21,3 +21,6 @@ Thumbs.db
 
 # Local test artefacts
 .unit_*.tmp.mjs
+
+# Documentation site build output
+docs-site/dist-client/
