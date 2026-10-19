@@ -285,3 +285,14 @@ export const generatedInvoiceController = {
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler
 };
+
+export const businessReportController = {
+  report: (async ctx => ok(await svc(ctx).businessReport.report(ctx.req.query))) as Handler,
+  transactions: (async ctx => ok(await svc(ctx).businessReport.transactions(ctx.req.query))) as Handler,
+  people: (async ctx => ok(await svc(ctx).businessReport.people())) as Handler,
+  invoiceBusiness: (async ctx => ok(await svc(ctx).businessReport.invoiceBusiness(ctx.params.id))) as Handler,
+  tagInvoice: (async ctx => {
+    await svc(ctx).businessReport.tagInvoice(ctx.params.id, ctx.req.body);
+    return ok(null);
+  }) as Handler
+};

@@ -1031,3 +1031,39 @@ export const clientDocumentReviewSchema = z
 export const clientDocumentQueueQuerySchema = z.object({ status: z.enum(['PENDING', 'REVIEWED']).default('PENDING') });
 
 export const clientActivityCustomersQuerySchema = z.object({ search: trimmed(100).optional() });
+
+
+// ---------------------------------------------------------------------------
+// Business reports (HR / Super Admin)
+// ---------------------------------------------------------------------------
+const businessFilters = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  departmentId: uuidSchema.optional(),
+  division: z.enum(['SALES', 'SUPPORT']).optional(),
+  employeeId: uuidSchema.optional(),
+  type: z.enum(['INITIAL_SALE', 'ADDON', 'RENEWAL', 'SUBSCRIPTION', 'UNCLASSIFIED']).optional(),
+  status: z.enum(['COLLECTED', 'PENDING', 'REFUNDED']).optional()
+};
+const businessRange = (v: { from?: string; to?: string }) => !v.from || !v.to || v.to >= v.from;
+export const businessReportQuerySchema = z.object(businessFilters).refine(businessRange, { message: 'The end date is before the start date.', path: ['to'] });
+export type BusinessReportQuery = z.infer<typeof businessReportQuerySchema>;
+export const businessTransactionsQuerySchema = z
+  .object({
+    ...businessFilters,
+    search: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .refine(businessRange, { message: 'The end date is before the start date.', path: ['to'] });
+export type BusinessTransactionsQuery = z.infer<typeof businessTransactionsQuerySchema>;
+
+export const invoiceBusinessTagSchema = z
+  .object({
+    kind: z.enum(['RENEWAL', 'ADDON', 'OTHER']),
+    serviceCode: z.preprocess(v => (v === '' ? null : v), z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).nullable().optional()),
+    invoiceRequestId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
+    note: optionalText(500)
+  })
+  .strict();
+export type InvoiceBusinessTagInput = z.infer<typeof invoiceBusinessTagSchema>;

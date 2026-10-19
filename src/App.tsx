@@ -9,6 +9,7 @@ import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
 import { DepartmentSelector } from './components/dashboard/DepartmentSelector';
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
+import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { TabBar } from './components/layout/TabBar';
 
@@ -389,6 +390,8 @@ const MainAppContent: React.FC = () => {
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
+            ) : currentActiveTab === 'business_reports' && currentDeptId === 'hr' ? (
+              <BusinessReports />
             ) : currentActiveTab === 'staff_access' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view={currentDeptId === 'hr' ? 'manage' : 'all'} />
             ) : currentActiveTab === 'notifications' ? (

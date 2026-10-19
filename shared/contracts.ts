@@ -1772,3 +1772,90 @@ export interface DeliveryQueueItem {
   paymentStatus: PaymentStatus;
   clientLogin: boolean;
 }
+
+
+// ---------------------------------------------------------------------------
+// Business reports (HR / Super Admin): Sales and Support business, from the real payment records
+// (migration 20261104000100_business_attribution_reports.sql). Amounts are rupees (GST included, as invoiced).
+// ---------------------------------------------------------------------------
+export const BUSINESS_DIVISIONS = ['SALES', 'SUPPORT'] as const;
+export type BusinessDivision = (typeof BUSINESS_DIVISIONS)[number];
+/** UNCLASSIFIED: an additional invoice Accounts has not yet said is a renewal or an add-on; it is credited to neither department. */
+export const BUSINESS_TX_TYPES = ['INITIAL_SALE', 'ADDON', 'RENEWAL', 'SUBSCRIPTION', 'UNCLASSIFIED'] as const;
+export type BusinessTxType = (typeof BUSINESS_TX_TYPES)[number];
+export const BUSINESS_PAY_STATUSES = ['COLLECTED', 'PENDING', 'REFUNDED'] as const;
+export type BusinessPayStatus = (typeof BUSINESS_PAY_STATUSES)[number];
+
+export interface BusinessFigures {
+  /** Verified payments (money received). */
+  collected: number;
+  /** Recorded but not yet verified by Accounts. */
+  pending: number;
+  /** Payments that were reversed. */
+  refunded: number;
+  /** Number of collected payments. */
+  transactions: number;
+  customers: number;
+  /** Agreed / invoiced amount of the orders in the range. */
+  billed: number;
+  /** billed - collected for those orders, as of now (never below zero). */
+  outstanding: number;
+}
+export interface BusinessByType extends BusinessFigures {
+  type: BusinessTxType;
+}
+export interface BusinessEmployeeRow extends BusinessFigures {
+  /** null: the records do not say who was responsible (listed for manual review). */
+  employeeId: string | null;
+  name: string;
+}
+export interface BusinessSection extends BusinessFigures {
+  orders: number;
+  byType: BusinessByType[];
+  employees: BusinessEmployeeRow[];
+}
+export interface BusinessReport {
+  range: { from: string | null; to: string | null };
+  filters: { departmentId: string | null; division: BusinessDivision | null; employeeId: string | null; type: BusinessTxType | null; status: BusinessPayStatus | null };
+  sections: { sales?: BusinessSection; support?: BusinessSection };
+  unclassified: { collected: number; pending: number; transactions: number };
+  organization: { collected: number; pending: number; refunded: number; billed: number; outstanding: number };
+  review: { withoutEmployee: number; withoutEmployeeAmount: number; unclassifiedInvoices: number };
+}
+export interface BusinessTransaction {
+  key: string;
+  source: 'CUSTOMER_PAYMENT' | 'ADDON_PAYMENT' | 'INVOICE_PAYMENT' | 'PLAN_ACTIVATION';
+  type: BusinessTxType;
+  division: BusinessDivision | null;
+  amount: number;
+  status: BusinessPayStatus;
+  occurredAt: string;
+  customerId: string;
+  customerName: string;
+  company: string | null;
+  customerCode: string | null;
+  departmentId: string | null;
+  department: string | null;
+  service: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
+  reference: string | null;
+  method: string | null;
+}
+export type BusinessTransactionsPage = Paginated<BusinessTransaction>;
+export interface BusinessPerson {
+  id: string;
+  name: string;
+  division: string | null;
+  department: string | null;
+}
+
+export type InvoiceBusinessKind = 'RENEWAL' | 'ADDON' | 'OTHER';
+export interface InvoiceBusinessInfo {
+  purpose: InvoicePurpose;
+  tag: { kind: InvoiceBusinessKind; serviceCode: string | null; invoiceRequestId: string | null; responsibleId: string | null; responsible: string | null; note: string | null } | null;
+  /** Payments are verified: only the Super Admin can still change the classification. */
+  locked: boolean;
+  /** Open invoice requests a Support member made for this customer (link one to credit that member). */
+  requests: { id: string; requestedBy: string | null; requestedByName: string | null; fromMonth: string; toMonth: string; note: string | null; createdAt: string }[];
+}

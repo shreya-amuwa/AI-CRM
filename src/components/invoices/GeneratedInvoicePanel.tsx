@@ -6,6 +6,7 @@ import { generatedInvoicesApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, notifyPipelineChanged, Pill, selectCls, todayIso, type Tone } from '../team-member/pipeline/shared';
 import { rupees } from './invoiceShared';
 import { toPaise } from '../../../shared/invoiceCalc';
+import { InvoiceBusinessCard } from './InvoiceBusinessCard';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = { UPI: 'UPI', BANK_TRANSFER: 'Bank transfer', CASH: 'Cash', CARD: 'Card', CHEQUE: 'Cheque', OTHER: 'Other' };
 const stamp = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '-');
@@ -409,6 +410,7 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
         <div className="text-[11px] text-slate-500 text-right">{t.inWords}</div>
       </dl>
       {g.paymentSummary && <PaymentSummaryCard summary={g.paymentSummary} />}
+      {canManage && g.purpose === 'ADDITIONAL' && <InvoiceBusinessCard invoiceId={invoice.id} />}
       {steps && <StepList steps={steps} />}
       <div className="grid sm:grid-cols-2 gap-3">
         <StageCard invoice={invoice} stage="UNPAID" state={g.unpaid} canManage={canManage} onRun={run} />
