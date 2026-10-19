@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, ChevronLeft, ChevronRight
@@ -100,6 +100,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const showForm = view === 'manage' ? false : view !== 'members' || formOpen;
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // The Create button sits at the bottom of a long form: show the reason next to it and bring it into view.
+  const formErrorRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (formError) formErrorRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [formError]);
   const [created, setCreated] = useState<{ profile: Profile; dashboard: string; password?: string } | null>(null);
   const [showCreatedPassword, setShowCreatedPassword] = useState(false);
   const [actionNotice, setActionNotice] = useState<{ text: string; ok: boolean } | null>(null);
@@ -209,6 +214,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setFormError(null);
     setCreated(null);
     setShowCreatedPassword(false);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (dateOfBirth && dateOfBirth > todayIso) {
+      setFormError('Date of birth cannot be in the future. Please enter the real date of birth.');
+      return;
+    }
     const parsed = userCreateSchema.safeParse({
       email,
       fullName,
@@ -387,12 +397,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <h3 className="text-sm font-bold text-slate-900">Add Team Member</h3>
           </div>
 
-          {formError && (
-            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" /> <span>{formError}</span>
-            </div>
-          )}
-
           {created && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs space-y-1.5">
               <div className="flex items-center gap-1.5 font-bold">
@@ -514,7 +518,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </label>
             <label className="block text-xs font-semibold text-slate-700">
               Date of birth *
-              <input type="date" className={`${inputClass} mt-1`} value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} required />
+              <input type="date" className={`${inputClass} mt-1`} max={new Date().toISOString().slice(0, 10)} value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} required />
             </label>
             <label className="block text-xs font-semibold text-slate-700">
               Blood group *
@@ -545,6 +549,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               <span>
                 {department?.name || 'This department'} already has a Department Head (<strong>{existingHead.fullName}</strong>). A department can have only one.
               </span>
+            </div>
+          )}
+
+          {formError && (
+            <div ref={formErrorRef} role="alert" className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" /> <span>{formError}</span>
             </div>
           )}
 
