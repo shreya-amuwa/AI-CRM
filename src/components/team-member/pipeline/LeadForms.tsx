@@ -828,10 +828,10 @@ export const EditLeadView: React.FC<{
           defaultAmount={lead.dealAmount ?? lead.expectedBudget}
           hasServices={selected.length > 0}
           onClose={() => setSendOpen(false)}
-          onConfirm={async (amount, note) => {
+          onConfirm={async (amount, note, taxBasis) => {
             // Persist pending edits first; the database then re-checks everything.
             if (!(await save())) return false;
-            await pipelineApi.sendToAccounts(id, { amount, note });
+            await pipelineApi.sendToAccounts(id, { amount, note, taxBasis });
             notifyPipelineChanged();
             hydrate(await pipelineApi.get(id));
             setSendOpen(false);
@@ -884,9 +884,11 @@ const SendToAccountsDialog: React.FC<{
   defaultAmount: number | null;
   hasServices: boolean;
   onClose: () => void;
-  onConfirm: (amount: number, note: string | null) => Promise<boolean>;
+  onConfirm: (amount: number, note: string | null, taxBasis: 'INCLUSIVE' | 'EXCLUSIVE') => Promise<boolean>;
 }> = ({ leadName, defaultAmount, hasServices, onClose, onConfirm }) => {
   const [amount, setAmount] = useState(defaultAmount ? String(defaultAmount) : '');
+  // Services are normally sold at a price before GST, so that is the default; Sales can say the amount already includes GST.
+  const [taxBasis, setTaxBasis] = useState<'INCLUSIVE' | 'EXCLUSIVE'>('EXCLUSIVE');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -899,7 +901,7 @@ const SendToAccountsDialog: React.FC<{
     setBusy(true);
     setError(null);
     try {
-      if (!(await onConfirm(n, note.trim() || null))) setBusy(false);
+      if (!(await onConfirm(n, note.trim() || null, taxBasis))) setBusy(false);
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
@@ -910,6 +912,17 @@ const SendToAccountsDialog: React.FC<{
       <form onSubmit={submit} className="space-y-3" noValidate>
         <Field label="Agreed amount (₹)" required htmlFor="accounts-amount">
           <input id="accounts-amount" type="number" min={1} step={1} inputMode="numeric" className={inputCls} value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={blockDecimals} />
+        </Field>
+        <Field label="Does this amount include GST?" required htmlFor="accounts-basis">
+          <select id="accounts-basis" className={inputCls} value={taxBasis} onChange={e => setTaxBasis(e.target.value as 'INCLUSIVE' | 'EXCLUSIVE')}>
+            <option value="EXCLUSIVE">No, GST is added on top (amount excluding GST)</option>
+            <option value="INCLUSIVE">Yes, GST is already included in this amount</option>
+          </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {taxBasis === 'EXCLUSIVE'
+              ? 'Accounts adds GST when they issue the invoice, so the customer pays more than the amount above. The total payable is shown to Accounts and on every invoice.'
+              : 'The customer pays exactly this amount, GST included.'}
+          </p>
         </Field>
         <Field label="Note for Accounts (optional)" htmlFor="accounts-note">
           <textarea id="accounts-note" rows={2} maxLength={1000} className={inputCls} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Customer will pay half today by UPI" />

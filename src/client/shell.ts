@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-export type SectionSlug = 'overview' | 'services' | 'explore' | 'plans' | 'calendar' | 'documents' | 'invoices' | 'tickets' | 'notifications';
+export type SectionSlug = 'overview' | 'services' | 'campaigns' | 'explore' | 'plans' | 'calendar' | 'documents' | 'invoices' | 'tickets' | 'notifications';
 
 export interface Shell { go: (to: string) => void; unread: number; refreshUnread: () => void; sub: string }
 export const ShellCtx = createContext<Shell | null>(null);

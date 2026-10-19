@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Invoice, InvoicePrefill, InvoiceStage } from '../../shared/contracts.js';
+import type { AgreementReviewItem, Invoice, InvoicePrefill, InvoiceStage, OrderSummary } from '../../shared/contracts.js';
 import type { GeneratedInvoiceIssueInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
@@ -24,6 +24,15 @@ export class GeneratedInvoiceRepository {
 
   async prefill(customerId: string, purpose: string, addonRequestId?: string): Promise<InvoicePrefill> {
     return unwrap(await this.db.rpc('accounts_invoice_prefill', { p_customer: customerId, p_purpose: purpose, p_addon_request: addonRequestId ?? null })) as InvoicePrefill;
+  }
+
+  async setAgreementBasis(customerId: string, basis: string, reason: string): Promise<OrderSummary> {
+    return unwrap(await this.db.rpc('accounts_set_agreement_basis', { p_customer: customerId, p_basis: basis, p_reason: reason })) as OrderSummary;
+  }
+
+  /** Older agreements (no recorded basis) that already have invoices: listed for Accounts to reconcile, never changed silently. */
+  async agreementReview(): Promise<AgreementReviewItem[]> {
+    return unwrap(await this.db.rpc('accounts_agreement_review')) as AgreementReviewItem[];
   }
 
   async issue(input: GeneratedInvoiceIssueInput): Promise<Invoice & { replayed: boolean }> {

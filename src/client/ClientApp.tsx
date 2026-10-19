@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Menu, Package, Search, Sparkles } from 'lucide-react';
+import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, Package, Search, Sparkles } from 'lucide-react';
 import './client.css';
 import { clientApi } from './api';
 import { ClientAuthProvider, useClientAuth } from './auth';
 import { usePath } from './hooks';
 import { Login } from './Login';
+import { SetPassword } from './SetPassword';
+import { Campaigns } from './Campaigns';
 import { NewServicePopup, NoticeBanners, useAnnouncements } from './Announcements';
 import { Overview } from './Overview';
 import { MyServices } from './MyServices';
@@ -23,6 +25,7 @@ import { ShellCtx, dashboardPath, type SectionSlug } from './shell';
 export const SECTIONS = [
   { slug: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { slug: 'services', label: 'My Services', Icon: Package },
+  { slug: 'campaigns', label: 'Campaigns', Icon: Megaphone },
   { slug: 'explore', label: 'Explore Services', Icon: Search },
   { slug: 'plans', label: 'Monthly Plans', Icon: Sparkles },
   { slug: 'calendar', label: 'Calendar', Icon: CalendarDays },
@@ -47,7 +50,7 @@ const Inner: React.FC = () => {
 
   // /client and /client/login both lead to the right place.
   useEffect(() => {
-    if (status === 'loading') return;
+    if (status === 'loading' || path === '/client/set-password') return;
     const onLogin = path === '/client/login' || path === '/client';
     if (status === 'signedOut' && path !== '/client/login') go('/client/login', true);
     else if (status === 'ready' && (onLogin || !path.startsWith('/client/dashboard'))) go(dashboardPath('overview'), true);
@@ -70,6 +73,8 @@ const Inner: React.FC = () => {
     return () => document.removeEventListener('mousedown', close);
   }, [menu]);
 
+  // opened from the set-password e-mail: works signed in (the link) or not (expired link)
+  if (path === '/client/set-password') return <div className="cd"><SetPassword /></div>;
   if (status === 'loading') return <div className="cd" style={{ padding: 24 }}><LoadingBlock rows={2} /></div>;
   if (status === 'signedOut') return <div className="cd"><Login onDone={() => go(dashboardPath('overview'), true)} /></div>;
   if (!me) return null;
@@ -82,6 +87,7 @@ const Inner: React.FC = () => {
   const page = (() => {
     switch (slug) {
       case 'services': return <MyServices />;
+      case 'campaigns': return <Campaigns />;
       case 'explore': return <ExploreServices />;
       case 'plans': return <MonthlyPlans />;
       case 'calendar': return <Calendar />;

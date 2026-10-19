@@ -73,6 +73,72 @@ function fromPrefill(p: InvoicePrefill): FormState {
  * "Generate & Send Invoice" saves the invoice, creates its PDF, stores it privately and e-mails it to the customer;
  * the result lists each step so a failed PDF or e-mail can be retried from the invoice.
  */
+/**
+ * What Sales agreed, read from the database: the agreed amount and whether it includes GST, what is already invoiced and what is
+ * left to invoice, plus the total payable and the order balance. Accounts can correct the basis (with a reason; audited).
+ */
+const AgreementNote: React.FC<{ prefill: InvoicePrefill; customerId: string; filled: boolean; onChanged: (p: InvoicePrefill) => void }> = ({ prefill, customerId, filled, onChanged }) => {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const excl = prefill.agreedTaxBasis === 'EXCLUSIVE';
+  const agreed = toPaise(prefill.agreedAmount ?? prefill.dealAmount ?? 0) ?? 0;
+  const doneTaxable = toPaise(prefill.servicesInvoicedTaxable ?? 0) ?? 0;
+  const doneGross = toPaise(prefill.servicesInvoiced) ?? 0;
+  const o = prefill.order ?? null;
+  const amountsNote = filled ? 'The amounts below are filled in from the balance still to be invoiced; check or change them (before GST). ' : 'Enter each service amount below, before GST. ';
+  const change = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await generatedInvoicesApi.setAgreementBasis(customerId, { basis: excl ? 'INCLUSIVE' : 'EXCLUSIVE', reason });
+      const p = await generatedInvoicesApi.prefill(customerId, { purpose: 'SERVICES', addonRequestId: null });
+      onChanged(p);
+      setOpen(false);
+      setReason('');
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-[11px] text-slate-600">
+      <p>
+        Sales agreed <b className="text-slate-900">{rs(agreed)}</b> {excl ? 'excluding GST' : 'including GST'} for all the services together.
+        {excl
+          ? ` ${doneTaxable > 0 ? `${rs(doneTaxable)} is already invoiced before GST; ${rs(Math.max(agreed - doneTaxable, 0))} is left to invoice. ` : ''}${amountsNote}The GST is added on top, and the invoices together cannot exceed the agreed amount before GST.`
+          : ` ${doneGross > 0 ? `${rs(doneGross)} is already invoiced (with GST). ` : ''}${amountsNote}The invoices together, with GST, cannot exceed the agreed amount.`}
+      </p>
+      {o && (
+        <p>
+          Total payable {rs(toPaise(o.totalPayable) ?? 0)}{o.estimated ? ' (GST on the part not invoiced yet is estimated)' : ''} · confirmed payments {rs(toPaise(o.confirmed) ?? 0)} · order balance <b className="text-slate-900">{rs(toPaise(o.balance) ?? 0)}</b>
+        </p>
+      )}
+      {!open ? (
+        <button type="button" className="text-blue-700 font-semibold hover:underline" onClick={() => setOpen(true)}>
+          {excl ? 'The agreed amount already includes GST' : 'The agreed amount is before GST'}
+        </button>
+      ) : (
+        <div className="flex flex-wrap items-end gap-2 pt-1">
+          <label className="flex-1 min-w-[12rem]">
+            <span className="block text-[11px] font-medium text-slate-600 mb-1">Why is the agreement being changed? (recorded in the audit log)</span>
+            <input className={inputCls} value={reason} maxLength={500} onChange={e => setReason(e.target.value)} />
+          </label>
+          <button type="button" className={btn.green} disabled={busy || reason.trim().length < 5} onClick={change}>
+            {busy ? 'Saving…' : excl ? 'Treat it as including GST' : 'Treat it as before GST'}
+          </button>
+          <button type="button" className={btn.secondary} disabled={busy} onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {err && <ErrorBanner message={err} />}
+    </div>
+  );
+};
+
 export const InvoiceBuilder: React.FC<{
   customer?: { id: string; label: string } | null;
   addon?: { requestId: string; customerId: string; label: string } | null;
@@ -160,10 +226,21 @@ export const InvoiceBuilder: React.FC<{
     });
     if (calc && !calc.ok) calc.problems.forEach(p => problems.push(p.message));
     // Each part payment can have its own invoice, but together they may not exceed what Sales agreed (the database refuses it too).
-    const dealPaise = prefill?.dealAmount ? toPaise(prefill.dealAmount) : null;
-    const donePaise = prefill?.servicesInvoiced ? toPaise(prefill.servicesInvoiced) ?? 0 : 0;
-    if (calc && calc.ok && purpose === 'SERVICES' && dealPaise !== null && dealPaise > 0 && donePaise + calc.totalPaise > dealPaise) {
-      problems.push(`The invoices of the agreed services would total ${rs(donePaise + calc.totalPaise)} but only ${rs(dealPaise)} was agreed with Sales${donePaise ? ` (already invoiced: ${rs(donePaise)})` : ''}. Lower this invoice, or ask Sales to correct the agreed amount first.`);
+    // When the agreement excludes GST, the amounts before GST are compared with it (the GST is added on top); otherwise the totals with GST are.
+    if (calc && calc.ok && purpose === 'SERVICES' && prefill) {
+      if (prefill.agreedTaxBasis === 'EXCLUSIVE' && prefill.agreedAmount) {
+        const agreedPaise = toPaise(prefill.agreedAmount) ?? 0;
+        const donePaise = toPaise(prefill.servicesInvoicedTaxable ?? 0) ?? 0;
+        if (agreedPaise > 0 && donePaise + calc.subtotalPaise > agreedPaise) {
+          problems.push(`The invoices of the agreed services would total ${rs(donePaise + calc.subtotalPaise)} before GST but only ${rs(agreedPaise)} was agreed with Sales, excluding GST${donePaise ? ` (already invoiced: ${rs(donePaise)})` : ''}. Lower this invoice, or ask Sales to correct the agreed amount first.`);
+        }
+      } else {
+        const dealPaise = prefill.dealAmount ? toPaise(prefill.dealAmount) : null;
+        const donePaise = prefill.servicesInvoiced ? toPaise(prefill.servicesInvoiced) ?? 0 : 0;
+        if (dealPaise !== null && dealPaise > 0 && donePaise + calc.totalPaise > dealPaise) {
+          problems.push(`The invoices of the agreed services would total ${rs(donePaise + calc.totalPaise)} but only ${rs(dealPaise)} was agreed with Sales, including GST${donePaise ? ` (already invoiced: ${rs(donePaise)})` : ''}. Lower this invoice, or ask Sales to correct the agreed amount first.`);
+        }
+      }
     }
     if (treatment === null && form.stateCode === '') problems.push('Choose the tax treatment.');
   }
@@ -397,7 +474,16 @@ export const InvoiceBuilder: React.FC<{
           <fieldset className="space-y-2">
             <legend className="text-xs font-bold text-slate-800 mb-1">Services</legend>
             {prefill.dealAmount !== null && purpose === 'SERVICES' && (
-              <p className="text-[11px] text-slate-500">Sales agreed {rs(toPaise(prefill.dealAmount) ?? 0)} for all the services together{prefill.servicesInvoiced > 0 ? `; ${rs(toPaise(prefill.servicesInvoiced) ?? 0)} is already invoiced` : ''}. You can make an invoice for each part payment: the invoices together (with tax) cannot be more than the agreed amount. Enter each service amount below, before tax.</p>
+              <AgreementNote
+                prefill={prefill}
+                customerId={prefill.customerId}
+                filled={form.lines.some(l => l.baseAmount.trim() !== '')}
+                // the balance still to be invoiced changes with the basis: the amounts filled in are worked out again
+                onChanged={p => {
+                  setPrefill(p);
+                  setForm(f => (f ? { ...f, lines: fromPrefill(p).lines } : f));
+                }}
+              />
             )}
             <div className="space-y-3">
               {form.lines.map((l, i) => (

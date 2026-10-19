@@ -48,6 +48,69 @@ export function serviceDetails(code: string, details: Record<string, unknown> | 
   return { usage, rows };
 }
 
+/** A package being used up (WhatsApp / RCS / Voice messages, AI Calling minutes or credits), for the usage bars and alerts. */
+export interface UsageBar {
+  label: string;
+  unit: string;
+  total: number;
+  used: number;
+  left: number;
+  pct: number;
+  tone: 'success' | 'attention' | 'danger';
+  asOf: string | null;
+  validUntil: string | null;
+}
+export function usageBar(s: { code: string; usage?: { kind: string; metrics: Record<string, unknown>; asOf: string | null; validUntil: string | null } | null; details?: Record<string, unknown> | null }): UsageBar | null {
+  const make = (label: string, unit: string, total: number | null, used: number | null, left: number | null, asOf: string | null, validUntil: string | null): UsageBar | null => {
+    if (total === null || total <= 0) return null;
+    const usedN = Math.max(0, used ?? (left !== null ? total - left : 0));
+    const leftN = Math.max(0, left ?? total - usedN);
+    const pct = Math.min(100, Math.round((usedN / total) * 100));
+    return { label, unit, total, used: usedN, left: leftN, pct, tone: pct >= 90 ? 'danger' : pct >= 75 ? 'attention' : 'success', asOf, validUntil };
+  };
+  const u = s.usage;
+  if (u) {
+    const m = u.metrics;
+    if (u.kind === 'WHATSAPP') {
+      const total = (num(m.packageMessages) ?? 0) + (num(m.extraMessages) ?? 0);
+      return make('Messages', 'messages', total, num(m.sent), null, u.asOf, u.validUntil);
+    }
+    if (u.kind === 'AI_CALLING') {
+      if (num(m.minutesBought)) return make('Calling minutes', 'minutes', num(m.minutesBought), null, num(m.minutesLeft), u.asOf, u.validUntil);
+      return make('Calling credits', '₹', num(m.creditsBought), null, num(m.creditsLeft), u.asOf, u.validUntil);
+    }
+    if (u.kind === 'RCS' || u.kind === 'VOICE') return make(u.kind === 'RCS' ? 'RCS messages' : 'Voice messages', 'messages', num(m.packageMessages), num(m.sent), null, u.asOf, u.validUntil);
+  }
+  const old = serviceDetails(s.code, s.details).usage;
+  return old ? make('Messages', 'messages', old.bought, old.sent, null, null, null) : null;
+}
+export const fmtNum = (n: number, unit = ''): string => (unit === '₹' ? inr(n) : `${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}${unit ? ` ${unit}` : ''}`);
+
+export const UsageMeter: React.FC<{ bar: UsageBar; compact?: boolean }> = ({ bar, compact }) => {
+  const colour = bar.tone === 'danger' ? 'var(--danger)' : bar.tone === 'attention' ? 'var(--attention-text)' : 'var(--primary)';
+  return (
+    <div style={compact ? undefined : { border: '1px solid var(--divider)', background: 'var(--surface)', borderRadius: 14, padding: 14 }}>
+      <div className="cd-between"><span className="cd-label">{bar.label}</span><b style={{ color: bar.tone === 'success' ? undefined : colour }}>{fmtNum(bar.left, bar.unit)} left</b></div>
+      <div role="progressbar" aria-label={`${bar.label} used`} aria-valuenow={bar.pct} aria-valuemin={0} aria-valuemax={100} style={{ height: 9, borderRadius: 99, background: 'var(--segment)', overflow: 'hidden', margin: '8px 0' }}>
+        <i style={{ display: 'block', height: '100%', width: `${bar.pct}%`, background: colour, borderRadius: 99 }} />
+      </div>
+      <div className="cd-between cd-small cd-muted"><span>{fmtNum(bar.used, bar.unit)} used ({bar.pct}%)</span><span>of {fmtNum(bar.total, bar.unit)}</span></div>
+      {!compact && (bar.asOf || bar.validUntil) ? (
+        <p className="cd-small cd-muted" style={{ marginTop: 6 }}>{bar.asOf ? `Updated ${fmtDate(bar.asOf)}` : ''}{bar.asOf && bar.validUntil ? ' · ' : ''}{bar.validUntil ? `valid until ${fmtDate(bar.validUntil)}` : ''}</p>
+      ) : null}
+    </div>
+  );
+};
+
+export const SERVICE_STATUS: Record<string, { label: string; tone: Tone }> = {
+  LIVE: { label: 'Live', tone: 'success' },
+  SETTING_UP: { label: 'Setting up', tone: 'attention' },
+  PAUSED: { label: 'Paused', tone: 'neutral' },
+  EXPIRED: { label: 'Expired', tone: 'danger' },
+  CANCELLED: { label: 'Cancelled', tone: 'neutral' }
+};
+export const serviceStatus = (s: string) => SERVICE_STATUS[s] ?? SERVICE_STATUS.SETTING_UP;
+
 // ---- status labels ----
 export type Tone = 'success' | 'attention' | 'info' | 'neutral' | 'danger';
 export const SERVICE_REQUEST_LABEL: Record<ServiceRequestStatus, { label: string; tone: Tone }> = {

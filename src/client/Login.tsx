@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Eye, EyeOff, FileText, Layers, Lock, Mail, MessageCircle } from 'lucide-react';
 import { Button, Field } from './ui';
+import { clientApi } from './api';
 import { useClientAuth } from './auth';
 
 const POINTS = [
@@ -16,6 +17,18 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [forgot, setForgot] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const sendLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(''); clearNotice();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setError('Enter the e-mail you sign in with.'); return; }
+    setBusy(true);
+    try { await clientApi.forgotPassword(email.trim().toLowerCase()); setSent(true); }
+    catch (err) { setError((err as Error).message); }
+    finally { setBusy(false); }
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,16 +47,37 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
           <span><b>Amuwa</b><small>Client dashboard</small></span>
         </div>
         <h2 style={{ marginTop: 'auto' }}>Everything you have with Amuwa, in one place.</h2>
-        <p className="cd-login-lead">Check your services, pay what’s due and talk to your Support team — without waiting on email.</p>
+        <p className="cd-login-lead">Check your services, pay what’s due and talk to your Support team - without waiting on email.</p>
         <ul className="cd-login-points">
           {POINTS.map(({ Icon, text }) => <li key={text}><Icon size={20} aria-hidden />{text}</li>)}
         </ul>
       </section>
       <div className="cd-login-form">
+        {forgot ? (
+          <form className="cd-login-card" onSubmit={sendLink} noValidate>
+            <div>
+              <h1>Forgot password?</h1>
+              <p className="cd-sub">Enter the e-mail you sign in with. We will e-mail you a link to set a new password.</p>
+            </div>
+            {sent ? (
+              <div className="cd-banner info" role="status"><Mail size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>If {email.trim()} has a client login, a link is on its way. Check your inbox (and the spam folder). The link works once.</span></div>
+            ) : (
+              <>
+                {error && <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>{error}</span></div>}
+                <Field label="E-mail" htmlFor="cd-forgot-email">
+                  <input id="cd-forgot-email" className="cd-input" type="email" autoComplete="username" inputMode="email" autoCapitalize="none"
+                    placeholder="you@yourbusiness.com" value={email} onChange={e => setEmail(e.target.value)} />
+                </Field>
+                <Button type="submit" loading={busy}>Send me the link</Button>
+              </>
+            )}
+            <button type="button" className="cd-link" style={{ alignSelf: 'center' }} onClick={() => { setForgot(false); setSent(false); setError(''); }}>Back to sign in</button>
+          </form>
+        ) : (
         <form className="cd-login-card" onSubmit={submit} noValidate>
           <div>
             <h1>Sign in</h1>
-            <p className="cd-sub">Use the e-mail your Technical Consultant registered for you.</p>
+            <p className="cd-sub">Use your login e-mail and the password you set from our e-mail.</p>
           </div>
           {(error || notice) && (
             <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>{error || notice}</span></div>
@@ -67,8 +101,9 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
             </div>
           </Field>
           <Button type="submit" loading={busy}>Sign in</Button>
-          <p className="cd-small cd-muted" style={{ textAlign: 'center' }}>Forgot your password? Your Technical Consultant can reset it for you.</p>
+          <button type="button" className="cd-link" style={{ alignSelf: 'center' }} onClick={() => { setForgot(true); setError(''); clearNotice(); }}>Forgot password?</button>
         </form>
+        )}
       </div>
     </div>
   );

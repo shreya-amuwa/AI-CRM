@@ -17,6 +17,27 @@ Each stage tracks its own `pdf_status` and `email_status`. A failed PDF or e-mai
 - PDFs are private, stay under 500,000 bytes (a lean fallback is used if a render would reach the limit) and are opened through short-lived links.
 - Nothing polls: the Accounts lists refresh on `crm:pipeline-changed` and Realtime, the client page on the client notification feed.
 
+## One order: the agreed amount, GST and balance
+
+Sales usually agrees a price **before GST** (for example 1,20,000 + 18% GST = 1,41,600). Earlier, the agreed amount was treated everywhere as the total the customer pays, so the invoice check compared GST-inclusive invoice totals with a pre-GST figure and every balance and status was capped at it. The model is now:
+
+| Figure | Where it lives |
+| --- | --- |
+| Agreed amount, as agreed | `customers.agreed_amount` |
+| Does it include GST? | `customers.agreed_tax_basis` (`INCLUSIVE` or `EXCLUSIVE`) |
+| Total payable, GST included | `customers.deal_amount` (what every payment, balance and status rule already read) |
+| Total confirmed payments | `customers.amount_verified` (verified payments only; pending and rejected are never counted) |
+| Order balance | total payable - confirmed payments |
+| An invoice's own figures | taxable subtotal, GST, total, and what the verified payments cover of it (first invoice first) |
+
+- `EXCLUSIVE`: the invoices of the agreed services may total at most the agreed amount **before GST**. The total payable is the GST of the invoices already issued plus the agreed amount not yet invoiced with GST at the rate of those invoices (18% before the first invoice). It is recalculated in the same transaction when an invoice is issued. Real GST is never added to a payment, and never twice.
+- `INCLUSIVE`: unchanged. Invoice totals (with GST) are compared with the agreed amount.
+- The PDF, the invoice preview and e-mail attachment, the Accounts and customer screens and the client dashboard all read `private.order_summary` and `private.invoice_payment_summary`; nothing re-derives a balance in the browser or the PDF. The PDF shows the invoice's own balance ("Balance Due on this Invoice") apart from "Total Order Value (incl. GST)", "Total Confirmed Payments", "Total Order Balance Outstanding" and the order's "Payment Status". The PAID stamp belongs to the invoice, not the order.
+- Sales chooses the basis in Send to Accounts (default: excluding GST). Paise are accepted only on the payment that settles the exact balance (GST can leave paise).
+- Agreements made before migration `20261103000100` are **not** reinterpreted: they stay `INCLUSIVE`. Accounts can correct one with `accounts_set_agreement_basis` (reason required, audited as `AGREEMENT_BASIS_CHANGED`; the "The agreed amount is before GST" link in the invoice builder). `accounts_agreement_review` (`GET /accounts/agreement-review`) lists every older agreement that already has invoices, for reconciliation. Nothing is rewritten or regenerated automatically.
+
+Run `supabase/migrations/20261103000100_order_tax_basis.sql` in the Supabase SQL editor after `20261102000100` (safe to run again).
+
 ## Setup
 
 - Run `supabase/migrations/20261028000100_dynamic_invoices_two_stage.sql` once in the Supabase SQL editor (safe to run again).

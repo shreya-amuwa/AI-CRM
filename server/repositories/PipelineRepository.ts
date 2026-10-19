@@ -645,8 +645,8 @@ export class PipelineRepository {
   // -------------------------------------------------------------------------
   // Sales → Accounts payment workflow
   // -------------------------------------------------------------------------
-  async sendToAccounts(customerId: string, amount: number, note: string | null): Promise<void> {
-    unwrap(await this.db.rpc('send_lead_to_accounts', { p_customer: customerId, p_amount: amount, p_note: note }));
+  async sendToAccounts(customerId: string, amount: number, note: string | null, taxBasis: 'INCLUSIVE' | 'EXCLUSIVE' = 'INCLUSIVE'): Promise<void> {
+    unwrap(await this.db.rpc('send_lead_to_accounts', { p_customer: customerId, p_amount: amount, p_note: note, p_tax_basis: taxBasis }));
   }
 
   async paymentOverview(customerId: string): Promise<PaymentOverview> {

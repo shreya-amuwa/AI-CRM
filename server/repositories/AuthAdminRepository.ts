@@ -85,6 +85,30 @@ export class AuthAdminRepository {
     }
   }
 
+  /**
+   * A one-time "set your password" link for a login (Supabase Auth recovery link). It opens
+   * `redirectTo` signed in, where the user chooses their own password.
+   */
+  async passwordLink(email: string, redirectTo: string): Promise<string> {
+    const { data, error } = await getServiceClient().auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
+    const link = data?.properties?.action_link;
+    if (error || !link) {
+      console.error('[api] auth.admin.generateLink failed', error?.message);
+      throw new AppError('INTERNAL', 'Could not make the set-password link.');
+    }
+    return link;
+  }
+
+  /** The client login behind an e-mail (for "Forgot password?"), or null. */
+  async clientLoginForReset(email: string): Promise<{ email: string; name: string; businessName: string } | null> {
+    const { data, error } = await getServiceClient().rpc('client_login_for_reset', { p_email: email });
+    if (error) {
+      console.error('[api] client_login_for_reset failed', error.message);
+      throw new AppError('INTERNAL');
+    }
+    return (data as { email: string; name: string; businessName: string } | null) ?? null;
+  }
+
   async deleteUser(userId: string): Promise<void> {
     await getServiceClient().auth.admin.deleteUser(userId);
   }

@@ -690,7 +690,11 @@ export interface PaymentRequestSummary {
 export interface PaymentOverview {
   customerId: string;
   workflow: PaymentWorkflow;
+  /** The total payable, GST included. */
   dealAmount: number | null;
+  agreedAmount?: number | null;
+  taxBasis?: AgreementTaxBasis;
+  order?: OrderSummary | null;
   recorded: number;
   verified: number;
   pending: number;
@@ -720,6 +724,9 @@ export interface PaymentRequestItem {
   lastConversation: { note: string; at: string } | null;
   status: 'PENDING' | 'CONFIRMED' | 'RETURNED';
   agreedAmount: number;
+  /** The total payable including GST (equal to agreedAmount unless the agreement excludes GST). */
+  payableAmount?: number;
+  taxBasis?: AgreementTaxBasis;
   salesNote: string | null;
   sentAt: string;
   sentBy: string | null;
@@ -1055,6 +1062,33 @@ export interface GeneratedInvoiceStageState {
   busy: boolean;
 }
 export type InvoicePaymentState = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+/** Whether the amount Sales agreed already has GST in it (INCLUSIVE) or GST is added on top of it (EXCLUSIVE). */
+export type AgreementTaxBasis = 'INCLUSIVE' | 'EXCLUSIVE';
+/**
+ * The whole agreed order in one place, worked out by the database: what was agreed, the GST, what is payable, what is confirmed and
+ * what is left. Every screen, the PDF and the e-mail read these same figures; none of them works the balance out itself.
+ */
+export interface OrderSummary {
+  basis: AgreementTaxBasis;
+  /** What Sales agreed, as agreed (before GST when the basis is EXCLUSIVE). */
+  agreedAmount: number | null;
+  /** The agreed amount before GST (null when the agreement is GST inclusive and no split is known). */
+  taxableTotal: number | null;
+  gstTotal: number | null;
+  /** The total the customer pays, GST included. */
+  totalPayable: number;
+  /** Verified payments only: pending and rejected payments are never counted. */
+  confirmed: number;
+  pending: number;
+  /** totalPayable - confirmed: what the customer still owes for the whole order. */
+  balance: number;
+  state: InvoicePaymentState;
+  invoicedTaxable: number;
+  invoicedGst: number;
+  invoicedTotal: number;
+  /** True while the GST of the part not invoiced yet is still an estimate. */
+  estimated: boolean;
+}
 export interface InvoicePaymentSummary {
   total: number;
   /** Confirmed (verified) payments applied to this invoice. Pending or rejected payments are never counted. */
@@ -1066,6 +1100,8 @@ export interface InvoicePaymentSummary {
   /** Where this invoice's payments are recorded: the customer's payment ledger, the add-on's payments, or the invoice itself. */
   ledger: 'CUSTOMER' | 'ADDON' | 'INVOICE';
   payments: { amount: number; method: PaymentMethod | null; reference: string | null; paidAt: string }[];
+  /** The whole order this invoice belongs to (agreed services only); null for an additional invoice or an add-on. */
+  order?: OrderSummary | null;
 }
 
 export interface GeneratedInvoice {
@@ -1111,10 +1147,29 @@ export interface InvoicePrefill {
   dealAmount: number | null;
   /** What the invoices already issued for the agreed services come to (each part payment can have its own invoice). */
   servicesInvoiced: number;
+  /** The same, before GST: what an agreement made excluding GST is checked against. */
+  servicesInvoicedTaxable?: number;
+  /** What Sales agreed (before GST when the basis is EXCLUSIVE) and whether it includes GST. */
+  agreedAmount?: number | null;
+  agreedTaxBasis?: AgreementTaxBasis;
+  order?: OrderSummary | null;
   addonTotal: number | null;
   existingInvoices: { id: string; number: string; kind: InvoiceKind; status: string; total: number | null }[];
   catalog: { code: string; name: string; category: string }[];
   warnings: string[];
+}
+
+/** An older agreement (no recorded GST basis) that already has invoices: Accounts confirms each one. */
+export interface AgreementReviewItem {
+  customerId: string;
+  customerCode: string | null;
+  customer: string;
+  totalPayableOnRecord: number;
+  invoicedTaxable: number;
+  invoicedTotal: number;
+  invoices: number;
+  confirmedPayments: number;
+  note: string;
 }
 
 export type InvoiceStepName = 'ISSUE' | 'PAYMENT' | 'PDF' | 'EMAIL';
@@ -1223,7 +1278,7 @@ export interface ClientProfile {
   loginEmail: string;
   clientSince: string;
 }
-export type ClientServiceStatus = 'LIVE' | 'SETTING_UP';
+export type ClientServiceStatus = 'LIVE' | 'SETTING_UP' | 'PAUSED' | 'EXPIRED' | 'CANCELLED';
 export interface ClientService {
   code: string;
   name: string;
@@ -1236,6 +1291,63 @@ export interface ClientService {
   plan: string | null;
   /** What the team set up for this service (e.g. WhatsApp API: campaigns sent, message package bought / sent). */
   details?: Record<string, unknown> | null;
+  /** The plan bought (from the team's Excel import or entered by the team). */
+  planName?: string | null;
+  price?: number | null;
+  billingCycle?: string | null;
+  platform?: string | null;
+  panelAccount?: string | null;
+  /** The latest package usage (WhatsApp messages, AI Calling minutes, RCS / Voice messages). */
+  usage?: ClientServiceUsage | null;
+  /** Monthly deliverables, newest month first (at most 6). */
+  monthly?: { month: string; metrics: Record<string, unknown> }[];
+  campaignCount?: number;
+}
+export interface ClientServiceUsage {
+  kind: 'WHATSAPP' | 'AI_CALLING' | 'RCS' | 'VOICE';
+  metrics: Record<string, unknown>;
+  asOf: string | null;
+  validUntil: string | null;
+}
+export interface ClientCampaign {
+  id: string;
+  serviceCode: string;
+  serviceName: string;
+  name: string;
+  template: string | null;
+  sentOn: string | null;
+  audienceType: string | null;
+  audienceSize: number | null;
+  sent: number | null;
+  delivered: number | null;
+  read: number | null;
+  replied: number | null;
+  failed: number | null;
+  status: string | null;
+}
+
+/** Excel import of existing customers (Support). */
+export interface CustomerDataImportError {
+  sheet: string;
+  row: number;
+  message: string;
+}
+export interface CustomerDataImportLogin {
+  customerId: string;
+  email: string;
+  name: string;
+  businessName?: string;
+  /** CREATED: the login exists; FAILED: see detail. */
+  login: 'CREATED' | 'FAILED';
+  /** SENT: the "Set your password" e-mail went out; NOT_SENT: see detail (it can be sent again later). */
+  mail: 'SENT' | 'NOT_SENT';
+  detail?: string;
+}
+export interface CustomerDataImportResult {
+  committed: boolean;
+  errors: CustomerDataImportError[];
+  summary: { added: number; updated: number; services: number; usage: number; campaigns: number; logins: number };
+  logins: CustomerDataImportLogin[];
 }
 export type ServiceRequestStatus = 'REQUESTED' | 'IN_REVIEW' | 'IN_ADDON_WORKFLOW' | 'ACTIVATED' | 'REJECTED' | 'CANCELLED';
 export interface ClientCatalogService {

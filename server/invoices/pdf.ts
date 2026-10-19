@@ -43,6 +43,8 @@ export interface InvoicePdfInput {
     balance: number;
     state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
     payments?: { amount: number }[];
+    /** The whole agreed order (every invoice of the agreed services together), as worked out by the database. Absent: only the invoice is shown. */
+    order?: { totalPayable: number; confirmed: number; balance: number; state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID' } | null;
   } | null;
   /** Fixes the PDF's creation date (so the same invoice always gives the same file). */
   issuedAt?: string | null;
@@ -576,23 +578,46 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
   // Payment status: what the invoice came to, what was confirmed, what is left. On the paid invoice it is settled by definition.
   const ps = inv.paymentSummary;
   const settled = stage === 'PAID';
-  const payRows: [string, string][] = ps
-    ? [
-        ['Invoice Total:', money(ps.total)],
-        ['Payments Received:', money(settled ? ps.total : ps.confirmed)],
-        ...(settled && ps.payments && ps.payments.length ? ([['This Payment:', money(ps.payments[ps.payments.length - 1].amount)]] as [string, string][]) : []),
-        ['Balance Outstanding:', money(settled ? 0 : ps.balance)],
-        ['Payment Status:', settled || ps.state === 'FULLY_PAID' ? 'Fully Paid' : ps.state === 'PARTIALLY_PAID' ? 'Partially Paid' : 'Unpaid']
-      ]
-    : [];
+  const statusText = (state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID') => (state === 'FULLY_PAID' ? 'Fully Paid' : state === 'PARTIALLY_PAID' ? 'Partially Paid' : 'Unpaid');
+  const order = ps?.order ?? null;
+  // Each row: label, value, and how it is drawn. With an order, this invoice's own figures come first and the whole order's follow,
+  // so a balance left on one invoice is never mistaken for what the customer still owes in total.
+  type PayRow = { k: string; v: string; bold?: boolean; fill?: boolean; gap?: boolean };
+  const payRows: PayRow[] = !ps
+    ? []
+    : order
+      ? [
+          { k: 'Current Invoice Total:', v: money(ps.total), bold: true },
+          { k: 'Balance Due on this Invoice:', v: money(settled ? 0 : ps.balance) },
+          { k: 'Invoice Status:', v: settled || ps.state === 'FULLY_PAID' ? 'Fully Paid' : statusText(ps.state), gap: true },
+          { k: 'Total Order Value (incl. GST):', v: money(order.totalPayable), gap: true },
+          { k: 'Total Confirmed Payments:', v: money(order.confirmed) },
+          { k: 'Total Order Balance Outstanding:', v: money(order.balance), bold: true, fill: true },
+          { k: 'Payment Status:', v: statusText(order.state), bold: true }
+        ]
+      : [
+          { k: 'Invoice Total:', v: money(ps.total) },
+          { k: 'Payments Received:', v: money(settled ? ps.total : ps.confirmed) },
+          ...(settled && ps.payments && ps.payments.length ? [{ k: 'This Payment:', v: money(ps.payments[ps.payments.length - 1].amount) }] : []),
+          { k: 'Balance Outstanding:', v: money(settled ? 0 : ps.balance), bold: true },
+          { k: 'Payment Status:', v: settled || ps.state === 'FULLY_PAID' ? 'Fully Paid' : statusText(ps.state), bold: true }
+        ];
+  const PAY_ROW = order ? 12.2 : 13.2;
+  const payGap = payRows.filter(r => r.gap).length * 4;
   const payment: Block = {
-    h: ps ? 12 + payRows.length * 13.2 : 0,
+    h: ps ? 12 + payRows.length * PAY_ROW + payGap : 0,
     draw: (y, h) => {
       p.rect(MX, y, LW, h, { border: BLUE });
-      payRows.forEach(([k, v], i) => {
-        const bold = k === 'Balance Outstanding:' || k === 'Payment Status:';
-        p.text(k, MX + 7, y + 14 + i * 13.2, { font: f.bold, size: 8.4 });
-        p.text(v, MX + LW - 8, y + 14 + i * 13.2, { font: bold ? f.bold : f.regular, size: 8.4, align: 'right' });
+      let ry = y;
+      payRows.forEach(r => {
+        if (r.gap) {
+          p.line(MX, ry + 10, MX + LW, ry + 10);
+          ry += 4;
+        }
+        if (r.fill) p.rect(MX, ry + 4.4, LW, PAY_ROW + 1.4, { fill: HEAD_FILL, border: BLUE });
+        p.text(r.k, MX + 7, ry + 13, { font: f.bold, size: r.fill ? 8.8 : 8.4 });
+        p.text(r.v, MX + LW - 8, ry + 13, { font: r.bold ? f.bold : f.regular, size: r.fill ? 9.2 : 8.4, align: 'right' });
+        ry += PAY_ROW;
       });
       p.box('payment', MX, y, LW, h);
     }

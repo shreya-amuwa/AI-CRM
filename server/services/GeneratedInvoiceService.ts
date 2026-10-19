@@ -1,6 +1,6 @@
-import type { ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, InvoiceStage, InvoiceStep } from '../../shared/contracts.js';
+import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, InvoiceStage, InvoiceStep, OrderSummary } from '../../shared/contracts.js';
 import { invoiceDate, rs, toPaise } from '../../shared/invoiceCalc.js';
-import { generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, uuidSchema } from '../../shared/validation.js';
+import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { sendInvoiceEmail } from '../invoices/mailer.js';
@@ -69,6 +69,15 @@ export class GeneratedInvoiceService {
   prefill(customerId: unknown, query: unknown): Promise<InvoicePrefill> {
     const q = parse(invoicePrefillQuerySchema, query ?? {});
     return this.repo.prefill(parse(uuidSchema, customerId), q.purpose, q.addonRequestId);
+  }
+
+  setAgreementBasis(customerId: unknown, body: unknown): Promise<OrderSummary> {
+    const input = parse(agreementBasisSchema, body);
+    return this.repo.setAgreementBasis(parse(uuidSchema, customerId), input.basis, input.reason);
+  }
+
+  agreementReview(): Promise<AgreementReviewItem[]> {
+    return this.repo.agreementReview();
   }
 
   /** Stage 1: persist the snapshot (once), then the unpaid PDF and its e-mail. A repeated request resumes instead of duplicating. */

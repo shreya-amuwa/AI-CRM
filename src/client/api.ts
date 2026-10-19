@@ -1,5 +1,5 @@
 import type {
-  ClientAnnouncement, ClientCalendarEvent, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
+  ClientAnnouncement, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
   ClientService, ClientServiceRequest, ClientTicket, ClientTicketDetail
 } from '../../shared/contracts';
 import { api } from '../lib/api/client';
@@ -9,6 +9,9 @@ export const clientApi = {
   me: () => api.get<ClientProfile>('/client/me'),
   overview: () => api.get<ClientOverview>('/client/overview'),
   services: () => api.get<ClientService[]>('/client/services'),
+  campaigns: () => api.get<ClientCampaign[]>('/client/campaigns'),
+  /** No login needed; the answer is the same whatever the e-mail. */
+  forgotPassword: (email: string) => api.post<{ ok: true }>('/client-auth/forgot-password', { email }),
   catalog: () => api.get<ClientCatalogService[]>('/client/catalog'),
   serviceRequests: () => api.get<ClientServiceRequest[]>('/client/service-requests'),
   requestService: (serviceCode: string, note?: string) => api.post<ClientServiceRequest>('/client/service-requests', { serviceCode, note: note || undefined }),

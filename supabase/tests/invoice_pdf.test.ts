@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { INVOICE_GENERATED_PDF_LIMIT_BYTES } from '../../shared/contracts.js';
+import { calculateInvoice } from '../../shared/invoiceCalc.js';
 import { COMPANY_DETAILS, renderInvoicePdf, type LayoutBox } from '../../server/invoices/pdf.js';
 import { sampleInvoice } from './invoice_fixtures.js';
 
@@ -215,6 +216,49 @@ console.log('--- 4. Payment status and the remaining balance');
   }
   const again = await renderInvoicePdf({ ...base, paymentSummary: part }, { stage: 'UNPAID' });
   check(sha(again.bytes) === sha(a.bytes), 'the same invoice and payments give the same file (a retry stores the same bytes)');
+}
+// ---------------------------------------------------------------------------
+console.log('--- 5. The whole order next to the invoice (an agreement of 1,20,000 before GST)');
+{
+  const calc = calculateInvoice([{ baseAmount: 60000, taxRate: 18 }], 'INTRA_STATE');
+  if (!calc.ok) throw new Error('calc');
+  const base = sampleInvoice(1);
+  const inv = {
+    ...base,
+    lines: [{ ...base.lines[0], baseAmount: 60000, gstAmount: calc.lines[0].gstPaise / 100, totalAmount: calc.lines[0].totalPaise / 100 }],
+    totals: { ...base.totals, subtotal: 60000, cgstAmount: 5400, sgstAmount: 5400, igstAmount: 0, totalGst: 10800, total: 70800, inWords: calc.words,
+      breakdown: [{ rate: 18, base: 60000, gst: 10800, cgst: 5400, sgst: 5400, igst: 0 }] }
+  };
+  const orderPart = { totalPayable: 141600, confirmed: 60000, balance: 81600, state: 'PARTIALLY_PAID' as const };
+  const inv1 = { total: 70800, confirmed: 60000, balance: 10800, state: 'PARTIALLY_PAID' as const, payments: [{ amount: 60000 }], order: orderPart };
+  const inv2 = { total: 70800, confirmed: 0, balance: 70800, state: 'UNPAID' as const, payments: [], order: orderPart };
+  const done = { total: 70800, confirmed: 70800, balance: 0, state: 'FULLY_PAID' as const, payments: [{ amount: 70800 }], order: { totalPayable: 141600, confirmed: 141600, balance: 0, state: 'FULLY_PAID' as const } };
+  const paidInvOpenOrder = { total: 70800, confirmed: 70800, balance: 0, state: 'FULLY_PAID' as const, payments: [{ amount: 10800 }], order: { totalPayable: 141600, confirmed: 100000, balance: 41600, state: 'PARTIALLY_PAID' as const } };
+  const a = await renderInvoicePdf({ ...inv, paymentSummary: inv1 }, { stage: 'UNPAID' });
+  const b = await renderInvoicePdf({ ...inv, paymentSummary: inv2 }, { stage: 'UNPAID' });
+  const c = await renderInvoicePdf({ ...inv, paymentSummary: done }, { stage: 'PAID' });
+  const d = await renderInvoicePdf({ ...inv, paymentSummary: paidInvOpenOrder }, { stage: 'PAID' });
+  check([a, b, c, d].every(r => r.bytes.length < INVOICE_GENERATED_PDF_LIMIT_BYTES && r.pages === 1), 'each stays one page and below the size limit');
+  const overlapping = (x: LayoutBox, y: LayoutBox) => x.page === y.page && x.x < y.x + y.w && y.x < x.x + x.w && x.y < y.y + y.h && y.y < x.y + x.h;
+  check([a, b, c, d].every(r => !r.boxes.filter(x => x.kind === 'payment').some(p => r.boxes.some(o => o !== p && ['bank', 'state', 'words', 'terms', 'summary', 'address', 'signatory'].includes(o.kind) && overlapping(p, o)))), 'the order block overlaps no other block');
+  if (HAS_TEXT) {
+    const ta = flat(text(a.bytes, 'ord-1'));
+    check(/Current Invoice Total: Rs\.70,800\.00/.test(ta) && /Balance Due on this Invoice: Rs\.10,800\.00/.test(ta) && /Total Order Value \(incl\. GST\): Rs\.1,41,600\.00/.test(ta)
+      && /Total Confirmed Payments: Rs\.60,000\.00/.test(ta) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(ta) && /Payment Status: Partially Paid/.test(ta) && !/\bPAID\b/.test(ta),
+      'invoice 1: its own 10,800 is kept apart from the order balance 81,600; Partially Paid; no stamp');
+    const tb = flat(text(b.bytes, 'ord-2'));
+    check(/Balance Due on this Invoice: Rs\.70,800\.00/.test(tb) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(tb) && /Invoice Status: Unpaid/.test(tb), 'invoice 2: 70,800 on the invoice, the same 81,600 on the order');
+    const tc = flat(text(c.bytes, 'ord-3'));
+    check(/Total Order Balance Outstanding: Rs\.0\.00/.test(tc) && /Payment Status: Fully Paid/.test(tc) && /\bPAID\b/.test(tc), 'settled: order balance 0, Fully Paid, stamp');
+    const td = flat(text(d.bytes, 'ord-4'));
+    check(/Invoice Status: Fully Paid/.test(td) && /Total Order Balance Outstanding: Rs\.41,600\.00/.test(td) && /Payment Status: Partially Paid/.test(td) && /\bPAID\b/.test(td), 'a paid invoice of an order that still has a balance: stamp on the invoice, order Partially Paid with 41,600 left');
+  }
+  if (HAS_RENDER) {
+    const f = join(dir, 'order.pdf');
+    writeFileSync(f, a.bytes);
+    execFileSync('pdftoppm', ['-r', '70', '-png', f, join(dir, 'order')]);
+    if (process.env.KEEP_PDF_PNG) execFileSync('cp', [join(dir, 'order-1.png'), process.env.KEEP_PDF_PNG]);
+  }
 }
 if (!HAS_TEXT || !HAS_RENDER) console.log(`NOTE: pdftotext=${HAS_TEXT} pdftoppm=${HAS_RENDER}: the text and render checks above were skipped`);
 rmSync(dir, { recursive: true, force: true });

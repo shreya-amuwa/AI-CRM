@@ -43,7 +43,10 @@ export const customersController = {
     return ok(null);
   }) as Handler,
   listActivities: (async ctx => ok(await svc(ctx).customers.listActivities(ctx.params.id))) as Handler,
-  addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler
+  addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
+  /** Support: the Excel sheet of existing customers (preview or save) and the client's set-password e-mail. */
+  importExisting: (async ctx => ok(await svc(ctx).customerImport.importExisting(ctx.actor, ctx.req.body, ctx.req.headers.origin))) as Handler,
+  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.params.id, ctx.req.headers.origin))) as Handler
 };
 
 export const notificationsController = {
@@ -276,6 +279,8 @@ export const generatedInvoiceController = {
     const r = await svc(ctx).generatedInvoices.issue(ctx.req.body);
     return ok({ invoice: r.invoice, steps: r.steps }, r.created ? 201 : 200);
   }) as Handler,
+  setAgreementBasis: (async ctx => ok(await svc(ctx).generatedInvoices.setAgreementBasis(ctx.params.id, ctx.req.body))) as Handler,
+  agreementReview: (async ctx => ok(await svc(ctx).generatedInvoices.agreementReview())) as Handler,
   confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler

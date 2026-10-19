@@ -10,6 +10,8 @@ reset role;
 -- generated_json / claim / confirm functions. Re-apply this migration too (proving it is re-runnable as well).
 \i supabase/migrations/20261029000100_service_journeys_support_balance.sql
 \i supabase/migrations/20261030000100_part_payment_invoices.sql
+\i supabase/migrations/20261102000100_invoice_prefill_agreed_amount.sql
+\i supabase/migrations/20261103000100_order_tax_basis.sql
 create temp table jc (name text primary key, id uuid);
 create temp table jr (name text primary key, data jsonb);
 create temp table jq (name text primary key, id uuid default gen_random_uuid());
@@ -488,6 +490,148 @@ select test.check((accounts_confirm_invoice_payment((select (data ->> 'id')::uui
 insert into jr select 'PP3', accounts_issue_invoice((select id from jq where name = 'PP3b'), test.inv_payload((select id from jc where name = 'PP'), 7000));
 select test.check((select (data ->> 'total')::numeric = 8260 and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 760 and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 7500 from jr where name = 'PP3'),
   'a third invoice within the agreed amount (29,500 of 30,000) is allowed; it gets the 760 left of the 22,000 verified so far');
+-- the amount is filled in from the customer's own record: what was agreed, less what is already invoiced
+select test.check((select (select count(*) from jsonb_array_elements(p -> 'lines')) = 1
+                          and (l ->> 'baseAmount')::numeric > 0
+                          and (l ->> 'baseAmount')::numeric + round((l ->> 'baseAmount')::numeric * 18 / 100, 2) between 499.99 and 500
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PP')) p) x, jsonb_array_elements(p -> 'lines') l),
+  'the builder fills in the balance still to be invoiced for this customer (agreed 30,000 less 29,500 invoiced = 500, with GST)');
+select test.login('tm_a');
+insert into jc select 'PQ', create_lead('{"name":"Pankaj Qureshi","company":"Qureshi Traders","email":"pankaj@qureshitraders.example","phone":"9820000107","leadSource":"Walk-in"}', array['AI_CALLING', 'META_ADS_MANAGEMENT']);
+select test.login('tm_a');
+select send_lead_to_accounts((select id from jc where name = 'PQ'), 59000, null);
+select test.login('acc_m');
+select accounts_record_payment((select id from jc where name = 'PQ'), 'PART', 1000, 'UPI', 'PQ-UPI-1', null, null, true);
+select test.check((select jsonb_array_length(p -> 'lines') = 2
+                          and (select count(distinct (l ->> 'baseAmount')::numeric) = 1 and bool_and((l ->> 'baseAmount')::numeric = 25000) from jsonb_array_elements(p -> 'lines') l)
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PQ')) p) x),
+  'two services share the agreed 59,000 equally: 25,000 each before GST (29,500 with GST each)');
+select test.check((select (select sum((l ->> 'baseAmount')::numeric + round((l ->> 'baseAmount')::numeric * 18 / 100, 2)) from jsonb_array_elements(p -> 'lines') l) = 59000
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PQ')) p) x),
+  'with GST the filled-in lines add up to the agreed amount');
+select test.check((select (select count(*) from jsonb_array_elements(p -> 'lines') l where l -> 'baseAmount' <> 'null'::jsonb) = 1
+                          and (select (l ->> 'baseAmount')::numeric from jsonb_array_elements(p -> 'lines') l limit 1) is not null
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PP')) p) x),
+  'one customer''s amount does not leak into another''s (PP gets one row, PQ two)');
+insert into jq (name) values ('PQ1');
+insert into jr select 'PQ1', accounts_issue_invoice((select id from jq where name = 'PQ1'), test.inv_payload((select id from jc where name = 'PQ'), 50000));
+select test.check((select (select bool_and(l -> 'baseAmount' = 'null'::jsonb) from jsonb_array_elements(p -> 'lines') l)
+                          and exists (select 1 from jsonb_array_elements(p -> 'warnings') w where w #>> '{}' like '%already been invoiced in full%')
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PQ')) p) x),
+  'once the agreed amount is invoiced in full nothing is filled in, and Accounts is told why');
+select test.check((select bool_and(l -> 'baseAmount' = 'null'::jsonb) from jsonb_array_elements(accounts_invoice_prefill((select id from jc where name = 'PQ'), 'ADDITIONAL') -> 'lines') l) is not false,
+  'an additional purchase still starts empty');
 select test.login('tm_a');
 select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'PPx'), test.inv_payload((select id from jc where name = 'PP'), 100))$$, 'a salesperson still cannot issue one', 'Only the Accounts');
+reset role;
+
+-- ---------------------------------------------------------------------------
+\echo '--- 48. One order: an agreement before GST, the total payable and the order balance'
+-- ---------------------------------------------------------------------------
+insert into jq (name) values ('GX1'), ('GX2'), ('GX3'), ('GX4'), ('LG1'), ('LG2'), ('LG3');
+set role authenticated;
+select test.login('tm_a');
+insert into jc select 'GX', create_lead('{"name":"Gita Xavier","company":"Xavier Exports","email":"gita@xavierexports.example","phone":"9820000107","leadSource":"Walk-in"}', array['AI_CALLING']);
+select test.must_fail($$select send_lead_to_accounts((select id from jc where name = 'GX'), 120000, null, 'NET')$$, 'the basis must be known', 'includes or excludes GST');
+select test.must_fail($$select send_lead_to_accounts((select id from jc where name = 'GX'), 120000.5, null, 'EXCLUSIVE')$$, 'the agreed amount is in whole rupees', 'whole rupees');
+select send_lead_to_accounts((select id from jc where name = 'GX'), 120000, null, 'EXCLUSIVE');
+select test.admin_check($q$select deal_amount = 141600 and agreed_amount = 120000 and agreed_tax_basis = 'EXCLUSIVE' and payment_status = 'NO_PAYMENT' from customers where id = (select id from jc where name = 'GX')$q$,
+  'A: 1,20,000 agreed excluding GST: GST 18% = 21,600, total payable 1,41,600');
+select test.login('acc_m');
+select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"basis":"EXCLUSIVE","agreedAmount":120000,"taxableTotal":120000,"gstTotal":21600,"totalPayable":141600,"confirmed":0,"balance":141600,"state":"UNPAID"}'::jsonb,
+  'the payment screen reads the same order figures before any invoice or payment');
+select test.check((accounts_invoice_prefill((select id from jc where name = 'GX')) ->> 'servicesInvoicedTaxable')::numeric = 0
+               and accounts_invoice_prefill((select id from jc where name = 'GX')) ->> 'agreedTaxBasis' = 'EXCLUSIVE'
+               and (accounts_invoice_prefill((select id from jc where name = 'GX')) ->> 'agreedAmount')::numeric = 120000, 'the invoice builder is told the agreement, its basis and what is already invoiced');
+
+select test.check((select (l ->> 'baseAmount')::numeric = 120000 from jsonb_array_elements(accounts_invoice_prefill((select id from jc where name = 'GX')) -> 'lines') l limit 1),
+  'the builder fills in the whole 1,20,000 before GST (not the amount with GST) while nothing is invoiced');
+select accounts_record_payment((select id from jc where name = 'GX'), 'PART', 60000, 'UPI', 'GX-UPI-1', null, null, true);
+select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"confirmed":60000,"balance":81600,"state":"PARTIALLY_PAID"}'::jsonb
+               and customer_payment_overview((select id from jc where name = 'GX')) ->> 'paymentStatus' = 'PARTIALLY_PAID',
+  'C: 60,000 confirmed: the ORDER balance is 81,600 (1,41,600 - 60,000), Partially Paid; GST is not applied to the payment');
+
+insert into jr select 'GX1', accounts_issue_invoice((select id from jq where name = 'GX1'), test.inv_payload((select id from jc where name = 'GX'), 60000));
+select test.check((select (data ->> 'total')::numeric = 70800 and (data -> 'generated' -> 'totals' ->> 'subtotal')::numeric = 60000 and (data -> 'generated' -> 'totals' ->> 'totalGst')::numeric = 10800
+                          and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 60000 and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 10800
+                          and data -> 'generated' -> 'paymentSummary' ->> 'state' = 'PARTIALLY_PAID'
+                          and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'balance')::numeric = 81600
+                          and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'totalPayable')::numeric = 141600
+                     from jr where name = 'GX1'), 'B/D: invoice 1 = 60,000 + 10,800 GST = 70,800, 10,800 left on the invoice; the order still has 81,600 to receive');
+insert into jr select 'GX2', accounts_issue_invoice((select id from jq where name = 'GX2'), test.inv_payload((select id from jc where name = 'GX'), 60000));
+select test.check((select (data ->> 'total')::numeric = 70800 and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 0
+                          and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 70800 and data -> 'generated' -> 'paymentSummary' ->> 'state' = 'UNPAID'
+                          and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'invoicedTaxable')::numeric = 120000
+                          and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'invoicedGst')::numeric = 21600
+                          and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'invoicedTotal')::numeric = 141600
+                          and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'balance')::numeric = 81600
+                     from jr where name = 'GX2'), 'B: the second 70,800 invoice is allowed (cumulative 1,20,000 + 21,600 = 1,41,600); its own balance is 70,800, the order balance 81,600');
+select test.check((invoice_detail((select (data ->> 'id')::uuid from jr where name = 'GX1')) -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 10800, 'invoice 1 is not changed by invoice 2');
+select test.check((select (l ->> 'baseAmount') is null from jsonb_array_elements(accounts_invoice_prefill((select id from jc where name = 'GX')) -> 'lines') l limit 1)
+               and exists (select 1 from jsonb_array_elements(accounts_invoice_prefill((select id from jc where name = 'GX')) -> 'warnings') w where w #>> '{}' like '%excluding GST) has already been invoiced in full%'),
+  'with both invoices issued nothing is filled in and Accounts is told the agreed amount is invoiced in full');
+
+select test.admin_check($q$select deal_amount = 141600 from customers where id = (select id from jc where name = 'GX')$q$, 'the total payable still is 1,41,600 once both invoices exist (the GST is not added twice)');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'GX3'), test.inv_payload((select id from jc where name = 'GX'), 1))$$, 'H: real overbilling (the taxable value above what was agreed) is still refused', 'would total .*before GST.*1,20,000');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'GX3'), test.inv_payload((select id from jc where name = 'GX'), 60000.01))$$, 'H: also by a paisa', 'before GST');
+select test.check((accounts_invoice_prefill((select id from jc where name = 'GX')) ->> 'servicesInvoicedTaxable')::numeric = 120000, 'the builder is told everything is invoiced');
+
+insert into jr select 'GX1again', accounts_issue_invoice((select id from jq where name = 'GX1'), test.inv_payload((select id from jc where name = 'GX'), 60000));
+select test.admin_check($q$select count(*) = 2 and sum(subtotal) = 120000 and sum(total_gst) = 21600 from generated_invoices where customer_id = (select id from jc where name = 'GX')$q$, 'I: a retried request makes no third invoice');
+
+select accounts_record_payment((select id from jc where name = 'GX'), 'PART', 5000, 'CASH', null, null, null, false);
+select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"confirmed":60000,"pending":5000,"balance":81600}'::jsonb, 'G: a payment waiting for verification is shown apart and not counted');
+reset role;
+insert into jpay select 'GXp', id from customer_payments where customer_id = (select id from jc where name = 'GX') and status = 'PENDING';
+set role authenticated;
+select test.login('acc_m');
+select accounts_reject_payment((select id from jpay where name = 'GXp'), 'cheque bounced');
+select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"confirmed":60000,"pending":0,"balance":81600}'::jsonb
+               and (invoice_detail((select (data ->> 'id')::uuid from jr where name = 'GX2')) -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 70800, 'G: a rejected payment is not counted either');
+
+select accounts_record_payment((select id from jc where name = 'GX'), 'PART', 40000, 'BANK_TRANSFER', 'GX-NEFT-2', null, null, true);
+select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"confirmed":100000,"balance":41600,"state":"PARTIALLY_PAID"}'::jsonb
+               and (invoice_detail((select (data ->> 'id')::uuid from jr where name = 'GX1')) -> 'generated' -> 'paymentSummary' ->> 'state') = 'FULLY_PAID'
+               and (invoice_detail((select (data ->> 'id')::uuid from jr where name = 'GX2')) -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 41600,
+  'E: 1,00,000 confirmed: 41,600 left on the order, still Partially Paid; invoice 1 is covered, invoice 2 has 41,600 left');
+select test.must_fail($$select accounts_record_payment((select id from jc where name = 'GX'), 'PART', 41601, 'CASH', null, null, null, true)$$, 'a payment above the balance is refused', 'exceed');
+select test.must_fail($$select accounts_record_payment((select id from jc where name = 'GX'), 'PART', 41600, 'CASH', null, null, null, true)$$, 'a part payment that settles the order must be a full payment', 'full payment');
+select test.must_fail($$select accounts_record_payment((select id from jc where name = 'GX'), 'PART', 100.5, 'CASH', null, null, null, true)$$, 'paise are refused on an ordinary payment', 'whole rupees');
+select test.must_fail($$select accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from jr where name = 'GX2'))$$, 'invoice 2 cannot be confirmed paid while its share is open', 'of .*70,800 is confirmed');
+
+select accounts_record_payment((select id from jc where name = 'GX'), 'FULL', 41600, 'UPI', 'GX-UPI-3', null, null, true);
+select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"confirmed":141600,"balance":0,"state":"FULLY_PAID"}'::jsonb
+               and customer_payment_overview((select id from jc where name = 'GX')) ->> 'paymentStatus' = 'FULLY_PAID',
+  'F: the last 41,600 settles the order: Fully Paid, balance 0');
+select test.check((accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from jr where name = 'GX1')) ->> 'settled')::boolean
+               and (accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from jr where name = 'GX2')) ->> 'settled')::boolean, 'both invoices are confirmed paid');
+select test.check((invoice_detail((select (data ->> 'id')::uuid from jr where name = 'GX2')) -> 'generated' -> 'paymentSummary' -> 'order' ->> 'state') = 'FULLY_PAID', 'the paid invoice shows the same order figures');
+
+select test.login('tm_a');
+insert into jc select 'LG', create_lead('{"name":"Lata Gandhi","company":"Gandhi Gems","email":"lata@gandhigems.example","phone":"9820000108","leadSource":"Walk-in"}', array['AI_CALLING']);
+select send_lead_to_accounts((select id from jc where name = 'LG'), 100000, null);
+select test.admin_check($q$select deal_amount = 100000 and agreed_tax_basis = 'INCLUSIVE' from customers where id = (select id from jc where name = 'LG')$q$, 'an agreement made without a basis stays as it always was: the amount includes GST');
+select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'EXCLUSIVE', 'The deal was before GST')$$, 'a salesperson cannot change the basis', 'Only the Accounts');
+select test.login('acc_m');
+select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'LG1'), test.inv_payload((select id from jc where name = 'LG'), 100000))$$, 'including GST: 1,18,000 against 1,00,000 is refused as before', 'including GST');
+select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'EXCLUSIVE', 'no')$$, 'a reason is required', 'at least 5 characters');
+select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'INCLUSIVE', 'Same basis again')$$, 'the same basis is refused', 'already has this basis');
+select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'MAYBE', 'Unknown basis')$$, 'an unknown basis is refused', 'includes or excludes');
+select test.check((accounts_set_agreement_basis((select id from jc where name = 'LG'), 'EXCLUSIVE', 'The deal was agreed before GST') ->> 'totalPayable')::numeric = 118000, 'Accounts corrects the basis: payable becomes 1,18,000');
+select test.admin_check($q$select count(*) = 1 from audit_logs where action = 'AGREEMENT_BASIS_CHANGED' and entity_id = (select id from jc where name = 'LG')$q$, 'the correction is audited');
+insert into jr select 'LG1', accounts_issue_invoice((select id from jq where name = 'LG1'), test.inv_payload((select id from jc where name = 'LG'), 100000));
+select test.check((select (data ->> 'total')::numeric = 118000 from jr where name = 'LG1'), 'the invoice for the whole 1,00,000 + GST is now allowed');
+select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'INCLUSIVE', 'Back to inclusive')$$, 'and cannot be switched back below what is invoiced', 'below what was already');
+select test.login('tm_a');
+select test.must_fail($$select accounts_agreement_review()$$, 'the review is for Accounts', 'Only the Accounts');
+reset role;
+
+update customers set agreed_amount = null where id = (select id from jc where name = 'PP');
+set role authenticated;
+select test.login('acc_m');
+select test.check(exists (select 1 from jsonb_array_elements(accounts_agreement_review()) r where r ->> 'customerId' = (select id::text from jc where name = 'PP'))
+               and not exists (select 1 from jsonb_array_elements(accounts_agreement_review()) r where r ->> 'customerId' = (select id::text from jc where name = 'GX')),
+  'J: an older agreement that already has invoices is listed for review; a new one is not');
+select test.check((customer_payment_overview((select id from jc where name = 'PP')) -> 'order' ->> 'basis') = 'INCLUSIVE'
+               and (customer_payment_overview((select id from jc where name = 'PP')) -> 'order' ->> 'totalPayable')::numeric = 30000, 'and it is still read as before (including GST), not reinterpreted');
 reset role;

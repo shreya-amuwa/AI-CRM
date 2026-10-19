@@ -52,7 +52,7 @@ const SalesPaymentSummary: React.FC<{ customerId: string }> = ({ customerId }) =
   if (!o) return <Loading label="Loading payments…" />;
   return (
     <div className="space-y-3">
-      <MoneyTiles deal={o.dealAmount} verified={o.verified} pending={o.pending} balance={o.balance} />
+      <MoneyTiles deal={o.dealAmount} agreed={o.agreedAmount} basis={o.taxBasis} verified={o.verified} pending={o.pending} balance={o.balance} />
       <PaymentHistory payments={o.payments} />
       {o.balance > 0 && <p className="text-[11px] text-slate-500">Accounts follows up the remaining balance. Onboarding continues meanwhile.</p>}
     </div>

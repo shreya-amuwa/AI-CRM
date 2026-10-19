@@ -1743,6 +1743,85 @@ r = await api('tc', 'POST', `/pipeline/customers/${autoD}/client-messages/resend
 check(r.status === 409, 'and not again within a minute', r);
 const un = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-messages/resend`);
 check(un.status === 409 || un.status === 404, 'not for customers that are not automated', un);
+// --- Excel import of existing customers (Support) + client "Set your password" e-mails ---
+{
+  Object.assign(process.env, { RATE_LIMIT_IMPORT_PER_MIN: '50', AUTOMATION_MODE: 'live', APP_URL: 'https://crm.example.test', AUTOMATION_TEST_RECIPIENTS: 'imp.client@example.com, imp.other@example.com' });
+  const file = {
+    customers: [
+      { row: 3, mobile: '9000000201', name: 'Import Client', businessName: 'Import Traders (TEST)', customerSince: '2025-04-01', loginEmail: 'imp.client@example.com' },
+      { row: 4, mobile: '9000000202', name: 'No Login Client', businessName: 'No Login Co (TEST)' }
+    ],
+    services: [
+      { row: 3, mobile: '9000000201', service: 'WhatsApp API + Blue Tick', plan: '2 Lakh messages', price: 40000, startDate: '2025-04-01', renewsOn: '2027-03-31', status: 'Live' },
+      { row: 4, mobile: '9000000202', service: 'AI Calling', startDate: '2025-05-01', status: 'Setting up' }
+    ],
+    whatsapp: [{ row: 4, mobile: '9000000201', packageMessages: 200000, sent: 190000, delivered: 150000, read: 90000, replied: 4000, failed: 9000, asOf: '2026-10-15' }],
+    campaigns: [{ row: 4, mobile: '9000000201', name: 'Navratri', sentOn: '2026-10-01', audienceSize: 405, sent: 405, delivered: 306, read: 200, replied: 37, failed: 46, status: 'Completed' }]
+  };
+  r = await api('a', 'POST', '/customers/import-existing', { commit: false, data: file });
+  check(r.status === 403, 'import: a Sales member cannot import existing customers', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: { ...file, extra: [] } });
+  check(r.status === 422, 'import: an unknown sheet is refused', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: { customers: [{ row: 3, mobile: { x: 1 } }] } });
+  check(r.status === 422, 'import: a cell that is not text or a number is refused', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: file });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.errors.length === 0 && r.json.data.summary.added === 2 && r.json.data.logins.length === 1 && r.json.data.logins[0].mail === 'NOT_SENT',
+    'import: the preview checks everything and saves nothing', r);
+  check((await db.query(`select count(*)::int as n from public.customers where phone = '9000000201'`)).rows[0].n === 0, 'import: nothing saved by the preview');
+  const bad = { ...file, campaigns: [{ ...file.campaigns[0], mobile: '12' }] };
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: bad });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.errors[0].sheet === '4 WhatsApp Campaigns' && r.json.data.errors[0].row === 4, 'import: a bad row stops the save and is named by sheet and row', r);
+
+  const mailsBefore = outbox.filter(o => o.path === '/emails').length;
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: file });
+  check(r.status === 200 && r.json.data.committed && r.json.data.logins.length === 1 && r.json.data.logins[0].login === 'CREATED' && r.json.data.logins[0].mail === 'SENT',
+    'import: saved; the client login is created and the set-password e-mail sent', r);
+  const impCustomer = r.json.data.logins[0].customerId as string;
+  const mail = outbox.filter(o => o.path === '/emails').slice(mailsBefore).find(o => o.body.to?.[0] === 'imp.client@example.com');
+  check(!!mail && /set your password/i.test(mail.body.subject) && !/password:\s*\S/i.test(mail.body.text), 'import: the e-mail has a set-password link and no password', mail?.body);
+  const link = /href="([^"]+)"/.exec(mail?.body.html ?? '')?.[1]?.replace(/&amp;/g, '&') ?? '';
+  check(decodeURIComponent(link).includes('https://crm.example.test/client/set-password'), 'import: the link opens the client set-password page', link);
+  const acct = (await db.query(`select a.email, u.raw_app_meta_data ->> 'client_customer_id' as cid from public.customer_client_accounts a join auth.users u on u.id = a.auth_user_id where a.customer_id = $1`, [impCustomer])).rows[0];
+  check(acct?.email === 'imp.client@example.com' && acct.cid === impCustomer, 'import: the login is recorded for that customer only', acct);
+
+  // the client opens the link, chooses a password and signs in with it
+  const verify = await fetch(link, { redirect: 'manual' });
+  const hash = new URLSearchParams((verify.headers.get('location') ?? '').split('#')[1] ?? '');
+  check(verify.status === 303 && hash.get('type') === 'recovery' && !!hash.get('access_token'), 'import: the link signs the client in to set the password');
+  await fetch(`${GW}/auth/v1/user`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${hash.get('access_token')}` }, body: JSON.stringify({ password: 'MyOwnPass#2026' }) });
+  const signed = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'imp.client@example.com', password: 'MyOwnPass#2026' }) });
+  tokens.set('imp', ((await signed.json()) as any).access_token);
+  const again = await fetch(link, { redirect: 'manual' });
+  check(/error=access_denied/.test(again.headers.get('location') ?? ''), 'import: the link works only once');
+  r = await api('imp', 'GET', '/client/services');
+  const wa = r.json.data?.find((s: any) => s.code === 'WHATSAPP_API_BLUE_TICK');
+  check(r.status === 200 && wa?.planName === '2 Lakh messages' && wa.usage?.metrics?.packageMessages === 200000 && wa.usage.metrics.sent === 190000, 'import: the client sees the plan and the usage', r);
+  r = await api('imp', 'GET', '/client/campaigns');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].delivered === 306, 'import: the client sees their campaigns', r);
+  r = await api('imp', 'GET', '/client/me');
+  check(r.status === 200 && String(r.json.data.clientSince).startsWith('2025-04-01'), 'import: "customer since" comes from the sheet', r);
+
+  // sent again by the team; "Forgot password?" by the client
+  r = await api('a', 'POST', `/customers/${impCustomer}/client-password-email`);
+  check(r.status === 404, 'import: someone else cannot send the set-password e-mail', r);
+  r = await api('sm', 'POST', `/customers/${impCustomer}/client-password-email`);
+  check(r.status === 200 && r.json.data.sent === true && r.json.data.email === 'imp.client@example.com', 'import: the member sends the set-password e-mail again', r);
+  const n0 = outbox.filter(o => o.path === '/emails').length;
+  const forgot = (email: string) => fetch(`${base}/client-auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ email }) })
+    .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  r = await forgot('IMP.client@example.com');
+  check(r.status === 200 && r.json.data.ok === true, 'forgot password: answers ok', r);
+  const reset = outbox.filter(o => o.path === '/emails').slice(n0).find(o => o.body.to?.[0] === 'imp.client@example.com');
+  check(!!reset && /new password/i.test(reset.body.subject) && reset.body.html.includes(encodeURIComponent('https://crm.example.test/client/set-password')), 'forgot password: the client gets a reset link to the CRM (not to the caller\'s site)', reset?.body);
+  const n1 = outbox.filter(o => o.path === '/emails').length;
+  r = await forgot('imp.other@example.com');
+  check(r.status === 200 && r.json.data.ok === true && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: same answer and no e-mail for an address without a client login', r);
+  r = await forgot('sm@amuwa.com');
+  check(r.status === 200 && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: never for a staff login', r);
+  r = await forgot('not-an-email');
+  check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
+  delete process.env.APP_URL; process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
+}
 for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 provider.close();
 
@@ -2400,8 +2479,10 @@ provider.close();
   r = await api('accm', 'GET', `/accounts/customers/${crypto.randomUUID()}/invoice-prefill`);
   check(r.status === 404, 'prefill: an unknown customer is not found', r);
   r = await api('accm', 'GET', `/accounts/customers/${cust}/invoice-prefill?purpose=SERVICES`);
-  check(r.status === 200 && r.json.data.customer.businessName === 'Auto Traders' && r.json.data.lines.length >= 1 && r.json.data.lines.every((l: any) => l.hsnSac === '998313' && l.taxRate === 18 && l.quantity === '1 Nos' && l.baseAmount === null)
-    && r.json.data.orderNumber === 'Verbal' && /^INV-\d{4}-\d{5}$/.test(r.json.data.suggestedInvoiceNumber) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details and the purchase\'s services, price blank, defaults set', r);
+  check(r.status === 200 && r.json.data.customer.businessName === 'Auto Traders' && r.json.data.lines.length >= 1 && r.json.data.lines.every((l: any) => l.hsnSac === '998313' && l.taxRate === 18 && l.quantity === '1 Nos')
+    // the customer's agreed 1,000 (with GST) less nothing invoiced yet: 847.46 + 18% (152.54) = 1,000.00
+    && r.json.data.dealAmount === 1000 && r.json.data.lines.length === 1 && r.json.data.lines[0].baseAmount === 847.46
+    && r.json.data.orderNumber === 'Verbal' && /^INV-\d{4}-\d{5}$/.test(r.json.data.suggestedInvoiceNumber) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details, the purchase\'s services with the amount filled in from the agreed amount, defaults set', r);
 
   // ---- issue: validation first
   r = await api('accm', 'POST', '/accounts/generated-invoices', { ...payload(), totalAmount: 11000 });
@@ -2905,6 +2986,75 @@ provider.close();
     check(r.status === 422 && /would total/.test(r.json.error.message), 'part payments: together the invoices cannot exceed the agreed amount', r);
     r = await api('accm', 'GET', `/accounts/customers/${lead}/invoice-prefill?purpose=SERVICES`);
     check(r.status === 200 && r.json.data.servicesInvoiced === 7080 && r.json.data.warnings.some((w: string) => /already issued/.test(w)), 'part payments: the builder is told what is already invoiced', r.json.data.warnings);
+  }
+
+  // ---- one order: an agreement of 1,20,000 before GST, two invoices of 60,000 + GST, part payments against the whole order
+  {
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Gita Xavier', company: 'Xavier Exports', email: 'gita.api@xavierexports.example', phone: '9820000207', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const gx = r.json.data.id;
+    r = await api('a', 'POST', `/pipeline/customers/${gx}/send-to-accounts`, { amount: 120000, taxBasis: 'SOMETIMES' });
+    check(r.status === 422, 'gst: an unknown basis is refused', r);
+    r = await api('a', 'POST', `/pipeline/customers/${gx}/send-to-accounts`, { amount: 120000, taxBasis: 'EXCLUSIVE' });
+    check(r.status === 200 || r.status === 201, 'gst: Sales sends 1,20,000 excluding GST to Accounts', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.dealAmount === 141600 && r.json.data.agreedAmount === 120000 && r.json.data.taxBasis === 'EXCLUSIVE' && r.json.data.order.gstTotal === 21600 && r.json.data.order.balance === 141600,
+      'gst: the payable is 1,41,600 (GST 21,600) and the whole of it is outstanding', r.json.data);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'GX-API-1', verify: true });
+    check(r.status === 201, 'gst: 60,000 received and verified', r);
+    const inv = () => ({
+      requestId: crypto.randomUUID(), customerId: gx, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
+      customer: { name: 'Gita Xavier', businessName: 'Xavier Exports', address: 'Shop 2, FC Road, Pune 411004, Maharashtra', contactPerson: 'Gita Xavier', contactNumber: '9820000207', gstin: null, stateCode: '27' },
+      taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+      lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: 60000 }]
+    });
+    const body1 = inv();
+    r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
+    const g1 = r.json.data?.invoice;
+    check(r.status === 201 && g1.total === 70800 && g1.generated.paymentSummary.balance === 10800 && g1.generated.paymentSummary.order.balance === 81600 && g1.generated.paymentSummary.order.totalPayable === 141600,
+      'gst: invoice 1 is 60,000 + 10,800 = 70,800 with 10,800 left on it and 81,600 on the order', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
+    check(r.status === 200 && r.json.data.invoice.id === g1.id && /already issued/.test(r.json.data.steps[0].message), 'gst: the same request again returns the same invoice', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', inv());
+    const g2 = r.json.data?.invoice;
+    check(r.status === 201 && g2.total === 70800 && g2.generated.paymentSummary.balance === 70800 && g2.generated.paymentSummary.order.invoicedTotal === 141600,
+      'gst: the second 70,800 invoice is allowed (1,20,000 + 21,600 = 1,41,600 together)', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', { ...inv(), lines: [{ ...inv().lines[0], baseAmount: 1 }] });
+    check(r.status === 422 && /before GST/.test(r.json.error.message), 'gst: real overbilling is still refused', r);
+    check((await db.query(`select count(*)::int n from generated_invoices where customer_id = $1`, [gx])).rows[0].n === 2, 'gst: exactly two invoices exist');
+    r = await api('accm', 'GET', `/accounts/customers/${gx}/invoice-prefill?purpose=SERVICES`);
+    check(r.json.data.agreedTaxBasis === 'EXCLUSIVE' && r.json.data.servicesInvoicedTaxable === 120000 && r.json.data.agreedAmount === 120000, 'gst: the builder reads the agreement from the server', r.json.data);
+    // the PDF is drawn from this same stored snapshot (its text is checked in the PDF unit tests and the invoice tests above)
+    check(g1.generated.unpaid.pdfStatus === 'STORED' && g1.generated.unpaid.sizeBytes > 0 && g1.generated.paymentSummary.order.totalPayable === 141600, 'gst: the unpaid PDF was drawn from the snapshot that carries the order figures', g1.generated.unpaid);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 5000, method: 'CASH', verify: false });
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.order.confirmed === 60000 && r.json.data.order.pending === 5000 && r.json.data.order.balance === 81600, 'gst: a pending payment is not counted', r.json.data.order);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 40000, method: 'UPI', reference: 'GX-API-2', verify: true });
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.order.confirmed === 100000 && r.json.data.order.balance === 41600 && r.json.data.paymentStatus === 'PARTIALLY_PAID', 'gst: after 40,000 more, 41,600 is left and it is still partially paid', r.json.data.order);
+    // client dashboard side: the customer's own invoice carries the same order figures
+    r = await api('accm', 'GET', `/invoices/${g2.id}`);
+    check(r.status === 200 && r.json.data.generated.paymentSummary.order.balance === 41600, 'gst: the invoice read back shows the current order balance', r.json.data);
+    // basis corrections: Accounts only, with a reason
+    r = await api('a', 'POST', `/accounts/customers/${gx}/agreement-basis`, { basis: 'INCLUSIVE', reason: 'Sales changed it' });
+    check(r.status === 403, 'gst: Sales cannot change the basis of an agreement', r);
+    r = await api('accm', 'POST', `/accounts/customers/${gx}/agreement-basis`, { basis: 'INCLUSIVE', reason: 'x' });
+    check(r.status === 422, 'gst: a reason is required', r);
+    r = await api('accm', 'POST', `/accounts/customers/${gx}/agreement-basis`, { basis: 'INCLUSIVE', reason: 'Customer says the amount had GST in it' });
+    check(r.status === 409, 'gst: and it cannot be switched back below what is already invoiced', r);
+    r = await api('a', 'GET', '/accounts/agreement-review');
+    check(r.status === 403, 'gst: the reconciliation list is for Accounts', r);
+    r = await api('accm', 'GET', '/accounts/agreement-review');
+    check(r.status === 200 && Array.isArray(r.json.data) && !r.json.data.some((x: any) => x.customerId === gx), 'gst: Accounts can read the reconciliation list; this order is not on it', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'FULL', amount: 41600, method: 'UPI', reference: 'GX-API-3', verify: true });
+    check(r.status === 422, 'gst: the settling payment is refused while 5,000 is still waiting for verification (it is held against the balance)', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    const waiting = r.json.data.payments.find((x: any) => x.status === 'PENDING');
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments/${waiting.id}/reject`, { reason: 'Cash was not handed over' });
+    check(r.status === 200 || r.status === 201, 'gst: the unverified payment is rejected', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'FULL', amount: 41600, method: 'UPI', reference: 'GX-API-3', verify: true });
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.order.balance === 0 && r.json.data.order.state === 'FULLY_PAID' && r.json.data.paymentStatus === 'FULLY_PAID', 'gst: the last 41,600 settles the order', r.json.data.order);
   }
 
   // ---- service journey settings

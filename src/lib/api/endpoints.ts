@@ -30,6 +30,9 @@ import type {
   InvoiceKind,
   InvoicePage,
   InvoicePrefill,
+  AgreementReviewItem,
+  AgreementTaxBasis,
+  OrderSummary,
   InvoicePurpose,
   InvoiceRunResult,
   InvoiceStage,
@@ -218,8 +221,8 @@ export const pipelineApi = {
   conversations: (id: string) => api.get<Conversation[]>(`/pipeline/customers/${id}/conversations`),
   addConversation: (id: string, note: string) => api.post<Conversation[]>(`/pipeline/customers/${id}/conversations`, { note }),
   updateConversation: (conversationId: string, note: string) => api.patch<null>(`/pipeline/conversations/${conversationId}`, { note }),
-  sendToAccounts: (id: string, body: { amount: number; note?: string | null }) =>
-    api.post<PipelineCustomer>(`/pipeline/customers/${id}/send-to-accounts`, { amount: body.amount, note: body.note || null }),
+  sendToAccounts: (id: string, body: { amount: number; note?: string | null; taxBasis?: AgreementTaxBasis }) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/send-to-accounts`, { amount: body.amount, note: body.note || null, taxBasis: body.taxBasis ?? 'INCLUSIVE' }),
   paymentOverview: (id: string) => api.get<PaymentOverview>(`/pipeline/customers/${id}/payment-overview`),
   partPayments: (q: PartPaymentsParams = {}) => api.get<PartPaymentsPage>('/pipeline/part-payments', { ...q }),
   paymentRequests: (q: { status?: 'PENDING' | 'CONFIRMED' | 'RETURNED'; search?: string; page?: number; pageSize?: number } = {}) =>
@@ -336,6 +339,10 @@ export const invoicesApi = {
 export const generatedInvoicesApi = {
   prefill: (customerId: string, q: { purpose: InvoicePurpose; addonRequestId?: string | null }) =>
     api.get<InvoicePrefill>(`/accounts/customers/${customerId}/invoice-prefill`, { purpose: q.purpose, addonRequestId: q.addonRequestId }),
+  /** Accounts: say whether the amount on record is before or after GST (audited, with a reason). */
+  setAgreementBasis: (customerId: string, body: { basis: AgreementTaxBasis; reason: string }) =>
+    api.post<OrderSummary>(`/accounts/customers/${customerId}/agreement-basis`, body),
+  agreementReview: () => api.get<AgreementReviewItem[]>('/accounts/agreement-review'),
   /** `body.requestId` is created once per builder session: repeating the request never creates a second invoice. */
   issue: (body: Record<string, unknown>) => api.post<InvoiceRunResult>('/accounts/generated-invoices', body),
   confirmPayment: (id: string, body: { method?: PaymentMethod | null; reference?: string | null; note?: string | null; paidOn?: string | null; amount?: string | null; requestId?: string }) =>

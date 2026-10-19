@@ -106,6 +106,29 @@ export const customerImportSchema = z.object({
   customers: z.array(z.unknown()).min(1).max(500)
 });
 
+/** One cell of the Excel import: text, number or empty. The database checks what each cell means. */
+const importCell = z.union([z.string().max(2000), z.number().finite(), z.null()]).optional();
+const importRow = z.object({ row: z.number().int().min(1).max(100000) }).catchall(importCell);
+const importSheet = (max: number) => z.array(importRow).max(max).optional();
+export const customerDataImportSchema = z
+  .object({
+    commit: z.boolean().default(false),
+    data: z
+      .object({
+        customers: importSheet(500),
+        services: importSheet(3000),
+        whatsapp: importSheet(500),
+        campaigns: importSheet(3000),
+        aiCalling: importSheet(500),
+        rcsVoice: importSheet(1000),
+        monthly: importSheet(3000)
+      })
+      .strict()
+  })
+  .strict();
+
+export const clientForgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254) }).strict();
+
 export const customerActivityCreateSchema = z
   .object({
     type: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9_]{1,49}$/, 'Invalid activity type.'),
@@ -522,8 +545,20 @@ export const serviceJourneySchema = z
   .strict()
   .refine(v => v.requiresTechnicalConsultant || !!v.deliveryDepartmentId, { path: ['deliveryDepartmentId'], message: 'Choose the department that delivers this service.' });
 
+export const AGREEMENT_TAX_BASES = ['INCLUSIVE', 'EXCLUSIVE'] as const;
 export const sendToAccountsSchema = z
-  .object({ amount: wholeRupees('Enter the agreed amount.'), note: optionalText(1000) })
+  .object({
+    amount: wholeRupees('Enter the agreed amount.'),
+    note: optionalText(1000),
+    /** Whether the agreed amount already includes GST. Older callers send nothing and keep the amount as the total. */
+    taxBasis: z.enum(AGREEMENT_TAX_BASES, { errorMap: () => ({ message: 'Say whether the agreed amount includes or excludes GST.' }) }).default('INCLUSIVE')
+  })
+  .strict();
+export const agreementBasisSchema = z
+  .object({
+    basis: z.enum(AGREEMENT_TAX_BASES, { errorMap: () => ({ message: 'Say whether the agreed amount includes or excludes GST.' }) }),
+    reason: z.string().trim().min(5, 'Say why the agreement is being changed (at least 5 characters).').max(500)
+  })
   .strict();
 
 const paymentFields = {

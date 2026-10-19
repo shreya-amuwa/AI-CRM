@@ -17,6 +17,7 @@
     "@hono/node-server": "^1.19.17",
     "@supabase/supabase-js": "^2.117.2",
     "hono": "^4.13.13",
+    "jszip": "^3.10.2",
     "lucide-react": "^0.428.0",
     "nodemailer": "^10.1.0",
     "pdf-lib": "^1.17.1",
