@@ -279,6 +279,8 @@ export const generatedInvoiceController = {
     const r = await svc(ctx).generatedInvoices.issue(ctx.req.body);
     return ok({ invoice: r.invoice, steps: r.steps }, r.created ? 201 : 200);
   }) as Handler,
+  setAgreementBasis: (async ctx => ok(await svc(ctx).generatedInvoices.setAgreementBasis(ctx.params.id, ctx.req.body))) as Handler,
+  agreementReview: (async ctx => ok(await svc(ctx).generatedInvoices.agreementReview())) as Handler,
   confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler

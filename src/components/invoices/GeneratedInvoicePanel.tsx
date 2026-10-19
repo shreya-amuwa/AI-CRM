@@ -87,10 +87,26 @@ export const PaymentSummaryCard: React.FC<{ summary: InvoicePaymentSummary }> = 
         <dd className="font-semibold text-slate-900">{rupees(s.confirmed)}</dd>
       </div>
       <div>
-        <dt className="text-[11px] text-slate-500">Balance outstanding</dt>
+        <dt className="text-[11px] text-slate-500">{s.order ? 'Balance due on this invoice' : 'Balance outstanding'}</dt>
         <dd className={`font-bold ${s.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.balance)}</dd>
       </div>
     </dl>
+    {s.order && (
+      <dl className="grid grid-cols-3 gap-3 text-xs rounded-lg bg-slate-50 border border-slate-100 p-2.5" aria-label="Whole order">
+        <div>
+          <dt className="text-[11px] text-slate-500">Total order value (incl. GST)</dt>
+          <dd className="font-semibold text-slate-900">{rupees(s.order.totalPayable)}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-slate-500">Total confirmed payments</dt>
+          <dd className="font-semibold text-slate-900">{rupees(s.order.confirmed)}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-slate-500">Total order balance outstanding</dt>
+          <dd className={`font-bold ${s.order.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.order.balance)}</dd>
+        </div>
+      </dl>
+    )}
     {s.pending > 0 && <p className="text-[11px] text-amber-800">{rupees(s.pending)} is recorded but not verified yet. It is not counted until it is verified.</p>}
     {s.payments.length > 0 && (
       <ul className="divide-y divide-slate-100 border border-slate-100 rounded-lg text-[11px]" aria-label="Confirmed payments">

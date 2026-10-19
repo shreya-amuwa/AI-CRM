@@ -89,7 +89,7 @@ const PaymentFormDialog: React.FC<{
     <Modal title={editing ? 'Edit payment' : 'Record payment'} onClose={() => !busy && onClose()}>
       <form onSubmit={submit} className="space-y-4" noValidate>
         <p className="text-xs text-slate-500">
-          Agreed {rupees(overview.dealAmount)} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong>
+          {overview.taxBasis === 'EXCLUSIVE' ? `Agreed ${rupees(overview.agreedAmount)} excluding GST · total payable ${rupees(overview.dealAmount)}` : `Agreed ${rupees(overview.dealAmount)}`} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong>
         </p>
         <fieldset>
           <legend className="block text-xs font-semibold text-slate-700 mb-1">Payment type</legend>
@@ -281,7 +281,7 @@ export const AccountsPaymentPanel: React.FC<{
           </button>
         )}
       </div>
-      <MoneyTiles deal={o.dealAmount} verified={o.verified} pending={o.pending} balance={o.balance} />
+      <MoneyTiles deal={o.dealAmount} agreed={o.agreedAmount} basis={o.taxBasis} verified={o.verified} pending={o.pending} balance={o.balance} />
       {notice && (
         <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
           {notice}

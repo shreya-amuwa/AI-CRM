@@ -59,7 +59,7 @@ export const CustomerQuickView: React.FC<{ id: string; title?: string; onClose: 
           {pay && (
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-slate-800">Payments</h3>
-              <MoneyTiles deal={pay.dealAmount} verified={pay.verified} pending={pay.pending} balance={pay.balance} />
+              <MoneyTiles deal={pay.dealAmount} agreed={pay.agreedAmount} basis={pay.taxBasis} verified={pay.verified} pending={pay.pending} balance={pay.balance} />
               <PaymentHistory payments={pay.payments} />
             </div>
           )}

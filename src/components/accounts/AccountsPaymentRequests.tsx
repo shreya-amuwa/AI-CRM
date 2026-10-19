@@ -76,7 +76,8 @@ const RequestDetail: React.FC<{
             <Row k={item.sentFrom === 'SUPPORT' ? 'Referred by (Support)' : 'Sold by'} v={item.salesperson} />
             <Row k="Customer ID" v={item.code} />
             <Row k="Services" v={item.services.length ? item.services.join(', ') : null} />
-            <Row k="Agreed amount" v={rupees(item.agreedAmount)} />
+            <Row k={item.taxBasis === 'EXCLUSIVE' ? 'Agreed amount (excl. GST)' : 'Agreed amount'} v={rupees(item.agreedAmount)} />
+            {item.taxBasis === 'EXCLUSIVE' && item.payableAmount != null && <Row k="Total payable (incl. GST)" v={rupees(item.payableAmount)} />}
           </dl>
           {item.salesNote && (
             <p className="mt-3 text-xs text-slate-700 bg-slate-50 rounded-xl px-3 py-2">
@@ -312,7 +313,10 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
                     </span>
                   </span>
                   <span className="text-xs text-slate-700 truncate">{i.services.join(', ') || '-'}</span>
-                  <span className="text-sm font-semibold text-slate-900">{rupees(i.agreedAmount)}</span>
+                  <span className="text-sm font-semibold text-slate-900">
+                    {rupees(i.payableAmount ?? i.agreedAmount)}
+                    {i.taxBasis === 'EXCLUSIVE' && <span className="block text-[10px] font-normal text-slate-500">{rupees(i.agreedAmount)} + GST</span>}
+                  </span>
                   <span className="text-xs text-slate-600">
                     {i.amountRecorded > 0 ? (
                       <>

@@ -545,8 +545,20 @@ export const serviceJourneySchema = z
   .strict()
   .refine(v => v.requiresTechnicalConsultant || !!v.deliveryDepartmentId, { path: ['deliveryDepartmentId'], message: 'Choose the department that delivers this service.' });
 
+export const AGREEMENT_TAX_BASES = ['INCLUSIVE', 'EXCLUSIVE'] as const;
 export const sendToAccountsSchema = z
-  .object({ amount: wholeRupees('Enter the agreed amount.'), note: optionalText(1000) })
+  .object({
+    amount: wholeRupees('Enter the agreed amount.'),
+    note: optionalText(1000),
+    /** Whether the agreed amount already includes GST. Older callers send nothing and keep the amount as the total. */
+    taxBasis: z.enum(AGREEMENT_TAX_BASES, { errorMap: () => ({ message: 'Say whether the agreed amount includes or excludes GST.' }) }).default('INCLUSIVE')
+  })
+  .strict();
+export const agreementBasisSchema = z
+  .object({
+    basis: z.enum(AGREEMENT_TAX_BASES, { errorMap: () => ({ message: 'Say whether the agreed amount includes or excludes GST.' }) }),
+    reason: z.string().trim().min(5, 'Say why the agreement is being changed (at least 5 characters).').max(500)
+  })
   .strict();
 
 const paymentFields = {

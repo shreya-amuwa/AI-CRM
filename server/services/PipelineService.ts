@@ -571,7 +571,7 @@ export class PipelineService {
   async sendToAccounts(id: string, body: unknown): Promise<PipelineCustomer> {
     const customerId = parse(uuidSchema, id);
     const input = parse(sendToAccountsSchema, body);
-    await this.repo.sendToAccounts(customerId, input.amount, input.note ?? null);
+    await this.repo.sendToAccounts(customerId, input.amount, input.note ?? null, input.taxBasis);
     return this.repo.get(customerId);
   }
 

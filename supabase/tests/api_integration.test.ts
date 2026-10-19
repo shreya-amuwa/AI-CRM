@@ -2988,6 +2988,75 @@ provider.close();
     check(r.status === 200 && r.json.data.servicesInvoiced === 7080 && r.json.data.warnings.some((w: string) => /already issued/.test(w)), 'part payments: the builder is told what is already invoiced', r.json.data.warnings);
   }
 
+  // ---- one order: an agreement of 1,20,000 before GST, two invoices of 60,000 + GST, part payments against the whole order
+  {
+    const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Gita Xavier', company: 'Xavier Exports', email: 'gita.api@xavierexports.example', phone: '9820000207', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const gx = r.json.data.id;
+    r = await api('a', 'POST', `/pipeline/customers/${gx}/send-to-accounts`, { amount: 120000, taxBasis: 'SOMETIMES' });
+    check(r.status === 422, 'gst: an unknown basis is refused', r);
+    r = await api('a', 'POST', `/pipeline/customers/${gx}/send-to-accounts`, { amount: 120000, taxBasis: 'EXCLUSIVE' });
+    check(r.status === 200 || r.status === 201, 'gst: Sales sends 1,20,000 excluding GST to Accounts', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.dealAmount === 141600 && r.json.data.agreedAmount === 120000 && r.json.data.taxBasis === 'EXCLUSIVE' && r.json.data.order.gstTotal === 21600 && r.json.data.order.balance === 141600,
+      'gst: the payable is 1,41,600 (GST 21,600) and the whole of it is outstanding', r.json.data);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'GX-API-1', verify: true });
+    check(r.status === 201, 'gst: 60,000 received and verified', r);
+    const inv = () => ({
+      requestId: crypto.randomUUID(), customerId: gx, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
+      customer: { name: 'Gita Xavier', businessName: 'Xavier Exports', address: 'Shop 2, FC Road, Pune 411004, Maharashtra', contactPerson: 'Gita Xavier', contactNumber: '9820000207', gstin: null, stateCode: '27' },
+      taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+      lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: 60000 }]
+    });
+    const body1 = inv();
+    r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
+    const g1 = r.json.data?.invoice;
+    check(r.status === 201 && g1.total === 70800 && g1.generated.paymentSummary.balance === 10800 && g1.generated.paymentSummary.order.balance === 81600 && g1.generated.paymentSummary.order.totalPayable === 141600,
+      'gst: invoice 1 is 60,000 + 10,800 = 70,800 with 10,800 left on it and 81,600 on the order', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
+    check(r.status === 200 && r.json.data.invoice.id === g1.id && /already issued/.test(r.json.data.steps[0].message), 'gst: the same request again returns the same invoice', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', inv());
+    const g2 = r.json.data?.invoice;
+    check(r.status === 201 && g2.total === 70800 && g2.generated.paymentSummary.balance === 70800 && g2.generated.paymentSummary.order.invoicedTotal === 141600,
+      'gst: the second 70,800 invoice is allowed (1,20,000 + 21,600 = 1,41,600 together)', r);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', { ...inv(), lines: [{ ...inv().lines[0], baseAmount: 1 }] });
+    check(r.status === 422 && /before GST/.test(r.json.error.message), 'gst: real overbilling is still refused', r);
+    check((await db.query(`select count(*)::int n from generated_invoices where customer_id = $1`, [gx])).rows[0].n === 2, 'gst: exactly two invoices exist');
+    r = await api('accm', 'GET', `/accounts/customers/${gx}/invoice-prefill?purpose=SERVICES`);
+    check(r.json.data.agreedTaxBasis === 'EXCLUSIVE' && r.json.data.servicesInvoicedTaxable === 120000 && r.json.data.agreedAmount === 120000, 'gst: the builder reads the agreement from the server', r.json.data);
+    // the PDF is drawn from this same stored snapshot (its text is checked in the PDF unit tests and the invoice tests above)
+    check(g1.generated.unpaid.pdfStatus === 'STORED' && g1.generated.unpaid.sizeBytes > 0 && g1.generated.paymentSummary.order.totalPayable === 141600, 'gst: the unpaid PDF was drawn from the snapshot that carries the order figures', g1.generated.unpaid);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 5000, method: 'CASH', verify: false });
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.order.confirmed === 60000 && r.json.data.order.pending === 5000 && r.json.data.order.balance === 81600, 'gst: a pending payment is not counted', r.json.data.order);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 40000, method: 'UPI', reference: 'GX-API-2', verify: true });
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.order.confirmed === 100000 && r.json.data.order.balance === 41600 && r.json.data.paymentStatus === 'PARTIALLY_PAID', 'gst: after 40,000 more, 41,600 is left and it is still partially paid', r.json.data.order);
+    // client dashboard side: the customer's own invoice carries the same order figures
+    r = await api('accm', 'GET', `/invoices/${g2.id}`);
+    check(r.status === 200 && r.json.data.generated.paymentSummary.order.balance === 41600, 'gst: the invoice read back shows the current order balance', r.json.data);
+    // basis corrections: Accounts only, with a reason
+    r = await api('a', 'POST', `/accounts/customers/${gx}/agreement-basis`, { basis: 'INCLUSIVE', reason: 'Sales changed it' });
+    check(r.status === 403, 'gst: Sales cannot change the basis of an agreement', r);
+    r = await api('accm', 'POST', `/accounts/customers/${gx}/agreement-basis`, { basis: 'INCLUSIVE', reason: 'x' });
+    check(r.status === 422, 'gst: a reason is required', r);
+    r = await api('accm', 'POST', `/accounts/customers/${gx}/agreement-basis`, { basis: 'INCLUSIVE', reason: 'Customer says the amount had GST in it' });
+    check(r.status === 409, 'gst: and it cannot be switched back below what is already invoiced', r);
+    r = await api('a', 'GET', '/accounts/agreement-review');
+    check(r.status === 403, 'gst: the reconciliation list is for Accounts', r);
+    r = await api('accm', 'GET', '/accounts/agreement-review');
+    check(r.status === 200 && Array.isArray(r.json.data) && !r.json.data.some((x: any) => x.customerId === gx), 'gst: Accounts can read the reconciliation list; this order is not on it', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'FULL', amount: 41600, method: 'UPI', reference: 'GX-API-3', verify: true });
+    check(r.status === 422, 'gst: the settling payment is refused while 5,000 is still waiting for verification (it is held against the balance)', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    const waiting = r.json.data.payments.find((x: any) => x.status === 'PENDING');
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments/${waiting.id}/reject`, { reason: 'Cash was not handed over' });
+    check(r.status === 200 || r.status === 201, 'gst: the unverified payment is rejected', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'FULL', amount: 41600, method: 'UPI', reference: 'GX-API-3', verify: true });
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.order.balance === 0 && r.json.data.order.state === 'FULLY_PAID' && r.json.data.paymentStatus === 'FULLY_PAID', 'gst: the last 41,600 settles the order', r.json.data.order);
+  }
+
   // ---- service journey settings
   r = await api('sm', 'GET', '/pipeline/service-journeys');
   check(r.status === 200 && r.json.data.filter((x: any) => !x.requiresTechnicalConsultant).length === 6 && r.json.data.find((x: any) => x.code === 'WHATSAPP_API_BLUE_TICK').requiresTechnicalConsultant === true, 'settings: one catalogue; only the six Design Studio services skip the consultant', r);

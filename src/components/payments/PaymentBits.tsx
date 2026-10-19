@@ -79,23 +79,27 @@ export const FollowUpBadge: React.FC<{ status: FollowUpStatus }> = ({ status }) 
 );
 
 /** Money summary: agreed · verified · pending · balance. */
-export const MoneyTiles: React.FC<{ deal: number | null; verified: number; pending: number; balance: number }> = ({ deal, verified, pending, balance }) => (
-  <dl className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-    {(
-      [
-        ['Agreed amount', rupees(deal)],
-        ['Verified received', rupees(verified)],
-        ['Pending verification', rupees(pending)],
-        ['Outstanding balance', rupees(balance)]
-      ] as const
-    ).map(([k, v]) => (
+/** `deal` is the total payable (GST included). When the agreement excludes GST, `agreed` shows the amount before GST next to it. */
+export const MoneyTiles: React.FC<{ deal: number | null; verified: number; pending: number; balance: number; agreed?: number | null; basis?: 'INCLUSIVE' | 'EXCLUSIVE' }> = ({ deal, verified, pending, balance, agreed, basis }) => {
+  const excl = basis === 'EXCLUSIVE' && agreed != null;
+  const tiles: (readonly [string, string])[] = [
+    ...(excl ? ([['Agreed amount (excl. GST)', rupees(agreed)]] as const) : []),
+    [excl ? 'Total payable (incl. GST)' : 'Agreed amount', rupees(deal)],
+    ['Verified received', rupees(verified)],
+    ['Pending verification', rupees(pending)],
+    ['Outstanding balance', rupees(balance)]
+  ];
+  return (
+  <dl className={`grid grid-cols-2 ${excl ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
+    {tiles.map(([k, v]) => (
       <div key={k} className="rounded-xl bg-slate-50 p-3">
         <dt className="text-[11px] text-slate-500">{k}</dt>
         <dd className="text-base font-bold text-slate-900 mt-0.5">{v}</dd>
       </div>
     ))}
   </dl>
-);
+  );
+};
 
 /** Every payment on record, newest first. `actions` adds per-row buttons (Accounts). */
 export const PaymentHistory: React.FC<{

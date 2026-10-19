@@ -143,6 +143,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/accounts/invoice-customers', handler: addons.invoiceCustomers },
   // Generated invoices (Accounts invoice builder): prefill -> issue (+ unpaid PDF + e-mail) -> confirm payment (+ paid PDF + e-mail)
   { method: 'GET', path: '/accounts/customers/:id/invoice-prefill', handler: generatedInvoices.prefill },
+  { method: 'POST', path: '/accounts/customers/:id/agreement-basis', handler: generatedInvoices.setAgreementBasis, options: S },
+  { method: 'GET', path: '/accounts/agreement-review', handler: generatedInvoices.agreementReview },
   { method: 'POST', path: '/accounts/generated-invoices', handler: generatedInvoices.issue, options: S },
   { method: 'POST', path: '/accounts/generated-invoices/:id/confirm-payment', handler: generatedInvoices.confirmPayment, options: S },
   { method: 'POST', path: '/accounts/generated-invoices/:id/deliver', handler: generatedInvoices.deliver, options: S },
