@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   BarChart3,
   Bell,
+  Activity,
   CalendarCheck,
   ClipboardList,
   FileSpreadsheet,
@@ -23,6 +24,7 @@ import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { AccountsPlans } from '../accounts/AccountsPlans';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
+import { TeamActivityPage } from '../support-member/TeamActivityPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { useWorkTasks } from '../../lib/workTasks';
 import { LeaveCenter } from '../leave/LeaveCenter';
@@ -55,7 +57,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
     const work = [
       { id: 'assign', label: 'Assign', icon: ClipboardList },
       { id: 'reports', label: 'Reports', icon: BarChart3 },
-      { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck }
+      { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
+      { id: 'activity', label: 'Team Activity', icon: Activity }
     ];
     // The Accounts Department Head also confirms the amount of customers Sales sends, and configures the monthly plans.
     if (isAccounts) {
@@ -130,6 +133,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'reports' && <HeadReports data={data} />}
       {nav === 'daily' && <HeadDaily data={data} />}
+      {nav === 'activity' && <TeamActivityPage />}
       {nav === 'support' && <SupportDeskPage />}
       {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
       {nav === 'customers' && <DepartmentCustomers initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
