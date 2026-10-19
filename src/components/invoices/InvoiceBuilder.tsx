@@ -397,7 +397,7 @@ export const InvoiceBuilder: React.FC<{
           <fieldset className="space-y-2">
             <legend className="text-xs font-bold text-slate-800 mb-1">Services</legend>
             {prefill.dealAmount !== null && purpose === 'SERVICES' && (
-              <p className="text-[11px] text-slate-500">Sales agreed {rs(toPaise(prefill.dealAmount) ?? 0)} for all the services together{prefill.servicesInvoiced > 0 ? `; ${rs(toPaise(prefill.servicesInvoiced) ?? 0)} is already invoiced` : ''}. You can make an invoice for each part payment: the invoices together (with tax) cannot be more than the agreed amount. Enter each service amount below, before tax.</p>
+              <p className="text-[11px] text-slate-500">Sales agreed {rs(toPaise(prefill.dealAmount) ?? 0)} for all the services together{prefill.servicesInvoiced > 0 ? `; ${rs(toPaise(prefill.servicesInvoiced) ?? 0)} is already invoiced` : ''}. You can make an invoice for each part payment: the invoices together (with tax) cannot be more than the agreed amount. {form.lines.some(l => l.baseAmount.trim()) ? 'The amounts below are filled in from the balance still to be invoiced; check or change them (before tax).' : 'Enter each service amount below, before tax.'}</p>
             )}
             <div className="space-y-3">
               {form.lines.map((l, i) => (

@@ -10,6 +10,7 @@ reset role;
 -- generated_json / claim / confirm functions. Re-apply this migration too (proving it is re-runnable as well).
 \i supabase/migrations/20261029000100_service_journeys_support_balance.sql
 \i supabase/migrations/20261030000100_part_payment_invoices.sql
+\i supabase/migrations/20261102000100_invoice_prefill_agreed_amount.sql
 create temp table jc (name text primary key, id uuid);
 create temp table jr (name text primary key, data jsonb);
 create temp table jq (name text primary key, id uuid default gen_random_uuid());
@@ -488,6 +489,37 @@ select test.check((accounts_confirm_invoice_payment((select (data ->> 'id')::uui
 insert into jr select 'PP3', accounts_issue_invoice((select id from jq where name = 'PP3b'), test.inv_payload((select id from jc where name = 'PP'), 7000));
 select test.check((select (data ->> 'total')::numeric = 8260 and (data -> 'generated' -> 'paymentSummary' ->> 'confirmed')::numeric = 760 and (data -> 'generated' -> 'paymentSummary' ->> 'balance')::numeric = 7500 from jr where name = 'PP3'),
   'a third invoice within the agreed amount (29,500 of 30,000) is allowed; it gets the 760 left of the 22,000 verified so far');
+-- the amount is filled in from the customer's own record: what was agreed, less what is already invoiced
+select test.check((select (select count(*) from jsonb_array_elements(p -> 'lines')) = 1
+                          and (l ->> 'baseAmount')::numeric > 0
+                          and (l ->> 'baseAmount')::numeric + round((l ->> 'baseAmount')::numeric * 18 / 100, 2) between 499.99 and 500
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PP')) p) x, jsonb_array_elements(p -> 'lines') l),
+  'the builder fills in the balance still to be invoiced for this customer (agreed 30,000 less 29,500 invoiced = 500, with GST)');
+select test.login('tm_a');
+insert into jc select 'PQ', create_lead('{"name":"Pankaj Qureshi","company":"Qureshi Traders","email":"pankaj@qureshitraders.example","phone":"9820000107","leadSource":"Walk-in"}', array['AI_CALLING', 'META_ADS_MANAGEMENT']);
+select test.login('tm_a');
+select send_lead_to_accounts((select id from jc where name = 'PQ'), 59000, null);
+select test.login('acc_m');
+select accounts_record_payment((select id from jc where name = 'PQ'), 'PART', 1000, 'UPI', 'PQ-UPI-1', null, null, true);
+select test.check((select jsonb_array_length(p -> 'lines') = 2
+                          and (select count(distinct (l ->> 'baseAmount')::numeric) = 1 and bool_and((l ->> 'baseAmount')::numeric = 25000) from jsonb_array_elements(p -> 'lines') l)
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PQ')) p) x),
+  'two services share the agreed 59,000 equally: 25,000 each before GST (29,500 with GST each)');
+select test.check((select (select sum((l ->> 'baseAmount')::numeric + round((l ->> 'baseAmount')::numeric * 18 / 100, 2)) from jsonb_array_elements(p -> 'lines') l) = 59000
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PQ')) p) x),
+  'with GST the filled-in lines add up to the agreed amount');
+select test.check((select (select count(*) from jsonb_array_elements(p -> 'lines') l where l -> 'baseAmount' <> 'null'::jsonb) = 1
+                          and (select (l ->> 'baseAmount')::numeric from jsonb_array_elements(p -> 'lines') l limit 1) is not null
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PP')) p) x),
+  'one customer''s amount does not leak into another''s (PP gets one row, PQ two)');
+insert into jq (name) values ('PQ1');
+insert into jr select 'PQ1', accounts_issue_invoice((select id from jq where name = 'PQ1'), test.inv_payload((select id from jc where name = 'PQ'), 50000));
+select test.check((select (select bool_and(l -> 'baseAmount' = 'null'::jsonb) from jsonb_array_elements(p -> 'lines') l)
+                          and exists (select 1 from jsonb_array_elements(p -> 'warnings') w where w #>> '{}' like '%already been invoiced in full%')
+                     from (select accounts_invoice_prefill((select id from jc where name = 'PQ')) p) x),
+  'once the agreed amount is invoiced in full nothing is filled in, and Accounts is told why');
+select test.check((select bool_and(l -> 'baseAmount' = 'null'::jsonb) from jsonb_array_elements(accounts_invoice_prefill((select id from jc where name = 'PQ'), 'ADDITIONAL') -> 'lines') l) is not false,
+  'an additional purchase still starts empty');
 select test.login('tm_a');
 select test.must_fail($$select accounts_issue_invoice((select id from jq where name = 'PPx'), test.inv_payload((select id from jc where name = 'PP'), 100))$$, 'a salesperson still cannot issue one', 'Only the Accounts');
 reset role;
