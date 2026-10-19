@@ -3088,6 +3088,60 @@ provider.close();
     'a mixed order keeps each service\'s own setting and follows the Technical Consultant journey', r.json.data);
 }
 
+// --- Business reports: Sales and Support business for HR ---------------------------------
+{
+  const num = (v: unknown) => Number(v ?? 0);
+  r = await api('hr', 'GET', '/hr/business-report');
+  check(r.status === 200 && r.json.data.sections.sales && r.json.data.sections.support && Array.isArray(r.json.data.sections.sales.employees), 'an HR manager reads the business report', r);
+  const rep = r.json.data;
+  const { rows: [led] } = await db.query(`select
+      coalesce(sum(amount) filter (where status = 'COLLECTED' and division = 'SALES'), 0)::float as sales,
+      coalesce(sum(amount) filter (where status = 'COLLECTED' and division = 'SUPPORT'), 0)::float as support,
+      coalesce(sum(amount) filter (where status = 'COLLECTED' and division is null), 0)::float as unclassified,
+      coalesce(sum(amount) filter (where status = 'COLLECTED' and source <> 'PLAN_ACTIVATION'), 0)::float as cash
+    from private.business_ledger()`);
+  check(num(rep.sections.sales.collected) === led.sales && num(rep.sections.support.collected) === led.support, 'the API figures are exactly what the ledger holds', { rep: rep.sections, led });
+  const { rows: [vi] } = await db.query(`select coalesce(sum(amount), 0)::float as s from private.verified_income()`);
+  check(led.cash === vi.s, 'every verified payment appears once: the ledger equals the verified income Accounts reports', { led, vi });
+  check(num(rep.organization.collected) === led.sales + led.support, 'the organisation total is Sales + Support', rep.organization);
+  r = await api('hr', 'GET', '/hr/business-report?division=SUPPORT');
+  check(r.status === 200 && !r.json.data.sections.sales && r.json.data.sections.support, 'a division filter returns only that department', r);
+  r = await api('hr', 'GET', '/hr/business-report/transactions?pageSize=5&status=COLLECTED');
+  check(r.status === 200 && r.json.data.items.length <= 5 && r.json.data.items.every((t: any) => t.status === 'COLLECTED' && t.amount > 0) && r.json.data.total >= 1, 'the transaction list is paged and filtered', r);
+  const { rows: [cnt] } = await db.query(`select count(*)::int as n from private.business_ledger() where status = 'COLLECTED'`);
+  r = await api('hr', 'GET', '/hr/business-report/transactions?status=COLLECTED&pageSize=100');
+  check(r.json.data.total === cnt.n, 'the list and the ledger count the same payments', { api: r.json.data.total, db: cnt.n });
+  r = await api('hr', 'GET', '/hr/business-report?from=2026-12-31&to=2026-01-01');
+  check(r.status === 400, 'an end date before the start date is refused', r);
+  r = await api('hr', 'GET', '/hr/business-report?division=HR');
+  check(r.status === 400, 'only Sales or Support can be asked for', r);
+  r = await api('hr', 'GET', '/hr/business-report?from=2020-01-01&to=2020-01-31');
+  check(r.status === 200 && num(r.json.data.organization.collected) === 0, 'a date range with no payments is zero', r);
+  r = await api('hr', 'GET', '/hr/business-report/people');
+  check(r.status === 200 && Array.isArray(r.json.data), 'HR reads the employees that appear in the records', r);
+  r = await api('sa', 'GET', '/hr/business-report');
+  check(r.status === 200, 'the Super Admin reads the business report', r);
+  for (const who of ['a', 'sm', 'accm', 'accdh', 'dh', 'tc']) {
+    r = await api(who, 'GET', '/hr/business-report');
+    check(r.status === 403, `${who} cannot read the business report`, r);
+  }
+  r = await api('a', 'GET', '/hr/business-report/transactions');
+  check(r.status === 403, 'nor the transaction list', r);
+  r = await api('sm', 'GET', '/hr/business-report/people');
+  check(r.status === 403, 'nor the employee list', r);
+  r = await api(null, 'GET', '/hr/business-report');
+  check(r.status === 401, 'nor without signing in', r);
+  // Accounts classifies additional invoices
+  r = await api('accm', 'POST', '/accounts/invoices/00000000-0000-4000-8000-000000000001/business', { kind: 'RENEWAL' });
+  check(r.status === 404, 'tagging an invoice that does not exist is refused', r);
+  r = await api('accm', 'POST', '/accounts/invoices/00000000-0000-4000-8000-000000000001/business', { kind: 'WEEKLY' });
+  check(r.status === 400, 'an unknown kind is refused', r);
+  r = await api('a', 'POST', '/accounts/invoices/00000000-0000-4000-8000-000000000001/business', { kind: 'RENEWAL' });
+  check(r.status === 403, 'a salesperson cannot classify an invoice', r);
+  r = await api('a', 'GET', '/accounts/invoices/00000000-0000-4000-8000-000000000001/business');
+  check(r.status === 403, 'nor read its classification', r);
+}
+
 // A project missing an earlier migration must still let people sign in.
 await db.query(`alter function public.rate_limit_consume(jsonb) rename to rate_limit_consume_hidden`);
 r = await api('sa', 'GET', '/me');

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AccountsFinanceRepository } from '../repositories/AccountsFinanceRepository.js';
+import { BusinessReportRepository } from '../repositories/BusinessReportRepository.js';
 import { AddonInvoiceRepository } from '../repositories/AddonInvoiceRepository.js';
 import { ApprovalRepository } from '../repositories/ApprovalRepository.js';
 import { AuditRepository } from '../repositories/AuditRepository.js';
@@ -13,6 +14,7 @@ import { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
 import { AccountsFinanceService } from './AccountsFinanceService.js';
+import { BusinessReportService } from './BusinessReportService.js';
 import { AddonInvoiceService } from './AddonInvoiceService.js';
 import { ApprovalService } from './ApprovalService.js';
 import { AuditService } from './AuditService.js';
@@ -40,6 +42,7 @@ export function createServices(db: SupabaseClient) {
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
     automations: new AutomationService(new PipelineRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),
+    businessReport: new BusinessReportService(new BusinessReportRepository(db)),
     addons: new AddonInvoiceService(new AddonInvoiceRepository(db)),
     generatedInvoices: new GeneratedInvoiceService(new GeneratedInvoiceRepository(db), new StorageRepository()),
     customerImport: new CustomerImportService(db),

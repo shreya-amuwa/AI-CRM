@@ -67,6 +67,7 @@ export type ActiveTab =
   | 'staff_access'
   | 'staff_add'
   | 'client_notices'
+  | 'business_reports'
   | 'notifications';
 
 interface SidebarProps {
@@ -299,11 +300,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // HR: adding a member and managing access are two separate pages; Client notices sit below HR & Operations.
   // (Only a Department Head, or the Super Admin, can publish a client notice: the database refuses anyone else.)
   const canSendClientNotices = user?.role === 'superadmin' || (user?.role === 'hr' && profileRole === 'DEPARTMENT_HEAD');
+  // Sales / Support business reports: HR managers and the Super Admin (the database refuses anyone else)
+  const canSeeBusinessReports = user?.role === 'superadmin' || (user?.role === 'hr' && (profileRole === 'DEPARTMENT_HEAD' || profileRole === 'TEAM_HEAD'));
   const hrNav: typeof baseNavItems = [
     baseNavItems[0],
     { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
     { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
     ...baseNavItems.slice(1, -1),
+    ...(canSeeBusinessReports ? [{ id: 'business_reports' as ActiveTab, label: 'Business Reports', icon: BarChart3 }] : []),
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
     baseNavItems[baseNavItems.length - 1]
   ];
