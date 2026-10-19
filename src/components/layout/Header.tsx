@@ -47,8 +47,8 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
           <span className="text-slate-200 text-lg">|</span>
           </div>
 
-          {/* Active Department Identifier */}
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs min-w-0">
+          {/* Active Department Identifier (the HR dashboard shows none: the HR logo/name is left out of the top corner) */}
+          {activeDepartment.id !== 'hr' && <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs min-w-0">
             {activeDepartment.logoUrl ? (
               <img 
                 src={activeDepartment.logoUrl} 
@@ -62,7 +62,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
               />
             )}
             <span className="font-bold font-heading text-sm text-slate-900 truncate">{activeDepartment.name}</span>
-          </div>
+          </div>}
 
           {/* Active Sessions Counter Badge */}
           <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs">
