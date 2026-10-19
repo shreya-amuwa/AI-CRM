@@ -2277,6 +2277,34 @@ provider.close();
   check(JSON.stringify(r.json).indexOf('B+') === -1 && JSON.stringify(r.json).indexOf('98765') === -1, 'the details are not part of the ordinary profile everyone can read');
   r = await api('sa', 'POST', '/users', { ...hrBody, details });
   check(r.status === 409, 'a second account with the same e-mail is refused', r);
+  // The HR login is linked to its HR employee record straight away, in the HR department, once
+  const { rows: hrRec } = await db.query(`select id, name, email, department_id, profile_id from public.hr_employees where profile_id = $1`, [hrId]);
+  check(hrRec.length === 1 && hrRec[0].department_id === 'hr' && hrRec[0].email === 'hr.api@amuwa.com' && hrRec[0].id === `EMP-${hrId.slice(0, 8).toUpperCase()}`, 'an HR login is linked to one HR employee record (the id the HR directory already uses)', hrRec);
+  r = await api('sa', 'POST', '/users', { email: 'hr.second@amuwa.com', fullName: 'Second HR Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id, details });
+  check(r.status === 409 && /already has a Department Head/i.test(r.json.error.message), 'a second HR Department Head is refused with a clear message', r);
+  check((await db.query(`select 1 from public.profiles where email = 'hr.second@amuwa.com'`)).rowCount === 0, 'and no second account or login is left behind');
+  const { rows: [hrTeam] } = await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id]);
+  r = await api('hr', 'POST', '/users', { email: 'hr.lead@amuwa.com', fullName: 'HR Lead', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: hrTeam.id, details: { ...details, designation: 'Team Lead' } });
+  check(r.status === 201 && r.json.data.role === 'TEAM_HEAD' && r.json.data.department.slug === 'hr', 'the HR head creates an HR Team Lead', r);
+  tokens.set('hrlead', tokenFor(r.json.data.id));
+  r = await api('sa', 'POST', '/users', { email: 'hr.member@amuwa.com', fullName: 'HR Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id, details: { ...details, designation: 'Team Member' } });
+  check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department.slug === 'hr' && r.json.data.status === 'ACTIVE', 'the Super Admin creates an HR Team Member (active, in the HR department)', r);
+  tokens.set('hrmember', tokenFor(r.json.data.id));
+  check((await db.query(`select 1 from public.hr_employees where email in ('hr.lead@amuwa.com', 'hr.member@amuwa.com') and department_id = 'hr' and profile_id is not null`)).rowCount === 2, 'each of them has an HR employee record');
+  for (const who of ['hr', 'hrlead', 'hrmember']) {
+    r = await api(who, 'GET', '/hr/attendance');
+    check(r.status === 200, `the HR dashboard's attendance data loads for ${who}`, r);
+    r = await api(who, 'GET', '/hr/personal-details');
+    check(r.status === 200, `and the employee details for ${who}`, r);
+  }
+  r = await api('hrmember', 'POST', '/users', { email: 'x.hr@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id });
+  check(r.status === 403, 'an HR Team Member cannot create accounts', r);
+  r = await api('hrlead', 'POST', '/users', { email: 'x.head@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id });
+  check(r.status === 403, 'an HR Team Lead cannot create a Department Head', r);
+  r = await api('hrlead', 'POST', '/users', { email: 'x.wab@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(r.status === 403, 'nor can the HR team create people in another department', r);
+  r = await api('a', 'GET', '/hr/attendance');
+  check(r.status === 403, 'a Sales member still cannot open the HR data', r);
   r = await api('hr', 'GET', '/hr/personal-details');
   check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
   r = await api('a', 'GET', '/hr/personal-details');

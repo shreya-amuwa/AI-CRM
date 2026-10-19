@@ -16,6 +16,14 @@ Migration: `supabase/migrations/20261027000100_hr_attendance_leave_workflow.sql`
 
 ## HR logins (ID and password)
 
+**From the Super Admin hub:** **Add Team Member** -> Department **HR Department** -> role Department Head / Team Lead / Team Member ->
+name, e-mail (the login ID), password (the key icon generates a strong one) and the employee details -> **Create Account**. The account is
+a real Supabase Auth login, active at once, in the HR department with that role, and linked to its HR employee record
+(`hr_employees.profile_id`, created by migration `20261103000100_hr_members_employee_record.sql` for every way an HR account is made: this
+form, the API and `npm run create:hr-login`). For HR accounts the Super Admin sees the initial password once on the confirmation card (hidden
+until "show", copyable, never stored or logged) to hand over privately. A second Department Head, or an e-mail that already has a login, is
+refused with a clear message. The new person signs in at the normal login page and lands on the HR dashboard.
+
 **Create the first HR login from a terminal** (the same HR dashboard, behind its own sign-in):
 
 ```
