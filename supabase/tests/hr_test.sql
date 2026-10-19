@@ -252,6 +252,16 @@ select test.must_fail($$select leave_monthly_summary('2026-11-01')$$, 'an employ
 select test.login('th_wab');
 select test.must_fail($$select leave_monthly_summary('2026-11-01')$$, 'nor can a Team Lead', 'Not allowed');
 
+-- ---------------------------------------------------------------- HR members have an HR employee record (migration 20261103000100)
+reset role;
+select test.check((select count(*) = 1 and bool_and(department_id = 'hr' and id = 'EMP-' || upper(left(profile_id::text, 8)))
+                     from hr_employees where profile_id = test.id('hr_head')), 'the HR head is linked to one HR employee record (the directory''s own id)');
+select test.check((select count(*) = 0 from hr_employees where profile_id = test.id('tm_a')), 'a member of another department gets none');
+select private.link_hr_employee_record(test.id('hr_head'));
+select private.link_hr_employee_record(test.id('hr_head'));
+select test.check((select count(*) = 1 from hr_employees where profile_id = test.id('hr_head')), 'linking again never duplicates it');
+select test.check((select count(*) = 0 from hr_employees where profile_id = (select id from profiles where role = 'SUPER_ADMIN' limit 1)), 'the Super Admin is not an HR employee');
+
 -- ---------------------------------------------------------------- personal details
 reset role;
 insert into employee_personal_details (profile_id, designation, joining_date, date_of_birth, blood_group, emergency_contact)

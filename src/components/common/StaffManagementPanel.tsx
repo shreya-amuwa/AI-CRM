@@ -100,7 +100,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const showForm = view === 'manage' ? false : view !== 'members' || formOpen;
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ profile: Profile; dashboard: string } | null>(null);
+  const [created, setCreated] = useState<{ profile: Profile; dashboard: string; password?: string } | null>(null);
+  const [showCreatedPassword, setShowCreatedPassword] = useState(false);
   const [actionNotice, setActionNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -207,6 +208,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     e.preventDefault();
     setFormError(null);
     setCreated(null);
+    setShowCreatedPassword(false);
     const parsed = userCreateSchema.safeParse({
       email,
       fullName,
@@ -225,8 +227,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setSaving(true);
     try {
       const newProfile = await usersApi.create(parsed.data);
+      // HR logins: the Super Admin sees the initial password once, here, to pass on. It is kept only in this panel's memory
+      // (never stored or logged) and disappears when the next account is started or the panel is closed.
+      setShowCreatedPassword(false);
       setCreated({
         profile: newProfile,
+        password: newProfile.department?.slug === 'hr' ? password : undefined,
         dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug)
       });
       resetForm();
@@ -406,7 +412,22 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               <div className="flex items-center gap-1.5">
                 <LayoutDashboard className="w-3.5 h-3.5" /> Default dashboard: <strong>{created.dashboard}</strong>
               </div>
-              <div className="text-emerald-700">Share the password securely; they can change it after signing in.</div>
+              {created.password ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    Password: <span className="font-mono">{showCreatedPassword ? created.password : '••••••••••••'}</span>
+                    <button type="button" onClick={() => setShowCreatedPassword(v => !v)} className="inline-flex items-center text-emerald-700 hover:underline" title={showCreatedPassword ? 'Hide password' : 'Show password'} aria-label={showCreatedPassword ? 'Hide password' : 'Show password'}>
+                      {showCreatedPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    </button>
+                    <button type="button" onClick={() => navigator.clipboard?.writeText(created.password!)} className="inline-flex items-center text-emerald-700 hover:underline" title="Copy password" aria-label="Copy password">
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="text-emerald-700">Shown only now, and not stored by the CRM. Give it to them privately (in person or a call, not in a group chat); they can change it after signing in.</div>
+                </div>
+              ) : (
+                <div className="text-emerald-700">Share the password securely; they can change it after signing in.</div>
+              )}
             </div>
           )}
 
