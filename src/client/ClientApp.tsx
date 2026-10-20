@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, Package, Search, Sparkles, BookOpen, X } from 'lucide-react';
+import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, Package, Search, Sparkles, X } from 'lucide-react';
 import './client.css';
 import { clientApi } from './api';
 import { ClientAuthProvider, useClientAuth } from './auth';
@@ -115,9 +115,6 @@ const Inner: React.FC = () => {
                 </button>
               ))}
             </nav>
-            <a className="cd-nav-item cd-doc-link" href="/documentation" target="_blank" rel="noopener noreferrer">
-              <BookOpen size={20} aria-hidden /> <span>User Documentation</span>
-            </a>
           </aside>
 
           <div className="cd-main">

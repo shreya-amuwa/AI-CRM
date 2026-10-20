@@ -72,8 +72,6 @@
 .cd-nav-item:focus-visible { border-radius: 9px; box-shadow: var(--focus-ring); }
 @media (hover: hover) { .cd-nav-item:hover { background: var(--surface-warm); color: var(--fg); } }
 .cd-nav-item[aria-current='page'] { background: var(--green-light); color: var(--green-house); font-weight: 800; }
-.cd .cd-doc-link { margin-top: auto; text-decoration: none; color: var(--fg-2); }
-@media (hover: hover) { .cd-doc-link:hover { text-decoration: none; } }
 .cd-nav-count { margin-left: auto; min-width: 24px; padding: 0 8px; border-radius: var(--radius-pill); background: var(--surface-warm); color: var(--fg-2);
   font-size: 13px; font-weight: 800; text-align: center; line-height: 22px; }
 .cd-nav-item[aria-current='page'] .cd-nav-count { background: var(--accent); color: var(--accent-on); }

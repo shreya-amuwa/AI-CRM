@@ -23,8 +23,8 @@ The Amuwa AI CRM user documentation website is designed to evolve alongside the 
 graph TD
     Content["Markdown Content: docs-site/content/"] --> Sections["sections.json Configuration"]
     Sections --> Builder["build.mjs Generator and Link Validator"]
-    Builder --> InternalBuild["dist/docs/: Complete Internal Manual"]
-    Builder --> ClientBuild["dist/docs-client/: Isolated Client Help Center"]
+    Builder --> InternalBuild["docs-site/dist/: Complete Internal Manual"]
+    Builder --> ClientBuild["docs-site/dist-client/: Isolated Client Help Center"]
 ```
 
 - **Content Directory:** `docs-site/content/<section-id>/<article-slug>.md`
@@ -73,7 +73,7 @@ All documentation scripts are integrated into `package.json`:
 ```bash
 npm run docs:build
 ```
-Builds the complete internal knowledge base to `dist/docs/`. Scans every article, computes headings, builds the full-text search index, and enforces zero-tolerance link validation.
+Builds the complete internal knowledge base to `docs-site/dist/` for a local preview (`npm run docs:serve`). The normal web build (`npm run build`) also builds it into the app's output at `/documentation/`, which is what the **User Documentation** link in every staff dashboard opens. A change to an article is therefore published with the next deployment of the app. Scans every article, computes headings, builds the full-text search index, and enforces zero-tolerance link validation.
 
 ---
 
@@ -81,7 +81,7 @@ Builds the complete internal knowledge base to `dist/docs/`. Scans every article
 ```bash
 npm run docs:build-client
 ```
-Builds the customer-facing documentation portal to `dist/docs-client/`. Strictly includes only articles marked `audience: client` or `audience: both`. Completely strips internal employee procedures, administrative tools, and confidential queues.
+Builds the customer-facing documentation portal to `docs-site/dist-client/`. Strictly includes only articles marked `audience: client` or `audience: both`. Completely strips internal employee procedures, administrative tools, and confidential queues.
 
 ---
 
