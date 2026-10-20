@@ -3,6 +3,7 @@ import { Bell, CalendarPlus, FolderCheck, PackagePlus, UserPlus, Users } from 'l
 import { useNotifications } from '../../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../../layout/shell';
 import { LeaveCenter } from '../../leave/LeaveCenter';
+import { ChatLauncher } from '../../chat/ChatLauncher';
 
 export type ConsultantPage = 'customers' | 'addons' | 'onboarding' | 'client-documents' | 'client-calendar' | 'notifications';
 
@@ -42,7 +43,7 @@ export const ConsultantLayout: React.FC<{
       onSelect={id => onSelectPage(id as ConsultantPage)}
       user={{ name: userName, role: 'Technical Consultant' }}
       onSignOut={onSignOut}
-      topActions={<LeaveCenter />}
+      topActions={<><LeaveCenter /><ChatLauncher /></>}
       showHelp
       wide
     >

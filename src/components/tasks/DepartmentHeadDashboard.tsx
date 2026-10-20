@@ -29,6 +29,7 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { useWorkTasks } from '../../lib/workTasks';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ChatLauncher } from '../chat/ChatLauncher';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
@@ -120,6 +121,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       topActions={
         <>
           <LeaveCenter />
+          <ChatLauncher />
           <NotificationBell />
         </>
       }

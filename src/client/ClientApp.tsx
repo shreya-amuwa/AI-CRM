@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, Package, Search, Sparkles, X } from 'lucide-react';
+import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, MessageCircle, Package, Search, Sparkles, X } from 'lucide-react';
 import './client.css';
 import { clientApi } from './api';
+import { chatApi } from '../lib/chat/api';
+import { useChatUnread } from '../lib/chat/useChatUnread';
 import { ClientAuthProvider, useClientAuth } from './auth';
 import { usePath } from './hooks';
 import { Login } from './Login';
@@ -17,6 +19,7 @@ import { Invoices } from './Invoices';
 import { Calendar } from './Calendar';
 import { Documents } from './Documents';
 import { Tickets } from './Tickets';
+import { Chat } from './Chat';
 import { Notifications } from './Notifications';
 import { LoadingBlock, initials } from './ui';
 import { ShellCtx, dashboardPath, type SectionSlug } from './shell';
@@ -32,6 +35,7 @@ export const SECTIONS = [
   { slug: 'documents', label: 'Documents', Icon: FolderUp },
   { slug: 'invoices', label: 'Invoices', Icon: FileText },
   { slug: 'tickets', label: 'Tickets', Icon: LifeBuoy },
+  { slug: 'chat', label: 'Chat', Icon: MessageCircle },
   { slug: 'notifications', label: 'Notification Center', Icon: Bell }
 ] as const;
 
@@ -43,6 +47,7 @@ const Inner: React.FC = () => {
   const [unread, setUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
   const notices = useAnnouncements(status === 'ready');
+  const chat = useChatUnread(chatApi.clientUnread, status === 'ready');
 
   const refreshUnread = useCallback(() => {
     clientApi.notifications(1, 0).then(n => setUnread(n.unread), () => { /* the bell is a convenience; pages show their own errors */ });
@@ -94,13 +99,14 @@ const Inner: React.FC = () => {
       case 'documents': return <Documents />;
       case 'invoices': return <Invoices />;
       case 'tickets': return <Tickets />;
+      case 'chat': return <Chat />;
       case 'notifications': return <Notifications />;
       default: return <Overview />;
     }
   })();
 
   return (
-    <ShellCtx.Provider value={{ go: to, unread, refreshUnread, sub }}>
+    <ShellCtx.Provider value={{ go: to, unread, refreshUnread, chatUnread: chat.summary.total, refreshChatUnread: chat.refresh, sub }}>
       <div className="cd">
         <div className={`cd-shell ${collapsed ? 'cd-collapsed' : ''}`}>
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={closeNav} />
@@ -111,6 +117,7 @@ const Inner: React.FC = () => {
                 <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
                   <Icon size={20} aria-hidden />
                   <span>{label}</span>
+                  {s === 'chat' && chat.summary.total > 0 ? <span className="cd-nav-count" aria-label={`${chat.summary.total} unread messages`}>{chat.summary.total > 99 ? '99+' : chat.summary.total}</span> : null}
                   {s === 'notifications' && unread > 0 ? <span className="cd-nav-count" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span> : null}
                 </button>
               ))}

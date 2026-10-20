@@ -6,7 +6,7 @@ import { requireSupabase } from '../services/supabaseClient';
  * made for this one file, or (files stored before R2 / STORAGE_PROVIDER=supabase) to Supabase Storage.
  * Throws an Error with a readable message on failure.
  */
-export async function uploadToTicket(ticket: DocumentUploadTicket, file: File, contentType: string): Promise<void> {
+export async function uploadToTicket(ticket: Pick<DocumentUploadTicket, 'provider' | 'upload' | 'bucket' | 'path' | 'token'>, file: File, contentType: string): Promise<void> {
   if (ticket.provider === 'R2' && ticket.upload) {
     let res: Response;
     try {

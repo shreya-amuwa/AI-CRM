@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Bell, BellOff } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { SideDrawer } from '../common/SideDrawer';
+import { openChat } from '../chat/chatEvents';
 
 /**
  * The bell in the header: the unread count, and a side panel with the person's own notifications (newest first),
@@ -52,7 +53,7 @@ export const NotificationBell: React.FC = () => {
                 <li key={n.id}>
                   <button
                     type="button"
-                    onClick={() => markAsRead(n.id)}
+                    onClick={() => { markAsRead(n.id); if (n.entityType === 'chat' && n.entityId) { setOpen(false); openChat({ clientConversationId: n.entityId }); } }}
                     aria-label={`${n.isRead ? '' : 'Unread: '}${n.title}`}
                     className={`w-full text-left px-5 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/50'}`}
                   >

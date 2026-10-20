@@ -1,0 +1,104 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import type { ChatConversation, ChatMyClient } from '../../../shared/contracts';
+import { errorMessage } from '../../lib/api/client';
+import { chatApi, staffTransport } from '../../lib/chat/api';
+import { useChatLive } from '../../lib/chat/useChatLive';
+import { Avatar, ConversationItem, Split } from './ChatBits';
+import { ChatThread } from './ChatThread';
+
+/** The customers this employee looks after (as Team Member or Team Lead), each with the shared chat the client sees. */
+export const ClientChats: React.FC<{ active: boolean; onUnreadChange: () => void; initialCustomer?: string | null }> = ({ active, onUnreadChange, initialCustomer }) => {
+  const [items, setItems] = useState<ChatMyClient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [term, setTerm] = useState('');
+  const [customerId, setCustomerId] = useState<string | null>(initialCustomer ?? null);
+  const [conv, setConv] = useState<ChatConversation | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState('');
+
+  const load = useCallback(() => {
+    chatApi.myClients(term.trim() || undefined).then(
+      list => { setItems(list); setError(''); setLoading(false); },
+      e => { setError(errorMessage(e)); setLoading(false); }
+    );
+  }, [term]);
+  useEffect(() => { const t = setTimeout(load, term ? 250 : 0); return () => clearTimeout(t); }, [load, term]);
+  useChatLive(load, active);
+
+  // choosing a customer opens (or creates) the one conversation for them
+  useEffect(() => {
+    setConv(null); setOpenError('');
+    if (!customerId) return undefined;
+    let live = true;
+    setOpening(true);
+    chatApi.customer(customerId).then(
+      c => { if (live) { setConv(c); setOpening(false); } },
+      e => { if (live) { setOpenError(errorMessage(e)); setOpening(false); } }
+    );
+    return () => { live = false; };
+  }, [customerId]);
+
+  const transport = useMemo(() => (conv ? staffTransport(conv.id) : null), [conv?.id]);
+  const row = items.find(i => i.customerId === customerId) || null;
+
+  const patch = useCallback((c: ChatConversation) => {
+    setItems(list => list.map(x => (x.conversationId === c.id ? { ...x, unread: c.unread, lastMessageAt: c.lastMessageAt, lastMessagePreview: c.lastMessagePreview } : x)));
+    onUnreadChange();
+  }, [onUnreadChange]);
+
+  const header = (c: ChatConversation | null) => {
+    const cust = c?.customer || null;
+    return (
+      <div className="ch-head">
+        <button type="button" className="ch-icon ch-back" onClick={() => setCustomerId(null)} aria-label="Back to customers">&larr;</button>
+        <Avatar name={cust?.business || cust?.name || row?.business || '?'} />
+        <div className="ch-head-main">
+          <h2>{cust?.business || cust?.name || row?.business || 'Customer'}</h2>
+          <p>{[cust?.name, cust?.code].filter(Boolean).join(' - ')}{row ? ` - you are their ${row.role}` : ''}</p>
+        </div>
+      </div>
+    );
+  };
+
+  const list = (
+    <>
+      <div className="ch-search"><input type="search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Search your customers" aria-label="Search your customers" /></div>
+      {error ? (
+        <div className="ch-list-empty" role="alert"><p>{error}</p><button type="button" className="ch-btn" onClick={load}><RefreshCw size={13} aria-hidden /> Try again</button></div>
+      ) : loading ? (
+        <div className="ch-list-empty" role="status"><Loader2 className="ch-spin" size={18} aria-hidden /></div>
+      ) : items.length === 0 ? (
+        <div className="ch-list-empty"><p><b>{term ? 'No customers match' : 'No customers yet'}</b></p><p>{term ? 'Try another name.' : 'Customers assigned to you as Team Member or Team Lead appear here.'}</p></div>
+      ) : (
+        <ul className="ch-list" aria-label="Customers">
+          {items.map(i => (
+            <ConversationItem key={i.customerId} selected={i.customerId === customerId} onClick={() => setCustomerId(i.customerId)}
+              item={{ id: i.customerId, name: i.business || i.name, preview: i.lastMessagePreview || '', sub: `${i.name} - ${i.role}`, time: i.lastMessageAt, unread: i.unread }} />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
+  return (
+    <Split
+      open={Boolean(customerId)}
+      list={list}
+      empty={<div><p><b>Select a customer</b></p><p>The client sees this chat in their dashboard, together with the other person on their team.</p></div>}
+      detail={opening ? (
+        <div className="ch-state" role="status"><Loader2 className="ch-spin" size={22} aria-hidden /></div>
+      ) : openError || !transport ? (
+        <div className="ch-state" role="alert"><AlertCircle size={26} aria-hidden /><p>{openError || 'This chat could not be opened.'}</p><button type="button" className="ch-btn" onClick={() => setCustomerId(null)}>Back</button></div>
+      ) : (
+        <>
+          {row && !row.hasLogin && <div className="ch-locked" role="note" style={{ borderTop: 0, borderBottom: '1px solid var(--ch-border)' }}><AlertCircle size={16} aria-hidden /> This customer has no dashboard login yet, so they cannot see messages until one is created.</div>}
+          <ChatThread key={transport.key} transport={transport} active={active} header={header} onConversation={patch} showNames
+            emptyTitle="No messages yet" emptyText="Write to the client. Your co-worker on this account will see the conversation too."
+            readOnlyText={() => 'You can read this chat, but only the assigned Team Member and Team Lead can write in it.'} />
+        </>
+      )}
+    />
+  );
+};

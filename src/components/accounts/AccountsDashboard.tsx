@@ -7,6 +7,7 @@ import { PartPaymentsView } from '../payments/PartPaymentsView';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ChatLauncher } from '../chat/ChatLauncher';
 import { AccountsConfirmations } from './AccountsConfirmations';
 import { BusinessVerification } from './BusinessVerification';
 import { AccountsInvoices } from './AccountsInvoices';
@@ -82,6 +83,7 @@ export const AccountsDashboard: React.FC = () => {
       topActions={
         <>
           <LeaveCenter />
+          <ChatLauncher />
           <NotificationBell />
         </>
       }
