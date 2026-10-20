@@ -29,7 +29,8 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { useWorkTasks } from '../../lib/workTasks';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { ChatLauncher } from '../chat/ChatLauncher';
+import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
@@ -53,6 +54,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const [customerQuery, setCustomerQuery] = useState('');
   const data = useWorkTasks();
   const waiting = useWaitingForLead();
+  const chatUnread = useChatNavBadge();
+  useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
 
   const groups: ShellNavGroup[] = useMemo(() => {
     const work = [
@@ -83,11 +86,12 @@ export const DepartmentHeadDashboard: React.FC = () => {
         label: 'Team',
         items: [
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+          { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell }
         ]
       }
     ];
-  }, [isAccounts, waiting]);
+  }, [isAccounts, waiting, chatUnread]);
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => setNav(p);
@@ -103,6 +107,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       user={{ name: user?.name || 'Department Head', role: 'Department Head' }}
       onSignOut={() => void logout()}
       showHelp
+      flush={nav === 'chat'}
       topLeft={
         <HeadSearch
           data={data}
@@ -121,7 +126,6 @@ export const DepartmentHeadDashboard: React.FC = () => {
       topActions={
         <>
           <LeaveCenter />
-          <ChatLauncher />
           <NotificationBell />
         </>
       }
@@ -143,6 +147,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}
       {nav === 'payments' && <AccountsConfirmations />}
       {nav === 'plans' && <AccountsPlans />}
+      {nav === 'chat' && <ChatRoute />}
       {nav === 'notifications' && <NotificationsPage />}
       {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}
     </DashboardShell>

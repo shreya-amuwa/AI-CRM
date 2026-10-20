@@ -2,8 +2,9 @@ import React, { useCallback } from 'react';
 import { Users } from 'lucide-react';
 import type { ChatConversation } from '../../shared/contracts';
 import { ChatThread } from '../components/chat/ChatThread';
+import { useFillViewport } from '../lib/chat/useFillViewport';
 import { clientTransport } from '../lib/chat/api';
-import { PageHeader, initials } from './ui';
+import { initials } from './ui';
 import { useShell } from './shell';
 
 const who = (p: { name: string; position: string | null } | null | undefined) => (p ? p.name : null);
@@ -11,6 +12,7 @@ const who = (p: { name: string; position: string | null } | null | undefined) =>
 /** The client's chat with the Team Member and Team Lead who look after them. One shared conversation. */
 export const Chat: React.FC = () => {
   const { refreshChatUnread } = useShell();
+  const card = useFillViewport<HTMLDivElement>();
   const onConversation = useCallback(() => refreshChatUnread(), [refreshChatUnread]);
 
   const header = (c: ChatConversation | null) => {
@@ -36,9 +38,8 @@ export const Chat: React.FC = () => {
   };
 
   return (
-    <div className="cd-stack" style={{ gap: 14 }}>
-      <PageHeader title="Chat" subtitle="Message your Team Member and Team Lead. They both see this conversation, and it is private to you and your team." />
-      <div className="cd-chat-card">
+    <div className="cd-chat-page">
+      <div className="cd-chat-card" ref={card}>
         <ChatThread
           transport={clientTransport}
           header={header}

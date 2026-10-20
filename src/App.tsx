@@ -12,6 +12,8 @@ import { ClientNotices } from './components/notices/ClientNotices';
 import { EmailAutomation } from './components/hr/EmailAutomation';
 import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
+import { ChatRoute } from './components/chat/ChatRoute';
+import { useOpenChatRequest } from './components/chat/chatEvents';
 import { TabBar } from './components/layout/TabBar';
 
 // Dedicated Department Panels
@@ -57,6 +59,9 @@ const MainAppContent: React.FC = () => {
   const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout } = useAuth();
   const { departments } = useDepartments();
   const { tabs, activeTabId, updateTabState, closeAllTabs } = useTabs();
+  // a notification can ask for the Chat page of whichever dashboard layout is showing
+  const showChat = React.useRef<(() => void) | null>(null);
+  useOpenChatRequest(React.useCallback(() => showChat.current?.(), []));
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
@@ -299,6 +304,8 @@ const MainAppContent: React.FC = () => {
     }
   };
 
+  showChat.current = () => handleTabUpdate('chat');
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Top Persistent Header */}
@@ -323,7 +330,7 @@ const MainAppContent: React.FC = () => {
         )}
 
         {/* Main Workspace Panel */}
-        <main className="flex-1 min-w-0 p-3 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className={currentActiveTab === 'chat' ? 'flex-1 min-w-0 w-full' : 'flex-1 min-w-0 p-3 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full'}>
           {currentDept && currentDeptId ? (
             /* Sub-department selection screen: ALWAYS show choice cards when no sub-department is selected */
             hasSubDeptChoice && currentSubDept === null ? (
@@ -381,10 +388,10 @@ const MainAppContent: React.FC = () => {
                   onNavigateToLeads={() => handleTabUpdate('leads')}
                 />
               )
-            ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'sales' && currentActiveTab !== 'notifications' ? (
+            ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'sales' && currentActiveTab !== 'notifications' && currentActiveTab !== 'chat' ? (
               /* Super Admin of Wabastore Sales: Team Members, Access Control, Team Performance, Leads */
               <SalesSuperAdminDashboard activeTab={currentActiveTab} onSelectTab={(tab: any) => handleTabUpdate(tab)} />
-            ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'support' && currentActiveTab !== 'notifications' ? (
+            ) : user?.role === 'superadmin' && currentDeptId === 'wabastore' && currentSubDept === 'support' && currentActiveTab !== 'notifications' && currentActiveTab !== 'chat' ? (
               /* Super Admin of Wabastore Support: Team Members, Access Control, Team Performance, Customers, Tickets */
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
@@ -397,6 +404,8 @@ const MainAppContent: React.FC = () => {
               <BusinessReports />
             ) : currentActiveTab === 'staff_access' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view={currentDeptId === 'hr' ? 'manage' : 'all'} />
+            ) : currentActiveTab === 'chat' ? (
+              <ChatRoute />
             ) : currentActiveTab === 'notifications' ? (
               <NotificationCenterPanel subDept={currentSubDept} />
             ) : currentActiveTab === 'settings' && currentDeptId === 'amuwa' ? (

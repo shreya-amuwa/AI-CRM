@@ -509,6 +509,6 @@ button.cd-docs-card { cursor: pointer; }
 .cd-doc-meter i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .4s; }
 @media (max-width: 640px) { .cd-doc { flex-wrap: wrap; } .cd-doc-actions { width: 100%; justify-content: flex-start; padding-left: 54px; } }
 
-/* ---- Chat ---- */
-.cd-chat-card { background: var(--card); border-radius: var(--radius-lg); box-shadow: var(--elev-raised); overflow: hidden; height: min(680px, calc(100vh - 230px)); min-height: 420px; }
-@media (max-width: 767px) { .cd-chat-card { height: calc(100vh - 210px); border-radius: var(--radius-md); } }
+/* ---- Chat: fills the whole page area, like a messaging app ---- */
+.cd-content-flush { padding: 0; max-width: none; }
+.cd-chat-card { background: #fff; overflow: hidden; height: calc(100vh - var(--cd-top-h, 69px)); height: calc(100dvh - var(--cd-top-h, 69px)); min-height: 420px; }
