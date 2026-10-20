@@ -18,6 +18,7 @@ import { memberTitle } from '../../lib/auth/roleMapping';
 import { NavButton, SidebarBrand, SidebarFrame, SignOutButton, TopBar } from '../layout/shell';
 import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ChatLauncher } from '../chat/ChatLauncher';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type TeamMemberNav =
@@ -193,6 +194,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           actions={
             <>
               <LeaveCenter />
+              <ChatLauncher />
               <NotificationBell />
             </>
           }

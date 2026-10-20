@@ -8,6 +8,7 @@ import { ClientNotices } from '../notices/ClientNotices';
 import { Dialog } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ChatLauncher } from '../chat/ChatLauncher';
 import { MenuButton } from './shell';
 
 interface HeaderProps {
@@ -86,6 +87,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
           )}
 
           <LeaveCenter />
+          <ChatLauncher />
           <NotificationBell />
 
           {/* User Profile & Logout */}

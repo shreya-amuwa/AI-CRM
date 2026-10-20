@@ -1098,3 +1098,57 @@ export const businessOrdersQuerySchema = z
   })
   .refine(v => !v.from || !v.to || v.to >= v.from, { message: 'The end date is before the start date.', path: ['to'] });
 export type BusinessOrdersQuery = z.infer<typeof businessOrdersQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+export const CHAT_MAX_BODY = 4000;
+export const CHAT_MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const CHAT_MIME_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+  'text/csv',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+] as const;
+
+export const chatSendSchema = z
+  .object({
+    body: z.string().max(CHAT_MAX_BODY, `A message can have at most ${CHAT_MAX_BODY} characters.`).default(''),
+    clientMsgId: uuidSchema,
+    replyTo: uuidSchema.optional(),
+    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([])
+  })
+  .strict()
+  .refine(v => v.body.trim().length > 0 || v.attachmentIds.length > 0, { message: 'Write a message first.', path: ['body'] });
+
+export const chatMessagesQuerySchema = z
+  .object({
+    before: z.coerce.number().int().min(0).optional(),
+    after: z.coerce.number().int().min(0).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(30)
+  })
+  .refine(v => v.before === undefined || v.after === undefined, { message: 'Use either "before" or "after", not both.' });
+export const chatReadSchema = z.object({ seq: z.coerce.number().int().min(0).optional() }).strict();
+export const chatSearchQuerySchema = z.object({ q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) });
+export const chatReviewQuerySchema = z.object({ q: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(30) });
+export const chatDirectSchema = z.object({ profileId: uuidSchema }).strict();
+export const chatGroupCreateSchema = z
+  .object({
+    title: z.string().trim().min(1, 'Give the group a name.').max(80, 'The group name can have at most 80 characters.'),
+    memberIds: z.array(uuidSchema).min(1, 'Add at least one other person.').max(99, 'A group can have at most 100 people.')
+  })
+  .strict();
+export const chatGroupRenameSchema = z.object({ title: z.string().trim().min(1, 'Give the group a name.').max(80, 'The group name can have at most 80 characters.') }).strict();
+export const chatMembersSchema = z.object({ profileIds: z.array(uuidSchema).min(1, 'Pick at least one person.').max(99) }).strict();
+export const chatAdminSchema = z.object({ profileId: uuidSchema, admin: z.boolean() }).strict();
+export const chatUploadSchema = z
+  .object({
+    fileName: z.string().trim().min(1, 'The file needs a name.').max(200),
+    mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+  })
+  .strict();

@@ -1975,3 +1975,117 @@ export interface HrEmailRunSummary {
   schedule: { day: string; birthdays: number; anniversaries: number; cyclesOpened: number; reminders: number; overdueReminders: number } | null;
   send: { mode: 'off' | 'dry_run' | 'live'; claimed: number; sent: number; dryRun: number; skipped: number; retrying: number; failed: number; note?: string };
 }
+
+// ---------------------------------------------------------------------------
+// Chat (client chat and internal employee chat)
+// ---------------------------------------------------------------------------
+export type ChatKind = 'CLIENT' | 'DIRECT' | 'GROUP';
+/** How the signed-in person relates to a conversation. REVIEWER can read but never write. */
+export type ChatAccess = 'CLIENT' | 'STAFF' | 'MEMBER' | 'REVIEWER';
+export interface ChatPerson {
+  name: string;
+  position: string | null;
+}
+export interface ChatMember {
+  id: string;
+  name: string;
+  role: 'ADMIN' | 'MEMBER';
+  position: string | null;
+  label: string;
+  department: string | null;
+  me: boolean;
+}
+export interface ChatConversation {
+  id: string;
+  kind: ChatKind;
+  access: ChatAccess;
+  canWrite: boolean;
+  /** Group name, the other person's name, the business (staff view of a client chat) or "Your Amuwa team" (client view). */
+  title: string | null;
+  /** Staff view of a client chat only. */
+  customer: { id: string; name: string; business: string; code: string; hasLogin: boolean } | null;
+  /** Client chat: who looks after the customer now. */
+  team: { teamMember: ChatPerson | null; teamLead: ChatPerson | null } | null;
+  members: ChatMember[] | null;
+  isAdmin: boolean;
+  /** Client chat: false until a Team Member or Team Lead is assigned (nobody can answer yet). */
+  assigned: boolean | null;
+  lastSeq: number;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  lastSenderName: string | null;
+  unread: number;
+  readSeq: number;
+  /** Where the other side has read up to ("seen"): the team for the client, the client for the team, the other person in a direct chat. */
+  peerReadSeq: number | null;
+  createdAt: string;
+}
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+}
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  seq: number;
+  mine: boolean;
+  senderKind: 'CLIENT' | 'STAFF' | 'SYSTEM';
+  senderName: string | null;
+  /** "Client", "Team Member", "Team Lead" in a client chat. */
+  senderLabel: string | null;
+  kind: 'TEXT' | 'SYSTEM';
+  body: string;
+  attachments: ChatAttachment[];
+  clientMsgId: string | null;
+  createdAt: string;
+  replyTo: { id: string; seq: number; senderName: string | null; body: string } | null;
+}
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  hasMore: boolean;
+  lastSeq: number;
+}
+export interface ChatClientView {
+  conversation: ChatConversation;
+  page: ChatMessagePage;
+}
+export interface ChatDirectoryPerson {
+  id: string;
+  name: string;
+  label: string;
+  position: string | null;
+  department: string | null;
+  team: string | null;
+}
+export interface ChatMyClient {
+  customerId: string;
+  name: string;
+  business: string;
+  code: string;
+  conversationId: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  unread: number;
+  hasLogin: boolean;
+  role: 'Team Member' | 'Team Lead';
+}
+export interface ChatReviewList {
+  total: number;
+  items: ChatConversation[];
+}
+export interface ChatUnreadSummary {
+  total: number;
+  internal: number;
+  clients: number;
+  review: number;
+}
+export interface ChatUploadTicket {
+  attachment: ChatAttachment;
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
+}

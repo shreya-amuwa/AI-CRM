@@ -28,6 +28,8 @@ import { PipelineService } from './PipelineService.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
 import { CustomerImportService } from './CustomerImportService.js';
+import { ChatService } from './ChatService.js';
+import { ChatRepository } from '../repositories/ChatRepository.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
@@ -46,6 +48,7 @@ export function createServices(db: SupabaseClient) {
     addons: new AddonInvoiceService(new AddonInvoiceRepository(db)),
     generatedInvoices: new GeneratedInvoiceService(new GeneratedInvoiceRepository(db), new StorageRepository()),
     customerImport: new CustomerImportService(db),
+    chat: new ChatService(new ChatRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };
 }

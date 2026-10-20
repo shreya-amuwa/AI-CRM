@@ -439,3 +439,7 @@
 .cd-doc-meter { flex: 1; min-width: 160px; max-width: 360px; height: 12px; border-radius: 999px; background: var(--surface-warm); overflow: hidden; }
 .cd-doc-meter i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .4s; }
 @media (max-width: 640px) { .cd-doc { flex-wrap: wrap; } .cd-doc-actions { width: 100%; justify-content: flex-start; padding-left: 54px; } }
+
+/* ---- Chat ---- */
+.cd-chat-card { background: var(--card); border-radius: var(--radius-lg); box-shadow: var(--elev-raised); overflow: hidden; height: min(680px, calc(100vh - 230px)); min-height: 420px; }
+@media (max-width: 767px) { .cd-chat-card { height: calc(100vh - 210px); border-radius: var(--radius-md); } }

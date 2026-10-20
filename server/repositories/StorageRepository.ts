@@ -8,6 +8,9 @@ import type { InspectResult, StorageDriver, StorageProviderName, UploadTarget } 
 export { matchesSignature } from '../storage/signature.js';
 export type { InspectResult, StorageProviderName, UploadTarget } from '../storage/types.js';
 
+/** The tables that keep a file's reference next to the file's own row (customer documents, chat attachments). */
+export type ReferenceTable = 'customer_documents' | 'chat_attachments';
+
 const drivers: Record<StorageProviderName, StorageDriver> = { SUPABASE: new SupabaseDriver(), R2: new R2Driver() };
 
 /**
@@ -29,10 +32,10 @@ export class StorageRepository {
   }
 
   /** A single-use way for the browser to upload exactly this one file; the provider is remembered on the document row. */
-  async createUploadTarget(documentId: string, bucket: string, path: string, mimeType: string): Promise<UploadTarget> {
+  async createUploadTarget(documentId: string, bucket: string, path: string, mimeType: string, table: ReferenceTable = 'customer_documents'): Promise<UploadTarget> {
     const driver = this.active();
     const target = await driver.createUploadTarget(bucket, path, mimeType);
-    await this.setReference(documentId, { storage_provider: driver.provider, storage_ref: driver.reference(bucket, path) });
+    await this.setReference(documentId, { storage_provider: driver.provider, storage_ref: driver.reference(bucket, path) }, table);
     return target;
   }
 
@@ -47,13 +50,13 @@ export class StorageRepository {
   }
 
   /** The reference of a stored file, kept in Supabase next to the document: where it lives, its key and its ETag. */
-  async recordStored(documentId: string, provider: StorageProviderName | null | undefined, info: { reference?: string; etag: string | null }): Promise<void> {
-    await this.setReference(documentId, { storage_provider: this.driver(provider).provider, storage_ref: info.reference, storage_etag: info.etag });
+  async recordStored(documentId: string, provider: StorageProviderName | null | undefined, info: { reference?: string; etag: string | null }, table: ReferenceTable = 'customer_documents'): Promise<void> {
+    await this.setReference(documentId, { storage_provider: this.driver(provider).provider, storage_ref: info.reference, storage_etag: info.etag }, table);
   }
 
-  private async setReference(documentId: string, fields: Record<string, unknown>): Promise<void> {
+  private async setReference(documentId: string, fields: Record<string, unknown>, table: ReferenceTable = 'customer_documents'): Promise<void> {
     const clean = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
-    const { error } = await getServiceClient().from('customer_documents').update(clean).eq('id', documentId);
+    const { error } = await getServiceClient().from(table).update(clean).eq('id', documentId);
     if (error) console.error('[storage] could not record the file reference', { documentId, message: error.message });
   }
 

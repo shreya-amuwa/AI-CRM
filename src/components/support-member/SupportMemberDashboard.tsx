@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ChatLauncher } from '../chat/ChatLauncher';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
@@ -118,6 +119,7 @@ export const SupportMemberDashboard: React.FC = () => {
       topActions={
         <>
           <LeaveCenter />
+          <ChatLauncher />
           <NotificationBell />
         </>
       }

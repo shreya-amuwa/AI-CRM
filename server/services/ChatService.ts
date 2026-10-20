@@ -1,0 +1,148 @@
+import type { ChatClientView, ChatConversation, ChatMessage, ChatMessagePage, ChatUploadTicket, ClientDocumentUrl } from '../../shared/contracts.js';
+import {
+  chatAdminSchema,
+  chatDirectSchema,
+  chatGroupCreateSchema,
+  chatGroupRenameSchema,
+  chatMembersSchema,
+  chatMessagesQuerySchema,
+  chatReadSchema,
+  chatReviewQuerySchema,
+  chatSearchQuerySchema,
+  chatSendSchema,
+  chatUploadSchema,
+  clientFileQuerySchema,
+  uuidSchema
+} from '../../shared/validation.js';
+import { AppError } from '../http/errors.js';
+import { parse } from '../http/validate.js';
+import { ChatRepository, type ChatAttachmentRow } from '../repositories/ChatRepository.js';
+import type { StorageRepository } from '../repositories/StorageRepository.js';
+
+const FILE_URL_TTL_SECONDS = 120;
+
+/**
+ * Chat for employees (direct messages, groups, the clients they look after, review) and for clients (their one
+ * conversation). The database decides who may do what; this layer validates input, issues upload / download links
+ * AFTER the database allowed them, and never accepts a sender, a customer for a client, or a storage path from a request.
+ */
+export class ChatService {
+  constructor(
+    private readonly repo: ChatRepository,
+    private readonly storage: StorageRepository
+  ) {}
+
+  // ---------------------------------------------------------------- employees
+  internalList(query: unknown) { return this.repo.internalList(parse(chatSearchQuerySchema, query ?? {}).q || null); }
+  myClients(query: unknown) { return this.repo.myClients(parse(chatSearchQuerySchema, query ?? {}).q || null); }
+  review(query: unknown) {
+    const { q, page, pageSize } = parse(chatReviewQuerySchema, query ?? {});
+    return this.repo.reviewList(q || null, pageSize, (page - 1) * pageSize);
+  }
+  /** A Department Head opening a client chat to review it: written to the audit log (at most once per 30 minutes). */
+  async reviewOpen(id: string): Promise<null> {
+    await this.repo.reviewOpen(parse(uuidSchema, id));
+    return null;
+  }
+  unread() { return this.repo.unread(); }
+  customerConversation(customerId: string) { return this.repo.customerConversation(parse(uuidSchema, customerId)); }
+  detail(id: string): Promise<ChatConversation> { return this.repo.detail(parse(uuidSchema, id)); }
+  directory(query: unknown) {
+    const { q, limit } = parse(chatSearchQuerySchema, query ?? {});
+    return this.repo.directory(q || null, limit);
+  }
+  openDirect(body: unknown) { return this.repo.openDirect(parse(chatDirectSchema, body).profileId); }
+  createGroup(body: unknown) {
+    const i = parse(chatGroupCreateSchema, body);
+    return this.repo.createGroup(i.title, [...new Set(i.memberIds)]);
+  }
+  renameGroup(id: string, body: unknown) { return this.repo.renameGroup(parse(uuidSchema, id), parse(chatGroupRenameSchema, body).title); }
+  addMembers(id: string, body: unknown) { return this.repo.addMembers(parse(uuidSchema, id), [...new Set(parse(chatMembersSchema, body).profileIds)]); }
+  removeMember(id: string, profileId: string) { return this.repo.removeMember(parse(uuidSchema, id), parse(uuidSchema, profileId)); }
+  setAdmin(id: string, body: unknown) {
+    const i = parse(chatAdminSchema, body);
+    return this.repo.setAdmin(parse(uuidSchema, id), i.profileId, i.admin);
+  }
+  async leave(id: string): Promise<null> {
+    await this.repo.leave(parse(uuidSchema, id));
+    return null;
+  }
+  messages(id: string, query: unknown): Promise<ChatMessagePage> { return this.repo.messages(parse(uuidSchema, id), parse(chatMessagesQuerySchema, query ?? {})); }
+  send(id: string, body: unknown): Promise<ChatMessage> { return this.repo.send(parse(uuidSchema, id), parse(chatSendSchema, body)); }
+  markRead(id: string, body: unknown) { return this.repo.markRead(parse(uuidSchema, id), parse(chatReadSchema, body ?? {}).seq); }
+
+  // ---------------------------------------------------------------- clients (the conversation always comes from the login)
+  async clientView(query: unknown): Promise<ChatClientView> {
+    const conversation = await this.repo.clientConversation();
+    return { conversation, page: await this.repo.messages(conversation.id, parse(chatMessagesQuerySchema, query ?? {})) };
+  }
+  private async clientConversationId() { return (await this.repo.clientConversation()).id; }
+  async clientMessages(query: unknown): Promise<ChatMessagePage> { return this.repo.messages(await this.clientConversationId(), parse(chatMessagesQuerySchema, query ?? {})); }
+  async clientSend(body: unknown): Promise<ChatMessage> { return this.repo.send(await this.clientConversationId(), parse(chatSendSchema, body)); }
+  async clientMarkRead(body: unknown) { return this.repo.markRead(await this.clientConversationId(), parse(chatReadSchema, body ?? {}).seq); }
+  async clientBeginUpload(body: unknown) { return this.beginUpload(await this.clientConversationId(), body); }
+
+  // ---------------------------------------------------------------- attachments
+  /** Books the upload in the database (it checks the person, the type and the size), then hands out the one signed upload for it. */
+  async beginUpload(conversationId: string, body: unknown): Promise<ChatUploadTicket> {
+    const i = parse(chatUploadSchema, body);
+    const row = await this.repo.beginUpload(parse(uuidSchema, conversationId), i.fileName, i.mimeType, i.sizeBytes);
+    try {
+      const target = await this.storage.createUploadTarget(row.id, row.storage_bucket, row.storage_path, row.mime_type, 'chat_attachments');
+      return {
+        attachment: { id: row.id, name: row.file_name, mime: row.mime_type, size: Number(row.size_bytes) },
+        bucket: row.storage_bucket,
+        path: row.storage_path,
+        provider: target.provider,
+        token: target.token ?? '',
+        ...(target.url ? { upload: { url: target.url, headers: target.headers ?? {} } } : {})
+      };
+    } catch (err) {
+      await this.repo.abortUpload(row.id).catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /** The browser says the file is stored: look at the stored object (exists, size, content matches its type), then finish. */
+  async completeUpload(id: string) {
+    const attId = parse(uuidSchema, id);
+    const row = await this.repo.pendingUpload(attId);
+    const object = await this.storage.inspectFile(row.storage_provider, row.storage_bucket, row.storage_path, row.mime_type);
+    if (!object.exists) {
+      await this.discard(row);
+      throw new AppError('VALIDATION_ERROR', 'The file did not finish uploading. Please try again.');
+    }
+    if (!object.matches) {
+      await this.discard(row);
+      throw new AppError('VALIDATION_ERROR', 'The file content does not match its type. Please send the original file.');
+    }
+    try {
+      const done = await this.repo.completeUpload(attId, object.size, object.etag);
+      await this.storage.recordStored(attId, row.storage_provider, { reference: object.reference, etag: object.etag }, 'chat_attachments');
+      return done;
+    } catch (err) {
+      await this.discard(row);
+      throw err;
+    }
+  }
+
+  async abortUpload(id: string): Promise<null> {
+    const attId = parse(uuidSchema, id);
+    const row = await this.repo.pendingUpload(attId).catch(() => null);
+    if (row) await this.discard(row);
+    return null;
+  }
+
+  private async discard(row: ChatAttachmentRow) {
+    await this.repo.abortUpload(row.id).catch(() => undefined);
+    await this.storage.remove(row.storage_bucket, [row.storage_path], row.storage_provider).catch(() => undefined);
+  }
+
+  /** A short-lived link, issued only if the database says this caller may read the message the file belongs to. */
+  async attachmentUrl(id: string, query: unknown): Promise<ClientDocumentUrl> {
+    const { action } = parse(clientFileQuerySchema, query ?? {});
+    const row = await this.repo.attachmentFile(parse(uuidSchema, id));
+    const url = await this.storage.signedDownloadUrl(row.storage_bucket, row.storage_path, FILE_URL_TTL_SECONDS, action === 'download' ? row.file_name : undefined, row.storage_provider);
+    return { url, expiresInSeconds: FILE_URL_TTL_SECONDS, fileName: row.file_name };
+  }
+}
