@@ -12,6 +12,49 @@
 -- (its add-on invoice), or an additional invoice Accounts classified as a renewal / add-on. Access: the Accounts department and
 -- the Super Admin (same check as the other business reports).
 
+-- A sale that is still waiting for Accounts has no "resolved" date yet: it is dated from when it was submitted (never left undated,
+-- which would also hide it from every date range).
+create or replace function private.business_orders()
+returns table (order_key text, division text, order_type text, customer_id uuid, department_id uuid, employee_id uuid,
+               billed numeric, billed_at timestamptz)
+language sql stable security definer set search_path = '' as $$
+  -- the services Sales agreed with the customer
+  select 'SALE:' || c.id::text, 'SALES'::text, 'INITIAL_SALE'::text, c.id, c.department_id, fr.requested_by, c.deal_amount,
+         coalesce(fr.resolved_at, fr.requested_at, (select min(p.recorded_at) from public.customer_payments p where p.customer_id = c.id), c.created_at)
+    from public.customers c
+    left join lateral (select x.requested_by, x.resolved_at, x.requested_at from public.payment_requests x
+                        where x.customer_id = c.id and x.status <> 'RETURNED' order by x.requested_at limit 1) fr on true
+   where coalesce(c.deal_amount, 0) > 0
+     and (fr.requested_by is not null or exists (select 1 from public.payment_requests x where x.customer_id = c.id and x.status <> 'RETURNED')
+          or exists (select 1 from public.customer_payments p where p.customer_id = c.id and p.status <> 'REJECTED'))
+  union all
+  -- a services invoice whose payments are recorded on the invoice (the customer has no agreed amount)
+  select 'INV:' || g.invoice_id::text, 'SALES', 'INITIAL_SALE', g.customer_id, c.department_id, fr.requested_by, g.total_amount,
+         g.invoice_date::timestamp at time zone 'Asia/Kolkata'
+    from public.generated_invoices g
+    join public.customers c on c.id = g.customer_id
+    left join lateral (select x.requested_by from public.payment_requests x
+                        where x.customer_id = g.customer_id and x.status <> 'RETURNED' order by x.requested_at limit 1) fr on true
+   where g.purpose = 'SERVICES' and g.payment_ledger = 'INVOICE'
+  union all
+  -- approved add-ons that were invoiced
+  select 'ADDON:' || r.id::text, 'SUPPORT', 'ADDON', r.customer_id, c.department_id, coalesce(r.submitted_by, r.created_by, r.consultant_id), r.total,
+         coalesce((select g.invoice_date::timestamp at time zone 'Asia/Kolkata' from public.generated_invoices g where g.addon_request_id = r.id limit 1),
+                  r.decided_at, r.submitted_at, r.created_at)
+    from public.addon_requests r
+    join public.customers c on c.id = r.customer_id
+   where r.status in ('INVOICE_GENERATED', 'PAYMENT_CONFIRMED', 'IN_PROGRESS', 'COMPLETED') and r.total > 0
+  union all
+  -- additional invoices Accounts tagged as renewal / add-on
+  select 'INV:' || g.invoice_id::text, 'SUPPORT', case t.kind when 'RENEWAL' then 'RENEWAL' else 'ADDON' end, g.customer_id, c.department_id,
+         t.responsible_id, g.total_amount, g.invoice_date::timestamp at time zone 'Asia/Kolkata'
+    from public.generated_invoices g
+    join public.invoice_business_tags t on t.invoice_id = g.invoice_id and t.kind in ('RENEWAL', 'ADDON')
+    join public.customers c on c.id = g.customer_id
+   where g.purpose = 'ADDITIONAL'
+$$;
+revoke all on function private.business_orders() from public, anon, authenticated;
+
 create or replace function public.business_report_orders(
   p_from date default null, p_to date default null, p_department uuid default null, p_division text default null,
   p_employee uuid default null, p_type text default null, p_search text default null,

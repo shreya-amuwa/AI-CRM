@@ -50,7 +50,7 @@ export const DepartmentBusinessDetail: React.FC<{
   return (
     <div className="space-y-6">
       <div>
-        <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-[13px] font-bold text-blue-700 hover:text-blue-800">
+        <button type="button" onClick={onBack} data-testid="back-to-departments" className="inline-flex items-center gap-1.5 text-[13px] font-bold text-blue-700 hover:text-blue-800">
           <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Department Income
         </button>
         <div className="mt-3 flex flex-wrap items-center gap-3">

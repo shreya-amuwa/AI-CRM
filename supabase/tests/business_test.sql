@@ -185,6 +185,7 @@ select test.check((select sum((i ->> 'outstanding')::numeric) = (public.business
                      from jsonb_array_elements(public.business_report_orders(p_division => 'SUPPORT', p_department => test.dept('wabastore'), p_page_size => 100) -> 'items') i),
   'and the support orders'' outstanding amounts add up to the department''s outstanding figure');
 select test.check((select (public.business_report_orders(p_department => test.dept('accounts')) ->> 'total')::int = 0), 'a department with no business has no orders (an empty state, not invented rows)');
+select test.check((select count(*) = 0 from jsonb_array_elements(public.business_report_orders(p_page_size => 100) -> 'items') i where i ->> 'billedAt' is null), 'every order is dated (a sale still waiting for Accounts is dated from its submission)');
 select test.must_fail($$select public.business_report_orders(p_type => 'SUBSCRIPTION')$$, 'an unknown order type is refused', 'Unknown order type');
 
 -- ---------------------------------------------------------------- 5. consistency: no double counting, one rule everywhere
