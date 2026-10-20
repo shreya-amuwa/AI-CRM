@@ -1,0 +1,86 @@
+---
+title: Attendance Monitoring and Biometric Discrepancy Tracking
+summary: Comprehensive guide for Human Resources to monitor employee attendance, reconcile CRM system logins against physical biometric punches, and resolve timing discrepancies.
+audience: internal
+roles:
+  - HR Manager
+  - Department Head
+  - Super Admin
+related:
+  - /hr/hr-operations-directory
+  - /hr/leave-approval-hr
+  - /shared/requesting-leave
+---
+
+# Attendance Monitoring and Biometric Discrepancy Tracking
+
+Amuwa AI CRM features an integrated attendance auditing engine. To ensure transparency and workplace discipline, the system correlates **two independent clock-in streams**:
+
+1. **Relationship Manager (RM) / CRM System Login (`rmLoginAt`):** The timestamp captured automatically when an employee signs in to the web CRM application.
+2. **Biometric Punch (`biometricLoginAt`):** The timestamp recorded when an employee scans their fingerprint or facial profile at the office biometric attendance scanner (or authorized manual HR punch).
+
+---
+
+## The 15-Minute Discrepancy Rule
+
+The system computes the absolute difference in minutes between the CRM login and the biometric scan:
+
+$$\Delta t = |\text{Time}_{\text{CRM}} - \text{Time}_{\text{Biometric}}|$$
+
+- **Normal Synchronized Punch ($\Delta t \le 15\text{ min}$):** Displayed with a green indicator (`Present - Both recorded`).
+- **Flagged Discrepancy ($\Delta t > 15\text{ min}$):** Triggers a prominent amber warning badge (`LoginGapBadge.tsx`). This indicates an employee punched into the office scanner but delayed opening the CRM to commence work (or conversely logged in remotely without being physically present).
+
+---
+
+## Daily Attendance Register States
+
+In the **HR Department Panel** (**Attendance Register**), each employee record for the active date is categorized into one of four states:
+
+| Attendance State | Indicator | Description |
+| :--- | :--- | :--- |
+| **Present (Both recorded)** | Green dot | Both CRM login and biometric scanner punch are recorded within normal tolerances. |
+| **Present (No biometric punch)** | Amber dot | Employee logged into the CRM but lacks an office physical scanner punch. |
+| **Biometric only (No CRM login)** | Amber dot | Employee scanned at the office door but has not authenticated into their CRM workstation. |
+| **Absent / On Leave** | Slate dot | No punch or login recorded; cross-referenced against approved leave records. |
+
+---
+
+## Step-by-Step HR Attendance Reconciliation
+
+### 1. Filtering Attendance Records
+
+1. Open the **HR Department Panel**.
+2. Select the **Daily Attendance** sub-tab.
+3. Use the filter chips to isolate specific cohorts:
+   - **All Records:** View entire corporate workforce.
+   - **CRM Logins Only:** Employees who signed in via web.
+   - **Biometric Only:** Staff with scanner timestamps awaiting CRM sign-in.
+   - **Discrepancies:** Quickly filter to records exceeding the 15-minute gap threshold.
+
+---
+
+### 2. Manual Punch Logging and Overrides
+
+If a physical scanner malfunctions or an employee is assigned to external on-site client meetings:
+
+1. In the attendance workspace, locate the **Manual Punch / Attendance Override** modal.
+2. Select the employee name from the dropdown.
+3. Choose the **Punch Device Type**:
+   - `Biometric Scanner` (records the missing biometric physical scan time).
+   - `Mobile Punch` (authorized off-site work).
+   - `HR Override` (administrative correction).
+4. Enter the punch time (e.g., `09:30 AM`) and target date.
+5. Click **Record Attendance Punch**.
+6. The system records the punch with an administrative audit tag: *"Recorded the biometric punch of [Employee] at [Time] on [Date] by HR."*
+
+---
+
+### 3. Exporting the Monthly Attendance Register
+
+1. In the attendance toolbar, select the target calendar month or date range.
+2. Click **Export Attendance Register (CSV)**.
+3. The exported file contains:
+   - `Employee Name`, `E-mail`, `Designation`, `Department`
+   - `Date`, `RM System Login`, `Biometric Login`
+   - `Time Difference (min)`, `Discrepancy (>15 min)` flag
+4. Use this CSV for corporate payroll processing and monthly punctuality audits.

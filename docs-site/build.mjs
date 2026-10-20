@@ -30,9 +30,10 @@ const slugify = s => String(s).toLowerCase().replace(/<[^>]+>/g, '').replace(/&[
 const walk = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 
 function frontMatter(raw, file) {
-  const m = /^---\n([\s\S]*?)\n---\n?/.exec(raw);
+  const cleanRaw = raw.replace(/\r\n/g, '\n');
+  const m = /^---\n([\s\S]*?)\n---\n?/.exec(cleanRaw);
   const meta = {};
-  if (!m) return { meta, body: raw };
+  if (!m) return { meta, body: cleanRaw };
   let key = null;
   for (const line of m[1].split('\n')) {
     if (/^\s+-\s+/.test(line) && key) { (meta[key] ||= []).push(line.replace(/^\s+-\s+/, '').trim()); continue; }
@@ -104,7 +105,13 @@ function createRenderer(ctx) {
         i++;
         while (i < lines.length && !/^```\s*$/.test(lines[i])) body.push(lines[i++]);
         i++;
-        out.push(m[1] === 'flow' ? flow(body) : `<pre><code>${esc(body.join('\n'))}</code></pre>`);
+        if (m[1] === 'flow') {
+          out.push(flow(body));
+        } else if (m[1] === 'mermaid') {
+          out.push(`<div class="mermaid-wrap"><div class="mermaid">${esc(body.join('\n'))}</div></div>`);
+        } else {
+          out.push(`<pre><code>${esc(body.join('\n'))}</code></pre>`);
+        }
         continue;
       }
       if ((m = /^:::(\w+)\s*(.*)$/.exec(line))) {
@@ -222,6 +229,7 @@ for (const file of walk(contentDir).filter(f => f.endsWith('.md'))) {
   const slug = isHome ? '' : parts.slice(1).join('/');
   if (!isHome && (parts.length !== 2 || !sectionIds.has(section))) { err(rel, `must be content/<section>/<article>.md with a section from sections.json (${[...sectionIds].join(', ')})`); continue; }
   if (!meta.title) err(rel, 'missing "title"');
+  meta.description ||= meta.summary;
   if (!meta.description) err(rel, 'missing "description"');
   const sectionDef = SITE.sections.find(s => s.id === section);
   const audience = meta.audience || (sectionDef?.audience ?? 'internal');
@@ -315,18 +323,28 @@ function page({ p, html, headings, base }) {
 <meta name="description" content="${esc(p.meta.description || '')}">
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" href="${base}assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="${base}assets/docs.css">
 </head>
 <body data-base="${base}">
+<div class="nav-progress" id="nav-progress" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to the article</a>
 <header class="top">
-  <button class="icon-btn menu-btn" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <button class="icon-btn menu-btn" type="button" aria-label="Toggle navigation menu" aria-controls="sidebar" aria-expanded="false" title="Toggle navigation menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <a class="brand" href="${base || './'}"><img src="${base}assets/logo.png" alt="" width="28" height="28"><span>Amuwa AI CRM<small>${AUDIENCE === 'client' ? 'Client guide' : 'Documentation'}</small></span></a>
   <button class="search-btn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search the documentation</span><kbd>/</kbd></button>
 </header>
 <div class="shell">
   <div class="scrim" hidden></div>
-  <aside class="sidebar" id="sidebar" aria-label="Documentation navigation"><nav>${sidebar(current, base)}</nav></aside>
+  <aside class="sidebar" id="sidebar" aria-label="Documentation navigation">
+    <div class="sidebar-head">
+      <span class="sidebar-title">${AUDIENCE === 'client' ? 'Client Guide Menu' : 'Documentation Menu'}</span>
+      <button class="sidebar-close-btn" type="button" aria-label="Close menu" title="Close menu"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <nav>${sidebar(current, base)}</nav>
+  </aside>
   <main id="main" class="main">
     <article class="article">
       ${crumbs}
@@ -355,6 +373,41 @@ function page({ p, html, headings, base }) {
 </div>
 <script src="${base}assets/search-index.js" defer></script>
 <script src="${base}assets/docs.js" defer></script>
+<script src="${base}assets/mermaid.min.js"></script>
+<script>
+  (function() {
+    function initMermaid() {
+      if (typeof mermaid === 'undefined') return;
+      try {
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: 'neutral',
+          securityLevel: 'loose',
+          fontFamily: 'Manrope, system-ui, sans-serif',
+          themeVariables: {
+            fontFamily: 'Manrope, system-ui, sans-serif',
+            primaryColor: '#EEF2FF',
+            primaryTextColor: '#111827',
+            primaryBorderColor: '#2F5BEA',
+            lineColor: '#6B7280',
+            secondaryColor: '#F7F8FA',
+            tertiaryColor: '#FFFFFF'
+          }
+        });
+        mermaid.run({ querySelector: '.mermaid' }).catch(function(err) {
+          console.warn('Mermaid rendering notice:', err);
+        });
+      } catch (e) {
+        console.warn('Mermaid initialization notice:', e);
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initMermaid);
+    } else {
+      initMermaid();
+    }
+  })();
+</script>
 </body>
 </html>`;
 }
@@ -362,7 +415,7 @@ function page({ p, html, headings, base }) {
 // ------------------------------------------------------------------ write output
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'assets'), { recursive: true });
-for (const f of ['docs.css', 'docs.js']) fs.copyFileSync(path.join(ROOT, 'assets', f), path.join(OUT, 'assets', f));
+for (const f of ['docs.css', 'docs.js', 'mermaid.min.js']) fs.copyFileSync(path.join(ROOT, 'assets', f), path.join(OUT, 'assets', f));
 fs.copyFileSync(path.join(ROOT, 'assets', 'logo.png'), path.join(OUT, 'assets', 'logo.png'));
 const usedShots = new Set(rendered.flatMap(x => x.images.filter(i => i.url.startsWith('shot:')).map(i => i.url.slice(5))));
 fs.mkdirSync(path.join(OUT, 'assets', 'shots'), { recursive: true });

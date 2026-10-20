@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AttendanceDay, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails } from '../../shared/contracts.js';
+import type {
+  AttendanceDay, HrEmailDataIssue, HrEmailHistory, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
+} from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /**
@@ -36,4 +38,20 @@ export class HrRepository {
     return this.rpc<LeaveRequest>('decide_leave_hr', { p_id: id, p_approve: approve, p_note: note });
   }
   monthlySummary(month: string | null) { return this.rpc<LeaveMonthlySummary>('leave_monthly_summary', { p_month: month }); }
+
+  // HR e-mail automation (birthdays, anniversaries, probation reminders, confirmation). Every function checks HR staff itself.
+  emailOverview() { return this.rpc<Omit<HrEmailOverview, 'settings'>>('hr_email_overview'); }
+  emailHistory(i: { status?: string; kind?: string; limit: number; offset: number }) {
+    return this.rpc<HrEmailHistory>('hr_email_history', { p_status: i.status ?? null, p_kind: i.kind ?? null, p_limit: i.limit, p_offset: i.offset });
+  }
+  probationList() { return this.rpc<HrProbationCycle[]>('hr_probation_list'); }
+  confirmProbation(id: string, effectiveDate: string | null, note: string | null) {
+    return this.rpc<HrProbationCycle>('hr_confirm_probation', { p_cycle: id, p_effective: effectiveDate, p_note: note });
+  }
+  dismissProbation(id: string, note: string) { return this.rpc<HrProbationCycle>('hr_dismiss_probation', { p_cycle: id, p_note: note }); }
+  retryEmail(id: string) { return this.rpc<{ id: string; status: string }>('hr_email_retry', { p_event: id }); }
+  emailDataIssues() { return this.rpc<HrEmailDataIssue[]>('hr_email_data_issues'); }
+  setEmployeeDates(i: { employeeKey: string; dateOfBirth: string | null; joiningDate: string | null }) {
+    return this.rpc<{ employeeKey: string }>('hr_set_employee_dates', { p_employee_key: i.employeeKey, p_date_of_birth: i.dateOfBirth, p_joining_date: i.joiningDate });
+  }
 }

@@ -19,6 +19,7 @@ import { routes } from './routes.js';
 import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
+import { runHrAutomation } from './automations/hrDispatcher.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
@@ -78,6 +79,12 @@ app.use('/pipeline/customers/*', async (c, next) => {
   if (c.req.method !== 'GET' && c.res.status < 300) await dispatchQuietly();
 });
 
+// An approval or a retry in the HR dashboard sends its e-mails right away (the scheduler would do it at its next run).
+app.use('/hr/email-automation/*', async (c, next) => {
+  await next();
+  if (c.req.method === 'POST' && c.res.status < 300 && !relativePath(c).endsWith('/run')) await runHrAutomation().catch(() => undefined);
+});
+
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
 // (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
 app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
@@ -96,7 +103,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     if (error) log('error', 'ticket escalation failed', c, { message: error.message });
     else ticketsEscalated = Number(data) || 0;
   }
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated }));
+  // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
+  const hr = await runHrAutomation();
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

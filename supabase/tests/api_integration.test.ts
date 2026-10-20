@@ -3181,6 +3181,193 @@ provider.close();
 }
 
 // ---------------------------------------------------------------------------
+// HR e-mail automation: birthdays, anniversaries, probation reminders, approval, retries, duplicates.
+// A local mock stands in for the e-mail provider: nothing real is sent.
+// ---------------------------------------------------------------------------
+{
+  const outbox: { path: string; body: any }[] = [];
+  const failNext: Record<string, number[]> = {};
+  const mailMock = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      const path = (req.url || '').split('?')[0];
+      outbox.push({ path, body: raw ? JSON.parse(raw) : null });
+      const status = failNext[path]?.shift() ?? 200;
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(status < 300 ? { id: `hr-msg-${outbox.length}` } : { message: 'Service busy' }));
+    });
+  });
+  await new Promise<void>(rs => mailMock.listen(0, rs));
+  const P = `http://127.0.0.1:${(mailMock.address() as any).port}`;
+  Object.assign(process.env, {
+    AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_hr_secret_key', EMAIL_API_BASE_URL: P,
+    EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>', EMAIL_CC: 'ops-copy@example.com', EMAIL_BCC: 'ops-bcc@example.com',
+    AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789'
+  });
+  const emails = () => outbox.filter(o => o.path === '/emails');
+  const hrMail = (to: string, subjectPart: string) => emails().filter(o => o.body?.to?.[0] === to && String(o.body?.subject).includes(subjectPart));
+  const hrRun = async () => (await dispatch('dispatch-secret-0123456789')).json.data.hr;
+  const { rows: [{ today }] } = await db.query(`select to_char(private.hr_today(), 'YYYY-MM-DD') as today`);
+  const md = today.slice(5);
+  await db.query(`insert into public.crm_settings (key, value) values ('hr.notify_emails', '["hr.inbox@example.com"]') on conflict (key) do update set value = excluded.value`);
+  const recipients = ['hr.inbox@example.com', 'hr.api@amuwa.com', 'hrbd.one@example.com', 'hrbd.two@example.com', 'hrbd.prob@example.com'];
+  process.env.AUTOMATION_TEST_RECIPIENTS = recipients.join(',');
+  const joinForProbationEnd = async (daysFromToday: number) =>
+    (await db.query(`select to_char((private.hr_today() + $1::int - interval '6 months')::date, 'YYYY-MM-DD') as d`, [daysFromToday])).rows[0].d;
+  const addRecord = (id: string, name: string, email: string, joining: string, dob: string | null) =>
+    db.query(`insert into public.hr_employees (id, name, email, department_id, status, joining_date, data) values ($1, $2, $3, 'hr', 'Full-Time', $4, $5::jsonb)`,
+      [id, name, email, joining, JSON.stringify(dob ? { dateOfBirth: dob } : {})]);
+
+  // HR-only employee records (the same table the HR dashboard reads)
+  await addRecord('HRBD-1', 'Birthday Person', 'hrbd.one@example.com', '2020-01-15', `1990-${md}`);
+  await addRecord('HRBD-2', 'Anniversary Person', 'hrbd.two@example.com', `2021-${md}`, '1991-01-01');
+  await addRecord('HRBD-3', 'Probation Person', 'hrbd.prob@example.com', await joinForProbationEnd(7), '1992-01-01');
+
+  const before = emails().length;
+  let hr = await hrRun();
+  check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
+  const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
+  check(bd.length === 1 && /Dear Birthday Person,/.test(bd[0].body.text) && /Best wishes,\nHR Team\nAmuwa Corporation/.test(bd[0].body.text),
+    'HR automation: the birthday e-mail has the approved subject and text, addressed to the employee', bd[0]?.body);
+  check(bd[0].body.from.includes('Amuwa Corporation HR') && !bd[0].body.cc && !bd[0].body.bcc && bd[0].body.reply_to,
+    'HR automation: it is sent as the HR sender, without the client-facing CC / BCC lists');
+  const an = hrMail('hrbd.two@example.com', 'Happy Work Anniversary, Anniversary Person!');
+  check(an.length === 1 && /Congratulations on your work anniversary at Amuwa Corporation!/.test(an[0].body.text) && /5 completed years/.test(an[0].body.text),
+    'HR automation: the anniversary e-mail counts the completed years of service', an[0]?.body?.text);
+  const pe = hrMail('hrbd.prob@example.com', 'Upcoming Employment Confirmation Review – Probation Person');
+  check(pe.length === 1 && /approaching completion on /.test(pe[0].body.text) && /HR will communicate the confirmation decision/.test(pe[0].body.text),
+    'HR automation: the employee gets the probation reminder exactly seven days before the end');
+  const ph = hrMail('hr.inbox@example.com', 'Action Required: Probation Confirmation Due – Probation Person');
+  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm permanent employment/.test(ph[0].body.text)
+    && /approaching completion in 7 days/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
+  check(hrMail('hr.api@amuwa.com', 'Action Required: Probation Confirmation Due').length === 1, 'HR automation: every HR department member is also told');
+  check(emails().filter(o => /Employment Confirmation – Amuwa Corporation$/.test(o.body.subject)).length === 0, 'HR automation: nothing confirms the employee by itself');
+
+  // never twice
+  const mid = emails().length;
+  hr = await hrRun();
+  await hrRun();
+  check(emails().length === mid && hr.send.sent === 0, 'HR automation: running the scheduler again sends nothing twice');
+  check((await db.query(`select count(*)::int as n from public.hr_email_events where status = 'SENT' and sent_at is not null`)).rows[0].n === emails().length - before, 'HR automation: every delivered e-mail is recorded once with its time');
+
+  // test mode: an address outside the list is held back (recorded as a dry run) and sent once it is allowed
+  await addRecord('HRBD-4', 'Held Person', 'hrbd.dry@example.com', '2019-02-02', `1990-${md}`);
+  hr = await hrRun();
+  check(hrMail('hrbd.dry@example.com', 'Happy Birthday').length === 0
+    && (await db.query(`select status from public.hr_email_events where payload ->> 'employeeName' = 'Held Person' and kind = 'BIRTHDAY'`)).rows[0].status === 'PENDING',
+    'HR automation: in test mode an address outside the test list is not e-mailed (it waits)', hr);
+  process.env.AUTOMATION_TEST_RECIPIENTS += ',hrbd.dry@example.com';
+  hr = await hrRun();
+  check(hrMail('hrbd.dry@example.com', 'Happy Birthday').length === 1, 'HR automation: it is sent once the address is allowed');
+
+  // dry run: prepared and logged, nothing leaves the server; off does nothing; live sends it afterwards
+  await addRecord('HRBD-5', 'Rehearsal Person', 'hrbd.one@example.com', '2018-03-03', `1989-${md}`);
+  process.env.AUTOMATION_MODE = 'dry_run';
+  const dryBefore = emails().length;
+  await hrRun();
+  check(emails().length === dryBefore && (await db.query(`select 1 from public.hr_email_events where status = 'DRY_RUN' and payload ->> 'employeeName' = 'Rehearsal Person'`)).rowCount === 1,
+    'HR automation: dry run records the e-mail without sending it');
+  process.env.AUTOMATION_MODE = 'off';
+  hr = await hrRun();
+  check(emails().length === dryBefore && hr.send.claimed === 0, 'HR automation: switched off, nothing happens');
+  process.env.AUTOMATION_MODE = 'live';
+  await hrRun();
+  check(hrMail('hrbd.one@example.com', 'Happy Birthday, Rehearsal Person').length === 1, 'HR automation: live sends what dry run had prepared');
+
+  // a temporary provider failure is retried, and the e-mail is delivered exactly once
+  await addRecord('HRBD-6', 'Retry Person', 'hrbd.two@example.com', '2017-04-04', `1988-${md}`);
+  failNext['/emails'] = [503];
+  await hrRun();
+  let ev = (await db.query(`select status, attempts, last_error, next_attempt_at > now() as later from public.hr_email_events where payload ->> 'employeeName' = 'Retry Person' and kind = 'BIRTHDAY'`)).rows[0];
+  check(ev.status === 'RETRY' && ev.attempts === 1 && ev.later && /503/.test(ev.last_error), 'HR automation: a temporary failure (503) is queued for a retry with the error recorded', ev);
+  await hrRun();
+  check(hrMail('hrbd.two@example.com', 'Happy Birthday, Retry Person').length === 1, 'HR automation: the retry waits for its time');
+  await db.query(`update public.hr_email_events set next_attempt_at = now() where payload ->> 'employeeName' = 'Retry Person'`);
+  await hrRun();
+  ev = (await db.query(`select status, attempts, sent_at is not null as sent from public.hr_email_events where payload ->> 'employeeName' = 'Retry Person' and kind = 'BIRTHDAY'`)).rows[0];
+  check(ev.status === 'SENT' && ev.attempts === 2 && ev.sent, 'HR automation: the retry delivers it', ev);
+  check(hrMail('hrbd.two@example.com', 'Happy Birthday, Retry Person').length === 2, 'HR automation: two requests reached the provider (the failed one and the delivery)');
+  await hrRun();
+  check(hrMail('hrbd.two@example.com', 'Happy Birthday, Retry Person').length === 2, 'HR automation: and nothing more after delivery');
+
+  // a permanent refusal is not retried forever
+  await addRecord('HRBD-7', 'Failing Person', 'hrbd.two@example.com', '2016-05-05', `1987-${md}`);
+  failNext['/emails'] = [422];
+  await hrRun();
+  ev = (await db.query(`select status, last_error from public.hr_email_events where payload ->> 'employeeName' = 'Failing Person' and kind = 'BIRTHDAY'`)).rows[0];
+  check(ev.status === 'FAILED' && /422/.test(ev.last_error), 'HR automation: a permanent refusal (422) is FAILED at once, with the reason', ev);
+  const failedId = (await db.query(`select id from public.hr_email_events where payload ->> 'employeeName' = 'Failing Person' and kind = 'BIRTHDAY'`)).rows[0].id;
+
+  // the HR dashboard API
+  r = await api('a', 'GET', '/hr/email-automation/overview');
+  check(r.status === 403, 'HR automation API: a sales member cannot open the overview', r);
+  r = await api(null, 'GET', '/hr/email-automation/overview');
+  check(r.status === 401, 'HR automation API: nor a visitor', r);
+  r = await api('hr', 'GET', '/hr/email-automation/overview');
+  check(r.status === 200 && r.json.data.settings.mode === 'live' && r.json.data.settings.emailConfigured === true && r.json.data.settings.testMode === true
+    && r.json.data.queue.failed >= 1 && r.json.data.confirmations.pending >= 1 && Array.isArray(r.json.data.upcoming) && r.json.data.lastRun, 'HR automation API: HR sees status, queue, confirmations and the last run', r);
+  check(!/re_hr_secret_key|SMTP_PASS|dispatch-secret/i.test(JSON.stringify(r.json)), 'HR automation API: no credential is ever part of the answer');
+  r = await api('hr', 'GET', '/hr/email-automation/history?status=FAILED&limit=5');
+  check(r.status === 200 && r.json.data.items.some((i: any) => i.id === failedId && i.employeeName === 'Failing Person' && /422/.test(i.error)), 'HR automation API: the history shows failures with their error', r);
+  r = await api('hr', 'GET', '/hr/email-automation/history?status=NOPE');
+  check(r.status === 422, 'HR automation API: an unknown filter is refused', r);
+  r = await api('a', 'POST', `/hr/email-automation/events/${failedId}/retry`, {});
+  check(r.status === 403, 'HR automation API: a sales member cannot retry', r);
+  r = await api('hr', 'POST', `/hr/email-automation/events/${failedId}/retry`, {});
+  check(r.status === 200 && r.json.data.status === 'PENDING', 'HR automation API: HR retries a failed e-mail', r);
+  check(hrMail('hrbd.two@example.com', 'Happy Birthday, Failing Person').length === 2, 'HR automation API: the retry is sent straight away (one failed request, one delivery)');
+  r = await api('hr', 'POST', `/hr/email-automation/events/${failedId}/retry`, {});
+  check(r.status === 409, 'HR automation API: a delivered e-mail cannot be retried', r);
+
+  // approval: the confirmation e-mails only after an authorised person approves
+  r = await api('hr', 'GET', '/hr/email-automation/probation');
+  const cycle = r.json.data.find((c: any) => c.employeeName === 'Probation Person');
+  check(r.status === 200 && cycle && cycle.status === 'PENDING' && cycle.daysLeft === 7 && cycle.canDecide === true && cycle.employeeCode === 'HRBD-3', 'HR automation API: the upcoming confirmation is listed with its days left', cycle);
+  r = await api('a', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, {});
+  check(r.status === 403, 'HR automation API: a sales member cannot approve', r);
+  r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, { effectiveDate: 'soon' });
+  check(r.status === 422, 'HR automation API: an invalid date is refused', r);
+  r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, { note: 'Reviewed with the Department Head' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.approvedAt && r.json.data.note === 'Reviewed with the Department Head', 'HR automation API: HR approves the confirmation (date and status recorded)', r);
+  check(hrMail('hrbd.prob@example.com', 'Employment Confirmation – Amuwa Corporation').length === 0, 'HR automation API: the confirmation e-mail waits for the end of the probation period');
+  await db.query(`update public.hr_email_events set send_after = now() - interval '1 minute' where kind in ('CONFIRMATION_EMPLOYEE', 'CONFIRMATION_HR') and status = 'PENDING'`);
+  await hrRun();
+  const ce = hrMail('hrbd.prob@example.com', 'Employment Confirmation – Amuwa Corporation');
+  check(ce.length === 1 && /has been confirmed as permanent, effective /.test(ce[0].body.text) && /Congratulations, and best wishes/.test(ce[0].body.text), 'HR automation API: after the end date the employee receives the confirmation e-mail');
+  const chr = hrMail('hr.inbox@example.com', 'Employee Confirmation Completed – Probation Person');
+  check(chr.length === 1 && /Approval Status: Approved/.test(chr[0].body.text) && /Confirmation Effective Date:/.test(chr[0].body.text) && /HRBD-3/.test(chr[0].body.text), 'HR automation API: HR is notified with the approval details', chr[0]?.body?.text);
+  r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, {});
+  check(r.status === 409, 'HR automation API: approving twice is refused', r);
+  await hrRun();
+  check(hrMail('hrbd.prob@example.com', 'Employment Confirmation – Amuwa Corporation').length === 1, 'HR automation API: and no second confirmation e-mail is sent');
+  check((await db.query(`select status from public.hr_probation_cycles where id = $1`, [cycle.id])).rows[0].status === 'APPROVED', 'HR automation: the cycle stays APPROVED');
+
+  // data problems and fixing them
+  await db.query(`insert into public.hr_employees (id, name, email, department_id, status, joining_date) values ('HRBD-8', 'No Dates Person', 'hrbd.nodates@example.com', 'hr', 'Full-Time', 'n/a')`);
+  r = await api('hr', 'GET', '/hr/email-automation/data-issues');
+  const issue = r.json.data.find((i: any) => i.name === 'No Dates Person');
+  check(r.status === 200 && issue && issue.issues.includes('NO_DATE_OF_BIRTH') && issue.issues.includes('NO_JOINING_DATE'), 'HR automation API: employees without dates are listed with the reason', r);
+  r = await api('hr', 'POST', '/hr/email-automation/employee-dates', { employeeKey: issue.employeeKey, dateOfBirth: '2999-01-01' });
+  check(r.status === 422, 'HR automation API: a future date of birth is refused', r);
+  r = await api('hr', 'POST', '/hr/email-automation/employee-dates', { employeeKey: issue.employeeKey, dateOfBirth: '1990-06-15', joiningDate: '2024-02-01' });
+  check(r.status === 200, 'HR automation API: HR fills in the dates', r);
+  r = await api('hr', 'GET', '/hr/email-automation/data-issues');
+  check(!r.json.data.some((i: any) => i.name === 'No Dates Person' && (i.issues.includes('NO_DATE_OF_BIRTH') || i.issues.includes('NO_JOINING_DATE'))), 'HR automation API: and it leaves the list');
+  r = await api('a', 'POST', '/hr/email-automation/run', {});
+  check(r.status === 403, 'HR automation API: a sales member cannot run the check', r);
+  r = await api('hr', 'POST', '/hr/email-automation/run', {});
+  check(r.status === 200 && r.json.data.send.mode === 'live', 'HR automation API: HR can run the check now', r);
+
+  // the scheduler endpoint is protected
+  const unauth = await dispatch();
+  check(unauth.status === 401, 'HR automation: the scheduler endpoint needs its secret', unauth.status);
+
+  mailMock.close();
+  for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
+}
+
+// ---------------------------------------------------------------------------
 // Security hardening: /api/proxy and the lead webhook (Vercel functions), against the real database
 // ---------------------------------------------------------------------------
 {

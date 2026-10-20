@@ -1907,3 +1907,71 @@ export interface BusinessOrder {
   invoices: BusinessOrderInvoice[];
 }
 export type BusinessOrdersPage = Paginated<BusinessOrder>;
+
+// ---------------------------------------------------------------------------
+// HR e-mail automation (birthdays, work anniversaries, probation reminders, employment confirmation)
+// ---------------------------------------------------------------------------
+export type HrEmailKind =
+  | 'BIRTHDAY' | 'ANNIVERSARY' | 'PROBATION_REMINDER_EMPLOYEE' | 'PROBATION_REMINDER_HR' | 'PROBATION_OVERDUE_HR'
+  | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR';
+export type HrEmailStatus = 'PENDING' | 'SENDING' | 'RETRY' | 'SENT' | 'FAILED' | 'SKIPPED' | 'DRY_RUN';
+
+export interface HrEmailOverview {
+  today: string;
+  /** Whether the server sends real e-mail: "off", "dry_run" (nothing leaves the server) or "live". No credentials are ever included. */
+  settings: { mode: 'off' | 'dry_run' | 'live'; emailConfigured: boolean; testMode: boolean };
+  lastRun: { ranAt: string; day: string; birthdays: number; anniversaries: number; cyclesOpened: number; reminders: number; overdueReminders: number } | null;
+  last30Days: Partial<Record<HrEmailStatus, number>>;
+  byKind: Partial<Record<HrEmailKind, number>>;
+  queue: { pending: number; retrying: number; failed: number };
+  confirmations: { pending: number; dueWithin7Days: number; overdue: number };
+  upcoming: { kind: 'BIRTHDAY' | 'ANNIVERSARY'; name: string; date: string; years?: number }[];
+}
+export interface HrEmailItem {
+  id: string;
+  kind: HrEmailKind;
+  employeeName: string | null;
+  recipientEmail: string | null;
+  recipientName: string | null;
+  status: HrEmailStatus;
+  attempts: number;
+  eventDate: string;
+  sendAfter: string;
+  sentAt: string | null;
+  lastAttemptAt: string | null;
+  nextAttemptAt: string;
+  error: string | null;
+  createdAt: string;
+}
+export interface HrEmailHistory { total: number; items: HrEmailItem[] }
+export interface HrProbationCycle {
+  id: string;
+  employeeName: string;
+  employeeEmail: string | null;
+  employeeCode: string;
+  department: string | null;
+  joiningDate: string;
+  probationEnd: string;
+  daysLeft: number;
+  status: 'PENDING' | 'APPROVED' | 'DISMISSED';
+  effectiveDate: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
+  note: string | null;
+  /** Whether the signed-in user may approve / close it (HR lead, the employee's Department Head, Super Admin). */
+  canDecide: boolean;
+}
+export type HrDataIssue = 'NO_VALID_EMAIL' | 'NO_DATE_OF_BIRTH' | 'NO_JOINING_DATE' | 'JOINING_DATE_IN_THE_FUTURE';
+export interface HrEmailDataIssue {
+  employeeKey: string;
+  name: string;
+  department: string | null;
+  email: string | null;
+  dateOfBirth: string | null;
+  joiningDate: string | null;
+  issues: HrDataIssue[];
+}
+export interface HrEmailRunSummary {
+  schedule: { day: string; birthdays: number; anniversaries: number; cyclesOpened: number; reminders: number; overdueReminders: number } | null;
+  send: { mode: 'off' | 'dry_run' | 'live'; claimed: number; sent: number; dryRun: number; skipped: number; retrying: number; failed: number; note?: string };
+}

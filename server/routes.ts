@@ -214,6 +214,15 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/leave/:id/department-head-decision', handler: hr.decideAsDepartmentHead, options: S },
   { method: 'POST', path: '/leave/:id/hr-decision', handler: hr.decideAsHr, options: S },
   { method: 'GET', path: '/leave/monthly-summary', handler: hr.monthlySummary },
+  { method: 'GET', path: '/hr/email-automation/overview', handler: hr.emailOverview },
+  { method: 'GET', path: '/hr/email-automation/history', handler: hr.emailHistory },
+  { method: 'GET', path: '/hr/email-automation/probation', handler: hr.probationList },
+  { method: 'POST', path: '/hr/email-automation/probation/:id/confirm', handler: hr.confirmProbation, options: S },
+  { method: 'POST', path: '/hr/email-automation/probation/:id/dismiss', handler: hr.dismissProbation, options: S },
+  { method: 'POST', path: '/hr/email-automation/events/:id/retry', handler: hr.retryEmail, options: S },
+  { method: 'GET', path: '/hr/email-automation/data-issues', handler: hr.emailDataIssues },
+  { method: 'POST', path: '/hr/email-automation/employee-dates', handler: hr.setEmployeeDates, options: S },
+  { method: 'POST', path: '/hr/email-automation/run', handler: hr.runEmailAutomation, options: S },
 
   { method: 'GET', path: '/audit-logs', handler: audit.list }
 ];

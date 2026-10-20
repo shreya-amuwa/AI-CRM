@@ -9,6 +9,7 @@ import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
 import { DepartmentSelector } from './components/dashboard/DepartmentSelector';
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
+import { EmailAutomation } from './components/hr/EmailAutomation';
 import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { TabBar } from './components/layout/TabBar';
@@ -388,6 +389,8 @@ const MainAppContent: React.FC = () => {
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
+            ) : currentActiveTab === 'hr_email' && currentDeptId === 'hr' ? (
+              <EmailAutomation />
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
             ) : currentActiveTab === 'business_reports' && currentDeptId === 'accounts' ? (

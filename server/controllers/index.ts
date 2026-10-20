@@ -78,6 +78,8 @@ export const organizationController = {
   }) as Handler
 };
 
+import { runHrAutomation } from '../automations/hrDispatcher.js';
+
 export const hrController = {
   recordRmLogin: (async ctx => (await svc(ctx).hr.recordRmLogin(), ok(null))) as Handler,
   attendance: (async ctx => ok(await svc(ctx).hr.attendance(ctx.req.query))) as Handler,
@@ -88,7 +90,20 @@ export const hrController = {
   leaveToReview: (async ctx => ok(await svc(ctx).hr.leaveToReview())) as Handler,
   decideAsDepartmentHead: (async ctx => ok(await svc(ctx).hr.decideAsDepartmentHead(ctx.params.id, ctx.req.body))) as Handler,
   decideAsHr: (async ctx => ok(await svc(ctx).hr.decideAsHr(ctx.params.id, ctx.req.body))) as Handler,
-  monthlySummary: (async ctx => ok(await svc(ctx).hr.monthlySummary(ctx.req.query))) as Handler
+  monthlySummary: (async ctx => ok(await svc(ctx).hr.monthlySummary(ctx.req.query))) as Handler,
+  emailOverview: (async ctx => ok(await svc(ctx).hr.emailOverview())) as Handler,
+  emailHistory: (async ctx => ok(await svc(ctx).hr.emailHistory(ctx.req.query))) as Handler,
+  probationList: (async ctx => ok(await svc(ctx).hr.probationList())) as Handler,
+  confirmProbation: (async ctx => ok(await svc(ctx).hr.confirmProbation(ctx.params.id, ctx.req.body))) as Handler,
+  dismissProbation: (async ctx => ok(await svc(ctx).hr.dismissProbation(ctx.params.id, ctx.req.body))) as Handler,
+  retryEmail: (async ctx => ok(await svc(ctx).hr.retryEmail(ctx.params.id))) as Handler,
+  emailDataIssues: (async ctx => ok(await svc(ctx).hr.emailDataIssues())) as Handler,
+  setEmployeeDates: (async ctx => ok(await svc(ctx).hr.setEmployeeDates(ctx.req.body))) as Handler,
+  /** "Run the check now": decides what is due and sends it (HR staff only; the same work the scheduler does). */
+  runEmailAutomation: (async ctx => {
+    await svc(ctx).hr.emailOverview(); // the database refuses anyone who is not HR staff
+    return ok(await runHrAutomation());
+  }) as Handler
 };
 
 export const auditController = {
