@@ -12,7 +12,11 @@
     "test:api": "supabase/tests/run-api.sh",
     "test:unit": "supabase/tests/run-unit.sh",
     "bootstrap:super-admin": "node scripts/bootstrap-super-admin.mjs",
-    "create:hr-login": "node scripts/create-hr-login.mjs"
+    "create:hr-login": "node scripts/create-hr-login.mjs",
+    "docs:build": "node docs-site/build.mjs",
+    "docs:build-client": "node docs-site/build.mjs --audience=client",
+    "docs:check": "node docs-site/build.mjs --check",
+    "docs:serve": "node docs-site/serve.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.17",
