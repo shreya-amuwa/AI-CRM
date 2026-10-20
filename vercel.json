@@ -73,5 +73,11 @@
         }
       ]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/internal/automations/dispatch",
+      "schedule": "30 3 * * *"
+    }
   ]
 }

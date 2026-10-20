@@ -990,6 +990,22 @@ export const leaveDecisionSchema = z
   .refine(v => v.approve || (!!v.note && v.note.length >= 3), { message: 'Give a reason for rejecting the request.', path: ['note'] });
 export const leaveMonthQuerySchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM.').optional() }).strict();
 
+// ---- HR e-mail automation ----
+export const hrEmailHistoryQuerySchema = z
+  .object({
+    status: z.enum(['PENDING', 'SENDING', 'RETRY', 'SENT', 'FAILED', 'SKIPPED', 'DRY_RUN']).optional(),
+    kind: z.enum(['BIRTHDAY', 'ANNIVERSARY', 'PROBATION_REMINDER_EMPLOYEE', 'PROBATION_REMINDER_HR', 'PROBATION_OVERDUE_HR', 'CONFIRMATION_EMPLOYEE', 'CONFIRMATION_HR']).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).max(100000).default(0)
+  })
+  .strict();
+export const hrConfirmProbationSchema = z.object({ effectiveDate: isoDate.optional(), note: optionalText(500) }).strict();
+export const hrDismissProbationSchema = z.object({ note: z.string().trim().min(3, 'Say why the confirmation is closed.').max(500) }).strict();
+export const hrEmployeeDatesSchema = z
+  .object({ employeeKey: z.string().trim().min(3).max(80), dateOfBirth: isoDate.optional(), joiningDate: isoDate.optional() })
+  .strict()
+  .refine(v => !!v.dateOfBirth || !!v.joiningDate, { message: 'Enter a date of birth or a joining date.', path: ['dateOfBirth'] });
+
 // ---- Client calendar and documents ----
 export const clientCalendarQuerySchema = z
   .object({ from: isoDate, to: isoDate })

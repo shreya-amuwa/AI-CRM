@@ -16,6 +16,13 @@ import type {
   DeliveryQueueItem,
   ServiceJourneySetting,
   AttendanceDay,
+  HrEmailDataIssue,
+  HrEmailHistory,
+  HrEmailKind,
+  HrEmailOverview,
+  HrEmailRunSummary,
+  HrEmailStatus,
+  HrProbationCycle,
   LeaveMonthlySummary,
   LeaveRequest,
   LeaveReview,
@@ -439,7 +446,18 @@ export const hrApi = {
     api.post<LeaveRequest>('/leave', body),
   decideAsDepartmentHead: (id: string, approve: boolean, note?: string) => api.post<LeaveRequest>(`/leave/${id}/department-head-decision`, { approve, note: note || undefined }),
   decideAsHr: (id: string, approve: boolean, note?: string) => api.post<LeaveRequest>(`/leave/${id}/hr-decision`, { approve, note: note || undefined }),
-  monthlySummary: (month: string) => api.get<LeaveMonthlySummary>('/leave/monthly-summary', { month })
+  monthlySummary: (month: string) => api.get<LeaveMonthlySummary>('/leave/monthly-summary', { month }),
+
+  // E-mail automation (birthdays, work anniversaries, probation reminders, employment confirmation) - HR staff only
+  emailOverview: () => api.get<HrEmailOverview>('/hr/email-automation/overview'),
+  emailHistory: (q: { status?: HrEmailStatus; kind?: HrEmailKind; limit?: number; offset?: number } = {}) => api.get<HrEmailHistory>('/hr/email-automation/history', { ...q }),
+  probation: () => api.get<HrProbationCycle[]>('/hr/email-automation/probation'),
+  confirmProbation: (id: string, body: { effectiveDate?: string; note?: string } = {}) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/confirm`, body),
+  dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note }),
+  retryEmail: (id: string) => api.post<{ id: string; status: string }>(`/hr/email-automation/events/${id}/retry`, {}),
+  emailDataIssues: () => api.get<HrEmailDataIssue[]>('/hr/email-automation/data-issues'),
+  setEmployeeDates: (body: { employeeKey: string; dateOfBirth?: string; joiningDate?: string }) => api.post<{ employeeKey: string }>('/hr/email-automation/employee-dates', body),
+  runEmailAutomation: () => api.post<HrEmailRunSummary>('/hr/email-automation/run', {})
 };
 
 export const organizationApi = {
