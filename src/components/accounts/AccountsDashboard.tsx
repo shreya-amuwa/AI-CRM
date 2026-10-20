@@ -31,6 +31,8 @@ export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const [page, setPage] = useState<Page>('overview');
+  // choosing the page you are already on starts it afresh (Department Income goes back to its department cards)
+  const [pageKey, setPageKey] = useState(0);
   const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);
   // Add-on requests that wait for Accounts: to verify, or approved and waiting for the invoice.
   const [addonsWaiting, setAddonsWaiting] = useState(0);
@@ -70,7 +72,10 @@ export const AccountsDashboard: React.FC = () => {
       ariaLabel="Accounts navigation"
       groups={groups}
       active={page}
-      onSelect={id => setPage(id as Page)}
+      onSelect={id => {
+        if (id === page) setPageKey(k => k + 1);
+        setPage(id as Page);
+      }}
       user={{ name: displayName, role: 'Accounts' }}
       onSignOut={() => void logout()}
       topLeft={<div className="hidden lg:block text-sm text-slate-500">{profile?.department?.name || 'Accounts Department'}</div>}
@@ -89,7 +94,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'invoices' && <AccountsInvoices />}
       {page === 'plans' && <AccountsPlans />}
       {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
-      {page === 'department-income' && <AccountsDepartmentIncome />}
+      {page === 'department-income' && <AccountsDepartmentIncome key={pageKey} />}
       {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
       {page === 'notifications' && <NotificationsPage />}

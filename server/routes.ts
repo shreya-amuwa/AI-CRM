@@ -177,6 +177,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/accounts/finance/trend', handler: finance.trend },
   { method: 'GET', path: '/accounts/business-report', handler: business.report },
   { method: 'GET', path: '/accounts/business-report/transactions', handler: business.transactions },
+  { method: 'GET', path: '/accounts/business-report/orders', handler: business.orders },
   { method: 'GET', path: '/accounts/business-report/people', handler: business.people },
   { method: 'GET', path: '/accounts/invoices/:id/business', handler: business.invoiceBusiness },
   { method: 'POST', path: '/accounts/invoices/:id/business', handler: business.tagInvoice, options: S },

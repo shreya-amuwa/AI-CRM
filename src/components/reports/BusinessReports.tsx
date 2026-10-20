@@ -23,17 +23,17 @@ import { Card, CardHead, fieldCls, ghostBtn, StatCard, Tabs } from '../tasks/hea
  */
 
 type Page = 'OVERVIEW' | BusinessDivision;
-type Preset = 'TODAY' | '7' | '30' | 'MONTH' | 'ALL' | 'CUSTOM';
+export type Preset = 'TODAY' | '7' | '30' | 'MONTH' | 'ALL' | 'CUSTOM';
 
-const TYPE_LABEL: Record<BusinessTxType, string> = {
+export const TYPE_LABEL: Record<BusinessTxType, string> = {
   INITIAL_SALE: 'Initial sale',
   ADDON: 'Add-on service',
   RENEWAL: 'Renewal',
   SUBSCRIPTION: 'Subscription (plan)',
   UNCLASSIFIED: 'Not classified yet'
 };
-const STATUS_LABEL: Record<BusinessPayStatus, string> = { COLLECTED: 'Collected', PENDING: 'Pending', REFUNDED: 'Refunded' };
-const STATUS_CLS: Record<BusinessPayStatus, string> = {
+export const STATUS_LABEL: Record<BusinessPayStatus, string> = { COLLECTED: 'Collected', PENDING: 'Pending', REFUNDED: 'Refunded' };
+export const STATUS_CLS: Record<BusinessPayStatus, string> = {
   COLLECTED: 'bg-emerald-50 text-emerald-700',
   PENDING: 'bg-amber-50 text-amber-700',
   REFUNDED: 'bg-rose-50 text-rose-700'
@@ -47,7 +47,7 @@ const daysAgo = (n: number) => {
   d.setDate(d.getDate() - n);
   return dateKey(d);
 };
-function presetRange(p: Preset): { from?: string; to?: string } {
+export function presetRange(p: Preset): { from?: string; to?: string } {
   const today = dateKey(new Date());
   if (p === 'TODAY') return { from: today, to: today };
   if (p === '7') return { from: daysAgo(6), to: today };
@@ -55,9 +55,9 @@ function presetRange(p: Preset): { from?: string; to?: string } {
   if (p === 'MONTH') return { from: `${today.slice(0, 8)}01`, to: today };
   return {};
 }
-const when = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+export const when = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-const DEFINITIONS: [string, string][] = [
+export const DEFINITIONS: [string, string][] = [
   ['Collected', 'Payments Accounts has verified (money received). This is the same cash basis Accounts uses for income.'],
   ['Pending', 'Payments recorded but not yet verified. They are not collected revenue.'],
   ['Refunded', 'Payments that were reversed. They are taken out of collected.'],
@@ -383,7 +383,7 @@ const DivisionView: React.FC<{
   );
 };
 
-const EmployeeTable: React.FC<{ title: string; rows: BusinessEmployeeRow[] }> = ({ title, rows }) => (
+export const EmployeeTable: React.FC<{ title: string; rows: BusinessEmployeeRow[] }> = ({ title, rows }) => (
   <Card label={title}>
     <CardHead title={title} hint="Credited from the records that name who was responsible." />
     {rows.length === 0 ? (
@@ -424,7 +424,7 @@ const EmployeeTable: React.FC<{ title: string; rows: BusinessEmployeeRow[] }> = 
 );
 
 const PAGE_SIZE = 25;
-const TransactionTable: React.FC<{
+export const TransactionTable: React.FC<{
   title: string;
   division: BusinessDivision;
   filters: { from?: string; to?: string; departmentId?: string; employeeId?: string; type?: BusinessTxType; status?: BusinessPayStatus };

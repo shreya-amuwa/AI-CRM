@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Building2, Search } from 'lucide-react';
+import { Building2, ChevronRight, Search } from 'lucide-react';
 import type { DepartmentFinance } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { financeApi } from '../../../lib/api/endpoints';
 import { Empty, ErrorBanner, inputClass, Loading, PageHeader } from '../../support-member/SupportParts';
 import { money, useFinanceRefresh } from './FinanceBits';
 import { useDepartments } from './AccountsIncome';
+import { DepartmentBusinessDetail } from '../../reports/DepartmentBusinessDetail';
 
 /**
  * Department Income: one box per department in the CRM, with that department's
@@ -17,6 +18,7 @@ export const AccountsDepartmentIncome: React.FC = () => {
   const [rows, setRows] = useState<DepartmentFinance[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     financeApi.departments().then(
@@ -34,9 +36,16 @@ export const AccountsDepartmentIncome: React.FC = () => {
   const q = search.trim().toLowerCase();
   const shown = (rows ?? []).filter(r => !q || r.name.toLowerCase().includes(q));
 
+  // One department opened: its Sales team and Support team business. Back returns to these cards.
+  const selected = selectedId ? (rows ?? []).find(r => r.departmentId === selectedId) : undefined;
+  if (selected) {
+    const meta = look.get(selected.departmentId);
+    return <DepartmentBusinessDetail department={selected} accent={meta?.accentColor} logoUrl={meta?.logoUrl} onBack={() => setSelectedId(null)} />;
+  }
+
   return (
     <div className="space-y-6">
-      <PageHeader title="Department Income" subtitle="Each department's own earnings and expenses, from verified customer payments and recorded expenses." />
+      <PageHeader title="Department Income" subtitle="Each department's own earnings and expenses, from verified customer payments and recorded expenses. Open a department to see its Sales team and Support team business." />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!rows && !error ? (
         <Loading label="Loading departments..." />
@@ -67,12 +76,13 @@ export const AccountsDepartmentIncome: React.FC = () => {
                   const accent = meta?.accentColor || '#64748b';
                   const empty = r.incomeCount === 0 && r.expenseCount === 0;
                   return (
-                    <li
-                      key={r.departmentId}
-                      className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-md transition-all space-y-4 relative overflow-hidden"
-                      aria-label={r.name}
-                      data-testid="department-box"
-                    >
+                    <li key={r.departmentId} aria-label={r.name} data-testid="department-box" className="list-none">
+                     <button
+                      type="button"
+                      onClick={() => setSelectedId(r.departmentId)}
+                      aria-label={`Open ${r.name}: Sales and Support business`}
+                      className="w-full text-left bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-md hover:border-blue-300 transition-all space-y-4 relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                     >
                       <div className="h-1 w-full absolute top-0 left-0 right-0" style={{ backgroundColor: accent }} aria-hidden="true" />
                       <div className="flex items-center gap-3 pt-1">
                         {meta?.logoUrl ? (
@@ -84,7 +94,7 @@ export const AccountsDepartmentIncome: React.FC = () => {
                             <Building2 className="w-5 h-5" />
                           </div>
                         )}
-                        <h3 className="text-base font-bold font-heading text-slate-900 truncate">{r.name}</h3>
+                        <span className="text-base font-bold font-heading text-slate-900 truncate">{r.name}</span>
                       </div>
                       <div className="grid grid-cols-2 rounded-xl bg-slate-50 border border-slate-100 text-center font-mono">
                         <div className="p-3">
@@ -108,6 +118,10 @@ export const AccountsDepartmentIncome: React.FC = () => {
                         </div>
                       </div>
                       {empty && <p className="text-[11px] text-slate-400 text-center">No income or expense records yet.</p>}
+                      <span className="flex items-center justify-between text-[13px] font-bold text-blue-700 pt-1">
+                        View Sales and Support business <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                      </span>
+                     </button>
                     </li>
                   );
                 })}

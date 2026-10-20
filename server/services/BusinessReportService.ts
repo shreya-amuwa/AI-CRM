@@ -1,5 +1,5 @@
-import type { BusinessPerson, BusinessReport, BusinessTransactionsPage, InvoiceBusinessInfo } from '../../shared/contracts.js';
-import { businessReportQuerySchema, businessTransactionsQuerySchema, invoiceBusinessTagSchema, uuidSchema } from '../../shared/validation.js';
+import type { BusinessOrdersPage, BusinessPerson, BusinessReport, BusinessTransactionsPage, InvoiceBusinessInfo } from '../../shared/contracts.js';
+import { businessOrdersQuerySchema, businessReportQuerySchema, businessTransactionsQuerySchema, invoiceBusinessTagSchema, uuidSchema } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
 import type { BusinessReportRepository } from '../repositories/BusinessReportRepository.js';
 
@@ -13,6 +13,10 @@ export class BusinessReportService {
 
   transactions(query: unknown): Promise<BusinessTransactionsPage> {
     return this.repo.transactions(parse(businessTransactionsQuerySchema, query ?? {}));
+  }
+
+  orders(query: unknown): Promise<BusinessOrdersPage> {
+    return this.repo.orders(parse(businessOrdersQuerySchema, query ?? {}));
   }
 
   people(): Promise<BusinessPerson[]> {

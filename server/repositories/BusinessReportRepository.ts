@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BusinessPerson, BusinessReport, BusinessTransactionsPage, InvoiceBusinessInfo } from '../../shared/contracts.js';
-import type { BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput } from '../../shared/validation.js';
+import type { BusinessOrdersPage, BusinessPerson, BusinessReport, BusinessTransactionsPage, InvoiceBusinessInfo } from '../../shared/contracts.js';
+import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
 /** Business reports: every call is a database function that checks the caller (the Accounts department and the Super Admin). */
@@ -27,6 +27,22 @@ export class BusinessReportRepository {
     return unwrap(
       await this.db.rpc('business_report_transactions', { ...this.filters(q), p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })
     ) as BusinessTransactionsPage;
+  }
+
+  async orders(q: BusinessOrdersQuery): Promise<BusinessOrdersPage> {
+    return unwrap(
+      await this.db.rpc('business_report_orders', {
+        p_from: q.from ?? null,
+        p_to: q.to ?? null,
+        p_department: q.departmentId ?? null,
+        p_division: q.division ?? null,
+        p_employee: q.employeeId ?? null,
+        p_type: q.type ?? null,
+        p_search: q.search ?? null,
+        p_page: q.page,
+        p_page_size: q.pageSize
+      })
+    ) as BusinessOrdersPage;
   }
 
   async people(): Promise<BusinessPerson[]> {
