@@ -1874,3 +1874,36 @@ export interface InvoiceBusinessInfo {
   /** Open invoice requests a Support member made for this customer (link one to credit that member). */
   requests: { id: string; requestedBy: string | null; requestedByName: string | null; fromMonth: string; toMonth: string; note: string | null; createdAt: string }[];
 }
+
+/** One order behind the business figures: what was billed, what is collected / pending / outstanding, and its invoices. */
+export type BusinessOrderState = 'PAID' | 'PARTLY_PAID' | 'UNPAID';
+export interface BusinessOrderInvoice {
+  invoiceId: string;
+  number: string;
+  date: string | null;
+  total: number;
+  kind: string;
+  paid: boolean;
+}
+export interface BusinessOrder {
+  key: string;
+  type: 'INITIAL_SALE' | 'ADDON' | 'RENEWAL';
+  division: BusinessDivision;
+  billedAt: string;
+  billed: number;
+  collected: number;
+  pending: number;
+  refunded: number;
+  outstanding: number;
+  state: BusinessOrderState;
+  customerId: string;
+  customerName: string;
+  company: string | null;
+  customerCode: string | null;
+  departmentId: string | null;
+  department: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
+  invoices: BusinessOrderInvoice[];
+}
+export type BusinessOrdersPage = Paginated<BusinessOrder>;

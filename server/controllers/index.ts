@@ -289,6 +289,7 @@ export const generatedInvoiceController = {
 export const businessReportController = {
   report: (async ctx => ok(await svc(ctx).businessReport.report(ctx.req.query))) as Handler,
   transactions: (async ctx => ok(await svc(ctx).businessReport.transactions(ctx.req.query))) as Handler,
+  orders: (async ctx => ok(await svc(ctx).businessReport.orders(ctx.req.query))) as Handler,
   people: (async ctx => ok(await svc(ctx).businessReport.people())) as Handler,
   invoiceBusiness: (async ctx => ok(await svc(ctx).businessReport.invoiceBusiness(ctx.params.id))) as Handler,
   tagInvoice: (async ctx => {

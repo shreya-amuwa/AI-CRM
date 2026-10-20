@@ -1067,3 +1067,18 @@ export const invoiceBusinessTagSchema = z
   })
   .strict();
 export type InvoiceBusinessTagInput = z.infer<typeof invoiceBusinessTagSchema>;
+
+export const businessOrdersQuerySchema = z
+  .object({
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    departmentId: uuidSchema.optional(),
+    division: z.enum(['SALES', 'SUPPORT']).optional(),
+    employeeId: uuidSchema.optional(),
+    type: z.enum(['INITIAL_SALE', 'ADDON', 'RENEWAL']).optional(),
+    search: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .refine(v => !v.from || !v.to || v.to >= v.from, { message: 'The end date is before the start date.', path: ['to'] });
+export type BusinessOrdersQuery = z.infer<typeof businessOrdersQuerySchema>;

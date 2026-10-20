@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  BusinessOrdersPage,
   BusinessPerson,
   BusinessReport,
   BusinessTransactionsPage,
@@ -94,7 +95,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -502,6 +503,7 @@ export type { MonthlyPlan };
 export const businessReportApi = {
   report: (q: BusinessReportQuery = {}) => api.get<BusinessReport>('/accounts/business-report', { ...q }),
   transactions: (q: Partial<BusinessTransactionsQuery> = {}) => api.get<BusinessTransactionsPage>('/accounts/business-report/transactions', { ...q }),
+  orders: (q: Partial<BusinessOrdersQuery> = {}) => api.get<BusinessOrdersPage>('/accounts/business-report/orders', { ...q }),
   people: () => api.get<BusinessPerson[]>('/accounts/business-report/people'),
   invoiceBusiness: (invoiceId: string) => api.get<InvoiceBusinessInfo>(`/accounts/invoices/${invoiceId}/business`),
   tagInvoice: (invoiceId: string, body: InvoiceBusinessTagInput) => api.post<null>(`/accounts/invoices/${invoiceId}/business`, body)

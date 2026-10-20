@@ -161,6 +161,32 @@ select test.check((select (d -> 'sales' ->> 'collected')::numeric - coalesce((se
 select test.check((select coalesce(sum((d ->> 'collected')::numeric), 0) = (data -> 'organization' ->> 'collected')::numeric from br, jsonb_array_elements(data -> 'departments') d where name = 'plan' group by data),
   'the department rows add up to the organisation total');
 
+-- ---------------------------------------------------------------- 4c. the orders behind the figures, with their invoices
+select test.login('acc_m');
+insert into br select 'orders', public.business_report_orders(p_search => 'Mehta', p_page_size => 50);
+select test.check((select count(*) = 3 from jsonb_array_elements(data -> 'items') i where i ->> 'customerName' = 'Kiran Mehta') from br where name = 'orders'),
+  'the customer has three orders: the initial sale, the add-on and the renewal');
+select test.check((select (i ->> 'billed')::numeric = 60000 and (i ->> 'collected')::numeric = 20000 and (i ->> 'pending')::numeric = 8000
+                      and (i ->> 'outstanding')::numeric = 40000 and i ->> 'state' = 'PARTLY_PAID' and i ->> 'division' = 'SALES' and i ->> 'employeeName' = 'Member A'
+                   from br, jsonb_array_elements(data -> 'items') i where name = 'orders' and i ->> 'type' = 'INITIAL_SALE'),
+  'the sale: billed 60,000, collected 20,000, pending 8,000, outstanding 40,000, partly paid, Sales, credited to the salesperson');
+select test.check((select (i ->> 'billed')::numeric = 30000 and (i ->> 'collected')::numeric = 30000 and (i ->> 'pending')::numeric = 4000
+                      and (i ->> 'outstanding')::numeric = 0 and i ->> 'state' = 'PAID' and i ->> 'division' = 'SUPPORT'
+                   from br, jsonb_array_elements(data -> 'items') i where name = 'orders' and i ->> 'type' = 'ADDON'),
+  'the add-on: billed 30,000, collected 30,000, paid, Support');
+select test.check((select (i ->> 'billed')::numeric = 11800 and (i ->> 'collected')::numeric = 11800 and i ->> 'state' = 'PAID' and i ->> 'division' = 'SUPPORT'
+                      and jsonb_array_length(i -> 'invoices') = 1 and (i -> 'invoices' -> 0 ->> 'paid')::boolean
+                   from br, jsonb_array_elements(data -> 'items') i where name = 'orders' and i ->> 'type' = 'RENEWAL'),
+  'the renewal: billed 11,800, collected, paid, Support, and its (paid) invoice is listed');
+select test.check((select sum((i ->> 'billed')::numeric) = (public.business_report(p_division => 'SALES', p_department => test.dept('wabastore')) -> 'sections' -> 'sales' ->> 'billed')::numeric
+                     from jsonb_array_elements(public.business_report_orders(p_division => 'SALES', p_department => test.dept('wabastore'), p_page_size => 100) -> 'items') i),
+  'the sales orders add up to the department''s billed figure (one definition)');
+select test.check((select sum((i ->> 'outstanding')::numeric) = (public.business_report(p_division => 'SUPPORT', p_department => test.dept('wabastore')) -> 'sections' -> 'support' ->> 'outstanding')::numeric
+                     from jsonb_array_elements(public.business_report_orders(p_division => 'SUPPORT', p_department => test.dept('wabastore'), p_page_size => 100) -> 'items') i),
+  'and the support orders'' outstanding amounts add up to the department''s outstanding figure');
+select test.check((select (public.business_report_orders(p_department => test.dept('accounts')) ->> 'total')::int = 0), 'a department with no business has no orders (an empty state, not invented rows)');
+select test.must_fail($$select public.business_report_orders(p_type => 'SUBSCRIPTION')$$, 'an unknown order type is refused', 'Unknown order type');
+
 -- ---------------------------------------------------------------- 5. consistency: no double counting, one rule everywhere
 reset role;
 select test.check((select sum(amount) from private.business_ledger() where customer_id = (select id from bc where name = 'K1') and status = 'COLLECTED' and source <> 'PLAN_ACTIVATION')
@@ -220,6 +246,7 @@ set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select public.business_report()$$, 'a salesperson cannot read the business report', 'Only the Accounts department');
 select test.must_fail($$select public.business_report_transactions()$$, 'nor the transaction list', 'Only the Accounts department');
+select test.must_fail($$select public.business_report_orders()$$, 'nor the orders', 'Only the Accounts department');
 select test.login('sup_b');
 select test.must_fail($$select public.business_report()$$, 'a Support member cannot', 'Only the Accounts department');
 select test.login('hr_head');
