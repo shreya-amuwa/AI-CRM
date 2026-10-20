@@ -65,15 +65,6 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
   const navItems = [
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
     { id: 'assigned-tasks' as TeamLeadNav, label: 'Assigned Tasks', icon: ClipboardList },
-    { id: 'team-members' as TeamLeadNav, label: 'Team Members & Access', icon: UserPlus },
-    { id: 'reps' as TeamLeadNav, label: 'Team Reps (5)', icon: Users },
-    {
-      id: 'field-visits' as TeamLeadNav,
-      label: 'Field Visits (Live GPS)',
-      icon: Navigation,
-      badge: '1 Live',
-      badgeColor: 'bg-emerald-600 text-white'
-    },
     {
       id: 'distribution' as TeamLeadNav,
       label: 'Lead Distribution',
@@ -82,6 +73,14 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
       badgeColor: 'bg-blue-600 text-white'
     },
     { id: 'pipeline' as TeamLeadNav, label: 'Team Pipeline & Deals', icon: Kanban },
+    {
+      id: 'field-visits' as TeamLeadNav,
+      label: 'Field Visits (Live GPS)',
+      icon: Navigation,
+      badge: '1 Live',
+      badgeColor: 'bg-emerald-600 text-white'
+    },
+    { id: 'reps' as TeamLeadNav, label: 'Team Reps (5)', icon: Users },
     {
       id: 'eod' as TeamLeadNav,
       label: 'EOD Daily Reviews',
@@ -98,9 +97,12 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
     },
     { id: 'analytics' as TeamLeadNav, label: 'Analytics & Leaderboard', icon: BarChart3 },
     { id: 'settings' as TeamLeadNav, label: 'Pod Targets & Rules', icon: Settings },
+    { id: 'team-members' as TeamLeadNav, label: 'Team Members & Access', icon: UserPlus },
     { id: 'chat' as TeamLeadNav, label: CHAT_NAV.label, icon: CHAT_NAV.icon, badge: chatUnread > 0 ? String(chatUnread) : undefined, badgeColor: 'bg-emerald-600 text-white' },
     { id: 'notifications' as TeamLeadNav, label: 'Notification Center', icon: Bell }
   ];
+  // the menu reads in sections, like the Department Head's
+  const SECTION_LABEL: Partial<Record<TeamLeadNav, string>> = { 'assigned-tasks': 'Work', reps: 'Performance', 'team-members': 'Team' };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased">
@@ -125,8 +127,9 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
           <p className="text-[11px] text-slate-600 mt-1 leading-snug">Managing 5 reps in WabaStore Sales Pod Alpha.</p>
         </div>
         <nav className="flex flex-col gap-0.5" aria-label="Team Lead pages">
-          <NavGroupLabel>Command Center</NavGroupLabel>
           {navItems.map(item => (
+            <React.Fragment key={item.id}>
+              {SECTION_LABEL[item.id] ? <div className="pt-3 first:pt-0"><NavGroupLabel>{SECTION_LABEL[item.id]}</NavGroupLabel></div> : null}
             <NavButton
               key={item.id}
               label={item.label}
@@ -139,6 +142,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
             >
               {item.badge && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${activeNav === item.id ? 'bg-white text-blue-700' : item.badgeColor}`}>{item.badge}</span>}
             </NavButton>
+            </React.Fragment>
           ))}
         </nav>
       </SidebarFrame>

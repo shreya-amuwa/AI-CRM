@@ -24,12 +24,23 @@ export const ConsultantLayout: React.FC<{
   const chatUnread = useChatNavBadge();
   const groups: ShellNavGroup[] = [
     {
+      label: 'Customers',
       items: [
         { id: 'customers', label: 'Customers', icon: Users, count: newCount },
         { id: 'addons', label: 'Add-ons Services', icon: PackagePlus, count: addonsCount },
-        { id: 'onboarding', label: 'Onboarding Customers', icon: UserPlus, count },
+        { id: 'onboarding', label: 'Onboarding Customers', icon: UserPlus, count }
+      ]
+    },
+    {
+      label: 'Client portal',
+      items: [
         { id: 'client-documents', label: 'Client documents', icon: FolderCheck },
-        { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
+        { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus }
+      ]
+    },
+    {
+      label: 'Team',
+      items: [
         { ...CHAT_NAV, count: chatUnread > 0 ? chatUnread : undefined },
         { id: 'notifications', label: 'Notification Center', icon: Bell, count: unreadCount > 0 ? unreadCount : undefined }
       ]

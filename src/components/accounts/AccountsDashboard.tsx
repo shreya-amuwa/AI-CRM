@@ -52,18 +52,29 @@ export const AccountsDashboard: React.FC = () => {
 
   const displayName = profile?.fullName || user?.name || 'Accounts';
   const groups: ShellNavGroup[] = [
+    { items: [{ id: 'overview', label: 'Account Overview', icon: LayoutDashboard }] },
     {
+      label: 'Payments',
       items: [
-        { id: 'overview', label: 'Account Overview', icon: LayoutDashboard },
-        { id: 'income', label: 'Income', icon: TrendingUp },
         { id: 'confirmations', label: 'Confirmation', icon: ReceiptIndianRupee, badge: (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0) },
         { id: 'business-verification', label: 'Business Verification', icon: BadgeCheck, badge: addonsWaiting },
-        { id: 'invoices', label: 'Invoices', icon: FileText },
-        { id: 'plans', label: 'Monthly Plans', icon: Sparkles },
         { id: 'part-payments', label: 'Part Payment', icon: Wallet, badge: counts?.followUpsDue ?? 0 },
+        { id: 'invoices', label: 'Invoices', icon: FileText },
+        { id: 'plans', label: 'Monthly Plans', icon: Sparkles }
+      ]
+    },
+    {
+      label: 'Finance',
+      items: [
+        { id: 'income', label: 'Income', icon: TrendingUp },
         { id: 'department-income', label: 'Department Income', icon: Building2 },
-        { id: 'business-reports', label: 'Business Reports', icon: BarChart3 },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
+        { id: 'business-reports', label: 'Business Reports', icon: BarChart3 }
+      ]
+    },
+    {
+      label: 'Team',
+      items: [
         { ...CHAT_NAV, badge: chatUnread },
         { id: 'notifications', label: 'Notification Center', icon: Bell, badge: unreadCount }
       ]

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
-import { DashboardShell, type ShellNavGroup } from '../layout/shell';
+import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
@@ -103,7 +103,16 @@ export const SupportMemberDashboard: React.FC = () => {
   const displayName = profile?.fullName || user?.name || 'Support Team Member';
   const teamName = profile?.team?.name;
 
-  const groups: ShellNavGroup[] = [{ items: NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n)) }];
+  const groups: ShellNavGroup[] = groupNavItems(
+    NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n)),
+    [
+      { ids: ['customers'] },
+      { label: 'Work', ids: ['tasks', 'tickets', 'delivery', 'invoices'] },
+      { label: 'Customers', ids: ['my-clients', 'add-customer', 'import', 'client-documents', 'client-calendar'] },
+      { label: 'My Leads', ids: ['leads', 'potential', 'onboarding', 'part-payments'] },
+      { label: 'Team', ids: ['chat', 'notifications'] }
+    ]
+  );
 
   return (
     <DashboardShell

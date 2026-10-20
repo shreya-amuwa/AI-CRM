@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
 import { closeMenu, useMenu } from './menuState';
-import { DocumentationLink, SidebarToggle } from './shell';
+import { DocumentationLink, SidebarToggle, groupNavItems } from './shell';
 import { CHAT_NAV, useChatNavBadge } from '../chat/ChatRoute';
 
 export type ActiveTab =
@@ -333,6 +333,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const chatTab = { id: CHAT_NAV.id as ActiveTab, label: CHAT_NAV.label, icon: CHAT_NAV.icon };
   const lastTab = departmentNav[departmentNav.length - 1];
   const navItems: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
+  // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
+  const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'hr_email', 'client_notices', 'chat', 'notifications'];
+  const navSections = groupNavItems(navItems, [
+    { ids: navItems.slice(0, 1).map(i => i.id) },
+    { label: 'Work', ids: navItems.slice(1).map(i => i.id).filter(id => !TEAM_IDS.includes(id)) },
+    { label: 'Team', ids: TEAM_IDS.filter(id => navItems.some(i => i.id === id)) }
+  ]);
   const deptTitle = activeDepartment?.name || 'Department';
 
   return (
@@ -378,7 +385,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {subDept ? `${deptTitle} (${subDept})` : deptTitle}
           </div>
 
-          {navItems.map(item => {
+          {navSections.map(section => (
+          <div key={section.label || 'top'} className="space-y-0.5">
+          {section.label && <div className="px-2.5 pt-4 pb-1.5 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">{section.label}</div>}
+          {section.items.map(item => {
             const Icon = item.icon;
             const isActive = ((isSalesSuperAdmin || isSupportSuperAdmin) && activeTab === 'dashboard' ? 'team_members' : activeTab) === item.id;
             const isNotif = item.id === 'notifications';
@@ -412,6 +422,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </React.Fragment>
             );
           })}
+          </div>
+          ))}
         </div>
 
       </div>
