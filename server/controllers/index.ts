@@ -46,7 +46,7 @@ export const customersController = {
   addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
   /** Support: the Excel sheet of existing customers (preview or save) and the client's set-password e-mail. */
   importExisting: (async ctx => ok(await svc(ctx).customerImport.importExisting(ctx.actor, ctx.req.body, ctx.req.headers.origin))) as Handler,
-  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.params.id, ctx.req.headers.origin))) as Handler
+  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler
 };
 
 export const chatController = {
@@ -132,7 +132,17 @@ export const hrController = {
 };
 
 export const auditController = {
-  list: (async ctx => ok(await svc(ctx).audit.list(ctx.actor, ctx.req.query))) as Handler
+  list: (async ctx => ok(await svc(ctx).audit.list(ctx.actor, ctx.req.query))) as Handler,
+  /** The security and audit log viewer: search, filters, pages. */
+  search: (async ctx => ok(await svc(ctx).dashboards.auditSearch(ctx.actor, ctx.req.query))) as Handler,
+  actions: (async ctx => ok(await svc(ctx).dashboards.auditActions(ctx.actor))) as Handler,
+  /** A browser-side export is recorded: what and how many rows. */
+  recordExport: (async ctx => ok(await svc(ctx).dashboards.recordExport(ctx.req.body))) as Handler
+};
+
+export const dashboardController = {
+  company: (async ctx => ok(await svc(ctx).dashboards.companyOverview(ctx.actor))) as Handler,
+  scope: (async ctx => ok(await svc(ctx).dashboards.scopeOverview(ctx.actor, ctx.req.query))) as Handler
 };
 
 export const pipelineController = {

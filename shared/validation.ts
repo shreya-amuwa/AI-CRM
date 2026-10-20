@@ -326,6 +326,30 @@ export const teamUpdateSchema = z
 
 export const teamListQuerySchema = z.object({ departmentId: uuidSchema.optional() });
 
+/** The security and audit log viewer: search, filters and pages (read-only). */
+export const AUDIT_OUTCOMES = ['SUCCESS', 'FAILURE', 'DENIED'] as const;
+export const auditSearchQuerySchema = z.object({
+  ...pageParams,
+  q: z.string().trim().max(100).optional(),
+  action: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9_]{1,63}$/).optional(),
+  outcome: z.enum(AUDIT_OUTCOMES).optional(),
+  entityType: z.string().regex(/^[a-z_]{1,40}$/).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional()
+});
+
+/** A scoped dashboard overview: only the Super Admin may name a department (everyone else gets their own scope). */
+export const dashboardScopeQuerySchema = z.object({ departmentId: uuidSchema.optional() });
+
+/** A browser-side export (CSV and the like) is recorded: what it was and how many rows. */
+export const dataExportSchema = z
+  .object({
+    dataset: z.string().trim().regex(/^[a-z_]{1,40}$/, 'Unknown dataset.'),
+    rows: z.coerce.number().int().min(0).max(10_000_000),
+    note: z.string().trim().max(200).optional()
+  })
+  .strict();
+
 export const auditListQuerySchema = z.object({
   ...pageParams,
   action: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9_]{1,63}$/).optional(),

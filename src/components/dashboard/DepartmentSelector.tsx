@@ -2,15 +2,13 @@ import React, { useState } from 'react';
 import {
   Building2, ShoppingBag, MessageSquare, PhoneCall, Cpu, Layers, Sparkles, Star,
   ArrowRight, Plus, Lock, Unlock, X, AlertTriangle, GraduationCap, Users, FileText,
-  Trash2, RotateCcw, DollarSign, ShieldCheck, UserPlus
+  Trash2, DollarSign
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { useTabs } from '../../context/TabContext';
-import { AmuwaLogo } from '../common/AmuwaLogo';
 import { Department } from '../../types/crm';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
-import { AddStaffModal } from '../common/AddStaffModal';
 
 const getFallbackIcon = (iconName: string) => {
   switch (iconName) {
@@ -32,16 +30,13 @@ const getFallbackIcon = (iconName: string) => {
 const CARD_BASE =
   'bg-white/95 backdrop-blur-xl rounded-3xl transition-all duration-300 group flex flex-col justify-between border shadow-md overflow-hidden relative p-6 space-y-5';
 
-export const DepartmentSelector: React.FC = () => {
-  const { selectDepartment, user, logout } = useAuth();
-  const {
-    departments,
-    addDepartment,
-    deleteDepartment,
-    refreshDepartments,
-    lockDepartment,
-    unlockDepartment
-  } = useDepartments();
+/**
+ * The department cards: open a department's own panel, lock / unlock one, add one (Super Admin). These are the existing
+ * administrative functions, kept as they were; they now live on the "Departments" page of the Super Admin dashboard.
+ */
+export const DepartmentGrid: React.FC = () => {
+  const { selectDepartment, user } = useAuth();
+  const { departments, addDepartment, deleteDepartment, lockDepartment, unlockDepartment } = useDepartments();
   const { openDepartment, tabs } = useTabs();
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr';
@@ -49,7 +44,6 @@ export const DepartmentSelector: React.FC = () => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [lockTarget, setLockTarget] = useState<Department | null>(null);
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
-  const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
 
   const showNotice = (message: string) => {
     setLockedNotice(message);
@@ -75,75 +69,10 @@ export const DepartmentSelector: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-8 flex flex-col justify-between relative overflow-hidden selection:bg-blue-500/20">
-
-      {/* 1. Animated Ambient Floating Gradient Orbs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[600px] h-[600px] bg-gradient-to-tr from-purple-300/30 via-fuchsia-200/20 to-pink-300/30 blur-[130px] rounded-full pointer-events-none animate-orb-1" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[650px] h-[650px] bg-gradient-to-br from-blue-300/30 via-cyan-200/20 to-indigo-300/30 blur-[140px] rounded-full pointer-events-none animate-orb-2" />
-      <div className="absolute top-[40%] right-[15%] w-[450px] h-[450px] bg-gradient-to-r from-teal-200/20 via-emerald-200/20 to-sky-300/20 blur-[120px] rounded-full pointer-events-none animate-orb-3" />
-
-      {/* 2. Modern Dot Grid Pattern Overlay */}
-      <div className="absolute inset-0 bg-[radial-gradient(#94A3B8_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none" />
-
-      {/* Top Navbar */}
-      <header className="max-w-7xl w-full mx-auto flex items-center justify-between pb-6 border-b border-slate-200/80 z-10">
-        <AmuwaLogo layout="horizontal" size="sm" />
-
-        <div className="flex items-center gap-4">
-          <div className="hidden sm:flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-white/90 border border-slate-200/80 text-xs font-mono text-slate-700 shadow-xs backdrop-blur-md">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>{isSuperAdmin ? 'Super Admin' : 'Staff'}: <strong className="text-slate-900">{user?.name}</strong></span>
-          </div>
-
-          {isSuperAdmin && (
-            <button
-              type="button"
-              onClick={() => setIsAddStaffOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Add Team Member</span>
-            </button>
-          )}
-
-
-          <button
-            onClick={logout}
-            className="px-4 py-1.5 rounded-xl bg-white/90 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium font-mono transition-all shadow-xs backdrop-blur-md active:scale-95"
-          >
-            Sign Out
-          </button>
-        </div>
-      </header>
-
-      {/* Centered Page Title Header */}
-      <div className="max-w-7xl w-full mx-auto my-6 text-center z-10 space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-mono font-semibold">
-          <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
-          <span>{departments.length} Business Units &bull; Dedicated Control Panels</span>
-        </div>
-        <h2 className="text-3xl sm:text-4xl font-bold font-heading text-slate-900 tracking-tight drop-shadow-2xs">
-          {isSuperAdmin ? 'Super Admin Dashboard' : 'Select Department Control Panel'}
-        </h2>
-        {isSuperAdmin && (
-          <div className="pt-1">
-            <button
-              onClick={() => void refreshDepartments()}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-2xs transition-all cursor-pointer active:scale-95"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-              <span>Reload Departments</span>
-            </button>
-          </div>
-        )}
-      </div>
-
+    <div>
       {/* Transient locked-department notice */}
       {lockedNotice && (
-        <div className="max-w-7xl w-full mx-auto z-20 mb-2">
+        <div className="z-20 mb-2">
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium shadow-sm animate-fade-in">
             <Lock className="w-4 h-4 shrink-0" />
             <span>{lockedNotice}</span>
@@ -152,7 +81,7 @@ export const DepartmentSelector: React.FC = () => {
       )}
 
       {/* Department Cards Grid */}
-      <div className="max-w-7xl w-full mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-1 z-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 flex-1 z-10">
         {departments.map(dept => {
           const Icon = getFallbackIcon(dept.iconName);
           const isCustom = !SEED_DEPARTMENTS.some(s => s.id === dept.id);
@@ -300,11 +229,6 @@ export const DepartmentSelector: React.FC = () => {
         )}
       </div>
 
-      {/* Clean Footer */}
-      <footer className="max-w-7xl w-full mx-auto mt-10 pt-6 border-t border-slate-200/80 text-center text-xs font-sans text-slate-400 z-10">
-        &copy; 2026 Amuwa Corporation. All rights reserved.
-      </footer>
-
       {isAddOpen && (
         <AddDepartmentModal onClose={() => setIsAddOpen(false)} onCreate={addDepartment} />
       )}
@@ -320,8 +244,6 @@ export const DepartmentSelector: React.FC = () => {
           }}
         />
       )}
-
-      {isAddStaffOpen && <AddStaffModal onClose={() => setIsAddStaffOpen(false)} />}
 
     </div>
   );

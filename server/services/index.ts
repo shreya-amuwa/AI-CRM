@@ -30,6 +30,8 @@ import { UserService } from './UserService.js';
 import { CustomerImportService } from './CustomerImportService.js';
 import { ChatService } from './ChatService.js';
 import { ChatRepository } from '../repositories/ChatRepository.js';
+import { DashboardRepository } from '../repositories/DashboardRepository.js';
+import { DashboardService } from './DashboardService.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
@@ -41,6 +43,7 @@ export function createServices(db: SupabaseClient) {
     notifications: new NotificationService(new NotificationRepository(db)),
     organization: new OrganizationService(new OrganizationRepository(db)),
     audit: new AuditService(new AuditRepository(db)),
+    dashboards: new DashboardService(new DashboardRepository(db)),
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
     automations: new AutomationService(new PipelineRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),

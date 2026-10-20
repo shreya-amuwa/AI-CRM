@@ -3,6 +3,10 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  AuditEvent,
+  AuditOutcome,
+  CompanyOverview,
+  ScopeOverview,
   BusinessOrdersPage,
   BusinessPerson,
   BusinessReport,
@@ -471,7 +475,21 @@ export const organizationApi = {
 
 export const auditApi = {
   list: (q: { page?: number; pageSize?: number; action?: string; entityType?: string; entityId?: string } = {}) =>
-    api.get<Paginated<AuditLog>>('/audit-logs', { ...q })
+    api.get<Paginated<AuditLog>>('/audit-logs', { ...q }),
+  /** Security & Audit Logs viewer: search, filters, pages. Read-only; the database scopes it by role. */
+  search: (q: { page?: number; pageSize?: number; q?: string; action?: string; outcome?: AuditOutcome; entityType?: string; from?: string; to?: string } = {}) =>
+    api.get<Paginated<AuditEvent>>('/audit-logs/search', { ...q }),
+  actions: () => api.get<string[]>('/audit-logs/actions')
+};
+
+/** Dashboards: the figures come from the database; screens only show them. */
+export const dashboardApi = {
+  /** Super Admin only. */
+  company: () => api.get<CompanyOverview>('/dashboard/company-overview'),
+  /** Team Lead (the team), Department Head (the department), Super Admin (all, or the department named). */
+  scope: (departmentId?: string) => api.get<ScopeOverview>('/dashboard/scope-overview', { departmentId }),
+  /** Records that a list was exported from the browser (who, what, how many rows). Call it when the file is made. */
+  recordExport: (dataset: string, rows: number, note?: string) => api.post<null>('/security/data-exports', { dataset, rows, note })
 };
 
 /** Public sign-up options (departments + teams) via the anon-callable RPC. */

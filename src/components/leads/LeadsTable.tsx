@@ -6,6 +6,7 @@ import { DepartmentId, Lead, LeadSourceId } from '../../types/crm';
 import { useLeadStore } from '../../context/LeadStoreContext';
 import { LEAD_SOURCES, LEAD_SOURCE_LIST } from '../../data/leadSources';
 import { LeadPayloadModal } from './LeadPayloadModal';
+import { dashboardApi } from '../../lib/api/endpoints';
 
 interface LeadsTableProps {
   departmentId: DepartmentId;
@@ -57,6 +58,8 @@ export const LeadsTable: React.FC<LeadsTableProps> = ({ departmentId }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // an export of records is recorded: who, what and how many rows (the record is best-effort from the browser)
+    void dashboardApi.recordExport('leads', filteredLeads.length).catch(() => undefined);
   };
 
   return (

@@ -166,6 +166,151 @@ export interface AuditLog {
   createdAt: string;
 }
 
+/** One row of the security and audit log viewer (read-only). */
+export type AuditOutcome = 'SUCCESS' | 'FAILURE' | 'DENIED';
+export interface AuditEvent {
+  id: number;
+  at: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  outcome: AuditOutcome;
+  actorId: string | null;
+  /** Who did it, as it was when it happened (kept even if the person is removed later). */
+  actor: string | null;
+  actorRole: string | null;
+  departmentId: string | null;
+  department: string | null;
+  /** The API request that caused it (the same id is in the server log). */
+  requestId: string | null;
+  ip: string | null;
+  /** Safe details only: secrets are removed before an event is stored. */
+  metadata: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Dashboards (figures are worked out by the database from the real records; the screens add nothing of their own)
+// ---------------------------------------------------------------------------
+export interface LifecycleCounts {
+  total: number;
+  leads: number;
+  potential: number;
+  onboarding: number;
+  customers: number;
+  lost: number;
+}
+export interface TicketCounts {
+  open: number;
+  escalated: number;
+  unassigned: number;
+  pastSla: number;
+}
+export interface DashboardAlert {
+  key: string;
+  severity: 'high' | 'medium' | 'low';
+  count: number;
+  title: string;
+  hint: string;
+}
+export interface DashboardActivity {
+  at: string;
+  type: string;
+  note: string;
+  customerId: string;
+  customer: string;
+  department?: string | null;
+  actor: string | null;
+}
+export interface CompanyDepartmentRow {
+  id: string;
+  name: string;
+  slug: string;
+  locked: boolean;
+  generatesRevenue: boolean;
+  staff: number;
+  leads: number;
+  potential: number;
+  onboarding: number;
+  customers: number;
+  lost: number;
+  records: number;
+  /** (onboarding + customers) / (records - lost), as a percentage; null when there is nothing to divide. */
+  conversionPct: number | null;
+  income: number;
+  incomeThisMonth: number;
+  expenses: number;
+  expensesPending: number;
+  outstanding: number;
+  openTickets: number;
+  pastSla: number;
+}
+/** Super Admin only: the whole company in one response. */
+export interface CompanyOverview {
+  generatedAt: string;
+  customers: LifecycleCounts;
+  money: {
+    incomeThisMonth: number;
+    incomeLastMonth: number;
+    incomeTotal: number;
+    expensesThisMonth: number;
+    expensesLastMonth: number;
+    expensesTotal: number;
+    expensesPending: number;
+    pendingConfirmations: number;
+    pendingConfirmationsAmount: number;
+    unverifiedPayments: number;
+    unverifiedPaymentsAmount: number;
+    outstandingBalance: number;
+    customersWithBalance: number;
+  };
+  invoices: { count: number; total: number; paid: number; paidAmount: number; pending: number; pendingAmount: number; overdue: number; overdueAmount: number };
+  onboarding: {
+    inProgress: number;
+    withConsultant: number;
+    byStage: Record<'SALES_CONSULTATION' | 'COLLECT_REQUIREMENTS' | 'SETUP' | 'APPROVAL' | 'HANDOVER' | 'COMPLETED', number>;
+    itemsTotal: number;
+    itemsSaved: number;
+    itemsVerified: number;
+    itemsRejected: number;
+    stalled: number;
+  };
+  tickets: TicketCounts;
+  departments: CompanyDepartmentRow[];
+  trend: { month: string; income: number; expenses: number; net: number }[];
+  alerts: DashboardAlert[];
+  recentActivity: DashboardActivity[];
+}
+export interface ScopeMemberRow {
+  id: string;
+  name: string;
+  role: Role;
+  team: string;
+  teamId: string;
+  leads: number;
+  potential: number;
+  onboarding: number;
+  customers: number;
+  records: number;
+  followUpsOverdue: number;
+  openTasks: number;
+  overdueTasks: number;
+  lastActivityAt: string | null;
+}
+/** What a Team Lead, a Department Head (or the Super Admin for one department) is responsible for. Scoped by row-level security. */
+export interface ScopeOverview {
+  generatedAt: string;
+  scope: { role: Role; departmentId: string | null; teamId: string | null };
+  customers: LifecycleCounts;
+  pipeline: { followUpsOverdue: number; followUpsToday: number; leadsWithoutFollowUp: number; newLeadsThisWeek: number; wonThisMonth: number };
+  money: { pendingConfirmations: number; unverifiedPayments: number; outstandingBalance: number; customersWithBalance: number; verifiedReceived: number };
+  onboarding: { inProgress: number; waitingForDepartmentHead: number; waitingForTeamLead: number; withTeamMember: number; itemsTotal: number; itemsVerified: number; stalled: number };
+  tickets: TicketCounts;
+  tasks: { open: number; overdue: number; blocked: number; completedThisWeek: number };
+  members: ScopeMemberRow[];
+  teams: { id: string; name: string; division: TeamDivision; members: number; records: number; leads: number; onboarding: number; customers: number }[];
+  recentActivity: DashboardActivity[];
+}
+
 export interface Paginated<T> {
   items: T[];
   page: number;
