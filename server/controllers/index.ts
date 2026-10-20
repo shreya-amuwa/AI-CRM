@@ -49,6 +49,31 @@ export const customersController = {
   sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.params.id, ctx.req.headers.origin))) as Handler
 };
 
+export const chatController = {
+  internalList: (async ctx => ok(await svc(ctx).chat.internalList(ctx.req.query))) as Handler,
+  myClients: (async ctx => ok(await svc(ctx).chat.myClients(ctx.req.query))) as Handler,
+  review: (async ctx => ok(await svc(ctx).chat.review(ctx.req.query))) as Handler,
+  reviewOpen: (async ctx => ok(await svc(ctx).chat.reviewOpen(ctx.params.id))) as Handler,
+  unread: (async ctx => ok(await svc(ctx).chat.unread())) as Handler,
+  customerConversation: (async ctx => ok(await svc(ctx).chat.customerConversation(ctx.params.customerId))) as Handler,
+  detail: (async ctx => ok(await svc(ctx).chat.detail(ctx.params.id))) as Handler,
+  directory: (async ctx => ok(await svc(ctx).chat.directory(ctx.req.query))) as Handler,
+  openDirect: (async ctx => ok(await svc(ctx).chat.openDirect(ctx.req.body))) as Handler,
+  createGroup: (async ctx => ok(await svc(ctx).chat.createGroup(ctx.req.body), 201)) as Handler,
+  renameGroup: (async ctx => ok(await svc(ctx).chat.renameGroup(ctx.params.id, ctx.req.body))) as Handler,
+  addMembers: (async ctx => ok(await svc(ctx).chat.addMembers(ctx.params.id, ctx.req.body))) as Handler,
+  removeMember: (async ctx => ok(await svc(ctx).chat.removeMember(ctx.params.id, ctx.params.profileId))) as Handler,
+  setAdmin: (async ctx => ok(await svc(ctx).chat.setAdmin(ctx.params.id, ctx.req.body))) as Handler,
+  leave: (async ctx => ok(await svc(ctx).chat.leave(ctx.params.id))) as Handler,
+  messages: (async ctx => ok(await svc(ctx).chat.messages(ctx.params.id, ctx.req.query))) as Handler,
+  send: (async ctx => ok(await svc(ctx).chat.send(ctx.params.id, ctx.req.body), 201)) as Handler,
+  markRead: (async ctx => ok(await svc(ctx).chat.markRead(ctx.params.id, ctx.req.body))) as Handler,
+  beginUpload: (async ctx => ok(await svc(ctx).chat.beginUpload(ctx.params.id, ctx.req.body), 201)) as Handler,
+  completeUpload: (async ctx => ok(await svc(ctx).chat.completeUpload(ctx.params.id))) as Handler,
+  abortUpload: (async ctx => ok(await svc(ctx).chat.abortUpload(ctx.params.id))) as Handler,
+  attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
+};
+
 export const notificationsController = {
   list: (async ctx => ok(await svc(ctx).notifications.list(ctx.req.query))) as Handler,
   unreadCount: (async ctx => ok(await svc(ctx).notifications.unreadCount())) as Handler,

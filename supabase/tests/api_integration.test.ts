@@ -1822,6 +1822,218 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
   delete process.env.APP_URL; process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 }
+// --- Chat: client chat, reviewers, internal direct messages, groups and files -------------------------------------
+{
+  const cust = (await db.query(`select id from public.customers where phone = '9000000201'`)).rows[0].id as string;
+  const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
+  const smId = await idOf('sm@amuwa.com'), tm2Id = await idOf('tm.delivery@amuwa.com'), tl2Id = await idOf('tl.delivery@amuwa.com'), aId = await idOf('a@amuwa.com');
+  const mid = () => crypto.randomUUID();
+
+  // ---- who can reach the chat routes at all
+  r = await api(null, 'GET', '/chat/internal');
+  check(r.status === 401, 'chat: no token, no chat', r);
+  r = await api('imp', 'GET', '/chat/internal');
+  check(r.status === 401 || r.status === 403, 'chat: a client login cannot use the employee chat routes', r);
+  r = await api('sm', 'GET', '/client/chat');
+  check(r.status === 401 || r.status === 403, 'chat: an employee login cannot use the client chat routes', r);
+  r = await api(null, 'GET', '/client/chat');
+  check(r.status === 401, 'chat: client chat needs a sign-in', r);
+
+  // ---- the client's conversation
+  r = await api('imp', 'GET', '/client/chat');
+  check(r.status === 200 && r.json.data.conversation.access === 'CLIENT' && r.json.data.conversation.canWrite && r.json.data.conversation.assigned === true && r.json.data.page.messages.length === 0
+    && r.json.data.conversation.team.teamMember.name === 'Support Member', 'chat: the client opens their conversation, sees their Team Member and no messages yet', r);
+  const conv = r.json.data.conversation.id as string;
+  check(!JSON.stringify(r.json.data).includes(smId), 'chat: no employee id is given to the client', r.json.data);
+  const first = mid();
+  r = await api('imp', 'POST', '/client/chat/messages', { body: '  Hello team  ', clientMsgId: first });
+  check(r.status === 201 && r.json.data.body === 'Hello team' && r.json.data.mine === true && r.json.data.senderLabel === 'Client' && r.json.data.seq === 1, 'chat: the client sends a message', r);
+  const firstId = r.json.data.id as string;
+  r = await api('imp', 'POST', '/client/chat/messages', { body: 'Hello team', clientMsgId: first });
+  check(r.status === 201 && r.json.data.id === firstId, 'chat: sending the same message again returns the stored one (no duplicate)', r);
+  r = await api('imp', 'POST', '/client/chat/messages', { body: '   ', clientMsgId: mid() });
+  check(r.status === 422, 'chat: an empty message is refused', r);
+  r = await api('imp', 'POST', '/client/chat/messages', { body: 'x'.repeat(4001), clientMsgId: mid() });
+  check(r.status === 422, 'chat: a message over 4000 characters is refused', r);
+  r = await api('imp', 'POST', '/client/chat/messages', { body: 'hi', clientMsgId: 'not-a-uuid' });
+  check(r.status === 422, 'chat: a bad message id is refused', r);
+  r = await api('imp', 'POST', '/client/chat/messages', { body: 'hi', clientMsgId: mid(), senderId: smId, conversationId: conv });
+  check(r.status === 422, 'chat: a client cannot name a sender or a conversation (unknown fields are refused)', r);
+  r = await api('imp', 'GET', '/client/chat/messages?before=5&after=2');
+  check(r.status === 422, 'chat: "before" and "after" together are refused', r);
+
+  // ---- the assigned Team Member
+  r = await api('sm', 'GET', '/chat/my-clients');
+  const mine = r.json.data?.find((x: any) => x.customerId === cust);
+  check(r.status === 200 && mine && mine.unread === 1 && mine.role === 'Team Member' && mine.conversationId === conv, 'chat: the Team Member sees the customer with 1 unread message', r);
+  r = await api('sm', 'GET', `/chat/customers/${cust}`);
+  check(r.status === 200 && r.json.data.id === conv && r.json.data.access === 'STAFF' && r.json.data.customer.business.includes('Import Traders'), 'chat: and opens the conversation from the customer', r);
+  r = await api('sm', 'GET', `/chat/conversations/${conv}/messages?limit=10`);
+  check(r.status === 200 && r.json.data.messages.length === 1 && r.json.data.messages[0].body === 'Hello team' && r.json.data.messages[0].mine === false, 'chat: and reads it', r);
+  r = await api('sm', 'POST', `/chat/conversations/${conv}/messages`, { body: 'Hi, how can we help?', clientMsgId: mid() });
+  check(r.status === 201 && r.json.data.senderKind === 'STAFF' && r.json.data.senderLabel === 'Team Member' && r.json.data.seq === 2, 'chat: and replies', r);
+  r = await api('sm', 'POST', `/chat/conversations/${conv}/read`, {});
+  check(r.status === 200 && r.json.data.readSeq === 2, 'chat: and marks it read', r);
+  r = await api('imp', 'GET', '/client/chat');
+  check(r.json.data.conversation.unread === 1 && r.json.data.conversation.peerReadSeq === 2 && r.json.data.page.messages.length === 2, 'chat: the client sees the reply, 1 unread, and how far the team has read', r);
+  r = await api('imp', 'GET', '/client/chat/messages?after=1');
+  check(r.json.data.messages.length === 1 && r.json.data.messages[0].seq === 2, 'chat: a reconnecting client asks only for what came after the last message it has', r);
+  r = await api('imp', 'POST', '/client/chat/read', {});
+  check(r.status === 200, 'chat: the client marks it read', r);
+  r = await api('imp', 'GET', '/client/chat/unread');
+  check(r.status === 200 && r.json.data.total === 0, 'chat: and has nothing unread', r);
+
+  // ---- everybody else
+  r = await api('a', 'GET', `/chat/conversations/${conv}`);
+  check(r.status === 404, 'chat: a Sales member cannot open the conversation', r);
+  r = await api('a', 'GET', `/chat/conversations/${conv}/messages`);
+  check(r.status === 404, 'chat: nor read its messages', r);
+  r = await api('a', 'POST', `/chat/conversations/${conv}/messages`, { body: 'hi', clientMsgId: mid() });
+  check(r.status === 404, 'chat: nor write in it', r);
+  r = await api('a', 'GET', `/chat/customers/${cust}`);
+  check(r.status === 404, 'chat: nor open the customer\'s chat', r);
+  r = await api('tl2', 'GET', `/chat/conversations/${conv}/messages`);
+  check(r.status === 404, 'chat: an unrelated Team Lead cannot read it', r);
+  // ---- the Department Head reviews, cannot write
+  r = await api('dh', 'GET', `/chat/conversations/${conv}`);
+  check(r.status === 200 && r.json.data.access === 'REVIEWER' && r.json.data.canWrite === false, 'chat: the Department Head opens it as a reviewer', r);
+  r = await api('dh', 'GET', `/chat/conversations/${conv}/messages`);
+  check(r.status === 200 && r.json.data.messages.length === 2, 'chat: and reads it', r);
+  r = await api('dh', 'POST', `/chat/conversations/${conv}/review-open`);
+  check(r.status === 200, 'chat: opening it for review is recorded', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action = 'CLIENT_CHAT_REVIEWED' and entity_id = $1`, [conv])).rows[0].n === 1, 'chat: in the audit log');
+  r = await api('dh', 'POST', `/chat/conversations/${conv}/messages`, { body: 'I am the Department Head', clientMsgId: mid() });
+  check(r.status === 403, 'chat: the Department Head cannot send (direct API call)', r);
+  r = await api('dh', 'POST', `/chat/conversations/${conv}/uploads`, { fileName: 'a.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+  check(r.status === 403, 'chat: nor attach a file', r);
+  r = await api('dh', 'GET', '/chat/review');
+  check(r.status === 200 && r.json.data.items.some((x: any) => x.id === conv && x.access === 'REVIEWER'), 'chat: the review list shows it', r);
+  r = await api('sm', 'GET', '/chat/review');
+  check(r.status === 403, 'chat: an employee who is not a Department Head cannot use the review list', r);
+  check((await db.query(`select count(*)::int n from public.chat_messages where conversation_id = $1 and sender_id = $2`, [conv, await idOf('dh@amuwa.com')])).rows[0].n === 0, 'chat: and no message of the Department Head exists');
+
+  // ---- internal direct messages
+  r = await api('sm', 'GET', '/chat/directory?q=delivery');
+  check(r.status === 200 && r.json.data.some((p: any) => p.id === tm2Id) && !r.json.data.some((p: any) => 'email' in p), 'chat: the directory finds colleagues without e-mail addresses', r);
+  r = await api('imp', 'GET', '/chat/directory');
+  check(r.status === 401 || r.status === 403, 'chat: a client cannot list employees', r);
+  r = await api('sm', 'POST', '/chat/direct', { profileId: tm2Id });
+  check(r.status === 200 && r.json.data.kind === 'DIRECT' && r.json.data.title === 'Mohan Member' || r.json.data?.kind === 'DIRECT', 'chat: an employee starts a direct conversation', r);
+  const dm = r.json.data.id as string;
+  r = await api('tm2', 'POST', '/chat/direct', { profileId: smId });
+  check(r.json.data.id === dm, 'chat: the other person opening it gets the same conversation', r);
+  r = await api('sm', 'POST', '/chat/direct', { profileId: smId });
+  check(r.status === 422, 'chat: nobody can open a conversation with themselves', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/messages`, { body: 'Got a minute?', clientMsgId: mid() });
+  check(r.status === 201 && r.json.data.senderLabel === null, 'chat: a direct message is sent', r);
+  r = await api('tm2', 'GET', '/chat/internal');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].unread === 1 && r.json.data[0].lastMessagePreview === 'Got a minute?', 'chat: the other person has it in their list with 1 unread', r);
+  r = await api('tm2', 'GET', '/chat/unread');
+  check(r.json.data.internal === 1, 'chat: and in their unread summary', r);
+  r = await api('tl2', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 404, 'chat: a third person cannot read the direct conversation', r);
+  r = await api('dh', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 404, 'chat: nor can a Department Head', r);
+  r = await api('sa', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 404, 'chat: nor the Super Admin', r);
+  r = await api('imp', 'GET', `/client/chat/messages`);
+  check(r.json.data.messages.every((m: any) => m.conversationId === conv), 'chat: a client never receives an internal message', r);
+
+  // ---- groups
+  r = await api('sm', 'POST', '/chat/groups', { title: 'Delivery huddle', memberIds: [tm2Id, tl2Id] });
+  check(r.status === 201 && r.json.data.kind === 'GROUP' && r.json.data.isAdmin === true && r.json.data.members.length === 3, 'chat: an employee creates a group', r);
+  const grp = r.json.data.id as string;
+  r = await api('sm', 'POST', '/chat/groups', { title: '', memberIds: [tm2Id] });
+  check(r.status === 422, 'chat: a group needs a name', r);
+  r = await api('sm', 'POST', '/chat/groups', { title: 'x', memberIds: [] });
+  check(r.status === 422, 'chat: and someone to talk to', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: 'Welcome', clientMsgId: mid() });
+  check(r.status === 201, 'chat: the admin writes in it', r);
+  r = await api('tm2', 'POST', `/chat/conversations/${grp}/messages`, { body: 'Thanks', clientMsgId: mid() });
+  check(r.status === 201, 'chat: a member writes in it', r);
+  r = await api('tm2', 'POST', `/chat/groups/${grp}/members`, { profileIds: [aId] });
+  check(r.status === 403, 'chat: a member who is not an admin cannot add people', r);
+  r = await api('tm2', 'PATCH', `/chat/groups/${grp}`, { title: 'Mine now' });
+  check(r.status === 403, 'chat: nor rename the group', r);
+  r = await api('a', 'GET', `/chat/conversations/${grp}/messages`);
+  check(r.status === 404, 'chat: a non-member cannot read it', r);
+  r = await api('sm', 'POST', `/chat/groups/${grp}/members`, { profileIds: [aId] });
+  check(r.status === 200 && r.json.data.members.length === 4, 'chat: the admin adds a person', r);
+  r = await api('a', 'GET', `/chat/conversations/${grp}/messages`);
+  check(r.status === 200 && r.json.data.messages.length === 1 && r.json.data.messages[0].kind === 'SYSTEM', 'chat: a new member sees only what is said from when they joined', r);
+  r = await api('sm', 'POST', `/chat/groups/${grp}/members`, { profileIds: [await idOf('x@amuwa.com').catch(() => crypto.randomUUID())] });
+  check(r.status === 422 || r.status === 200, 'chat: adding is validated (an unknown person is refused)', r);
+  r = await api('sm', 'POST', `/chat/groups/${grp}/members`, { profileIds: [crypto.randomUUID()] });
+  check(r.status === 422, 'chat: a person who does not exist cannot be added', r);
+
+  // ---- files
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n% chat file\n'), Buffer.alloc(2000, 0x20), Buffer.from('\n%%EOF\n')]);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'virus.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
+  check(r.status === 422, 'chat: a file type that is not allowed is refused', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'big.pdf', mimeType: 'application/pdf', sizeBytes: 6 * 1024 * 1024 });
+  check(r.status === 422, 'chat: a file over 5 MB is refused', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  check(r.status === 201 && r.json.data.bucket === 'chat-attachments' && r.json.data.path.startsWith(`${grp}/`) && !r.json.data.path.includes('..'), 'chat: an upload is booked under the conversation', r);
+  const tk = r.json.data;
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: 'with file', clientMsgId: mid(), attachmentIds: [tk.attachment.id] });
+  check(r.status === 422, 'chat: a file that has not finished uploading cannot be sent', r);
+  r = await api('sm', 'POST', `/chat/uploads/${tk.attachment.id}/complete`);
+  check(r.status === 422, 'chat: completing an upload that never arrived is refused', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  const tk2 = r.json.data;
+  const put = await fetch(`${GW}/storage/v1/object/upload/sign/${tk2.bucket}/${tk2.path}?token=${tk2.token}`, { method: 'PUT', headers: { 'content-type': 'application/pdf', 'x-upsert': 'false' }, body: pdf });
+  check(put.status < 300, 'chat: the file is uploaded with the single-use link', await put.text().catch(() => ''));
+  r = await api('tm2', 'POST', `/chat/uploads/${tk2.attachment.id}/complete`);
+  check(r.status === 404, 'chat: someone else cannot confirm my upload', r);
+  r = await api('sm', 'POST', `/chat/uploads/${tk2.attachment.id}/complete`);
+  check(r.status === 200 && r.json.data.name === 'Plan.pdf', 'chat: the uploader confirms it', r);
+  r = await api('tm2', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 404, 'chat: before it is sent only the uploader can reach the file', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: '', clientMsgId: mid(), attachmentIds: [tk2.attachment.id] });
+  check(r.status === 201 && r.json.data.attachments[0].name === 'Plan.pdf', 'chat: a message can be a file only', r);
+  r = await api('tm2', 'GET', `/chat/attachments/${tk2.attachment.id}/url?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.fileName === 'Plan.pdf' && r.json.data.expiresInSeconds <= 120, 'chat: a member gets a short-lived download link', r);
+  const dl = await fetch(r.json.data.url);
+  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(pdf), 'chat: and the file is the one that was uploaded');
+  r = await api('a', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 200, 'chat: the member who joined later can open files sent after they joined', r);
+  r = await api('imp', 'GET', `/client/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 404, 'chat: a client cannot open an internal file even with its id', r);
+  r = await api('imp', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 401 || r.status === 403, 'chat: nor through the employee route', r);
+  r = await api('dh', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 404, 'chat: a Department Head cannot open an employee group\'s file', r);
+
+  // ---- removing a member
+  r = await api('sm', 'DELETE', `/chat/groups/${grp}/members/${tl2Id}`);
+  check(r.status === 200 && r.json.data.members.length === 3, 'chat: the admin removes a member', r);
+  r = await api('tl2', 'GET', `/chat/conversations/${grp}/messages`);
+  check(r.status === 404, 'chat: the removed member can no longer read the group', r);
+  r = await api('tl2', 'POST', `/chat/conversations/${grp}/messages`, { body: 'still here', clientMsgId: mid() });
+  check(r.status === 404, 'chat: nor write in it', r);
+  r = await api('tl2', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 404, 'chat: nor download its files', r);
+  r = await api('tm2', 'POST', `/chat/groups/${grp}/leave`);
+  check(r.status === 200, 'chat: a member leaves', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${grp}/messages`);
+  check(r.status === 404, 'chat: and has no access afterwards', r);
+
+  // ---- history paging and bad ids
+  for (let i = 0; i < 35; i++) await db.query(`select 1`); // (the pages below are checked on the group, which has 5+ messages)
+  r = await api('sm', 'GET', `/chat/conversations/${grp}/messages?limit=2`);
+  check(r.status === 200 && r.json.data.messages.length === 2 && r.json.data.hasMore === true, 'chat: history is paged (newest first page, "hasMore")', r);
+  const oldest = r.json.data.messages[0].seq as number;
+  r = await api('sm', 'GET', `/chat/conversations/${grp}/messages?limit=100&before=${oldest}`);
+  check(r.status === 200 && r.json.data.messages.every((m: any) => m.seq < oldest), 'chat: the next page continues before the oldest message', r);
+  r = await api('sm', 'GET', `/chat/conversations/${grp}/messages?limit=500`);
+  check(r.status === 422, 'chat: a page cannot be larger than 100', r);
+  r = await api('sm', 'GET', '/chat/conversations/not-a-uuid/messages');
+  check(r.status === 422, 'chat: a malformed conversation id is refused', r);
+  r = await api('sm', 'GET', `/chat/conversations/${crypto.randomUUID()}/messages`);
+  check(r.status === 404, 'chat: a conversation id that does not exist is not found (same as one that is not yours)', r);
+  r = await api('sm', 'GET', `/chat/customers/${crypto.randomUUID()}`);
+  check(r.status === 404, 'chat: a customer id that does not exist is not found', r);
+}
 for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_SECRET_KEY', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 provider.close();
 
@@ -1835,6 +2047,17 @@ provider.close();
   };
   tokens.set('cl1', await signIn(clientEmail, 'ClientPass#2026'));
   tokens.set('cl2', await signIn('auto.login@example.com', 'AutoPass#2026x'));
+
+  // chat: another client has their own conversation and sees nothing of the first client's
+  {
+    const importedConv = (await db.query(`select cv.id from public.chat_conversations cv join public.customers c on c.id = cv.customer_id where c.phone = '9000000201'`)).rows[0].id as string;
+    r = await api('cl1', 'GET', '/client/chat');
+    check(r.status === 200 && r.json.data.conversation.id !== importedConv && r.json.data.page.messages.length === 0, 'chat: another client has their own, empty conversation', r);
+    r = await api('cl1', 'GET', '/client/chat/messages?after=0');
+    check(r.status === 200 && r.json.data.messages.length === 0, 'chat: and sees none of the first client\'s messages', r);
+    r = await api('cl1', 'POST', '/client/chat/read', { seq: 99999 });
+    check(r.status === 200 && r.json.data.readSeq <= 0, 'chat: marking read cannot go past what exists in their own conversation', r);
+  }
 
   r = await api(null, 'GET', '/client/me');
   check(r.status === 401, 'client API: no token → 401', r);

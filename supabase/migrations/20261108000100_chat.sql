@@ -394,8 +394,9 @@ declare
   me uuid := private.my_id();
   c public.chat_conversations;
 begin
+  -- coalesce: for someone who is not assigned the comparisons are NULL, and NOT NULL would not refuse
   if me is null or p_customer is null
-     or not (me = private.support_member_of(p_customer) or me = private.support_lead_of(p_customer) or private.chat_can_review(p_customer)) then
+     or not coalesce(me = private.support_member_of(p_customer) or me = private.support_lead_of(p_customer) or private.chat_can_review(p_customer), false) then
     raise exception 'NOT_FOUND: Conversation not found.' using errcode = 'P0001';
   end if;
   c := private.chat_ensure_client_conversation(p_customer);

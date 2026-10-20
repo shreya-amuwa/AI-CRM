@@ -104,6 +104,7 @@ select test.check((select count(*) = 0 from chat_conversations where kind = 'CLI
 select test.check((select jsonb_array_length(chat_my_clients()) = 0 or not exists (select 1 from jsonb_array_elements(chat_my_clients()) x where x ->> 'customerId' = pg_temp.g('cust'))), 'the customer is not in their "my clients"');
 select test.login('tm_a');
 select test.must_fail($$select chat_messages_page(pg_temp.g('conv')::uuid)$$, 'a Sales member cannot read it', 'not found');
+select test.must_fail($$select chat_customer_conversation(pg_temp.g('cust')::uuid)$$, 'nor open the customer''s chat (a customer nobody on their side looks after)', 'not found');
 select test.login('dh_wbx');
 select test.must_fail($$select chat_messages_page(pg_temp.g('conv')::uuid)$$, 'the Department Head of another department cannot read it', 'not found');
 select test.must_fail($$select chat_review_open(pg_temp.g('conv')::uuid)$$, 'nor open it for review', 'not found');
