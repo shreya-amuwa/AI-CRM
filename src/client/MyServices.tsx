@@ -4,7 +4,7 @@ import type { ClientService } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useLoad } from './hooks';
 import { dashboardPath, useShell } from './shell';
-import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, UsageMeter, fmtDate, inr, serviceDetails, serviceStatus, tagOf, usageBar } from './ui';
+import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, UsageMeter, fmtDate, inr, serviceDetails, hueOf, serviceStatus, tagOf, usageBar } from './ui';
 
 const monthLabel = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 const n = (v: unknown) => (typeof v === 'number' ? v : null);
@@ -33,7 +33,7 @@ export const MyServices: React.FC = () => {
               return (
                 <Card key={s.code}>
                   <div className="cd-row" style={{ alignItems: 'flex-start' }}>
-                    <span className="cd-tag">{tagOf(s.name)}</span>
+                    <span className="cd-tag" data-hue={hueOf(s.category)}>{tagOf(s.name)}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <h3 style={{ fontSize: 17 }}>{s.name}</h3>
                       <p className="cd-small cd-muted">{s.planName || s.category}</p>

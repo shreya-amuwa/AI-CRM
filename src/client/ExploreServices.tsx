@@ -4,7 +4,7 @@ import type { ClientCatalogService } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
-import { Badge, Button, Card, EmptyState, Field, Modal, PageHeader, Query, SERVICE_REQUEST_LABEL, inr, tagOf } from './ui';
+import { Badge, Button, Card, EmptyState, Field, Modal, PageHeader, Query, SERVICE_REQUEST_LABEL, inr, hueOf, tagOf } from './ui';
 
 export const ExploreServices: React.FC = () => {
   const q = useLoad(() => clientApi.catalog());
@@ -51,7 +51,7 @@ export const ExploreServices: React.FC = () => {
                 {list.map(s => (
                   <Card key={s.code}>
                     <div className="cd-row" style={{ alignItems: 'flex-start' }}>
-                      <span className="cd-tag">{tagOf(s.name)}</span>
+                      <span className="cd-tag" data-hue={hueOf(s.category)}>{tagOf(s.name)}</span>
                       <div style={{ flex: 1, minWidth: 0 }}><h3 style={{ fontSize: 17 }}>{s.name}</h3><p className="cd-small cd-muted">{s.category}</p></div>
                       {s.owned ? <Badge tone="success">You have this</Badge> : s.request ? <Badge tone={SERVICE_REQUEST_LABEL[s.request.status].tone}>{SERVICE_REQUEST_LABEL[s.request.status].label}</Badge> : null}
                     </div>

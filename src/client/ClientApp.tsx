@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, MessageCircle, Package, Search, Sparkles, X } from 'lucide-react';
+import { BookOpen, Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, MessageCircle, Package, Search, Sparkles, X } from 'lucide-react';
+import { DOCUMENTATION_ROUTE } from '../lib/documentation';
 import './client.css';
 import { clientApi } from './api';
 import { chatApi } from '../lib/chat/api';
@@ -39,12 +40,25 @@ export const SECTIONS = [
   { slug: 'notifications', label: 'Notification Center', Icon: Bell }
 ] as const;
 
+/** The sidebar groups from the Amuwa Connect design; every section appears exactly once. */
+const NAV_GROUPS: { label?: string; slugs: SectionSlug[] }[] = [
+  { slugs: ['overview'] },
+  { label: 'Your account', slugs: ['services', 'plans', 'invoices', 'documents'] },
+  { label: 'Activity', slugs: ['campaigns', 'calendar', 'tickets', 'chat', 'notifications'] },
+  { label: 'Discover', slugs: ['explore'] }
+];
+/** Phone bottom tab bar: the five places clients use most. */
+const TABS: SectionSlug[] = ['overview', 'services', 'tickets', 'campaigns', 'chat'];
+const TAB_LABEL: Partial<Record<SectionSlug, string>> = { overview: 'Home', services: 'Services', tickets: 'Tickets', campaigns: 'Campaigns', chat: 'Live chat' };
+
 const Inner: React.FC = () => {
   const { status, me, signOut } = useClientAuth();
   const [path, go] = usePath();
   const [menu, setMenu] = useState(false);
   const { open: nav, collapsed, toggle: toggleNav, close: closeNav } = useMenu();
   const [unread, setUnread] = useState(0);
+  const [find, setFind] = useState('');
+  const [findOpen, setFindOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const notices = useAnnouncements(status === 'ready');
   const chat = useChatUnread(chatApi.clientUnread, status === 'ready');
@@ -89,6 +103,10 @@ const Inner: React.FC = () => {
   const sub = parts.slice(1).join('/');
   const to = (p: string) => { closeNav(); go(p); };
 
+  const sectionOf = (s: string) => SECTIONS.find(x => x.slug === s)!;
+  const matches = find.trim() ? SECTIONS.filter(x => x.label.toLowerCase().includes(find.trim().toLowerCase())) : [];
+  const badgeFor = (s: string) => (s === 'chat' ? chat.summary.total : s === 'notifications' ? unread : 0);
+
   const page = (() => {
     switch (slug) {
       case 'services': return <MyServices />;
@@ -112,30 +130,61 @@ const Inner: React.FC = () => {
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={closeNav} />
           <aside id="cd-sidebar" className={`cd-side ${nav ? 'open' : ''}`} aria-label="Main navigation">
             <div className="cd-brand"><span className="cd-brand-tile"><img src="/amuwa-logo.png" alt="" /></span><span><b>Amuwa</b><small>Client dashboard</small></span><button className="cd-side-toggle" onClick={toggleNav} aria-label="Collapse menu" aria-controls="cd-sidebar"><Menu size={20} className="cd-only-desktop" /><X size={18} className="cd-only-mobile" /></button></div>
-            <nav className="cd-stack" style={{ gap: 2 }}>
-              {SECTIONS.map(({ slug: s, label, Icon }) => (
-                <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
-                  <Icon size={20} aria-hidden />
-                  <span>{label}</span>
-                  {s === 'chat' && chat.summary.total > 0 ? <span className="cd-nav-count" aria-label={`${chat.summary.total} unread messages`}>{chat.summary.total > 99 ? '99+' : chat.summary.total}</span> : null}
-                  {s === 'notifications' && unread > 0 ? <span className="cd-nav-count" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span> : null}
-                </button>
+            <nav className="cd-nav">
+              {NAV_GROUPS.map((g, i) => (
+                <div className="cd-nav-group" key={g.label ?? i}>
+                  {g.label ? <p className="cd-nav-label">{g.label}</p> : null}
+                  {g.slugs.map(s => {
+                    const { label, Icon } = sectionOf(s);
+                    const n = badgeFor(s);
+                    return (
+                      <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
+                        <Icon size={19} aria-hidden />
+                        <span>{label}</span>
+                        {n > 0 ? <span className="cd-nav-count" aria-label={`${n} unread`}>{n > 99 ? '99+' : n}</span> : null}
+                      </button>
+                    );
+                  })}
+                </div>
               ))}
             </nav>
+            <div className="cd-help">
+              <b>Need a hand?</b>
+              <p>Our team replies on your tickets and in live chat.</p>
+              <button className="cd-btn gold sm" onClick={() => to(dashboardPath('tickets'))}>Raise a ticket</button>
+            </div>
+            <div className="cd-side-foot">
+              <a href={DOCUMENTATION_ROUTE} target="_blank" rel="noopener noreferrer" className="cd-nav-item cd-doc-link"><BookOpen size={19} aria-hidden /> <span>User Documentation</span></a>
+            </div>
           </aside>
 
           <div className="cd-main">
             <header className="cd-top">
               <button className="cd-bell cd-burger" onClick={toggleNav} aria-label="Toggle menu" aria-expanded={nav || !collapsed}><Menu size={20} /></button>
-              <div className="grow">
-                <p className="cd-small cd-muted cd-ellipsis">{greeting()}, <b style={{ color: 'var(--text)' }}>{me.name}</b></p>
+              <div className="cd-search">
+                <label>
+                  <Search size={17} aria-hidden />
+                  <input value={find} placeholder="Jump to a page - services, invoices, tickets" aria-label="Jump to a page"
+                    onChange={e => { setFind(e.target.value); setFindOpen(true); }} onFocus={() => setFindOpen(true)}
+                    onBlur={() => setTimeout(() => setFindOpen(false), 120)}
+                    onKeyDown={e => { if (e.key === 'Enter' && matches[0]) { setFind(''); to(dashboardPath(matches[0].slug)); } if (e.key === 'Escape') { setFind(''); setFindOpen(false); } }} />
+                </label>
+                {findOpen && find.trim() ? (
+                  <ul role="listbox" aria-label="Pages">
+                    {matches.length === 0 ? <li><button disabled>No page matches "{find.trim()}"</button></li> : matches.map(m => (
+                      <li key={m.slug}><button role="option" aria-selected="false" onMouseDown={e => e.preventDefault()} onClick={() => { setFind(''); to(dashboardPath(m.slug)); }}><m.Icon size={16} aria-hidden /> {m.label}</button></li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
+              <div className="grow" />
               <button className="cd-bell" onClick={() => to(dashboardPath('notifications'))} aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
-                <Bell size={20} />{unread > 0 ? <span className="dot" /> : null}
+                <Bell size={20} />{unread > 0 ? <span className="count">{unread > 99 ? '99+' : unread}</span> : null}
               </button>
               <div ref={menuRef}>
                 <button className="cd-account" onClick={() => setMenu(m => !m)} aria-haspopup="menu" aria-expanded={menu} aria-label="Account menu">
                   <span className="cd-avatar">{initials(me.name)}</span>
+                  <span className="who"><b>{me.name}</b><small>{me.businessName && me.businessName !== me.name ? me.businessName : greeting()}</small></span>
                 </button>
                 {menu && (
                   <div className="cd-menu" role="menu">
@@ -156,6 +205,18 @@ const Inner: React.FC = () => {
             </main>
             <NewServicePopup items={notices.items} onDismiss={notices.dismiss} go={to} />
           </div>
+          <nav className="cd-tabbar" aria-label="Quick navigation">
+            {TABS.map(s => {
+              const { Icon } = sectionOf(s);
+              const n = badgeFor(s);
+              return (
+                <button key={s} aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
+                  <Icon size={20} aria-hidden />{TAB_LABEL[s]}
+                  {n > 0 ? <span className="count" aria-label={`${n} unread`}>{n > 99 ? '99+' : n}</span> : null}
+                </button>
+              );
+            })}
+          </nav>
         </div>
       </div>
     </ShellCtx.Provider>
@@ -167,7 +228,7 @@ function greeting(): string {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 }
 
-const FONTS = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap';
+const FONTS = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap';
 
 export const ClientApp: React.FC = () => {
   useEffect(() => {
@@ -177,7 +238,7 @@ export const ClientApp: React.FC = () => {
     if (!link) { link = document.createElement('link'); link.id = 'cd-fonts'; link.rel = 'stylesheet'; link.href = FONTS; document.head.appendChild(link); }
     // the staff shell sets Tailwind colours on <body>; the client app paints its own page
     const prevBg = document.body.style.background;
-    document.body.style.background = 'var(--cd-body-bg, #f2f0eb)';
+    document.body.style.background = 'var(--cd-body-bg, #f3f6f4)';
     return () => { document.title = prevTitle; document.body.style.background = prevBg; };
   }, []);
   return <ClientAuthProvider><Inner /></ClientAuthProvider>;
