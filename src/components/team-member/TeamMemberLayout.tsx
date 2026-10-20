@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
-import { NavButton, SidebarBrand, SidebarFrame, SignOutButton, TopBar } from '../layout/shell';
+import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, SignOutButton, TopBar } from '../layout/shell';
 import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
@@ -67,16 +67,18 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
     { id: 'leads' as TeamMemberNav, label: 'My Leads', icon: UserCheck },
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
-    { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
-    { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
+    { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
+    { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
     { id: CHAT_NAV.id as TeamMemberNav, label: CHAT_NAV.label, icon: CHAT_NAV.icon },
     { id: 'notifications' as TeamMemberNav, label: 'Notification Center', icon: Bell }
   ];
+  // the menu reads in sections, like the Department Head's: the label is shown above the first entry of each
+  const SECTION_LABEL: Partial<Record<TeamMemberNav, string>> = { leads: 'Sales', 'work-tasks': 'Work', settings: 'Team' };
 
   const [currentNav, setCurrentNav] = useState<TeamMemberNav>(activeNav || 'leads');
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
@@ -121,7 +123,9 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
         <SidebarBrand title="Amuwa" subtitle="Corporation" />
         <nav className="flex flex-col gap-0.5" aria-label="Main">
           {navItems.map(item => {
+            const sectionLabel = SECTION_LABEL[item.id];
             const Icon = item.icon;
+            const entry = (() => {
             if (item.id === 'leads') {
               const inPipeline = isPipelineNav(currentNav);
               return (
@@ -190,6 +194,13 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
               );
             }
             return <NavButton key={item.id} label={item.label} icon={Icon} badge={item.id === 'chat' ? chatUnread : undefined} active={currentNav === item.id} onClick={() => handleNavClick(item.id)} />;
+            })();
+            return (
+              <React.Fragment key={item.id}>
+                {sectionLabel ? <div className="pt-3"><NavGroupLabel>{sectionLabel}</NavGroupLabel></div> : null}
+                {entry}
+              </React.Fragment>
+            );
           })}
         </nav>
       </SidebarFrame>

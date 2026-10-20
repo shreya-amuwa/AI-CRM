@@ -28,6 +28,20 @@ export interface ShellNavGroup {
   items: ShellNavItem[];
 }
 
+/**
+ * Sorts a flat list of menu entries into labelled sections (the way the Department Head's menu reads: Overview on top, then
+ * Work / Customers / Team ...). `spec` names each section's entries by id, in the order to show them; an entry that no
+ * section names goes into the last section, so a new page is never lost.
+ */
+export function groupNavItems<T extends { id: string }>(items: T[], spec: { label?: string; ids: string[] }[]): { label?: string; items: T[] }[] {
+  const byId = new Map(items.map(i => [i.id, i]));
+  const named = new Set(spec.flatMap(s => s.ids));
+  const groups = spec.map(s => ({ label: s.label, items: s.ids.map(id => byId.get(id)).filter((i): i is T => Boolean(i)) }));
+  const rest = items.filter(i => !named.has(i.id));
+  if (rest.length && groups.length) groups[groups.length - 1].items.push(...rest);
+  return groups.filter(g => g.items.length > 0);
+}
+
 export const initialsOf = (name: string) =>
   name
     .split(/\s+/)
