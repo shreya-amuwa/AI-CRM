@@ -164,7 +164,7 @@ select test.check((select coalesce(sum((d ->> 'collected')::numeric), 0) = (data
 -- ---------------------------------------------------------------- 4c. the orders behind the figures, with their invoices
 select test.login('acc_m');
 insert into br select 'orders', public.business_report_orders(p_search => 'Mehta', p_page_size => 50);
-select test.check((select count(*) = 3 from jsonb_array_elements(data -> 'items') i where i ->> 'customerName' = 'Kiran Mehta') from br where name = 'orders'),
+select test.check((select count(*) = 3 from br, jsonb_array_elements(data -> 'items') i where name = 'orders' and i ->> 'customerName' = 'Kiran Mehta'),
   'the customer has three orders: the initial sale, the add-on and the renewal');
 select test.check((select (i ->> 'billed')::numeric = 60000 and (i ->> 'collected')::numeric = 20000 and (i ->> 'pending')::numeric = 8000
                       and (i ->> 'outstanding')::numeric = 40000 and i ->> 'state' = 'PARTLY_PAID' and i ->> 'division' = 'SALES' and i ->> 'employeeName' = 'Member A'
