@@ -200,6 +200,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!supabase) return { ok: false, message: 'The CRM is not connected to its database.' };
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     if (error) {
+      if (error.status === 429 || /too many|rate limit/i.test(error.message)) return { ok: false, message: 'Too many sign-in attempts. Please wait a few minutes and try again.' };
       return { ok: false, message: /confirm/i.test(error.message) ? 'Please confirm your e-mail address first.' : 'Invalid email or password.' };
     }
     if (await sendClientToDashboard()) return { ok: true };

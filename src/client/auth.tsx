@@ -68,6 +68,7 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!supabase) throw new Error('The app is not connected to its database yet. Please contact Amuwa.');
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     if (error) {
+      if (error.status === 429 || /too many|rate limit/i.test(error.message)) throw new Error('Too many sign-in attempts. Please wait a few minutes and try again.');
       if (error.status === 400 || error.status === 401 || error.code === 'invalid_credentials' || /invalid/i.test(error.message)) throw new Error('The e-mail or password is not correct.');
       if (/fetch|network/i.test(error.message)) throw new Error('Cannot reach the server. Check your connection and try again.');
       throw new Error(error.message);

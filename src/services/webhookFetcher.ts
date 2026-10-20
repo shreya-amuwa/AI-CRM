@@ -1,6 +1,7 @@
 import { getSupabase } from './supabaseClient';
 import { extractCustomerDetailsFromWebhook } from '../context/LeadStoreContext';
 import { LeadSourceId, DepartmentId } from '../types/crm';
+import { proxyFetch } from '../lib/api/proxyFetch';
 
 export interface InboundedLead {
   name: string;
@@ -328,8 +329,7 @@ export async function fetchFromAnyWebhookUrl(
 
     // Fallback 1: Vercel / local serverless proxy (/api/proxy) - completely bypasses browser CORS
     try {
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-      const proxyRes = await fetch(proxyUrl);
+      const proxyRes = await proxyFetch(targetUrl);
       if (proxyRes.ok) {
         rawBodyText = await proxyRes.text();
         try {

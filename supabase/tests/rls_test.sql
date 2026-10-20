@@ -417,13 +417,14 @@ select test.must_fail($$insert into member_deals (owner_id, lead_name) values (t
   'member cannot write rows for someone else', 'row-level security');
 select test.check(test.rows($$update crm_leads set assigned_to = test.id('tm_a'), stage = 'Contacted' where id = 'L-pool'$$) = 1,
   'member claims an unassigned lead');
-select test.must_fail($$update crm_leads set stage = 'Won' where id = 'L-c'$$,
-  'member cannot work a lead assigned to someone else', 'FORBIDDEN');
+-- Leads of another department are invisible (security hardening 20261106): the update finds no row.
+select test.check(test.rows($$update crm_leads set stage = 'Won' where id = 'L-c'$$) = 0,
+  'member cannot work a lead of another department / assigned to someone else');
 select test.login('tm_c');
 select test.check((select count(*) = 0 from member_follow_ups), 'other member cannot see the follow-up');
 select test.check(test.rows($$delete from member_calendar_events$$) = 0, 'other member cannot delete the event');
-select test.must_fail($$update crm_leads set assigned_to = test.id('tm_c') where id = 'L-pool'$$,
-  'member cannot take over a claimed lead', 'FORBIDDEN');
+select test.check(test.rows($$update crm_leads set assigned_to = test.id('tm_c') where id = 'L-pool'$$) = 0,
+  'member cannot take over a claimed lead (another department: not even visible)');
 select test.login('th_wab');
 select test.check((select count(*) = 1 from member_follow_ups), 'team head reads team member follow-ups');
 select test.check(test.rows($$update member_follow_ups set status = 'completed'$$) = 0, 'team head cannot edit member follow-ups');
