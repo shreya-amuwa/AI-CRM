@@ -61,6 +61,10 @@ Accounts dashboard → sidebar → **Business Reports** (every Accounts member a
 
 API: `GET /api/v1/accounts/business-report`, `/accounts/business-report/transactions`, `/accounts/business-report/people`; Accounts: `GET|POST /api/v1/accounts/invoices/:id/business`.
 
+## Upgrading a database that ran the first release
+
+The first release of `20261104000100` gave the reports to HR and returned no department table. If your database ran that version, run **`20261105000100_department_business_orders.sql`**: it re-asserts the final access rule (Accounts department and Super Admin) and the final `business_report()` (with the per-department rows), and adds the orders list. It is safe to run again. Symptom of the old version: Accounts sees "Only HR managers and the Super Admin can see the business reports."
+
 ## Running the migration manually
 
 Open the Supabase SQL editor and run the file once. It is safe to run again (`create ... if not exists`, `create or replace`). It must run after `20261103000100_order_tax_basis.sql`. It creates one table (`invoice_business_tags`, no direct access for any signed-in user), no money tables, and changes no existing record.

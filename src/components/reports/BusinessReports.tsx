@@ -279,7 +279,7 @@ const Overview: React.FC<{ report: BusinessReport; onOpen: (p: Page) => void }> 
       </div>
       <Card label="Income by department">
         <CardHead title="Income by customer department" hint="Where the customers belong, split between what Sales and Support brought in (collected payments)." />
-        {report.departments.length === 0 ? (
+        {(report.departments ?? []).length === 0 ? (
           <p className="px-5 pb-6 text-sm text-slate-500">No income recorded for these filters.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -295,7 +295,7 @@ const Overview: React.FC<{ report: BusinessReport; onOpen: (p: Page) => void }> 
                 </tr>
               </thead>
               <tbody>
-                {report.departments.map(d => (
+                {(report.departments ?? []).map(d => (
                   <tr key={d.departmentId ?? 'none'} className="border-b border-slate-100 last:border-0">
                     <td className="py-3 pl-5 pr-3 font-bold text-slate-900">{d.name}</td>
                     <td className="py-3 px-3 text-right">{money(d.sales.collected)}</td>
