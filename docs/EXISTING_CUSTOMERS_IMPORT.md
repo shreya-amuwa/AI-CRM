@@ -73,3 +73,22 @@ Limits: one .xlsx file of up to 5 MB, 500 customers and 5000 rows in total.
    - With `AUTOMATION_MODE` not set to `live` (or no e-mail set up), logins are still created, and the import screen shows "E-mail not sent" with the reason. Use **Send again** once e-mail is on.
    - `AUTOMATION_TEST_RECIPIENTS` also limits these e-mails while you are testing.
 3. **Optional: the Supabase "Reset password" e-mail template.** It is not used: the CRM sends its own e-mail. You can leave it as it is.
+
+## Template with your real Support team (`Existing_Customers_Services_Usage_Team.xlsx`)
+
+`public/templates/Existing_Customers_Services_Usage_Team.xlsx` is the same workbook plus a **Support Team** tab. Its names
+feed a drop-down on *1 Customers > Support Team Member*, so nobody types a name wrongly.
+
+Fill the tab with the real people. In the Supabase SQL editor run (read-only), then paste the four columns under the headers:
+
+```sql
+select p.full_name as "Support Team Member", case p.role when 'TEAM_HEAD' then 'Team Lead' else 'Team Member' end as "Role",
+       t.name as "Team", p.email as "CRM e-mail"
+  from public.profiles p
+  join public.teams t on t.id = p.team_id and t.division = 'SUPPORT'
+ where p.status = 'ACTIVE' and p.role in ('TEAM_MEMBER', 'TEAM_HEAD')
+ order by t.name, p.role desc, p.full_name;
+```
+
+Only active Support Team Members and Team Leads can look after customers; the Department Head uploads the file and
+names them. The upload rules above are unchanged.
