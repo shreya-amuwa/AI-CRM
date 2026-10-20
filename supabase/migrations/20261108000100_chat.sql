@@ -486,6 +486,8 @@ begin
   if c.id is null or private.chat_access(c.id) is distinct from 'REVIEWER' then
     raise exception 'NOT_FOUND: Conversation not found.' using errcode = 'P0001';
   end if;
+  -- two opens at the same moment (two tabs, a double click) must still leave one entry
+  perform pg_advisory_xact_lock(hashtextextended('chat_review:' || auth.uid()::text || ':' || c.id::text, 0));
   if exists (select 1 from public.audit_logs l where l.actor_id = auth.uid() and l.action = 'CLIENT_CHAT_REVIEWED'
                 and l.entity_id = c.id and l.created_at > now() - interval '30 minutes') then
     return;
@@ -668,6 +670,7 @@ declare
   a text;
   me uuid := auth.uid();
   v_seq bigint;
+  v_prev bigint;
 begin
   select * into c from public.chat_conversations where id = p_conversation;
   a := private.chat_access(p_conversation);
@@ -675,8 +678,13 @@ begin
     raise exception 'NOT_FOUND: Conversation not found.' using errcode = 'P0001';
   end if;
   v_seq := least(greatest(coalesce(p_seq, c.last_seq), 0), c.last_seq);
+  select r.last_read_seq into v_prev from public.chat_read_state r where r.conversation_id = c.id and r.user_id = me;
   insert into public.chat_read_state (conversation_id, user_id, last_read_seq) values (c.id, me, v_seq)
   on conflict (conversation_id, user_id) do update set last_read_seq = greatest(public.chat_read_state.last_read_seq, excluded.last_read_seq), updated_at = now();
+  -- a direct chat shows "seen" from the read state, which nobody can subscribe to: touch the conversation so the other side's screen refreshes
+  if c.kind = 'DIRECT' and v_seq > coalesce(v_prev, 0) then
+    update public.chat_conversations set updated_at = clock_timestamp() where id = c.id;
+  end if;
   if c.kind = 'CLIENT' and a = 'CLIENT' then
     update public.chat_conversations set client_read_seq = v_seq where id = c.id and client_read_seq < v_seq;
     update public.client_notifications set read_at = now() where customer_id = c.customer_id and entity_type = 'chat' and entity_id = c.id and read_at is null;

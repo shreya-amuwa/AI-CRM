@@ -163,8 +163,10 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
         if (row?.id && msgs.current.some(m => m.id === row.id)) return;
         soon(() => void sync());
       })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_conversations', filter: `id=eq.${convId}` }, () => soon(() => void refreshConversation()))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_members', filter: `conversation_id=eq.${convId}` }, () => soon(() => void refreshConversation()))
+      // One catch-up for every kind of event (it fetches new messages and the conversation): events can arrive in any order, so a
+      // second kind of event must never cancel the first one's work.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_conversations', filter: `id=eq.${convId}` }, () => soon(() => void sync()))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_members', filter: `conversation_id=eq.${convId}` }, () => soon(() => void sync()))
       .subscribe(status => {
         if (status !== 'SUBSCRIBED') return;
         // A connection made again after a drop: whatever happened in between has to be fetched.
@@ -182,7 +184,7 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
       document.removeEventListener('visibilitychange', wake);
       void supabase.removeChannel(channel);
     };
-  }, [convId, sync, refreshConversation]);
+  }, [convId, sync]);
 
   useEffect(() => {
     const on = () => setVisible(document.visibilityState === 'visible');

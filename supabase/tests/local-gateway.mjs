@@ -2,6 +2,7 @@
 //   /rest/v1/*  → proxied to a real PostgREST (JWT-authenticated, RLS applies)
 //   /auth/v1/*  → minimal GoTrue emulation: token verification, sign-in,
 //                 admin create/update user (writes auth.users directly)
+//   /realtime/v1/websocket → postgres_changes over the Phoenix protocol (see local-realtime.mjs)
 //   /storage/v1/* → in-memory Storage emulation (private buckets only): signed
 //                 upload tokens, signed download URLs, list, remove. Object
 //                 operations other than token-based ones need the service role.
@@ -9,6 +10,7 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
 import pg from 'pg';
+import { attachRealtime } from './local-realtime.mjs';
 
 const PORT = Number(process.env.GATEWAY_PORT || 54400);
 const POSTGREST_URL = process.env.POSTGREST_URL || 'http://127.0.0.1:54401';
@@ -226,7 +228,7 @@ async function handleStorage(req, res, path, url) {
   return json(res, 404, { msg: `unhandled storage route ${req.method} ${path}` });
 }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x');
     if (url.pathname.startsWith('/auth/v1')) {
@@ -261,4 +263,7 @@ http.createServer(async (req, res) => {
   } catch (e) {
     json(res, 500, { msg: e.message });
   }
-}).listen(PORT, () => console.log(`gateway on ${PORT}`));
+});
+server.listen(PORT, () => console.log(`gateway on ${PORT}`));
+// Realtime (postgres_changes), RLS-respecting, so browser tests can prove "live without refresh".
+attachRealtime(server, db, verifyJwt).catch(e => console.error('realtime shim failed to start:', e.message));

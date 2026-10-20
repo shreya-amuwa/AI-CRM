@@ -156,3 +156,4 @@ button.ch-person:hover { background: var(--ch-surface); }
 .ch-section-title { font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ch-muted); margin: 6px 0 0; }
 
 @media (min-width: 768px) { .ch-back { display: none; } }
+.ch-modal-body > * { flex-shrink: 0; }
