@@ -3180,6 +3180,93 @@ provider.close();
   check(r.status === 403, 'nor read its classification', r);
 }
 
+// ---------------------------------------------------------------------------
+// Security hardening: /api/proxy and the lead webhook (Vercel functions), against the real database
+// ---------------------------------------------------------------------------
+{
+  const { default: proxyHandler } = await import('../../api/proxy.js');
+  const { default: webhookHandler } = await import('../../api/webhook.js');
+  const adapt = (handler: (req: any, res: any) => unknown) => async (nreq: http.IncomingMessage, nres: http.ServerResponse) => {
+    const url = new URL(nreq.url || '/', 'http://localhost');
+    const chunks: Buffer[] = [];
+    for await (const c of nreq) chunks.push(c as Buffer);
+    const text = Buffer.concat(chunks).toString();
+    const query: Record<string, string> = {};
+    url.searchParams.forEach((v, k) => { query[k] = v; });
+    let status = 200;
+    const res: any = {
+      setHeader: (k: string, v: string) => { nres.setHeader(k, v); return res; },
+      status: (n: number) => { status = n; return res; },
+      json: (b: unknown) => { nres.writeHead(status, { 'content-type': 'application/json' }); nres.end(JSON.stringify(b)); return res; },
+      send: (b: any) => { nres.writeHead(status); nres.end(b); return res; },
+      end: () => { nres.writeHead(status); nres.end(); return res; }
+    };
+    let body: unknown;
+    try { body = text ? JSON.parse(text) : undefined; } catch { body = text; }
+    await handler({ method: nreq.method, url: nreq.url, query, headers: nreq.headers, body }, res);
+  };
+  const vserver = http.createServer((q, s) => void adapt(q.url!.startsWith('/api/proxy') ? proxyHandler : webhookHandler)(q, s));
+  await new Promise<void>(res => vserver.listen(0, res));
+  const vbase = `http://127.0.0.1:${(vserver.address() as any).port}`;
+  const vcall = async (path: string, init: RequestInit = {}) => {
+    const res = await fetch(vbase + path, init);
+    const text = await res.text();
+    let json: any = null;
+    try { json = JSON.parse(text); } catch { /* not JSON */ }
+    return { status: res.status, json, text, headers: res.headers };
+  };
+
+  // /api/proxy
+  let v = await vcall('/api/proxy?url=' + encodeURIComponent('http://127.0.0.1:1/'));
+  check(v.status === 401, 'proxy: refuses a visitor who is not signed in', v);
+  v = await vcall('/api/proxy?url=' + encodeURIComponent('http://169.254.169.254/latest/meta-data/'), { headers: { authorization: `Bearer ${tokens.get('a')}` } });
+  check(v.status === 400, 'proxy: a signed-in user still cannot reach the cloud metadata address', v);
+  v = await vcall('/api/proxy?url=' + encodeURIComponent('http://127.0.0.1:5432/'), { headers: { authorization: `Bearer ${tokens.get('a')}` } });
+  check(v.status === 400, 'proxy: nor localhost / internal ports', v);
+  v = await vcall('/api/proxy?url=' + encodeURIComponent('file:///etc/passwd'), { headers: { authorization: `Bearer ${tokens.get('a')}` } });
+  check(v.status === 400, 'proxy: nor local files', v);
+  v = await vcall('/api/proxy', { headers: { authorization: `Bearer ${tokens.get('a')}` } });
+  check(v.status === 400, 'proxy: a missing address is a plain 400', v);
+  check(!v.headers.get('access-control-allow-origin'), 'proxy: no wildcard CORS');
+
+  // lead webhook
+  const secret = 'integration-shared-secret-0001';
+  process.env.WEBHOOK_SECRET = secret;
+  v = await vcall('/api/webhooks/wabastore/whatsapp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Intruder' }) });
+  check(v.status === 401, 'webhook: a lead without the secret is refused', v);
+  check((await db.query(`select count(*)::int as n from crm_leads where name = 'Intruder'`)).rows[0].n === 0, 'webhook: and nothing was stored');
+  check((await db.query(`select count(*)::int as n from audit_logs where action = 'WEBHOOK_REJECTED' and entity_type = 'webhook'`)).rows[0].n >= 1, 'webhook: the rejection is in the audit log');
+  check((await db.query(`select count(*)::int as n from audit_logs where action = 'WEBHOOK_REJECTED' and metadata::text ilike '%integration-shared-secret%'`)).rows[0].n === 0, 'webhook: the secret is never audited');
+  v = await vcall('/api/webhooks/nosuchdept/whatsapp', { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-secret': secret }, body: JSON.stringify({ name: 'Ghost' }) });
+  check(v.status === 404, 'webhook: an unknown department is refused', v);
+  v = await vcall('/api/webhooks/wabastore/whatsapp', {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-secret': secret },
+    body: JSON.stringify({ name: 'Webhook Ravi', phone: '9820011111', message: 'x'.repeat(9000), department: 'whatsbox' })
+  });
+  check(v.status === 200 && v.json.success, 'webhook: a lead with the secret is stored', v);
+  const stored = (await db.query(`select department, channel, length(notes) as n, raw_payload is not null as raw from crm_leads where name = 'Webhook Ravi'`)).rows[0];
+  check(stored.department === 'wabastore' && stored.channel === 'whatsapp', 'webhook: the department comes from the address, not from the sender data', stored);
+  check(stored.n === 4000, 'webhook: long text is cut to its limit', stored);
+  v = await vcall('/api/webhooks/wabastore/whatsapp', { method: 'POST', headers: { 'content-type': 'application/json', 'x-webhook-secret': secret }, body: JSON.stringify({ name: 'Big', data: 'y'.repeat(100_000) }) });
+  check(v.status === 200, 'webhook: an oversized payload is still accepted ...', v);
+  check((await db.query(`select raw_payload ->> 'truncated' as t from crm_leads where name = 'Big'`)).rows[0].t === 'true', '... but its raw copy is not stored in full');
+  delete process.env.WEBHOOK_SECRET;
+  vserver.close();
+
+  // leads are scoped to the department (through the real PostgREST path used by the app)
+  const leadVisible = async (who: string, name: string) => {
+    const res = await fetch(`${process.env.GATEWAY_URL}/rest/v1/crm_leads?name=eq.${encodeURIComponent(name)}&select=id`, {
+      headers: { apikey: process.env.SUPABASE_ANON_KEY!, authorization: `Bearer ${tokens.get(who)}` }
+    });
+    return ((await res.json()) as unknown[]).length;
+  };
+  check(await leadVisible('sa', 'Webhook Ravi') === 1, 'leads: the Super Admin sees the webhook lead');
+  check(await leadVisible('a', 'Webhook Ravi') === 1, 'leads: a member of the same department sees it');
+  check(await leadVisible('hr', 'Webhook Ravi') === 0, 'leads: HR staff (another department) do not see it');
+  check(await leadVisible('accm', 'Webhook Ravi') === 0, 'leads: nor Accounts');
+  check(await leadVisible('client', 'Webhook Ravi') === 0, 'leads: nor a client login');
+}
+
 // A project missing an earlier migration must still let people sign in.
 await db.query(`alter function public.rate_limit_consume(jsonb) rename to rate_limit_consume_hidden`);
 r = await api('sa', 'GET', '/me');

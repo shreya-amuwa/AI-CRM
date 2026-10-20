@@ -5,6 +5,7 @@ import {
   FileSpreadsheet, Download, RefreshCw, AlertCircle, Check,
   Copy, X, Trash2, ExternalLink, HelpCircle, Sparkles
 } from 'lucide-react';
+import { proxyFetch } from '../../../lib/api/proxyFetch';
 import {
   accountsStore,
   CorporateExpense
@@ -203,7 +204,7 @@ export const ExpenseView: React.FC = () => {
           }
         } catch {
           // Fallback to proxy
-          const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(csvExportUrl)}`);
+          const proxyRes = await proxyFetch(csvExportUrl);
           if (proxyRes.ok) {
             csvText = await proxyRes.text();
           } else {
@@ -228,7 +229,7 @@ export const ExpenseView: React.FC = () => {
           const res = await fetch(rawUrl);
           resData = await res.json();
         } catch {
-          const proxyRes = await fetch(`/api/proxy?url=${encodeURIComponent(rawUrl)}`);
+          const proxyRes = await proxyFetch(rawUrl);
           resData = await proxyRes.json();
         }
 
