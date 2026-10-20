@@ -4,8 +4,8 @@ Two audiences, one set of tables and functions, no overlap:
 
 * **Client chat** - a **Chat** tab in the client dashboard. The client talks to the Team Member and the Team Lead who look
   after them, in **one shared conversation**. The Department Head of the customer's department can **read** it (review only).
-* **Internal chat** - employees message each other one to one and in groups. Employees open it with the **Chat** button next
-  to the notification bell on every employee dashboard.
+* **Internal chat** - employees message each other one to one and in groups. Employees open it from the **Chat** item in the
+  menu of their dashboard (just above the Notification Center). It is a full page, not a pop-up.
 
 A client can never reach internal chat, and no internal conversation is ever visible to a client. The two share no
 participants, no endpoints and no screens.
@@ -103,11 +103,13 @@ that calls an employee route is answered `401` (it has no CRM profile). Manageme
   "seen" ticks, loading / empty / error states, a composer (Enter sends, Shift+Enter adds a line), attach files, reply to a
   message, failed sends stay on screen with **Retry** (same message id, no duplicate), earlier messages load on request. If no
   Team Member is assigned yet, the composer is replaced by a note.
-* **Employees > Chat button** (a two-panel screen; on a phone one panel at a time): **Messages** (direct chats and groups, with
-  preview, time, unread count, search, **New** to start a chat or group, group details with admin actions and confirmation for
-  removing someone or leaving), **My clients** (the customers they look after and the shared conversation), and, for
-  Department Heads, **Client conversations** (review only, with a "Review only" marker and no message box).
-* Clicking an in-app notification about a client message opens that conversation.
+* **Employees > Chat (menu item)**: a WhatsApp-style page that fills the content area (chat list on the left, the conversation on
+  the right; on a phone one panel at a time with a back arrow). My messages are on the right, the other person's on the left,
+  with ticks, date separators and a wallpaper. Tabs: **Messages** (direct chats and groups, with preview, time, unread count,
+  search, **New** to start a chat or group, group details with admin actions and confirmation for removing someone or
+  leaving), **My clients** (the customers they look after and the shared conversation), and, for Department Heads,
+  **Client conversations** (review only, with a "Review only" marker and no message box). The menu item shows the unread count.
+* Clicking an in-app notification about a client message opens the Chat page on that conversation.
 
 ## Live updates without polling
 

@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { ChatLauncher } from '../chat/ChatLauncher';
+import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
@@ -32,7 +33,7 @@ const SupportTeamLeads: React.FC = () => {
   return <PipelineWorkspace section="leads" counts={counts} ownOnly onNavigate={() => undefined} />;
 };
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'notifications';
+export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'chat' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -52,6 +53,7 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'handovers', label: 'Client Hand-overs', icon: UserCheck },
   { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+  { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
 ];
 
@@ -117,7 +119,9 @@ export const SupportLeadDashboard: React.FC = () => {
   const displayName = profile?.fullName || user?.name || 'Support Team Lead';
   const teamName = profile?.team?.name;
   const { unreadCount } = useNotifications();
-  const groups: ShellNavGroup[] = [{ items: NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n)) }];
+  const chatUnread = useChatNavBadge();
+  useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
+  const groups: ShellNavGroup[] = [{ items: NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n)) }];
 
   return (
     <DashboardShell
@@ -138,11 +142,11 @@ export const SupportLeadDashboard: React.FC = () => {
       topActions={
         <>
           <LeaveCenter />
-          <ChatLauncher />
           <NotificationBell />
         </>
       }
       wide
+      flush={page === 'chat'}
     >
       {page === 'dashboard' && <TeamLeaderDashboard />}
       {page === 'customers' && <SupportLeadCustomers />}
@@ -155,6 +159,7 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'tickets' && <LeadTickets />}
       {page === 'invoices' && <LeadInvoices />}
       {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}
+      {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
       {page === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept="support" />}
     </DashboardShell>

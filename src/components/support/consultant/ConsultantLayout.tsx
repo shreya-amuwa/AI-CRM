@@ -3,9 +3,9 @@ import { Bell, CalendarPlus, FolderCheck, PackagePlus, UserPlus, Users } from 'l
 import { useNotifications } from '../../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../../layout/shell';
 import { LeaveCenter } from '../../leave/LeaveCenter';
-import { ChatLauncher } from '../../chat/ChatLauncher';
+import { CHAT_NAV, useChatNavBadge } from '../../chat/ChatRoute';
 
-export type ConsultantPage = 'customers' | 'addons' | 'onboarding' | 'client-documents' | 'client-calendar' | 'notifications';
+export type ConsultantPage = 'customers' | 'addons' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'notifications';
 
 /** Shell of the Technical Consultant dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{
@@ -21,6 +21,7 @@ export const ConsultantLayout: React.FC<{
   children: React.ReactNode;
 }> = ({ userName, count, newCount, addonsCount, page, onSelectPage, onSignOut, children }) => {
   const { unreadCount } = useNotifications();
+  const chatUnread = useChatNavBadge();
   const groups: ShellNavGroup[] = [
     {
       items: [
@@ -29,6 +30,7 @@ export const ConsultantLayout: React.FC<{
         { id: 'onboarding', label: 'Onboarding Customers', icon: UserPlus, count },
         { id: 'client-documents', label: 'Client documents', icon: FolderCheck },
         { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
+        { ...CHAT_NAV, count: chatUnread > 0 ? chatUnread : undefined },
         { id: 'notifications', label: 'Notification Center', icon: Bell, count: unreadCount > 0 ? unreadCount : undefined }
       ]
     }
@@ -43,9 +45,10 @@ export const ConsultantLayout: React.FC<{
       onSelect={id => onSelectPage(id as ConsultantPage)}
       user={{ name: userName, role: 'Technical Consultant' }}
       onSignOut={onSignOut}
-      topActions={<><LeaveCenter /><ChatLauncher /></>}
+      topActions={<LeaveCenter />}
       showHelp
       wide
+      flush={page === 'chat'}
     >
       {children}
     </DashboardShell>

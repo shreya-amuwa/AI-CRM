@@ -8,7 +8,7 @@ import { fmtDate } from '../TaskParts';
 import { Avatar, Card, CardHead, healthOf, HealthBadge, LoadingLine, primaryBtn, ghostBtn, StatCard } from './headParts';
 import { dayLabelsOfWeek } from './weekChart';
 
-export type HeadPage = 'overview' | 'assign' | 'reports' | 'daily' | 'activity' | 'clients' | 'customers' | 'import' | 'support' | 'notices' | 'team' | 'notifications' | 'payments' | 'plans';
+export type HeadPage = 'overview' | 'assign' | 'reports' | 'daily' | 'activity' | 'clients' | 'customers' | 'import' | 'support' | 'notices' | 'team' | 'notifications' | 'payments' | 'plans' | 'chat';
 
 const greeting = () => {
   const h = new Date().getHours();

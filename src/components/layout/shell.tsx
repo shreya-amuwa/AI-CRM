@@ -227,6 +227,8 @@ interface DashboardShellProps {
   showHelp?: boolean;
   /** Let the page use the full width (wide tables); default keeps the calm 1240px column. */
   wide?: boolean;
+  /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
+  flush?: boolean;
   children: React.ReactNode;
 }
 
@@ -244,6 +246,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   footerExtra,
   showHelp = false,
   wide = false,
+  flush = false,
   children
 }) => {
   return (
@@ -283,7 +286,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       </SidebarFrame>
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} />
-        <main className={`flex-1 min-w-0 w-full px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}>{children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{children}</main>
       </div>
     </div>
   );

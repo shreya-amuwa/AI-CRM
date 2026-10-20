@@ -19,6 +19,8 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, SignOutButton, TopBar, UserChip } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { closeMenu } from '../layout/menuState';
 
 export type TeamLeadNav =
@@ -33,6 +35,7 @@ export type TeamLeadNav =
   | 'sla'
   | 'analytics'
   | 'settings'
+  | 'chat'
   | 'notifications';
 
 interface TeamLeadLayoutProps {
@@ -56,6 +59,8 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const chatUnread = useChatNavBadge();
+  useOpenChatRequest(React.useCallback(() => onSelectNav('chat'), [onSelectNav]));
 
   const navItems = [
     { id: 'overview' as TeamLeadNav, label: 'Pod Command Center', icon: LayoutDashboard },
@@ -93,6 +98,7 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
     },
     { id: 'analytics' as TeamLeadNav, label: 'Analytics & Leaderboard', icon: BarChart3 },
     { id: 'settings' as TeamLeadNav, label: 'Pod Targets & Rules', icon: Settings },
+    { id: 'chat' as TeamLeadNav, label: CHAT_NAV.label, icon: CHAT_NAV.icon, badge: chatUnread > 0 ? String(chatUnread) : undefined, badgeColor: 'bg-emerald-600 text-white' },
     { id: 'notifications' as TeamLeadNav, label: 'Notification Center', icon: Bell }
   ];
 
@@ -229,8 +235,9 @@ export const TeamLeadLayout: React.FC<TeamLeadLayoutProps> = ({
             </>
           }
         />
-        <main className="flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-5 sm:py-7">
-          <div className="max-w-7xl mx-auto space-y-6">{children}</div>
+        <main className={activeNav === 'chat' ? 'flex-1 min-w-0' : 'flex-1 min-w-0 px-4 sm:px-6 lg:px-8 py-5 sm:py-7'}>
+          {activeNav === 'chat' && <ChatRoute />}
+          <div hidden={activeNav === 'chat'} className="max-w-7xl mx-auto space-y-6">{children}</div>
         </main>
       </div>
     </div>

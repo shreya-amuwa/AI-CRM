@@ -4,6 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
+import { ChatRoute } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { ConsultantLayout, type ConsultantPage } from './consultant/ConsultantLayout';
 import { ConsultantIntake } from './consultant/ConsultantIntake';
 import { ConsultantCustomerDetail, ConsultantCustomerList } from './consultant/ConsultantViews';
@@ -33,6 +35,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
   }, []);
   useEffect(loadCounts, [loadCounts]);
   usePipelineRealtime(loadCounts);
+  useOpenChatRequest(useCallback(() => { setPage('chat'); setOpenId(null); }, []));
 
   return (
     <ConsultantLayout
@@ -61,6 +64,8 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
         <ClientDocumentsReview />
       ) : page === 'client-calendar' ? (
         <ClientActivityManager />
+      ) : page === 'chat' ? (
+        <ChatRoute />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : openId ? (

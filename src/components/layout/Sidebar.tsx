@@ -5,6 +5,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
 import { closeMenu, useMenu } from './menuState';
 import { DocumentationLink, SidebarToggle } from './shell';
+import { CHAT_NAV, useChatNavBadge } from '../chat/ChatRoute';
 
 export type ActiveTab =
   | 'dashboard'
@@ -70,6 +71,7 @@ export type ActiveTab =
   | 'client_notices'
   | 'hr_email'
   | 'business_reports'
+  | 'chat'
   | 'notifications';
 
 interface SidebarProps {
@@ -286,6 +288,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const unreadCount = getUnreadCountForUser(key, subDept || null);
+  const chatUnread = useChatNavBadge();
   // Only departments with a hand-built entry in DEPARTMENT_NAV_MAP get that
   // bespoke nav. Every other department - including all newly created ones -
   // gets the generic nav. It must never fall back to another department's
@@ -313,7 +316,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
     baseNavItems[baseNavItems.length - 1]
   ];
-  const navItems = isSalesSuperAdmin
+  const departmentNav = isSalesSuperAdmin
     ? WABASTORE_SALES_SUPERADMIN_NAV
     : isSupportSuperAdmin
     ? WABASTORE_SUPPORT_SUPERADMIN_NAV
@@ -326,6 +329,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ...baseNavItems.slice(anchored)
       ]
     : baseNavItems;
+  // Chat sits just above the Notification Center in every department's menu
+  const chatTab = { id: CHAT_NAV.id as ActiveTab, label: CHAT_NAV.label, icon: CHAT_NAV.icon };
+  const lastTab = departmentNav[departmentNav.length - 1];
+  const navItems: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
   const deptTitle = activeDepartment?.name || 'Department';
 
   return (
@@ -392,6 +399,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="truncate">{item.label}</span>
                 </div>
 
+                {item.id === 'chat' && chatUnread > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold">{chatUnread}</span>
+                )}
                 {isNotif && unreadCount > 0 && (
                   <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold">
                     {unreadCount}

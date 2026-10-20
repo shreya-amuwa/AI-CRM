@@ -18,7 +18,8 @@ import { memberTitle } from '../../lib/auth/roleMapping';
 import { NavButton, SidebarBrand, SidebarFrame, SignOutButton, TopBar } from '../layout/shell';
 import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { ChatLauncher } from '../chat/ChatLauncher';
+import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
 export type TeamMemberNav =
@@ -35,6 +36,7 @@ export type TeamMemberNav =
   | 'invoices'
   | 'delivery'
   | 'settings'
+  | 'chat'
   | 'notifications';
 
 interface TeamMemberLayoutProps {
@@ -72,6 +74,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
+    { id: CHAT_NAV.id as TeamMemberNav, label: CHAT_NAV.label, icon: CHAT_NAV.icon },
     { id: 'notifications' as TeamMemberNav, label: 'Notification Center', icon: Bell }
   ];
 
@@ -93,6 +96,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     closeMenu();
   };
 
+  const chatUnread = useChatNavBadge();
+  useOpenChatRequest(React.useCallback(() => handleNavClick('chat'), []));
   const displayName = user?.name || 'Team Member';
   const displayRole = memberTitle(user);
 
@@ -184,7 +189,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
                 </div>
               );
             }
-            return <NavButton key={item.id} label={item.label} icon={Icon} active={currentNav === item.id} onClick={() => handleNavClick(item.id)} />;
+            return <NavButton key={item.id} label={item.label} icon={Icon} badge={item.id === 'chat' ? chatUnread : undefined} active={currentNav === item.id} onClick={() => handleNavClick(item.id)} />;
           })}
         </nav>
       </SidebarFrame>
@@ -194,13 +199,15 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           actions={
             <>
               <LeaveCenter />
-              <ChatLauncher />
               <NotificationBell />
             </>
           }
           user={{ name: displayName, role: displayRole }}
         />
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-y-auto">{children}</main>
+        <main className={currentNav === 'chat' ? 'flex-1 min-w-0' : 'flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-y-auto'}>
+          {currentNav === 'chat' && <ChatRoute />}
+          <div hidden={currentNav === 'chat'}>{children}</div>
+        </main>
       </div>
     </div>
   );

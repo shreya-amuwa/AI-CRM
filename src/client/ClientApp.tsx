@@ -199,7 +199,7 @@ const Inner: React.FC = () => {
                 )}
               </div>
             </header>
-            <main className="cd-content" id="cd-main">
+            <main className={`cd-content ${slug === 'chat' ? 'cd-content-flush' : ''}`} id="cd-main">
               <NoticeBanners items={notices.items} onDismiss={notices.dismiss} />
               {page}
             </main>

@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { ChatLauncher } from '../chat/ChatLauncher';
+import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
@@ -23,7 +24,7 @@ import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
@@ -45,6 +46,7 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
+  { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
 ];
 
@@ -69,6 +71,7 @@ const SupportPipelinePage: React.FC<{ section: PipelineSection; onNavigate: (s: 
 export const SupportMemberDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { unreadCount } = useNotifications();
+  const chatUnread = useChatNavBadge();
   const userId = user?.id || profile?.id || '';
   const [page, setPage] = useState<SupportPage>(() => parseSupportPage(window.location.pathname));
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -84,6 +87,8 @@ export const SupportMemberDashboard: React.FC = () => {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  useOpenChatRequest(React.useCallback(() => { setProfileId(null); setPage('chat'); }, []));
+
   const go = (next: SupportPage) => {
     setProfileId(null);
     setNotice(null);
@@ -98,7 +103,7 @@ export const SupportMemberDashboard: React.FC = () => {
   const displayName = profile?.fullName || user?.name || 'Support Team Member';
   const teamName = profile?.team?.name;
 
-  const groups: ShellNavGroup[] = [{ items: NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n)) }];
+  const groups: ShellNavGroup[] = [{ items: NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n)) }];
 
   return (
     <DashboardShell
@@ -119,11 +124,11 @@ export const SupportMemberDashboard: React.FC = () => {
       topActions={
         <>
           <LeaveCenter />
-          <ChatLauncher />
           <NotificationBell />
         </>
       }
       wide
+      flush={page === 'chat' && !profileId}
     >
       {profileId ? (
         <CustomerProfile
@@ -161,6 +166,8 @@ export const SupportMemberDashboard: React.FC = () => {
         />
       ) : page === 'tickets' ? (
         <TicketsPage mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
+      ) : page === 'chat' ? (
+        <ChatRoute />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : (

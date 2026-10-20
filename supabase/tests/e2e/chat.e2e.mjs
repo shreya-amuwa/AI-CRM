@@ -50,14 +50,20 @@ const staffLogin = async (email, viewport) => {
   await p.getByPlaceholder('name@amuwa.com').fill(email);
   await p.locator('input[type="password"]').first().fill(password);
   await p.locator('form button[type="submit"]').click();
-  await p.waitForSelector('button[aria-label^="Chat"]', { timeout: 20000 }).catch(async () => { current = p; await fail(`${email} did not reach a dashboard with the Chat button`); });
+  await p.waitForSelector('nav button:has-text("Chat")', { timeout: 20000 }).catch(async () => { current = p; await fail(`${email} did not reach a dashboard with Chat in the menu`); });
   return p;
 };
 const wait = async (p, sel, m, t = 12000) => { current = p; await p.waitForSelector(sel, { timeout: t }).catch(() => fail(m)); };
 const gone = async (p, sel, m, t = 12000) => { current = p; await p.waitForSelector(sel, { state: 'detached', timeout: t }).catch(() => fail(m)); };
-const chatBtn = p => p.locator('button[aria-label^="Chat"]').first();
-const openChat = async p => { await chatBtn(p).click(); await wait(p, '.ch-center', 'the chat did not open'); };
-const closeChat = async p => { await p.getByRole('button', { name: 'Close chat' }).click(); await gone(p, '.ch-center', 'chat did not close'); };
+// Chat is a page in the dashboard's own menu (not a pop-up); on a phone the menu is behind the hamburger
+const menuItem = (p, label) => p.locator('nav button').filter({ has: p.locator('span', { hasText: new RegExp(`^${label}$`) }) }).first();
+const openChat = async p => {
+  if ((p.viewportSize()?.width ?? 1440) < 1024) { await p.getByRole('button', { name: 'Toggle menu' }).click(); await new Promise(r => setTimeout(r, 400)); }
+  await menuItem(p, 'Chat').click();
+  await wait(p, '.ch-page', 'the Chat page did not open');
+};
+const closeChat = async p => { await menuItem(p, 'Overview').click(); await gone(p, '.ch-page', 'the Chat page did not close'); };
+const chatBadge = (p, n) => p.waitForFunction(k => [...document.querySelectorAll('nav button')].some(b => new RegExp(`^Chat\\s*${k}$`).test(b.innerText.replace(/\s+/g, ' ').trim())), n, { timeout: 12000 });
 const send = async (p, text) => { const box = p.getByLabel('Message', { exact: true }); await box.fill(text); await box.press('Enter'); };
 const bubble = (p, text) => p.locator('.ch-bubble', { hasText: text });
 const sendBtnEnabled = p => p.getByRole('button', { name: 'Send message' }).isEnabled();
@@ -88,7 +94,7 @@ await C.goto(BASE + '/client/login');
 await C.getByLabel('E-mail').fill('anil@acharya.example.com');
 await C.getByLabel('Password', { exact: true }).fill(CLIENT_A.password);
 await C.getByRole('button', { name: 'Sign in' }).click();
-await wait(C, '.cd-welcome h1', 'client did not sign in');
+await wait(C, 'h1.cd-page-title', 'client did not sign in');
 const M = await staffLogin('tm.delivery@amuwa.com');
 const L = await staffLogin('tl.delivery@amuwa.com');
 const D = await staffLogin('dh@amuwa.com');
@@ -98,7 +104,7 @@ ok('a client, a Team Member, a Team Lead, a Department Head and a second Team Me
 // ------------------------------------------------------------------ client: the Chat tab
 current = C;
 await C.locator('.cd-side button', { hasText: 'Chat' }).click();
-await wait(C, 'h1:has-text("Chat")', 'Chat tab did not open');
+await wait(C, '.cd-chat-card', 'Chat tab did not open');
 await wait(C, '.ch-head h2:has-text("Your Amuwa team")', 'team header missing');
 await wait(C, '.ch-head-main p:has-text("Mohan Member")', 'the team names did not load');
 const head = await C.locator('.ch-head').innerText();
@@ -124,14 +130,16 @@ await expect(first.length === 1 && first[0].sender_kind === 'CLIENT' && Number(f
 const convA = (await q(`select id from chat_conversations where customer_id = $1`, [A]))[0].id;
 await wait(M, '.ch-bubble:has-text("Hello, I need help with my campaign")', "Mohan's open chat did not receive the message without a refresh");
 ok("Mohan's open chat shows the client's message live (no refresh)");
+const sgeo = await M.evaluate(() => { const r = document.querySelector('.ch-page').getBoundingClientRect(); return { h: r.height, w: r.width, vh: window.innerHeight, vw: window.innerWidth, popup: !!document.querySelector('.ch-overlay, [role="dialog"][aria-label="Chat"]') }; });
+await expect(!sgeo.popup && sgeo.h > sgeo.vh - 140 && sgeo.w > sgeo.vw - 320, `employee chat is a full page in the dashboard (not a pop-up): ${Math.round(sgeo.w)} x ${Math.round(sgeo.h)} of ${sgeo.vw} x ${sgeo.vh}`);
 await wait(C, '.ch-row.mine svg[aria-label="Seen"]', 'the client does not see the Seen tick');
 ok('the client sees the message as Seen once the Team Member has it on screen');
 
 // Dina (chat closed): badge appears live, one bell notification only
-await wait(L, 'button[aria-label="Chat (1 unread)"]', "Dina's Chat button did not show 1 unread live");
-ok("Dina's Chat button shows 1 unread without a refresh");
+await chatBadge(L, 1).catch(() => fail("Dina's Chat menu item did not show 1 unread live"));
+ok("Dina's Chat menu item shows 1 unread without a refresh");
 await send(C, 'Also, can you check my invoice?');
-await wait(L, 'button[aria-label="Chat (2 unread)"]', 'second unread did not arrive');
+await chatBadge(L, 2).catch(() => fail('second unread did not arrive'));
 const bells = await q(`select count(*)::int n from notifications where recipient_id = $1 and type = 'CHAT_CLIENT_MESSAGE'`, [tl]);
 await expect(bells[0].n === 1, 'Dina gets one in-app notification for an unread run of messages, not one per message');
 
@@ -140,11 +148,21 @@ await send(M, "Hi Anil, I'm on it");
 await wait(C, '.ch-row.theirs .ch-bubble:has-text("Hi Anil, I\'m on it")', 'reply did not reach the client live');
 const reply = await C.locator('.ch-row.theirs .ch-bubble', { hasText: "I'm on it" }).innerText();
 await expect(/Mohan Member/.test(reply) && /Team Member/.test(reply), 'the client sees who answered: name and "Team Member"');
+// WhatsApp-style layout: my messages on the right, the team's on the left, and the chat fills the page
+const geo = await C.evaluate(() => {
+  const body = document.querySelector('.ch-body').getBoundingClientRect();
+  const mine = document.querySelector('.ch-row.mine .ch-bubble').getBoundingClientRect();
+  const theirs = document.querySelector('.ch-row.theirs .ch-bubble').getBoundingClientRect();
+  const card = document.querySelector('.cd-chat-card').getBoundingClientRect();
+  return { bodyLeft: body.left, bodyRight: body.right, mineRight: mine.right, theirsLeft: theirs.left, cardH: card.height, vh: window.innerHeight };
+});
+await expect(geo.bodyRight - geo.mineRight < 90 && geo.theirsLeft - geo.bodyLeft < 90, `my messages sit on the right edge and the team's on the left (mine ends ${Math.round(geo.bodyRight - geo.mineRight)}px from the right, theirs starts ${Math.round(geo.theirsLeft - geo.bodyLeft)}px from the left)`);
+await expect(geo.cardH > geo.vh - 120, `the client chat fills the page (${Math.round(geo.cardH)}px of ${geo.vh}px)`);
 await C.screenshot({ path: `${OUT}/chat-client-conversation.png` });
 
 // unread badge on the client's sidebar while on another page
 await C.locator('.cd-side button', { hasText: 'Overview' }).click();
-await wait(C, '.cd-welcome h1', 'overview');
+await wait(C, 'h1.cd-page-title', 'overview');
 await send(M, 'Let me know your preferred time for a call.');
 await wait(C, '.cd-side button:has-text("Chat") .cd-nav-count', "client's Chat nav badge did not appear live");
 ok("the client's Chat item shows an unread count while they are on another page");
@@ -274,8 +292,8 @@ await M.locator('.ch-modal .ch-person', { hasText: 'Rina Rao' }).click();
 await wait(M, '.ch-head h2:has-text("Rina Rao")', 'the direct chat did not open');
 await send(M, 'Can you cover my queue after lunch?');
 await wait(M, '.ch-row.mine .ch-bubble:has-text("cover my queue")', 'DM not shown');
-await wait(R, 'button[aria-label="Chat (1 unread)"]', "Rina's Chat button did not show 1 unread live");
-ok("Rina's Chat button shows the new direct message live");
+await chatBadge(R, 1).catch(() => fail("Rina's Chat menu item did not show 1 unread live"));
+ok("Rina's Chat menu item shows the new direct message live");
 await openChat(R);
 await wait(R, '.ch-item.unread:has-text("Mohan Member")', 'unread conversation not highlighted');
 await expect(/1/.test(await R.locator('.ch-item', { hasText: 'Mohan Member' }).locator('.ch-count').innerText()), 'the list shows an unread count and the preview');
@@ -386,6 +404,8 @@ await phone.locator('.ch-item', { hasText: 'Rina Rao' }).click();
 await wait(phone, '.ch-thread', 'thread');
 await expect(await phone.locator('.ch-list-panel:visible').count() === 0, 'opening a chat replaces the list');
 await phone.screenshot({ path: `${OUT}/chat-mobile-thread.png` });
+const phoneGeo = await phone.evaluate(() => ({ composerBottom: document.querySelector('.ch-composer').getBoundingClientRect().bottom, vh: window.innerHeight, over: document.documentElement.scrollWidth > window.innerWidth + 1 }));
+await expect(phoneGeo.composerBottom <= phoneGeo.vh + 1 && !phoneGeo.over, `on a phone the message box stays on screen and nothing scrolls sideways (box bottom ${Math.round(phoneGeo.composerBottom)} of ${phoneGeo.vh})`);
 await phone.getByRole('button', { name: 'Back to chats' }).click();
 await wait(phone, '.ch-list-panel', 'back to the list');
 const pc = await open({ width: 390, height: 780 });
@@ -393,10 +413,11 @@ await pc.goto(BASE + '/client/login');
 await pc.getByLabel('E-mail').fill('anil@acharya.example.com');
 await pc.getByLabel('Password', { exact: true }).fill(CLIENT_A.password);
 await pc.getByRole('button', { name: 'Sign in' }).click();
-await wait(pc, '.cd-welcome h1', 'mobile client sign in');
+await wait(pc, 'h1.cd-page-title', 'mobile client sign in');
 await pc.goto(BASE + '/client/dashboard/chat');
 await wait(pc, '.ch-composer', 'mobile client chat');
 await pc.screenshot({ path: `${OUT}/chat-mobile-client.png` });
+await expect(await pc.evaluate(() => { const bar = document.querySelector('.cd-tabbar'); const limit = bar && getComputedStyle(bar).display !== 'none' ? bar.getBoundingClientRect().top : window.innerHeight; return document.querySelector('.ch-composer').getBoundingClientRect().bottom <= limit + 1; }), "on a phone the client's message box is not hidden behind the tab bar")
 const overflow = await pc.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
 await expect(!overflow, 'the client chat fits a phone screen with no sideways scrolling');
 
