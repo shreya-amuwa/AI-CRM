@@ -12,7 +12,8 @@ const who = (p: { name: string; position: string | null } | null | undefined) =>
 /** The client's chat with the Team Member and Team Lead who look after them. One shared conversation. */
 export const Chat: React.FC = () => {
   const { refreshChatUnread } = useShell();
-  const card = useFillViewport<HTMLDivElement>();
+  // on a phone the dashboard has a tab bar fixed to the bottom of the window
+  const card = useFillViewport<HTMLDivElement>(() => document.querySelector<HTMLElement>('.cd-tabbar')?.offsetHeight ?? 0);
   const onConversation = useCallback(() => refreshChatUnread(), [refreshChatUnread]);
 
   const header = (c: ChatConversation | null) => {

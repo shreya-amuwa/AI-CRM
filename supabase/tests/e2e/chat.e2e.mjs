@@ -94,7 +94,7 @@ await C.goto(BASE + '/client/login');
 await C.getByLabel('E-mail').fill('anil@acharya.example.com');
 await C.getByLabel('Password', { exact: true }).fill(CLIENT_A.password);
 await C.getByRole('button', { name: 'Sign in' }).click();
-await wait(C, '.cd-welcome h1', 'client did not sign in');
+await wait(C, 'h1.cd-page-title', 'client did not sign in');
 const M = await staffLogin('tm.delivery@amuwa.com');
 const L = await staffLogin('tl.delivery@amuwa.com');
 const D = await staffLogin('dh@amuwa.com');
@@ -162,7 +162,7 @@ await C.screenshot({ path: `${OUT}/chat-client-conversation.png` });
 
 // unread badge on the client's sidebar while on another page
 await C.locator('.cd-side button', { hasText: 'Overview' }).click();
-await wait(C, '.cd-welcome h1', 'overview');
+await wait(C, 'h1.cd-page-title', 'overview');
 await send(M, 'Let me know your preferred time for a call.');
 await wait(C, '.cd-side button:has-text("Chat") .cd-nav-count', "client's Chat nav badge did not appear live");
 ok("the client's Chat item shows an unread count while they are on another page");
@@ -413,11 +413,11 @@ await pc.goto(BASE + '/client/login');
 await pc.getByLabel('E-mail').fill('anil@acharya.example.com');
 await pc.getByLabel('Password', { exact: true }).fill(CLIENT_A.password);
 await pc.getByRole('button', { name: 'Sign in' }).click();
-await wait(pc, '.cd-welcome h1', 'mobile client sign in');
+await wait(pc, 'h1.cd-page-title', 'mobile client sign in');
 await pc.goto(BASE + '/client/dashboard/chat');
 await wait(pc, '.ch-composer', 'mobile client chat');
 await pc.screenshot({ path: `${OUT}/chat-mobile-client.png` });
-await expect(await pc.evaluate(() => document.querySelector('.ch-composer').getBoundingClientRect().bottom <= window.innerHeight + 1), "on a phone the client's message box stays on screen")
+await expect(await pc.evaluate(() => { const bar = document.querySelector('.cd-tabbar'); const limit = bar && getComputedStyle(bar).display !== 'none' ? bar.getBoundingClientRect().top : window.innerHeight; return document.querySelector('.ch-composer').getBoundingClientRect().bottom <= limit + 1; }), "on a phone the client's message box is not hidden behind the tab bar")
 const overflow = await pc.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
 await expect(!overflow, 'the client chat fits a phone screen with no sideways scrolling');
 
