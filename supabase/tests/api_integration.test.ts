@@ -2719,8 +2719,23 @@ provider.close();
   check(r.status === 200 && r.json.data.employees.length === 0, 'another department\'s head sees none of Wabastore\'s', r);
 }
 
+// The next two sections exercise the delivery machinery that invoices made before the paid-only rule still use (the unpaid stage, its
+// retries and e-mail). A new invoice no longer runs the unpaid stage, so here "issue" is followed by the unpaid delivery, on invoices
+// created as older (not paid-only) ones. The paid-only rule itself is tested in its own section below.
+const apiBase = api;
+async function apiLegacy(who: string | null, method: string, path: string, body?: unknown, raw?: string) {
+  const res = await apiBase(who, method, path, body, raw);
+  if (method === 'POST' && path === '/accounts/generated-invoices' && (res.status === 201 || res.status === 200) && res.json?.data?.invoice?.id) {
+    const d = await apiBase(who, 'POST', `/accounts/generated-invoices/${res.json.data.invoice.id}/deliver`, { stage: 'UNPAID' });
+    if (d.status === 200) res.json.data = { ...res.json.data, invoice: d.json.data.invoice, steps: [...res.json.data.steps, ...d.json.data.steps] };
+  }
+  return res;
+}
+await db.query(`alter table public.generated_invoices alter column paid_only set default false`);
+
 // --- Dynamic invoices (Accounts invoice builder): issue -> unpaid PDF + e-mail -> confirm payment -> paid PDF + e-mail ----------
 {
+  const api = apiLegacy;
   const { amountInWords } = await import('../../shared/invoiceCalc.js');
   const { inferStateFromAddress } = await import('../../shared/gst.js');
   const { execFileSync, spawnSync } = await import('node:child_process');
@@ -2850,7 +2865,7 @@ provider.close();
   // a repeated request (a double click, a retry): the same invoice, nothing done twice
   const objectsBefore = fake.objects.size;
   r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
-  check(r.status === 200 && r.json.data.invoice.id === inv1.id && r.json.data.steps.every((s: any) => s.status === 'DONE') && /already issued/.test(r.json.data.steps[0].message), 'a repeated request returns the same invoice (200, not 201)', r);
+  check(r.status === 200 && r.json.data.invoice.id === inv1.id && r.json.data.steps.every((s: any) => s.status === 'DONE') && /already (issued|saved)/.test(r.json.data.steps[0].message), 'a repeated request returns the same invoice (200, not 201)', r);
   check(smtpMail.length === m0 + 1 && fake.objects.size === objectsBefore && (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n === 1, 'and sends no second e-mail, stores no second file, creates no second invoice');
   r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/135' }));
   check(r.status === 409, 'a different request with the same invoice number is refused', r);
@@ -3151,6 +3166,7 @@ provider.close();
 
 // --- Support leads, the direct journey (no Technical Consultant), delivery departments, service settings -------------------
 {
+  const api = apiLegacy;
   const ds = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'designstudio');
   const dsTeam = (await api('sa', 'GET', `/teams?departmentId=${ds.id}`)).json.data[0];
   r = await api('sa', 'POST', '/users', { email: 'ds.mem@amuwa.com', fullName: 'DS Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: dsTeam.id });
@@ -3310,8 +3326,8 @@ provider.close();
     r = await api('a', 'POST', `/pipeline/customers/${gx}/send-to-accounts`, { amount: 120000, taxBasis: 'EXCLUSIVE' });
     check(r.status === 200 || r.status === 201, 'gst: Sales sends 1,20,000 excluding GST to Accounts', r);
     r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
-    check(r.json.data.dealAmount === 141600 && r.json.data.agreedAmount === 120000 && r.json.data.taxBasis === 'EXCLUSIVE' && r.json.data.order.gstTotal === 21600 && r.json.data.order.balance === 141600,
-      'gst: the payable is 1,41,600 (GST 21,600) and the whole of it is outstanding', r.json.data);
+    check(r.json.data.dealAmount === 120000 && r.json.data.agreedAmount === 120000 && r.json.data.taxBasis === 'EXCLUSIVE' && r.json.data.order.gstTotal === 0 && r.json.data.order.balance === 120000,
+      'gst: the payable is the agreed 1,20,000 - the system adds no GST - and the whole of it is outstanding', r.json.data);
     r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'GX-API-1', verify: true });
     check(r.status === 201, 'gst: 60,000 received and verified', r);
     const inv = () => ({
@@ -3323,10 +3339,10 @@ provider.close();
     const body1 = inv();
     r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
     const g1 = r.json.data?.invoice;
-    check(r.status === 201 && g1.total === 70800 && g1.generated.paymentSummary.balance === 10800 && g1.generated.paymentSummary.order.balance === 81600 && g1.generated.paymentSummary.order.totalPayable === 141600,
-      'gst: invoice 1 is 60,000 + 10,800 = 70,800 with 10,800 left on it and 81,600 on the order', r);
+    check(r.status === 201 && g1.total === 70800 && g1.generated.paymentSummary.balance === 10800 && g1.generated.paymentSummary.order.balance === 70800 && g1.generated.paymentSummary.order.totalPayable === 130800,
+      'gst: invoice 1 is 60,000 + 10,800 GST (Accounts chose 18%) = 70,800; the payable is that plus the 60,000 not invoiced yet (no GST assumed), so 70,800 is outstanding', r);
     r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
-    check(r.status === 200 && r.json.data.invoice.id === g1.id && /already issued/.test(r.json.data.steps[0].message), 'gst: the same request again returns the same invoice', r);
+    check(r.status === 200 && r.json.data.invoice.id === g1.id && /already (issued|saved)/.test(r.json.data.steps[0].message), 'gst: the same request again returns the same invoice', r);
     r = await api('accm', 'POST', '/accounts/generated-invoices', inv());
     const g2 = r.json.data?.invoice;
     check(r.status === 201 && g2.total === 70800 && g2.generated.paymentSummary.balance === 70800 && g2.generated.paymentSummary.order.invoicedTotal === 141600,
@@ -3337,7 +3353,7 @@ provider.close();
     r = await api('accm', 'GET', `/accounts/customers/${gx}/invoice-prefill?purpose=SERVICES`);
     check(r.json.data.agreedTaxBasis === 'EXCLUSIVE' && r.json.data.servicesInvoicedTaxable === 120000 && r.json.data.agreedAmount === 120000, 'gst: the builder reads the agreement from the server', r.json.data);
     // the PDF is drawn from this same stored snapshot (its text is checked in the PDF unit tests and the invoice tests above)
-    check(g1.generated.unpaid.pdfStatus === 'STORED' && g1.generated.unpaid.sizeBytes > 0 && g1.generated.paymentSummary.order.totalPayable === 141600, 'gst: the unpaid PDF was drawn from the snapshot that carries the order figures', g1.generated.unpaid);
+    check(g1.generated.unpaid.pdfStatus === 'STORED' && g1.generated.unpaid.sizeBytes > 0 && g1.generated.paymentSummary.order.totalPayable === 130800, 'gst: the unpaid PDF was drawn from the snapshot that carries the order figures', g1.generated.unpaid);
     r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 5000, method: 'CASH', verify: false });
     r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
     check(r.json.data.order.confirmed === 60000 && r.json.data.order.pending === 5000 && r.json.data.order.balance === 81600, 'gst: a pending payment is not counted', r.json.data.order);
@@ -3398,6 +3414,97 @@ provider.close();
   r = await api('a', 'GET', `/pipeline/customers/${r.json.data.id}/journey`);
   check(r.json.data.journey === 'MIXED' && r.json.data.services.length === 2 && r.json.data.services.find((x: any) => x.code === 'DS_GRAPHIC_DESIGN').requiresTechnicalConsultant === false && r.json.data.services.find((x: any) => x.code === 'AI_CALLING').requiresTechnicalConsultant === true,
     'a mixed order keeps each service\'s own setting and follows the Technical Consultant journey', r.json.data);
+}
+
+// --- Paid invoices only: saving sends nothing, a (part) payment confirms the PAID invoice, no GST is added by the system -------------
+{
+  await db.query(`alter table public.generated_invoices alter column paid_only set default true`);
+  const { execFileSync, spawnSync } = await import('node:child_process');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const R2 = { key: 'r2-po-key', secret: 'r2-po-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket });
+  if (!smtp.listening) await new Promise<void>(rs => smtp.listen(0, '127.0.0.1', rs));
+  Object.assign(process.env, {
+    AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'smtp', EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
+    SMTP_HOST: '127.0.0.1', SMTP_PORT: String((smtp.address() as any).port), SMTP_SECURE: 'false', SMTP_USER: 'meta@amuwa.com', SMTP_PASS: 'abcd efgh ijkl mnop'
+  });
+  delete process.env.AUTOMATION_TEST_RECIPIENTS;
+  smtpMode = 'ok';
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const pdfText = (bytes: Buffer) => {
+    if (spawnSync('pdftotext', ['-v'], { stdio: 'ignore' }).error) return null;
+    const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'inv-po-')), 'x.pdf');
+    fs.writeFileSync(f, bytes);
+    return execFileSync('pdftotext', ['-raw', f, '-'], { encoding: 'utf8' }).replace(/\s+/g, ' ');
+  };
+
+  r = await api('a', 'POST', '/pipeline/leads', { name: 'Paid Only', company: 'Paid Only Co', email: 'paid.only@example.com', phone: '9820000808', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+  const po = r.json.data.id;
+  const key = (inv: string, stage: string) => `customer-documents/customers/${po}/invoices/${inv}/${stage}.pdf`;
+  r = await api('a', 'POST', `/pipeline/customers/${po}/send-to-accounts`, { amount: 120000 });
+  check(r.status === 200 || r.status === 201, 'paid-only: Sales sends 1,20,000 to Accounts without any GST choice', r);
+  r = await api('accm', 'GET', `/pipeline/customers/${po}/payment-overview`);
+  check(r.json.data.dealAmount === 120000 && r.json.data.agreedAmount === 120000 && r.json.data.order.gstTotal === 0 && r.json.data.order.balance === 120000, 'paid-only: the order is exactly the agreed amount - no GST added', r.json.data);
+  r = await api('accm', 'GET', `/accounts/customers/${po}/invoice-prefill?purpose=SERVICES`);
+  check(r.status === 200 && r.json.data.lines[0].taxRate === null && r.json.data.lines[0].baseAmount === 120000, 'paid-only: the invoice form starts without a GST rate and with the agreed amount', r.json.data.lines);
+  const inv = (rate: number | string, base: number) => ({
+    requestId: crypto.randomUUID(), customerId: po, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
+    customer: { name: 'Paid Only', businessName: 'Paid Only Co', address: 'Shop 5, FC Road, Pune 411004, Maharashtra', contactPerson: 'Paid Only', contactNumber: '9820000808', gstin: null, stateCode: '27' },
+    taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+    lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: rate, quantity: '1 Nos', baseAmount: base }]
+  });
+  r = await api('accm', 'POST', '/accounts/generated-invoices', inv('', 60000));
+  check(r.status === 422 && /GST rate/.test(r.json.error.message), 'paid-only: a line without a GST rate is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${po}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'PO-API-1', verify: true });
+  check(r.status === 201, 'paid-only: 60,000 received and verified', r);
+
+  const mail0 = smtpMail.length;
+  const files0 = fake.objects.size;
+  r = await api('accm', 'POST', '/accounts/generated-invoices', inv(18, 60000));
+  const a = r.json.data?.invoice;
+  check(r.status === 201 && a.total === 70800 && a.generated.paidOnly === true && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'ISSUE:DONE' && /Nothing was sent/.test(r.json.data.steps[0].message),
+    'paid-only: saving an invoice (60,000 + 18% GST chosen by Accounts = 70,800) only saves it', r);
+  check(smtpMail.length === mail0 && fake.objects.size === files0 && a.generated.unpaid.pdfStatus === 'PENDING' && a.generated.paid.pdfStatus === 'NOT_DUE', 'paid-only: no e-mail, no PDF, nothing stored');
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/deliver`, { stage: 'UNPAID' });
+  check(r.status === 409 && /Unpaid invoices are not sent/.test(r.json.error.message), 'paid-only: an unpaid invoice cannot be made or sent', r);
+  r = await api('accm', 'GET', `/pipeline/customers/${po}/payment-overview`);
+  check(r.json.data.dealAmount === 130800, 'paid-only: the order is now the invoice (70,800) plus the 60,000 not invoiced yet, with no GST assumed on it', r.json.data);
+
+  // a part payment is enough for the paid invoice
+  r = await api('a', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, {});
+  check(r.status === 403, 'paid-only: a salesperson cannot confirm', r);
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, { note: 'Part payment received' });
+  check(r.status === 200 && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE', 'paid-only: with a verified part payment (60,000 of 70,800) the PAID invoice is created, stored and e-mailed', r.json);
+  const sm = smtpMail.at(-1);
+  check(smtpMail.length === mail0 + 1 && sm && /paid\.pdf|paid/i.test(sm.data) , 'paid-only: exactly one e-mail left, the paid invoice');
+  const paidObj = fake.objects.get(key(a.id, 'paid'));
+  check(!!paidObj && paidObj.body.subarray(0, 5).toString() === '%PDF-' && !fake.objects.has(key(a.id, 'unpaid')), 'paid-only: the paid PDF is stored and there is no unpaid file');
+  const txt = paidObj ? pdfText(paidObj.body) : null;
+  if (txt) {
+    check(/Current Invoice Total: Rs\.70,800\.00/.test(txt) && /Total Confirmed Payments: Rs\.60,000\.00/.test(txt) && /Total Order Balance Outstanding: Rs\.70,800\.00/.test(txt) && /\bPAID\b/.test(txt),
+      'paid-only: the PDF shows the invoice total, the confirmed 60,000, the order balance and the PAID stamp');
+    check(!/Balance Due on this Invoice|Invoice Status|Total Order Value/.test(txt), 'paid-only: and none of the removed rows');
+  }
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, {});
+  check(r.status === 200 && smtpMail.length === mail0 + 1, 'paid-only: confirming again changes nothing and sends nothing', r.json);
+
+  // the second invoice needs new money
+  r = await api('accm', 'POST', '/accounts/generated-invoices', inv(12, 60000));
+  const b = r.json.data?.invoice;
+  check(r.status === 201 && b.total === 67200, 'paid-only: a second invoice with 12% GST chosen by Accounts (67,200)', r);
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
+  check(r.status === 409 && /already covered/.test(r.json.error.message), 'paid-only: the second paid invoice needs a new verified payment', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${po}/accounts/payments`, { type: 'PART', amount: 10000, method: 'UPI', reference: 'PO-API-2', verify: true });
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
+  check(r.status === 200 && smtpMail.length === mail0 + 2 && fake.objects.has(key(b.id, 'paid')), 'paid-only: after the new payment the second paid invoice is sent', r.json);
+  r = await api('accm', 'GET', `/invoices/${b.id}`);
+  check(r.json.data.generated.paymentSummary.order.totalPayable === 138000 && r.json.data.generated.paymentSummary.order.confirmed === 70000 && r.json.data.generated.paymentSummary.order.balance === 68000, 'paid-only: the order shows 1,38,000 payable, 70,000 confirmed and 68,000 outstanding', r.json.data.generated.paymentSummary);
+  smtp.close();
+  fake.server.close();
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
 }
 
 // --- Business reports: Sales and Support business for Accounts ---------------------------------

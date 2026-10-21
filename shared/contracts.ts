@@ -1231,7 +1231,7 @@ export interface OrderSummary {
   invoicedTaxable: number;
   invoicedGst: number;
   invoicedTotal: number;
-  /** True while the GST of the part not invoiced yet is still an estimate. */
+  /** Always false now: no GST is estimated for the part not invoiced yet (Accounts decides it when it makes the invoice). */
   estimated: boolean;
 }
 export interface InvoicePaymentSummary {
@@ -1264,6 +1264,8 @@ export interface GeneratedInvoice {
   lines: GeneratedInvoiceLine[];
   totals: GeneratedInvoiceTotals;
   lifecycle: 'ISSUED' | 'PAID';
+  /** True for an invoice made under the paid-only rule: no unpaid PDF is ever created or e-mailed, only the paid invoice. */
+  paidOnly?: boolean;
   /** Total - confirmed payments applied to this invoice. Worked out by the database from the payment records, never typed or sent by the browser. */
   paymentSummary: InvoicePaymentSummary | null;
   payment: { confirmedAt: string; confirmedBy: string | null; method: PaymentMethod | null; reference: string | null; note: string | null; paidOn: string | null } | null;
@@ -1287,7 +1289,7 @@ export interface InvoicePrefill {
   invoiceDate: string;
   orderNumber: string;
   terms: string;
-  lines: { serviceCode: string | null; particulars: string; hsnSac: string; taxRate: number; quantity: string; baseAmount: number | null }[];
+  lines: { serviceCode: string | null; particulars: string; hsnSac: string; taxRate: number | null; quantity: string; baseAmount: number | null }[];
   /** What Sales agreed for all the original services together (a reference only: the price per service is not recorded). */
   dealAmount: number | null;
   /** What the invoices already issued for the agreed services come to (each part payment can have its own invoice). */

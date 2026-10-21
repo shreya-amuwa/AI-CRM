@@ -94,11 +94,11 @@ export const AccountsInvoices: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Invoices</h1>
-          <p className="text-sm text-slate-500 mt-1">Generate an invoice for a customer (it is e-mailed to them and shown on their dashboard), or upload an existing invoice PDF. Only Accounts issues and manages invoices; every employee who may see the customer can view and download them.</p>
+          <p className="text-sm text-slate-500 mt-1">Prepare an invoice for a customer (only the paid invoice reaches them, e-mailed and shown on their dashboard once you confirm the payment), or upload an existing invoice PDF. Only Accounts issues and manages invoices; every employee who may see the customer can view and download them.</p>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
           <button type="button" className={btn.primary} onClick={() => setBuilding(true)}>
-            <FilePlus2 className="w-4 h-4" aria-hidden="true" /> Generate Invoice
+            <FilePlus2 className="w-4 h-4" aria-hidden="true" /> Create Invoice
           </button>
           <button type="button" className={btn.secondary} onClick={() => setUploading(true)}>
             <UploadCloud className="w-4 h-4" aria-hidden="true" /> Upload Invoice PDF
@@ -145,7 +145,7 @@ export const AccountsInvoices: React.FC = () => {
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <FileText className="w-6 h-6 mx-auto text-slate-300" aria-hidden="true" />
           <div className="text-sm font-bold text-slate-800 mt-2">{debounced || kind || status ? 'No invoice matches' : 'No invoices yet'}</div>
-          <p className="text-xs text-slate-500 mt-1">{debounced || kind || status ? 'Try another search or filter.' : 'Create the first invoice with Generate Invoice.'}</p>
+          <p className="text-xs text-slate-500 mt-1">{debounced || kind || status ? 'Try another search or filter.' : 'Create the first invoice with Create Invoice.'}</p>
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden">

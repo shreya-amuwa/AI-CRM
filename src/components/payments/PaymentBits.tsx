@@ -81,10 +81,11 @@ export const FollowUpBadge: React.FC<{ status: FollowUpStatus }> = ({ status }) 
 /** Money summary: agreed · verified · pending · balance. */
 /** `deal` is the total payable (GST included). When the agreement excludes GST, `agreed` shows the amount before GST next to it. */
 export const MoneyTiles: React.FC<{ deal: number | null; verified: number; pending: number; balance: number; agreed?: number | null; basis?: 'INCLUSIVE' | 'EXCLUSIVE' }> = ({ deal, verified, pending, balance, agreed, basis }) => {
-  const excl = basis === 'EXCLUSIVE' && agreed != null;
+  // The total payable differs from the agreed amount only once Accounts has added GST on an invoice: then both are shown.
+  const excl = basis === 'EXCLUSIVE' && agreed != null && deal != null && Math.round(deal * 100) !== Math.round(agreed * 100);
   const tiles: (readonly [string, string])[] = [
-    ...(excl ? ([['Agreed amount (excl. GST)', rupees(agreed)]] as const) : []),
-    [excl ? 'Total payable (incl. GST)' : 'Agreed amount', rupees(deal)],
+    ...(excl ? ([['Agreed amount', rupees(agreed)]] as const) : []),
+    [excl ? 'Total payable' : 'Agreed amount', rupees(deal)],
     ['Verified received', rupees(verified)],
     ['Pending verification', rupees(pending)],
     ['Outstanding balance', rupees(balance)]
