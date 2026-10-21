@@ -4037,6 +4037,27 @@ r = await api('sa', 'GET', '/departments');
 check(r.status === 200, 'API keeps working on the fallback path', r);
 await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to rate_limit_consume`);
 
+// --- deleting a customer: the Super Admin and the Department Head only ---------
+{
+  r = await api('a', 'POST', '/customers', { name: 'Delete Test', email: 'delete.test@acme.com', phone: '+91 98765 43299', company: 'Delete Test Co', segment: 'RETAIL' });
+  const delId = r.json.data.id as string;
+  r = await api('th', 'DELETE', `/customers/${delId}`);
+  check(r.status === 403, 'delete: a team lead cannot delete a customer', r);
+  r = await api(null, 'DELETE', `/customers/${delId}`);
+  check(r.status === 401, 'delete: a signed-out visitor cannot', r);
+  r = await api('dh', 'DELETE', `/customers/${delId}`);
+  check(r.status === 200 && r.json.data.name === 'Delete Test Co', 'delete: the Department Head deletes a customer of the department', r);
+  r = await api('dh', 'GET', `/customers/${delId}`);
+  check(r.status === 404, 'delete: the customer is gone', r);
+  r = await api('dh', 'DELETE', `/customers/${delId}`);
+  check(r.status === 404, 'delete: deleting it again says not found', r);
+  r = await api('a', 'POST', '/customers', { name: 'Delete Test Two', email: 'delete.two@acme.com', phone: '+91 98765 43298', company: 'Delete Two Co', segment: 'RETAIL' });
+  const delId2 = r.json.data.id as string;
+  r = await api('sa', 'DELETE', `/customers/${delId2}`);
+  check(r.status === 200, 'delete: the Super Admin can too', r);
+  check(Number((await db.query(`select count(*) from audit_logs where action = 'CUSTOMER_DELETED' and entity_id in ($1, $2)`, [delId, delId2])).rows[0].count) === 2, 'delete: both deletions are audited');
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

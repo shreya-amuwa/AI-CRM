@@ -406,7 +406,8 @@ export const customersApi = {
   get: (id: string) => api.get<Customer>(`/customers/${id}`),
   create: (body: CustomerCreateInput) => api.post<Customer>('/customers', body),
   update: (id: string, body: CustomerUpdateInput) => api.patch<Customer>(`/customers/${id}`, body),
-  remove: (id: string) => api.delete<null>(`/customers/${id}`),
+  /** Super Admin / the department's Department Head. Refused while the customer has an issued invoice or a verified payment. */
+  remove: (id: string) => api.delete<{ name: string }>(`/customers/${id}`),
   import: (customers: unknown[]) => api.post<ImportResult>('/customers/import', { customers }),
   activities: (id: string) => api.get<CustomerActivity[]>(`/customers/${id}/activities`),
   addActivity: (id: string, body: { type: string; note?: string }) => api.post<CustomerActivity>(`/customers/${id}/activities`, body)

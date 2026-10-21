@@ -42,6 +42,7 @@ import {
   TicketStatusPill
 } from './SupportParts';
 import { NewTicketModal } from './TicketsPage';
+import { DeleteCustomerButton } from '../common/DeleteCustomer';
 import { CustomerForm, customerToInput } from './CustomerForm';
 import { DueLabel, PriorityPill, ProgressBar, StatusPill } from '../tasks/TaskParts';
 import { getSupabase } from '../../services/supabaseClient';
@@ -389,9 +390,12 @@ export const CustomerProfile: React.FC<{
                 {customer.phone || 'No phone'} · {customer.email || 'No e-mail'}
               </p>
             </div>
+            <div className="flex flex-wrap items-start gap-2 self-start shrink-0">
+            <DeleteCustomerButton customerId={customerId} name={customer.company || customer.name} onDeleted={onBack} />
             <button type="button" onClick={() => setNewTicket(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 self-start shrink-0">
               <Plus className="w-4 h-4" aria-hidden="true" /> New ticket
             </button>
+            </div>
           </div>
 
           <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-slate-200">

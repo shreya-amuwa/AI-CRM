@@ -38,10 +38,7 @@ export const customersController = {
   create: (async ctx => ok(await svc(ctx).customers.create(ctx.actor, ctx.req.body), 201)) as Handler,
   import: (async ctx => ok(await svc(ctx).customers.import(ctx.actor, ctx.req.body))) as Handler,
   update: (async ctx => ok(await svc(ctx).customers.update(ctx.params.id, ctx.req.body))) as Handler,
-  remove: (async ctx => {
-    await svc(ctx).customers.delete(ctx.actor, ctx.params.id);
-    return ok(null);
-  }) as Handler,
+  remove: (async ctx => ok(await svc(ctx).pipeline.deleteCustomer(ctx.actor, ctx.params.id))) as Handler,
   listActivities: (async ctx => ok(await svc(ctx).customers.listActivities(ctx.params.id))) as Handler,
   addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
   /** Support: the Excel sheet of existing customers (preview or save) and the client's set-password e-mail. */

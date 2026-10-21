@@ -57,5 +57,6 @@ export function assertCanManageTeamsIn(actor: Actor, departmentId: string): void
 }
 
 export function assertCanDeleteCustomers(actor: Actor): void {
-  if (!isManager(actor)) throw new AppError('FORBIDDEN', 'Only team heads and above can delete customers.');
+  // the database also checks the Department Head's department (delete_customer)
+  if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin and the Department Head can delete a customer.');
 }

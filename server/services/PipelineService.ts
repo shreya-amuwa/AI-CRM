@@ -81,6 +81,7 @@ import { encryptSecret } from '../automations/secrets.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageProviderName, StorageRepository } from '../repositories/StorageRepository.js';
+import { assertCanDeleteCustomers } from '../authz/policies.js';
 
 /** Signed URLs for viewing/downloading a document live this long. */
 export const DOCUMENT_URL_TTL_SECONDS = 120;
@@ -532,6 +533,25 @@ export class PipelineService {
       await this.repo.providerOf(id)
     );
     return { url, expiresInSeconds: DOCUMENT_URL_TTL_SECONDS, fileName: access.original_file_name };
+  }
+
+  /**
+   * Deletes a customer. The database checks who may and refuses a customer with an issued invoice or a verified payment; only after it
+   * accepted the deletion are the stored files and the client's sign-in user removed (a failure there never undoes the deletion).
+   */
+  async deleteCustomer(actor: Actor, customerId: string): Promise<{ name: string }> {
+    assertCanDeleteCustomers(actor);
+    const r = await this.repo.deleteCustomer(parse(uuidSchema, customerId));
+    const byBucket = new Map<string, { provider: StorageProviderName | null; paths: string[] }>();
+    for (const d of r.documents) {
+      const key = `${d.provider ?? ''}|${d.bucket}`;
+      const e = byBucket.get(key) ?? { provider: d.provider, paths: [] };
+      e.paths.push(d.path);
+      byBucket.set(key, e);
+    }
+    for (const [key, e] of byBucket) await this.storage.remove(key.split('|')[1], e.paths, e.provider).catch(() => undefined);
+    if (r.clientUserId) await this.authAdmin.deleteUser(r.clientUserId).catch(() => undefined);
+    return { name: r.name };
   }
 
   async deleteDocument(documentId: string): Promise<void> {
