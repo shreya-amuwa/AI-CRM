@@ -240,8 +240,8 @@ export const pipelineApi = {
   conversations: (id: string) => api.get<Conversation[]>(`/pipeline/customers/${id}/conversations`),
   addConversation: (id: string, note: string) => api.post<Conversation[]>(`/pipeline/customers/${id}/conversations`, { note }),
   updateConversation: (conversationId: string, note: string) => api.patch<null>(`/pipeline/conversations/${conversationId}`, { note }),
-  sendToAccounts: (id: string, body: { amount: number; note?: string | null; taxBasis?: AgreementTaxBasis }) =>
-    api.post<PipelineCustomer>(`/pipeline/customers/${id}/send-to-accounts`, { amount: body.amount, note: body.note || null, taxBasis: body.taxBasis ?? 'INCLUSIVE' }),
+  sendToAccounts: (id: string, body: { amount: number; note?: string | null }) =>
+    api.post<PipelineCustomer>(`/pipeline/customers/${id}/send-to-accounts`, { amount: body.amount, note: body.note || null }),
   paymentOverview: (id: string) => api.get<PaymentOverview>(`/pipeline/customers/${id}/payment-overview`),
   partPayments: (q: PartPaymentsParams = {}) => api.get<PartPaymentsPage>('/pipeline/part-payments', { ...q }),
   paymentRequests: (q: { status?: 'PENDING' | 'CONFIRMED' | 'RETURNED'; search?: string; page?: number; pageSize?: number } = {}) =>

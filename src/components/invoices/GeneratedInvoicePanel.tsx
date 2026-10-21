@@ -71,48 +71,55 @@ const mailPill = (st: GeneratedInvoiceStageState): { tone: Tone; text: string } 
 const STATE_LABEL: Record<InvoicePaymentState, string> = { UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially paid', FULLY_PAID: 'Fully paid' };
 const STATE_TONE: Record<InvoicePaymentState, Tone> = { UNPAID: 'orange', PARTIALLY_PAID: 'indigo', FULLY_PAID: 'green' };
 
-/** What the invoice came to, what was confirmed, what is left. All of it comes from the database's payment records. */
+/**
+ * What was received and what is still outstanding. For the agreed services only the invoice total and the order's two figures are shown
+ * (no per-invoice balance, no status, no order value); an add-on or an additional invoice keeps its own simple summary.
+ * All of it comes from the database's payment records.
+ */
 export const PaymentSummaryCard: React.FC<{ summary: InvoicePaymentSummary }> = ({ summary: s }) => (
-  <section aria-label="Payment summary" className="rounded-xl border border-slate-200 p-3 space-y-2">
-    <div className="flex flex-wrap items-center gap-2">
-      <h4 className="text-xs font-bold text-slate-800">Payment</h4>
-      <Pill tone={STATE_TONE[s.state]}>{STATE_LABEL[s.state]}</Pill>
-    </div>
-    <dl className="grid grid-cols-3 gap-3 text-xs">
-      <div>
-        <dt className="text-[11px] text-slate-500">Invoice total</dt>
-        <dd className="font-semibold text-slate-900">{rupees(s.total)}</dd>
-      </div>
-      <div>
-        <dt className="text-[11px] text-slate-500">Confirmed payments</dt>
-        <dd className="font-semibold text-slate-900">{rupees(s.confirmed)}</dd>
-      </div>
-      <div>
-        <dt className="text-[11px] text-slate-500">{s.order ? 'Balance due on this invoice' : 'Balance outstanding'}</dt>
-        <dd className={`font-bold ${s.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.balance)}</dd>
-      </div>
-    </dl>
-    {s.order && (
-      <dl className="grid grid-cols-3 gap-3 text-xs rounded-lg bg-slate-50 border border-slate-100 p-2.5" aria-label="Whole order">
+  <section aria-label="Payment summary" className="rounded-xl border border-slate-200 p-4 space-y-4">
+    <h4 className="text-xs font-bold text-slate-800">Payment</h4>
+    {s.order ? (
+      <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
         <div>
-          <dt className="text-[11px] text-slate-500">Total order value (incl. GST)</dt>
-          <dd className="font-semibold text-slate-900">{rupees(s.order.totalPayable)}</dd>
+          <dt className="text-[11px] text-slate-500">Invoice total</dt>
+          <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.total)}</dd>
         </div>
         <div>
           <dt className="text-[11px] text-slate-500">Total confirmed payments</dt>
-          <dd className="font-semibold text-slate-900">{rupees(s.order.confirmed)}</dd>
+          <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.order.confirmed)}</dd>
         </div>
         <div>
           <dt className="text-[11px] text-slate-500">Total order balance outstanding</dt>
-          <dd className={`font-bold ${s.order.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.order.balance)}</dd>
+          <dd className={`mt-0.5 font-bold ${s.order.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.order.balance)}</dd>
         </div>
       </dl>
+    ) : (
+      <>
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone={STATE_TONE[s.state]}>{STATE_LABEL[s.state]}</Pill>
+        </div>
+        <dl className="grid grid-cols-3 gap-4 text-xs">
+          <div>
+            <dt className="text-[11px] text-slate-500">Invoice total</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.total)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-slate-500">Confirmed payments</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.confirmed)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-slate-500">Balance outstanding</dt>
+            <dd className={`mt-0.5 font-bold ${s.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.balance)}</dd>
+          </div>
+        </dl>
+      </>
     )}
     {s.pending > 0 && <p className="text-[11px] text-amber-800">{rupees(s.pending)} is recorded but not verified yet. It is not counted until it is verified.</p>}
     {s.payments.length > 0 && (
       <ul className="divide-y divide-slate-100 border border-slate-100 rounded-lg text-[11px]" aria-label="Confirmed payments">
         {s.payments.map((p, i) => (
-          <li key={i} className="px-2.5 py-1.5 flex flex-wrap gap-x-3">
+          <li key={i} className="px-3 py-2 flex flex-wrap gap-x-3 gap-y-0.5">
             <span className="font-semibold text-slate-800">{rupees(p.amount)}</span>
             <span className="text-slate-500">
               {[p.method ? METHOD_LABEL[p.method] : null, p.reference, longDate(p.paidAt)].filter(Boolean).join(' · ')}
@@ -150,7 +157,9 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
   const requestId = useRef(crypto.randomUUID());
   const amountPaise = toPaise(amount);
   const partial = onInvoice && amountPaise !== null && amountPaise > 0 && amountPaise < balancePaise;
-  const needsMoney = !!summary && !onInvoice && summary.balance > 0;
+  const onOrder = summary?.ledger === 'CUSTOMER';
+  // The agreed services: a verified payment (also a part payment) is enough for the paid invoice. An add-on still needs its balance paid.
+  const needsMoney = !!summary && !onInvoice && (onOrder ? (summary.order?.confirmed ?? summary.confirmed) <= 0 : summary.balance > 0);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,7 +192,7 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
       description={`Invoice ${invoice.number} for ${rupees(invoice.total)}. ${
         partial
           ? 'The part payment is recorded and the invoice stays open with its balance. The paid invoice is made when the balance is zero.'
-          : 'Confirming marks the invoice paid, creates the paid invoice with the PAID stamp (same number and amounts) and e-mails it to the customer.'
+          : 'Confirming creates the paid invoice with the PAID stamp (same number and amounts) and e-mails it to the customer. Only the paid invoice is ever sent.'
       }`}
       onClose={onClose}
       persistent
@@ -198,12 +207,13 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
           </div>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-3" aria-label="Confirm payment">
+        <form onSubmit={submit} className="space-y-5" aria-label="Confirm payment">
           {summary && <PaymentSummaryCard summary={summary} />}
           {needsMoney && (
-            <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-              {rupees(summary?.confirmed)} of {rupees(summary?.total)} is confirmed. Record and verify the remaining {rupees(summary?.balance)} in{' '}
-              {summary?.ledger === 'ADDON' ? 'Business Verification' : 'Payments'}, then confirm the payment here.
+            <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              {onOrder
+                ? 'No payment is confirmed yet. Record and verify the payment in Payments, then confirm it here.'
+                : `${rupees(summary?.confirmed)} of ${rupees(summary?.total)} is confirmed. Record and verify the remaining ${rupees(summary?.balance)} in Business Verification, then confirm the payment here.`}
             </p>
           )}
           {onInvoice && (
@@ -221,7 +231,7 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
                   ))}
                 </select>
               </Field>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <Field label="Transaction reference" htmlFor="cp-ref">
                   <input id="cp-ref" className={inputCls} value={reference} maxLength={120} onChange={e => setReference(e.target.value)} disabled={busy} />
                 </Field>
@@ -235,7 +245,7 @@ export const ConfirmPaymentDialog: React.FC<{ invoice: Invoice; onClose: () => v
             <input id="cp-note" className={inputCls} value={note} maxLength={1000} onChange={e => setNote(e.target.value)} disabled={busy} />
           </Field>
           {error && <ErrorBanner message={error} />}
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-3 pt-1">
             <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>
               Cancel
             </button>
@@ -257,7 +267,7 @@ const StageCard: React.FC<{ invoice: Invoice; stage: InvoiceStage; state: Genera
   const [error, setError] = useState<string | null>(null);
   const pdf = pdfPill(state);
   const mail = mailPill(state);
-  const title = stage === 'UNPAID' ? 'Unpaid invoice' : 'Paid invoice (with the PAID stamp)';
+  const title = stage === 'UNPAID' ? 'Unpaid invoice (sent before this rule)' : 'Paid invoice (with the PAID stamp)';
   const notDue = state.pdfStatus === 'NOT_DUE';
   const open = async (action: 'view' | 'download') => {
     setBusy(action);
@@ -285,17 +295,17 @@ const StageCard: React.FC<{ invoice: Invoice; stage: InvoiceStage; state: Genera
   };
   const incomplete = !notDue && (state.pdfStatus !== 'STORED' || state.emailStatus !== 'SENT');
   return (
-    <section className="rounded-xl border border-slate-200 p-3 space-y-2" aria-label={title}>
+    <section className="rounded-xl border border-slate-200 p-4 space-y-3" aria-label={title}>
       <div className="flex flex-wrap items-center gap-2">
         <FileText className="w-4 h-4 text-slate-400" aria-hidden="true" />
         <h4 className="text-xs font-bold text-slate-800">{title}</h4>
         <Pill tone={pdf.tone}>{pdf.text}</Pill>
-        <Pill tone={mail.tone}>{mail.text}</Pill>
+        {!(notDue && mail.text === pdf.text) && <Pill tone={mail.tone}>{mail.text}</Pill>}
         {state.busy && <Pill tone="indigo">Being processed</Pill>}
       </div>
       <p className="text-[11px] text-slate-500">
         {notDue
-          ? 'Created when the payment is confirmed.'
+          ? 'Created and e-mailed to the customer when you confirm the payment.'
           : [
               state.storedAt ? `Stored ${stamp(state.storedAt)}${state.sizeBytes ? ` (${Math.round(state.sizeBytes / 1024)} KB)` : ''}` : null,
               state.emailSentAt ? `e-mailed to ${state.emailTo} on ${stamp(state.emailSentAt)}` : null
@@ -337,13 +347,14 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
   const [confirming, setConfirming] = useState(false);
   if (!g) return <p className="text-xs text-slate-500">The details of this invoice are not available.</p>;
   const t = g.totals;
+  const showUnpaid = !g.paidOnly && !(g.unpaid.pdfStatus === 'PENDING' && g.unpaid.emailStatus === 'PENDING');
   const run = (r: InvoiceRunResult) => {
     setSteps(r.steps);
     onChanged?.(r.invoice);
   };
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
         {(
           [
             ['Invoice date', longDate(g.invoiceDate)],
@@ -356,7 +367,7 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
             ['Payment', g.lifecycle === 'PAID' && g.payment ? `Confirmed ${stamp(g.payment.confirmedAt)}${g.payment.method ? ` · ${METHOD_LABEL[g.payment.method]}` : ''}${g.payment.reference ? ` · ${g.payment.reference}` : ''}` : 'Not confirmed yet']
           ] as const
         ).map(([k, v]) => (
-          <div key={k} className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+          <div key={k} className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
             <div className="text-[11px] text-slate-500">{k}</div>
             <div className="mt-0.5 font-semibold text-slate-800 break-words">{v}</div>
           </div>
@@ -412,13 +423,14 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
       {g.paymentSummary && <PaymentSummaryCard summary={g.paymentSummary} />}
       {canManage && g.purpose === 'ADDITIONAL' && <InvoiceBusinessCard invoiceId={invoice.id} />}
       {steps && <StepList steps={steps} />}
-      <div className="grid sm:grid-cols-2 gap-3">
-        <StageCard invoice={invoice} stage="UNPAID" state={g.unpaid} canManage={canManage} onRun={run} />
+      {/* No unpaid invoice is made or sent any more; an older invoice that already has one keeps showing it. */}
+      <div className={`grid gap-4 ${showUnpaid ? 'sm:grid-cols-2' : ''}`}>
+        {showUnpaid && <StageCard invoice={invoice} stage="UNPAID" state={g.unpaid} canManage={canManage} onRun={run} />}
         <StageCard invoice={invoice} stage="PAID" state={g.paid} canManage={canManage && g.lifecycle === 'PAID'} onRun={run} />
       </div>
       {canManage && g.lifecycle === 'ISSUED' && (
-        <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-          <p className="text-xs text-emerald-900">Payment received? Confirm it here. Once the balance is zero the paid invoice (the same invoice with the PAID stamp) is created and e-mailed to the customer.</p>
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+          <p className="text-xs leading-relaxed text-emerald-900">Payment received? Confirm it here. The paid invoice (the same invoice with the PAID stamp) is created and e-mailed to the customer. Nothing is sent before that.</p>
           <button type="button" className={btn.green} onClick={() => setConfirming(true)}>
             <BadgeCheck className="w-3.5 h-3.5" aria-hidden="true" /> Confirm Payment &amp; Send Paid Invoice
           </button>

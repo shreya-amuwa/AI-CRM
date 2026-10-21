@@ -6,7 +6,7 @@ import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, fmtDate, inr } from './ui';
 
-const statusOf = (i: ClientInvoice) => i.status === 'Paid' ? { label: 'Paid', tone: 'success' as const } : i.paymentSummary?.state === 'PARTIALLY_PAID' ? { label: 'Partially paid', tone: 'attention' as const } : i.overdue ? { label: 'Overdue', tone: 'danger' as const } : { label: 'Pending', tone: 'attention' as const };
+const statusOf = (i: ClientInvoice) => i.status === 'Paid' ? { label: 'Paid', tone: 'success' as const } : i.overdue ? { label: 'Overdue', tone: 'danger' as const } : { label: 'Pending', tone: 'attention' as const };
 
 export const Invoices: React.FC = () => {
   const q = useLoad(() => clientApi.invoices());
@@ -85,16 +85,16 @@ export const Invoices: React.FC = () => {
                 : <div className="cd-between"><span className="cd-muted">GST</span><span>{open.tax !== null ? inr(open.tax) : '-'}</span></div>}
               <hr className="cd-divider" />
               <div className="cd-between"><b>Total</b><b style={{ fontSize: 18 }}>{inr(open.amount)}</b></div>
-              {open.paymentSummary && <>
-                <div className="cd-between"><span className="cd-muted">Payments confirmed</span><span>{inr(open.paymentSummary.confirmed)}</span></div>
-                <div className="cd-between"><b>{open.paymentSummary.order ? 'Balance due on this invoice' : 'Balance to pay'}</b><b>{inr(open.paymentSummary.balance)}</b></div>
-                {open.paymentSummary.order && <>
-                  <hr className="cd-divider" />
-                  <div className="cd-between"><span className="cd-muted">Total order value (incl. GST)</span><span>{inr(open.paymentSummary.order.totalPayable)}</span></div>
-                  <div className="cd-between"><span className="cd-muted">Total confirmed payments</span><span>{inr(open.paymentSummary.order.confirmed)}</span></div>
-                  <div className="cd-between"><b>Total order balance outstanding</b><b>{inr(open.paymentSummary.order.balance)}</b></div>
-                </>}
-              </>}
+              {open.paymentSummary && (open.paymentSummary.order
+                ? <>
+                    <hr className="cd-divider" />
+                    <div className="cd-between"><span className="cd-muted">Total confirmed payments</span><span>{inr(open.paymentSummary.order.confirmed)}</span></div>
+                    <div className="cd-between"><b>Total order balance outstanding</b><b>{inr(open.paymentSummary.order.balance)}</b></div>
+                  </>
+                : <>
+                    <div className="cd-between"><span className="cd-muted">Payments confirmed</span><span>{inr(open.paymentSummary.confirmed)}</span></div>
+                    <div className="cd-between"><b>Balance to pay</b><b>{inr(open.paymentSummary.balance)}</b></div>
+                  </>)}
             </div>
             <div className="cd-grid c2"><div><p className="cd-label">Due date</p><p style={{ fontWeight: 600 }}>{open.status === 'Paid' ? 'Paid' : fmtDate(open.dueDate)}</p></div>
               <div><p className="cd-label">Paid on</p><p style={{ fontWeight: 600 }}>{open.paidAt ? fmtDate(open.paidAt) : '-'}</p></div></div>

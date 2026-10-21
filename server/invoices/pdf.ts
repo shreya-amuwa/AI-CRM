@@ -580,18 +580,15 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
   const settled = stage === 'PAID';
   const statusText = (state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID') => (state === 'FULLY_PAID' ? 'Fully Paid' : state === 'PARTIALLY_PAID' ? 'Partially Paid' : 'Unpaid');
   const order = ps?.order ?? null;
-  // Each row: label, value, and how it is drawn. With an order, this invoice's own figures come first and the whole order's follow,
-  // so a balance left on one invoice is never mistaken for what the customer still owes in total.
+  // Each row: label, value, and how it is drawn. With an order: this invoice's total, then what the whole order has received and what is
+  // still outstanding on it (no per-invoice balance or status: the order is what the customer owes).
   type PayRow = { k: string; v: string; bold?: boolean; fill?: boolean; gap?: boolean };
   const payRows: PayRow[] = !ps
     ? []
     : order
       ? [
           { k: 'Current Invoice Total:', v: money(ps.total), bold: true },
-          { k: 'Balance Due on this Invoice:', v: money(settled ? 0 : ps.balance) },
-          { k: 'Invoice Status:', v: settled || ps.state === 'FULLY_PAID' ? 'Fully Paid' : statusText(ps.state), gap: true },
-          { k: 'Total Order Value (incl. GST):', v: money(order.totalPayable), gap: true },
-          { k: 'Total Confirmed Payments:', v: money(order.confirmed) },
+          { k: 'Total Confirmed Payments:', v: money(order.confirmed), gap: true },
           { k: 'Total Order Balance Outstanding:', v: money(order.balance), bold: true, fill: true },
           { k: 'Payment Status:', v: statusText(order.state), bold: true }
         ]

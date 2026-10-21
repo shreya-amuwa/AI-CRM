@@ -243,15 +243,17 @@ console.log('--- 5. The whole order next to the invoice (an agreement of 1,20,00
   check([a, b, c, d].every(r => !r.boxes.filter(x => x.kind === 'payment').some(p => r.boxes.some(o => o !== p && ['bank', 'state', 'words', 'terms', 'summary', 'address', 'signatory'].includes(o.kind) && overlapping(p, o)))), 'the order block overlaps no other block');
   if (HAS_TEXT) {
     const ta = flat(text(a.bytes, 'ord-1'));
-    check(/Current Invoice Total: Rs\.70,800\.00/.test(ta) && /Balance Due on this Invoice: Rs\.10,800\.00/.test(ta) && /Total Order Value \(incl\. GST\): Rs\.1,41,600\.00/.test(ta)
-      && /Total Confirmed Payments: Rs\.60,000\.00/.test(ta) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(ta) && /Payment Status: Partially Paid/.test(ta) && !/\bPAID\b/.test(ta),
-      'invoice 1: its own 10,800 is kept apart from the order balance 81,600; Partially Paid; no stamp');
+    check(/Current Invoice Total: Rs\.70,800\.00/.test(ta) && /Total Confirmed Payments: Rs\.60,000\.00/.test(ta) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(ta) && /Payment Status: Partially Paid/.test(ta) && !/\bPAID\b/.test(ta),
+      'the order block keeps the invoice total, the confirmed payments, the order balance (81,600) and the payment status');
+    check(![ta, flat(text(b.bytes, 'ord-2')), flat(text(c.bytes, 'ord-3')), flat(text(d.bytes, 'ord-4'))].some(t => /Balance Due on this Invoice|Invoice Status|Total Order Value/.test(t)),
+      'and never "Balance Due on this Invoice", "Invoice Status" or "Total Order Value"');
     const tb = flat(text(b.bytes, 'ord-2'));
-    check(/Balance Due on this Invoice: Rs\.70,800\.00/.test(tb) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(tb) && /Invoice Status: Unpaid/.test(tb), 'invoice 2: 70,800 on the invoice, the same 81,600 on the order');
+    check(/Current Invoice Total: Rs\.70,800\.00/.test(tb) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(tb), 'invoice 2: its total, and the same 81,600 on the order');
     const tc = flat(text(c.bytes, 'ord-3'));
     check(/Total Order Balance Outstanding: Rs\.0\.00/.test(tc) && /Payment Status: Fully Paid/.test(tc) && /\bPAID\b/.test(tc), 'settled: order balance 0, Fully Paid, stamp');
     const td = flat(text(d.bytes, 'ord-4'));
-    check(/Invoice Status: Fully Paid/.test(td) && /Total Order Balance Outstanding: Rs\.41,600\.00/.test(td) && /Payment Status: Partially Paid/.test(td) && /\bPAID\b/.test(td), 'a paid invoice of an order that still has a balance: stamp on the invoice, order Partially Paid with 41,600 left');
+    check(/Total Order Balance Outstanding: Rs\.41,600\.00/.test(td) && /Total Confirmed Payments: Rs\.1,00,000\.00/.test(td) && /Payment Status: Partially Paid/.test(td) && /\bPAID\b/.test(td),
+      'a paid invoice of an order that still has a balance: stamp on the invoice, confirmed 1,00,000, 41,600 still outstanding on the order');
   }
   if (HAS_RENDER) {
     const f = join(dir, 'order.pdf');

@@ -175,7 +175,7 @@ export const CustomerDetailsModal: React.FC<{ id: string; onClose: () => void }>
 
                   <Section icon={<IndianRupee className="w-4 h-4" />} title="Deal & payment">
                     <dl className="grid grid-cols-2 gap-x-4 gap-y-3.5">
-                      <Fact label={pay?.taxBasis === 'EXCLUSIVE' ? 'Total payable (incl. GST)' : 'Agreed amount'} value={(pay?.dealAmount ?? c.dealAmount) !== null ? money(pay?.dealAmount ?? c.dealAmount) : null} />
+                      <Fact label={pay?.taxBasis === 'EXCLUSIVE' && pay.agreedAmount != null && pay.dealAmount != null && pay.dealAmount !== pay.agreedAmount ? 'Total payable' : 'Agreed amount'} value={(pay?.dealAmount ?? c.dealAmount) !== null ? money(pay?.dealAmount ?? c.dealAmount) : null} />
                       <Fact label="Verified received" value={money(pay?.verified ?? c.amountVerified)} />
                       <Fact label="Pending verification" value={money(pay?.pending ?? Math.max(0, c.amountReceived - c.amountVerified))} />
                       <Fact label="Outstanding balance" value={pay ? money(pay.balance) : null} />

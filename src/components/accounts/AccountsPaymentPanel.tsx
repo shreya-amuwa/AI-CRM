@@ -89,7 +89,7 @@ const PaymentFormDialog: React.FC<{
     <Modal title={editing ? 'Edit payment' : 'Record payment'} onClose={() => !busy && onClose()}>
       <form onSubmit={submit} className="space-y-4" noValidate>
         <p className="text-xs text-slate-500">
-          {overview.taxBasis === 'EXCLUSIVE' ? `Agreed ${rupees(overview.agreedAmount)} excluding GST · total payable ${rupees(overview.dealAmount)}` : `Agreed ${rupees(overview.dealAmount)}`} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong>
+          {overview.taxBasis === 'EXCLUSIVE' && overview.agreedAmount != null && overview.dealAmount !== overview.agreedAmount ? `Agreed ${rupees(overview.agreedAmount)} · total payable ${rupees(overview.dealAmount)}` : `Agreed ${rupees(overview.dealAmount)}`} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong>
         </p>
         <fieldset>
           <legend className="block text-xs font-semibold text-slate-700 mb-1">Payment type</legend>

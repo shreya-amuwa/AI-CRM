@@ -303,19 +303,25 @@ export const InvoiceDetail: React.FC<{
 };
 
 /** Per-row actions: the stored PDF (Preview / Download) for an uploaded invoice, a generated PDF otherwise. */
-export const InvoiceRowActions: React.FC<{ invoice: Invoice }> = ({ invoice: i }) =>
-  i.kind === 'GENERATED' ? (
-    <button
-      type="button"
-      className={btn.secondary}
-      onClick={e => {
-        e.stopPropagation();
-        void openGeneratedPdf(i.id, i.generated?.lifecycle === 'PAID' && i.generated.paid.pdfStatus === 'STORED' ? 'PAID' : 'UNPAID', 'download').catch(() => undefined);
-      }}
-      aria-label={`Download ${i.number}`}
-    >
-      <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
-    </button>
+export const InvoiceRowActions: React.FC<{ invoice: Invoice }> = ({ invoice: i }) => {
+  // A generated invoice has a file only once the paid invoice is stored (older invoices may still have their unpaid file).
+  const stage = i.kind === 'GENERATED' ? (i.generated?.paid.pdfStatus === 'STORED' ? 'PAID' : i.generated?.unpaid.pdfStatus === 'STORED' ? 'UNPAID' : null) : null;
+  return i.kind === 'GENERATED' ? (
+    stage ? (
+      <button
+        type="button"
+        className={btn.secondary}
+        onClick={e => {
+          e.stopPropagation();
+          void openGeneratedPdf(i.id, stage, 'download').catch(() => undefined);
+        }}
+        aria-label={`Download ${i.number}`}
+      >
+        <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
+      </button>
+    ) : (
+      <span className="text-[11px] text-slate-400">Paid copy after payment</span>
+    )
   ) : i.kind === 'UPLOADED' && i.file ? (
     <InvoiceFileButtons file={i.file} number={i.number} compact />
   ) : (
@@ -323,6 +329,7 @@ export const InvoiceRowActions: React.FC<{ invoice: Invoice }> = ({ invoice: i }
       <Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF
     </button>
   );
+};
 
 export const Totals: React.FC<{ subtotal: number; discount: number; tax: number; total: number; label?: string }> = ({ subtotal, discount, tax, total, label = 'Total' }) => (
   <dl className="ml-auto w-full sm:w-72 text-xs space-y-1">
