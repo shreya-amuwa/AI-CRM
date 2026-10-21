@@ -6,7 +6,7 @@
 
 reset role;
 -- The suites above re-apply older migrations (which bring back the older invoice functions): apply this one again on top of them.
-\i supabase/migrations/20261112000100_paid_only_invoices.sql
+\i supabase/migrations/20261112000200_paid_only_invoices.sql
 create temp table pc (name text primary key, id uuid);
 create temp table pr (name text primary key, data jsonb);
 create temp table pq (name text primary key, id uuid default gen_random_uuid());

@@ -2,7 +2,7 @@
 
 Accounts builds an invoice from the customer and purchase details. **Only the paid invoice (with the PAID stamp) is ever created and sent.** Older invoices keep the two-stage history described at the end of the lifecycle section.
 
-## What changed (migration `20261112000100_paid_only_invoices.sql`)
+## What changed (migration `20261112000200_paid_only_invoices.sql`)
 
 - **No GST question for Sales, no automatic 18%.** *Send to Accounts* asks only for the agreed amount and a note. The agreed amount is the amount payable; the system adds no GST. Accounts chooses the GST rate of every invoice line (the rate field starts blank, with 0 / 5 / 12 / 18 / 28 % shortcuts, and any other rate can be typed); the invoice total and the order balance follow from that choice. Older agreements that were saved as including GST keep that meaning (Accounts can change it with a reason).
 - **Save Invoice sends nothing.** The invoice is saved (`paid_only = true`); no unpaid PDF is created, stored or e-mailed, and the customer does not see it yet.
@@ -10,7 +10,7 @@ Accounts builds an invoice from the customer and purchase details. **Only the pa
 - **Simpler invoice summary** (PDF, screens, e-mail attachment): *Invoice total*, *Total confirmed payments*, *Total order balance outstanding* and, on the PDF, the *Payment status*. *Balance Due on this Invoice*, *Invoice Status* and *Total Order Value* are removed. The invoice and the confirm dialog have more spacing.
 - Add-on and invoice ledgers (`ADDON`, `INVOICE`) keep their existing part-payment-on-invoice rule.
 
-Run `supabase/migrations/20261112000100_paid_only_invoices.sql` in the Supabase SQL editor after the earlier migrations (safe to run again).
+Run `supabase/migrations/20261112000200_paid_only_invoices.sql` in the Supabase SQL editor after the earlier migrations (safe to run again).
 
 
 ## Lifecycle (invoices made before the paid-only rule)
