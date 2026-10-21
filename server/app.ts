@@ -20,6 +20,7 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
+import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
@@ -110,7 +111,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
   const hr = await runHrAutomation();
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr }));
+  // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run until a calling provider is connected.
+  const subscriptionReminders = await runSubscriptionReminders();
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

@@ -3652,6 +3652,64 @@ provider.close();
 }
 
 // ---------------------------------------------------------------------------
+// Subscription expiry reminder calls: decided and tracked in the database, dry run only (no calling provider is connected)
+// ---------------------------------------------------------------------------
+{
+  Object.assign(process.env, { AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789' });
+  delete process.env.AUTOMATION_MODE_AI_CALL;
+  const cust = (await db.query(`select id from public.customers where phone = '9000000201'`)).rows[0].id as string;
+  const svc = (await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 7), service_status = 'LIVE'
+                                 where customer_id = $1 returning service_code`, [cust])).rows[0].service_code as string;
+  await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+  const row = async () => (await db.query(`select status, reason, phone_masked, attempts, external_call_id, send_after, send_until from public.subscription_reminders where customer_id = $1 and service_code = $2 and stage = 7`, [cust, svc])).rows;
+
+  let r = await dispatch();
+  check(r.status === 401, 'reminder calls: the scheduler endpoint still needs its secret', r.status);
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.status === 200 && r.json.data.subscriptionReminders.mode === 'dry_run' && r.json.data.subscriptionReminders.schedule.created >= 1, 'reminder calls: the daily run schedules the 7-day reminder (dry run by default)', r.json);
+  check((await row()).length === 1, 'reminder calls: one reminder row');
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.subscriptionReminders.schedule.created === 0 && (await row()).length === 1, 'reminder calls: running the scheduler again creates no duplicate', r.json);
+  check((await row())[0].status === 'SKIPPED' || (await row())[0].status === 'SCHEDULED', 'reminder calls: with no consent record the customer is never called (skipped or waiting for the window)');
+
+  // consent, then the window around "now" (the test must not depend on the time of day)
+  await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+  await db.query(`insert into public.customer_reminder_consent (customer_id, status, note) values ($1, 'ALLOWED', 'test consent') on conflict (customer_id) do update set status = 'ALLOWED'`, [cust]);
+  r = await dispatch('dispatch-secret-0123456789');
+  await db.query(`update public.subscription_reminders set status = 'SCHEDULED', attempts = 0, reason = null, send_after = now() - interval '1 hour', send_until = now() + interval '1 hour', next_attempt_at = now()
+                   where customer_id = $1 and stage = 7`, [cust]);
+  r = await dispatch('dispatch-secret-0123456789');
+  const sub = r.json.data.subscriptionReminders;
+  check(r.status === 200 && sub.mode === 'dry_run' && sub.dryRun >= 1 && sub.accepted === 0, 'reminder calls: a due reminder is prepared as a dry run, and nothing is accepted by any provider', r.json);
+  let x = (await row())[0];
+  check(x.status === 'DRY_RUN' && /^Dry run - not called/.test(x.reason) && /^\+91XXXXXX\d{4}$/.test(x.phone_masked) && x.external_call_id === null && x.attempts === 1,
+    'reminder calls: recorded as DRY_RUN with a masked number, no call id and one attempt', x);
+  check(!JSON.stringify(x).includes('9000000201'), 'reminder calls: the full phone number is not stored on the reminder');
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.subscriptionReminders.claimed === 0 && (await row()).length === 1, 'reminder calls: a finished dry run is not claimed again', r.json);
+
+  // a renewal withdraws the reminder
+  await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 365) where customer_id = $1 and service_code = $2`, [cust, svc]);
+  r = await dispatch('dispatch-secret-0123456789');
+  x = (await row())[0];
+  check(x.status === 'CANCELLED' && /expiry date changed/.test(x.reason), 'reminder calls: a renewed service has its reminder cancelled', x);
+
+  // off / live
+  process.env.AUTOMATION_MODE_AI_CALL = 'off';
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.subscriptionReminders.mode === 'off' && r.json.data.subscriptionReminders.schedule === null, 'reminder calls: off does nothing', r.json);
+  process.env.AUTOMATION_MODE_AI_CALL = 'live';
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.subscriptionReminders.mode === 'off' && /not available/.test(r.json.data.subscriptionReminders.note) && r.json.data.subscriptionReminders.claimed === 0,
+    'reminder calls: live is refused while no calling provider is connected (nobody is called)', r.json);
+
+  delete process.env.AUTOMATION_MODE_AI_CALL;
+  delete process.env.AUTOMATION_DISPATCH_SECRET;
+  await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+  await db.query(`delete from public.customer_reminder_consent where customer_id = $1`, [cust]);
+}
+
+// ---------------------------------------------------------------------------
 // Security hardening: /api/proxy and the lead webhook (Vercel functions), against the real database
 // ---------------------------------------------------------------------------
 {
