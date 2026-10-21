@@ -12,7 +12,7 @@
 --   Nothing is typed into the diagram: a new department, team, person or reassignment shows up on the next read, and a
 --   hand-off is only returned when both ends exist (no consultant in a department, no consultant hand-off).
 --   No e-mail, phone, password or token is returned.
--- Run after 20261111000100_ticket_attachments.sql. Safe to run again.
+-- Run after 20261112000200_paid_only_invoices.sql. Safe to run again.
 -- =============================================================================
 
 create or replace function public.company_workflow()

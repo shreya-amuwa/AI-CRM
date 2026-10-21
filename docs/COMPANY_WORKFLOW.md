@@ -2,7 +2,7 @@
 
 **Super Admin -> Company Workflow** draws the whole company as one diagram: every department, its teams (sub-departments), its Department Head, Team Leads and members, and the hand-offs that already exist between them. It is read from the live records every time it opens, so a new department, team or person, or a changed assignment, appears on the next read. Nothing in the picture is typed in.
 
-Migration: `20261112000100_company_workflow.sql` (adds one read-only function, safe to run again). Run it after `20261111000100_ticket_attachments.sql`.
+Migration: `20261112000300_company_workflow.sql` (adds one read-only function, safe to run again). Run it after `20261112000200_paid_only_invoices.sql`.
 
 > The Wabastore Support Head's "Support Flow & Lifecycle" page (a fixed description of the six support stages) is a different screen and is unchanged.
 
