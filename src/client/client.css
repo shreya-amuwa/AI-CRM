@@ -425,8 +425,11 @@ button.cd-docs-card { cursor: pointer; }
 .cd-msg .foot span { display: inline-flex; align-items: center; gap: 4px; }
 .cd-msg .foot .seen { color: #1f7ab8; }
 .cd-msg .foot .failed { color: var(--danger); }
-.cd-composer { display: flex; gap: 12px; align-items: flex-end; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--card); }
-.cd-composer .cd-textarea { min-height: 52px; max-height: 160px; resize: none; padding: 12px 14px; border-radius: var(--radius-md); }
+.cd-composer { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--card); }
+.cd-composer .tf-staged-wrap:not(:empty) { flex: 1 1 100%; }
+.cd-composer .tf-staged-wrap:empty { display: none; }
+.cd-composer .cd-tk-attach { height: 52px; width: 44px; justify-content: center; padding: 0; border-radius: var(--radius-md); }
+.cd-composer .cd-textarea { flex: 1 1 0; min-width: 0; min-height: 52px; max-height: 160px; resize: none; padding: 12px 14px; border-radius: var(--radius-md); }
 .cd-send { min-height: 52px; padding: 0 28px; border-radius: var(--radius-md); flex: none; }
 
 @media (max-width: 1023px) {
@@ -512,3 +515,11 @@ button.cd-docs-card { cursor: pointer; }
 /* ---- Chat: fills the whole page area, like a messaging app ---- */
 .cd-content-flush { padding: 0; max-width: none; }
 .cd-chat-card { background: #fff; overflow: hidden; height: calc(100vh - var(--cd-top-h, 69px)); height: calc(100dvh - var(--cd-top-h, 69px)); min-height: 420px; }
+
+/* Phones: use the height that is really visible (the address bar does not hide the bottom of the page or the menu). */
+@supports (height: 100dvh) {
+  body { min-height: 100dvh; }
+  .cd-shell { min-height: 100dvh; }
+  .cd-side { height: 100dvh; }
+  .cd-login { min-height: 100dvh; }
+}

@@ -935,12 +935,15 @@ const clientNote = z.string().trim().max(1000, 'Keep the note under 1000 charact
 
 export const clientServiceRequestSchema = z.object({ serviceCode: serviceCodeSchema, note: clientNote }).strict();
 export const clientPlanRequestSchema = z.object({ planId: uuidSchema, note: clientNote }).strict();
+/** Files already uploaded for this message (see ticketUploadSchema); the database re-checks every one. */
+export const ticketAttachmentIdsSchema = z.array(uuidSchema).max(5, 'You can attach up to 5 files at a time.').default([]);
 export const clientTicketCreateSchema = z
   .object({
     subject: z.string().trim().min(3, 'Enter a subject (at least 3 characters).').max(200, 'The subject is too long.'),
     description: z.string().trim().min(5, 'Describe the problem (at least 5 characters).').max(4000, 'The description is too long.'),
     category: z.enum(['GENERAL', 'BILLING', 'TECHNICAL', 'ONBOARDING', 'COMPLAINT', 'SERVICE_REQUEST', 'OTHER']).default('GENERAL'),
-    serviceCode: serviceCodeSchema.optional().nullable().transform(v => v || null)
+    serviceCode: serviceCodeSchema.optional().nullable().transform(v => v || null),
+    attachmentIds: ticketAttachmentIdsSchema
   })
   .strict();
 export const clientTicketReplySchema = z.object({ message: z.string().trim().min(1, 'Write your reply.').max(4000, 'The reply is too long.') }).strict();
@@ -948,7 +951,8 @@ export const clientTicketReplySchema = z.object({ message: z.string().trim().min
 export const clientTicketMessageSchema = z
   .object({
     message: z.string().trim().min(1, 'Write your message.').max(4000, 'The message is too long.'),
-    clientMsgId: uuidSchema.optional().nullable().transform(v => v || null)
+    clientMsgId: uuidSchema.optional().nullable().transform(v => v || null),
+    attachmentIds: ticketAttachmentIdsSchema
   })
   .strict();
 export const clientNotificationsQuerySchema = z.object({
@@ -1173,6 +1177,20 @@ export const chatUploadSchema = z
   .object({
     fileName: z.string().trim().min(1, 'The file needs a name.').max(200),
     mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Ticket attachments (same limits as chat: 5 files per message, 5 MB each, the same file types)
+// ---------------------------------------------------------------------------
+/** A ticket (an existing one) or, for staff starting a new ticket, the customer it is for. A client never names a customer. */
+export const ticketUploadSchema = z
+  .object({
+    ticketId: uuidSchema.optional(),
+    customerId: uuidSchema.optional(),
+    fileName: z.string().trim().min(1, 'The file needs a name.').max(200),
+    mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be attached. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
     sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
   })
   .strict();

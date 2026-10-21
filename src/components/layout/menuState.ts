@@ -1,4 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
+import { lockScroll } from '../../lib/scrollLock';
 
 /**
  * The hamburger menu, shared by every dashboard (only one is on screen at a time).
@@ -76,12 +77,11 @@ export function useMenu(): MenuState & { toggle: () => void; close: () => void }
     const onChange = () => mq.matches && closeMenu();
     document.addEventListener('keydown', onKey);
     mq.addEventListener('change', onChange);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
       mq.removeEventListener('change', onChange);
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, [snap.open]);
   return { ...snap, toggle: toggleMenu, close: closeMenu };

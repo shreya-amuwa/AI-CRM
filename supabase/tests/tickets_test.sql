@@ -363,5 +363,98 @@ select test.check((select assignee_id = test.id('sup_th') from support_tickets w
 select test.check((select count(*) = 1 from support_ticket_updates where ticket_id = (select id from tk where name = 'N1') and kind = 'ASSIGNED' and author_id = test.id('sup_th') and assignee_id = test.id('sup_th')),
   'the pick-up is on the ticket history');
 
+
+\echo '--- 31b. Ticket attachments: limits, who can attach, who can read'
+reset role;
+-- Support B (the RM) needs a helper to book + finish an upload in one step, as the signed-in user.
+create or replace function test.tfile(p_ticket uuid, p_customer uuid, p_name text default 'a.pdf', p_mime text default 'application/pdf', p_size bigint default 2048)
+returns uuid language plpgsql as $$
+declare v_id uuid;
+begin
+  v_id := (ticket_begin_upload(p_ticket, p_customer, p_name, p_mime, p_size)).id;
+  perform ticket_complete_upload(v_id, p_size, null);
+  return v_id;
+end $$;
+create temp table af (name text primary key, id uuid);
+grant all on af to authenticated, service_role;
+
+set role authenticated;
+select test.login('tk_r');
+-- the limits
+select test.must_fail($$select ticket_begin_upload(null, null, 'virus.exe', 'application/x-msdownload', 1000)$$, 'a file type that is not allowed is refused', 'cannot be attached');
+select test.must_fail($$select ticket_begin_upload(null, null, 'big.pdf', 'application/pdf', 5242881)$$, 'a file over 5 MB is refused', '5 MB');
+select test.must_fail($$select ticket_begin_upload(null, null, 'empty.pdf', 'application/pdf', 0)$$, 'an empty file is refused', '5 MB');
+select test.must_fail($$select ticket_begin_upload(null, null, '', 'application/pdf', 1000)$$, 'a file needs a name', 'needs a name');
+select test.check((select (ticket_begin_upload(null, null, 'exactly5mb.pdf', 'application/pdf', 5242880)).status = 'PENDING'), 'a file of exactly 5 MB is allowed');
+select test.must_fail($$select ticket_begin_upload(gen_random_uuid(), null, 'a.pdf', 'application/pdf', 1000)$$, 'a ticket that is not mine is not found', 'not found');
+
+-- a client opens a ticket WITH a file (the file is a draft until the ticket exists)
+insert into af select 'draft', test.tfile(null, null, 'Screenshot.png', 'image/png', 4096);
+select test.check((select (ticket_attachment_download((select id from af where name = 'draft'))).file_name = 'Screenshot.png'), 'the uploader can open their own draft');
+insert into tk select 'A1', (client_create_ticket('Dashboard shows an error', 'See the attached screenshot', 'TECHNICAL', null, array[(select id from af where name = 'draft')]) ->> 'id')::uuid;
+select test.check((select count(*) = 1 and bool_and(name = 'Screenshot.png' and "fromClient") from jsonb_to_recordset(ticket_attachments((select id from tk where name = 'A1'))) as x(id uuid, "updateId" uuid, name text, "fromClient" boolean)),
+  'the file is on the new ticket');
+select test.must_fail($$select client_create_ticket('Second', 'Reusing the same file', 'TECHNICAL', null, array[(select id from af where name = 'draft')])$$, 'a file that was already sent cannot be sent again', 'not ready');
+select test.must_fail($$select client_send_ticket_message((select id from tk where name = 'A1'), 'six files', gen_random_uuid(), (select array_agg(gen_random_uuid()) from generate_series(1, 6)))$$, 'more than 5 files on one message is refused', 'up to 5');
+
+-- a client message with files
+insert into af select 'm1', test.tfile((select id from tk where name = 'A1'), null, 'Invoice.pdf');
+insert into af select 'm2', test.tfile((select id from tk where name = 'A1'), null, 'Sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 9000);
+select test.check((select client_send_ticket_message((select id from tk where name = 'A1'), 'Two files', '33333333-3333-3333-3333-333333333333', array[(select id from af where name = 'm1'), (select id from af where name = 'm2')]) is not null), 'a client message can carry files');
+select test.check((select count(*) = 3 from jsonb_array_elements(ticket_attachments((select id from tk where name = 'A1')))), 'the ticket now holds three files');
+
+-- another client, and a team that does not look after this ticket, can reach nothing
+select test.login('tk_n');
+select test.must_fail($$select ticket_attachments((select id from tk where name = 'A1'))$$, 'another client cannot list the files', 'not found');
+select test.must_fail($$select ticket_attachment_download((select id from af where name = 'm1'))$$, 'nor open one even with its id', 'not found');
+select test.must_fail($$select ticket_begin_upload((select id from tk where name = 'A1'), null, 'x.pdf', 'application/pdf', 100)$$, 'nor attach to the ticket', 'not found');
+select test.login('th_gen');
+select test.must_fail($$select ticket_attachments((select id from tk where name = 'A1'))$$, 'a Team Lead of another team cannot list them', 'not found');
+select test.must_fail($$select ticket_attachment_download((select id from af where name = 'm1'))$$, 'nor open one', 'not found');
+select test.must_fail($$select ticket_begin_upload((select id from tk where name = 'A1'), null, 'x.pdf', 'application/pdf', 100)$$, 'nor attach to the ticket', 'not found');
+
+-- the RM reads them (audited) and answers with a file
+select test.login('sup_b');
+select test.check((select count(*) = 3 from jsonb_array_elements(ticket_attachments((select id from tk where name = 'A1')))), 'the RM sees the files of the ticket');
+select test.check((select (ticket_attachment_download((select id from af where name = 'm2'))).file_name = 'Sheet.xlsx'), 'and can open one');
+insert into af select 'r1', test.tfile((select id from tk where name = 'A1'), null, 'Fix.pdf');
+insert into af select 'n1', test.tfile((select id from tk where name = 'A1'), null, 'Internal.txt', 'text/plain', 300);
+select test.must_fail($$select send_ticket_message((select id from tk where name = 'A1'), 'trying the clients file', false, null, array[(select id from af where name = 'm1')])$$, 'staff cannot send a file the client uploaded', 'not ready');
+select send_ticket_message((select id from tk where name = 'A1'), 'Here is the fix', false, '44444444-4444-4444-4444-444444444444', array[(select id from af where name = 'r1')]);
+select send_ticket_message((select id from tk where name = 'A1'), 'Team only', true, '55555555-5555-5555-5555-555555555555', array[(select id from af where name = 'n1')]);
+select test.check((select count(*) = 5 from jsonb_array_elements(ticket_attachments((select id from tk where name = 'A1')))), 'staff see all five files, the internal one too');
+
+-- the client sees the reply file but never the file on an internal note
+select test.login('tk_r');
+select test.check((select count(*) = 4 and not bool_or(name = 'Internal.txt') from jsonb_to_recordset(ticket_attachments((select id from tk where name = 'A1'))) as x(id uuid, name text)),
+  'the client sees four files, not the one on the internal note');
+select test.check((select (ticket_attachment_download((select id from af where name = 'r1'))).file_name = 'Fix.pdf'), 'and can open the reply file');
+select test.must_fail($$select ticket_attachment_download((select id from af where name = 'n1'))$$, 'but cannot open the internal note file even with its id', 'not found');
+
+-- a file from the other side is not mine to send
+insert into af select 'c3', test.tfile((select id from tk where name = 'A1'), null, 'Third.pdf');
+select test.login('sup_b');
+select test.must_fail($$select send_ticket_message((select id from tk where name = 'A1'), 'x', false, null, array[(select id from af where name = 'c3')])$$, 'a client draft cannot be sent by staff', 'not ready');
+
+-- the audit trail
+reset role;
+select test.check((select count(*) >= 3 from audit_logs where action = 'TICKET_ATTACHMENT_ADDED' and entity_id = (select id from tk where name = 'A1')), 'attaching files is audited');
+select test.check((select count(*) >= 2 from audit_logs where action = 'TICKET_ATTACHMENT_DOWNLOADED' and entity_id = (select id from tk where name = 'A1')), 'opening a file is audited');
+select test.check((select not exists (select 1 from audit_logs where action like 'TICKET_ATTACHMENT%' and metadata::text ilike '%Fix.pdf%')), 'and the audit trail does not carry file names');
+
+-- the per-ticket cap (25) and the table is closed to the browser
+insert into support_ticket_attachments (customer_id, ticket_id, update_id, uploader_client, file_name, mime_type, size_bytes, status, storage_path)
+select t.customer_id, t.id, (select id from support_ticket_updates where ticket_id = t.id and client_author order by created_at limit 1), true, 'f' || g || '.pdf', 'application/pdf', 100, 'READY', 'cap/' || g
+  from support_tickets t, generate_series(1, 21) g where t.id = (select id from tk where name = 'A1');
+set role authenticated;
+select test.login('tk_r');
+insert into af select 'cap', test.tfile((select id from tk where name = 'A1'), null, 'Over.pdf');
+select test.must_fail($$select client_send_ticket_message((select id from tk where name = 'A1'), 'one too many', gen_random_uuid(), array[(select id from af where name = 'cap')])$$, 'a ticket holds at most 25 files', '25');
+select test.must_fail($$select * from support_ticket_attachments$$, 'the files table cannot be read directly', 'permission denied');
+reset role;
+set role anon;
+select test.must_fail($$select ticket_begin_upload(null, null, 'a.pdf', 'application/pdf', 100)$$, 'a visitor cannot upload', 'permission denied');
+reset role;
+
 reset role;
 \echo '=== ALL TICKET HIERARCHY AND CHAT TESTS PASSED ==='

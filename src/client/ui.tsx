@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { AlertTriangle, Inbox, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import type { Loaded } from './hooks';
 import type { ClientTicketStatus, ServiceRequestStatus } from '../../shared/contracts';
+import { lockScroll } from '../lib/scrollLock';
 
 // ---- formatting ----
 export const inr = (n: number | null | undefined): string =>
@@ -226,9 +227,8 @@ export const Modal: React.FC<{ title: string; onClose: () => void; children: Rea
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+    const unlock = lockScroll();
+    return () => { document.removeEventListener('keydown', onKey); unlock(); };
   }, [onClose]);
   return (
     <div className="cd-modal-wrap" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
