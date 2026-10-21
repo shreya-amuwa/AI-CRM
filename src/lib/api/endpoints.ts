@@ -6,6 +6,7 @@ import type {
   AuditEvent,
   AuditOutcome,
   CompanyOverview,
+  CompanyWorkflow,
   ScopeOverview,
   BusinessOrdersPage,
   BusinessPerson,
@@ -488,6 +489,8 @@ export const auditApi = {
 export const dashboardApi = {
   /** Super Admin only. */
   company: () => api.get<CompanyOverview>('/dashboard/company-overview'),
+  /** Super Admin only: every department, team, person and the hand-offs between them. */
+  workflow: () => api.get<CompanyWorkflow>('/dashboard/company-workflow'),
   /** Team Lead (the team), Department Head (the department), Super Admin (all, or the department named). */
   scope: (departmentId?: string) => api.get<ScopeOverview>('/dashboard/scope-overview', { departmentId }),
   /** Records that a list was exported from the browser (who, what, how many rows). Call it when the file is made. */

@@ -2253,3 +2253,45 @@ export interface ChatUploadTicket {
   token: string;
   upload?: { url: string; headers: Record<string, string> };
 }
+
+// ---------------------------------------------------------------------------
+// Company workflow (Super Admin): the whole company as one diagram, read from the live tables.
+// ---------------------------------------------------------------------------
+export type WorkflowEndpointKind = 'team' | 'consultants' | 'head' | 'department';
+export type WorkflowProcess = 'payment' | 'addon' | 'onboarding' | 'delivery' | 'tickets' | 'tasks' | 'leave';
+export interface WorkflowEndpoint {
+  kind: WorkflowEndpointKind;
+  id: string;
+}
+export interface WorkflowHandoff {
+  key: string;
+  process: WorkflowProcess;
+  from: WorkflowEndpoint;
+  to: WorkflowEndpoint;
+  label: string;
+  hint: string;
+  count: number;
+  countLabel: string;
+  extra?: Record<string, number>;
+}
+export interface CompanyWorkflow {
+  generatedAt: string;
+  accountsDepartmentId: string | null;
+  hrDepartmentId: string | null;
+  departments: {
+    id: string;
+    slug: string;
+    name: string;
+    category: string | null;
+    description: string;
+    accent: string;
+    locked: boolean;
+    generatesRevenue: boolean;
+    staff: number;
+    customers: number;
+  }[];
+  teams: { id: string; departmentId: string; name: string; division: TeamDivision; leadCount: number; memberCount: number; consultantCount: number; customers: number }[];
+  heads: { id: string; name: string; departmentId: string }[];
+  people: { id: string; name: string; role: Role; title: string | null; teamId: string; departmentId: string; consultant: boolean }[];
+  handoffs: WorkflowHandoff[];
+}

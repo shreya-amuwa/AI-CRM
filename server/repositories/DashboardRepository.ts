@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AuditEvent, CompanyOverview, Paginated, ScopeOverview } from '../../shared/contracts.js';
+import type { AuditEvent, CompanyOverview, CompanyWorkflow, Paginated, ScopeOverview } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 export interface AuditSearch {
@@ -22,6 +22,10 @@ export class DashboardRepository {
 
   async companyOverview(): Promise<CompanyOverview> {
     return unwrap(await this.db.rpc('dashboard_company_overview')) as CompanyOverview;
+  }
+
+  async companyWorkflow(): Promise<CompanyWorkflow> {
+    return unwrap(await this.db.rpc('company_workflow')) as CompanyWorkflow;
   }
 
   async scopeOverview(departmentId?: string): Promise<ScopeOverview> {

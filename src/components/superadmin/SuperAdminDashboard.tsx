@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, LayoutDashboard, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react';
+import { BarChart3, Bell, Building2, LayoutDashboard, Network, RotateCcw, ShieldCheck, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { AddStaffModal } from '../common/AddStaffModal';
@@ -12,13 +12,15 @@ import { useOpenChatRequest } from '../chat/chatEvents';
 import { BusinessReports } from '../reports/BusinessReports';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
+import { CompanyWorkflow } from './CompanyWorkflow';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 
-type Page = 'overview' | 'departments' | 'reports' | 'security' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'workflow' | 'reports' | 'security' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
  *   Overview            the company in one page (figures from the database, see CompanyOverview)
+ *   Company Workflow    every department, team and person, and the hand-offs between them, from the live records
  *   Departments         the department cards: open a department's own panel, lock / unlock, add one (unchanged functions)
  *   Business Reports    the existing company business report
  *   Security & Audit    who did what, and what was refused (read-only)
@@ -39,6 +41,7 @@ export const SuperAdminDashboard: React.FC = () => {
         label: 'Company',
         items: [
           { id: 'departments', label: 'Departments', icon: Building2 },
+          { id: 'workflow', label: 'Company Workflow', icon: Network },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
         ]
       },
@@ -65,7 +68,7 @@ export const SuperAdminDashboard: React.FC = () => {
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
       showHelp
-      wide={page === 'overview' || page === 'security' || page === 'reports'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'workflow'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -91,6 +94,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <DepartmentGrid />
         </div>
       )}
+      {page === 'workflow' && <CompanyWorkflow />}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'chat' && <ChatRoute />}

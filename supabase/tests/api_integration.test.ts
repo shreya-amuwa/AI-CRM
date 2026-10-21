@@ -3924,6 +3924,20 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     'dashboards: the department rows add up to the customers (none counted twice)');
   check(Number(co.money.incomeTotal) === Number((await db.query(`select coalesce(sum(amount), 0) s from private.verified_income()`)).rows[0].s), 'dashboards: income is verified payments only');
 
+  console.log('--- company workflow: the Super Admin only, built from the real departments');
+  r = await api(null, 'GET', '/dashboard/company-workflow');
+  check(r.status === 401, 'workflow: the company workflow needs a sign-in', r);
+  for (const who of ['dh', 'th', 'a', 'accm', 'sm', 'tc'] as const) {
+    r = await api(who, 'GET', '/dashboard/company-workflow');
+    check(r.status === 403, `workflow: ${who} cannot read the company workflow`, r);
+  }
+  r = await api('sa', 'GET', '/dashboard/company-workflow');
+  const wf = r.json.data;
+  check(r.status === 200 && wf.departments.length === Number((await db.query(`select count(*) from departments`)).rows[0].count)
+    && wf.teams.length === Number((await db.query(`select count(*) from teams`)).rows[0].count) && Array.isArray(wf.handoffs) && wf.handoffs.length > 0,
+    'workflow: the Super Admin gets every department and team, and the hand-offs between them', r);
+  check(!JSON.stringify(wf).match(/password|token|secret|"email"|"phone"/i), 'workflow: nothing sensitive is returned');
+
   console.log('--- dashboards: the scoped overview');
   r = await api('th', 'GET', '/dashboard/scope-overview');
   const thTeam = (await db.query(`select team_id from profiles where email = (select email from profiles where id = $1)`, [(await api('th', 'GET', '/me')).json.data.id])).rows[0].team_id;
