@@ -3,15 +3,11 @@ import { LeadSourceStat } from '../../types/crm';
 
 interface MemberAnalyticsWidgetsProps {
   leadSources: LeadSourceStat[];
-  conversionRate: number;
-  convertedCount: number;
   totalLeads: number;
 }
 
 export const MemberAnalyticsWidgets: React.FC<MemberAnalyticsWidgetsProps> = ({
   leadSources,
-  conversionRate,
-  convertedCount,
   totalLeads
 }) => {
   // SVG Donut calculation
@@ -94,18 +90,6 @@ export const MemberAnalyticsWidgets: React.FC<MemberAnalyticsWidgetsProps> = ({
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* 2. CONVERSION RATE CARD */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs">
-        <h3 className="text-xs font-bold font-heading text-slate-900">Conversion Rate</h3>
-        <div className="text-2xl font-bold font-heading text-slate-900 mt-2">{conversionRate}%</div>
-        <p className="text-[11px] text-slate-500 mt-1">
-          {convertedCount} out of {totalLeads} leads converted
-        </p>
-        <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden mt-3">
-          <div className="h-full rounded-full bg-emerald-500 transition-all duration-500" style={{ width: `${Math.min(100, conversionRate)}%` }} />
         </div>
       </div>
     </div>
