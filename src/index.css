@@ -249,3 +249,41 @@ code, pre, kbd {
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------------------------------------------------------
+ * Responsive safety net (every dashboard)
+ * ------------------------------------------------------------------------------------------------------------------- */
+
+/*
+ * A pop-up (a dimmed full-screen layer that centres a panel) used to be exactly as tall as the screen and not scrollable: when
+ * the panel was taller than the screen (a phone held sideways, a small phone, the on-screen keyboard open) its top and bottom
+ * were cut off and the Save button could not be reached. The layer now scrolls; a panel that fits is still centred, a taller one
+ * starts at the top and scrolls (the auto margins give a free space to centre in, and nothing when there is none).
+ */
+.fixed.inset-0.items-center {
+  align-items: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.fixed.inset-0.items-center > * {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/*
+ * Phones: "100vh" is the page height with the browser's address bar hidden, so the bottom of a full-height panel (the last menu
+ * entries, a dialog's buttons) sat behind the bar. "dvh" is the height that is really visible. Browsers that do not know it keep
+ * the vh values from the component classes.
+ */
+@supports (height: 100dvh) {
+  html #app-sidebar { height: calc(100dvh - 4rem); }
+  html #app-sidebar > div:first-of-type { max-height: calc(100dvh - 6rem); }
+  html .max-h-\[90vh\] { max-height: 90dvh; }
+  html .max-h-\[92vh\] { max-height: 92dvh; }
+  html .max-h-\[96vh\] { max-height: 96dvh; }
+  html .max-h-\[calc\(100vh-1\.5rem\)\] { max-height: calc(100dvh - 1.5rem); }
+  html .h-\[85vh\] { height: 85dvh; }
+  html .h-\[88vh\] { height: 88dvh; }
+  html .min-h-screen { min-height: 100dvh; }
+}

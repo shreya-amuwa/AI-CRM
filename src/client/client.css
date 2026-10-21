@@ -512,3 +512,11 @@ button.cd-docs-card { cursor: pointer; }
 /* ---- Chat: fills the whole page area, like a messaging app ---- */
 .cd-content-flush { padding: 0; max-width: none; }
 .cd-chat-card { background: #fff; overflow: hidden; height: calc(100vh - var(--cd-top-h, 69px)); height: calc(100dvh - var(--cd-top-h, 69px)); min-height: 420px; }
+
+/* Phones: use the height that is really visible (the address bar does not hide the bottom of the page or the menu). */
+@supports (height: 100dvh) {
+  body { min-height: 100dvh; }
+  .cd-shell { min-height: 100dvh; }
+  .cd-side { height: 100dvh; }
+  .cd-login { min-height: 100dvh; }
+}

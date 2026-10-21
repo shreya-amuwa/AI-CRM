@@ -16,9 +16,10 @@ for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_e
   node "./.unit_$t.tmp.mjs" || status=1
   rm -f "./.unit_$t.tmp.mjs"
 done
-# Browser test of the "Same as mobile number" checkbox (needs Playwright + Chromium, skipped when they are missing)
-if [ -f supabase/tests/ui_whatsapp.test.mjs ]; then
-  echo "=== ui_whatsapp"
-  node supabase/tests/ui_whatsapp.test.mjs || status=1
-fi
+# Browser tests: the "Same as mobile number" checkbox, and the scrolling of pop-ups / the page lock (need Playwright + Chromium, skipped when they are missing)
+for ui in ui_whatsapp ui_scroll; do
+  [ -f "supabase/tests/$ui.test.mjs" ] || continue
+  echo "=== $ui"
+  node "supabase/tests/$ui.test.mjs" || status=1
+done
 exit $status
