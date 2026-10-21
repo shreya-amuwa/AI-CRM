@@ -188,7 +188,8 @@ export const ScopeOverviewPanel: React.FC<{ heading?: string; hint?: string }> =
             </Card>
           )}
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+          {/* side by side whenever both fit (the sidebar drawer frees the full width below lg); stacked only on narrow screens */}
+          <div className="grid grid-cols-1 min-[720px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-4 sm:gap-5 items-start">
             <Card label="Open work">
               <CardHead title="Open work" />
               <dl className="px-5 pb-5 text-sm space-y-1.5">

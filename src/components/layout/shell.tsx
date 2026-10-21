@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BookOpen, HelpCircle, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -117,13 +117,21 @@ export const SidebarFrame: React.FC<{
   onClose?: () => void;
 }> = ({ ariaLabel, children, footer }) => {
   const { open, collapsed } = useMenu();
+  const ref = useRef<HTMLElement>(null);
+  // an opened drawer takes keyboard focus, so Tab walks its links instead of the page behind the backdrop
+  useEffect(() => {
+    if (open) ref.current?.focus({ preventScroll: true });
+  }, [open]);
   return (
     <>
       {open && <div className="fixed inset-0 bg-slate-900/35 z-40 lg:hidden" onClick={closeMenu} aria-hidden="true" />}
       <aside
+        ref={ref}
         id="app-sidebar"
-        className={`fixed lg:sticky top-0 left-0 h-screen w-[264px] max-w-[85vw] bg-white border-r border-slate-200 z-50 flex flex-col p-3.5 pb-5 gap-5 overflow-y-auto overscroll-contain transition-transform ${
-          open ? 'translate-x-0 shadow-xl' : '-translate-x-full'
+        tabIndex={-1}
+        // closed on a phone or tablet it is off screen and out of the tab order; from lg up it is a sticky column (or hidden when collapsed)
+        className={`fixed lg:sticky top-0 left-0 h-screen w-[264px] max-w-[85vw] shrink-0 bg-white border-r border-slate-200 z-50 flex flex-col p-3.5 pb-5 gap-5 overflow-y-auto overscroll-contain outline-none transition-[transform,visibility] ${
+          open ? 'translate-x-0 shadow-xl' : '-translate-x-full max-lg:invisible'
         } ${collapsed ? 'lg:hidden' : 'lg:translate-x-0'}`}
         aria-label={ariaLabel}
       >
