@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { StorageProviderName } from './StorageRepository.js';
 import type {
   CustomerJourneyInfo,
   DeliveryQueueItem,
@@ -632,6 +633,11 @@ export class PipelineRepository {
   // -------------------------------------------------------------------------
   async conversations(customerId: string): Promise<Conversation[]> {
     return (unwrap(await this.db.rpc('customer_conversations', { p_customer: customerId })) as Conversation[] | null) ?? [];
+  }
+
+  /** Super Admin / the department's Department Head: removes the customer (refused while it has invoices or verified payments). */
+  async deleteCustomer(customerId: string): Promise<{ name: string; code: string | null; documents: { bucket: string; path: string; provider: StorageProviderName | null }[]; clientUserId: string | null }> {
+    return unwrap(await this.db.rpc('delete_customer', { p_customer: customerId })) as Awaited<ReturnType<PipelineRepository['deleteCustomer']>>;
   }
 
   async addConversation(customerId: string, note: string): Promise<void> {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { DeleteCustomerButton } from '../../common/DeleteCustomer';
 import type { PaymentOverview, PipelineCustomerDetail } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
@@ -74,6 +75,7 @@ export const CustomerQuickView: React.FC<{ id: string; title?: string; onClose: 
             </div>
           )}
           <ActivityCard activities={c.activities} title="Last activities" />
+          <div className="flex justify-end"><DeleteCustomerButton customerId={id} name={c.company || c.name} onDeleted={onClose} /></div>
         </div>
       )}
     </Modal>

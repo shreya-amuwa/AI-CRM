@@ -4,6 +4,7 @@ import { Search, Users } from 'lucide-react';
 import { getSupabase } from '../../services/supabaseClient';
 import { cleanDbError, fmtWhen, isTicketOpen, TICKET_STATUS_LABELS, useRealtime, type TicketStatus } from '../../lib/support';
 import { rowOpen } from '../../lib/rowClick';
+import { DeleteCustomerButton } from '../common/DeleteCustomer';
 import { Avatar, Card, Dialog, ErrorBanner, Pager, Pill, Spinner, useDebounced, type Tone } from '../team-member/pipeline/shared';
 
 /**
@@ -188,12 +189,12 @@ export const DepartmentCustomers: React.FC<{
           {data && data.total > PAGE_SIZE && <Pager page={page} pageSize={PAGE_SIZE} total={data.total} noun="customers" onPage={setPage} />}
         </Card>
       )}
-      {open && <CustomerDialog customer={open} onClose={() => setOpen(null)} />}
+      {open && <CustomerDialog customer={open} onClose={() => setOpen(null)} onDeleted={() => { setOpen(null); load(); }} />}
     </div>
   );
 };
 
-const CustomerDialog: React.FC<{ customer: DirectoryItem; onClose: () => void }> = ({ customer: c, onClose }) => {
+const CustomerDialog: React.FC<{ customer: DirectoryItem; onClose: () => void; onDeleted: () => void }> = ({ customer: c, onClose, onDeleted }) => {
   const [tickets, setTickets] = useState<CustomerTicket[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
@@ -274,7 +275,8 @@ const CustomerDialog: React.FC<{ customer: DirectoryItem; onClose: () => void }>
           </ul>
         )}
       </div>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-between gap-2">
+        <DeleteCustomerButton customerId={c.id} name={c.company || c.name} onDeleted={onDeleted} />
         <button type="button" className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={onClose}>
           Close
         </button>

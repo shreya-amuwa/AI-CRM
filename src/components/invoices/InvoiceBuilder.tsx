@@ -74,6 +74,39 @@ function fromPrefill(p: InvoicePrefill): FormState {
  * e-mailed when Accounts confirms the payment. The GST rate of every line is Accounts' choice; the system adds none by itself.
  */
 /**
+ * The budget Sales agreed against what Accounts has priced: the system never divides the budget between services, Accounts enters each
+ * price, and the invoices together may not pass the budget (the database refuses it too). Before GST when the agreement excludes GST.
+ */
+const BudgetMeter: React.FC<{ prefill: InvoicePrefill; lines: { baseAmount: string }[]; thisInvoicePaise: number | null }> = ({ prefill, lines, thisInvoicePaise }) => {
+  const excl = prefill.agreedTaxBasis === 'EXCLUSIVE' && !!prefill.agreedAmount;
+  const budget = toPaise((excl ? prefill.agreedAmount : prefill.dealAmount) ?? 0) ?? 0;
+  if (budget <= 0) return null;
+  const done = toPaise((excl ? prefill.servicesInvoicedTaxable : prefill.servicesInvoiced) ?? 0) ?? 0;
+  const typed = lines.reduce((n, l) => n + (toPaise(l.baseAmount) ?? 0), 0);
+  const mine = thisInvoicePaise ?? typed;
+  const used = done + mine;
+  const left = budget - used;
+  const over = left < 0;
+  const pct = Math.min(100, Math.round((used / budget) * 100));
+  return (
+    <div className={`rounded-xl border p-4 space-y-2 text-xs ${over ? 'border-rose-200 bg-rose-50' : 'border-slate-200 bg-white'}`} role="status" aria-live="polite" aria-label="Budget">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className="font-bold text-slate-900">Budget agreed by Sales: {rs(budget)}{excl ? ' (before GST)' : ' (with GST)'}</span>
+        <span className={over ? 'font-bold text-rose-700' : 'text-slate-600'}>
+          {over ? `${rs(-left)} over the budget: lower a price` : `${rs(left)} left to price`}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Budget used">
+        <div className={`h-full rounded-full ${over ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-slate-500">
+        {done > 0 ? `Already invoiced ${rs(done)} · ` : ''}This invoice {rs(mine)}. You set the price of each service yourself; the system does not divide the budget, and the prices together cannot pass it.
+      </p>
+    </div>
+  );
+};
+
+/**
  * What Sales agreed, read from the database: the agreed amount and whether it includes GST, what is already invoiced and what is
  * left to invoice, plus the total payable and the order balance. Accounts can correct the basis (with a reason; audited).
  */
@@ -87,7 +120,7 @@ const AgreementNote: React.FC<{ prefill: InvoicePrefill; customerId: string; fil
   const doneTaxable = toPaise(prefill.servicesInvoicedTaxable ?? 0) ?? 0;
   const doneGross = toPaise(prefill.servicesInvoiced) ?? 0;
   const o = prefill.order ?? null;
-  const amountsNote = filled ? 'The amounts below are filled in from the balance still to be invoiced; check or change them (before GST). ' : 'Enter each service amount below, before GST. ';
+  const amountsNote = filled ? 'The amount below is the balance still to be invoiced; check or change it (before GST). ' : 'Set the price of each service below, before GST: the system does not divide the budget. ';
   const change = async () => {
     setBusy(true);
     setErr(null);
@@ -485,6 +518,9 @@ export const InvoiceBuilder: React.FC<{
                   setForm(f => (f ? { ...f, lines: fromPrefill(p).lines } : f));
                 }}
               />
+            )}
+            {prefill.dealAmount !== null && purpose === 'SERVICES' && (
+              <BudgetMeter prefill={prefill} lines={form.lines} thisInvoicePaise={calc && calc.ok ? (prefill.agreedTaxBasis === 'EXCLUSIVE' && prefill.agreedAmount ? calc.subtotalPaise : calc.totalPaise) : null} />
             )}
             <div className="space-y-4">
               {form.lines.map((l, i) => (
