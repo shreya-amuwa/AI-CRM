@@ -1,0 +1,21 @@
+.tf-attach { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(120, 130, 150, 0.45); background: transparent; color: inherit; border-radius: 8px; padding: 6px 9px; font: inherit; font-size: 13px; cursor: pointer; }
+.tf-attach:hover:not(:disabled) { background: rgba(120, 130, 150, 0.14); }
+.tf-attach:disabled { opacity: 0.5; cursor: not-allowed; }
+.tf-staged-wrap { display: flex; flex-direction: column; gap: 4px; }
+.tf-staged { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; }
+.tf-staged li { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; border: 1px solid rgba(120, 130, 150, 0.4); border-radius: 999px; padding: 3px 4px 3px 10px; max-width: 260px; }
+.tf-staged li.busy { padding-right: 10px; opacity: 0.8; }
+.tf-staged li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tf-staged li small { opacity: 0.65; flex: none; }
+.tf-staged li button { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.tf-staged li button:hover { background: rgba(120, 130, 150, 0.25); }
+.tf-hint { margin: 0; font-size: 12px; opacity: 0.7; }
+.tf-error { margin: 0; font-size: 12.5px; color: #b42318; }
+.tf-files { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.tf-files button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 10px; border-radius: 8px; border: 0; background: rgba(0, 0, 0, 0.07); color: inherit; font: inherit; font-size: 13px; cursor: pointer; text-align: left; }
+.tf-files button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.12); }
+.tf-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.tf-size { font-size: 11px; opacity: 0.7; flex: none; }
+.tf-spin { animation: tf-rot 0.9s linear infinite; }
+@keyframes tf-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tf-spin { animation: none; } }

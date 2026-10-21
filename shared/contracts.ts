@@ -2226,6 +2226,23 @@ export interface ChatUnreadSummary {
   clients: number;
   review: number;
 }
+/** A file on a ticket message. updateId is the message it belongs to (absent while the upload is still a draft). */
+export interface TicketAttachment {
+  id: string;
+  updateId?: string | null;
+  name: string;
+  mime: string;
+  size: number;
+  fromClient?: boolean;
+}
+export interface TicketUploadTicket {
+  attachment: TicketAttachment;
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
+}
 export interface ChatUploadTicket {
   attachment: ChatAttachment;
   bucket: string;

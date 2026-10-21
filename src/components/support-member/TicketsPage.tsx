@@ -1,3 +1,5 @@
+import { StagedFiles, TicketFileButton, useTicketFiles } from '../tickets/TicketFiles';
+import { staffTicketFiles } from '../tickets/staffTransport';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Settings2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -172,6 +174,9 @@ export const NewTicketModal: React.FC<{
   const [assignee, setAssignee] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const files = useTicketFiles(staffTicketFiles, customer ? { customerId: customer } : {});
+  // files belong to one customer: choosing another customer starts the list again
+  useEffect(() => files.clear(), [customer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isLead = profile?.role === 'TEAM_HEAD';
   const team = people.filter(p => (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.status === 'ACTIVE' && p.teamId === profile?.teamId);
@@ -188,9 +193,10 @@ export const NewTicketModal: React.FC<{
     setError(null);
     if (!customer) return setError('Choose the customer this ticket is for.');
     if (subject.trim().length < 3) return setError('Enter a subject (at least 3 characters).');
+    if (files.busy) return setError('Wait for the files to finish uploading.');
     setBusy(true);
     try {
-      const id = await ticketApi.create({ customerId: customer, subject: subject.trim(), description: description.trim(), category, priority, assigneeId: assignee || undefined });
+      const id = await ticketApi.create({ customerId: customer, subject: subject.trim(), description: description.trim(), category, priority, assigneeId: assignee || undefined, attachmentIds: files.ids });
       onCreated(id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the ticket.');
@@ -244,6 +250,10 @@ export const NewTicketModal: React.FC<{
         <FormField label="Query or issue description" htmlFor="nt-desc">
           <textarea id="nt-desc" rows={4} value={description} onChange={e => setDescription(e.target.value)} maxLength={4000} className={inputClass} />
         </FormField>
+        <div className="space-y-1.5">
+          <div>{customer ? <TicketFileButton files={files} label /> : <p className="text-xs text-slate-500">Choose the customer first to attach files.</p>}</div>
+          <StagedFiles files={files} hint={!!customer} />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="Category" htmlFor="nt-cat">
             <select id="nt-cat" value={category} onChange={e => setCategory(e.target.value as TicketCategory)} className={inputClass}>

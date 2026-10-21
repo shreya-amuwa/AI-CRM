@@ -71,8 +71,8 @@ export class ClientService {
     return this.repo.replyTicket(parse(uuidSchema, id), parse(clientTicketReplySchema, body).message);
   }
   sendTicketMessage(id: string, body: unknown) {
-    const { message, clientMsgId } = parse(clientTicketMessageSchema, body);
-    return this.repo.sendTicketMessage(parse(uuidSchema, id), message, clientMsgId);
+    const { message, clientMsgId, attachmentIds } = parse(clientTicketMessageSchema, body);
+    return this.repo.sendTicketMessage(parse(uuidSchema, id), message, clientMsgId, attachmentIds);
   }
   async ticketSeen(id: string) { return { marked: await this.repo.ticketSeen(parse(uuidSchema, id)) }; }
 

@@ -80,6 +80,8 @@ import type {
   PaymentType,
   Department,
   DocumentUploadTicket,
+  TicketAttachment,
+  TicketUploadTicket,
   DocumentUrl,
   HandoverStage,
   InboundLead,
@@ -532,6 +534,14 @@ export const clientWorkApi = {
   decidePlanRequest: (id: string, body: { decision: 'APPROVE' | 'REJECT' | 'ACTIVATE'; note?: string | null; paymentConfirmed?: boolean; renewsOn?: string | null }) =>
     api.post<null>(`/accounts/plan-requests/${id}/decision`, body),
   replyToClient: (ticketId: string, message: string) => api.post<null>(`/support/tickets/${ticketId}/client-reply`, { message })
+};
+/** Files on tickets for staff: the server checks the person may see the ticket (or the customer, for a new ticket). */
+export const ticketFilesApi = {
+  forTicket: (ticketId: string) => api.get<TicketAttachment[]>(`/support/tickets/${ticketId}/attachments`),
+  begin: (body: { ticketId?: string; customerId?: string; fileName: string; mimeType: string; sizeBytes: number }) => api.post<TicketUploadTicket>('/support/ticket-uploads', body),
+  complete: (id: string) => api.post<TicketAttachment>(`/support/ticket-uploads/${id}/complete`, {}),
+  abort: (id: string) => api.post<null>(`/support/ticket-uploads/${id}/abort`, {}),
+  url: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/support/ticket-attachments/${id}/url`, { action })
 };
 export interface PlanInput { name: string; description?: string | null; monthlyPrice: number; features: string[]; services: string[]; isActive: boolean }
 export type { MonthlyPlan };

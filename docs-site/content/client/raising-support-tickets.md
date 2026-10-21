@@ -34,7 +34,7 @@ graph TD
    - **Category:** Select `TECHNICAL`, `BILLING`, `ONBOARDING`, `SERVICE_REQUEST`, or `GENERAL`.
    - **Priority Level:** Choose `LOW`, `NORMAL`, `HIGH`, or `URGENT` (reserve Urgent for complete service outages).
    - **Detailed Description:** Provide specific context, including error messages, steps to reproduce, or transaction IDs.
-   - **Attachments:** Attach screenshots or error logs (up to 2 MB per file).
+   - **Attachments:** Click **Attach files** to add screenshots, PDFs or documents. You can add up to 5 files at a time, 5 MB each. Allowed types: images (PNG, JPG, WebP), PDF, text, CSV, Word and Excel.
 4. Click **Submit Ticket**.
 5. The system generates a unique tracking number (e.g., `#AMW-0042`) and routes the ticket directly to your support team.
 
@@ -46,7 +46,7 @@ Once a ticket is created, clicking on it opens the interactive **Ticket Chat Wor
 
 - **Real-Time Messaging:** Send messages and receive replies without refreshing your browser.
 - **Delivery & Read Receipts:** Sent and seen double-check indicators confirm when a support specialist has read your message.
-- **File Sharing:** Upload replacement screenshots or documentation directly into the conversation thread.
+- **File Sharing:** Click the paperclip next to the message box to send screenshots or documents (up to 5 files at a time, 5 MB each; images, PDF, text, CSV, Word or Excel). Click a file in the chat to open it. Only you and the support team handling your ticket can open your files.
 - **Dedicated Specialist:** The header displays the name and photo of the support engineer or Relationship Manager actively handling your ticket.
 
 ---

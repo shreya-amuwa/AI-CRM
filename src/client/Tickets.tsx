@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, CheckCheck, ChevronDown, LifeBuoy, Plus, RotateCcw, Send } from 'lucide-react';
-import type { ClientTicket, ClientTicketMessage } from '../../shared/contracts';
+import type { ClientTicket, ClientTicketMessage, TicketAttachment } from '../../shared/contracts';
+import { MessageFiles, StagedFiles, TicketFileButton, useTicketFiles, type TicketFileTransport } from '../components/tickets/TicketFiles';
 import { clientApi } from './api';
 import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
@@ -118,11 +119,28 @@ const TicketRow: React.FC<{ t: ClientTicket; active: boolean; onOpen: () => void
   </li>
 );
 
-interface Pending { key: string; text: string; state: 'sending' | 'failed'; error?: string }
+interface Pending { key: string; text: string; files: TicketAttachment[]; state: 'sending' | 'failed'; error?: string }
+
+/** Files go through the client endpoints; the server checks that the ticket is the signed-in client's own. */
+const transport: TicketFileTransport = {
+  begin: b => clientApi.beginTicketUpload(b),
+  complete: id => clientApi.completeTicketUpload(id),
+  abort: id => clientApi.abortTicketUpload(id),
+  url: (id, action) => clientApi.ticketAttachmentUrl(id, action)
+};
+const filesOnly = (n: number) => (n === 1 ? 'Attached 1 file' : `Attached ${n} files`);
 
 const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => void }> = ({ id, onChanged, onBack }) => {
   const q = useLoad(() => clientApi.ticket(id), [id]);
-  useClientLive(q.reload, id);
+  const attachments = useLoad(() => clientApi.ticketAttachments(id), [id]);
+  const reloadAll = useCallback(() => { q.reload(); attachments.reload(); }, [q, attachments]);
+  useClientLive(reloadAll, id);
+  const files = useTicketFiles(transport, { ticketId: id });
+  const filesByMessage = useMemo(() => {
+    const m = new Map<string, TicketAttachment[]>();
+    for (const a of attachments.data ?? []) if (a.updateId) m.set(a.updateId, [...(m.get(a.updateId) ?? []), a]);
+    return m;
+  }, [attachments.data]);
   const [text, setText] = useState('');
   const [pending, setPending] = useState<Pending[]>([]);
   const [info, setInfo] = useState(false);
@@ -148,14 +166,15 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
 
   const deliver = useCallback(async (p: Pending) => {
     setPending(l => l.map(x => (x.key === p.key ? { ...x, state: 'sending', error: undefined } : x)));
-    try { await clientApi.sendTicketMessage(id, p.text, p.key); q.reload(); onChanged(); }
+    try { await clientApi.sendTicketMessage(id, p.text, p.key, p.files.map(f => f.id)); reloadAll(); onChanged(); }
     catch (e) { setPending(l => l.map(x => (x.key === p.key ? { ...x, state: 'failed', error: errorMessage(e) } : x))); }
-  }, [id, q, onChanged]);
+  }, [id, reloadAll, onChanged]);
   const send = () => {
-    const body = text.trim();
+    if (files.busy) return;
+    const body = text.trim() || (files.staged.length ? filesOnly(files.staged.length) : '');
     if (!body) return;
-    const p: Pending = { key: newMessageKey(), text: body, state: 'sending' };
-    setPending(l => [...l, p]); setText(''); atBottom.current = true;
+    const p: Pending = { key: newMessageKey(), text: body, files: files.staged, state: 'sending' };
+    setPending(l => [...l, p]); setText(''); files.clear(); atBottom.current = true;
     void deliver(p);
   };
 
@@ -218,13 +237,14 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
         {messages.map(m => {
           const d = new Date(m.at).toDateString();
           const sep = d !== day ? (day = d, <div className="cd-chat-day" key={`d-${m.id}`}><span>{dayLabel(m.at)}</span></div>) : null;
-          return <React.Fragment key={m.id}>{sep}<Entry m={m} /></React.Fragment>;
+          return <React.Fragment key={m.id}>{sep}<Entry m={m} files={filesByMessage.get(m.id) ?? []} /></React.Fragment>;
         })}
         {pending.map(p => (
           <div key={p.key} className={`cd-msg me ${p.state}`}>
             <div className="bubble">
               <div className="who">You</div>
               <div className="txt">{p.text}</div>
+              {p.files.length > 0 && <ul className="tf-files">{p.files.map(f => <li key={f.id}><span className="tf-name">{f.name}</span></li>)}</ul>}
               <div className="foot">
                 {p.state === 'sending' ? 'Sending…' : (
                   <span className="failed">{p.error || 'Not sent.'} <button className="cd-link" onClick={() => void deliver(p)}><RotateCcw size={12} /> Retry</button></span>
@@ -238,11 +258,13 @@ const TicketChat: React.FC<{ id: string; onChanged: () => void; onBack: () => vo
 
       {closed ? <div className="cd-banner attention cd-chat-banner">This ticket is closed. Please raise a new ticket if you need more help.</div> : (
         <form className="cd-composer" onSubmit={e => { e.preventDefault(); send(); }}>
+          <StagedFiles files={files} />
+          <TicketFileButton files={files} className="cd-tk-attach" />
           <textarea className="cd-textarea" rows={1} maxLength={4000} value={text} onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
             aria-label={t.status === 'RESOLVED' ? 'Not solved? Write to reopen the ticket' : 'Your message'}
             placeholder={t.status === 'RESOLVED' ? 'Not solved? Write here to reopen the ticket' : 'Write a message'} />
-          <button type="submit" className="cd-btn cd-send" disabled={!text.trim()}><Send size={16} /> Send</button>
+          <button type="submit" className="cd-btn cd-send" disabled={files.busy || (!text.trim() && files.staged.length === 0)}><Send size={16} /> Send</button>
         </form>
       )}
     </div>
@@ -261,7 +283,7 @@ const EVENT_TEXT = (m: ClientTicketMessage) => {
   }
 };
 
-const Entry: React.FC<{ m: ClientTicketMessage }> = ({ m }) => {
+const Entry: React.FC<{ m: ClientTicketMessage; files: TicketAttachment[] }> = ({ m, files }) => {
   if (m.kind === 'EVENT') return <div className="cd-chat-event"><span>{EVENT_TEXT(m)} · {clock(m.at)}</span>{m.event === 'CREATED' && m.text ? <p>{m.text}</p> : null}</div>;
   const mine = m.from === 'CLIENT';
   return (
@@ -269,6 +291,7 @@ const Entry: React.FC<{ m: ClientTicketMessage }> = ({ m }) => {
       <div className="bubble">
         <div className="who">{mine ? 'You' : m.author ?? 'Amuwa Support'}{!mine && m.role ? <span> · {m.role}</span> : null}</div>
         <div className="txt">{m.text}</div>
+        <MessageFiles items={files} transport={transport} />
         <div className="foot">
           {clock(m.at)}
           {mine && (m.seen ? <span className="seen" aria-label="Seen"><CheckCheck size={14} /></span> : <span aria-label="Sent"><Check size={14} /></span>)}
@@ -285,11 +308,13 @@ const NewTicket: React.FC<{ services: { code: string; name: string }[]; onClose:
   const [serviceCode, setServiceCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const files = useTicketFiles(transport, {});
   const submit = async () => {
+    if (files.busy) { setError('Wait for the files to finish uploading.'); return; }
     if (subject.trim().length < 3) { setError('Enter a subject (at least 3 characters).'); return; }
     if (description.trim().length < 5) { setError('Describe the problem (at least 5 characters).'); return; }
     setBusy(true); setError('');
-    try { const t = await clientApi.createTicket({ subject: subject.trim(), description: description.trim(), category, serviceCode: serviceCode || null }); onCreated(t.id); }
+    try { const t = await clientApi.createTicket({ subject: subject.trim(), description: description.trim(), category, serviceCode: serviceCode || null, attachmentIds: files.ids }); onCreated(t.id); }
     catch (e) { setError(errorMessage(e)); setBusy(false); }
   };
   return (
@@ -301,6 +326,10 @@ const NewTicket: React.FC<{ services: { code: string; name: string }[]; onClose:
           <Field label="Related service (optional)" htmlFor="cd-t-svc"><select id="cd-t-svc" className="cd-select" value={serviceCode} onChange={e => setServiceCode(e.target.value)}><option value="">Not about one service</option>{services.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
         </div>
         <Field label="Describe the problem" htmlFor="cd-t-desc"><textarea id="cd-t-desc" className="cd-textarea" maxLength={4000} value={description} onChange={e => setDescription(e.target.value)} placeholder="Tell us what happened and what you expected." /></Field>
+        <div className="cd-stack" style={{ gap: 6 }}>
+          <div><TicketFileButton files={files} label /></div>
+          <StagedFiles files={files} hint />
+        </div>
         {error && <div className="cd-banner danger" role="alert">{error}</div>}
         <div className="cd-row" style={{ justifyContent: 'flex-end' }}><Button variant="outline" onClick={onClose}>Cancel</Button><Button loading={busy} onClick={submit}>Submit ticket</Button></div>
       </div>

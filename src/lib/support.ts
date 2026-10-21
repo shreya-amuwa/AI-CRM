@@ -575,14 +575,15 @@ export function unreadCount(t: SupportTicket, updates: TicketUpdateRow[], reads:
 }
 
 export const ticketApi = {
-  create: (i: { customerId: string; subject: string; description: string; category: TicketCategory; priority: TicketPriority; assigneeId?: string }) =>
+  create: (i: { customerId: string; subject: string; description: string; category: TicketCategory; priority: TicketPriority; assigneeId?: string; attachmentIds?: string[] }) =>
     rpc<string>('create_support_ticket', {
       p_customer: i.customerId,
       p_subject: i.subject,
       p_description: i.description,
       p_category: i.category,
       p_priority: i.priority,
-      p_assignee: i.assigneeId || null
+      p_assignee: i.assigneeId || null,
+      ...(i.attachmentIds?.length ? { p_attachments: i.attachmentIds } : {})
     }),
   update: (ticketId: string, i: { status: TicketStatus; note?: string; resolution?: string }) =>
     rpc<void>('update_support_ticket', { p_ticket: ticketId, p_status: i.status, p_note: i.note || null, p_resolution: i.resolution || null }),
@@ -591,8 +592,8 @@ export const ticketApi = {
   assign: (ticketId: string, assigneeId: string, note?: string) =>
     rpc<void>('assign_support_ticket', { p_ticket: ticketId, p_assignee: assigneeId, p_note: note || null }),
   /** A chat message: a reply the customer reads, or an internal note (internal) only staff see. */
-  send: (ticketId: string, message: string, internal: boolean, clientMsgId: string) =>
-    rpc<unknown>('send_ticket_message', { p_ticket: ticketId, p_message: message, p_internal: internal, p_client_msg_id: clientMsgId }),
+  send: (ticketId: string, message: string, internal: boolean, clientMsgId: string, attachmentIds: string[] = []) =>
+    rpc<unknown>('send_ticket_message', { p_ticket: ticketId, p_message: message, p_internal: internal, p_client_msg_id: clientMsgId, ...(attachmentIds.length ? { p_attachments: attachmentIds } : {}) }),
   markRead: (ticketId: string) => rpc<string>('mark_support_ticket_read', { p_ticket: ticketId }),
   /** Change the priority from the ticket header (the handlers, the Team Lead, the Department Head, the Super Admin). */
   setPriority: (ticketId: string, priority: TicketPriority) => rpc<unknown>('set_ticket_priority', { p_ticket: ticketId, p_priority: priority }),

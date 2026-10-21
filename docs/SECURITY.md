@@ -49,7 +49,7 @@ Rules the database enforces (migration `20261110000200_security_events.sql`):
 
 Who can read it: the **Super Admin** (everything), a **Department Head** (the department) and a **Team Lead** (the team), through *Security & Audit Logs* (Super Admin menu) or `GET /api/v1/audit-logs/search` (search by person, event or request id; filter by event type, outcome and dates; paged). Nobody can edit or delete a record through the app or the API.
 
-Known gaps (not changed): logouts and password changes made in Supabase Auth are only in the Supabase Auth logs; unknown-email sign-in attempts never reach the password hook; browser-side exports are recorded by the browser (a user who bypasses the screen is not recorded; the data they could read is limited by access rules anyway); chat attachment downloads and accepted webhook leads are not audited; there is no retention or archiving policy for `audit_logs`; there is no automated alerting (the Super Admin dashboard lists exceptions, it does not page anyone).
+Known gaps (not changed): logouts and password changes made in Supabase Auth are only in the Supabase Auth logs; unknown-email sign-in attempts never reach the password hook; browser-side exports are recorded by the browser (a user who bypasses the screen is not recorded; the data they could read is limited by access rules anyway); chat attachment downloads and accepted webhook leads are not audited (ticket attachments are: `TICKET_ATTACHMENT_ADDED` and `TICKET_ATTACHMENT_DOWNLOADED`, without file names); there is no retention or archiving policy for `audit_logs`; there is no automated alerting (the Super Admin dashboard lists exceptions, it does not page anyone).
 
 ## Remaining risks (not changed, on purpose)
 
