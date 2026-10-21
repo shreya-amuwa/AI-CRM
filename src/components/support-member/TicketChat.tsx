@@ -23,6 +23,10 @@ import {
 } from '../../lib/support';
 import { ago, displayTicketNo, initialsOf, newMessageKey, ticketNoSearchText } from '../../lib/ticketFormat';
 import { inputClass, TicketPriorityPill, TicketStatusPill } from './SupportParts';
+import type { TicketAttachment } from '../../../shared/contracts';
+import { ticketFilesApi } from '../../lib/api/endpoints';
+import { MessageFiles, StagedFiles, TicketFileButton, useTicketFiles } from '../tickets/TicketFiles';
+import { staffTicketFiles } from '../tickets/staffTransport';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -426,6 +430,7 @@ interface Pending {
   key: string;
   text: string;
   internal: boolean;
+  files: TicketAttachment[];
   state: 'sending' | 'failed';
   error?: string;
 }
@@ -571,6 +576,13 @@ export const TicketPane: React.FC<{
   const [text, setText] = useState('');
   const [internal, setInternal] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
+  const files = useTicketFiles(staffTicketFiles, { ticketId: ticket.id });
+  const [sent, setSent] = useState<TicketAttachment[]>([]);
+  const filesByMessage = useMemo(() => {
+    const m = new Map<string, TicketAttachment[]>();
+    for (const a of sent) if (a.updateId) m.set(a.updateId, [...(m.get(a.updateId) ?? []), a]);
+    return m;
+  }, [sent]);
   const scroller = useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [newBelow, setNewBelow] = useState(false);
@@ -586,8 +598,15 @@ export const TicketPane: React.FC<{
     setAssignee('');
     setText('');
     setPending([]);
+    files.clear();
     setInternal(!customerConversation);
-  }, [ticket.id, customerConversation]);
+  }, [ticket.id, customerConversation]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The files on this ticket's messages, reloaded whenever a message arrives (Realtime / reload).
+  useEffect(() => {
+    let live = true;
+    ticketFilesApi.forTicket(ticket.id).then(l => { if (live) setSent(l); }, () => { /* the messages still show; the files appear on the next load */ });
+    return () => { live = false; };
+  }, [ticket.id, history.length]);
   // Drop pending bubbles once the stored message arrives (Realtime / reload).
   useEffect(() => {
     const stored = new Set(history.map(u => u.clientMsgId).filter(Boolean));
@@ -649,7 +668,7 @@ export const TicketPane: React.FC<{
     async (p: Pending) => {
       setPending(list => list.map(x => (x.key === p.key ? { ...x, state: 'sending', error: undefined } : x)));
       try {
-        await ticketApi.send(ticket.id, p.text, p.internal, p.key);
+        await ticketApi.send(ticket.id, p.text, p.internal, p.key, p.files.map(f => f.id));
         await data.reload();
       } catch (err) {
         setPending(list => list.map(x => (x.key === p.key ? { ...x, state: 'failed', error: err instanceof Error ? err.message : 'Not sent.' } : x)));
@@ -658,11 +677,13 @@ export const TicketPane: React.FC<{
     [ticket.id, data]
   );
   const send = () => {
-    const body = text.trim();
+    if (files.busy) return;
+    const body = text.trim() || (files.staged.length ? (files.staged.length === 1 ? 'Attached 1 file' : `Attached ${files.staged.length} files`) : '');
     if (!body) return;
-    const p: Pending = { key: newMessageKey(), text: body, internal: internal || !customerConversation, state: 'sending' };
+    const p: Pending = { key: newMessageKey(), text: body, internal: internal || !customerConversation, files: files.staged, state: 'sending' };
     setPending(list => [...list, p]);
     setText('');
+    files.clear();
     setAtBottom(true);
     void deliver(p);
   };
@@ -974,6 +995,7 @@ export const TicketPane: React.FC<{
                 {e.text} · {clock(e.at)}
               </span>
               {e.detail && <span className="text-[11px] text-slate-500 mt-0.5 max-w-md whitespace-pre-line">{e.detail}</span>}
+              {(filesByMessage.get(e.id) ?? []).length > 0 && <div className="max-w-xs w-full"><MessageFiles items={filesByMessage.get(e.id) ?? []} transport={staffTicketFiles} /></div>}
             </div>
           ) : (
             <div key={e.id} className={`flex ${e.side === 'customer' ? 'justify-start' : 'justify-end'}`}>
@@ -996,6 +1018,7 @@ export const TicketPane: React.FC<{
                   )}
                 </div>
                 <div className="text-sm whitespace-pre-wrap break-words mt-0.5">{e.text}</div>
+                <MessageFiles items={filesByMessage.get(e.id) ?? []} transport={staffTicketFiles} />
                 <div className="flex items-center justify-end gap-1 text-[11px] text-slate-500 mt-1">
                   {clock(e.at)}
                   {e.seen !== undefined &&
@@ -1017,6 +1040,7 @@ export const TicketPane: React.FC<{
               }`}
             >
               <div className="text-sm whitespace-pre-wrap break-words text-slate-900">{p.text}</div>
+              {p.files.length > 0 && <ul className="tf-files">{p.files.map(f => <li key={f.id}><span className="tf-name">{f.name}</span></li>)}</ul>}
               <div className="text-[11px] mt-1 text-right">
                 {p.state === 'sending' ? (
                   <span className="text-slate-500">Sending…</span>
@@ -1102,7 +1126,9 @@ export const TicketPane: React.FC<{
                 </span>
               )}
             </div>
+            <StagedFiles files={files} />
             <div className="flex items-end gap-2">
+              <TicketFileButton files={files} className="shrink-0 h-12 w-11 justify-center !px-0" />
               <textarea
                 rows={2}
                 value={text}
@@ -1120,7 +1146,7 @@ export const TicketPane: React.FC<{
               />
               <button
                 type="submit"
-                disabled={!text.trim()}
+                disabled={files.busy || (!text.trim() && files.staged.length === 0)}
                 className={`shrink-0 h-12 px-5 rounded-xl text-sm font-bold text-white disabled:opacity-40 inline-flex items-center gap-1.5 ${internal ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-700 hover:bg-blue-800'}`}
               >
                 <Send className="w-4 h-4" aria-hidden="true" /> Send

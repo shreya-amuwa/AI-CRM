@@ -1,6 +1,6 @@
 import type {
   ClientAnnouncement, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
-  ClientService, ClientServiceRequest, ClientTicket, ClientTicketDetail
+  ClientService, ClientServiceRequest, ClientTicket, ClientTicketDetail, TicketAttachment, TicketUploadTicket
 } from '../../shared/contracts';
 import { api } from '../lib/api/client';
 
@@ -22,11 +22,16 @@ export const clientApi = {
   invoiceUrl: (id: string, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/client/invoices/${id}/url`, { action }),
   tickets: () => api.get<ClientTicket[]>('/client/tickets'),
   ticket: (id: string) => api.get<ClientTicketDetail>(`/client/tickets/${id}`),
-  createTicket: (input: { subject: string; description: string; category: string; serviceCode?: string | null }) =>
+  createTicket: (input: { subject: string; description: string; category: string; serviceCode?: string | null; attachmentIds?: string[] }) =>
     api.post<ClientTicket>('/client/tickets', { ...input, serviceCode: input.serviceCode || undefined }),
   replyTicket: (id: string, message: string) => api.post<unknown>(`/client/tickets/${id}/replies`, { message }),
-  sendTicketMessage: (id: string, message: string, clientMsgId: string) =>
-    api.post<ClientTicketDetail>(`/client/tickets/${id}/messages`, { message, clientMsgId }),
+  sendTicketMessage: (id: string, message: string, clientMsgId: string, attachmentIds: string[] = []) =>
+    api.post<ClientTicketDetail>(`/client/tickets/${id}/messages`, { message, clientMsgId, attachmentIds }),
+  ticketAttachments: (id: string) => api.get<TicketAttachment[]>(`/client/tickets/${id}/attachments`),
+  beginTicketUpload: (body: { ticketId?: string; fileName: string; mimeType: string; sizeBytes: number }) => api.post<TicketUploadTicket>('/client/tickets/uploads', body),
+  completeTicketUpload: (id: string) => api.post<TicketAttachment>(`/client/tickets/uploads/${id}/complete`, {}),
+  abortTicketUpload: (id: string) => api.post<null>(`/client/tickets/uploads/${id}/abort`, {}),
+  ticketAttachmentUrl: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/client/tickets/attachments/${id}/url`, { action }),
   ticketSeen: (id: string) => api.post<{ marked: number }>(`/client/tickets/${id}/seen`, {}),
   calendar: (from: string, to: string) => api.get<ClientCalendarEvent[]>('/client/calendar', { from, to }),
   documents: () => api.get<ClientDocuments>('/client/documents'),

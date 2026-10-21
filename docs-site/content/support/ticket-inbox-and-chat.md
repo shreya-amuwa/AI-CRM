@@ -40,6 +40,7 @@ The Tickets workspace uses a two-panel split:
    - **Reply to Client**: Sent directly to the customer's dashboard and mobile notifications.
    - **Internal Note**: Yellow background; visible only to company staff and hidden from the customer.
 4. Type your message and press **Send** (or press `kbd:Enter`).
+5. To send a file, click the paperclip next to the message box. You can attach up to 5 files per message, 5 MB each (images, PDF, text, CSV, Word or Excel). Files sent with an **Internal Note** are never shown to the customer. Click a file in the thread to open it; every file you attach or open is recorded in the audit log.
 
 ```flow
 Customer Sends Message | Client Portal | Displays on left in chat thread

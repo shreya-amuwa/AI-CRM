@@ -59,12 +59,12 @@ export class ClientRepository {
 
   tickets() { return this.rpc<ClientTicket[]>('client_tickets'); }
   ticket(id: string) { return this.rpc<ClientTicketDetail>('client_ticket', { p_ticket: id }); }
-  createTicket(i: { subject: string; description: string; category: string; serviceCode: string | null }) {
-    return this.rpc<ClientTicket>('client_create_ticket', { p_subject: i.subject, p_description: i.description, p_category: i.category, p_service: i.serviceCode });
+  createTicket(i: { subject: string; description: string; category: string; serviceCode: string | null; attachmentIds: string[] }) {
+    return this.rpc<ClientTicket>('client_create_ticket', { p_subject: i.subject, p_description: i.description, p_category: i.category, p_service: i.serviceCode, p_attachments: i.attachmentIds });
   }
   replyTicket(id: string, message: string) { return this.rpc<ClientTicketDetail>('client_reply_ticket', { p_ticket: id, p_message: message }); }
-  sendTicketMessage(id: string, message: string, clientMsgId: string | null) {
-    return this.rpc<ClientTicketDetail>('client_send_ticket_message', { p_ticket: id, p_message: message, p_client_msg_id: clientMsgId });
+  sendTicketMessage(id: string, message: string, clientMsgId: string | null, attachmentIds: string[]) {
+    return this.rpc<ClientTicketDetail>('client_send_ticket_message', { p_ticket: id, p_message: message, p_client_msg_id: clientMsgId, p_attachments: attachmentIds });
   }
   ticketSeen(id: string) { return this.rpc<number>('client_ticket_seen', { p_ticket: id }); }
 

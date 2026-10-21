@@ -74,6 +74,14 @@ export const chatController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+export const ticketFilesController = {
+  forTicket: (async ctx => ok(await svc(ctx).ticketFiles.forTicket(ctx.params.id))) as Handler,
+  beginUpload: (async ctx => ok(await svc(ctx).ticketFiles.beginUpload(ctx.req.body), 201)) as Handler,
+  completeUpload: (async ctx => ok(await svc(ctx).ticketFiles.completeUpload(ctx.params.id))) as Handler,
+  abortUpload: (async ctx => ok(await svc(ctx).ticketFiles.abortUpload(ctx.params.id))) as Handler,
+  attachmentUrl: (async ctx => ok(await svc(ctx).ticketFiles.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
+};
+
 export const notificationsController = {
   list: (async ctx => ok(await svc(ctx).notifications.list(ctx.req.query))) as Handler,
   unreadCount: (async ctx => ok(await svc(ctx).notifications.unreadCount())) as Handler,
