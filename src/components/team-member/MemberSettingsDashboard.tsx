@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   User,
-  Bell,
   Shield,
   Award,
   Save,
@@ -30,14 +29,6 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
   const [phone, setPhone] = useState(profile?.phone || '');
   const [savedToast, setSavedToast] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  // Notification Toggles
-  const [notifications, setNotifications] = useState({
-    leadAssigned: true,
-    callReminder: true,
-    dealUpdated: true,
-    dailySummary: true
-  });
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,55 +110,6 @@ export const MemberSettingsDashboard: React.FC<MemberSettingsDashboardProps> = (
                 className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none"
               />
             </div>
-          </div>
-        </div>
-
-        {/* NOTIFICATION PREFERENCES */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Bell className="w-4 h-4 text-purple-600" />
-            <h3 className="font-bold text-slate-900 text-sm">Notifications & Reminders</h3>
-          </div>
-
-          <div className="space-y-3">
-            <label className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 cursor-pointer">
-              <div>
-                <div className="font-semibold text-slate-800">New Lead Assignment</div>
-                <div className="text-[11px] text-slate-500">Get notified when a new lead is assigned to you.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.leadAssigned}
-                onChange={e => setNotifications({ ...notifications, leadAssigned: e.target.checked })}
-                className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-            </label>
-
-            <label className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 cursor-pointer">
-              <div>
-                <div className="font-semibold text-slate-800">Follow-up Call Reminders</div>
-                <div className="text-[11px] text-slate-500">Alert 15 minutes before a scheduled demo or call.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.callReminder}
-                onChange={e => setNotifications({ ...notifications, callReminder: e.target.checked })}
-                className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-            </label>
-
-            <label className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 cursor-pointer">
-              <div>
-                <div className="font-semibold text-slate-800">Deal Status Notifications</div>
-                <div className="text-[11px] text-slate-500">Receive alerts when payments or contracts are verified.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.dealUpdated}
-                onChange={e => setNotifications({ ...notifications, dealUpdated: e.target.checked })}
-                className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
-            </label>
           </div>
         </div>
 

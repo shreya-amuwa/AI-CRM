@@ -277,8 +277,10 @@ code, pre, kbd {
  * the vh values from the component classes.
  */
 @supports (height: 100dvh) {
-  html #app-sidebar { height: calc(100dvh - 4rem); }
-  html #app-sidebar > div:first-of-type { max-height: calc(100dvh - 6rem); }
+  /* the older department sidebar hangs under a 4rem header; the shared shell sidebar (DashboardShell) is full height from the top */
+  html #app-sidebar.top-16 { height: calc(100dvh - 4rem); }
+  html #app-sidebar.top-16 > div:first-of-type { max-height: calc(100dvh - 6rem); }
+  html #app-sidebar:not(.top-16) { height: 100dvh; }
   html .max-h-\[90vh\] { max-height: 90dvh; }
   html .max-h-\[92vh\] { max-height: 92dvh; }
   html .max-h-\[96vh\] { max-height: 96dvh; }

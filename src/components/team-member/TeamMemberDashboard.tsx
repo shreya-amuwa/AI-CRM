@@ -355,8 +355,6 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
               <MemberAnalyticsWidgets
                 leadSources={leadSources}
-                conversionRate={kpis.conversionRate}
-                convertedCount={kpis.convertedLeads}
                 totalLeads={kpis.totalLeads}
               />
               <MemberRightSidebar userName={userName} userRole={memberTitle(user)} target={target} activities={activities} />

@@ -188,49 +188,59 @@ export const ScopeOverviewPanel: React.FC<{ heading?: string; hint?: string }> =
             </Card>
           )}
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
-            <Card label="Open work">
-              <CardHead title="Open work" />
-              <dl className="px-5 pb-5 text-sm space-y-1.5">
-                <Row k="Open tasks" v={num(data.tasks.open)} />
-                <Row k="Overdue tasks" v={num(data.tasks.overdue)} red={data.tasks.overdue > 0} />
-                <Row k="Blocked tasks" v={num(data.tasks.blocked)} red={data.tasks.blocked > 0} />
-                <Row k="Completed in the last 7 days" v={num(data.tasks.completedThisWeek)} />
-                <Row k="Open tickets" v={num(data.tickets.open)} />
-                <Row k="Tickets past their SLA" v={num(data.tickets.pastSla)} red={data.tickets.pastSla > 0} />
-                <Row k="New leads this week" v={num(data.pipeline.newLeadsThisWeek)} />
-                <Row k="Won this month" v={num(data.pipeline.wonThisMonth)} />
-              </dl>
-            </Card>
-            <Card label="Recent activity">
-              <CardHead title="Recent activity" hint="The latest notes and updates logged on these customers." />
-              {data.recentActivity.length === 0 ? (
-                <p className="px-5 pb-6 text-sm text-slate-500" role="status">No activity has been logged yet.</p>
-              ) : (
-                <ul className="px-3 pb-3 divide-y divide-slate-100">
-                  {data.recentActivity.map((a, i) => (
-                    <li key={`${a.at}-${i}`} className="px-2.5 py-2.5">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-sm font-bold text-slate-900 truncate">{a.customer}</span>
-                        <span className="text-xs text-slate-500 shrink-0">{ago(a.at)}</span>
-                      </div>
-                      <div className="text-xs text-slate-500">{[a.type.toLowerCase().replace(/_/g, ' '), a.actor].filter(Boolean).join(' · ')}</div>
-                      {a.note && <p className="mt-0.5 text-[13px] text-slate-700 line-clamp-2">{a.note}</p>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
+          <section aria-label="Open work" className="space-y-3">
+            <h3 className="text-base font-extrabold text-slate-900">Open work</h3>
+            <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+              <Metric k="Open tasks" v={num(data.tasks.open)} />
+              <Metric k="Overdue tasks" v={num(data.tasks.overdue)} alert={data.tasks.overdue > 0} />
+              <Metric k="Blocked tasks" v={num(data.tasks.blocked)} alert={data.tasks.blocked > 0} />
+              <Metric k="Completed in the last 7 days" v={num(data.tasks.completedThisWeek)} />
+              <Metric k="Open tickets" v={num(data.tickets.open)} />
+              <Metric k="Tickets past their SLA" v={num(data.tickets.pastSla)} alert={data.tickets.pastSla > 0} />
+              <Metric k="New leads this week" v={num(data.pipeline.newLeadsThisWeek)} />
+              <Metric k="Won this month" v={num(data.pipeline.wonThisMonth)} />
+            </dl>
+          </section>
+
+          <section aria-label="Recent activity" className="space-y-3">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">Recent activity</h3>
+              <p className="text-[13px] text-slate-500 mt-0.5">The latest notes and updates logged on these customers.</p>
+            </div>
+            {data.recentActivity.length === 0 ? (
+              <p className="p-5 rounded-2xl bg-white border border-slate-200 text-sm text-slate-500" role="status">No activity has been logged yet.</p>
+            ) : (
+              <ul className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+                {data.recentActivity.map((a, i) => (
+                  <li
+                    key={`${a.at}-${i}`}
+                    className="px-4 sm:px-5 py-3 grid gap-x-4 gap-y-0.5 grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,15rem)_minmax(0,12rem)_minmax(0,1fr)_6rem] md:items-baseline"
+                  >
+                    <span className="text-sm font-bold text-slate-900 truncate">{a.customer}</span>
+                    <span className="text-xs text-slate-500 text-right md:text-right md:order-4 whitespace-nowrap">{ago(a.at)}</span>
+                    <span className="col-span-2 md:col-span-1 md:order-2 text-xs text-slate-500 truncate">
+                      {[a.type.toLowerCase().replace(/_/g, ' '), a.actor].filter(Boolean).join(' · ')}
+                    </span>
+                    {a.note ? (
+                      <p className="col-span-2 md:col-span-1 md:order-3 text-[13px] text-slate-700 line-clamp-2 md:line-clamp-1 break-words" title={a.note}>{a.note}</p>
+                    ) : (
+                      <span className="hidden md:block md:order-3" />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </>
       )}
     </section>
   );
 };
 
-const Row: React.FC<{ k: string; v: string; red?: boolean }> = ({ k, v, red }) => (
-  <div className="flex items-baseline justify-between gap-4">
-    <dt className="text-slate-600">{k}</dt>
-    <dd className={`font-bold ${red ? 'text-rose-700' : 'text-slate-900'}`}>{v}</dd>
+/** One Open work figure: a compact block, with a quiet rose accent only while something needs attention. */
+const Metric: React.FC<{ k: string; v: string; alert?: boolean }> = ({ k, v, alert }) => (
+  <div className={`rounded-2xl border p-4 min-w-0 ${alert ? 'bg-rose-50/60 border-rose-200' : 'bg-white border-slate-200'}`}>
+    <dt className="text-[13px] font-semibold text-slate-500 leading-snug min-h-[2.5em]">{k}</dt>
+    <dd className={`mt-1 text-[28px] leading-none font-extrabold tabular-nums ${alert ? 'text-rose-700' : 'text-slate-900'}`}>{v}</dd>
   </div>
 );
