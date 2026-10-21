@@ -122,6 +122,8 @@ begin
   -- 4. history about these records
   if s.purge_history then
     delete from public.notifications where entity_id in (select id from _d_ids);
+    -- audit rows are append-only; this deliberate clean-up of test records says so (for this transaction only)
+    perform set_config('amuwa.audit_purge', 'on', true);
     delete from public.audit_logs
      where entity_id in (select id from _d_ids)
         or (metadata ->> 'customer_id') in (select id::text from pg_temp.doomed);

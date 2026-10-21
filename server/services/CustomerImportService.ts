@@ -7,6 +7,8 @@ import { automationSettings, liveChannels } from '../automations/config.js';
 import { sendEmail } from '../automations/providers.js';
 import { renderClientPasswordEmail, type ClientPasswordMailData } from '../automations/templates.js';
 import { hasServiceClient } from '../db/supabase.js';
+import { requestInfo } from '../http/context.js';
+import { recordSecurityEvent } from '../security/events.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
@@ -72,12 +74,18 @@ export class CustomerImportService {
   }
 
   /** The team sends the "Set your password" e-mail again (e.g. the link expired). */
-  async sendPasswordEmail(id: string, origin?: string): Promise<{ email: string; sent: boolean; detail?: string }> {
+  async sendPasswordEmail(actor: Actor, id: string, origin?: string): Promise<{ email: string; sent: boolean; detail?: string }> {
     const customerId = parse(uuidSchema, id);
     const t = unwrap(await this.db.rpc('client_login_invite_target', { p_customer: customerId })) as { email: string; name: string; businessName: string };
     if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'Client logins are not set up on the server.');
     const link = await this.authAdmin.passwordLink(t.email, setPasswordUrl(origin));
     const r = await sendClientMail({ email: t.email, name: t.name }, { name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'WELCOME' });
+    // a password link was made for a client's login: who asked, for which customer (the address and the link are not recorded)
+    const info = requestInfo.getStore();
+    await recordSecurityEvent({
+      action: 'CLIENT_PASSWORD_LINK_SENT', entityType: 'customer', entityId: customerId, actorId: actor.id, outcome: r.sent ? 'SUCCESS' : 'FAILURE',
+      requestId: info?.requestId, ip: info?.ip, dedupeKey: `client-pwd-link:${customerId}:${Math.floor(Date.now() / 60_000)}`, metadata: { sent: r.sent }
+    });
     return { email: t.email, ...r };
   }
 
@@ -116,6 +124,12 @@ export async function clientForgotPassword(body: unknown, origin?: string): Prom
   if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE');
   const authAdmin = new AuthAdminRepository();
   const login = await authAdmin.clientLoginForReset(email);
+  // The answer never tells the caller whether the address has a login; the log does (without the address).
+  const info = requestInfo.getStore();
+  await recordSecurityEvent({
+    action: 'CLIENT_PASSWORD_RESET_REQUESTED', entityType: 'client_session', actorId: null, outcome: 'SUCCESS', requestId: info?.requestId, ip: info?.ip,
+    dedupeKey: `client-reset:${info?.ip ?? 'unknown'}:${Math.floor(Date.now() / 300_000)}:${login ? 'match' : 'none'}`, metadata: { matched: !!login }
+  });
   if (login) {
     try {
       const link = await authAdmin.passwordLink(login.email, setPasswordUrl(origin));

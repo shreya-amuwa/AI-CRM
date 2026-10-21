@@ -17,6 +17,7 @@ import { WabastoreSalesOS } from './WabastoreSalesOS';
 import { WabastoreSupportOS } from './WabastoreSupportOS';
 import { WabastoreWebhookLiveBar } from './WabastoreWebhookLiveBar';
 import { fetchFromAnyWebhookUrl } from '../../../services/webhookFetcher';
+import { dashboardApi } from '../../../lib/api/endpoints';
 
 interface WabastorePanelProps {
   activeTab: ActiveTab;
@@ -567,6 +568,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    void dashboardApi.recordExport('support_inquiries', wabastoreLeads.length).catch(() => undefined);
   };
 
   useEffect(() => {

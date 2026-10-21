@@ -23,12 +23,14 @@ import { runHrAutomation } from './automations/hrDispatcher.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
+import { requestInfo } from './http/context.js';
+import { recordSecurityEvent, sessionClaims } from './security/events.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
 const IMPORT_BODY_BYTES = 4_000_000;
 
-type Env = { Variables: { requestId: string; actor?: Actor; db?: SupabaseClient } };
+type Env = { Variables: { requestId: string; actor?: Actor; db?: SupabaseClient; errorCode?: string } };
 
 // ---------------------------------------------------------------------------
 // App + global middleware
@@ -36,7 +38,10 @@ type Env = { Variables: { requestId: string; actor?: Actor; db?: SupabaseClient 
 export const app = new Hono<Env>().basePath(API_PREFIX);
 
 app.use('*', requestId());
+// the request id (and caller address) follow the request into the database client, so audit rows can be tied back to it
+app.use('*', (c, next) => requestInfo.run({ requestId: c.get('requestId'), ip: clientIp(c) }, next));
 app.use('*', accessLog());
+app.use('*', securityAudit());
 app.use('*', secureHeaders({ crossOriginResourcePolicy: 'same-site' }));
 app.use(
   '*',
@@ -135,6 +140,7 @@ for (const route of clientRoutes) {
   app.on(route.method, `/client${route.path}`, async c => {
     const { db, me, limit } = await authenticateClient(c.req.header('authorization'));
     setRateHeaders(c, limit);
+    await noteSessionStart(c, null, { customerId: me.customerId });
     const request: ApiRequest = {
       method: c.req.method as HttpMethod,
       path: relativePath(c),
@@ -183,9 +189,11 @@ function authenticated(route: RouteDef): MiddlewareHandler<Env> {
   return async (c, next) => {
     const { actor, db, limit } = await authenticateRequest(c.req.header('authorization'), route.options?.rate || 'default');
     setRateHeaders(c, limit);
-    if (!route.options?.allowInactive) assertActive(actor);
+    // set first: a refused (inactive) caller is still named in the security log
     c.set('actor', actor);
     c.set('db', db);
+    if (!route.options?.allowInactive) assertActive(actor);
+    await noteSessionStart(c, actor);
     await next();
   };
 }
@@ -211,6 +219,7 @@ function adapt(route: RouteDef) {
 const ok = <T>(data: T): ApiResponse<T> => ({ success: true, data });
 
 function fail(c: Context, err: AppError) {
+  (c as Context<Env>).set('errorCode', err.code);
   if (err.code === 'RATE_LIMITED') {
     const retry = (err.details as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds;
     if (retry) c.header('Retry-After', String(retry));
@@ -258,6 +267,65 @@ function allowedOrigins(): string[] {
 function log(level: 'info' | 'warn' | 'error', msg: string, c: Context<Env>, extra: Record<string, unknown> = {}) {
   const line = JSON.stringify({ level, msg, requestId: c.get('requestId'), method: c.req.method, path: relativePath(c), userId: c.get('actor')?.id, ...extra });
   (level === 'error' ? console.error : level === 'warn' ? console.warn : console.log)(line);
+}
+
+// ---------------------------------------------------------------------------
+// Security log: what the database cannot record because a refused request rolls its own transaction back
+// ---------------------------------------------------------------------------
+const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
+  ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
+  ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
+];
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/integrations/biometric/punch', '/client-auth/forgot-password']);
+
+/** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
+function routeLabel(method: string, path: string): string {
+  if (STATIC_LABELS.has(path)) return path;
+  return ROUTE_LABELS.find(r => r.method === method && r.rx.test(path))?.label ?? 'unmatched';
+}
+
+function securityAudit(): MiddlewareHandler<Env> {
+  return async (c, next) => {
+    await next();
+    const status = c.res.status;
+    const code = c.get('errorCode');
+    if (!code || (status !== 401 && status !== 403 && status !== 429)) return;
+    const actor = c.get('actor');
+    const route = routeLabel(c.req.method, relativePath(c));
+    const ip = clientIp(c);
+    const action = status === 401 ? 'AUTH_REJECTED' : status === 429 ? 'RATE_LIMITED' : 'ACCESS_DENIED';
+    await recordSecurityEvent({
+      action,
+      entityType: 'request',
+      actorId: actor?.id ?? null,
+      outcome: 'DENIED',
+      requestId: c.get('requestId'),
+      ip: ip === 'unknown' ? undefined : ip,
+      // one row per caller, kind of refusal and route per five minutes: a retry or a flood is a single event
+      dedupeKey: `${action}:${code}:${actor?.id ?? ip}:${c.req.method}:${route}:${Math.floor(Date.now() / 300_000)}`,
+      metadata: { method: c.req.method, route, status, code, ...(actor ? { role: actor.role, accountStatus: actor.status } : {}) }
+    });
+  };
+}
+
+const knownSessions = new Set<string>();
+/** The first request of a sign-in session is the sign-in as the API sees it (the session id comes from the verified token). */
+async function noteSessionStart(c: Context<Env>, actor: Actor | null, extra: Record<string, unknown> = {}) {
+  const claims = sessionClaims(c.req.header('authorization'));
+  if (!claims || knownSessions.has(claims.sessionId)) return;
+  if (knownSessions.size > 5000) knownSessions.clear();
+  knownSessions.add(claims.sessionId);
+  await recordSecurityEvent({
+    action: 'SESSION_STARTED',
+    entityType: actor ? 'session' : 'client_session',
+    entityId: typeof extra.customerId === 'string' ? extra.customerId : null,
+    actorId: actor?.id ?? null,
+    outcome: 'SUCCESS',
+    requestId: c.get('requestId'),
+    ip: clientIp(c) === 'unknown' ? undefined : clientIp(c),
+    dedupeKey: `session:${claims.sessionId}`,
+    metadata: { method: claims.method, ...(actor ? { role: actor.role } : {}) }
+  });
 }
 
 /** One structured log line per request (visible in Vercel → Logs). */

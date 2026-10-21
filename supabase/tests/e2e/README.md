@@ -16,3 +16,15 @@ history, direct messages, groups, attachments, and that every unauthorized attem
 PGHOST=/var/lib/pgcrm PGPORT=54329 PGUSER=postgres POSTGREST_BIN=/path/to/postgrest \
   E2E_CHROMIUM=/path/to/chrome supabase/tests/e2e/run-chat.sh ./chat-screenshots
 ```
+
+## Dashboards and the security log
+
+`run-dashboards.sh` uses the same throw-away stack (other ports) and signs in as the Super Admin, a Department Head, a Team Lead and a Team
+Member. It checks that the Super Admin lands on the new company dashboard (not the old department hub), that every headline figure equals
+the database, that the Department Head and Team Lead see only their own scope, that the demo data of the old Team Lead dashboard is gone, and
+that the Security & Audit Logs page lists refused requests, filters, shows details and has nothing to edit or delete. It also checks a phone
+width for sideways scrolling and saves screenshots to the directory you pass.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-dashboards.sh ./dashboard-screenshots
+```

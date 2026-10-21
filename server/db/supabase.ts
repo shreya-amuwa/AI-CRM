@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getEnv } from '../config/env.js';
 import { AppError } from '../http/errors.js';
+import { requestInfo } from '../http/context.js';
 
 const SERVER_AUTH_OPTIONS = { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false };
 
@@ -13,7 +14,8 @@ export function createUserClient(accessToken: string): SupabaseClient {
   const env = getEnv();
   return createClient(env.supabaseUrl, env.supabaseAnonKey, {
     auth: SERVER_AUTH_OPTIONS,
-    global: { headers: { Authorization: `Bearer ${accessToken}` } }
+    // The request id travels with every query (PostgREST exposes it to the database), so audit rows can be tied to the request.
+    global: { headers: { Authorization: `Bearer ${accessToken}`, ...(requestInfo.getStore()?.requestId ? { 'X-Request-Id': requestInfo.getStore()!.requestId } : {}) } }
   });
 }
 

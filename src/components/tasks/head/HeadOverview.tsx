@@ -7,6 +7,7 @@ import { isDirectMemberTask, isOverdue, localDateKey, summarize, type WorkTaskDa
 import { fmtDate } from '../TaskParts';
 import { Avatar, Card, CardHead, healthOf, HealthBadge, LoadingLine, primaryBtn, ghostBtn, StatCard } from './headParts';
 import { dayLabelsOfWeek } from './weekChart';
+import { ScopeOverviewPanel } from '../../common/ScopeOverviewPanel';
 
 export type HeadPage = 'overview' | 'assign' | 'reports' | 'daily' | 'activity' | 'clients' | 'customers' | 'import' | 'support' | 'notices' | 'team' | 'notifications' | 'payments' | 'plans' | 'chat';
 
@@ -218,6 +219,9 @@ export const HeadOverview: React.FC<{ data: WorkTaskData; go: (p: HeadPage) => v
           </Card>
         </>
       )}
+
+      {/* the department's customers, teams and people, counted by the database from the real records and limited to this department */}
+      <ScopeOverviewPanel heading="Customers and teams" hint="Your department's customers, who is carrying them, and what is overdue." />
     </div>
   );
 };

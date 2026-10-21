@@ -51,7 +51,7 @@ async function api(who: string | null, method: string, path: string, body?: unkn
     headers: { 'content-type': 'application/json', ...(who ? { authorization: `Bearer ${tokens.get(who)}` } : {}) },
     body: raw ?? (body === undefined ? undefined : JSON.stringify(body))
   });
-  return { status: res.status, json: (await res.json()) as any };
+  return { status: res.status, json: (await res.json()) as any, requestId: res.headers.get('x-request-id') };
 }
 
 // ---------------------------------------------------------------------------
@@ -3675,6 +3675,118 @@ provider.close();
   check(await leadVisible('hr', 'Webhook Ravi') === 0, 'leads: HR staff (another department) do not see it');
   check(await leadVisible('accm', 'Webhook Ravi') === 0, 'leads: nor Accounts');
   check(await leadVisible('client', 'Webhook Ravi') === 0, 'leads: nor a client login');
+}
+
+// ---------------------------------------------------------------------------
+// Dashboards and security events
+// ---------------------------------------------------------------------------
+{
+  console.log('--- dashboards: who may read the company-wide view');
+  r = await api(null, 'GET', '/dashboard/company-overview');
+  check(r.status === 401, 'dashboards: the company overview needs a sign-in', r);
+  let firstDeniedRid: string | null = null; // the first refusal of the Team Member is the one that is recorded (the repeats are the same event)
+  for (const who of ['dh', 'th', 'a', 'accm', 'sm', 'tc'] as const) {
+    r = await api(who, 'GET', '/dashboard/company-overview');
+    check(r.status === 403, `dashboards: ${who} cannot read the company-wide view`, r);
+    if (who === 'a') firstDeniedRid = r.requestId;
+  }
+  r = await api('sa', 'GET', '/dashboard/company-overview');
+  const co = r.json.data;
+  check(r.status === 200 && co.customers.total === Number((await db.query(`select count(*) from customers`)).rows[0].count) && Array.isArray(co.departments) && co.trend.length === 12 && Array.isArray(co.alerts),
+    'dashboards: the Super Admin gets the company overview, and its customer total is the real record count', r);
+  check(co.departments.reduce((n: number, d: any) => n + d.records, 0) === Number((await db.query(`select count(*) from customers where department_id is not null`)).rows[0].count),
+    'dashboards: the department rows add up to the customers (none counted twice)');
+  check(Number(co.money.incomeTotal) === Number((await db.query(`select coalesce(sum(amount), 0) s from private.verified_income()`)).rows[0].s), 'dashboards: income is verified payments only');
+
+  console.log('--- dashboards: the scoped overview');
+  r = await api('th', 'GET', '/dashboard/scope-overview');
+  const thTeam = (await db.query(`select team_id from profiles where email = (select email from profiles where id = $1)`, [(await api('th', 'GET', '/me')).json.data.id])).rows[0].team_id;
+  check(r.status === 200 && r.json.data.scope.role === 'TEAM_HEAD' && r.json.data.customers.total === Number((await db.query(`select count(*) from customers where team_id = $1`, [thTeam])).rows[0].count),
+    'dashboards: a Team Lead counts only their own team', r);
+  const dhDept = (await api('dh', 'GET', '/me')).json.data.department.id;
+  r = await api('dh', 'GET', `/dashboard/scope-overview?departmentId=${crypto.randomUUID()}`);
+  check(r.status === 200 && r.json.data.scope.departmentId === dhDept && r.json.data.customers.total === Number((await db.query(`select count(*) from customers where department_id = $1`, [dhDept])).rows[0].count),
+    'dashboards: a Department Head gets their own department even when another is named in the request', r);
+  r = await api('a', 'GET', '/dashboard/scope-overview');
+  check(r.status === 403, 'dashboards: a Team Member has no scoped overview', r);
+  r = await api('sa', 'GET', `/dashboard/scope-overview?departmentId=${dhDept}`);
+  check(r.status === 200 && r.json.data.scope.departmentId === dhDept, 'dashboards: the Super Admin may name a department', r);
+  r = await api('sa', 'GET', '/dashboard/scope-overview?departmentId=not-a-uuid');
+  check(r.status === 422, 'dashboards: a bad department id is refused', r);
+
+  console.log('--- security: refused requests are recorded');
+  await db.query(`delete from audit_logs where action in ('ACCESS_DENIED', 'AUTH_REJECTED') and false`); // (the log is append-only: nothing to clear)
+  const deniedRid = firstDeniedRid;
+  check(!!deniedRid, 'security: the response carries a request id');
+  let ev = (await db.query(`select * from audit_logs where action = 'ACCESS_DENIED' and request_id = $1`, [deniedRid])).rows;
+  check(ev.length === 1 && ev[0].outcome === 'DENIED' && ev[0].actor_role === 'TEAM_MEMBER' && ev[0].metadata.route === '/dashboard/company-overview' && ev[0].metadata.status === 403 && ev[0].metadata.code === 'FORBIDDEN',
+    'security: a refused request is recorded with who, which route (pattern), the code and the request id', ev);
+  check(!JSON.stringify(ev[0].metadata).match(/Bearer|eyJ|password/i), 'security: no token or secret is in the event', ev[0].metadata);
+  await api('a', 'GET', '/dashboard/company-overview');
+  await api('a', 'GET', '/dashboard/company-overview');
+  check((await db.query(`select count(*)::int n from audit_logs where action = 'ACCESS_DENIED' and actor_id = (select id from profiles where email = 'a@amuwa.com') and metadata ->> 'route' = '/dashboard/company-overview'`)).rows[0].n === 1,
+    'security: retrying the same refused request does not add events (one per caller, route and kind in five minutes)');
+  r = await api(null, 'GET', '/dashboard/scope-overview?x=secret-query-value');
+  ev = (await db.query(`select * from audit_logs where action = 'AUTH_REJECTED' and request_id = $1`, [r.requestId])).rows;
+  check(r.status === 401 && ev.length === 1 && ev[0].actor_id === null && ev[0].outcome === 'DENIED' && !JSON.stringify(ev[0]).includes('secret-query-value'), 'security: an unauthenticated request is recorded without its query string', ev);
+  r = await api('forged', 'GET', '/dashboard/company-overview');
+  check(r.status === 401, 'security: a forged token is refused', r);
+  const bId = (await api('b', 'GET', '/me')).json.data.id;
+  await db.query(`update profiles set status = 'SUSPENDED', status_reason = 'security test' where id = $1`, [bId]);
+  r = await api('b', 'GET', '/dashboard/scope-overview');
+  ev = (await db.query(`select * from audit_logs where action = 'ACCESS_DENIED' and request_id = $1`, [r.requestId])).rows;
+  check(r.status === 403 && ev.length === 1 && ev[0].actor_id === bId && ev[0].metadata.code === 'ACCOUNT_INACTIVE' && ev[0].metadata.accountStatus === 'SUSPENDED', 'security: a refused suspended account is named in the log', ev);
+  await db.query(`update profiles set status = 'ACTIVE', status_reason = null where id = $1`, [bId]);
+
+  console.log('--- security: the request id follows an action into its audit row');
+  r = await api('a', 'POST', '/pipeline/leads', { name: 'Audit Trail Lead', company: 'Audit Trail Co', phone: '9820099001', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+  const created = r.status === 201 ? (await db.query(`select * from audit_logs where action = 'CUSTOMER_CREATED' and entity_id = $1`, [r.json.data.id])).rows : [];
+  check(r.status === 201 && created.length === 1 && created[0].request_id === r.requestId && created[0].actor_role === 'TEAM_MEMBER' && created[0].outcome === 'SUCCESS',
+    'security: a customer created through the API is audited with the request id, the actor and the role', created);
+
+  console.log('--- security: the start of a sign-in session is recorded once');
+  const sid = crypto.randomUUID();
+  tokens.set('sess', sign({ sub: (await api('a', 'GET', '/me')).json.data.id, role: 'authenticated', session_id: sid, amr: [{ method: 'password', timestamp: 1 }] }));
+  await api('sess', 'GET', '/me');
+  await api('sess', 'GET', '/me');
+  const ss = (await db.query(`select * from audit_logs where dedupe_key = $1`, [`session:${sid}`])).rows;
+  check(ss.length === 1 && ss[0].action === 'SESSION_STARTED' && ss[0].outcome === 'SUCCESS' && ss[0].metadata.method === 'password' && ss[0].actor_role === 'TEAM_MEMBER', 'security: a session is recorded once, with its method (never the token)', ss);
+
+  console.log('--- security: exports');
+  r = await api('a', 'POST', '/security/data-exports', { dataset: 'leads', rows: 12 });
+  check(r.status === 200, 'security: an export is recorded', r);
+  const ex = (await db.query(`select * from audit_logs where action = 'DATA_EXPORTED' and request_id = $1`, [r.requestId])).rows;
+  check(ex.length === 1 && ex[0].metadata.rows === 12 && ex[0].metadata.dataset === 'leads' && ex[0].actor_role === 'TEAM_MEMBER', 'security: with who, what and how many rows', ex);
+  r = await api('a', 'POST', '/security/data-exports', { dataset: 'Leads!', rows: 1 });
+  check(r.status === 422, 'security: an invalid dataset name is refused', r);
+  r = await api('a', 'POST', '/security/data-exports', { dataset: 'leads', rows: 1, extra: 'x' });
+  check(r.status === 422, 'security: unknown fields are refused', r);
+
+  console.log('--- security: the audit viewer');
+  r = await api('a', 'GET', '/audit-logs/search');
+  check(r.status === 403, 'security: a Team Member cannot use the viewer', r);
+  r = await api(null, 'GET', '/audit-logs/search');
+  check(r.status === 401, 'security: nor an anonymous caller', r);
+  r = await api('sa', 'GET', '/audit-logs/search?outcome=DENIED&pageSize=100');
+  check(r.status === 200 && r.json.data.total >= 3 && r.json.data.items.every((i: any) => i.outcome === 'DENIED') && r.json.data.items.some((i: any) => i.action === 'ACCESS_DENIED' && i.actorRole === 'TEAM_MEMBER'),
+    'security: the Super Admin filters by outcome and sees the refusals', r);
+  r = await api('sa', 'GET', `/audit-logs/search?q=${encodeURIComponent(deniedRid ?? '')}`);
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].requestId === deniedRid, 'security: a request id finds its event', r);
+  r = await api('sa', 'GET', '/audit-logs/search?action=DATA_EXPORTED&from=2000-01-01&to=2999-12-31');
+  check(r.status === 200 && r.json.data.items.length >= 1 && r.json.data.items.every((i: any) => i.action === 'DATA_EXPORTED'), 'security: filters by event type and dates', r);
+  r = await api('sa', 'GET', '/audit-logs/search?outcome=MAYBE');
+  check(r.status === 422, 'security: an unknown outcome is refused', r);
+  r = await api('sa', 'GET', '/audit-logs/search?page=1&pageSize=1');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.total > 1, 'security: results are paged', r);
+  r = await api('dh', 'GET', '/audit-logs/search?pageSize=100');
+  check(r.status === 200 && r.json.data.items.length > 0 && r.json.data.items.every((i: any) => i.departmentId === dhDept), 'security: a Department Head sees only their department', r);
+  r = await api('sa', 'GET', '/audit-logs/actions');
+  check(r.status === 200 && r.json.data.includes('ACCESS_DENIED') && r.json.data.includes('SESSION_STARTED'), 'security: the event types can be listed', r);
+  check(!JSON.stringify((await api('sa', 'GET', '/audit-logs/search?pageSize=100')).json).match(/"(password|token|authorization)"\s*:/i), 'security: nothing the viewer returns carries a secret');
+  r = await api('sa', 'DELETE', '/audit-logs/1');
+  check(r.status === 404 || r.status === 405, 'security: there is no way to delete an event through the API', r);
+  r = await api('sa', 'PATCH', '/audit-logs/1', { action: 'X' });
+  check(r.status === 404 || r.status === 405, 'security: nor to edit one', r);
 }
 
 // A project missing an earlier migration must still let people sign in.

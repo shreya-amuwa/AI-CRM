@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import { isDirectMemberTask, summarize, type Person, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
 import { nameOf, ProgressBar } from '../TaskParts';
 import { Avatar, Card, CardHead, ghostBtn, LoadingLine, StatCard, Tabs } from './headParts';
+import { dashboardApi } from '../../../lib/api/endpoints';
 
 type Range = 'all' | 'month' | 'week';
 type Row = ReturnType<typeof summarize> & { id: string };
@@ -44,6 +45,7 @@ export const HeadReports: React.FC<{ data: WorkTaskData }> = ({ data }) => {
     a.download = `task-report-${range}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    void dashboardApi.recordExport('task_report', lines.length - 1).catch(() => undefined);
   };
 
   const circ = 2 * Math.PI * 42;

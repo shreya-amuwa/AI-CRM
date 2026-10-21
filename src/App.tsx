@@ -6,7 +6,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { TabProvider, useTabs } from './context/TabContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
-import { DepartmentSelector } from './components/dashboard/DepartmentSelector';
+import { SuperAdminDashboard } from './components/superadmin/SuperAdminDashboard';
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
 import { EmailAutomation } from './components/hr/EmailAutomation';
@@ -269,7 +269,7 @@ const MainAppContent: React.FC = () => {
     if (user.role !== 'superadmin') return <ScreenLoader />;
     return (
       <div className="bg-slate-50 text-slate-900 min-h-screen">
-        <DepartmentSelector />
+        <SuperAdminDashboard />
         <SessionEvictionModal />
       </div>
     );

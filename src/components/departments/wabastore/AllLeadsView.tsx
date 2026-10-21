@@ -7,6 +7,7 @@ import {
 import { useLeadStore } from '../../../context/LeadStoreContext';
 import { LeadSourceId } from '../../../types/crm';
 import { WabastoreWebhookLiveBar } from './WabastoreWebhookLiveBar';
+import { dashboardApi } from '../../../lib/api/endpoints';
 
 export const AllLeadsView: React.FC = () => {
   const { getLeadsForDepartment, deleteLead, importBatchLeads, clearLeadsForDepartment } = useLeadStore();
@@ -97,6 +98,7 @@ export const AllLeadsView: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    void dashboardApi.recordExport('leads', wabastoreLeads.length).catch(() => undefined);
   };
 
   const handleImportSubmit = () => {

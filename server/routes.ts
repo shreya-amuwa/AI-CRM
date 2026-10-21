@@ -3,6 +3,7 @@ import {
   addonInvoiceController as addons,
   approvalsController as approvals,
   auditController as audit,
+  dashboardController as dashboards,
   businessReportController as business,
   clientWorkflowController as clientWork,
   chatController as chat,
@@ -250,5 +251,12 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/hr/email-automation/employee-dates', handler: hr.setEmployeeDates, options: S },
   { method: 'POST', path: '/hr/email-automation/run', handler: hr.runEmailAutomation, options: S },
 
-  { method: 'GET', path: '/audit-logs', handler: audit.list }
+  { method: 'GET', path: '/audit-logs', handler: audit.list },
+  // Security & Audit Logs viewer (read-only; scoped by the table's row-level security) and the record of browser-side exports
+  { method: 'GET', path: '/audit-logs/search', handler: audit.search },
+  { method: 'GET', path: '/audit-logs/actions', handler: audit.actions },
+  { method: 'POST', path: '/security/data-exports', handler: audit.recordExport, options: S },
+  // Dashboards: the whole company (Super Admin) and the scope of a Team Lead / Department Head
+  { method: 'GET', path: '/dashboard/company-overview', handler: dashboards.company },
+  { method: 'GET', path: '/dashboard/scope-overview', handler: dashboards.scope }
 ];
