@@ -1,8 +1,19 @@
-# Dynamic two-stage invoices
+# Dynamic invoices (paid invoice only)
 
-Accounts builds an invoice from the customer and purchase details, and the CRM creates, stores and e-mails its PDF in two stages.
+Accounts builds an invoice from the customer and purchase details. **Only the paid invoice (with the PAID stamp) is ever created and sent.** Older invoices keep the two-stage history described at the end of the lifecycle section.
 
-## Lifecycle
+## What changed (migration `20261112000100_paid_only_invoices.sql`)
+
+- **No GST question for Sales, no automatic 18%.** *Send to Accounts* asks only for the agreed amount and a note. The agreed amount is the amount payable; the system adds no GST. Accounts chooses the GST rate of every invoice line (the rate field starts blank, with 0 / 5 / 12 / 18 / 28 % shortcuts, and any other rate can be typed); the invoice total and the order balance follow from that choice. Older agreements that were saved as including GST keep that meaning (Accounts can change it with a reason).
+- **Save Invoice sends nothing.** The invoice is saved (`paid_only = true`); no unpaid PDF is created, stored or e-mailed, and the customer does not see it yet.
+- **Confirm Payment & Send Paid Invoice** creates the paid PDF, stores it and e-mails it. It works after a **part payment** too: it needs at least one verified payment that is not already covered by an earlier paid invoice of the same order (`generated_invoices.paid_order_confirmed` records the confirmed total each paid invoice was issued against), so several paid invoices can follow several part payments.
+- **Simpler invoice summary** (PDF, screens, e-mail attachment): *Invoice total*, *Total confirmed payments*, *Total order balance outstanding* and, on the PDF, the *Payment status*. *Balance Due on this Invoice*, *Invoice Status* and *Total Order Value* are removed. The invoice and the confirm dialog have more spacing.
+- Add-on and invoice ledgers (`ADDON`, `INVOICE`) keep their existing part-payment-on-invoice rule.
+
+Run `supabase/migrations/20261112000100_paid_only_invoices.sql` in the Supabase SQL editor after the earlier migrations (safe to run again).
+
+
+## Lifecycle (invoices made before the paid-only rule)
 
 1. **Generate & Send Invoice** (Accounts > Invoices, the customer pop-up, or an approved add-on in Business Verification). The invoice is saved as `ISSUED`, the unpaid PDF is created, stored privately (Cloudflare R2, or Supabase Storage as the fallback) and e-mailed to `customers.email`. The customer sees it on the client dashboard once the PDF is stored.
 2. **Confirm Payment & Send Paid Invoice**. Accounts records the method, reference and date. The same invoice is rendered again with the PAID stamp, stored next to the unpaid one and e-mailed. The paid file appears for the customer only once it is stored; until then the dashboard says it is being prepared.
@@ -46,4 +57,4 @@ Run `supabase/migrations/20261103000100_order_tax_basis.sql` in the Supabase SQL
 
 ## Tests
 
-`npm run test:unit` (calculation, PDF, delivery), `npm run test:db` (section 30-37 of `invoices_test.sql`), `npm run test:api`.
+`npm run test:unit` (calculation, PDF, delivery), `npm run test:db` (section 30-37 of `invoices_test.sql`), `npm run test:api`, and the browser test `supabase/tests/e2e/run-invoices.sh` (Sales form without GST, Accounts choosing the GST, a paid invoice after a part payment, a phone-sized builder). New cases: `supabase/tests/paid_invoices_test.sql` and the "paid-only" block of `api_integration.test.ts`.

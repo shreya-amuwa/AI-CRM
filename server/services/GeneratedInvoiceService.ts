@@ -80,17 +80,29 @@ export class GeneratedInvoiceService {
     return this.repo.agreementReview();
   }
 
-  /** Stage 1: persist the snapshot (once), then the unpaid PDF and its e-mail. A repeated request resumes instead of duplicating. */
+  /**
+   * Saves the invoice (once). No unpaid invoice is made or sent: the customer only ever receives the PAID invoice, which is created
+   * when the payment is confirmed. A repeated request returns the same invoice.
+   */
   async issue(body: unknown): Promise<InvoiceRunResult & { created: boolean }> {
     const issued = await this.repo.issue(parse(generatedInvoiceIssueSchema, body));
-    const first: InvoiceStep = { step: 'ISSUE', stage: null, status: 'DONE', message: issued.replayed ? 'This invoice was already issued; continuing where it stopped.' : null };
-    const run = await this.runStage(issued.id, 'UNPAID');
-    return { invoice: run.invoice, steps: [first, ...run.steps], created: !issued.replayed };
+    const invoice = await this.repo.detail(issued.id);
+    return {
+      invoice,
+      steps: [{
+        step: 'ISSUE', stage: null, status: 'DONE',
+        message: issued.replayed
+          ? 'This invoice was already saved.'
+          : 'Nothing was sent to the customer. The paid invoice is created and e-mailed when you confirm the payment.'
+      }],
+      created: !issued.replayed
+    };
   }
 
   /**
-   * Stage 2: confirm the payment (idempotent). A part payment is recorded and the invoice stays open with its balance; once the
-   * balance is zero the invoice is marked paid and the paid PDF (with the PAID stamp) and its e-mail follow.
+   * Confirm the payment (idempotent). For the agreed services a confirmed payment - also a part payment - marks the invoice paid and
+   * the paid PDF (with the PAID stamp) and its e-mail follow; what is still outstanding stays on the order. (An add-on or an additional
+   * invoice records its part payments on the invoice, which stays open until its balance is zero.)
    */
   async confirmPayment(id: unknown, body: unknown): Promise<InvoiceRunResult> {
     const invoiceId = parse(uuidSchema, id);

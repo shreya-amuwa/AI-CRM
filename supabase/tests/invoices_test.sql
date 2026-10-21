@@ -8,6 +8,10 @@
 
 \echo '--- 30. Dynamic invoices: maths, words, states'
 reset role;
+-- Most of this suite exercises the delivery machinery (unpaid stage, retries, immutability) that older invoices still use. Invoices made
+-- by the paid-only rule never run the unpaid stage, so while those sections run, new invoices are created as older (not paid-only) ones;
+-- section 38 at the end switches the rule back on and tests it.
+alter table public.generated_invoices alter column paid_only set default false;
 -- The same arithmetic as shared/invoiceCalc.ts (which has its own unit tests with these cases).
 select test.check(
   (select (c ->> 'subtotal')::numeric = 16000 and (c ->> 'totalGst')::numeric = 2880 and (c ->> 'total')::numeric = 18880

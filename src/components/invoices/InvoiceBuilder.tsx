@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Mail, Plus, Search, Trash2 } from 'lucide-react';
+import { FilePlus2, Plus, Search, Trash2 } from 'lucide-react';
 import { INVOICE_PURPOSES, type InvoiceCustomer, type InvoicePrefill, type InvoicePurpose, type InvoiceRunResult } from '../../../shared/contracts';
 import { defaultTaxTreatment, GST_STATES, inferStateFromAddress, isValidGstinFormat, normalizeGstin, reviewCustomerTax, stateName, type TaxTreatment } from '../../../shared/gst';
 import { calculateInvoice, inr, rateText, rs, toPaise, toRateBp } from '../../../shared/invoiceCalc';
@@ -25,7 +25,7 @@ interface LineForm {
   baseAmount: string;
 }
 let lineKey = 0;
-const blankLine = (): LineForm => ({ key: ++lineKey, serviceCode: '', particulars: '', hsnSac: '998313', taxRate: '18', quantity: '1 Nos', baseAmount: '' });
+const blankLine = (): LineForm => ({ key: ++lineKey, serviceCode: '', particulars: '', hsnSac: '998313', taxRate: '', quantity: '1 Nos', baseAmount: '' });
 
 interface FormState {
   invoiceNumber: string;
@@ -62,7 +62,7 @@ function fromPrefill(p: InvoicePrefill): FormState {
     acknowledge: false,
     terms: p.terms || '100% Payment Against supply.',
     lines: p.lines.length
-      ? p.lines.map(l => ({ key: ++lineKey, serviceCode: l.serviceCode || '', particulars: l.particulars, hsnSac: l.hsnSac, taxRate: String(l.taxRate), quantity: l.quantity, baseAmount: l.baseAmount === null ? '' : String(l.baseAmount) }))
+      ? p.lines.map(l => ({ key: ++lineKey, serviceCode: l.serviceCode || '', particulars: l.particulars, hsnSac: l.hsnSac, taxRate: l.taxRate === null || l.taxRate === undefined ? '' : String(l.taxRate), quantity: l.quantity, baseAmount: l.baseAmount === null ? '' : String(l.baseAmount) }))
       : [blankLine()]
   };
 }
@@ -70,8 +70,8 @@ function fromPrefill(p: InvoicePrefill): FormState {
 /**
  * Accounts: builds one invoice. Customer and purchase details come pre-filled (every value stays editable),
  * the totals shown here are only a preview: the database recomputes them and Accounts never types a total or a GST amount.
- * "Generate & Send Invoice" saves the invoice, creates its PDF, stores it privately and e-mails it to the customer;
- * the result lists each step so a failed PDF or e-mail can be retried from the invoice.
+ * "Save Invoice" saves the invoice only. Nothing is sent to the customer: the paid invoice (with the PAID stamp) is created and
+ * e-mailed when Accounts confirms the payment. The GST rate of every line is Accounts' choice; the system adds none by itself.
  */
 /**
  * What Sales agreed, read from the database: the agreed amount and whether it includes GST, what is already invoiced and what is
@@ -104,21 +104,21 @@ const AgreementNote: React.FC<{ prefill: InvoicePrefill; customerId: string; fil
     }
   };
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-[11px] text-slate-600">
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2 text-[11px] leading-relaxed text-slate-600">
       <p>
-        Sales agreed <b className="text-slate-900">{rs(agreed)}</b> {excl ? 'excluding GST' : 'including GST'} for all the services together.
+        Sales agreed <b className="text-slate-900">{rs(agreed)}</b> for all the services together.
         {excl
-          ? ` ${doneTaxable > 0 ? `${rs(doneTaxable)} is already invoiced before GST; ${rs(Math.max(agreed - doneTaxable, 0))} is left to invoice. ` : ''}${amountsNote}The GST is added on top, and the invoices together cannot exceed the agreed amount before GST.`
+          ? ` ${doneTaxable > 0 ? `${rs(doneTaxable)} is already invoiced; ${rs(Math.max(agreed - doneTaxable, 0))} is left to invoice. ` : ''}${amountsNote}You choose the GST for every line; the invoices together cannot exceed the agreed amount before GST.`
           : ` ${doneGross > 0 ? `${rs(doneGross)} is already invoiced (with GST). ` : ''}${amountsNote}The invoices together, with GST, cannot exceed the agreed amount.`}
       </p>
       {o && (
         <p>
-          Total payable {rs(toPaise(o.totalPayable) ?? 0)}{o.estimated ? ' (GST on the part not invoiced yet is estimated)' : ''} · confirmed payments {rs(toPaise(o.confirmed) ?? 0)} · order balance <b className="text-slate-900">{rs(toPaise(o.balance) ?? 0)}</b>
+          Total payable {rs(toPaise(o.totalPayable) ?? 0)} · confirmed payments {rs(toPaise(o.confirmed) ?? 0)} · order balance <b className="text-slate-900">{rs(toPaise(o.balance) ?? 0)}</b>
         </p>
       )}
       {!open ? (
         <button type="button" className="text-blue-700 font-semibold hover:underline" onClick={() => setOpen(true)}>
-          {excl ? 'The agreed amount already includes GST' : 'The agreed amount is before GST'}
+          {excl ? 'The agreed amount already includes GST (change)' : 'The agreed amount is before GST (change)'}
         </button>
       ) : (
         <div className="flex flex-wrap items-end gap-2 pt-1">
@@ -223,6 +223,7 @@ export const InvoiceBuilder: React.FC<{
       if (l.particulars.trim().length < 2) problems.push(`Line ${i + 1}: enter the particulars.`);
       if (!l.quantity.trim()) problems.push(`Line ${i + 1}: enter the quantity.`);
       if (!/^[0-9]{4,8}$/.test(l.hsnSac.trim())) problems.push(`Line ${i + 1}: the HSN/SAC code is 4 to 8 digits.`);
+      if (toRateBp(l.taxRate) === null) problems.push(`Line ${i + 1}: choose the GST rate (0 if there is no GST).`);
     });
     if (calc && !calc.ok) calc.problems.forEach(p => problems.push(p.message));
     // Each part payment can have its own invoice, but together they may not exceed what Sales agreed (the database refuses it too).
@@ -296,9 +297,9 @@ export const InvoiceBuilder: React.FC<{
   // ------------------------------------------------------------------ result
   if (result) {
     return (
-      <Dialog title={`Invoice ${result.invoice.number}`} description="The invoice is saved. This is what happened to its PDF and e-mail." onClose={() => onDone(result)} wide>
+      <Dialog title={`Invoice ${result.invoice.number}`} description="The invoice is saved. Nothing has been sent to the customer yet." onClose={() => onDone(result)} wide>
         <StepList steps={result.steps} />
-        <p className="text-xs text-slate-600">If a step did not finish, open the invoice and use Retry. Nothing is created twice.</p>
+        <p className="text-xs text-slate-600">When the customer has paid, open the invoice and use Confirm Payment &amp; Send Paid Invoice.</p>
         <div className="flex justify-end pt-2 border-t border-slate-100">
           <button type="button" className={btn.primary} onClick={() => onDone(result)}>
             Open the invoice
@@ -309,7 +310,7 @@ export const InvoiceBuilder: React.FC<{
   }
 
   return (
-    <Dialog title="Generate invoice" description="Customer and purchase details are filled in for you. Check them, add the amounts, and send." onClose={onClose} wide persistent>
+    <Dialog title="Create invoice" description="Customer and purchase details are filled in for you. Check them, choose the GST for each line and save. The customer receives only the paid invoice, when you confirm the payment." onClose={onClose} wide persistent>
       {!picked ? (
         <div className="space-y-3">
           <label className="relative block">
@@ -355,7 +356,7 @@ export const InvoiceBuilder: React.FC<{
           </div>
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-5" aria-label="Generate invoice" noValidate>
+        <form onSubmit={submit} className="space-y-7" aria-label="Create invoice" noValidate>
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs">
             <div>
               <div className="font-bold text-slate-900">{picked.label}</div>
@@ -388,8 +389,8 @@ export const InvoiceBuilder: React.FC<{
             </Field>
           )}
 
-          <fieldset className="grid sm:grid-cols-3 gap-3">
-            <legend className="text-xs font-bold text-slate-800 mb-2">Invoice</legend>
+          <fieldset className="grid sm:grid-cols-3 gap-4">
+            <legend className="text-xs font-bold text-slate-800 mb-3">Invoice</legend>
             <Field label="Invoice number" htmlFor="inv-number">
               <input id="inv-number" className={inputCls} value={form.invoiceNumber} maxLength={16} placeholder={prefill.suggestedInvoiceNumber ? `Automatic (next: ${prefill.suggestedInvoiceNumber})` : 'Automatic'} onChange={e => set('invoiceNumber', e.target.value)} />
             </Field>
@@ -401,8 +402,8 @@ export const InvoiceBuilder: React.FC<{
             </Field>
           </fieldset>
 
-          <fieldset className="grid sm:grid-cols-2 gap-3">
-            <legend className="text-xs font-bold text-slate-800 mb-2">Billed to</legend>
+          <fieldset className="grid sm:grid-cols-2 gap-4">
+            <legend className="text-xs font-bold text-slate-800 mb-3">Billed to</legend>
             <Field label="Business name" htmlFor="inv-business">
               <input id="inv-business" className={inputCls} value={form.businessName} maxLength={200} onChange={e => set('businessName', e.target.value)} />
               {SOURCE_LABEL[prefill.sources.businessName] && form.businessName && <span className="text-[11px] text-slate-500">{SOURCE_LABEL[prefill.sources.businessName]}</span>}
@@ -451,9 +452,9 @@ export const InvoiceBuilder: React.FC<{
             </div>
           )}
 
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-bold text-slate-800 mb-2">Tax</legend>
-            <div className="grid sm:grid-cols-2 gap-3">
+          <fieldset className="space-y-3">
+            <legend className="text-xs font-bold text-slate-800 mb-3">Tax</legend>
+            <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Tax treatment" htmlFor="inv-treatment">
                 <select id="inv-treatment" className={`${selectCls} w-full`} value={treatment ?? ''} onChange={e => set('treatment', e.target.value as TaxTreatment)}>
                   <option value="" disabled>
@@ -471,8 +472,8 @@ export const InvoiceBuilder: React.FC<{
             </div>
           </fieldset>
 
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-bold text-slate-800 mb-1">Services</legend>
+          <fieldset className="space-y-4">
+            <legend className="text-xs font-bold text-slate-800 mb-3">Services</legend>
             {prefill.dealAmount !== null && purpose === 'SERVICES' && (
               <AgreementNote
                 prefill={prefill}
@@ -485,16 +486,16 @@ export const InvoiceBuilder: React.FC<{
                 }}
               />
             )}
-            <div className="space-y-3">
+            <div className="space-y-4">
               {form.lines.map((l, i) => (
-                <div key={l.key} className="grid grid-cols-2 sm:grid-cols-12 gap-2 p-3 rounded-xl border border-slate-200 bg-white">
+                <div key={l.key} className="grid grid-cols-2 sm:grid-cols-12 gap-x-3 gap-y-4 p-4 rounded-xl border border-slate-200 bg-white">
                   <div className="col-span-2 sm:col-span-12">
                     <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-p-${l.key}`}>
                       Particulars (line {i + 1})
                     </label>
                     <input id={`ln-p-${l.key}`} className={inputCls} value={l.particulars} maxLength={500} onChange={e => setLine(l.key, { particulars: e.target.value })} />
                   </div>
-                  <div className="sm:col-span-3">
+                  <div className="sm:col-span-4">
                     <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-h-${l.key}`}>HSN/SAC</label>
                     <input id={`ln-h-${l.key}`} className={inputCls} inputMode="numeric" value={l.hsnSac} onChange={e => setLine(l.key, { hsnSac: e.target.value })} />
                   </div>
@@ -502,11 +503,20 @@ export const InvoiceBuilder: React.FC<{
                     <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-q-${l.key}`}>Quantity</label>
                     <input id={`ln-q-${l.key}`} className={inputCls} value={l.quantity} maxLength={30} onChange={e => setLine(l.key, { quantity: e.target.value })} />
                   </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-t-${l.key}`}>Tax rate %</label>
-                    <input id={`ln-t-${l.key}`} className={inputCls} inputMode="decimal" value={l.taxRate} onChange={e => setLine(l.key, { taxRate: e.target.value })} />
+                  <div className="col-span-2 sm:col-span-12">
+                    <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-t-${l.key}`}>GST rate % *</label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input id={`ln-t-${l.key}`} className={`${inputCls} !w-28`} inputMode="decimal" placeholder="Choose" value={l.taxRate} onChange={e => setLine(l.key, { taxRate: e.target.value })} />
+                      {['0', '5', '12', '18', '28'].map(r => (
+                        <button key={r} type="button" aria-pressed={l.taxRate.trim() === r} onClick={() => setLine(l.key, { taxRate: r })}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${l.taxRate.trim() === r ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                          {r}%
+                        </button>
+                      ))}
+                      <span className="text-[11px] text-slate-500">You decide the GST; none is added automatically.</span>
+                    </div>
                   </div>
-                  <div className="col-span-2 sm:col-span-4">
+                  <div className="col-span-2 sm:col-span-5">
                     <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-a-${l.key}`}>Invoice amount (Rs., before tax)</label>
                     <div className="flex gap-2">
                       <input id={`ln-a-${l.key}`} className={inputCls} inputMode="decimal" value={l.baseAmount} onChange={e => setLine(l.key, { baseAmount: e.target.value })} />
@@ -557,16 +567,16 @@ export const InvoiceBuilder: React.FC<{
           {error && <ErrorBanner message={error} />}
           {!error && problems.length > 0 && (
             <p className="text-[11px] text-slate-500" role="status">
-              Before you send: {problems[0]}
+              Before you save: {problems[0]}
               {problems.length > 1 ? ` (and ${problems.length - 1} more)` : ''}
             </p>
           )}
-          <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex flex-wrap justify-end gap-3 pt-4 border-t border-slate-100">
             <button type="button" className={btn.secondary} disabled={busy} onClick={onClose}>
               Cancel
             </button>
             <button type="submit" className={btn.primary} disabled={busy || problems.length > 0}>
-              <Mail className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Generating…' : 'Generate & Send Invoice'}
+              <FilePlus2 className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Saving…' : 'Save Invoice'}
             </button>
           </div>
         </form>

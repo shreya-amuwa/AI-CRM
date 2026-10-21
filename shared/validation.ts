@@ -574,8 +574,8 @@ export const sendToAccountsSchema = z
   .object({
     amount: wholeRupees('Enter the agreed amount.'),
     note: optionalText(1000),
-    /** Whether the agreed amount already includes GST. Older callers send nothing and keep the amount as the total. */
-    taxBasis: z.enum(AGREEMENT_TAX_BASES, { errorMap: () => ({ message: 'Say whether the agreed amount includes or excludes GST.' }) }).default('INCLUSIVE')
+    /** Ignored: Sales no longer decides about GST (Accounts adds it, line by line, on the invoice). Kept so older callers still work. */
+    taxBasis: z.enum(AGREEMENT_TAX_BASES, { errorMap: () => ({ message: 'Say whether the agreed amount includes or excludes GST.' }) }).default('EXCLUSIVE')
   })
   .strict();
 export const agreementBasisSchema = z
@@ -825,7 +825,7 @@ const moneyField = (label: string) =>
 const taxRateField = z.union([z.string(), z.number()]).transform((v, ctx) => {
   const bp = toRateBp(v);
   if (bp === null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter the tax rate as a percentage from 0 to 100 (up to 2 decimals).' });
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose the GST rate for the line (a percentage from 0 to 100; 0 when there is no GST).' });
     return z.NEVER;
   }
   return bp / 100;

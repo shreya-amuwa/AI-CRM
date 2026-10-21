@@ -24,7 +24,7 @@ export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLa
         {canUpload && (
           <div className="flex flex-wrap gap-2">
             <button type="button" className={btn.primary} onClick={() => setBuilding(true)}>
-              <FilePlus2 className="w-3.5 h-3.5" aria-hidden="true" /> Generate Invoice
+              <FilePlus2 className="w-3.5 h-3.5" aria-hidden="true" /> Create Invoice
             </button>
             <button type="button" className={btn.secondary} onClick={() => setUploading(true)}>
               <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" /> Upload Invoice PDF
