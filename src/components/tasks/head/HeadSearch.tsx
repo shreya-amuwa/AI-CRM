@@ -70,11 +70,11 @@ export const HeadSearch: React.FC<{
             }
           }}
           placeholder="Search tasks, people, customers"
-          className="w-full h-11 pl-10 pr-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15"
+          className="w-full h-11 pl-10 pr-3 text-ellipsis rounded-xl border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15"
         />
       </label>
       {open && term && (
-        <div className="absolute left-0 right-0 top-12 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-40 max-h-96 overflow-y-auto" role="listbox" aria-label="Search results">
+        <div className="absolute left-0 right-0 top-12 max-sm:fixed max-sm:left-3 max-sm:right-3 max-sm:top-[4.25rem] bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-40 max-h-96 overflow-y-auto" role="listbox" aria-label="Search results">
           {found.pages.map(p => (
             <button key={p.id} type="button" className={row} onClick={() => { onPage(p.id); done(); }}>
               <Search className="w-4 h-4 text-slate-400" aria-hidden="true" /> <span>Go to <b>{p.label}</b></span>
