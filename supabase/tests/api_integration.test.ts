@@ -3817,6 +3817,73 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 }
 
 // ---------------------------------------------------------------------------
+// Department income attribution: the report, reconciliation, corrections and the Client Dashboard rule
+// ---------------------------------------------------------------------------
+{
+  const deptOf = async (token: string) => (await api(token, 'GET', '/me')).json.data.department?.id ?? (await api(token, 'GET', '/me')).json.data.departmentId;
+  let r = await api(null, 'GET', '/reports/department-income');
+  check(r.status === 401, 'department income: signed-out visitors are refused', r.status);
+  r = await api('sa', 'GET', '/reports/department-income');
+  check(r.status === 200 && r.json.data.totals && typeof r.json.data.totals.collected === 'number' && typeof r.json.data.totals.collectedGst === 'number'
+    && r.json.data.byDivision && Array.isArray(r.json.data.departments) && Array.isArray(r.json.data.orders) && ['SUPPORT', 'SALES', 'ACQUISITION'].includes(r.json.data.rule),
+    'department income: the Super Admin reads the consolidated report (totals, GST split, divisions, departments, orders)', r);
+  const all = r.json.data;
+  check(all.departments.every((d: any) => Math.abs(d.collected - (d.sales.collected + d.support.collected)) < 0.005), 'department income: each department is its Sales plus its Support');
+  check(Math.abs(all.totals.collected - all.departments.reduce((n: number, d: any) => n + d.collected, 0)) < 0.005, 'department income: the company total is the sum of the departments');
+  r = await api('accm', 'GET', '/reports/department-income');
+  check(r.status === 200, 'department income: Accounts sees every department', r);
+  r = await api('dh', 'GET', '/reports/department-income');
+  check(r.status === 200 && r.json.data.scope.departmentId && r.json.data.departments.length === 0, 'department income: a Department Head gets their own department only', r);
+  const ownDept = r.json.data.scope.departmentId as string;
+  const otherDept = (all.departments.find((d: any) => d.departmentId !== ownDept) ?? { departmentId: crypto.randomUUID() }).departmentId as string;
+  r = await api('dh', 'GET', `/reports/department-income?departmentId=${otherDept}`);
+  check(r.status === 403, 'department income: and cannot ask for another department', r);
+  r = await api('a', 'GET', '/reports/department-income');
+  check(r.status === 403, 'department income: a Sales member is refused', r);
+  r = await api('sm', 'GET', '/reports/department-income');
+  check(r.status === 403, 'department income: so is a Support member', r);
+  r = await api('sa', 'GET', '/reports/department-income?from=2026-12-31&to=2026-01-01');
+  check(r.status === 422, 'department income: a reversed date range is refused', r);
+  r = await api('sa', 'GET', '/reports/department-income?departmentId=not-a-uuid');
+  check(r.status === 422, 'department income: a bad department id is refused', r);
+
+  r = await api('accm', 'GET', '/reports/department-income/reconciliation');
+  check(r.status === 200 && Array.isArray(r.json.data.items), 'department income: Accounts sees the orders to reconcile', r);
+  r = await api('a', 'GET', '/reports/department-income/reconciliation');
+  check(r.status === 403, 'department income: a Sales member cannot', r);
+  r = await api('accm', 'POST', '/reports/department-income/orders/attribution', { orderKey: 'SALE:not-an-id', division: 'SUPPORT', reason: 'testing' });
+  check(r.status === 422, 'department income: a made-up order key is refused', r);
+  r = await api('accm', 'POST', '/reports/department-income/orders/attribution', { orderKey: `SALE:${crypto.randomUUID()}`, division: 'SUPPORT' });
+  check(r.status === 422, 'department income: a correction needs a reason', r);
+  r = await api('accm', 'POST', '/reports/department-income/orders/attribution', { orderKey: `SALE:${crypto.randomUUID()}`, division: 'SUPPORT', reason: 'testing the unknown order' });
+  check(r.status === 404, 'department income: an order that does not exist is not found', r);
+  r = await api('a', 'POST', '/reports/department-income/orders/attribution', { orderKey: `SALE:${crypto.randomUUID()}`, division: 'SUPPORT', reason: 'testing' });
+  check(r.status === 403, 'department income: a Sales member cannot change attribution', r);
+  const custA = (await db.query(`select id from public.customers where phone = '9000000201'`)).rows[0].id as string;
+  r = await api('accm', 'POST', `/reports/department-income/customers/${custA}/acquisition`, { division: 'SUPPORT', reason: 'x' });
+  check(r.status === 422, 'department income: the acquisition reason needs a few words', r);
+  r = await api('accm', 'POST', `/reports/department-income/customers/${custA}/acquisition`, { division: 'SALES', reason: 'Confirmed with the Sales team lead' });
+  check(r.status === 200 && r.json.data.acquisitionDivision === 'SALES', 'department income: Accounts records who acquired a customer', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action = 'CUSTOMER_ACQUISITION_CHANGED' and entity_id = $1`, [custA])).rows[0].n === 1, 'department income: and it is in the audit log');
+  r = await api('a', 'POST', `/reports/department-income/customers/${custA}/acquisition`, { division: 'SALES', reason: 'Confirmed with the Sales team lead' });
+  check(r.status === 403, 'department income: a Sales member cannot', r);
+
+  r = await api('accm', 'GET', '/reports/department-income/settings');
+  check(r.status === 200 && r.json.data.clientPurchaseAttribution === 'SUPPORT', 'department income: Accounts reads the Client Dashboard rule (Support by default)', r);
+  r = await api('accm', 'PATCH', '/reports/department-income/settings', { clientPurchaseAttribution: 'SALES' });
+  check(r.status === 403, 'department income: only the Super Admin changes it', r);
+  r = await api('sa', 'PATCH', '/reports/department-income/settings', { clientPurchaseAttribution: 'EVERYONE' });
+  check(r.status === 422, 'department income: an unknown rule is refused', r);
+  r = await api('sa', 'PATCH', '/reports/department-income/settings', { clientPurchaseAttribution: 'ACQUISITION' });
+  check(r.status === 200, 'department income: the Super Admin sets the rule', r);
+  r = await api('sa', 'GET', '/reports/department-income');
+  check(r.json.data.rule === 'ACQUISITION', 'department income: the report shows the rule in force', r);
+  r = await api('sa', 'PATCH', '/reports/department-income/settings', { clientPurchaseAttribution: 'SUPPORT' });
+  check(r.status === 200, 'department income: and it can be set back', r);
+  void deptOf;
+}
+
+// ---------------------------------------------------------------------------
 // Security hardening: /api/proxy and the lead webhook (Vercel functions), against the real database
 // ---------------------------------------------------------------------------
 {

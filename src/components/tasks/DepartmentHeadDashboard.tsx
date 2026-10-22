@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Megaphone,
   ReceiptIndianRupee,
+  TrendingUp,
   Sparkles,
   UserCheck,
   UserPlus,
@@ -22,6 +23,7 @@ import { ClientNotices } from '../notices/ClientNotices';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { AccountsPlans } from '../accounts/AccountsPlans';
+import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { StaffManagementPanel } from '../common/StaffManagementPanel';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import { TeamActivityPage } from '../support-member/TeamActivityPage';
@@ -68,6 +70,9 @@ export const DepartmentHeadDashboard: React.FC = () => {
     if (isAccounts) {
       work.unshift({ id: 'payments', label: 'Payment confirmations', icon: ReceiptIndianRupee });
       work.push({ id: 'plans', label: 'Monthly Plans', icon: Sparkles });
+    } else {
+      // The income of their own department (the database refuses any other department)
+      work.push({ id: 'income', label: 'Department Income', icon: TrendingUp });
     }
     return [
       { items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }] },
@@ -147,6 +152,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}
       {nav === 'payments' && <AccountsConfirmations />}
       {nav === 'plans' && <AccountsPlans />}
+      {nav === 'income' && <DepartmentIncome own />}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'notifications' && <NotificationsPage />}
       {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}

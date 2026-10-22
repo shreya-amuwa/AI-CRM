@@ -342,6 +342,15 @@ export const generatedInvoiceController = {
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+export const departmentIncomeController = {
+  report: (async ctx => ok(await svc(ctx).departmentIncome.report(ctx.req.query))) as Handler,
+  reconciliation: (async ctx => ok(await svc(ctx).departmentIncome.reconciliation())) as Handler,
+  setOrderAttribution: (async ctx => ok(await svc(ctx).departmentIncome.setOrderAttribution(ctx.req.body))) as Handler,
+  setCustomerAcquisition: (async ctx => ok(await svc(ctx).departmentIncome.setCustomerAcquisition(ctx.params.id, ctx.req.body))) as Handler,
+  settings: (async ctx => ok(await svc(ctx).departmentIncome.settings())) as Handler,
+  setSettings: (async ctx => ok(await svc(ctx).departmentIncome.setSettings(ctx.req.body))) as Handler
+};
+
 export const businessReportController = {
   report: (async ctx => ok(await svc(ctx).businessReport.report(ctx.req.query))) as Handler,
   transactions: (async ctx => ok(await svc(ctx).businessReport.transactions(ctx.req.query))) as Handler,
