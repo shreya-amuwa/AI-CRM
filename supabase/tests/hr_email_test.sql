@@ -101,10 +101,13 @@ select test.check((select send_after = timestamptz '2027-04-14 09:00:00+05:30' f
 create temp table n1 as select count(*) as n from hr_email_events;
 select hr_schedule_emails(date '2027-04-14');
 select hr_schedule_emails(date '2027-04-14');
+select test.check((select count(*) from hr_email_events) = (select n from n1),
+  'running the check again the same day queues nothing twice');
+-- (the next day may legitimately queue a probation reminder whose week starts then, so only birthdays and anniversaries are compared)
+create temp table n2 as select count(*) as n from hr_email_events where kind in ('BIRTHDAY', 'ANNIVERSARY');
 select hr_schedule_emails(date '2027-04-15');
-select test.check((select count(*) from hr_email_events) = (select n from n1) + 0
-                   or (select count(*) from hr_email_events where kind in ('BIRTHDAY', 'ANNIVERSARY')) = (select count(*) from hr_email_events where kind in ('BIRTHDAY', 'ANNIVERSARY') and event_date = date '2027-04-14'),
-  'running the check again (same day / next day) queues nothing twice');
+select test.check((select count(*) from hr_email_events where kind in ('BIRTHDAY', 'ANNIVERSARY')) = (select n from n2),
+  'and the next day queues no second birthday or anniversary e-mail');
 select test.check(test.ev('BIRTHDAY', 'Hrx Bday') = 1 and test.ev('ANNIVERSARY', 'Hrx Anniv') = 1, 'still exactly one birthday and one anniversary e-mail');
 select hr_schedule_emails(date '2028-04-14');
 select test.check(test.ev('BIRTHDAY', 'Hrx Bday') = 2 and test.ev('ANNIVERSARY', 'Hrx Anniv') = 2

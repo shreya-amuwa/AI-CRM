@@ -1194,3 +1194,23 @@ export const ticketUploadSchema = z
     sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// Department income attribution (Super Admin, Accounts, Department Heads: the database decides who may do what)
+// ---------------------------------------------------------------------------
+export const departmentIncomeQuerySchema = z
+  .object({ departmentId: uuidSchema.optional(), from: isoDate.optional(), to: isoDate.optional() })
+  .refine(businessRange, { message: 'The end date is before the start date.', path: ['to'] });
+export type DepartmentIncomeQuery = z.infer<typeof departmentIncomeQuerySchema>;
+const attributionReason = z.string().trim().min(3, 'Say why (at least 3 characters).').max(500, 'Keep the reason under 500 characters.');
+export const orderAttributionSchema = z
+  .object({
+    orderKey: z.string().trim().regex(/^(SALE|ADDON|INV|PLAN):[0-9a-fA-F-]{36}$/, 'Choose an order from the list.'),
+    division: z.enum(['SALES', 'SUPPORT']),
+    departmentId: uuidSchema.optional().nullable().transform(v => v || null),
+    reason: attributionReason
+  })
+  .strict();
+export type OrderAttributionInput = z.infer<typeof orderAttributionSchema>;
+export const customerAcquisitionSchema = z.object({ division: z.enum(['SALES', 'SUPPORT']), reason: attributionReason }).strict();
+export const revenueSettingsSchema = z.object({ clientPurchaseAttribution: z.enum(['SUPPORT', 'ACQUISITION', 'SALES']) }).strict();

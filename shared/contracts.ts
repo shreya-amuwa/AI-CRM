@@ -2295,3 +2295,91 @@ export interface CompanyWorkflow {
   people: { id: string; name: string; role: Role; title: string | null; teamId: string; departmentId: string; consultant: boolean }[];
   handoffs: WorkflowHandoff[];
 }
+
+// ---------------------------------------------------------------------------
+// Department income attribution
+// ---------------------------------------------------------------------------
+export type RevenueSource = 'ACQUISITION' | 'DEFAULT_SALES' | 'SUPPORT_ADDON' | 'CLIENT_DASHBOARD' | 'SUPPORT_INVOICE' | 'LEGACY' | 'MANUAL' | 'UNRECORDED';
+export type ClientPurchaseRule = 'SUPPORT' | 'ACQUISITION' | 'SALES';
+/**
+ * The same set of figures for any slice. collected = verified payments (gross receipts, GST included); pending = recorded, not verified;
+ * refunded = reversed; billed = order value; outstanding = billed - collected per order, never below zero. The Taxable / Gst figures split
+ * the same amounts where the order's tax split is known; ...TaxSplitUnknown is the rest.
+ */
+export interface IncomeFigures {
+  collected: number;
+  collectedTaxable: number;
+  collectedGst: number;
+  collectedTaxSplitUnknown: number;
+  pending: number;
+  refunded: number;
+  payments: number;
+  billed: number;
+  billedTaxable: number;
+  billedGst: number;
+  billedTaxSplitUnknown: number;
+  outstanding: number;
+  orders: number;
+}
+export interface DepartmentIncomeOrder {
+  orderKey: string;
+  type: BusinessTxType;
+  division: BusinessDivision;
+  source: RevenueSource;
+  departmentId: string | null;
+  department: string | null;
+  customerId: string;
+  customerCode: string | null;
+  customer: string;
+  services: string | null;
+  billed: number;
+  taxSplitKnown: boolean;
+  billedTaxable: number | null;
+  billedGst: number | null;
+  collected: number;
+  pending: number;
+  refunded: number;
+  outstanding: number;
+  payments: number;
+  partPaid: boolean;
+  lastPaymentAt: string | null;
+  billedAt: string | null;
+  referralSource: string | null;
+  acquisitionDivision: BusinessDivision | null;
+  needsReview: boolean;
+  reviewNote: string | null;
+}
+export interface DepartmentIncomeReport {
+  scope: { departmentId: string | null; name: string | null; from: string | null; to: string | null };
+  basis: string;
+  /** The rule in force for what clients buy in the Client Dashboard. */
+  rule: ClientPurchaseRule;
+  totals: IncomeFigures;
+  byDivision: { sales?: IncomeFigures; support?: IncomeFigures };
+  byType: (IncomeFigures & { division: BusinessDivision; type: BusinessTxType })[];
+  bySource: (IncomeFigures & { source: RevenueSource })[];
+  byService: { service: string; division: BusinessDivision; collected: number; pending: number; refunded: number; payments: number }[];
+  highlights: { supportAddOns: IncomeFigures; supportAcquired: IncomeFigures; supportReferrals: IncomeFigures; clientDashboard: IncomeFigures };
+  /** Every department with its Sales / Support split (empty for a single department). */
+  departments: { departmentId: string; name: string; sales: IncomeFigures; support: IncomeFigures; collected: number; outstanding: number }[];
+  orders: DepartmentIncomeOrder[];
+  review: { needsReview: number; needsReviewCollected: number; unclassifiedInvoices: number; unrecordedAttribution: number };
+}
+export interface AttributionReconciliation {
+  legacyOrders: number;
+  withoutAcquisition: number;
+  items: {
+    orderKey: string;
+    customerId: string;
+    customerCode: string | null;
+    customer: string;
+    division: BusinessDivision;
+    source: RevenueSource;
+    departmentId: string | null;
+    department: string | null;
+    note: string | null;
+    collected: number;
+    acquisitionDivision: BusinessDivision | null;
+    ownerDivision: string | null;
+  }[];
+}

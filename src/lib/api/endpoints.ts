@@ -83,6 +83,9 @@ import type {
   DocumentUploadTicket,
   TicketAttachment,
   TicketUploadTicket,
+  AttributionReconciliation,
+  ClientPurchaseRule,
+  DepartmentIncomeReport,
   DocumentUrl,
   HandoverStage,
   InboundLead,
@@ -549,6 +552,17 @@ export const ticketFilesApi = {
 };
 export interface PlanInput { name: string; description?: string | null; monthlyPrice: number; features: string[]; services: string[]; isActive: boolean }
 export type { MonthlyPlan };
+
+export const departmentIncomeApi = {
+  report: (q: { departmentId?: string; from?: string; to?: string } = {}) => api.get<DepartmentIncomeReport>('/reports/department-income', { ...q }),
+  reconciliation: () => api.get<AttributionReconciliation>('/reports/department-income/reconciliation'),
+  setOrderAttribution: (body: { orderKey: string; division: 'SALES' | 'SUPPORT'; departmentId?: string | null; reason: string }) =>
+    api.post<unknown>('/reports/department-income/orders/attribution', body),
+  setCustomerAcquisition: (customerId: string, body: { division: 'SALES' | 'SUPPORT'; reason: string }) =>
+    api.post<unknown>(`/reports/department-income/customers/${customerId}/acquisition`, body),
+  settings: () => api.get<{ clientPurchaseAttribution: ClientPurchaseRule; updatedAt: string }>('/reports/department-income/settings'),
+  setSettings: (clientPurchaseAttribution: ClientPurchaseRule) => api.patch<unknown>('/reports/department-income/settings', { clientPurchaseAttribution })
+};
 
 export const businessReportApi = {
   report: (q: BusinessReportQuery = {}) => api.get<BusinessReport>('/accounts/business-report', { ...q }),

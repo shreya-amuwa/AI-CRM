@@ -10,12 +10,13 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { BusinessReports } from '../reports/BusinessReports';
+import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
 import { CompanyWorkflow } from './CompanyWorkflow';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 
-type Page = 'overview' | 'departments' | 'workflow' | 'reports' | 'security' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'workflow' | 'reports' | 'income' | 'security' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -42,6 +43,7 @@ export const SuperAdminDashboard: React.FC = () => {
         items: [
           { id: 'departments', label: 'Departments', icon: Building2 },
           { id: 'workflow', label: 'Company Workflow', icon: Network },
+          { id: 'income', label: 'Department Income', icon: Building2 },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
         ]
       },
@@ -68,7 +70,7 @@ export const SuperAdminDashboard: React.FC = () => {
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
       showHelp
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'workflow'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'workflow' || page === 'income'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -95,6 +97,7 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       )}
       {page === 'workflow' && <CompanyWorkflow />}
+      {page === 'income' && <DepartmentIncome />}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'chat' && <ChatRoute />}

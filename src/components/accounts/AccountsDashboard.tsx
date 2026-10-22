@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BarChart3, Bell, Building2, FileText, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
+import { BadgeCheck, BarChart3, Bell, Building2, FileText, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -18,11 +18,12 @@ import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
 import { BusinessReports } from '../reports/BusinessReports';
+import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'business-reports' | 'expenses' | 'chat' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'business-reports' | 'expenses' | 'chat' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -68,6 +69,7 @@ export const AccountsDashboard: React.FC = () => {
       items: [
         { id: 'income', label: 'Income', icon: TrendingUp },
         { id: 'department-income', label: 'Department Income', icon: Building2 },
+        { id: 'income-attribution', label: 'Income by Division', icon: Layers },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
         { id: 'business-reports', label: 'Business Reports', icon: BarChart3 }
       ]
@@ -112,6 +114,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'plans' && <AccountsPlans />}
       {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
       {page === 'department-income' && <AccountsDepartmentIncome key={pageKey} />}
+      {page === 'income-attribution' && <DepartmentIncome />}
       {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
       {page === 'chat' && <ChatRoute />}

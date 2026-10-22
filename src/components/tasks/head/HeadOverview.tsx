@@ -9,7 +9,7 @@ import { Avatar, Card, CardHead, healthOf, HealthBadge, LoadingLine, primaryBtn,
 import { dayLabelsOfWeek } from './weekChart';
 import { ScopeOverviewPanel } from '../../common/ScopeOverviewPanel';
 
-export type HeadPage = 'overview' | 'assign' | 'reports' | 'daily' | 'activity' | 'clients' | 'customers' | 'import' | 'support' | 'notices' | 'team' | 'notifications' | 'payments' | 'plans' | 'chat';
+export type HeadPage = 'overview' | 'assign' | 'reports' | 'daily' | 'activity' | 'clients' | 'customers' | 'import' | 'support' | 'notices' | 'team' | 'notifications' | 'payments' | 'plans' | 'chat' | 'income';
 
 const greeting = () => {
   const h = new Date().getHours();

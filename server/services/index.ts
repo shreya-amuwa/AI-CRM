@@ -15,6 +15,8 @@ import { ProfileRepository } from '../repositories/ProfileRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
 import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { BusinessReportService } from './BusinessReportService.js';
+import { DepartmentIncomeService } from './DepartmentIncomeService.js';
+import { DepartmentIncomeRepository } from '../repositories/DepartmentIncomeRepository.js';
 import { AddonInvoiceService } from './AddonInvoiceService.js';
 import { ApprovalService } from './ApprovalService.js';
 import { AuditService } from './AuditService.js';
@@ -49,6 +51,7 @@ export function createServices(db: SupabaseClient) {
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
     automations: new AutomationService(new PipelineRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),
+    departmentIncome: new DepartmentIncomeService(new DepartmentIncomeRepository(db)),
     businessReport: new BusinessReportService(new BusinessReportRepository(db)),
     addons: new AddonInvoiceService(new AddonInvoiceRepository(db)),
     generatedInvoices: new GeneratedInvoiceService(new GeneratedInvoiceRepository(db), new StorageRepository()),
