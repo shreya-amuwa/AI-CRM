@@ -54,3 +54,5 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/performance_test.sql 2>&1 | sed -E
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/recruitment_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/training_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/payment_gst_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
