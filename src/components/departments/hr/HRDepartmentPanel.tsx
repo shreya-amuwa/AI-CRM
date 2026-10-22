@@ -21,7 +21,7 @@ import { getSupabase } from '../../../services/supabaseClient';
 import { fetchHrDirectory, saveHrRecord, HrDepartment, ROLE_LABEL } from '../../../lib/hrDirectory';
 import { attendanceStore, AttendanceRecord } from '../../../services/attendanceStore';
 import type { AttendanceDay } from '../../../../shared/contracts';
-import { hrApi } from '../../../lib/api/endpoints';
+import { hrApi, recruitmentApi } from '../../../lib/api/endpoints';
 import { errorMessage } from '../../../lib/api/client';
 import { formatClock, officeInstant, officeToday } from '../../../lib/officeTime';
 import { LoginGapBadge } from '../../hr/LoginGapBadge';
@@ -334,6 +334,9 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const [newEmpDesignation, setNewEmpDesignation] = useState('');
   const [newEmpSalary, setNewEmpSalary] = useState('');
   const [newEmpHours, setNewEmpHours] = useState('09:30 AM - 06:30 PM (Mon-Sat)');
+  // the Recruitment Management card shows the real number of candidates (from the recruitment records), not a fixed figure
+  const [recruitCounts, setRecruitCounts] = useState<{ candidates: number; confirmed: number } | null>(null);
+  useEffect(() => { recruitmentApi.overview().then(o => setRecruitCounts({ candidates: o.candidates, confirmed: o.confirmed }), () => setRecruitCounts(null)); }, []);
   const [newEmpStatus, setNewEmpStatus] = useState<'Full-Time' | 'Training / Probation' | 'Intern'>('Full-Time');
   const [newEmpDepartment, setNewEmpDepartment] = useState('hr');
   const [newEmpSubDepartment, setNewEmpSubDepartment] = useState<'sales' | 'support'>('sales');
@@ -1431,8 +1434,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     </p>
 
                     <div className="mt-3.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 flex items-center justify-between text-xs font-mono">
-                      <span className="text-blue-700 font-bold">2 Active Candidates</span>
-                      <span className="text-[11px] text-slate-500">Offers Ready</span>
+                      <span className="text-blue-700 font-bold">{recruitCounts ? `${recruitCounts.candidates} Candidate${recruitCounts.candidates === 1 ? '' : 's'}` : 'Candidates'}</span>
+                      <span className="text-[11px] text-slate-500">{recruitCounts ? `${recruitCounts.confirmed} confirmed` : 'Offer letters'}</span>
                     </div>
                   </div>
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Users, LogOut, Megaphone, ShieldCheck } from 'lucide-react';
+import { Users, Megaphone } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { sessionManager } from '../../services/sessionManager';
 import { ROLE_LABELS } from '../../lib/auth/roleMapping';
@@ -8,7 +8,7 @@ import { ClientNotices } from '../notices/ClientNotices';
 import { Dialog } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { MenuButton } from './shell';
+import { MenuButton, SignOutButton } from './shell';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
@@ -101,13 +101,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
               </span>
             </div>
 
-            <button
-              onClick={logout}
-              title="Sign Out"
-              className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors ml-1"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <SignOutButton onClick={() => void logout()} />
           </div>
 
         </div>

@@ -157,9 +157,20 @@ export const DocumentationLink: React.FC = () => (
   </a>
 );
 
+/**
+ * Sign out: a compact icon button that sits in the top bar, right beside the profile avatar (every dashboard uses this one component;
+ * the sidebar no longer has a Sign out row). It only calls the sign-out the dashboard passes in: the logout, the cleanup and the
+ * redirect are unchanged.
+ */
 export const SignOutButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
-  <button type="button" onClick={onClick} className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-semibold text-rose-700 hover:bg-rose-50 text-left">
-    <LogOut className="w-[18px] h-[18px]" strokeWidth={1.9} aria-hidden="true" /> Sign out
+  <button
+    type="button"
+    onClick={onClick}
+    title="Sign out"
+    aria-label="Sign out"
+    className="shrink-0 w-10 h-10 rounded-xl text-slate-500 hover:text-rose-700 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 flex items-center justify-center transition-colors"
+  >
+    <LogOut className="w-[18px] h-[18px]" strokeWidth={1.9} aria-hidden="true" />
   </button>
 );
 
@@ -209,13 +220,16 @@ export const TopBar: React.FC<{
   left?: React.ReactNode;
   actions?: React.ReactNode;
   user?: { name: string; role: string };
-}> = ({ left, actions, user }) => (
+  /** Shows the Sign out button beside the avatar. */
+  onSignOut?: () => void;
+}> = ({ left, actions, user, onSignOut }) => (
   <header className="bg-white border-b border-slate-200 px-3 sm:px-6 lg:px-8 py-3 flex items-center gap-2 sm:gap-3 sticky top-0 z-30">
     <MenuButton />
     {left && <div className="flex-1 min-w-0 flex items-center">{left}</div>}
     <div className={`${left ? '' : 'ml-auto'} flex items-center gap-1 sm:gap-2 shrink-0`}>
       {actions}
       {user && <UserChip name={user.name} role={user.role} />}
+      {onSignOut && <SignOutButton onClick={onSignOut} />}
     </div>
   </header>
 );
@@ -244,7 +258,7 @@ interface DashboardShellProps {
   /** Top bar: left slot (search / context) and actions (leave, notifications). */
   topLeft?: React.ReactNode;
   topActions?: React.ReactNode;
-  /** Extra sidebar footer rows (above Sign out). */
+  /** Extra sidebar footer rows. */
   footerExtra?: React.ReactNode;
   showHelp?: boolean;
   /** Let the page use the full width (wide tables); default keeps the calm 1240px column. */
@@ -279,7 +293,6 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           <>
             {footerExtra}
             {showHelp && <HelpLink />}
-            <SignOutButton onClick={onSignOut} />
           </>
         }
       >
@@ -307,7 +320,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         </nav>
       </SidebarFrame>
       <div className="flex-1 min-w-0 flex flex-col">
-        <TopBar left={topLeft} actions={topActions} user={user} />
+        <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{children}</main>
       </div>
     </div>

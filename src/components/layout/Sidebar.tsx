@@ -70,6 +70,8 @@ export type ActiveTab =
   | 'staff_add'
   | 'client_notices'
   | 'hr_email'
+  | 'hr_recruitment'
+  | 'hr_training'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -312,6 +314,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
     { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
     ...baseNavItems.slice(1, -1),
+    { id: 'hr_recruitment' as ActiveTab, label: 'Recruitment Management', icon: Briefcase },
+    { id: 'hr_training' as ActiveTab, label: 'Training', icon: GraduationCap },
     { id: 'hr_email' as ActiveTab, label: 'Email Automation', icon: Mail },
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
     baseNavItems[baseNavItems.length - 1]

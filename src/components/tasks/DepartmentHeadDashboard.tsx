@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   Headset,
   LayoutDashboard,
+  LineChart,
   Megaphone,
   ReceiptIndianRupee,
   TrendingUp,
@@ -39,6 +40,7 @@ import { HeadAssign } from './head/HeadAssign';
 import { HeadReports } from './head/HeadReports';
 import { HeadDaily } from './head/HeadDaily';
 import { HeadSearch } from './head/HeadSearch';
+import { PerformanceManagement } from '../performance/PerformanceManagement';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -63,6 +65,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
     const work = [
       { id: 'assign', label: 'Assign', icon: ClipboardList },
       { id: 'reports', label: 'Reports', icon: BarChart3 },
+      { id: 'performance', label: 'Performance Management', icon: LineChart },
       { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
       { id: 'activity', label: 'Team Activity', icon: Activity }
     ];
@@ -143,6 +146,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'overview' && <HeadOverview data={data} go={go} />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'reports' && <HeadReports data={data} />}
+      {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}
       {nav === 'daily' && <HeadDaily data={data} />}
       {nav === 'activity' && <TeamActivityPage />}
       {nav === 'support' && <SupportDeskPage />}

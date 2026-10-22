@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bell, ClipboardList, LayoutDashboard, Navigation, UserPlus, Users } from 'lucide-react';
+import { Bell, ClipboardList, LayoutDashboard, LineChart, Navigation, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { ScopeOverviewPanel } from '../common/ScopeOverviewPanel';
@@ -10,10 +10,11 @@ import { DashboardShell, PageTitle, type ShellNavGroup } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { TeamCustomers } from './TeamCustomers';
 
-export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'field-visits' | 'team-members' | 'chat' | 'notifications';
+export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'notifications';
 
 interface TeamLeadDashboardProps {
   currentUserId: string;
@@ -39,6 +40,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         items: [
           { id: 'customers', label: 'Team Customers', icon: Users },
           { id: 'assigned-tasks', label: 'Assigned Tasks', icon: ClipboardList },
+          { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'field-visits', label: 'Field Visits', icon: Navigation }
         ]
       },
@@ -81,6 +83,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       )}
       {nav === 'customers' && <TeamCustomers />}
       {nav === 'assigned-tasks' && <TeamLeadTasksView />}
+      {nav === 'performance' && <PerformanceManagement mode="TEAM_LEAD" />}
       {nav === 'field-visits' && <FieldVisitTrackerView viewerRole="team-lead" userName={userName} />}
       {nav === 'team-members' && (
         <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept={profile?.team?.division === 'SALES' ? 'sales' : null} />

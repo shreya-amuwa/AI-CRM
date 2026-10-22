@@ -1034,6 +1034,112 @@ export const hrEmployeeDatesSchema = z
   .strict()
   .refine(v => !!v.dateOfBirth || !!v.joiningDate, { message: 'Enter a date of birth or a joining date.', path: ['dateOfBirth'] });
 
+// ---- Performance Management ----
+const perfPeriod = {
+  kind: z.enum(['WEEK', 'MONTH', 'CUSTOM']),
+  start: isoDate,
+  end: isoDate
+};
+export const performancePeopleQuerySchema = z.object({ ...perfPeriod, departmentId: uuidSchema.optional() }).strict();
+export const performanceReportQuerySchema = z
+  .object({
+    scope: z.enum(['MEMBER', 'TEAM', 'DEPARTMENT']),
+    subjectId: uuidSchema.optional(),
+    teamId: uuidSchema.optional(),
+    departmentId: uuidSchema.optional(),
+    ...perfPeriod
+  })
+  .strict()
+  .refine(v => (v.scope === 'MEMBER' ? !!v.subjectId : v.scope === 'TEAM' ? !!v.teamId : !!v.departmentId), { message: 'Choose who the report is about.', path: ['scope'] });
+export const performanceReportBodySchema = performanceReportQuerySchema;
+
+// ---- HR Recruitment ----
+const CONFIRMATIONS = ['NOT_STARTED', 'OFFER_PENDING', 'OFFERED', 'CONFIRMED', 'DECLINED', 'ON_HOLD'] as const;
+export const recruitmentListQuerySchema = z
+  .object({
+    search: trimmed(120).optional(),
+    positionId: uuidSchema.optional(),
+    confirmation: z.enum(CONFIRMATIONS).optional(),
+    pending: z.enum(['OPEN', 'OVERDUE', 'NONE']).optional(),
+    call: z.enum(['SCHEDULED', 'FOLLOW_UP_OVERDUE', 'NONE']).optional(),
+    ownerId: uuidSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    offset: z.coerce.number().int().min(0).max(100000).default(0)
+  })
+  .strict();
+export const recruitmentCandidateSchema = z
+  .object({
+    name: trimmed(160).min(2, 'Enter the candidate\'s name.'),
+    email: emailSchema,
+    phone: optionalText(40),
+    positionId: uuidSchema,
+    ownerId: uuidSchema.nullable().optional(),
+    source: optionalText(80),
+    notes: optionalText(2000)
+  })
+  .strict();
+export const recruitmentPositionSchema = z
+  .object({ id: uuidSchema.optional(), title: trimmed(120).min(2, 'Enter the position title.'), departmentId: uuidSchema.nullable().optional(), isOpen: z.boolean().default(true) })
+  .strict();
+export const recruitmentActionSchema = z
+  .object({
+    kind: z.enum(['INTERVIEW', 'DOCUMENTS', 'ASSESSMENT', 'BACKGROUND_CHECK', 'REFERENCE_CHECK', 'OTHER']),
+    title: trimmed(200).min(2, 'Describe what is pending.'),
+    dueDate: isoDate.nullable().optional(),
+    assigneeId: uuidSchema.nullable().optional()
+  })
+  .strict();
+export const recruitmentActionCloseSchema = z.object({ done: z.boolean(), note: optionalText(500) }).strict();
+export const recruitmentCallScheduleSchema = z.object({ at: z.string().datetime({ offset: true }) }).strict();
+export const recruitmentCallRecordSchema = z
+  .object({
+    callId: uuidSchema.nullable().optional(),
+    outcome: z.enum(['ANSWERED', 'NO_ANSWER', 'CALL_BACK', 'NOT_INTERESTED', 'WRONG_NUMBER']),
+    note: optionalText(1000),
+    followUpDate: isoDate.nullable().optional()
+  })
+  .strict();
+export const recruitmentConfirmationSchema = z
+  .object({ status: z.enum(CONFIRMATIONS), date: isoDate.nullable().optional(), note: optionalText(500) })
+  .strict();
+
+// ---- HR Training ----
+export const trainingProgramSchema = z
+  .object({ id: uuidSchema.optional(), name: trimmed(160).min(2, 'Enter the program name.'), description: optionalText(2000), startDate: isoDate, ownerId: uuidSchema.nullable().optional() })
+  .strict();
+export const trainingDaySchema = z
+  .object({
+    title: trimmed(160).min(2, 'Enter the title of the day.'),
+    topics: z.array(trimmed(200).min(1)).max(30).default([]),
+    trainerName: optionalText(160),
+    trainerId: uuidSchema.nullable().optional(),
+    criteria: z.array(z.object({ name: trimmed(120).min(1, 'Name the criterion.'), max: z.number().positive().max(1000) }).strict()).max(20).default([]),
+    passPercent: z.number().int().min(1).max(100).nullable().optional()
+  })
+  .strict();
+export const trainingEnrollSchema = z.object({ employeeKeys: z.array(trimmed(80).min(3)).min(1, 'Choose at least one employee.').max(200) }).strict();
+export const trainingReportSchema = z
+  .object({
+    attendance: z.enum(['PRESENT', 'LATE', 'ABSENT', 'EXCUSED']).nullable().optional(),
+    topicsCompleted: z.array(trimmed(200).min(1)).max(30).default([]),
+    tasks: z.array(z.object({ title: trimmed(200).min(1), done: z.boolean() }).strict()).max(30).default([]),
+    scores: z.array(z.object({ criterion: trimmed(120).min(1), score: z.number().min(0).max(1000) }).strict()).max(20).default([]),
+    feedback: optionalText(2000),
+    trainerRemarks: optionalText(2000),
+    report: optionalText(4000)
+  })
+  .strict();
+export const trainingReviewSchema = z.object({ strengths: optionalText(2000), improvements: optionalText(2000), trainerRemarks: optionalText(2000) }).strict();
+export const trainingRecordsQuerySchema = z
+  .object({
+    search: trimmed(120).optional(),
+    status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'INCOMPLETE']).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    offset: z.coerce.number().int().min(0).max(100000).default(0)
+  })
+  .strict();
+export const trainingCancelSchema = z.object({ cancel: z.boolean().default(true) }).strict();
+
 // ---- Client calendar and documents ----
 export const clientCalendarQuerySchema = z
   .object({ from: isoDate, to: isoDate })
