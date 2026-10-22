@@ -1,5 +1,5 @@
 import type {
-  AttendanceDay, HrEmailDataIssue, HrEmailHistory, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
+  AttendanceDay, HrEmailCards, HrEmailDataIssue, HrEmailHistory, HrEmailKind, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
 } from '../../shared/contracts.js';
 import {
   hrConfirmProbationSchema,
@@ -14,6 +14,7 @@ import {
   uuidSchema
 } from '../../shared/validation.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
+import { renderHrEmail } from '../automations/hrTemplates.js';
 import { parse } from '../http/validate.js';
 import type { HrRepository } from '../repositories/HrRepository.js';
 
@@ -57,6 +58,30 @@ export class HrService {
     const base = await this.repo.emailOverview();
     const s = automationSettings();
     return { ...base, settings: { mode: s.mode, emailConfigured: liveChannels(s).includes('EMAIL'), testMode: !!s.testRecipients } };
+  }
+  /** The three automation cards: live figures from the database plus the wording of each e-mail (a sample employee, never real data). */
+  async emailCards(): Promise<HrEmailCards> {
+    const base = await this.repo.emailCards();
+    const s = automationSettings();
+    const sample = { employeeName: 'Asha Verma', employeeCode: 'EMP-1A2B3C4D', department: 'Sales', designation: 'Sales Executive', reportingManager: 'Rohan Mehta',
+                     joiningDate: '2026-04-10', probationEndDate: '2026-10-10', years: 2, daysLeft: 7 };
+    const sampleMail = (label: string, to: string, kind: HrEmailKind) => {
+      const m = renderHrEmail(kind, sample);
+      return { label, to, subject: m.subject, text: m.text };
+    };
+    return {
+      ...base,
+      settings: { mode: s.mode, emailConfigured: liveChannels(s).includes('EMAIL'), testMode: !!s.testRecipients },
+      runsAt: '9:00 AM and 10:30 AM (India time), every day',
+      templates: {
+        BIRTHDAY: [sampleMail('Birthday e-mail', 'The employee', 'BIRTHDAY')],
+        ANNIVERSARY: [sampleMail('Work anniversary e-mail', 'The employee', 'ANNIVERSARY')],
+        CONFIRMATION: [
+          sampleMail('Reminder to the employee', 'The employee', 'PROBATION_REMINDER_EMPLOYEE'),
+          sampleMail('Reminder to HR', 'The HR team', 'PROBATION_REMINDER_HR')
+        ]
+      }
+    };
   }
   emailHistory(query: unknown): Promise<HrEmailHistory> { return this.repo.emailHistory(parse(hrEmailHistoryQuerySchema, query)); }
   probationList(): Promise<HrProbationCycle[]> { return this.repo.probationList(); }

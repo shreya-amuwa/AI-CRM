@@ -2063,6 +2063,27 @@ export type HrEmailKind =
   | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR';
 export type HrEmailStatus = 'PENDING' | 'SENDING' | 'RETRY' | 'SENT' | 'FAILED' | 'SKIPPED' | 'DRY_RUN';
 
+export type HrAutomationCode = 'BIRTHDAY' | 'ANNIVERSARY' | 'CONFIRMATION';
+export interface HrAutomationCard {
+  sent: number;
+  failed: number;
+  waiting: number;
+  last: { status: HrEmailStatus; at: string; error: string | null; employee: string | null } | null;
+}
+/** Live figures for the three automation cards, with the wording of each e-mail (a sample, rendered by the server). */
+export interface HrEmailCards {
+  today: string;
+  settings: { mode: 'off' | 'dry_run' | 'live'; emailConfigured: boolean; testMode: boolean };
+  /** The daily check runs at this time every day (company time zone). */
+  runsAt: string;
+  birthday: HrAutomationCard & { next: { date: string; names: string[] } | null };
+  anniversary: HrAutomationCard & { next: { date: string; names: string[] } | null };
+  confirmation: HrAutomationCard & {
+    upcoming: { name: string; department: string | null; joiningDate: string; confirmationDate: string; reminderDate: string; reminderSent: boolean }[];
+  };
+  templates: Record<HrAutomationCode, { label: string; to: string; subject: string; text: string }[]>;
+}
+
 export interface HrEmailOverview {
   today: string;
   /** Whether the server sends real e-mail: "off", "dry_run" (nothing leaves the server) or "live". No credentials are ever included. */

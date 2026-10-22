@@ -3619,20 +3619,20 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   let hr = await hrRun();
   check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
   const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
-  check(bd.length === 1 && /Dear Birthday Person,/.test(bd[0].body.text) && /Best wishes,\nHR Team\nAmuwa Corporation/.test(bd[0].body.text),
+  check(bd.length === 1 && /Dear Birthday Person,/.test(bd[0].body.text) && /Wishing you a very Happy Birthday!/.test(bd[0].body.text) && /Best regards,\nHR Team\nAmuwa Corporation/.test(bd[0].body.text),
     'HR automation: the birthday e-mail has the approved subject and text, addressed to the employee', bd[0]?.body);
   check(bd[0].body.from.includes('Amuwa Corporation HR') && !bd[0].body.cc && !bd[0].body.bcc && bd[0].body.reply_to,
     'HR automation: it is sent as the HR sender, without the client-facing CC / BCC lists');
-  const an = hrMail('hrbd.two@example.com', 'Happy Work Anniversary, Anniversary Person!');
-  check(an.length === 1 && /Congratulations on your work anniversary at Amuwa Corporation!/.test(an[0].body.text) && /5 completed years/.test(an[0].body.text),
+  const an = hrMail('hrbd.two@example.com', 'Happy Work Anniversary, Anniversary Person! 🎉');
+  check(an.length === 1 && /Congratulations on your work anniversary with Amuwa Corporation!/.test(an[0].body.text) && /Today marks 5 years of your professional journey/.test(an[0].body.text),
     'HR automation: the anniversary e-mail counts the completed years of service', an[0]?.body?.text);
-  const pe = hrMail('hrbd.prob@example.com', 'Upcoming Employment Confirmation Review – Probation Person');
-  check(pe.length === 1 && /approaching completion on /.test(pe[0].body.text) && /HR will communicate the confirmation decision/.test(pe[0].body.text),
+  const pe = hrMail('hrbd.prob@example.com', 'Employee Confirmation Reminder — Probation Person — Due ');
+  check(pe.length === 1 && /scheduled to be completed on /.test(pe[0].body.text) && /approaching in seven days/.test(pe[0].body.text),
     'HR automation: the employee gets the probation reminder exactly seven days before the end');
-  const ph = hrMail('hr.inbox@example.com', 'Action Required: Probation Confirmation Due – Probation Person');
-  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm permanent employment/.test(ph[0].body.text)
-    && /approaching completion in 7 days/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
-  check(hrMail('hr.api@amuwa.com', 'Action Required: Probation Confirmation Due').length === 1, 'HR automation: every HR department member is also told');
+  const ph = hrMail('hr.inbox@example.com', 'Action Required: Confirmation Due in 7 Days — Probation Person');
+  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm employment/.test(ph[0].body.text)
+    && /Designation: /.test(ph[0].body.text) && /Reporting Manager: /.test(ph[0].body.text) && /The confirmation date is seven days away/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
+  check(hrMail('hr.api@amuwa.com', 'Action Required: Confirmation Due in 7 Days').length === 1, 'HR automation: every HR department member is also told');
   check(emails().filter(o => /Employment Confirmation – Amuwa Corporation$/.test(o.body.subject)).length === 0, 'HR automation: nothing confirms the employee by itself');
 
   // never twice
@@ -3701,6 +3701,16 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(!/re_hr_secret_key|SMTP_PASS|dispatch-secret/i.test(JSON.stringify(r.json)), 'HR automation API: no credential is ever part of the answer');
   r = await api('hr', 'GET', '/hr/email-automation/history?status=FAILED&limit=5');
   check(r.status === 200 && r.json.data.items.some((i: any) => i.id === failedId && i.employeeName === 'Failing Person' && /422/.test(i.error)), 'HR automation API: the history shows failures with their error', r);
+  r = await api('a', 'GET', '/hr/email-automation/cards');
+  check(r.status === 403, 'HR automation API: a sales member cannot open the automation cards', r);
+  r = await api('hr', 'GET', '/hr/email-automation/cards');
+  check(r.status === 200 && r.json.data.settings.mode === 'live' && r.json.data.birthday.sent >= 1 && r.json.data.birthday.failed >= 1 && r.json.data.birthday.last?.status
+    && Array.isArray(r.json.data.confirmation.upcoming) && r.json.data.runsAt, 'HR automation API: the cards show live figures, the last execution and the schedule', r);
+  const tpl = r.json.data.templates;
+  check(tpl.BIRTHDAY[0].subject === 'Happy Birthday, Asha Verma! 🎂' && /Happy Work Anniversary, Asha Verma! 🎉/.test(tpl.ANNIVERSARY[0].subject)
+    && /^Employee Confirmation Reminder — Asha Verma — Due /.test(tpl.CONFIRMATION[0].subject) && /^Action Required: Confirmation Due in 7 Days — Asha Verma$/.test(tpl.CONFIRMATION[1].subject)
+    && /Reporting Manager: Rohan Mehta/.test(tpl.CONFIRMATION[1].text), 'HR automation API: each card previews its e-mail (sample data, the approved wording)', tpl);
+  check(!/re_hr_secret_key|SMTP_PASS|dispatch-secret/i.test(JSON.stringify(r.json)), 'HR automation API: the cards carry no credential');
   r = await api('hr', 'GET', '/hr/email-automation/history?status=NOPE');
   check(r.status === 422, 'HR automation API: an unknown filter is refused', r);
   r = await api('a', 'POST', `/hr/email-automation/events/${failedId}/retry`, {});

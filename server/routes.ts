@@ -255,6 +255,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/leave/:id/hr-decision', handler: hr.decideAsHr, options: S },
   { method: 'GET', path: '/leave/monthly-summary', handler: hr.monthlySummary },
   { method: 'GET', path: '/hr/email-automation/overview', handler: hr.emailOverview },
+  { method: 'GET', path: '/hr/email-automation/cards', handler: hr.emailCards },
   { method: 'GET', path: '/hr/email-automation/history', handler: hr.emailHistory },
   { method: 'GET', path: '/hr/email-automation/probation', handler: hr.probationList },
   { method: 'POST', path: '/hr/email-automation/probation/:id/confirm', handler: hr.confirmProbation, options: S },

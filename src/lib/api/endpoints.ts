@@ -24,6 +24,7 @@ import type {
   HrEmailDataIssue,
   HrEmailHistory,
   HrEmailKind,
+  HrEmailCards,
   HrEmailOverview,
   HrEmailRunSummary,
   HrEmailStatus,
@@ -462,6 +463,7 @@ export const hrApi = {
   // E-mail automation (birthdays, work anniversaries, probation reminders, employment confirmation) - HR staff only
   emailOverview: () => api.get<HrEmailOverview>('/hr/email-automation/overview'),
   emailHistory: (q: { status?: HrEmailStatus; kind?: HrEmailKind; limit?: number; offset?: number } = {}) => api.get<HrEmailHistory>('/hr/email-automation/history', { ...q }),
+  emailCards: () => api.get<HrEmailCards>('/hr/email-automation/cards'),
   probation: () => api.get<HrProbationCycle[]>('/hr/email-automation/probation'),
   confirmProbation: (id: string, body: { effectiveDate?: string; note?: string } = {}) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/confirm`, body),
   dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note }),

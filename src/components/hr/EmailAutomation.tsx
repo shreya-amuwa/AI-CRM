@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Mail, PlayCircle, RefreshCw, RotateCcw, XCircle } from 'lucide-react';
+import { AlertTriangle, Cake, CalendarCheck, CheckCircle2, ChevronDown, Mail, PartyPopper, PlayCircle, RefreshCw, RotateCcw, XCircle } from 'lucide-react';
 import { hrApi } from '../../lib/api/endpoints';
 import { ApiError } from '../../lib/api/client';
 import { fmtDay } from '../../lib/support';
-import type { HrDataIssue, HrEmailDataIssue, HrEmailHistory, HrEmailKind, HrEmailOverview, HrEmailStatus, HrProbationCycle } from '../../../shared/contracts';
+import type { HrAutomationCard, HrDataIssue, HrEmailCards, HrEmailDataIssue, HrEmailHistory, HrEmailKind, HrEmailOverview, HrEmailStatus, HrProbationCycle } from '../../../shared/contracts';
 import { btn, Card, ErrorBanner, inputCls, Pill, selectCls, Spinner, type Tone } from '../team-member/pipeline/shared';
 
 /**
@@ -47,11 +47,115 @@ const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string; ale
   </Card>
 );
 
+
+const nine = (d: string) => `${fmtDay(d)}, 9:00 AM`;
+const names = (n: { names: string[] }) => `${n.names.slice(0, 2).join(', ')}${n.names.length > 2 ? ` +${n.names.length - 2} more` : ''}`;
+
+/** One automation: is it on, how many e-mails went out, what happens next, what the last run did and what the e-mail says. */
+const AutomationCard: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  what: string;
+  cards: HrEmailCards;
+  data: HrAutomationCard;
+  next: string;
+  templates: HrEmailCards['templates'][keyof HrEmailCards['templates']];
+  children?: React.ReactNode;
+}> = ({ icon, title, what, cards, data, next, templates, children }) => {
+  const [open, setOpen] = useState(false);
+  const mode = cards.settings.mode;
+  const status = mode === 'live' ? { tone: 'green' as Tone, text: 'Active' } : mode === 'dry_run' ? { tone: 'orange' as Tone, text: 'Active (dry run, not sending)' } : { tone: 'red' as Tone, text: 'Inactive' };
+  return (
+    <Card className="p-4"><section className="flex flex-col gap-3" aria-label={title}>
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 text-indigo-600">{icon}</span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-extrabold text-slate-900">{title}</h3>
+          <p className="mt-0.5 text-[11px] text-slate-500">{what}</p>
+          <div className="mt-1.5"><Pill tone={status.tone}>{status.text}</Pill></div>
+        </div>
+      </div>
+      <dl className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg bg-slate-50 py-2"><dd className="text-lg font-extrabold text-slate-900">{data.sent}</dd><dt className="text-[10px] uppercase tracking-wide text-slate-500">Sent</dt></div>
+        <div className="rounded-lg bg-slate-50 py-2"><dd className="text-lg font-extrabold text-slate-900">{data.waiting}</dd><dt className="text-[10px] uppercase tracking-wide text-slate-500">Waiting</dt></div>
+        <div className={`rounded-lg py-2 ${data.failed ? 'bg-rose-50' : 'bg-slate-50'}`}><dd className={`text-lg font-extrabold ${data.failed ? 'text-rose-700' : 'text-slate-900'}`}>{data.failed}</dd><dt className="text-[10px] uppercase tracking-wide text-slate-500">Failed</dt></div>
+      </dl>
+      <div className="text-xs space-y-1.5">
+        <div><span className="font-semibold text-slate-700">Next execution: </span><span className="text-slate-600">{mode === 'off' ? 'Paused (automation is off)' : next}</span></div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-semibold text-slate-700">Last execution: </span>
+          {data.last ? (
+            <>
+              <Pill tone={STATUS_TONE[data.last.status]}>{STATUS_LABEL[data.last.status]}</Pill>
+              <span className="text-slate-500">{when(data.last.at)}</span>
+              {data.last.error && <span className="basis-full text-[11px] text-rose-700">{data.last.error}</span>}
+            </>
+          ) : <span className="text-slate-500">Nothing has run yet</span>}
+        </div>
+      </div>
+      {children}
+      <div>
+        <button type="button" className="text-xs font-bold text-indigo-700 inline-flex items-center gap-1" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" /> {open ? 'Hide' : 'Preview'} e-mail template
+        </button>
+        {open && (
+          <div className="mt-2 space-y-3">
+            {templates.map(t => (
+              <div key={t.label} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t.label} · to {t.to.toLowerCase()} · sample data</div>
+                <div className="mt-1 text-xs font-bold text-slate-900 break-words">{t.subject}</div>
+                <pre className="mt-1.5 whitespace-pre-wrap break-words font-sans text-[11px] leading-relaxed text-slate-700">{t.text}</pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      </section>
+    </Card>
+  );
+};
+
+const AutomationCards: React.FC<{ cards: HrEmailCards }> = ({ cards }) => {
+  const nextConfirmation = cards.confirmation.upcoming.find(u => !u.reminderSent);
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start" role="group" aria-label="The three automations">
+      <AutomationCard
+        icon={<Cake className="w-5 h-5" aria-hidden="true" />} title="Birthday Emails" what="On the employee's birthday, at 9:00 AM." cards={cards} data={cards.birthday}
+        next={cards.birthday.next ? `${nine(cards.birthday.next.date)} · ${names(cards.birthday.next)}` : 'No birthday on record'} templates={cards.templates.BIRTHDAY}
+      />
+      <AutomationCard
+        icon={<PartyPopper className="w-5 h-5" aria-hidden="true" />} title="Work Anniversary Emails" what="On each work anniversary (from the joining date), at 9:00 AM." cards={cards} data={cards.anniversary}
+        next={cards.anniversary.next ? `${nine(cards.anniversary.next.date)} · ${names(cards.anniversary.next)}` : 'No anniversary coming up'} templates={cards.templates.ANNIVERSARY}
+      />
+      <AutomationCard
+        icon={<CalendarCheck className="w-5 h-5" aria-hidden="true" />} title="Employee Confirmation Reminders" what="Seven days before the six-month confirmation date: to the employee and to HR." cards={cards} data={cards.confirmation}
+        next={nextConfirmation ? `${nine(nextConfirmation.reminderDate < cards.today ? cards.today : nextConfirmation.reminderDate)} · ${nextConfirmation.name} (confirmation due ${fmtDay(nextConfirmation.confirmationDate)})` : 'No confirmation is coming up'}
+        templates={cards.templates.CONFIRMATION}
+      >
+        <div className="text-xs">
+          <div className="font-semibold text-slate-700 mb-1">Upcoming confirmation reminders</div>
+          {cards.confirmation.upcoming.length === 0 ? <p className="text-slate-500">None right now.</p> : (
+            <ul className="space-y-1">
+              {cards.confirmation.upcoming.slice(0, 5).map(u => (
+                <li key={`${u.name}-${u.confirmationDate}`} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1">
+                  <span className="truncate text-slate-800">{u.name}</span>
+                  <span className="shrink-0 text-[11px] text-slate-500">{u.reminderSent ? 'Reminder sent' : `Reminder ${fmtDay(u.reminderDate)}`} · due {fmtDay(u.confirmationDate)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </AutomationCard>
+    </div>
+  );
+};
+
 export const EmailAutomation: React.FC = () => {
   const [overview, setOverview] = useState<HrEmailOverview | null>(null);
   const [cycles, setCycles] = useState<HrProbationCycle[] | null>(null);
   const [issues, setIssues] = useState<HrEmailDataIssue[] | null>(null);
   const [history, setHistory] = useState<HrEmailHistory | null>(null);
+  const [cards, setCards] = useState<HrEmailCards | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('confirmations');
@@ -70,16 +174,17 @@ export const EmailAutomation: React.FC = () => {
     [statusFilter, kindFilter, offset]
   );
 
+  // Each section loads on its own: one that fails shows its own message and does not blank the others.
   const loadAll = useCallback(async () => {
     setError(null);
-    try {
-      const [o, c, i] = await Promise.all([hrApi.emailOverview(), hrApi.probation(), hrApi.emailDataIssues()]);
-      setOverview(o);
-      setCycles(c);
-      setIssues(i);
-    } catch (e) {
-      setError(errText(e, 'Could not load the e-mail automation.'));
-    }
+    const parts = await Promise.allSettled([hrApi.emailOverview(), hrApi.probation(), hrApi.emailDataIssues(), hrApi.emailCards()]);
+    const [o, c, i, k] = parts;
+    const failed: string[] = [];
+    if (o.status === 'fulfilled') setOverview(o.value); else failed.push(`the summary (${errText(o.reason, 'failed')})`);
+    if (c.status === 'fulfilled') setCycles(c.value); else failed.push(`the confirmations (${errText(c.reason, 'failed')})`);
+    if (i.status === 'fulfilled') setIssues(i.value); else { setIssues(prev => prev ?? []); failed.push(`the dates to fix (${errText(i.reason, 'failed')})`); }
+    if (k.status === 'fulfilled') setCards(k.value); else failed.push(`the automation cards (${errText(k.reason, 'failed')})`);
+    if (failed.length) setError(`Could not load ${failed.join('; ')}.`);
   }, []);
 
   useEffect(() => { void loadAll(); }, [loadAll]);
@@ -163,6 +268,8 @@ export const EmailAutomation: React.FC = () => {
           </div>
         </>
       )}
+
+      {cards && <AutomationCards cards={cards} />}
 
       <div className="flex flex-wrap gap-1 p-1 bg-slate-50 border border-slate-200 rounded-xl w-fit" role="tablist" aria-label="Email automation sections">
         {tabBtn('confirmations', 'Probation confirmations', pending.length)}

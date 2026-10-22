@@ -122,6 +122,7 @@ export const hrController = {
   decideAsHr: (async ctx => ok(await svc(ctx).hr.decideAsHr(ctx.params.id, ctx.req.body))) as Handler,
   monthlySummary: (async ctx => ok(await svc(ctx).hr.monthlySummary(ctx.req.query))) as Handler,
   emailOverview: (async ctx => ok(await svc(ctx).hr.emailOverview())) as Handler,
+  emailCards: (async ctx => ok(await svc(ctx).hr.emailCards())) as Handler,
   emailHistory: (async ctx => ok(await svc(ctx).hr.emailHistory(ctx.req.query))) as Handler,
   probationList: (async ctx => ok(await svc(ctx).hr.probationList())) as Handler,
   confirmProbation: (async ctx => ok(await svc(ctx).hr.confirmProbation(ctx.params.id, ctx.req.body))) as Handler,

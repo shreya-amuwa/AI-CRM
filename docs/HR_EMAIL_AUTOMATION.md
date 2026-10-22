@@ -11,9 +11,9 @@ Migration: `supabase/migrations/20261107000100_hr_email_automation.sql` (additiv
 | E-mail | To | When | Once per |
 | --- | --- | --- | --- |
 | Birthday (`Happy Birthday, <name>! 🎂`) | the employee | their date of birth, 09:00 India time | employee and year |
-| Work anniversary (`Happy Work Anniversary, <name>!`) | the employee | joining-date anniversary (years of service counted from the real joining date, at least 1) | employee and anniversary year |
-| Upcoming Employment Confirmation Review | the employee | 7 days before the probation end | confirmation cycle |
-| Action Required: Probation Confirmation Due | HR | 7 days before the probation end | cycle and HR recipient |
+| Work anniversary (`Happy Work Anniversary, <name>! 🎉`) | the employee | joining-date anniversary (years of service counted from the real joining date, at least 1) | employee and anniversary year |
+| Employee Confirmation Reminder — `<name>` — Due `<date>` | the employee | 7 days before the probation end | confirmation cycle |
+| Action Required: Confirmation Due in 7 Days — `<name>` (lists id, department, designation, joining date, confirmation due date, reporting manager) | HR | 7 days before the probation end | cycle and HR recipient |
 | Overdue: Probation Confirmation Pending | HR only | after the end date while still undecided: weekly, at most 8 times | cycle, week and HR recipient |
 | Employment Confirmation - Amuwa Corporation | the employee | **only after approval**, on/after the probation end date | cycle |
 | Employee Confirmation Completed | HR | **only after approval** | cycle and HR recipient |
@@ -92,6 +92,20 @@ select cron.schedule('hr-email-automation', '*/15 * * * *', $$
 
 E-mails are timed for 09:00 India time on their day (`send_after`), whatever the run frequency.
 
+## The three automation cards (migration `20261115000100_hr_email_cards.sql`)
+
+HR Dashboard > Email Automation shows one card per automation: **Birthday Emails**, **Work Anniversary Emails** and **Employee Confirmation Reminders**.
+Each card has the status (Active = sending, Active (dry run) = prepared but not sent, Inactive = `AUTOMATION_MODE=off`), the number of e-mails sent / waiting /
+failed, the **next execution** (the next occasion and who it is for, 9:00 AM India time), the **last execution** with its real outcome and error, and a
+**Preview e-mail template** (the approved wording, rendered by the server with a sample employee). The confirmation card also lists the upcoming reminders
+(reminder date = six-month date minus seven days). The figures are live (`public.hr_email_cards()`, HR staff only); there are no placeholders.
+There is no month-specific rule anywhere: every date is calculated per employee from the joining date / date of birth in the company time zone
+(29 February is celebrated on 28 February in a common year). The designation and reporting manager in the HR reminder are looked up when the reminder is
+queued (reporting manager: the Team Lead of the member's team, else the Department Head, else "Not assigned").
+
+If a section cannot load, the page says which one and why instead of a blank "Something went wrong"; a database that has not been given the latest
+migration is reported as exactly that (HTTP 503 with a set-up message). Run the migrations in order, including `20261115000100_hr_email_cards.sql`.
+
 ## Go-live checklist
 
 1. Run the migration in the Supabase SQL editor.
@@ -108,4 +122,4 @@ E-mails are timed for 09:00 India time on their day (`send_after`), whatever the
 
 `npm run test:db` (section "HR e-mail automation": dates, Feb 29, once-per-year, 7-day reminder, overdue, approval rules, queue, retries, permissions),
 `npm run test:api` (scheduler endpoint with a mock mail provider: delivery, duplicates, 503 retry, 422 failure, dry run, test mode, approval, HR API
-permissions) and `npm run test:unit` (`hr_email_templates.test.ts`: the approved subjects and wording). No real e-mail is sent by the tests.
+permissions) and `npm run test:unit` (`hr_email_templates.test.ts`: the approved subjects and wording) and the browser test `supabase/tests/e2e/run-hr-email.sh` (the three cards with live data, template preview, "Dates to fix", phone width). No real e-mail is sent by the tests.
