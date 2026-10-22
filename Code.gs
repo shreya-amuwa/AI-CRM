@@ -4,25 +4,45 @@
  * ==============================================================================
  * Connects your Google Spreadsheet rows directly to Wabastore Sales OS CRM.
  * 
- * Google Spreadsheet: https://docs.google.com/spreadsheets/d/1-zJLKmYkio7ussaalkJoS2yr_IMzLogx9M1xQLiBAN4/edit
- * Google Spreadsheet ID: 1-zJLKmYkio7ussaalkJoS2yr_IMzLogx9M1xQLiBAN4
- * Deployment ID: AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ
- * 
+ * SECURITY: the web app runs as the sheet owner and is reachable by anyone who has its URL. Every request must carry
+ * the key stored in Script Properties (CRM_SHEET_KEY), as ?key=... in the URL (Apps Script cannot read headers).
+ * Without the property set, the script answers nothing. Never commit the web app URL or the key.
+ *
  * HOW TO DEPLOY IN 3 EASY STEPS:
  * 1. In your Google Sheet, click Extensions > Apps Script.
  * 2. Delete existing code, paste this entire file, and click Save (disk icon).
  * 3. Click Deploy > Manage deployments > Click Edit (pencil icon)
  *    -> Under Version, select "New version"
- *    -> Under "Who has access", select "Anyone"
+ *    -> Under "Who has access", select "Anyone" (the key below is what protects the data)
  *    -> Click Deploy!
+ * 4. Project Settings > Script Properties > add CRM_SHEET_KEY = a long random value (32+ characters).
+ * 5. In the CRM, paste the web app URL followed by ?key=<that value>.
  * ==============================================================================
  */
+
+/**
+ * True only when the request carries the key from Script Properties (constant-time comparison).
+ */
+function hasValidKey_(e) {
+  var want = PropertiesService.getScriptProperties().getProperty('CRM_SHEET_KEY') || '';
+  var given = (e && e.parameter && e.parameter.key) ? String(e.parameter.key) : '';
+  if (want.length < 32 || given.length !== want.length) return false;
+  var diff = 0;
+  for (var i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ given.charCodeAt(i);
+  return diff === 0;
+}
+
+function forbidden_() {
+  return ContentService.createTextOutput(JSON.stringify({ status: "error", error: "forbidden" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
 
 /**
  * Handles GET requests: Reads sheet rows and returns them as clean JSON leads.
  * Called automatically when you click "Sync Google Sheet Leads" in Wabastore.
  */
 function doGet(e) {
+  if (!hasValidKey_(e)) return forbidden_();
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getActiveSheet() || ss.getSheets()[0];
@@ -74,7 +94,7 @@ function doGet(e) {
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
       status: "error",
-      error: err.toString()
+      error: "request failed"
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }
@@ -83,6 +103,7 @@ function doGet(e) {
  * Handles POST requests: Appends incoming leads from Wabastore / Webhooks into the sheet.
  */
 function doPost(e) {
+  if (!hasValidKey_(e)) return forbidden_();
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getActiveSheet() || ss.getSheets()[0];
@@ -111,7 +132,7 @@ function doPost(e) {
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
       status: "error",
-      error: err.toString()
+      error: "request failed"
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }

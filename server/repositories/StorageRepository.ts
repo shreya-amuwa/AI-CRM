@@ -12,6 +12,7 @@ export type { InspectResult, StorageProviderName, UploadTarget } from '../storag
 export type ReferenceTable = 'customer_documents' | 'chat_attachments' | 'support_ticket_attachments';
 
 const drivers: Record<StorageProviderName, StorageDriver> = { SUPABASE: new SupabaseDriver(), R2: new R2Driver() };
+let attestMissingWarned = false;
 
 /**
  * File storage for customer documents and invoice PDFs. Only ever called AFTER a database function has authorized the
@@ -52,6 +53,24 @@ export class StorageRepository {
   /** The reference of a stored file, kept in Supabase next to the document: where it lives, its key and its ETag. */
   async recordStored(documentId: string, provider: StorageProviderName | null | undefined, info: { reference?: string; etag: string | null }, table: ReferenceTable = 'customer_documents'): Promise<void> {
     await this.setReference(documentId, { storage_provider: this.driver(provider).provider, storage_ref: info.reference, storage_etag: info.etag }, table);
+  }
+
+  /**
+   * Tells the database what the storage provider reported for an uploaded object (service role only). The database
+   * finishes an upload only with this attestation and the same size, so calling the completion function directly
+   * (skipping the inspection above) is refused. Migration 20261114000100_security_upload_attestation.sql.
+   */
+  async attest(table: ReferenceTable, id: string, object: { size: number; etag: string | null }): Promise<void> {
+    const { error } = await getServiceClient().rpc('attest_upload', { p_table: table, p_object: id, p_size: object.size, p_etag: object.etag });
+    if (!error) return;
+    if (error.code === 'PGRST202') {
+      // the migration is not applied yet: the database does not ask for an attestation either
+      if (!attestMissingWarned) console.warn('[storage] attest_upload() not found - apply migration 20261114000100_security_upload_attestation.sql.');
+      attestMissingWarned = true;
+      return;
+    }
+    console.error('[storage] attest_upload failed', { table, message: error.message });
+    throw new AppError('SERVICE_UNAVAILABLE', 'File storage is not available right now. Please try again.');
   }
 
   private async setReference(documentId: string, fields: Record<string, unknown>, table: ReferenceTable = 'customer_documents'): Promise<void> {

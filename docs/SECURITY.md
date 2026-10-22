@@ -1,5 +1,7 @@
 # Security: audit, hardening and what to switch on
 
+> The current findings tracker, threat model and deployment checklist are in [`docs/security/`](security/FINDINGS.md). This page records the earlier hardening.
+
 Migration: `supabase/migrations/20261106000100_security_hardening.sql` (additive, safe to rerun in the Supabase SQL editor; nothing is deleted).
 Tests: `npm run test:db` (security section at the end), `npm run test:api`, `npm run test:unit` (`security.test.ts`).
 
@@ -16,7 +18,7 @@ Tests: `npm run test:db` (security section at the end), `npm run test:api`, `npm
 | 7 | Medium | Signed-out visitors held table privileges (`anon` SELECT/TRUNCATE on several tables) and could execute 3 internal functions; signed-in users held `TRUNCATE` (skips Row Level Security) and write privileges on catalogue tables. | Revoked. Only `list_registration_options()` is callable signed-out. New tables / functions no longer start with `anon` access (default privileges). |
 | 8 | Medium | Audit metadata was whatever the caller passed. | `private.scrub_audit_metadata` removes keys containing password / secret / token / authorization / api key / cookie / credential (also nested) from every audit entry; `record_security_event()` (service role only) records events without a signed-in user. |
 
-Checked and found sound (no change): every public table has Row Level Security; all `SECURITY DEFINER` functions set `search_path`; role / status changes only through checked functions (`profiles` is read-only for users); requests are validated with strict Zod schemas; no raw SQL string building; PostgREST filters escaped; no secrets in the repository; `npm audit --omit=dev` reports 0 vulnerabilities; the 500 KB invoice PDF limit is enforced by the database (`complete_document_upload` checks the **stored** object's real size and signature, not the size the browser claims), by the bucket limit and by the schema in `shared/validation.ts`; per-user rate limits (shared across instances) and a per-address flood limit on the API; CORS is an explicit allow-list; the client dashboard only reaches the signed-in customer's own records.
+Checked and found sound (no change): every public table has Row Level Security; all `SECURITY DEFINER` functions set `search_path`; role / status changes only through checked functions (`profiles` is read-only for users); requests are validated with strict Zod schemas; no raw SQL string building; PostgREST filters escaped; no secrets in the repository; `npm audit --omit=dev` reports 0 vulnerabilities; the 500 KB invoice PDF limit is enforced by the API (it inspects the **stored** object's real size and signature, not the size the browser claims), by the bucket limit and by the schema in `shared/validation.ts`. *Correction (22 Oct 2026):* the database did not check the stored object itself, and the completion functions could be called directly; since migration `20261114000100_security_upload_attestation.sql` the database finishes an upload only with the server's attestation (docs/security/FINDINGS.md, SEC-2026-001); per-user rate limits (shared across instances) and a per-address flood limit on the API; CORS is an explicit allow-list; the client dashboard only reaches the signed-in customer's own records.
 
 ## Switch these on (one time)
 

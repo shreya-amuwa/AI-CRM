@@ -273,20 +273,21 @@ function liveWebhookPlugin(): Plugin {
                 // Forward to user's remote n8n webhook in the background
                 try {
                   const isAiCall = (source === 'aicalling' || source === 'ai_calling' || source === 'lead_src_5');
-                  const targetForwardUrl = isAiCall
-                    ? 'https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e'
-                    : 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
+                  // Development only: the forward targets and key come from the developer's own environment, never the code.
+                  const targetForwardUrl = (isAiCall ? process.env.DEV_AI_CALLING_FORWARD_URL : process.env.DEV_LEAD_FORWARD_URL) || '';
+                  if (!targetForwardUrl) throw new Error('no forward target configured');
 
                   const forwardHeaders: Record<string, string> = {
                     'Content-Type': 'application/json',
                     'Content-Length': String(Buffer.byteLength(body))
                   };
 
-                  if (isAiCall) {
-                    forwardHeaders['Authorization'] = 'Bearer da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['x-api-key'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['apikey'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['X-Webhook-Secret'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
+                  const forwardToken = process.env.DEV_LEAD_FORWARD_TOKEN;
+                  if (isAiCall && forwardToken) {
+                    forwardHeaders['Authorization'] = `Bearer ${forwardToken}`;
+                    forwardHeaders['x-api-key'] = forwardToken;
+                    forwardHeaders['apikey'] = forwardToken;
+                    forwardHeaders['X-Webhook-Secret'] = forwardToken;
                   }
 
                   const forwardReq = https.request(targetForwardUrl, {
@@ -329,7 +330,7 @@ function liveWebhookPlugin(): Plugin {
               const gidMatch = effectiveUrl.match(/[#?&]gid=([0-9]+)/);
               if (sheetMatch && sheetMatch[1]) {
                 const sheetId = sheetMatch[1];
-                const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : (sheetId === '1-zJLKmYkio7ussaalkJoS2yr_IMzLogx9M1xQLiBAN4' ? '&gid=1733395287' : '');
+                const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : '';
                 effectiveUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
               }
             }
@@ -453,7 +454,7 @@ function liveWebhookPlugin(): Plugin {
           };
 
           if (req.method === 'GET') {
-            const targetUrlStr = parsedUrl.searchParams.get('url') || 'https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec';
+            const targetUrlStr = parsedUrl.searchParams.get('url') || '';
             const token = parsedUrl.searchParams.get('token') || undefined;
             handleProxyFetch(targetUrlStr, token, 'GET');
             return;
@@ -464,7 +465,7 @@ function liveWebhookPlugin(): Plugin {
           req.on('end', () => {
             try {
               const reqData = body ? JSON.parse(body) : {};
-              const targetUrlStr = reqData.url || 'https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec';
+              const targetUrlStr = reqData.url || '';
               handleProxyFetch(targetUrlStr, reqData.token, reqData.method || 'GET', reqData.body);
             } catch (err: any) {
               res.statusCode = 400;

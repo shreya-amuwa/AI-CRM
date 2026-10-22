@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Customer, CustomerActivity, CustomerSummary, Paginated } from '../../shared/contracts.js';
 import type { CustomerCreateInput, CustomerListQuery, CustomerUpdateInput } from '../../shared/validation.js';
-import { AppError } from '../http/errors.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
 const COLUMNS = `id, owner_id, team_id, department_id, name, email, phone, company, segment, status, notes,
@@ -97,11 +96,6 @@ export class CustomerRepository {
       'Customer'
     );
     return mapCustomer(row);
-  }
-
-  async delete(id: string): Promise<void> {
-    const rows = unwrap(await this.db.from('customers').delete().eq('id', id).select('id'));
-    if (!rows.length) throw new AppError('NOT_FOUND', 'Customer not found.');
   }
 
   async listActivities(customerId: string): Promise<CustomerActivity[]> {

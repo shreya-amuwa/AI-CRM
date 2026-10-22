@@ -219,7 +219,7 @@ export async function fetchFromAnyWebhookUrl(
             mode: 'sheet_access_required',
             statusCode: 401,
             leads: [],
-            message: 'Google Sheet is Restricted. In Google Sheets, click "Share" -> set to "Anyone with the link (Viewer)".',
+            message: 'Google Sheet is Restricted (keep it that way). Sync through the keyed Apps Script web app: google-apps-script/README.md.',
             latencyMs,
             endpointUrl: targetUrl
           };
@@ -462,7 +462,7 @@ export async function fetchFromAnyWebhookUrl(
         mode: 'google_auth_required',
         statusCode: 401,
         leads: [],
-        message: 'Google Apps Script permission required. Change deployment access to "Anyone".',
+        message: 'Google Apps Script refused the request. Check the web app URL and its ?key= (google-apps-script/README.md).',
         latencyMs,
         endpointUrl: targetUrl
       };

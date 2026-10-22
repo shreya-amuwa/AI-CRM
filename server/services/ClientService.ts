@@ -143,6 +143,7 @@ export class ClientService {
     }
     let done;
     try {
+      await this.storage.attest('customer_documents', docId, object);
       done = await this.repo.completeDocumentUpload(docId, object.size);
     } catch (err) {
       await this.discard(docId, doc.storage_bucket, doc.storage_provider, doc.storage_path);

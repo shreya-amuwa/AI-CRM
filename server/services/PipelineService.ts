@@ -501,6 +501,7 @@ export class PipelineService {
       );
     }
     try {
+      await this.storage.attest('customer_documents', id, object);
       await this.repo.completeUpload(id, object.size);
     } catch (err) {
       await this.discard(id, doc.storage_bucket, doc.storage_provider);

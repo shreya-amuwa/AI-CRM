@@ -446,6 +446,27 @@ ticket = r.json.data;
 r = await api('a', 'POST', `/documents/${ticket.document.id}/complete`);
 check(r.status === 422 && /did not finish/.test(r.json.error.message), 'complete without an object → no fake success', r);
 
+// SEC-2026-001: the browser holds the Supabase URL and anon key, so it can call the completion function itself and skip
+// the server's look at the stored object. The database refuses that (no server attestation).
+{
+  const rpc = (who: string, fn: string, args: unknown) => fetch(`${process.env.GATEWAY_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { apikey: process.env.SUPABASE_ANON_KEY!, authorization: `Bearer ${tokens.get(who)}`, 'content-type': 'application/json' },
+    body: JSON.stringify(args)
+  });
+  r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS', 'bypass.pdf');
+  const bypass = r.json.data;
+  await put(bypass, Buffer.from('MZ an executable that never passed the PDF check'));
+  const direct = await rpc('a', 'complete_document_upload', { p_document: bypass.document.id, p_size: 100 });
+  const directBody = await direct.text();
+  check(direct.status >= 400 && /not been checked by the server/.test(directBody), 'direct RPC completion without the server check is refused', { status: direct.status, directBody });
+  check((await db.query(`select status from customer_documents where id = $1`, [bypass.document.id])).rows[0].status === 'PENDING', '... and the document stays PENDING');
+  const forge = await rpc('a', 'attest_upload', { p_table: 'customer_documents', p_object: bypass.document.id, p_size: 100, p_etag: null });
+  check(forge.status === 401 || forge.status === 403 || forge.status === 404, 'a user cannot attest their own upload', { status: forge.status });
+  r = await api('a', 'POST', `/documents/${bypass.document.id}/complete`);
+  check(r.status === 422 && /not a valid PDF/.test(r.json.error.message), '... and through the API the content check still applies', r);
+}
+
 r = await begin('a', leadA, 'IMPORTANT_DOCUMENTS');
 ticket = r.json.data;
 up = await put({ ...ticket, path: ticket.path.replace(ticket.document.id, crypto.randomUUID()) }, PDF);
@@ -1820,6 +1841,13 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 200 && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: never for a staff login', r);
   r = await forgot('not-an-email');
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
+  // SEC-2026-005: one inbox cannot be flooded (limit per e-mail, shared across server instances, whatever address calls)
+  const flood = (n: number) => fetch(`${base}/client-auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `203.0.113.${n}` }, body: JSON.stringify({ email: 'flood.target@example.com' }) }).then(x => x.status);
+  const floodStatuses = [await flood(1), await flood(2), await flood(3), await flood(4)];
+  check(floodStatuses.slice(0, 3).every(s => s === 200) && floodStatuses[3] === 429, 'forgot password: at most 3 reset requests per e-mail per hour, from any address', floodStatuses);
+  check(Number((await db.query(`select count(*) from private.rate_limit_counters where bucket like 'forgot-email:%'`)).rows[0].count) >= 1
+    && Number((await db.query(`select count(*) from private.rate_limit_counters where bucket like '%flood.target%'`)).rows[0].count) === 0,
+    'forgot password: the limit is kept in the shared store, without the e-mail address');
   delete process.env.APP_URL; process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 }
 // --- Chat: client chat, reviewers, internal direct messages, groups and files -------------------------------------
@@ -4055,6 +4083,16 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const delId2 = r.json.data.id as string;
   r = await api('sa', 'DELETE', `/customers/${delId2}`);
   check(r.status === 200, 'delete: the Super Admin can too', r);
+  // SEC-2026-002: no role can delete a customer straight through PostgREST (skipping delete_customer and its checks)
+  r = await api('a', 'POST', '/customers', { name: 'Delete Test Three', email: 'delete.three@acme.com', phone: '+91 98765 43297', company: 'Delete Three Co', segment: 'RETAIL' });
+  const delId3 = r.json.data.id as string;
+  for (const who of ['th', 'dh', 'sa']) {
+    const res = await fetch(`${process.env.GATEWAY_URL}/rest/v1/customers?id=eq.${delId3}`, {
+      method: 'DELETE', headers: { apikey: process.env.SUPABASE_ANON_KEY!, authorization: `Bearer ${tokens.get(who)}`, prefer: 'return=representation' }
+    });
+    check(res.status === 401 || res.status === 403, `delete: ${who} cannot delete a customer directly through PostgREST`, { status: res.status });
+  }
+  check(Number((await db.query(`select count(*) from customers where id = $1`, [delId3])).rows[0].count) === 1, 'delete: the customer is still there');
   check(Number((await db.query(`select count(*) from audit_logs where action = 'CUSTOMER_DELETED' and entity_id in ($1, $2)`, [delId, delId2])).rows[0].count) === 2, 'delete: both deletions are audited');
 }
 

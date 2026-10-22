@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useLeadStore } from '../../../context/LeadStoreContext';
 import { LeadSourceId } from '../../../types/crm';
+import { readLeadIntegrations } from '../../../lib/leadIntegrations';
 import {
   fetchFromAnyWebhookUrl,
   WebhookFetchResult
@@ -32,7 +33,7 @@ export const WabastoreWebhookLiveBar: React.FC<WabastoreWebhookLiveBarProps> = (
 }) => {
   const { importBatchLeads, clearLeadsForDepartment } = useLeadStore();
 
-  const [inputUrl, setInputUrl] = useState('https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57');
+  const [inputUrl, setInputUrl] = useState(() => readLeadIntegrations().webhookUrl);
   const [authToken, setAuthToken] = useState('');
   const [isFetching, setIsFetching] = useState(false);
   const [fetchResult, setFetchResult] = useState<WebhookFetchResult | null>(null);
@@ -238,7 +239,7 @@ export const WabastoreWebhookLiveBar: React.FC<WabastoreWebhookLiveBarProps> = (
                   type="text"
                   value={inputUrl}
                   onChange={e => setInputUrl(e.target.value)}
-                  placeholder="https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57"
+                  placeholder="https://webhooks.wabastore.com/webhook/<your webhook id>"
                   className="w-full pl-3.5 pr-10 py-2.5 bg-slate-50 border border-slate-200 focus:border-emerald-500 rounded-xl font-mono text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
                 />
                 <button

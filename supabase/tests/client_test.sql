@@ -589,18 +589,18 @@ select test.check((select d.status = 'PENDING' and d.uploaded_by is null and d.s
   'an upload is booked first (pending, filed under this client, nothing saved yet)');
 set role authenticated;
 select test.login('cdash_b');
-select test.must_fail($$select client_complete_document_upload((select id from cdoc where name = 'd1'), 5000)$$, 'another client cannot finish it', 'not found');
+select test.must_fail($$select client_complete_document_upload(test.attested('customer_documents', (select id from cdoc where name = 'd1'), 5000), 5000)$$, 'another client cannot finish it', 'not found');
 select test.must_fail($$select client_pending_document((select id from cdoc where name = 'd1'))$$, 'nor look it up', 'not found');
 select test.login('cdash_a');
 select test.check((select (client_pending_document((select id from cdoc where name = 'd1'))).status = 'PENDING'), 'the owner can look it up to check the stored file');
-select test.must_fail($$select client_complete_document_upload((select id from cdoc where name = 'd1'), 9000000)$$, 'the stored size is checked again', 'size');
-select client_complete_document_upload((select id from cdoc where name = 'd1'), 5000);
+select test.must_fail($$select client_complete_document_upload(test.attested('customer_documents', (select id from cdoc where name = 'd1'), 9000000), 9000000)$$, 'the stored size is checked again', 'size');
+select client_complete_document_upload(test.attested('customer_documents', (select id from cdoc where name = 'd1'), 5000), 5000);
 select test.check((select i ->> 'status' = 'SAVED' and (i ->> 'byClient')::boolean and i ->> 'value' = 'kyc.pdf' and i ->> 'documentId' is not null
                      from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'IMPORTANT_DOCUMENTS'), 'the finished upload fills the checklist item');
-select test.must_fail($$select client_complete_document_upload((select id from cdoc where name = 'd1'), 5000)$$, 'an upload finishes once', 'already finished');
+select test.must_fail($$select client_complete_document_upload(test.attested('customer_documents', (select id from cdoc where name = 'd1'), 5000), 5000)$$, 'an upload finishes once', 'already finished');
 -- replace it
 insert into cdoc select 'd2', (client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc2.pdf', 'application/pdf', 6000)).id;
-select client_complete_document_upload((select id from cdoc where name = 'd2'), 6000);
+select client_complete_document_upload(test.attested('customer_documents', (select id from cdoc where name = 'd2'), 6000), 6000);
 reset role;
 select test.check((select count(*) filter (where status = 'UPLOADED') = 1 and count(*) filter (where status = 'SUPERSEDED') = 1 and max(version) = 2
                      from customer_documents where customer_id = (select id from cl where name = 'A') and document_type = 'IMPORTANT_DOCUMENTS'),
@@ -634,7 +634,7 @@ select test.check((select count(*) = 1 from client_notifications where type = 'D
 select test.check((select count(*) = 1 from client_notifications where type = 'DOCUMENT_VERIFIED'), 'a verified item is announced too');
 select test.must_fail($$select client_save_detail('AI_CALL_CUSTOMER_NUMBER', '+91 90000 00000')$$, 'a verified detail is locked', 'already verified');
 insert into cdoc select 'd3', (client_begin_document_upload('IMPORTANT_DOCUMENTS', 'kyc3.pdf', 'application/pdf', 7000)).id;
-select client_complete_document_upload((select id from cdoc where name = 'd3'), 7000);
+select client_complete_document_upload(test.attested('customer_documents', (select id from cdoc where name = 'd3'), 7000), 7000);
 select test.check((select i ->> 'status' = 'SAVED' and i ->> 'value' = 'kyc3.pdf' and i ->> 'reviewNote' is null from jsonb_array_elements(client_documents() -> 'items') i where i ->> 'code' = 'IMPORTANT_DOCUMENTS'),
   'uploading again puts it back to waiting for review');
 select test.login('sup_th');

@@ -21,7 +21,7 @@ import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices }
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
 import { requestInfo } from './http/context.js';
@@ -133,9 +133,18 @@ app.post('/integrations/biometric/punch', async c => {
 });
 
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
+// Limits are shared across serverless instances (a per-instance counter resets on every cold start), per address and per
+// e-mail (hashed: no address is stored), so one inbox cannot be flooded with reset e-mails. SEC-2026-005.
 app.post('/client-auth/forgot-password', async c => {
-  await enforce([{ key: `forgot:${clientIp(c)}`, limit: 5, window: 900 }], 'memory');
-  return c.json(ok(await clientForgotPassword(await readJson(c), c.req.header('origin'))));
+  const body = await readJson(c);
+  const email = typeof (body as { email?: unknown } | undefined)?.email === 'string' ? (body as { email: string }).email.trim().toLowerCase() : '';
+  await enforce([
+    { key: `forgot:${clientIp(c)}`, limit: 5, window: 900 },
+    ...(email ? [{ key: `forgot-email:${createHash('sha256').update(email).digest('hex').slice(0, 32)}`, limit: 3, window: 3600 }] : [])
+  ], 'shared');
+  // The link in the e-mail points to APP_URL / the Vercel domain; a caller-supplied Origin is used only when it is an allowed one.
+  const origin = c.req.header('origin');
+  return c.json(ok(await clientForgotPassword(body, origin && (allowedOrigins().includes(origin) || isLoopbackOrigin(origin)) ? origin : undefined)));
 });
 
 // The client dashboard: the customer's own login, their own records only.
@@ -267,7 +276,16 @@ function allowedOrigins(): string[] {
   }
 }
 
-function log(level: 'info' | 'warn' | 'error', msg: string, c: Context<Env>, extra: Record<string, unknown> = {}) {
+function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname;
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
+function log(level:'info' | 'warn' | 'error', msg: string, c: Context<Env>, extra: Record<string, unknown> = {}) {
   const line = JSON.stringify({ level, msg, requestId: c.get('requestId'), method: c.req.method, path: relativePath(c), userId: c.get('actor')?.id, ...extra });
   (level === 'error' ? console.error : level === 'warn' ? console.warn : console.log)(line);
 }

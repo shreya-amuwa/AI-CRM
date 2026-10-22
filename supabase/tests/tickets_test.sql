@@ -372,7 +372,7 @@ returns uuid language plpgsql as $$
 declare v_id uuid;
 begin
   v_id := (ticket_begin_upload(p_ticket, p_customer, p_name, p_mime, p_size)).id;
-  perform ticket_complete_upload(v_id, p_size, null);
+  perform ticket_complete_upload(test.attested('support_ticket_attachments', v_id, p_size), p_size, null);
   return v_id;
 end $$;
 create temp table af (name text primary key, id uuid);

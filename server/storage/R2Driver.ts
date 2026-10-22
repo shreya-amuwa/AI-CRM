@@ -4,7 +4,8 @@ import { presignUrl } from './sigv4.js';
 import { matchesSignature } from './signature.js';
 import type { InspectResult, StorageDriver, UploadTarget } from './types.js';
 
-const UPLOAD_URL_SECONDS = 15 * 60;
+// Short: a presigned PUT can be replayed until it expires, also after the upload was checked (SEC-2026-003).
+const UPLOAD_URL_SECONDS = 5 * 60;
 const INTERNAL_URL_SECONDS = 60;
 
 /**

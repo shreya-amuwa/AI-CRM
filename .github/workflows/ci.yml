@@ -26,12 +26,18 @@ jobs:
       - run: npm ci
       - name: Typecheck (frontend + server)
         run: npm run typecheck
+      - name: Production dependencies have no known high or critical vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
       - name: Production build
         run: npm run build
       - name: No secrets in the browser bundle
         run: |
           if grep -lE 'eyJhbGciOi[A-Za-z0-9_-]{20,}|service_role|SUPABASE_SERVICE_ROLE_KEY' dist/assets/*.js; then
             echo "::error::A JWT or service-role reference was found in the frontend bundle"; exit 1
+          fi
+          # integration URLs whose path is the credential (docs/security/FINDINGS.md SEC-2026-004)
+          if grep -lE 'script\.google\.com/macros/s/AKfyc[A-Za-z0-9_-]{20,}|/webhook/[0-9a-f]{20,}' dist/assets/*.js; then
+            echo "::error::A credential-bearing integration URL was found in the frontend bundle"; exit 1
           fi
       - name: No committed env files or hard-coded keys
         run: |
@@ -41,6 +47,33 @@ jobs:
           if git grep -nE 'eyJhbGciOi[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}' -- ':!supabase/tests/**' ':!package-lock.json'; then
             echo "::error::A hard-coded JWT/API key was found"; exit 1
           fi
+
+  secrets:
+    name: Secret scan (gitleaks, full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks (pinned, checksum verified)
+        run: |
+          curl -sSL -o /tmp/gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          echo "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+      - name: Scan every commit (known historical findings are listed in .gitleaksignore)
+        run: /tmp/gitleaks git . --config .gitleaks.toml --redact --no-banner --verbose
+
+  sast:
+    name: Security rules (Semgrep, project rules)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: semgrep/semgrep:1.95.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Project security rules (.semgrep/rules.yml)
+        run: semgrep scan --config .semgrep/rules.yml --error --metrics=off server api shared src vite.config.ts
 
   database:
     name: RLS + API integration tests

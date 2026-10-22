@@ -1,0 +1,82 @@
+# Project security rules (Semgrep OSS, offline). Each one encodes a finding of docs/security/FINDINGS.md, so the same
+# mistake cannot come back unnoticed. Blocking in CI (.github/workflows/ci.yml). Run locally:
+#   semgrep scan --config .semgrep/rules.yml --error --metrics=off
+rules:
+  - id: no-direct-customer-delete
+    message: >-
+      Customers are deleted only through the delete_customer() database function (role rule, payment checks, stored files
+      removed). A direct delete on the customers table bypasses all of that (SEC-2026-002).
+    severity: ERROR
+    languages: [typescript]
+    pattern: $DB.from('customers').delete(...)
+
+  - id: no-direct-upload-completion-rpc
+    message: >-
+      Uploads are finished only by the server after it inspected the stored object and attested it
+      (StorageRepository.attest). Do not call the completion functions from the browser (SEC-2026-001).
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include: ['/src/']
+    pattern-either:
+      - pattern: $X.rpc('complete_document_upload', ...)
+      - pattern: $X.rpc('client_complete_document_upload', ...)
+      - pattern: $X.rpc('chat_complete_upload', ...)
+      - pattern: $X.rpc('ticket_complete_upload', ...)
+      - pattern: $X.rpc('attest_upload', ...)
+
+  - id: no-service-role-in-browser
+    message: The service-role key / client must never reach the browser bundle.
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include: ['/src/']
+    pattern-either:
+      - pattern: import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+      - pattern: getServiceClient(...)
+
+  - id: no-wildcard-cors-on-api
+    message: The API answers only allow-listed origins (server/app.ts). A wildcard lets any website read the response.
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include: ['/server/', '/api/']
+    pattern-either:
+      - pattern: $RES.setHeader('Access-Control-Allow-Origin', '*')
+      - pattern: $C.header('Access-Control-Allow-Origin', '*')
+
+  - id: no-unsafe-html-or-eval
+    message: Rendering raw HTML or evaluating strings opens XSS; the app's CSP also forbids it.
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include: ['/src/']
+    pattern-either:
+      - pattern: <$EL dangerouslySetInnerHTML={...} />
+      - pattern: eval(...)
+      - pattern: new Function(...)
+
+  - id: no-raw-error-to-client
+    message: >-
+      Do not send database or exception text to the caller; throw an AppError (server/http/errors.ts maps database errors
+      to safe messages).
+    severity: ERROR
+    languages: [typescript]
+    paths:
+      include: ['/server/', '/api/']
+    patterns:
+      - pattern-either:
+          - pattern: '$C.json({..., error: $ERR.message, ...}, ...)'
+          - pattern: '$RES.status(...).json({..., error: $ERR.message, ...})'
+      # AppError / BlockedTargetError messages are written for users
+      - pattern-not-inside: if ($ERR instanceof AppError) { ... }
+      - pattern-not-inside: if ($ERR instanceof AppError) $STMT;
+      - pattern-not-inside: if ($ERR instanceof BlockedTargetError) $STMT;
+
+  - id: no-hardcoded-integration-credential
+    message: >-
+      Integration URLs whose path is the credential, and API keys, must not be in the code: the bundle is public
+      (SEC-2026-004). Read them from server environment variables or user input.
+    severity: ERROR
+    languages: [typescript]
+    pattern-regex: '(script\.google\.com/macros/s/AKfyc[A-Za-z0-9_-]{20,}|/webhook/[0-9a-f]{20,}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}[''"`]\s*\)?\s*;?\s*//\s*key)'

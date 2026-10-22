@@ -1,0 +1,21 @@
+# Weekly dependency update pull requests (and security updates as soon as an advisory is published, once
+# "Dependabot security updates" is switched on in Settings > Code security). Every update PR runs the full CI.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

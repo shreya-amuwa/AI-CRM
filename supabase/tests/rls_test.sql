@@ -42,6 +42,13 @@ begin
 end $$;
 
 -- Execute SQL and return affected/returned row count (for "silently filtered" checks).
+-- What the API does after inspecting a stored file (migration 20261114000100): record the size the provider reported.
+create function test.attested(p_table text, p_id uuid, p_size bigint) returns uuid language plpgsql security definer set search_path = '' as $$
+begin
+  insert into private.upload_attestations (table_name, object_id, size_bytes) values (p_table, p_id, p_size)
+  on conflict (table_name, object_id) do update set size_bytes = excluded.size_bytes, attested_at = now();
+  return p_id;
+end $$;
 create function test.rows(p_sql text) returns bigint language plpgsql as $$
 declare v bigint;
 begin
@@ -206,7 +213,7 @@ select test.must_fail($$insert into customers (name, email) values ('Bad', 'not-
 select test.check(test.rows($$update customers set company = 'Acme Corp' where name = 'Acme Buyer'$$) = 1, 'owner updates own customer');
 select test.must_fail($$update customers set owner_id = test.id('tm_b') where name = 'Acme Buyer'$$,
   'team member cannot reassign customer', 'FORBIDDEN');
-select test.check(test.rows($$delete from customers$$) = 0, 'team member cannot delete customers');
+select test.must_fail($$delete from customers$$, 'team member cannot delete customers', 'permission denied');
 
 select test.login('tm_b');
 select test.check((select count(*) = 0 from customers), 'teammate cannot see another member''s customers');
@@ -371,7 +378,10 @@ select test.check((select count(*) = 1 from audit_logs where action = 'USER_DELE
 
 set role authenticated;
 select test.login('th_wab');
-select test.check(test.rows($$delete from customers where name = 'Second'$$) = 1, 'team head deletes team customer');
+select test.must_fail($$delete from customers where name = 'Second'$$, 'a team head cannot delete customers directly (only delete_customer)', 'permission denied');
+select test.login('dh_wab');
+select test.must_fail($$delete from customers where name = 'Second'$$, 'nor can a department head bypass delete_customer', 'permission denied');
+select delete_customer((select id from customers where name = 'Second'));
 reset role;
 select test.check((select metadata -> 'snapshot' ->> 'name' = 'Second' from audit_logs where action = 'CUSTOMER_DELETED'),
   'customer deletion audited with snapshot');
@@ -557,15 +567,15 @@ select test.must_fail($$insert into customer_documents (customer_id, document_ty
   'cannot insert document metadata directly', 'permission denied');
 select test.must_fail($$update customer_documents set customer_id = (select id from pipeline where name = 'B')$$,
   'cannot re-map a document to another customer', 'permission denied');
-select complete_document_upload((select id from docs where name = 'A_inv1'), 1200);
-select test.must_fail($$select complete_document_upload((select id from docs where name = 'A_inv1'), 1200)$$, 'cannot complete twice', 'already finished');
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_inv1'), 1200), 1200);
+select test.must_fail($$select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_inv1'), 1200), 1200)$$, 'cannot complete twice', 'already finished');
 insert into docs select 'A_inv2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'kyc-v2.pdf', 'application/pdf', 1300);
-select complete_document_upload((select id from docs where name = 'A_inv2'), 1300);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_inv2'), 1300), 1300);
 select test.check((select status = 'SUPERSEDED' from customer_documents where id = (select id from docs where name = 'A_inv1'))
               and (select status = 'UPLOADED' and version = 2 from customer_documents where id = (select id from docs where name = 'A_inv2')),
   'replacement keeps the old version (SUPERSEDED) and the new one current');
 insert into docs select 'B_inv', id, storage_path from begin_document_upload((select id from pipeline where name = 'B'), 'IMPORTANT_DOCUMENTS', 'b.pdf', 'application/pdf', 900);
-select complete_document_upload((select id from docs where name = 'B_inv'), 900);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'B_inv'), 900), 900);
 select test.check((select bool_and(customer_id = (select id from pipeline where name = 'A')) from customer_documents where document_type = 'IMPORTANT_DOCUMENTS' and id in (select id from docs where name like 'A_%')),
   'customer A documents map to customer A only');
 select test.check((select count(*) = 1 from customer_documents where customer_id = (select id from pipeline where name = 'B')), 'customer B sees only its own document');
@@ -592,7 +602,7 @@ select test.check((select count(*) >= 3 from customer_documents), 'department he
 select test.login('tm_a');
 insert into docs select 'A_kyc', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'IMPORTANT_DOCUMENTS', 'aadhaar-pan.pdf', 'application/pdf', 5000);
 select test.check((select path like '%/onboarding/%' from docs where name = 'A_kyc'), 'important documents stored under onboarding/');
-select complete_document_upload((select id from docs where name = 'A_kyc'), 5000);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_kyc'), 5000), 5000);
 -- Service checklist: Meta Ads + Gold Rate package for customer A.
 select test.check((select jsonb_array_length(customer_onboarding_checklist((select id from pipeline where name = 'A'))) = 15),
   'checklist = 4 basics + 6 Meta Ads + 4 Gold Rate + 2 mandatory documents (shared logo counted once)');
@@ -623,7 +633,7 @@ create temp table invd (name text primary key, id uuid, doc uuid);
 grant all on invd to authenticated;
 insert into invd select 'A1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'INV/A/0001', current_date::text, (current_date + 7)::text, 32420, 'Order 7', 'October',
   'Galaxy Oct.pdf', 'application/pdf', 20000);
-select complete_document_upload((select doc from invd where name = 'A1'), 20000);
+select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'A1'), 20000), 20000);
 update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'A1';
 select test.must_fail($$select accounts_set_invoice_status((select id from invd where name = 'A1'), 'Lost')$$, 'invoice status validated', 'paid or pending');
 select test.login('tm_a');
@@ -658,7 +668,7 @@ select save_onboarding_entry((select id from pipeline where name = 'A'), c, v) f
   ('GOLD_CONFIRM_JEWELLER', 'YES'), ('BRAND_COLOURS', 'Maroon #7A1F2B, Gold #C9A44C'), ('GOLD_TEMPLATE_APPROVAL', 'Approved on call')) v(c, v);
 insert into docs select 'A_logo', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo.png', 'image/png', 3000);
 select test.check((select path like '%.png' from docs where name = 'A_logo'), 'stored file keeps an extension matching its type');
-select complete_document_upload((select id from docs where name = 'A_logo'), 3000);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_logo'), 3000), 3000);
 select test.check((select items_saved = 15 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'all 15 items saved');
 select test.check((select name = 'Ankit Shah' and company = 'Shree Ganesh Jewellers' and address = 'Zaveri Bazaar, Mumbai' and phone = '+91 98765 11111' from customers where id = (select id from pipeline where name = 'A')),
   'editing the onboarding cards updates the customer record (one source of truth)');
@@ -807,7 +817,7 @@ insert into invd select 'ADDON', null, id from begin_addon_invoice_upload((selec
 select test.check((select accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft')) ->> 'status' = 'APPROVED'
                      and (select count(*) = 0 from member_invoices where addon_request_id = (select (data ->> 'id')::uuid from ar where name = 'draft'))),
   'nothing changes until the PDF is stored: still approved, no invoice');
-select complete_document_upload((select doc from invd where name = 'ADDON'), 15000);
+select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'ADDON'), 15000), 15000);
 update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'ADDON';
 insert into ar select 'inv', accounts_addon_request((select (data ->> 'id')::uuid from ar where name = 'draft'));
 select test.check((select data ->> 'status' = 'INVOICE_GENERATED' and data -> 'invoice' ->> 'kind' = 'UPLOADED' and (data -> 'invoice' ->> 'total')::numeric = 20440
@@ -856,7 +866,7 @@ set role authenticated;
 select test.must_fail($$select save_onboarding_entry((select id from pipeline where name = 'A'), 'WABA_ID', '1')$$, 'the TC cannot fill an item that is not on this customer''s checklist', 'Customer not found|not part of');
 insert into docs select 'A_gbp', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'shop.png', 'image/png', 3000);
 select test.must_fail($$select begin_document_upload((select id from pipeline where name = 'A'), 'INVOICE', 'x.pdf', 'application/pdf', 1000)$$, 'the TC cannot upload a document that is not an add-on item', 'Customer not found');
-select complete_document_upload((select id from docs where name = 'A_gbp'), 3000);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_gbp'), 3000), 3000);
 select test.check((select addon_items_total = 5 and addon_items_saved = 2 and addon_items_verified = 0 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'saved details and the uploaded document count towards the add-on progress');
 select review_onboarding_entry((select id from pipeline where name = 'A'), 'GBP_PHOTOS', 'VERIFIED', null);
 select test.check((select addon_items_verified = 1 from customer_onboarding where customer_id = (select id from pipeline where name = 'A')), 'verification of an add-on item is tracked');
@@ -921,7 +931,7 @@ select test.check((select items_verified = 14 and items_rejected = 1 from custom
   'review progress tracked (14 verified, 1 needs fixing)');
 -- the consultant replaces a wrong document: a new version, back to "to review"
 insert into docs select 'A_logo_tc', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo-fixed.png', 'image/png', 3500);
-select complete_document_upload((select id from docs where name = 'A_logo_tc'), 3500);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_logo_tc'), 3500), 3500);
 select test.check((select e.status = 'SAVED' and e.saved_by = test.id('tm_b') and (select count(*) = 1 from customer_documents d where d.customer_id = e.customer_id and d.document_type = 'BRAND_LOGO' and d.status = 'UPLOADED')
                    and (select count(*) = 1 from customer_documents d where d.customer_id = e.customer_id and d.document_type = 'BRAND_LOGO' and d.status = 'SUPERSEDED')
                    from customer_onboarding_entries e where e.customer_id = (select id from pipeline where name = 'A') and e.item_code = 'BRAND_LOGO'),
@@ -1003,11 +1013,11 @@ select test.check((select status = 'PENDING' and size_bytes = 512000 and path_ok
                      from customer_documents d where id = (select doc from invd where name = 'U1')) x),
   'exactly 500 KB is accepted; the storage path uses ids only');
 select test.check((select count(*) = 2 from member_invoices where kind = 'UPLOADED'), 'no new invoice record until the file is stored');
-select test.must_fail($$select complete_document_upload((select doc from invd where name = 'U1'), 512001)$$, 'the stored size is checked again on completion', 'exceeds the 500 KB limit');
+select test.must_fail($$select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'U1'), 512001), 512001)$$, 'the stored size is checked again on completion', 'exceeds the 500 KB limit');
 select test.login('tm_a');
-select test.must_fail($$select complete_document_upload((select doc from invd where name = 'U1'), 512000)$$, 'Sales cannot finish an Accounts upload', 'Document not found');
+select test.must_fail($$select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'U1'), 512000), 512000)$$, 'Sales cannot finish an Accounts upload', 'Document not found');
 select test.login('acc_m');
-select complete_document_upload((select doc from invd where name = 'U1'), 512000);
+select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'U1'), 512000), 512000);
 update invd set id = (select invoice_id from customer_documents where id = doc) where name = 'U1';
 select test.check((select i.kind = 'UPLOADED' and i.invoice_number = 'GST/26-27/001' and i.customer_id = (select id from pipeline where name = 'A')
                      and i.status = 'Paid' and i.amount = 41300 and i.issue_date = '2026-10-05' and i.due_date = '2026-10-20'
@@ -1023,8 +1033,8 @@ select test.must_fail($$select begin_invoice_upload((select id from pipeline whe
   'a duplicate invoice number is refused (case-insensitive)', 'already exists');
 insert into invd select 'R1', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/002', null, null, null, null, null, 'two-a.pdf', 'application/pdf', 1200);
 insert into invd select 'R2', null, id from begin_invoice_upload((select id from pipeline where name = 'A'), 'GST/26-27/002', null, null, null, null, null, 'two-b.pdf', 'application/pdf', 1300);
-select complete_document_upload((select doc from invd where name = 'R1'), 1200);
-select test.must_fail($$select complete_document_upload((select doc from invd where name = 'R2'), 1300)$$, 'two uploads started together cannot both create the same invoice number', 'already exists');
+select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'R1'), 1200), 1200);
+select test.must_fail($$select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'R2'), 1300), 1300)$$, 'two uploads started together cannot both create the same invoice number', 'already exists');
 select test.check((select count(*) = 1 from member_invoices where lower(invoice_number) = 'gst/26-27/002'), 'exactly one invoice record for that number');
 select test.check((select fail_document_upload((select doc from invd where name = 'R2')) like 'customers/%/invoices/%.pdf'), 'a failed upload returns its object path so the API can remove it');
 reset role;
@@ -1072,7 +1082,7 @@ select test.must_fail($$select begin_invoice_replacement((select id from invd wh
 select test.check((select status = 'UPLOADED' from customer_documents where id = (select doc from invd where name = 'U1')), 'a refused replacement keeps the current file');
 insert into invd select 'U1b', null, id from begin_invoice_replacement((select id from invd where name = 'U1'), 'Galaxy Jewellers Oct v2.pdf', 'application/pdf', 20000);
 select test.check((select status = 'UPLOADED' from customer_documents where id = (select doc from invd where name = 'U1')), 'the current file stays available while the replacement uploads');
-select complete_document_upload((select doc from invd where name = 'U1b'), 20000);
+select complete_document_upload(test.attested('customer_documents', (select doc from invd where name = 'U1b'), 20000), 20000);
 select test.check((select (select status from customer_documents where id = (select doc from invd where name = 'U1')) = 'SUPERSEDED'
                       and (select status from customer_documents where id = (select doc from invd where name = 'U1b')) = 'UPLOADED'
                       and (select invoice_id from customer_documents where id = (select doc from invd where name = 'U1b')) = (select id from invd where name = 'U1')),
@@ -1144,7 +1154,7 @@ select test.check((select (customer_pipeline_counts() -> 'onboarding' ->> 'RETUR
 select test.must_fail($$select forward_onboarding_to_support((select id from pipeline where name = 'A'))$$,
   'cannot resend until the rejected item is fixed', 'Brand logo');
 insert into docs select 'A_logo2', id, storage_path from begin_document_upload((select id from pipeline where name = 'A'), 'BRAND_LOGO', 'logo-hd.png', 'image/png', 4000);
-select complete_document_upload((select id from docs where name = 'A_logo2'), 4000);
+select complete_document_upload(test.attested('customer_documents', (select id from docs where name = 'A_logo2'), 4000), 4000);
 select test.login('tm_b');
 select test.check((select (e -> 'entry' ->> 'status') = 'SAVED' from jsonb_array_elements(customer_onboarding_checklist((select id from pipeline where name = 'A'))) e
                    where e ->> 'code' = 'BRAND_LOGO'), 'consultant sees the fix while still waiting for sales');

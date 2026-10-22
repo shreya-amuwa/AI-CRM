@@ -8,7 +8,6 @@ import {
   uuidSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
-import { assertCanDeleteCustomers } from '../authz/policies.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { CustomerRepository } from '../repositories/CustomerRepository.js';
@@ -47,11 +46,6 @@ export class CustomerService {
 
   update(id: string, body: unknown): Promise<Customer> {
     return this.customers.update(parse(uuidSchema, id), parse(customerUpdateSchema, body));
-  }
-
-  async delete(actor: Actor, id: string): Promise<void> {
-    assertCanDeleteCustomers(actor);
-    await this.customers.delete(parse(uuidSchema, id));
   }
 
   /** Bulk import (legacy browser data migration). Each row is validated and inserted under RLS. */

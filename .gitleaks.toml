@@ -1,0 +1,31 @@
+# Secret scanning (gitleaks). Runs in CI on every push / pull request and weekly over the whole history
+# (.github/workflows/security.yml). Default rules plus the credential shapes this codebase has actually leaked.
+# Known historical findings (already rotated or tracked in docs/security/FINDINGS.md) are listed by fingerprint in
+# .gitleaksignore; never add a live secret there - rotate it instead.
+title = "Amuwa AI CRM"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "google-apps-script-webapp-url"
+description = "Google Apps Script web app URL (anyone holding it can call the script as its owner)"
+regex = '''script\.google\.com/macros/s/AKfyc[A-Za-z0-9_-]{30,}'''
+keywords = ["script.google.com"]
+
+[[rules]]
+id = "webhook-url-with-secret-path"
+description = "Webhook URL whose path id is the credential (n8n / wabastore / 1automations style)"
+regex = '''https://[a-z0-9.-]*(wabastore|1automations|n8n)[a-z0-9.-]*/webhook(-test)?/[A-Za-z0-9_-]{16,}'''
+keywords = ["/webhook/", "/webhook-test/"]
+
+[[rules]]
+id = "hardcoded-bearer-or-api-key-assignment"
+description = "A UUID or long token assigned as an API key / secret / bearer value"
+regex = '''(?i)(api[_-]?key|secret|token|bearer)['"]?\s*[:=,]\s*['"`](Bearer\s+)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"`]'''
+keywords = ["key", "secret", "token", "bearer"]
+
+[allowlist]
+description = "Synthetic values: demo placeholders shown in the UI and test fixtures"
+regexes = ['''whsec_[a-z0-9_]+_[0-9]{3,10}''']
+paths = ['''^supabase/tests/''', '''^package-lock\.json$''']

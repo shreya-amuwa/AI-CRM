@@ -7,6 +7,10 @@
 \echo '--- Security: department-scoped leads and requirements'
 
 reset role;
+-- this suite switches to service_role below (also when run without automations_test.sql first)
+grant usage on schema test to service_role;
+grant execute on all functions in schema test to service_role;
+grant select on all tables in schema test to service_role;
 delete from crm_leads where id in ('SEC-wab', 'SEC-wbx', 'SEC-assigned');
 insert into crm_leads (id, name, department) values ('SEC-wab', 'Sec Wabastore lead', 'wabastore'), ('SEC-wbx', 'Sec Whatsbox lead', 'whatsbox');
 insert into crm_leads (id, name, department, assigned_to) values ('SEC-assigned', 'Sec assigned lead', 'whatsbox', test.id('tm_a'));

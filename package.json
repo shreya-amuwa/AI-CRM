@@ -11,6 +11,8 @@
     "test:db": "supabase/tests/run.sh",
     "test:api": "supabase/tests/run-api.sh",
     "test:unit": "supabase/tests/run-unit.sh",
+    "test:security": "supabase/tests/run-security.sh",
+    "security:semgrep": "semgrep scan --config .semgrep/rules.yml --error --metrics=off server api shared src vite.config.ts",
     "bootstrap:super-admin": "node scripts/bootstrap-super-admin.mjs",
     "create:hr-login": "node scripts/create-hr-login.mjs",
     "docs:build": "node docs-site/build.mjs",

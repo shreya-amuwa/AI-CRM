@@ -18,6 +18,9 @@ import { WabastoreSupportOS } from './WabastoreSupportOS';
 import { WabastoreWebhookLiveBar } from './WabastoreWebhookLiveBar';
 import { fetchFromAnyWebhookUrl } from '../../../services/webhookFetcher';
 import { dashboardApi } from '../../../lib/api/endpoints';
+import { readLeadIntegrations, saveLeadIntegrations } from '../../../lib/leadIntegrations';
+
+const savedLeadIntegrations = readLeadIntegrations();
 
 interface WabastorePanelProps {
   activeTab: ActiveTab;
@@ -53,7 +56,7 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     name: 'WhatsApp API',
     sourceId: 'whatsapp',
     port: 'Webhook Port #1080',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
+    endpoint: savedLeadIntegrations.webhookUrl,
     secret: 'whsec_waba_wa_992817264',
     desc: 'Wabastore e-commerce catalog inquiries, WhatsApp cart checkouts & customer support bots.',
     icon: MessageSquare,
@@ -79,7 +82,7 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     name: 'Meta Ads',
     sourceId: 'meta',
     port: 'Webhook Port #1081',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
+    endpoint: savedLeadIntegrations.webhookUrl,
     secret: 'whsec_waba_meta_881726351',
     desc: 'Instagram & Facebook sponsored Click-to-WhatsApp store ads & lead forms.',
     icon: Target,
@@ -104,7 +107,7 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     name: 'Telecaller',
     sourceId: 'telecaller',
     port: 'Webhook Port #1082',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
+    endpoint: savedLeadIntegrations.webhookUrl,
     secret: 'whsec_waba_tele_772615409',
     desc: 'Inbound customer care calling logs, order tracking & merchant support desk.',
     icon: PhoneCall,
@@ -129,7 +132,7 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     name: 'Business Developer',
     sourceId: 'bizdev',
     port: 'Webhook Port #1083',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
+    endpoint: savedLeadIntegrations.webhookUrl,
     secret: 'whsec_waba_bdm_661524398',
     desc: 'B2B enterprise merchant onboarding & brand partnerships logged by field BDMs.',
     icon: UserPlus,
@@ -153,9 +156,9 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     name: 'AI Calling',
     sourceId: 'aicalling',
     port: 'Webhook Port #1084',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e',
-    secret: 'da5fe28f-9924-4d10-bac3-1b2446f1fe56',
-    apiKey: 'da5fe28f-9924-4d10-bac3-1b2446f1fe56',
+    endpoint: savedLeadIntegrations.aiCallingUrl,
+    secret: savedLeadIntegrations.apiToken,
+    apiKey: savedLeadIntegrations.apiToken,
     desc: 'Conversational AI voice bot for abandoned cart recovery & COD order verification.',
     icon: RobotIcon,
     color: 'text-cyan-600',
@@ -184,7 +187,7 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     name: 'RCS Messages',
     sourceId: 'rcs',
     port: 'Webhook Port #1085',
-    endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
+    endpoint: savedLeadIntegrations.webhookUrl,
     secret: 'whsec_waba_rcs_449302176',
     desc: 'Google RCS verified merchant catalogs, rich action cards & instant buy buttons.',
     icon: RobotIcon,
@@ -241,14 +244,17 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
   const [webhookSuccessMsg, setWebhookSuccessMsg] = useState<string | null>(null);
   const [selectedSubDeptForUsers, setSelectedSubDeptForUsers] = useState<'sales' | 'support' | null>(null);
   const [activeGuideTab, setActiveGuideTab] = useState<'console' | 'curl' | 'sheets' | 'meta' | 'code'>('console');
-  const [customWebhookUrl, setCustomWebhookUrl] = useState('https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57');
+  const [customWebhookUrl, setCustomWebhookUrl] = useState(savedLeadIntegrations.webhookUrl);
   const [isCustomIngesting, setIsCustomIngesting] = useState(false);
   const [isVerifyingWebhook, setIsVerifyingWebhook] = useState(false);
   const [customIngestResult, setCustomIngestResult] = useState<{ success: boolean; status: number; message: string } | null>(null);
 
   // Remote Database API & Google Apps Script WebApp State
-  const [remoteApiUrl, setRemoteApiUrl] = useState('https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec');
-  const [remoteApiToken, setRemoteApiToken] = useState('da5fe28f-9924-4d10-bac3-1b2446f1fe56');
+  const [remoteApiUrl, setRemoteApiUrl] = useState(savedLeadIntegrations.remoteApiUrl);
+  const [remoteApiToken, setRemoteApiToken] = useState(savedLeadIntegrations.apiToken);
+  useEffect(() => {
+    saveLeadIntegrations({ webhookUrl: customWebhookUrl.trim(), remoteApiUrl: remoteApiUrl.trim(), apiToken: remoteApiToken.trim() });
+  }, [customWebhookUrl, remoteApiUrl, remoteApiToken]);
   const [isFetchingRemoteApi, setIsFetchingRemoteApi] = useState(false);
   const [isDevDocsExpanded, setIsDevDocsExpanded] = useState(false);
   const [subDeptSearchQuery, setSubDeptSearchQuery] = useState('');
@@ -287,10 +293,10 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     setWebhookSuccessMsg(null);
 
     const activeCfg = (activeTab && activeTab.startsWith('lead_src_')) ? WABASTORE_LEAD_SOURCES_CONFIG[activeTab] : WABASTORE_LEAD_SOURCES_CONFIG['lead_src_1'];
-    const targetUrl = activeCfg?.endpoint || customWebhookUrl || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
+    const targetUrl = activeCfg?.endpoint || customWebhookUrl;
     const channelName = activeCfg?.name || 'WhatsApp API';
     const channelSourceId = (activeCfg?.sourceId || 'whatsapp') as LeadSourceId;
-    const token = activeCfg?.apiKey || activeCfg?.secret || (channelSourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : (remoteApiToken || undefined));
+    const token = activeCfg?.apiKey || activeCfg?.secret || remoteApiToken || undefined;
 
     try {
       const result = await fetchFromAnyWebhookUrl(targetUrl, {
@@ -504,21 +510,21 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
         setRemoteFetchDiagnostic({
           type: 'missing_do_get',
           title: 'Apps Script: Select "New version" in Deploy Management (Tab 9)',
-          message: `Google returned: "Script function not found: doGet". In Tab 9 ("Untitled project"), click Deploy > Manage deployments > Edit (pencil) > change Version to "New version" > click Deploy. Or open Tab 8 ("Untitled spreadsheet") and click Share > Anyone with link for an instant 10-second fix.`,
+          message: `Google returned: "Script function not found: doGet". In Tab 9 ("Untitled project"), click Deploy > Manage deployments > Edit (pencil) > change Version to "New version" > click Deploy. Then set the CRM_SHEET_KEY script property (google-apps-script/README.md).`,
           statusCode: 200
         });
       } else if (result.mode === 'google_auth_required') {
         setRemoteFetchDiagnostic({
           type: 'google_auth_required',
           title: 'Google Apps Script Access Restriction (Sign-In Redirect)',
-          message: `Google redirected the request to accounts.google.com sign-in because your Apps Script deployment is set to "Only myself". To sync your live Google Sheet data, simply change access to "Anyone" in Google Apps Script Deploy settings.`,
+          message: `Google redirected the request to accounts.google.com sign-in because your Apps Script deployment is set to "Only myself". Deploy the keyed script from google-apps-script/README.md (access "Anyone", protected by CRM_SHEET_KEY) and paste its URL with ?key=.`,
           statusCode: 401
         });
       } else if (result.mode === 'sheet_access_required') {
         setRemoteFetchDiagnostic({
           type: 'sheet_access_required',
           title: 'Google Sheet Permission Needed',
-          message: `Your Google Sheet is set to "Restricted". Click "Open Google Sheet", click the green "Share" button, set General Access to "Anyone with the link (Viewer)", and click Done. Then click "Retry Sync".`,
+          message: `Your Google Sheet is set to "Restricted". Keep it restricted: customer details must not be public. Sync through the keyed Apps Script web app instead (google-apps-script/README.md).`,
           statusCode: 401
         });
       } else if (result.mode === 'webhook_sink') {
@@ -835,11 +841,11 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
       return;
     }
 
-    const targetEndpoint = cfg.endpoint || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
+    const targetEndpoint = cfg.endpoint || customWebhookUrl;
 
     try {
       const sample = JSON.parse(cfg.sampleJson);
-      const token = cfg.apiKey || cfg.secret || (cfg.sourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : undefined);
+      const token = cfg.apiKey || cfg.secret || remoteApiToken || undefined;
       
       // 1. Post to the live remote webhook URL via our proxy
       try {
@@ -890,8 +896,8 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
     const cfg = WABASTORE_LEAD_SOURCES_CONFIG[activeTab];
     const channelName = cfg?.name || 'WhatsApp API';
-    const targetEndpoint = cfg?.endpoint || customWebhookUrl || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
-    const token = cfg?.apiKey || cfg?.secret || (cfg?.sourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : undefined);
+    const targetEndpoint = cfg?.endpoint || customWebhookUrl;
+    const token = cfg?.apiKey || cfg?.secret || remoteApiToken || undefined;
 
     try {
       // Connect directly to user's Wabastore Webhook endpoint
@@ -1520,12 +1526,12 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                                 <span>Google Sheet</span>
                               </span>
                             ) : isWhatsApp ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200" title="Live Webhook: https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200" title="Live webhook (address set in Remote Leads API)">
                                 <MessageSquare className="w-3 h-3 text-emerald-600" />
                                 <span>WhatsApp API</span>
                               </span>
                             ) : isAiCalling ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200" title="Live Webhook: https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-50 text-teal-800 border border-teal-200" title="Live AI calling webhook (address set in Remote Leads API)">
                                 <PhoneCall className="w-3 h-3 text-teal-600" />
                                 <span>AI Calling</span>
                               </span>
@@ -1995,7 +2001,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                         </div>
                         <div className="pt-2 flex flex-wrap items-center justify-center gap-2.5">
                           <button
-                            onClick={() => handleFetchRemoteLeads('https://docs.google.com/spreadsheets/d/1-zJLKmYkio7ussaalkJoS2yr_IMzLogx9M1xQLiBAN4/edit#gid=1733395287')}
+                            onClick={() => handleFetchRemoteLeads()}
                             disabled={isFetchingRemoteApi}
                             className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
                           >
@@ -2211,8 +2217,8 @@ Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,
             <div className="px-3 py-2 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs flex items-center justify-between">
               <span className="truncate">
                 POST {inspectingLead?.sourceId === 'aicalling'
-                  ? 'https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e'
-                  : 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57'}
+                  ? (WABASTORE_LEAD_SOURCES_CONFIG.lead_src_5?.endpoint || 'AI calling webhook not set')
+                  : (customWebhookUrl || 'Webhook not set')}
               </span>
               <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 font-bold border border-emerald-800">
                 HTTP 200 OK
@@ -2296,7 +2302,7 @@ Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => setRemoteApiUrl('https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec')}
+                      onClick={() => setRemoteApiUrl('https://script.google.com/macros/s/')}
                       className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
                         remoteApiUrl.includes('script.google.com')
                           ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
@@ -2307,7 +2313,7 @@ Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,
                     </button>
                     <button
                       type="button"
-                      onClick={() => setRemoteApiUrl('https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57')}
+                      onClick={() => setRemoteApiUrl(customWebhookUrl || 'https://webhooks.wabastore.com/webhook/')}
                       className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold border transition-colors cursor-pointer ${
                         remoteApiUrl.includes('/webhook/')
                           ? 'bg-blue-100 text-blue-800 border-blue-300'
@@ -2333,16 +2339,16 @@ Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,
                   type="text"
                   value={remoteApiUrl}
                   onChange={(e) => setRemoteApiUrl(e.target.value)}
-                  placeholder="https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec"
+                  placeholder="https://script.google.com/macros/s/<deployment id>/exec?key=<sheet key>"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:outline-emerald-500 text-slate-900"
                 />
                 {remoteApiUrl.includes('script.google.com') ? (
                   <div className="mt-2 p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] font-sans text-emerald-950 space-y-1">
                     <div className="font-bold font-mono text-[10px] text-emerald-800 flex items-center justify-between">
-                      <span>DEPLOYMENT ID: AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ</span>
+                      <span>GOOGLE APPS SCRIPT WEB APP</span>
                     </div>
                     <p>
-                      Syncs customer leads directly from your Google Sheet. Requires <strong>Who has access: Anyone</strong> in Apps Script Deploy settings.
+                      Syncs customer leads directly from your Google Sheet. Add <code>?key=</code> with the key set in the script (see google-apps-script/README.md); without it the sheet answers nothing.
                     </p>
                   </div>
                 ) : (
@@ -2459,12 +2465,12 @@ Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,
               <ol className="text-xs text-slate-700 space-y-1.5 list-decimal list-inside pl-1 font-sans">
                 <li>Click <strong>Open Google Sheet</strong> below.</li>
                 <li>In top right corner of the sheet, click the green <strong>Share</strong> button.</li>
-                <li>Under <strong>General access</strong>, change from <em>Restricted</em> to <strong>"Anyone with the link" (Viewer)</strong>.</li>
+                <li>Keep <strong>General access</strong> on <em>Restricted</em>; sync through the keyed Apps Script web app (google-apps-script/README.md).</li>
                 <li>Click <strong>Done</strong>, then click <strong>"Sync Sheet Now"</strong> below!</li>
               </ol>
               <div className="pt-2 flex flex-wrap items-center gap-2.5">
                 <a
-                  href="https://docs.google.com/spreadsheets/d/1-zJLKmYkio7ussaalkJoS2yr_IMzLogx9M1xQLiBAN4/edit"
+                  href="https://docs.google.com/spreadsheets/u/0/"
                   target="_blank"
                   rel="noreferrer"
                   className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-emerald-300 text-emerald-900 font-mono text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-2xs"
@@ -2475,7 +2481,7 @@ Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,
                 <button
                   onClick={() => {
                     setIsDiagnosticGuideModalOpen(false);
-                    handleFetchRemoteLeads('https://docs.google.com/spreadsheets/d/1-zJLKmYkio7ussaalkJoS2yr_IMzLogx9M1xQLiBAN4/edit#gid=1733395287');
+                    handleFetchRemoteLeads();
                   }}
                   disabled={isFetchingRemoteApi}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
@@ -2557,7 +2563,7 @@ function doPost(e) {
                   <span>{copiedKey === 'copy_apps_script_modal' ? 'Code Copied!' : 'Copy Code.gs'}</span>
                 </button>
                 <a
-                  href="https://script.google.com/u/0/home/projects/1Om2nRyOqW_fnH1uSwPru6GEwv8pKsNvqi8_bJB6hnacbnX9gxdLR-Ra3/edit"
+                  href="https://script.google.com/home"
                   target="_blank"
                   rel="noreferrer"
                   className="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-mono text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-2xs"
@@ -2568,7 +2574,7 @@ function doPost(e) {
                 <button
                   onClick={() => {
                     setIsDiagnosticGuideModalOpen(false);
-                    handleFetchRemoteLeads('https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec');
+                    handleFetchRemoteLeads();
                   }}
                   disabled={isFetchingRemoteApi}
                   className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-bold rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"

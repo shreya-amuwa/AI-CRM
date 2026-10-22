@@ -117,6 +117,7 @@ export class ChatService {
       throw new AppError('VALIDATION_ERROR', 'The file content does not match its type. Please send the original file.');
     }
     try {
+      await this.storage.attest('chat_attachments', attId, object);
       const done = await this.repo.completeUpload(attId, object.size, object.etag);
       await this.storage.recordStored(attId, row.storage_provider, { reference: object.reference, etag: object.etag }, 'chat_attachments');
       return done;
