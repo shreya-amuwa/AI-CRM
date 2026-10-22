@@ -10,6 +10,8 @@ import { SuperAdminDashboard } from './components/superadmin/SuperAdminDashboard
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
 import { EmailAutomation } from './components/hr/EmailAutomation';
+import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
+import { TrainingWorkspace } from './components/hr/TrainingWorkspace';
 import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
@@ -396,6 +398,10 @@ const MainAppContent: React.FC = () => {
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
+            ) : currentActiveTab === 'hr_recruitment' && currentDeptId === 'hr' ? (
+              <RecruitmentManagement />
+            ) : currentActiveTab === 'hr_training' && currentDeptId === 'hr' ? (
+              <TrainingWorkspace />
             ) : currentActiveTab === 'hr_email' && currentDeptId === 'hr' ? (
               <EmailAutomation />
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (

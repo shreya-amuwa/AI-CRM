@@ -11,6 +11,9 @@ import type {
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 export const rupees = (n: number | null | undefined) => (n === null || n === undefined ? '-' : inr.format(n));
+const inrExact = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+/** Like rupees, but keeps the paise (GST brings them). */
+export const rupeesExact = (n: number | null | undefined) => (n === null || n === undefined ? '-' : inrExact.format(n));
 
 /** "10 Oct 2026, 11:30 AM" */
 export const fmtDateTime = (iso: string | null | undefined) =>
@@ -115,7 +118,10 @@ export const PaymentHistory: React.FC<{
         <li key={p.id} className="p-3 flex flex-col sm:flex-row sm:items-start justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-bold text-slate-900">{rupees(p.amount)}</span>
+              <span className="text-sm font-bold text-slate-900">{rupeesExact(p.amount)}</span>
+              {p.gstAmount != null && p.taxableAmount != null && (
+                <span className="text-[11px] text-slate-500">{p.gstAmount > 0 ? `${rupeesExact(p.taxableAmount)} + GST ${rupeesExact(p.gstAmount)} (${p.gstRate}%)` : `${rupeesExact(p.taxableAmount)}, no GST`}</span>
+              )}
               <Badge tone={p.type === 'PART' ? 'blue' : 'green'}>{TYPE_LABEL[p.type]}</Badge>
               <LedgerStatusBadge status={p.status} />
               {p.source !== 'ACCOUNTS' && <Badge tone="slate">{p.source === 'SALES' ? 'Recorded by Sales' : 'Earlier record'}</Badge>}

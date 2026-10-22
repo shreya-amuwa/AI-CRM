@@ -3507,6 +3507,191 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
 }
 
+// --- Performance Management, HR Recruitment and HR Training ----------------------------------
+{
+  const wk = 'kind=WEEK&start=2026-01-05&end=2026-01-11';
+  const task = (title: string, assignee: string, created: string, due: string | null, status: string, completed: string | null) =>
+    db.query(`insert into public.work_tasks (department_id, team_id, title, due_date, assigned_by, assignee_id, status, progress, completed_at, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [wab.id, sales.id, title, due, salesTeamLeadId, assignee, status, status === 'COMPLETED' ? 100 : 30, completed, created]);
+  await task('API on time', memberA, '2026-01-05T03:30:00Z', '2026-01-09', 'COMPLETED', '2026-01-08T03:30:00Z');
+  await task('API late', memberA, '2026-01-06T03:30:00Z', '2026-01-08', 'COMPLETED', '2026-01-10T03:30:00Z');
+  await task('API open', memberA, '2026-01-05T03:30:00Z', '2026-01-09', 'IN_PROGRESS', null);
+
+  // ---- who may open it
+  r = await api('a', 'GET', `/performance/people?${wk}`);
+  check(r.status === 403, 'performance API: a Team Member cannot open Performance Management', r);
+  r = await api(null, 'GET', `/performance/people?${wk}`);
+  check(r.status === 401, 'performance API: nor a visitor', r);
+  r = await api('th', 'GET', `/performance/people?${wk}`);
+  const names = (r.json.data?.people ?? []).map((p: any) => p.name);
+  check(r.status === 200 && names.includes('Member A') && !names.includes('Delivery Member') && !names.includes('Team Head') && r.json.data.department === null && r.json.data.teams.length === 1,
+    'performance API: a Team Lead sees only the members of their own team (and the team report), not the department', { names, status: r.status });
+  const aRow = r.json.data.people.find((p: any) => p.name === 'Member A');
+  check(aRow.summary.tasks.total === 3 && aRow.summary.tasks.completed === 2 && aRow.summary.tasks.overdue === 1 && aRow.summary.timing.onTimePct === 50 && aRow.report === null, 'performance API: the list shows the real task figures for the week', aRow.summary);
+  r = await api('dh', 'GET', `/performance/people?${wk}`);
+  check(r.status === 200 && r.json.data.people.some((p: any) => p.name === 'Team Head' && p.role === 'Team Lead') && r.json.data.department?.name === 'Wabastore' && r.json.data.teams.length >= 2, 'performance API: a Department Head sees the Team Leads, the teams and the department', r.json.data?.department);
+  r = await api('th', 'GET', '/performance/people?kind=WEEK&start=2026-01-06&end=2026-01-12');
+  check(r.status === 422 && /Monday to Sunday/.test(r.json.error.message), 'performance API: a week must run Monday to Sunday', r);
+  r = await api('th', 'GET', '/performance/people?kind=YEAR&start=2026-01-05&end=2026-01-11');
+  check(r.status === 422, 'performance API: an unknown period kind is refused', r);
+
+  // ---- generate (no AI key: rule-based analysis, said so)
+  delete process.env.ANTHROPIC_API_KEY;
+  const key = { scope: 'MEMBER', subjectId: memberA, kind: 'WEEK', start: '2026-01-05', end: '2026-01-11' };
+  r = await api('th', 'GET', `/performance/report?scope=MEMBER&subjectId=${memberA}&${wk}`);
+  check(r.status === 200 && r.json.data === null, 'performance API: before anything is generated there is no report', r);
+  r = await api('th', 'POST', '/performance/report', key);
+  const rep = r.json.data?.report;
+  check(r.status === 200 && r.json.data.state === 'CREATED' && rep.metrics.tasks.total === 3 && rep.metrics.timing.onTimePct === 50 && rep.metrics.duration.comparedTasks === 2 && rep.version === 1,
+    'performance API: a Team Lead generates the report of their member from the real tasks', r);
+  check(rep.narrativeSource === 'RULES' && rep.aiStatus === 'NOT_CONFIGURED' && /3 task\(s\)/.test(rep.narrative.summary) && /Insufficient data|On-time/.test(JSON.stringify(rep.narrative)), 'performance API: without an AI key the analysis is rule-based and says so', rep);
+  r = await api('th', 'POST', '/performance/report', key);
+  check(r.status === 200 && r.json.data.state === 'UNCHANGED' && r.json.data.report.id === rep.id && r.json.data.report.version === 1, 'performance API: generating again with unchanged tasks changes nothing (no duplicate)', r);
+  check((await db.query(`select count(*)::int n from public.performance_reports where subject_id = $1 and period_kind = 'WEEK' and period_start = '2026-01-05'`, [memberA])).rows[0].n === 1, 'performance API: still one report row');
+
+  // ---- a mock AI service: it is sent the figures only, and its answer is stored
+  const aiSeen: any[] = [];
+  let aiMode: 'ok' | 'down' = 'ok';
+  const aiServer = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', c => (b += c));
+    req.on('end', () => {
+      aiSeen.push({ headers: req.headers, body: JSON.parse(b || '{}') });
+      if (aiMode === 'down') { res.writeHead(500); res.end('{}'); return; }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ summary: 'AI summary of the week.', observations: ['one'], improvementAreas: ['two'], recommendations: ['three'], limitations: ['four'] }) }] }));
+    });
+  });
+  await new Promise<void>(res => aiServer.listen(0, '127.0.0.1', res));
+  process.env.ANTHROPIC_API_KEY = 'ai-key-for-the-test';
+  process.env.ANTHROPIC_API_BASE_URL = `http://127.0.0.1:${(aiServer.address() as any).port}`;
+  r = await api('th', 'POST', '/performance/report', key);
+  check(r.status === 200 && r.json.data.state === 'UNCHANGED' && r.json.data.report.narrativeSource === 'AI' && r.json.data.report.narrative.summary === 'AI summary of the week.' && r.json.data.report.aiStatus === 'OK',
+    'performance API: once an AI key exists the rule-based analysis is upgraded to the AI one (the figures did not change, so no new version)', r);
+  check(aiSeen.length === 1 && aiSeen[0].headers['x-api-key'] === 'ai-key-for-the-test' && !/@amuwa\.com/.test(JSON.stringify(aiSeen[0].body)) && /API late/.test(JSON.stringify(aiSeen[0].body.messages)), 'performance API: the AI service received the figures and task titles, no e-mail address');
+  await db.query(`update public.work_tasks set status = 'COMPLETED', progress = 100, completed_at = '2026-01-09T05:00:00Z' where title = 'API open'`);
+  aiMode = 'down';
+  r = await api('th', 'POST', '/performance/report', key);
+  check(r.status === 200 && r.json.data.state === 'UPDATED' && r.json.data.report.version === 2 && r.json.data.report.metrics.tasks.overdue === 0 && r.json.data.report.aiStatus === 'FAILED' && r.json.data.report.narrativeSource === 'RULES' && /HTTP 500/.test(r.json.data.report.aiError) && !/ai-key/.test(JSON.stringify(r.json)),
+    'performance API: when the task data changed a new version is made; if the AI service is down the rule-based analysis is stored and the failure is shown (not the key)', r);
+  aiMode = 'ok';
+  r = await api('th', 'POST', '/performance/report', key);
+  check(r.status === 200 && r.json.data.state === 'UNCHANGED' && r.json.data.report.version === 2 && r.json.data.report.narrativeSource === 'AI' && r.json.data.report.aiStatus === 'OK', 'performance API: a failed analysis is retried on the next refresh', r);
+  r = await api('th', 'GET', `/performance/report/${rep.id}/history`);
+  check(r.status === 200 && r.json.data.length === 2 && r.json.data[0].version === 2 && r.json.data[1].tasks.overdue === 1, 'performance API: the history keeps both versions', r);
+  aiServer.close();
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_API_BASE_URL;
+
+  // ---- the hierarchy is enforced by the database
+  r = await api('th', 'POST', '/performance/report', { ...key, subjectId: deliveryMember });
+  check(r.status === 403, 'performance API: a Team Lead cannot generate a report for a member of another team', r);
+  r = await api('a', 'POST', '/performance/report', key);
+  check(r.status === 403, 'performance API: a Team Member cannot generate one', r);
+  r = await api('tl2', 'GET', `/performance/report?scope=MEMBER&subjectId=${memberA}&${wk}`);
+  check(r.status === 403, 'performance API: another team\'s Team Lead cannot read it', r);
+  r = await api('th', 'POST', '/performance/report', { scope: 'DEPARTMENT', departmentId: wab.id, kind: 'WEEK', start: '2026-01-05', end: '2026-01-11' });
+  check(r.status === 403, 'performance API: a Team Lead cannot generate the department report', r);
+  r = await api('dh', 'POST', '/performance/report', { scope: 'DEPARTMENT', departmentId: wab.id, kind: 'WEEK', start: '2026-01-05', end: '2026-01-11' });
+  check(r.status === 200 && r.json.data.report.scope === 'DEPARTMENT' && r.json.data.report.metrics.tasks.total >= 3, 'performance API: a Department Head generates the department report', r);
+  r = await api('dh', 'POST', '/performance/report', { scope: 'DEPARTMENT', departmentId: wbx.id, kind: 'WEEK', start: '2026-01-05', end: '2026-01-11' });
+  check(r.status === 403, 'performance API: but not another department\'s', r);
+  r = await api('dh', 'POST', '/performance/report', { scope: 'MEMBER', kind: 'WEEK', start: '2026-01-05', end: '2026-01-11' });
+  check(r.status === 422, 'performance API: a report must say who it is about', r);
+
+  // ---- the daily run (the existing dispatch endpoint) is idempotent
+  process.env.AUTOMATION_DISPATCH_SECRET = 'dispatch-secret-0123456789';
+  const d1 = await dispatch('dispatch-secret-0123456789');
+  const d2 = await dispatch('dispatch-secret-0123456789');
+  check(d1.status === 200 && d1.json.data.performance?.schedule && d1.json.data.training?.day, 'performance API: the daily dispatch also refreshes performance reports and the training check', d1.json.data?.performance);
+  check(d2.json.data.performance.schedule.created === 0 && d2.json.data.performance.schedule.updated === 0, 'performance API: a second dispatch run creates and changes nothing', d2.json.data?.performance);
+  check((await db.query(`select count(*)::int n from (select scope, coalesce(subject_id, team_id, department_id) k, period_kind, period_start from public.performance_reports group by 1, 2, 3, 4 having count(*) > 1) x`)).rows[0].n === 0, 'performance API: no duplicate report for any subject and period');
+
+  // ---- HR recruitment
+  r = await api('a', 'GET', '/hr/recruitment/candidates');
+  check(r.status === 403, 'recruitment API: a Sales member cannot open it', r);
+  r = await api(null, 'GET', '/hr/recruitment/candidates');
+  check(r.status === 401, 'recruitment API: nor a visitor', r);
+  r = await api('hr', 'POST', '/hr/recruitment/positions', { title: 'Sales Executive' });
+  check(r.status === 200 && r.json.data.title === 'Sales Executive', 'recruitment API: HR adds a position', r);
+  const positionId = r.json.data.id;
+  r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Kavya Nair', email: 'not-an-email', positionId });
+  check(r.status === 422, 'recruitment API: an invalid e-mail address is refused', r);
+  r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Kavya Nair', email: 'kavya.n@example.com', phone: '+91 98200 12345', positionId, source: 'Referral' });
+  const cand = r.json.data;
+  check(r.status === 201 && cand.name === 'Kavya Nair' && cand.position === 'Sales Executive' && cand.pending.open === 0 && cand.call.nextAt === null && cand.confirmation.status === 'NOT_STARTED', 'recruitment API: HR adds a candidate (Pending, Call and Confirmation start empty and separate)', r);
+  r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Kavya Again', email: 'KAVYA.N@example.com', positionId });
+  check(r.status === 409, 'recruitment API: the same e-mail cannot apply twice for a position', r);
+  r = await api('hr', 'POST', `/hr/recruitment/candidates/${cand.id}/actions`, { kind: 'INTERVIEW', title: 'First round interview', dueDate: '2026-01-02' });
+  check(r.status === 201, 'recruitment API: HR records a pending interview', r);
+  r = await api('hr', 'POST', `/hr/recruitment/candidates/${cand.id}/calls`, { at: new Date(Date.now() + 2 * 86400000).toISOString() });
+  check(r.status === 201, 'recruitment API: and schedules a call', r);
+  r = await api('hr', 'POST', `/hr/recruitment/candidates/${cand.id}/confirmation`, { status: 'OFFERED' });
+  check(r.status === 422, 'recruitment API: an offer needs its date', r);
+  r = await api('hr', 'POST', `/hr/recruitment/candidates/${cand.id}/confirmation`, { status: 'OFFERED', date: '2026-02-01' });
+  check(r.status === 200 && r.json.data.confirmation.status === 'OFFERED', 'recruitment API: and updates the confirmation', r);
+  r = await api('hr', 'GET', '/hr/recruitment/candidates?search=kavya&call=SCHEDULED&pending=OVERDUE');
+  const row = r.json.data?.items?.[0];
+  check(r.status === 200 && r.json.data.total === 1 && row.pending.open === 1 && row.pending.overdue === 1 && row.call.nextAt && row.confirmation.status === 'OFFERED' && row.email === 'kavya.n@example.com', 'recruitment API: search and filters find it, with all six columns', r);
+  r = await api('hr', 'GET', '/hr/recruitment/candidates?confirmation=NOPE');
+  check(r.status === 422, 'recruitment API: an unknown filter is refused', r);
+  r = await api('hrmember', 'GET', `/hr/recruitment/candidates/${cand.id}`);
+  check(r.status === 200 && r.json.data.history.length >= 4 && r.json.data.actions.length === 1 && r.json.data.calls.length === 1, 'recruitment API: another HR employee sees the same record with its history', r);
+  r = await api('hr', 'PATCH', `/hr/recruitment/candidates/${cand.id}`, { name: 'Kavya N Nair', email: 'kavya.n@example.com', positionId });
+  check(r.status === 200 && r.json.data.name === 'Kavya N Nair', 'recruitment API: HR edits the candidate', r);
+  r = await api('hr', 'GET', '/hr/recruitment/overview');
+  check(r.status === 200 && r.json.data.candidates === 1 && r.json.data.withPending === 1 && r.json.data.overdueActions === 1 && r.json.data.upcomingCalls === 1, 'recruitment API: the overview counts the real records', r);
+  r = await api('dh', 'GET', '/hr/recruitment/overview');
+  check(r.status === 403, 'recruitment API: another department\'s head is refused', r);
+
+  // ---- HR training
+  r = await api('a', 'GET', '/hr/training/programs');
+  check(r.status === 403, 'training API: a Sales member cannot open it', r);
+  r = await api('hr', 'POST', '/hr/training/programs', { name: 'API Bootcamp', startDate: '2026-01-05', ownerId: null });
+  const prog = r.json.data;
+  check(r.status === 200 && prog.days.length === 3 && prog.days[2].date === '2026-01-07' && prog.endDate === '2026-01-07', 'training API: HR creates a program: three days on consecutive dates', r);
+  r = await api('hr', 'POST', `/hr/training/programs/${prog.id}/days/3`, { title: 'Final Training and Assessment', topics: ['Mock calls'], trainerName: 'Rina', criteria: [{ name: 'Quiz', max: 10 }], passPercent: 60 });
+  check(r.status === 200 && r.json.data.days[2].criteria[0].name === 'Quiz' && r.json.data.days[2].passPercent === 60 && r.json.data.days[2].topics[0] === 'Mock calls', 'training API: HR configures the topics, trainer and assessment criteria of a day', r);
+  r = await api('hr', 'POST', `/hr/training/programs/${prog.id}/days/9`, { title: 'Day nine', topics: [], criteria: [] });
+  check(r.status === 422, 'training API: there is no fourth day', r);
+  r = await api('hr', 'POST', `/hr/training/programs/${prog.id}/days/3`, { title: 'X', topics: [], criteria: [{ name: 'Quiz', max: -1 }] });
+  check(r.status === 422, 'training API: a criterion needs a positive maximum', r);
+  r = await api('hr', 'GET', '/hr/training/employees');
+  check(r.status === 200 && r.json.data.some((e: any) => e.employeeKey === memberA), 'training API: the employee picker lists the HR directory', r);
+  r = await api('hr', 'POST', `/hr/training/programs/${prog.id}/enrollments`, { employeeKeys: [memberA] });
+  check(r.status === 200 && r.json.data.added === 1, 'training API: HR enrols an employee', r);
+  r = await api('hr', 'GET', `/hr/training/programs/${prog.id}`);
+  const enr = r.json.data.enrollments[0];
+  check(r.status === 200 && enr.employeeName === 'Member A' && enr.status === 'NOT_STARTED' && enr.days.length === 3, 'training API: the program shows the enrolled employee and their three days', r);
+  r = await api('a', 'GET', `/hr/training/enrollments/${enr.id}`);
+  check(r.status === 404 || r.status === 403, 'training API: a Sales member cannot open a training record', r);
+  r = await api('hr', 'GET', `/hr/training/enrollments/${enr.id}`);
+  check(r.status === 200 && r.json.data.employeeName === 'Member A' && r.json.data.canReport['1'] === true && r.json.data.reports.length === 0, 'training API: HR opens the employee\'s record', r);
+  r = await api('hr', 'GET', '/hr/training/records?search=member&status=NOT_STARTED');
+  check(r.status === 200 && r.json.data.total === 1, 'training API: the records can be searched and filtered', r);
+  r = await api('hr', 'POST', `/hr/training/enrollments/${enr.id}/days/1`, { attendance: 'PRESENT', topicsCompleted: [], tasks: [], scores: [] });
+  check(r.status === 200 && r.json.data.completed === false && r.json.data.status !== 'COMPLETED', 'training API: present with nothing recorded is not a complete day', r);
+  r = await api('hr', 'POST', `/hr/training/enrollments/${enr.id}/days/1`, { attendance: 'PRESENT', topicsCompleted: ['CRM basics'], tasks: [{ title: 'Set up the account', done: true }], scores: [], feedback: 'Good' });
+  check(r.status === 200 && r.json.data.completed === true, 'training API: attendance plus recorded activity completes Day 1', r);
+  r = await api('hr', 'POST', `/hr/training/enrollments/${enr.id}/days/3`, { attendance: 'PRESENT', topicsCompleted: [], tasks: [], scores: [{ criterion: 'Quiz', score: 11 }] });
+  check(r.status === 422, 'training API: a score above the maximum is refused', r);
+  r = await api('hr', 'POST', `/hr/training/enrollments/${enr.id}/days/2`, { attendance: 'LATE', topicsCompleted: [], tasks: [{ title: 'Practice call', done: true }], scores: [] });
+  check(r.status === 200 && r.json.data.completed === true, 'training API: a late attendance with a done task completes Day 2', r);
+  r = await api('hr', 'POST', `/hr/training/enrollments/${enr.id}/days/3`, { attendance: 'PRESENT', topicsCompleted: ['Mock calls'], tasks: [], scores: [{ criterion: 'Quiz', score: 8 }], trainerRemarks: 'Strong' });
+  check(r.status === 200 && r.json.data.assessmentResult === 'PASS' && r.json.data.status === 'COMPLETED', 'training API: Day 3 with its assessment completes the training', r);
+  r = await api('hr', 'POST', `/hr/training/enrollments/${enr.id}/review`, { strengths: 'Quick learner', improvements: 'Objection handling', trainerRemarks: 'Recommended' });
+  check(r.status === 200, 'training API: HR writes the strengths and areas to improve', r);
+  r = await api('hr', 'GET', `/hr/training/enrollments/${enr.id}`);
+  check(r.status === 200 && r.json.data.status === 'COMPLETED' && r.json.data.reports.length === 3 && r.json.data.consolidated.daysCompleted === 3 && r.json.data.consolidated.strengths === 'Quick learner' && r.json.data.consolidated.assessmentPercent === 80,
+    'training API: the employee\'s record holds all three day reports and the consolidated report', r.json.data);
+  r = await api('a', 'POST', `/hr/training/enrollments/${enr.id}/days/1`, { attendance: 'PRESENT', topicsCompleted: ['x'], tasks: [], scores: [] });
+  check(r.status === 403 || r.status === 404, 'training API: a Sales member cannot record a report', r);
+  r = await api('hr', 'GET', '/hr/training/records?status=COMPLETED');
+  check(r.status === 200 && r.json.data.total === 1, 'training API: the record shows as Completed in the history', r);
+  r = await api('hr', 'GET', '/hr/training/overview');
+  check(r.status === 200 && r.json.data.employeesEnrolled === 1 && r.json.data.completed === 1, 'training API: the overview counts real enrolments and completions', r);
+}
+
 // --- Business reports: Sales and Support business for Accounts ---------------------------------
 {
   const num = (v: unknown) => Number(v ?? 0);
@@ -3619,20 +3804,20 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   let hr = await hrRun();
   check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
   const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
-  check(bd.length === 1 && /Dear Birthday Person,/.test(bd[0].body.text) && /Best wishes,\nHR Team\nAmuwa Corporation/.test(bd[0].body.text),
+  check(bd.length === 1 && /Dear Birthday Person,/.test(bd[0].body.text) && /Wishing you a very Happy Birthday!/.test(bd[0].body.text) && /Best regards,\nHR Team\nAmuwa Corporation/.test(bd[0].body.text),
     'HR automation: the birthday e-mail has the approved subject and text, addressed to the employee', bd[0]?.body);
   check(bd[0].body.from.includes('Amuwa Corporation HR') && !bd[0].body.cc && !bd[0].body.bcc && bd[0].body.reply_to,
     'HR automation: it is sent as the HR sender, without the client-facing CC / BCC lists');
-  const an = hrMail('hrbd.two@example.com', 'Happy Work Anniversary, Anniversary Person!');
-  check(an.length === 1 && /Congratulations on your work anniversary at Amuwa Corporation!/.test(an[0].body.text) && /5 completed years/.test(an[0].body.text),
+  const an = hrMail('hrbd.two@example.com', 'Happy Work Anniversary, Anniversary Person! 🎉');
+  check(an.length === 1 && /Congratulations on your work anniversary with Amuwa Corporation!/.test(an[0].body.text) && /Today marks 5 years of your professional journey/.test(an[0].body.text),
     'HR automation: the anniversary e-mail counts the completed years of service', an[0]?.body?.text);
-  const pe = hrMail('hrbd.prob@example.com', 'Upcoming Employment Confirmation Review – Probation Person');
-  check(pe.length === 1 && /approaching completion on /.test(pe[0].body.text) && /HR will communicate the confirmation decision/.test(pe[0].body.text),
+  const pe = hrMail('hrbd.prob@example.com', 'Employee Confirmation Reminder — Probation Person — Due ');
+  check(pe.length === 1 && /scheduled to be completed on /.test(pe[0].body.text) && /approaching in seven days/.test(pe[0].body.text),
     'HR automation: the employee gets the probation reminder exactly seven days before the end');
-  const ph = hrMail('hr.inbox@example.com', 'Action Required: Probation Confirmation Due – Probation Person');
-  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm permanent employment/.test(ph[0].body.text)
-    && /approaching completion in 7 days/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
-  check(hrMail('hr.api@amuwa.com', 'Action Required: Probation Confirmation Due').length === 1, 'HR automation: every HR department member is also told');
+  const ph = hrMail('hr.inbox@example.com', 'Action Required: Confirmation Due in 7 Days — Probation Person');
+  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm employment/.test(ph[0].body.text)
+    && /Designation: /.test(ph[0].body.text) && /Reporting Manager: /.test(ph[0].body.text) && /The confirmation date is seven days away/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
+  check(hrMail('hr.api@amuwa.com', 'Action Required: Confirmation Due in 7 Days').length === 1, 'HR automation: every HR department member is also told');
   check(emails().filter(o => /Employment Confirmation – Amuwa Corporation$/.test(o.body.subject)).length === 0, 'HR automation: nothing confirms the employee by itself');
 
   // never twice
@@ -3701,6 +3886,16 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(!/re_hr_secret_key|SMTP_PASS|dispatch-secret/i.test(JSON.stringify(r.json)), 'HR automation API: no credential is ever part of the answer');
   r = await api('hr', 'GET', '/hr/email-automation/history?status=FAILED&limit=5');
   check(r.status === 200 && r.json.data.items.some((i: any) => i.id === failedId && i.employeeName === 'Failing Person' && /422/.test(i.error)), 'HR automation API: the history shows failures with their error', r);
+  r = await api('a', 'GET', '/hr/email-automation/cards');
+  check(r.status === 403, 'HR automation API: a sales member cannot open the automation cards', r);
+  r = await api('hr', 'GET', '/hr/email-automation/cards');
+  check(r.status === 200 && r.json.data.settings.mode === 'live' && r.json.data.birthday.sent >= 1 && r.json.data.birthday.failed >= 1 && r.json.data.birthday.last?.status
+    && Array.isArray(r.json.data.confirmation.upcoming) && r.json.data.runsAt, 'HR automation API: the cards show live figures, the last execution and the schedule', r);
+  const tpl = r.json.data.templates;
+  check(tpl.BIRTHDAY[0].subject === 'Happy Birthday, Asha Verma! 🎂' && /Happy Work Anniversary, Asha Verma! 🎉/.test(tpl.ANNIVERSARY[0].subject)
+    && /^Employee Confirmation Reminder — Asha Verma — Due /.test(tpl.CONFIRMATION[0].subject) && /^Action Required: Confirmation Due in 7 Days — Asha Verma$/.test(tpl.CONFIRMATION[1].subject)
+    && /Reporting Manager: Rohan Mehta/.test(tpl.CONFIRMATION[1].text), 'HR automation API: each card previews its e-mail (sample data, the approved wording)', tpl);
+  check(!/re_hr_secret_key|SMTP_PASS|dispatch-secret/i.test(JSON.stringify(r.json)), 'HR automation API: the cards carry no credential');
   r = await api('hr', 'GET', '/hr/email-automation/history?status=NOPE');
   check(r.status === 422, 'HR automation API: an unknown filter is refused', r);
   r = await api('a', 'POST', `/hr/email-automation/events/${failedId}/retry`, {});
@@ -3814,6 +4009,33 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   delete process.env.AUTOMATION_DISPATCH_SECRET;
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
   await db.query(`delete from public.customer_reminder_consent where customer_id = $1`, [cust]);
+}
+
+// ---------------------------------------------------------------------------
+// GST when Accounts records a payment: the amount before GST, the rate, the final amount
+// ---------------------------------------------------------------------------
+{
+  let r = await api('a', 'POST', '/pipeline/leads', { name: 'Gst Api Customer', company: 'Gst Api Co', phone: '9850000001', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+  const gl = r.json.data.id as string;
+  r = await api('a', 'POST', `/pipeline/customers/${gl}/send-to-accounts`, { amount: 100000 });
+  check(r.status === 200 || r.status === 201, 'payment GST: Sales sends 1,00,000 to Accounts (before GST)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 30, method: 'CASH', verify: false });
+  check(r.status === 422, 'payment GST: a rate above 28 is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000.5, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 422, 'payment GST: the amount before GST is in whole rupees', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 18, method: 'CASH', verify: false });
+  const p0 = r.json.data;
+  check(r.status === 201 || r.status === 200, 'payment GST: Accounts records 60,000 + 18%', r);
+  const pay = p0.payments[0];
+  check(pay.amount === 70800 && pay.taxableAmount === 60000 && pay.gstRate === 18 && pay.gstAmount === 10800, 'payment GST: the final amount 70,800 is what is recorded, with its split', pay);
+  check(p0.dealAmount === 110800 && p0.recorded === 70800 && p0.gst.allowed === true && p0.gst.onPayments === 10800 && p0.gst.taxableBalance === 40000,
+    'payment GST: the total payable grows by the GST, and 40,000 before GST is left', p0);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 50000, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 422, 'payment GST: more than is left of the agreed amount is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'FULL', amount: 40000, gstRate: 18, method: 'CASH', verify: true });
+  check((r.status === 201 || r.status === 200) && r.json.data.dealAmount === 118000 && r.json.data.recorded === 118000, 'payment GST: a full payment settles it (1,18,000 = 1,00,000 + 18,000 GST)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 100, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 403, 'payment GST: a Sales member cannot record a payment', r);
 }
 
 // ---------------------------------------------------------------------------

@@ -122,6 +122,7 @@ export const hrController = {
   decideAsHr: (async ctx => ok(await svc(ctx).hr.decideAsHr(ctx.params.id, ctx.req.body))) as Handler,
   monthlySummary: (async ctx => ok(await svc(ctx).hr.monthlySummary(ctx.req.query))) as Handler,
   emailOverview: (async ctx => ok(await svc(ctx).hr.emailOverview())) as Handler,
+  emailCards: (async ctx => ok(await svc(ctx).hr.emailCards())) as Handler,
   emailHistory: (async ctx => ok(await svc(ctx).hr.emailHistory(ctx.req.query))) as Handler,
   probationList: (async ctx => ok(await svc(ctx).hr.probationList())) as Handler,
   confirmProbation: (async ctx => ok(await svc(ctx).hr.confirmProbation(ctx.params.id, ctx.req.body))) as Handler,
@@ -134,6 +135,49 @@ export const hrController = {
     await svc(ctx).hr.emailOverview(); // the database refuses anyone who is not HR staff
     return ok(await runHrAutomation());
   }) as Handler
+};
+
+export const performanceController = {
+  people: (async ctx => ok(await svc(ctx).performance.people(ctx.req.query))) as Handler,
+  report: (async ctx => ok(await svc(ctx).performance.report(ctx.req.query))) as Handler,
+  generate: (async ctx => ok(await svc(ctx).performance.generate(ctx.req.body))) as Handler,
+  history: (async ctx => ok(await svc(ctx).performance.history(ctx.params.id))) as Handler
+};
+
+export const recruitmentController = {
+  overview: (async ctx => ok(await svc(ctx).recruitment.overview())) as Handler,
+  agenda: (async ctx => ok(await svc(ctx).recruitment.agenda())) as Handler,
+  positions: (async ctx => ok(await svc(ctx).recruitment.positions())) as Handler,
+  recruiters: (async ctx => ok(await svc(ctx).recruitment.recruiters())) as Handler,
+  savePosition: (async ctx => ok(await svc(ctx).recruitment.savePosition(ctx.req.body))) as Handler,
+  list: (async ctx => ok(await svc(ctx).recruitment.list(ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).recruitment.get(ctx.params.id))) as Handler,
+  create: (async ctx => ok(await svc(ctx).recruitment.createCandidate(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).recruitment.updateCandidate(ctx.params.id, ctx.req.body))) as Handler,
+  addAction: (async ctx => ok(await svc(ctx).recruitment.addAction(ctx.params.id, ctx.req.body), 201)) as Handler,
+  closeAction: (async ctx => ok(await svc(ctx).recruitment.closeAction(ctx.params.id, ctx.req.body))) as Handler,
+  scheduleCall: (async ctx => ok(await svc(ctx).recruitment.scheduleCall(ctx.params.id, ctx.req.body), 201)) as Handler,
+  recordCall: (async ctx => ok(await svc(ctx).recruitment.recordCall(ctx.params.id, ctx.req.body), 201)) as Handler,
+  setConfirmation: (async ctx => ok(await svc(ctx).recruitment.setConfirmation(ctx.params.id, ctx.req.body))) as Handler
+};
+
+export const trainingController = {
+  overview: (async ctx => ok(await svc(ctx).training.overview())) as Handler,
+  programs: (async ctx => ok(await svc(ctx).training.programs())) as Handler,
+  employees: (async ctx => ok(await svc(ctx).training.employees())) as Handler,
+  program: (async ctx => ok(await svc(ctx).training.program(ctx.params.id))) as Handler,
+  saveProgram: (async ctx => ok(await svc(ctx).training.saveProgram(ctx.req.body))) as Handler,
+  cancelProgram: (async ctx => ok(await svc(ctx).training.cancelProgram(ctx.params.id, ctx.req.body))) as Handler,
+  saveDay: (async ctx => ok(await svc(ctx).training.saveDay(ctx.params.id, ctx.params.day, ctx.req.body))) as Handler,
+  enroll: (async ctx => ok(await svc(ctx).training.enroll(ctx.params.id, ctx.req.body))) as Handler,
+  enrollment: (async ctx => ok(await svc(ctx).training.enrollment(ctx.params.id))) as Handler,
+  unenroll: (async ctx => {
+    await svc(ctx).training.unenroll(ctx.params.id);
+    return ok(null);
+  }) as Handler,
+  saveReport: (async ctx => ok(await svc(ctx).training.saveReport(ctx.params.id, ctx.params.day, ctx.req.body))) as Handler,
+  review: (async ctx => ok(await svc(ctx).training.review(ctx.params.id, ctx.req.body))) as Handler,
+  records: (async ctx => ok(await svc(ctx).training.records(ctx.req.query))) as Handler
 };
 
 export const auditController = {

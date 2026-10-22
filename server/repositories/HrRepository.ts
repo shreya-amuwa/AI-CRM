@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AttendanceDay, HrEmailDataIssue, HrEmailHistory, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
+  AttendanceDay, HrEmailCards, HrEmailDataIssue, HrEmailHistory, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -50,6 +50,7 @@ export class HrRepository {
   }
   dismissProbation(id: string, note: string) { return this.rpc<HrProbationCycle>('hr_dismiss_probation', { p_cycle: id, p_note: note }); }
   retryEmail(id: string) { return this.rpc<{ id: string; status: string }>('hr_email_retry', { p_event: id }); }
+  emailCards() { return this.rpc<Omit<HrEmailCards, 'settings' | 'templates' | 'runsAt'>>('hr_email_cards'); }
   emailDataIssues() { return this.rpc<HrEmailDataIssue[]>('hr_email_data_issues'); }
   setEmployeeDates(i: { employeeKey: string; dateOfBirth: string | null; joiningDate: string | null }) {
     return this.rpc<{ employeeKey: string }>('hr_set_employee_dates', { p_employee_key: i.employeeKey, p_date_of_birth: i.dateOfBirth, p_joining_date: i.joiningDate });

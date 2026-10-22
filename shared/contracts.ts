@@ -795,7 +795,12 @@ export type FollowUpStatus = 'FOLLOW_UP_REQUIRED' | 'CONTACTED' | 'AWAITING_PAYM
 export interface LedgerPayment {
   id: string;
   type: PaymentType;
+  /** What was received (the final amount: the amount before GST plus the GST). */
   amount: number;
+  /** The GST split Accounts recorded; null when no GST was recorded (older payments, or an agreed amount that includes GST). */
+  taxableAmount?: number | null;
+  gstRate?: number | null;
+  gstAmount?: number | null;
   method: PaymentMethod | null;
   reference: string | null;
   paidAt: string;
@@ -839,6 +844,8 @@ export interface PaymentOverview {
   dealAmount: number | null;
   agreedAmount?: number | null;
   taxBasis?: AgreementTaxBasis;
+  /** Whether Accounts may add GST to a payment (the agreed amount excludes GST), the GST recorded so far, and what is left before GST. */
+  gst?: { allowed: boolean; onPayments: number; taxableBalance: number | null };
   order?: OrderSummary | null;
   recorded: number;
   verified: number;
@@ -2063,6 +2070,27 @@ export type HrEmailKind =
   | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR';
 export type HrEmailStatus = 'PENDING' | 'SENDING' | 'RETRY' | 'SENT' | 'FAILED' | 'SKIPPED' | 'DRY_RUN';
 
+export type HrAutomationCode = 'BIRTHDAY' | 'ANNIVERSARY' | 'CONFIRMATION';
+export interface HrAutomationCard {
+  sent: number;
+  failed: number;
+  waiting: number;
+  last: { status: HrEmailStatus; at: string; error: string | null; employee: string | null } | null;
+}
+/** Live figures for the three automation cards, with the wording of each e-mail (a sample, rendered by the server). */
+export interface HrEmailCards {
+  today: string;
+  settings: { mode: 'off' | 'dry_run' | 'live'; emailConfigured: boolean; testMode: boolean };
+  /** The daily check runs at this time every day (company time zone). */
+  runsAt: string;
+  birthday: HrAutomationCard & { next: { date: string; names: string[] } | null };
+  anniversary: HrAutomationCard & { next: { date: string; names: string[] } | null };
+  confirmation: HrAutomationCard & {
+    upcoming: { name: string; department: string | null; joiningDate: string; confirmationDate: string; reminderDate: string; reminderSent: boolean }[];
+  };
+  templates: Record<HrAutomationCode, { label: string; to: string; subject: string; text: string }[]>;
+}
+
 export interface HrEmailOverview {
   today: string;
   /** Whether the server sends real e-mail: "off", "dry_run" (nothing leaves the server) or "live". No credentials are ever included. */
@@ -2382,4 +2410,322 @@ export interface AttributionReconciliation {
     acquisitionDivision: BusinessDivision | null;
     ownerDivision: string | null;
   }[];
+}
+
+// ---------------------------------------------------------------------------
+// Performance Management (Team Lead and Department Head dashboards)
+// ---------------------------------------------------------------------------
+export type PerformanceScope = 'MEMBER' | 'TEAM' | 'DEPARTMENT';
+export type PerformancePeriodKind = 'WEEK' | 'MONTH' | 'CUSTOM';
+/** A figure the CRM could not work out is null: the screens show "Insufficient data", never a guess. */
+export interface PerformanceMetrics {
+  scope: PerformanceScope;
+  periodStart: string;
+  periodEnd: string;
+  today: string;
+  tasks: { total: number; completed: number; pending: number; overdue: number; blocked: number };
+  completionPct: number | null;
+  timing: { onTime: number; late: number; completedUnknownTiming: number; onTimePct: number | null };
+  duration: {
+    avgActualDays: number | null;
+    avgPlannedDays: number | null;
+    comparedTasks: number;
+    comparedActualDays: number | null;
+    comparedPlannedDays: number | null;
+    avgDifferenceDays: number | null;
+  };
+  activity: { updates: number; tasksWithoutUpdates: number };
+  workload: { byPriority: { HIGH: number; MEDIUM: number; LOW: number }; peakOpenTasks: number | null };
+  trend: { recentWeek: string; recentRate: number; previousWeek: string; previousRate: number; change: number } | null;
+  weekly: { weekStart: string; total: number; completed: number; onTime: number; late: number; overdue: number }[];
+  taskList: {
+    id: string;
+    title: string;
+    priority: string;
+    status: string;
+    progress: number;
+    assignedOn: string;
+    dueDate: string | null;
+    completedAt: string | null;
+    onTime: boolean | null;
+    daysToComplete: number | null;
+    plannedDays: number | null;
+    daysLate: number | null;
+    overdue: boolean;
+    updates: number;
+  }[];
+  delayReasons: { task: string; status: string; note: string; at: string }[];
+  limitations: string[];
+}
+/** The written analysis. Every statement comes from the figures; a missing figure reads "Insufficient data". */
+export interface PerformanceNarrative {
+  summary: string;
+  observations: string[];
+  improvementAreas: string[];
+  recommendations: string[];
+  limitations: string[];
+}
+export interface PerformanceReport {
+  id: string;
+  scope: PerformanceScope;
+  subjectId: string | null;
+  teamId: string | null;
+  departmentId: string;
+  subjectName: string;
+  subjectRole: string | null;
+  teamName: string | null;
+  departmentName: string | null;
+  periodKind: PerformancePeriodKind;
+  periodStart: string;
+  periodEnd: string;
+  metrics: PerformanceMetrics;
+  fingerprint: string;
+  sourceTaskCount: number;
+  narrative: PerformanceNarrative | null;
+  narrativeSource: 'AI' | 'RULES' | null;
+  aiStatus: 'PENDING' | 'OK' | 'FAILED' | 'NOT_CONFIGURED';
+  aiModel: string | null;
+  aiError: string | null;
+  version: number;
+  trigger: 'SCHEDULED' | 'MANUAL';
+  generatedBy: string | null;
+  generatedAt: string;
+  checkedAt: string;
+  updatedAt: string;
+}
+export interface PerformanceReportStub {
+  id: string;
+  generatedAt: string;
+  checkedAt: string;
+  narrativeSource: 'AI' | 'RULES' | null;
+  aiStatus: PerformanceReport['aiStatus'];
+}
+export interface PerformanceListEntry {
+  scope: PerformanceScope;
+  id: string;
+  name: string;
+  summary: PerformanceMetrics;
+  report: PerformanceReportStub | null;
+}
+export interface PerformancePeople {
+  period: { kind: PerformancePeriodKind; start: string; end: string };
+  today: string;
+  role: string;
+  people: (PerformanceListEntry & { role: string; teamId: string | null; teamName: string; position: string | null })[];
+  teams: (PerformanceListEntry & { lead: string | null; members: number })[];
+  department: PerformanceListEntry | null;
+}
+export interface PerformanceHistoryEntry {
+  version: number;
+  generatedAt: string;
+  trigger: 'SCHEDULED' | 'MANUAL';
+  generatedBy: string | null;
+  narrativeSource: 'AI' | 'RULES' | null;
+  aiStatus: string | null;
+  tasks: PerformanceMetrics['tasks'];
+  completionPct: number | null;
+  onTimePct: number | null;
+  summary: string | null;
+}
+export interface PerformanceRefreshResult {
+  state: 'CREATED' | 'UPDATED' | 'UNCHANGED';
+  report: PerformanceReport;
+}
+
+// ---------------------------------------------------------------------------
+// HR Recruitment Management
+// ---------------------------------------------------------------------------
+export type RecruitmentConfirmation = 'NOT_STARTED' | 'OFFER_PENDING' | 'OFFERED' | 'CONFIRMED' | 'DECLINED' | 'ON_HOLD';
+export type RecruitmentActionKind = 'INTERVIEW' | 'DOCUMENTS' | 'ASSESSMENT' | 'BACKGROUND_CHECK' | 'REFERENCE_CHECK' | 'OTHER';
+export type RecruitmentCallOutcome = 'ANSWERED' | 'NO_ANSWER' | 'CALL_BACK' | 'NOT_INTERESTED' | 'WRONG_NUMBER';
+
+/** One row of the candidate table: name, e-mail, position, and the three separate stages Pending / Call / Confirmation. */
+export interface RecruitmentCandidate {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  source: string | null;
+  notes: string | null;
+  positionId: string;
+  position: string;
+  ownerId: string | null;
+  owner: string | null;
+  createdAt: string;
+  updatedAt: string;
+  pending: { open: number; overdue: number; nextDue: string | null; items: { id: string; kind: RecruitmentActionKind; title: string; dueDate: string | null; overdue: boolean | null; assignee: string | null }[] };
+  call: {
+    total: number;
+    nextAt: string | null;
+    missedScheduled: number;
+    last: { outcome: RecruitmentCallOutcome; at: string; followUpDate: string | null; note: string | null } | null;
+    followUpOverdue: boolean;
+  };
+  confirmation: { status: RecruitmentConfirmation; date: string | null; note: string | null };
+}
+export interface RecruitmentDetail extends RecruitmentCandidate {
+  actions: { id: string; kind: RecruitmentActionKind; title: string; dueDate: string | null; status: 'OPEN' | 'DONE' | 'CANCELLED'; note: string | null; doneAt: string | null; assigneeId: string | null; assignee: string | null; overdue: boolean; createdAt: string }[];
+  calls: { id: string; scheduledAt: string | null; calledAt: string | null; outcome: RecruitmentCallOutcome | null; note: string | null; followUpDate: string | null; madeBy: string | null }[];
+  history: { id: string; kind: string; summary: string; actor: string | null; at: string }[];
+}
+export interface RecruitmentList {
+  total: number;
+  items: RecruitmentCandidate[];
+}
+export interface RecruitmentOverview {
+  today: string;
+  candidates: number;
+  withPending: number;
+  overdueActions: number;
+  upcomingCalls: number;
+  overdueFollowUps: number;
+  missedCalls: number;
+  confirmed: number;
+  openPositions: number;
+}
+export interface RecruitmentAgenda {
+  upcomingCalls: { candidateId: string; name: string; position: string | null; at: string; callId: string }[];
+  overdueCalls: { candidateId: string; name: string; position: string | null; at: string; callId: string }[];
+  overdueFollowUps: { candidateId: string; name: string; position: string | null; followUpDate: string }[];
+  overdueActions: { candidateId: string; name: string; actionId: string; title: string; dueDate: string; assignee: string | null }[];
+}
+export interface RecruitmentPosition {
+  id: string;
+  title: string;
+  departmentId: string | null;
+  department: string | null;
+  isOpen: boolean;
+  candidates: number;
+}
+export interface HrRecruiter {
+  id: string;
+  name: string;
+  position: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// HR Training workspace
+// ---------------------------------------------------------------------------
+export type TrainingStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'INCOMPLETE';
+export type TrainingAttendance = 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED';
+export interface TrainingOverview {
+  today: string;
+  employeesEnrolled: number;
+  activePrograms: number;
+  upcomingPrograms: number;
+  completed: number;
+  incomplete: number;
+  pendingTraining: number;
+  pendingReports: number;
+}
+export interface TrainingDayConfig {
+  dayNo: 1 | 2 | 3;
+  date: string;
+  title: string;
+  topics: string[];
+  trainerName: string | null;
+  trainerId: string | null;
+  criteria: { name: string; max: number }[];
+  passPercent: number | null;
+}
+export interface TrainingProgram {
+  id: string;
+  name: string;
+  description: string | null;
+  startDate: string;
+  endDate: string;
+  isCancelled: boolean;
+  ownerId: string | null;
+  owner: string | null;
+  phase: 'UPCOMING' | 'RUNNING' | 'ENDED' | 'CANCELLED';
+  enrolled: number;
+  byStatus: Partial<Record<TrainingStatus, number>>;
+  days: TrainingDayConfig[];
+}
+export interface TrainingEnrollmentRow {
+  id: string;
+  programId: string;
+  program: string;
+  startDate: string;
+  endDate: string;
+  employeeKey: string;
+  employeeName: string;
+  employeeCode: string | null;
+  department: string | null;
+  designation: string | null;
+  status: TrainingStatus;
+  strengths: string | null;
+  improvements: string | null;
+  trainerRemarks: string | null;
+  consolidated: TrainingConsolidated | null;
+  consolidatedAt: string | null;
+  days: { dayNo: 1 | 2 | 3; date: string; attendance: TrainingAttendance | null; completed: boolean; reported: boolean; overdue: boolean }[];
+}
+export interface TrainingProgramDetail extends TrainingProgram {
+  enrollments: TrainingEnrollmentRow[];
+}
+export interface TrainingDayReport {
+  dayNo: 1 | 2 | 3;
+  attendance: TrainingAttendance | null;
+  topicsCompleted: string[];
+  tasks: { title: string; done: boolean }[];
+  scores: { criterion: string; score: number; max: number }[];
+  assessmentTotal: number | null;
+  assessmentMax: number | null;
+  assessmentResult: 'PASS' | 'FAIL' | 'RECORDED' | null;
+  feedback: string | null;
+  trainerRemarks: string | null;
+  report: string | null;
+  completed: boolean;
+  reportedAt: string;
+  reportedBy: string | null;
+}
+export interface TrainingConsolidated {
+  program: string;
+  startDate: string;
+  endDate: string;
+  status: TrainingStatus;
+  daysAttended: number;
+  daysCompleted: number;
+  assessmentPercent: number | null;
+  strengths: string | null;
+  improvements: string | null;
+  trainerRemarks: string | null;
+  missing: string[];
+  days: {
+    day: number;
+    title: string;
+    date: string;
+    trainer: string | null;
+    attendance: TrainingAttendance | null;
+    completed: boolean;
+    topicsPlanned: number;
+    topicsCompleted: number;
+    tasksTotal: number;
+    tasksDone: number;
+    assessmentTotal: number | null;
+    assessmentMax: number | null;
+    assessmentPercent: number | null;
+    assessmentResult: string | null;
+    feedback: string | null;
+    trainerRemarks: string | null;
+    report: string | null;
+  }[];
+}
+export interface TrainingEnrollmentDetail extends TrainingEnrollmentRow {
+  programConfig: TrainingProgram;
+  canReport: Record<'1' | '2' | '3', boolean>;
+  reports: TrainingDayReport[];
+  preview: TrainingConsolidated;
+}
+export interface TrainingRecords {
+  total: number;
+  items: TrainingEnrollmentRow[];
+}
+export interface TrainingEmployee {
+  employeeKey: string;
+  name: string;
+  department: string | null;
+  code: string | null;
+  designation: string | null;
 }

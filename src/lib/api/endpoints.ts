@@ -3,6 +3,28 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  TrainingAttendance,
+  TrainingEmployee,
+  TrainingEnrollmentDetail,
+  TrainingOverview,
+  TrainingProgram,
+  TrainingProgramDetail,
+  TrainingRecords,
+  HrRecruiter,
+  RecruitmentActionKind,
+  RecruitmentAgenda,
+  RecruitmentCallOutcome,
+  RecruitmentCandidate,
+  RecruitmentConfirmation,
+  RecruitmentDetail,
+  RecruitmentList,
+  RecruitmentOverview,
+  RecruitmentPosition,
+  PerformanceHistoryEntry,
+  PerformancePeople,
+  PerformancePeriodKind,
+  PerformanceReport,
+  PerformanceScope,
   AuditEvent,
   AuditOutcome,
   CompanyOverview,
@@ -24,6 +46,7 @@ import type {
   HrEmailDataIssue,
   HrEmailHistory,
   HrEmailKind,
+  HrEmailCards,
   HrEmailOverview,
   HrEmailRunSummary,
   HrEmailStatus,
@@ -133,7 +156,9 @@ export interface CustomerQuery {
 
 export interface AccountsPaymentInput {
   type: PaymentType;
+  /** With GST: the amount before GST. */
   amount: number;
+  gstRate?: number | null;
   method: PaymentMethod;
   reference?: string | null;
   paidAt?: string | null;
@@ -446,6 +471,68 @@ export const notificationsApi = {
 };
 
 /** Attendance, employee details and the Department Head -> HR leave approval. */
+export const trainingApi = {
+  overview: () => api.get<TrainingOverview>('/hr/training/overview'),
+  programs: () => api.get<TrainingProgram[]>('/hr/training/programs'),
+  saveProgram: (body: { id?: string; name: string; description?: string | null; startDate: string; ownerId?: string | null }) => api.post<TrainingProgram>('/hr/training/programs', body),
+  cancelProgram: (id: string, cancel: boolean) => api.post<TrainingProgram>(`/hr/training/programs/${id}/cancel`, { cancel }),
+  employees: () => api.get<TrainingEmployee[]>('/hr/training/employees'),
+  records: (q: { search?: string; status?: string; limit?: number; offset?: number }) => api.get<TrainingRecords>('/hr/training/records', q),
+  program: (id: string) => api.get<TrainingProgramDetail>(`/hr/training/programs/${id}`),
+  saveDay: (id: string, day: number, body: { title: string; topics: string[]; trainerName?: string | null; trainerId?: string | null; criteria: { name: string; max: number }[]; passPercent?: number | null }) =>
+    api.post<TrainingProgram>(`/hr/training/programs/${id}/days/${day}`, body),
+  enroll: (id: string, employeeKeys: string[]) => api.post<{ added: number; skipped: number; unknown: string[] }>(`/hr/training/programs/${id}/enrollments`, { employeeKeys }),
+  enrollment: (id: string) => api.get<TrainingEnrollmentDetail>(`/hr/training/enrollments/${id}`),
+  unenroll: (id: string) => api.delete<null>(`/hr/training/enrollments/${id}`),
+  saveReport: (id: string, day: number, body: { attendance: TrainingAttendance | null; topicsCompleted: string[]; tasks: { title: string; done: boolean }[]; scores: { criterion: string; score: number }[]; feedback?: string | null; trainerRemarks?: string | null; report?: string | null }) =>
+    api.post<{ dayNo: number; completed: boolean; status: string; assessmentResult: string | null }>(`/hr/training/enrollments/${id}/days/${day}`, body),
+  review: (id: string, body: { strengths?: string | null; improvements?: string | null; trainerRemarks?: string | null }) => api.post<{ id: string; status: string }>(`/hr/training/enrollments/${id}/review`, body)
+};
+
+export const recruitmentApi = {
+  overview: () => api.get<RecruitmentOverview>('/hr/recruitment/overview'),
+  agenda: () => api.get<RecruitmentAgenda>('/hr/recruitment/agenda'),
+  positions: () => api.get<RecruitmentPosition[]>('/hr/recruitment/positions'),
+  savePosition: (body: { id?: string; title: string; departmentId?: string | null; isOpen: boolean }) => api.post<{ id: string; title: string; isOpen: boolean }>('/hr/recruitment/positions', body),
+  recruiters: () => api.get<HrRecruiter[]>('/hr/recruitment/recruiters'),
+  list: (q: { search?: string; positionId?: string; confirmation?: string; pending?: string; call?: string; ownerId?: string; limit?: number; offset?: number }) => api.get<RecruitmentList>('/hr/recruitment/candidates', q),
+  get: (id: string) => api.get<RecruitmentDetail>(`/hr/recruitment/candidates/${id}`),
+  create: (body: RecruitmentCandidateInput) => api.post<RecruitmentCandidate>('/hr/recruitment/candidates', body),
+  update: (id: string, body: RecruitmentCandidateInput) => api.patch<RecruitmentCandidate>(`/hr/recruitment/candidates/${id}`, body),
+  addAction: (id: string, body: { kind: RecruitmentActionKind; title: string; dueDate?: string | null; assigneeId?: string | null }) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/actions`, body),
+  closeAction: (id: string, body: { done: boolean; note?: string | null }) => api.post<{ id: string; status: string }>(`/hr/recruitment/actions/${id}/close`, body),
+  scheduleCall: (id: string, at: string) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/calls`, { at }),
+  recordCall: (id: string, body: { callId?: string | null; outcome: RecruitmentCallOutcome; note?: string | null; followUpDate?: string | null }) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/calls/record`, body),
+  setConfirmation: (id: string, body: { status: RecruitmentConfirmation; date?: string | null; note?: string | null }) => api.post<RecruitmentCandidate>(`/hr/recruitment/candidates/${id}/confirmation`, body)
+};
+export interface RecruitmentCandidateInput {
+  name: string;
+  email: string;
+  phone?: string | null;
+  positionId: string;
+  ownerId?: string | null;
+  source?: string | null;
+  notes?: string | null;
+}
+
+export const performanceApi = {
+  people: (q: { kind: PerformancePeriodKind; start: string; end: string; departmentId?: string }) => api.get<PerformancePeople>('/performance/people', q),
+  report: (k: PerformanceReportKey) => api.get<PerformanceReport | null>('/performance/report', k),
+  generate: (k: PerformanceReportKey) => api.post<{ state: string; report: PerformanceReport }>('/performance/report', k),
+  history: (id: string) => api.get<PerformanceHistoryEntry[]>(`/performance/report/${id}/history`)
+};
+
+export interface PerformanceReportKey {
+  scope: PerformanceScope;
+  subjectId?: string;
+  teamId?: string;
+  departmentId?: string;
+  kind: PerformancePeriodKind;
+  start: string;
+  end: string;
+  [k: string]: string | undefined;
+}
+
 export const hrApi = {
   recordRmLogin: () => api.post<null>('/attendance/rm-login'),
   attendance: (date?: string) => api.get<AttendanceDay>('/hr/attendance', { date }),
@@ -462,6 +549,7 @@ export const hrApi = {
   // E-mail automation (birthdays, work anniversaries, probation reminders, employment confirmation) - HR staff only
   emailOverview: () => api.get<HrEmailOverview>('/hr/email-automation/overview'),
   emailHistory: (q: { status?: HrEmailStatus; kind?: HrEmailKind; limit?: number; offset?: number } = {}) => api.get<HrEmailHistory>('/hr/email-automation/history', { ...q }),
+  emailCards: () => api.get<HrEmailCards>('/hr/email-automation/cards'),
   probation: () => api.get<HrProbationCycle[]>('/hr/email-automation/probation'),
   confirmProbation: (id: string, body: { effectiveDate?: string; note?: string } = {}) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/confirm`, body),
   dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note }),

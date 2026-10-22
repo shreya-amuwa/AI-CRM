@@ -20,6 +20,8 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
+import { runPerformanceAutomation } from './performance/writer.js';
+import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
@@ -113,7 +115,11 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const hr = await runHrAutomation();
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run until a calling provider is connected.
   const subscriptionReminders = await runSubscriptionReminders();
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders }));
+  // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
+  // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
+  const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, performance, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

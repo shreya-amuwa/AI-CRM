@@ -48,3 +48,11 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/workflow_test.sql 2>&1 | sed -E "s
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/delete_customer_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/attribution_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/performance_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/recruitment_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/training_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/payment_gst_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

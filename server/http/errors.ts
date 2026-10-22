@@ -74,6 +74,12 @@ export function fromDatabaseError(error: PostgrestError | null | undefined): App
       return new AppError('VALIDATION_ERROR');
     case 'PGRST116':
       return new AppError('NOT_FOUND');
+    // The database has not been given the latest migration (a function or table is missing). Say so: it is a set-up step, not a bug.
+    case 'PGRST202':
+    case '42883':
+    case '42P01':
+      console.error('[api] the database is missing an update', { code: error.code, message: error.message });
+      return new AppError('SERVICE_UNAVAILABLE', 'This feature needs a database update that has not been applied yet. Ask an administrator to run the latest migrations.');
     case 'PGRST301':
     case 'PGRST302':
       return new AppError('UNAUTHENTICATED');

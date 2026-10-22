@@ -704,10 +704,10 @@ export class PipelineRepository {
 
   async recordAccountsPayment(
     customerId: string,
-    p: { type: string; amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null; verify: boolean }
+    p: { type: string; amount: number; gstRate?: number | null; method: string; reference?: string | null; paidAt?: string | null; note?: string | null; verify: boolean }
   ): Promise<string> {
     return unwrap(
-      await this.db.rpc('accounts_record_payment', {
+      await this.db.rpc('accounts_record_taxed_payment', {
         p_customer: customerId,
         p_type: p.type,
         p_amount: p.amount,
@@ -715,24 +715,26 @@ export class PipelineRepository {
         p_reference: p.reference ?? null,
         p_paid_at: p.paidAt ?? null,
         p_note: p.note ?? null,
-        p_verify: p.verify
+        p_verify: p.verify,
+        p_gst_rate: p.gstRate ?? null
       })
     ) as string;
   }
 
   async updateAccountsPayment(
     paymentId: string,
-    p: { type: string; amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null }
+    p: { type: string; amount: number; gstRate?: number | null; method: string; reference?: string | null; paidAt?: string | null; note?: string | null }
   ): Promise<void> {
     unwrap(
-      await this.db.rpc('accounts_update_payment', {
+      await this.db.rpc('accounts_update_taxed_payment', {
         p_payment: paymentId,
         p_type: p.type,
         p_amount: p.amount,
         p_method: p.method,
         p_reference: p.reference ?? null,
         p_paid_at: p.paidAt ?? null,
-        p_note: p.note ?? null
+        p_note: p.note ?? null,
+        p_gst_rate: p.gstRate ?? null
       })
     );
   }

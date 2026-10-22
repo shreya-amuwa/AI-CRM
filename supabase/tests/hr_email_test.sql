@@ -67,6 +67,11 @@ select test.check((select (payload ->> 'daysLeft')::int = 7 and payload ->> 'emp
                       and payload ->> 'joiningDate' = '2026-09-14' and payload ->> 'probationEndDate' = '2027-03-14'
                      from hr_email_events where kind = 'PROBATION_REMINDER_HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1),
   'the HR reminder carries name, id, department, joining date and completion date');
+select test.check((select payload ->> 'designation' = 'Team Member' and payload ->> 'reportingManager' not in ('', 'Not assigned') and payload ->> 'reportingManager' = (select full_name from profiles where id = test.id('th_wab'))
+                     from hr_email_events where kind = 'PROBATION_REMINDER_HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1),
+  'the HR reminder also carries the designation and the reporting manager (the Team Lead of the team)');
+select test.check((select (payload ->> 'daysLeft')::int = 7 from hr_email_events where kind = 'PROBATION_REMINDER_EMPLOYEE' and payload ->> 'employeeName' = 'Hrx Prob'),
+  'the employee reminder knows it is seven days before');
 select hr_schedule_emails(date '2027-03-07');
 select hr_schedule_emails(date '2027-03-10');
 select hr_schedule_emails(date '2027-03-14');
@@ -288,6 +293,18 @@ select hr_set_employee_dates(test.id('hrx_nodob')::text, date '1993-08-09', null
 select test.check((select count(*) = 0 from jsonb_array_elements(hr_email_data_issues()) i where i ->> 'name' = 'Hrx Nodob'), 'HR can fill in the missing date of birth');
 select hr_set_employee_dates('HR:HRX-ONLY-BAD', date '1991-01-01', date '2021-04-01');
 select test.check((select data ->> 'dateOfBirth' = '1991-01-01' and joining_date = '2021-04-01' from hr_employees where id = 'HRX-ONLY-BAD'), 'and for an HR-only record');
+-- the three automation cards (HR staff only; live figures)
+select test.check((hr_email_cards() ? 'birthday' and hr_email_cards() ? 'anniversary' and hr_email_cards() ? 'confirmation'
+                   and (hr_email_cards() -> 'birthday' ->> 'sent')::int >= 1 and jsonb_typeof(hr_email_cards() -> 'confirmation' -> 'upcoming') = 'array'
+                   and hr_email_cards() -> 'birthday' -> 'last' ->> 'status' is not null),
+  'HR staff see the three cards with live figures (sent, last execution, upcoming confirmations)');
+select test.check((select bool_and((u ->> 'reminderDate')::date = (u ->> 'confirmationDate')::date - 7) from jsonb_array_elements(hr_email_cards() -> 'confirmation' -> 'upcoming') u),
+  'every upcoming reminder date is exactly seven days before the confirmation date');
+select test.login('tm_a');
+select test.must_fail($$select hr_email_cards()$$, 'a sales member cannot read the cards', 'FORBIDDEN');
+reset role;
+set role anon;
+select test.must_fail($$select hr_email_cards()$$, 'a signed-out visitor cannot read the cards', 'permission denied');
 reset role;
 select test.check((select date_of_birth = date '1993-08-09' and joining_date = date '2022-06-01' from employee_personal_details where profile_id = test.id('hrx_nodob')), 'the existing joining date is kept');
 select test.check((select count(*) = 2 from audit_logs where action = 'EMPLOYEE_DATES_SET'), 'the changes are audited');

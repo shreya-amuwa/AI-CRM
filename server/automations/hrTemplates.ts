@@ -16,6 +16,8 @@ export interface HrMailPayload {
   years?: number;
   daysLeft?: number;
   daysOverdue?: number;
+  designation?: string;
+  reportingManager?: string;
 }
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -46,33 +48,43 @@ export function renderHrEmail(kind: HrEmailKind, p: HrMailPayload): RenderedEmai
     case 'BIRTHDAY':
       subject = `Happy Birthday, ${name}! 🎂`;
       html = `<p>Dear ${esc(name)},</p>
-<p>Wishing you a very Happy Birthday! May your year ahead be filled with happiness, good health, success, and new achievements.</p>
-<p>We are glad to have you as part of the Amuwa Corporation team.</p>
-<p>Best wishes,<br>HR Team<br>Amuwa Corporation</p>`;
-      break;
-    case 'ANNIVERSARY':
-      subject = `Happy Work Anniversary, ${name}!`;
-      html = `<p>Dear ${esc(name)},</p>
-<p>Congratulations on your work anniversary at Amuwa Corporation!${p.years ? ` Today marks ${esc(p.years)} completed year${p.years === 1 ? '' : 's'} of service.` : ''}</p>
-<p>Thank you for your dedication, contribution, and commitment to the company. We appreciate being part of your professional journey and look forward to achieving more milestones together.</p>
+<p>Wishing you a very Happy Birthday!</p>
+<p>May your special day bring you happiness, success, good health, and wonderful opportunities in the year ahead.</p>
+<p>Thank you for being a valued member of our team. We wish you continued growth and success in both your personal and professional journey.</p>
+<p>Have a wonderful birthday!</p>
 ${hrSignature}`;
       break;
-    case 'PROBATION_REMINDER_EMPLOYEE':
-      subject = `Upcoming Employment Confirmation Review – ${name}`;
+    case 'ANNIVERSARY': {
+      const y = Math.max(1, Number(p.years) || 1);
+      subject = `Happy Work Anniversary, ${name}! 🎉`;
       html = `<p>Dear ${esc(name)},</p>
-<p>We would like to inform you that your six-month probation period at Amuwa Corporation is approaching completion on ${esc(longDate(p.probationEndDate))}.</p>
-<p>Your employment confirmation review will be conducted soon. HR will communicate the confirmation decision and any further steps required.</p>
-<p>Thank you for your contributions and commitment to the company.</p>
+<p>Congratulations on your work anniversary with Amuwa Corporation!</p>
+<p>Today marks ${y} year${y === 1 ? '' : 's'} of your professional journey with us. We sincerely appreciate your dedication, commitment, and valuable contributions to the organization.</p>
+<p>Thank you for being an important part of our team. We look forward to many more years of collaboration, growth, and success together.</p>
+<p>Wishing you continued achievements and a successful journey ahead!</p>
+${hrSignature}`;
+      break;
+    }
+    case 'PROBATION_REMINDER_EMPLOYEE':
+      subject = `Employee Confirmation Reminder — ${name} — Due ${longDate(p.probationEndDate)}`;
+      html = `<p>Dear ${esc(name)},</p>
+<p>This is a reminder that your six-month probation period at Amuwa Corporation is scheduled to be completed on ${esc(longDate(p.probationEndDate))}.</p>
+<p>Your employment confirmation is approaching ${esc(p.daysLeft === undefined || p.daysLeft === 7 ? 'in seven days' : days(p.daysLeft))}. Please connect with your reporting manager and the HR team to complete any required performance review, feedback, documentation, or confirmation formalities.</p>
+<p>We appreciate your contributions and look forward to your continued growth with the organization.</p>
 ${hrSignature}`;
       break;
     case 'PROBATION_REMINDER_HR':
-      subject = `Action Required: Probation Confirmation Due – ${name}`;
+      {
+        const left = p.daysLeft === undefined ? 7 : Math.max(0, Number(p.daysLeft));
+        subject = `Action Required: Confirmation Due ${left === 0 ? 'Today' : `in ${left} Day${left === 1 ? '' : 's'}`} — ${name}`;
+      }
       html = `<p>Dear HR Team,</p>
-<p>This is an automated reminder that the probation period for the following employee is approaching completion ${esc(days(p.daysLeft))}.</p>
-${details([['Employee Name', name], ['Employee ID', p.employeeCode ?? ''], ['Department', p.department ?? ''], ['Date of Joining', longDate(p.joiningDate)], ['Probation Completion Date', longDate(p.probationEndDate)]])}
-<p>Please review the employee's performance, coordinate with the relevant Department Head, and complete the confirmation process before the due date.</p>
-<p>This is a reminder for HR action and does not automatically confirm permanent employment.</p>
-${automationSignature}`;
+<p>This is an automated reminder that ${esc(name)}, who joined on ${esc(longDate(p.joiningDate))}, is approaching the completion of their six-month probation period.</p>
+<p>Employee details:</p>
+${details([['Employee Name', name], ['Employee ID', p.employeeCode ?? ''], ['Department', p.department ?? ''], ['Designation', p.designation ?? 'Not recorded'], ['Joining Date', longDate(p.joiningDate)], ['Confirmation Due Date', longDate(p.probationEndDate)], ['Reporting Manager', p.reportingManager ?? 'Not assigned']])}
+<p>The confirmation date is ${esc(p.daysLeft === undefined || p.daysLeft === 7 ? 'seven days away' : p.daysLeft <= 0 ? 'today' : `${p.daysLeft} day${p.daysLeft === 1 ? '' : 's'} away`)}. Please coordinate with the reporting manager, review the employee's performance, and complete the required confirmation formalities before the due date.</p>
+<p>This email is an advance reminder only. It does not automatically confirm employment or change the employee's employment status.</p>
+<p>Best regards,<br>Automated HR System<br>Amuwa Corporation</p>`;
       break;
     case 'PROBATION_OVERDUE_HR':
       subject = `Overdue: Probation Confirmation Pending – ${name}`;

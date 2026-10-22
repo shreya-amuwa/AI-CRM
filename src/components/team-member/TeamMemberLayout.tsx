@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
-import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, SignOutButton, TopBar } from '../layout/shell';
+import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, TopBar } from '../layout/shell';
 import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
@@ -116,7 +116,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
             >
               <HelpCircle className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.9} aria-hidden="true" /> Need help?
             </button>
-            <SignOutButton onClick={() => void logout()} />
           </>
         }
       >
@@ -214,6 +213,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
             </>
           }
           user={{ name: displayName, role: displayRole }}
+          onSignOut={() => void logout()}
         />
         <main className={currentNav === 'chat' ? 'flex-1 min-w-0' : 'flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-y-auto'}>
           {currentNav === 'chat' && <ChatRoute />}
