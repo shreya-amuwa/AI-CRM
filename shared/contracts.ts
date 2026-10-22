@@ -795,7 +795,12 @@ export type FollowUpStatus = 'FOLLOW_UP_REQUIRED' | 'CONTACTED' | 'AWAITING_PAYM
 export interface LedgerPayment {
   id: string;
   type: PaymentType;
+  /** What was received (the final amount: the amount before GST plus the GST). */
   amount: number;
+  /** The GST split Accounts recorded; null when no GST was recorded (older payments, or an agreed amount that includes GST). */
+  taxableAmount?: number | null;
+  gstRate?: number | null;
+  gstAmount?: number | null;
   method: PaymentMethod | null;
   reference: string | null;
   paidAt: string;
@@ -839,6 +844,8 @@ export interface PaymentOverview {
   dealAmount: number | null;
   agreedAmount?: number | null;
   taxBasis?: AgreementTaxBasis;
+  /** Whether Accounts may add GST to a payment (the agreed amount excludes GST), the GST recorded so far, and what is left before GST. */
+  gst?: { allowed: boolean; onPayments: number; taxableBalance: number | null };
   order?: OrderSummary | null;
   recorded: number;
   verified: number;

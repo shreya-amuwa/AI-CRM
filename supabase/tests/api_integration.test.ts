@@ -4012,6 +4012,33 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 }
 
 // ---------------------------------------------------------------------------
+// GST when Accounts records a payment: the amount before GST, the rate, the final amount
+// ---------------------------------------------------------------------------
+{
+  let r = await api('a', 'POST', '/pipeline/leads', { name: 'Gst Api Customer', company: 'Gst Api Co', phone: '9850000001', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+  const gl = r.json.data.id as string;
+  r = await api('a', 'POST', `/pipeline/customers/${gl}/send-to-accounts`, { amount: 100000 });
+  check(r.status === 200 || r.status === 201, 'payment GST: Sales sends 1,00,000 to Accounts (before GST)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 30, method: 'CASH', verify: false });
+  check(r.status === 422, 'payment GST: a rate above 28 is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000.5, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 422, 'payment GST: the amount before GST is in whole rupees', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 18, method: 'CASH', verify: false });
+  const p0 = r.json.data;
+  check(r.status === 201 || r.status === 200, 'payment GST: Accounts records 60,000 + 18%', r);
+  const pay = p0.payments[0];
+  check(pay.amount === 70800 && pay.taxableAmount === 60000 && pay.gstRate === 18 && pay.gstAmount === 10800, 'payment GST: the final amount 70,800 is what is recorded, with its split', pay);
+  check(p0.dealAmount === 110800 && p0.recorded === 70800 && p0.gst.allowed === true && p0.gst.onPayments === 10800 && p0.gst.taxableBalance === 40000,
+    'payment GST: the total payable grows by the GST, and 40,000 before GST is left', p0);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 50000, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 422, 'payment GST: more than is left of the agreed amount is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'FULL', amount: 40000, gstRate: 18, method: 'CASH', verify: true });
+  check((r.status === 201 || r.status === 200) && r.json.data.dealAmount === 118000 && r.json.data.recorded === 118000, 'payment GST: a full payment settles it (1,18,000 = 1,00,000 + 18,000 GST)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 100, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 403, 'payment GST: a Sales member cannot record a payment', r);
+}
+
+// ---------------------------------------------------------------------------
 // Department income attribution: the report, reconciliation, corrections and the Client Dashboard rule
 // ---------------------------------------------------------------------------
 {

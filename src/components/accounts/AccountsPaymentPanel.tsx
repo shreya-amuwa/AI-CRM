@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi, type AccountsPaymentInput } from '../../lib/api/endpoints';
 import { ErrorBanner, FormField, inputClass, Loading, Modal } from '../support-member/SupportParts';
-import { Badge, fmtDateTime, METHOD_LABEL, MoneyTiles, PaymentHistory, PaymentStatusBadge, rupees, TYPE_LABEL } from '../payments/PaymentBits';
+import { Badge, fmtDateTime, METHOD_LABEL, MoneyTiles, PaymentHistory, PaymentStatusBadge, rupees, rupeesExact, TYPE_LABEL } from '../payments/PaymentBits';
 
 const primaryBtn = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50';
 const ghostBtn = 'inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-50';
@@ -25,6 +25,10 @@ const toLocalInput = (iso: string) => {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
 const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null);
+
+/** GST rates Accounts can add on top of the amount (the database accepts 0 to 28). */
+const GST_RATES = [0, 5, 12, 18, 28];
+const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 const OUTCOME_LABEL: Record<FollowUpOutcome, string> = {
   CONTACTED: 'Contacted the customer',
@@ -45,8 +49,12 @@ const PaymentFormDialog: React.FC<{
 }> = ({ customerId, overview, editing, onClose, onSaved }) => {
   // Balance still unaccounted for (verified + pending are both counted), excluding the payment being edited.
   const open = Math.max((overview.dealAmount ?? 0) - (overview.recorded - (editing && editing.status === 'PENDING' ? editing.amount : 0)), 0);
+  // GST is added on top of an agreed amount that excludes it: Accounts types the amount BEFORE GST and chooses the rate.
+  const gstOn = !!overview.gst?.allowed;
+  const taxableLeft = Math.max((overview.gst?.taxableBalance ?? 0) + (editing ? editing.taxableAmount ?? editing.amount : 0), 0);
   const [type, setType] = useState<PaymentType>(editing?.type ?? 'PART');
-  const [amount, setAmount] = useState(editing ? String(editing.amount) : '');
+  const [amount, setAmount] = useState(editing ? String(gstOn ? editing.taxableAmount ?? editing.amount : editing.amount) : '');
+  const [gstRate, setGstRate] = useState<string>(editing && editing.gstRate != null ? String(editing.gstRate) : '');
   const [method, setMethod] = useState<string>(editing?.method ?? 'UPI');
   const [reference, setReference] = useState(editing?.reference ?? '');
   const [paidAt, setPaidAt] = useState(editing ? toLocalInput(editing.paidAt) : nowLocal());
@@ -58,12 +66,20 @@ const PaymentFormDialog: React.FC<{
 
   const pickType = (t: PaymentType) => {
     setType(t);
-    if (t === 'FULL') setAmount(String(open)); // a full payment settles the whole open balance
+    if (t === 'FULL') setAmount(String(gstOn ? taxableLeft : open)); // a full payment settles the whole open balance
   };
+  const taxable = Number(amount) || 0;
+  const rate = gstRate === '' ? null : Number(gstRate);
+  const gstAmount = gstOn && rate !== null ? round2((taxable * rate) / 100) : 0;
+  const finalAmount = round2(taxable + gstAmount);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const body: AccountsPaymentInput = { type, amount: Number(amount), method: method as AccountsPaymentInput['method'], reference: reference.trim() || null, paidAt: fromLocalInput(paidAt), note: note.trim() || null };
+    if (gstOn && rate === null) {
+      setFieldErrors({ gstRate: 'Choose the GST rate (or No GST).' });
+      return setError('Please fix the highlighted fields.');
+    }
+    const body: AccountsPaymentInput = { type, amount: Number(amount), ...(gstOn ? { gstRate: rate } : {}), method: method as AccountsPaymentInput['method'], reference: reference.trim() || null, paidAt: fromLocalInput(paidAt), note: note.trim() || null };
     const parsed = editing ? accountsUpdatePaymentSchema.safeParse(body) : accountsRecordPaymentSchema.safeParse({ ...body, verify });
     if (!parsed.success) {
       const next: Record<string, string> = {};
@@ -89,7 +105,9 @@ const PaymentFormDialog: React.FC<{
     <Modal title={editing ? 'Edit payment' : 'Record payment'} onClose={() => !busy && onClose()}>
       <form onSubmit={submit} className="space-y-4" noValidate>
         <p className="text-xs text-slate-500">
-          {overview.taxBasis === 'EXCLUSIVE' && overview.agreedAmount != null && overview.dealAmount !== overview.agreedAmount ? `Agreed ${rupees(overview.agreedAmount)} · total payable ${rupees(overview.dealAmount)}` : `Agreed ${rupees(overview.dealAmount)}`} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong>
+          {gstOn
+            ? <>Agreed {rupees(overview.agreedAmount ?? overview.dealAmount)} before GST · still to receive before GST <strong className="text-slate-800">{rupees(taxableLeft)}</strong></>
+            : <>{overview.taxBasis === 'EXCLUSIVE' && overview.agreedAmount != null && overview.dealAmount !== overview.agreedAmount ? `Agreed ${rupees(overview.agreedAmount)} · total payable ${rupees(overview.dealAmount)}` : `Agreed ${rupees(overview.dealAmount)}`} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong></>}
         </p>
         <fieldset>
           <legend className="block text-xs font-semibold text-slate-700 mb-1">Payment type</legend>
@@ -104,9 +122,21 @@ const PaymentFormDialog: React.FC<{
           {fieldErrors.type && <p className="text-[11px] text-rose-600 mt-1">{fieldErrors.type}</p>}
         </fieldset>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormField label="Amount (₹)" htmlFor="pay-amount" required error={fieldErrors.amount} hint={type === 'FULL' ? 'A full payment settles the whole balance.' : 'Whole rupees. Less than the balance.'}>
+          <FormField label={gstOn ? 'Amount before GST (₹)' : 'Amount (₹)'} htmlFor="pay-amount" required error={fieldErrors.amount} hint={type === 'FULL' ? 'A full payment settles the whole balance.' : 'Whole rupees. Less than the balance.'}>
             <input id="pay-amount" type="number" min={1} step={1} inputMode="numeric" className={inputClass} value={amount} onChange={e => setAmount(e.target.value)} />
           </FormField>
+          {gstOn && (
+            <FormField label="GST" htmlFor="pay-gst" required error={fieldErrors.gstRate} hint="Added on top of the amount.">
+              <select id="pay-gst" className={inputClass} value={gstRate} onChange={e => { setGstRate(e.target.value); setFieldErrors(f => ({ ...f, gstRate: '' })); setError(null); }}>
+                <option value="">Choose the GST rate</option>
+                {GST_RATES.map(r => (
+                  <option key={r} value={String(r)}>
+                    {r === 0 ? 'No GST (0%)' : `${r}% GST`}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          )}
           <FormField label="Payment method" htmlFor="pay-method" required error={fieldErrors.method}>
             <select id="pay-method" className={inputClass} value={method} onChange={e => setMethod(e.target.value)}>
               {PAYMENT_METHODS.map(m => (
@@ -123,6 +153,16 @@ const PaymentFormDialog: React.FC<{
             <input id="pay-date" type="datetime-local" className={inputClass} value={paidAt} max={nowLocal()} onChange={e => setPaidAt(e.target.value)} />
           </FormField>
         </div>
+        {gstOn && taxable > 0 && rate !== null && (
+          <dl className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-slate-700 grid grid-cols-2 gap-y-1" aria-live="polite">
+            <dt>Amount before GST</dt>
+            <dd className="text-right">{rupeesExact(taxable)}</dd>
+            <dt>GST ({rate}%)</dt>
+            <dd className="text-right">{rupeesExact(gstAmount)}</dd>
+            <dt className="font-bold text-slate-900">Final amount received</dt>
+            <dd className="text-right font-bold text-slate-900 text-sm" data-testid="pay-final">{rupeesExact(finalAmount)}</dd>
+          </dl>
+        )}
         <FormField label="Note (optional)" htmlFor="pay-note" error={fieldErrors.note}>
           <textarea id="pay-note" rows={2} maxLength={1000} className={inputClass} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Seen in the HDFC account" />
         </FormField>

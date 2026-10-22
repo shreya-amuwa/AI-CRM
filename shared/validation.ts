@@ -587,7 +587,10 @@ export const agreementBasisSchema = z
 
 const paymentFields = {
   type: z.enum(PAYMENT_TYPES, { errorMap: () => ({ message: 'Choose part payment or full payment.' }) }),
+  /** The amount received; with GST, the amount BEFORE GST (the final amount is this plus the GST at gstRate). */
   amount: wholeRupees('Enter the amount received.'),
+  /** GST rate in percent, added on top of the amount (only for an agreed amount that excludes GST). Leave out for no GST record. */
+  gstRate: z.preprocess(v => (v === '' ? null : v), z.coerce.number().min(0, 'Choose a GST rate between 0 and 28.').max(28, 'Choose a GST rate between 0 and 28.').multipleOf(0.01).nullable().optional()),
   method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Select the payment method.' }) }),
   reference: optionalText(120),
   paidAt: z.preprocess(v => (v === '' ? null : v), datetime.nullable().optional()),

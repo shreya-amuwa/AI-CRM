@@ -156,7 +156,9 @@ export interface CustomerQuery {
 
 export interface AccountsPaymentInput {
   type: PaymentType;
+  /** With GST: the amount before GST. */
   amount: number;
+  gstRate?: number | null;
   method: PaymentMethod;
   reference?: string | null;
   paidAt?: string | null;
