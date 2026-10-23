@@ -94,8 +94,9 @@ select test.check((select x ->> 'phone' = '+919000000501' and x ->> 'firstName' 
                           and x ->> 'planName' = 'Gold' and x ->> 'expiryDate' = '2026-12-17' and (x ->> 'daysLeft')::int = 7 and (x ->> 'stage')::int = 7
                      from jsonb_array_elements((select j from cl)) x where x ->> 'customerId' = pg_temp.g('a')::uuid::text),
   'the call details are the customer, the number in +91 form, the service, the expiry date and the days left');
-select test.check((select not (x ? 'email') and not (x ? 'address') from jsonb_array_elements((select j from cl)) x where x ->> 'customerId' = pg_temp.g('a')::uuid::text),
-  'and nothing else about the customer is handed over');
+select test.check((select (x ? 'email') and (x ? 'location') and not (x ? 'address') and not (x ? 'dealAmount') and not (x ? 'amount') and not (x ? 'gstin')
+                     from jsonb_array_elements((select j from cl)) x where x ->> 'customerId' = pg_temp.g('a')::uuid::text),
+  'and only the e-mail and city (the calling service takes both) are added: no street address, no payment data');
 select test.check((select status = 'SKIPPED' and reason like 'No call consent%' from subscription_reminders where customer_id = pg_temp.g('b')::uuid and stage = 7), 'no consent record: skipped, with the reason');
 select test.check((select status = 'SKIPPED' and reason like 'The customer asked not to be called%' from subscription_reminders where customer_id = pg_temp.g('c')::uuid and stage = 7), 'do not call: skipped');
 select test.check((select status = 'SKIPPED' and reason like '%no valid Indian mobile%' from subscription_reminders where customer_id = pg_temp.g('e')::uuid and stage = 7), 'no valid mobile: skipped');

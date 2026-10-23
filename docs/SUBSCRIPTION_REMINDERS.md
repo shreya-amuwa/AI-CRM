@@ -1,8 +1,8 @@
 # Subscription expiry reminder calls (7, 3 and 1 day before expiry)
 
-**Status: the decision and tracking half is built; calls are NOT placed.** No calling provider is connected, so the system runs
-in *dry run*: it decides which reminders are due and records "would call", and nothing leaves the server. `AUTOMATION_MODE_AI_CALL=live`
-is refused (it behaves like `off` and says so in the run summary) until a sender is added.
+**Status: the decision, tracking and BolifyAI sender are built.** By default the system runs in *dry run*: it decides which reminders are due
+and records "would call", and nothing leaves the server. With `BOLIFY_WEBHOOK_URL` set and `AUTOMATION_MODE_AI_CALL=live` the calls are placed
+through BolifyAI (see `BOLIFY_AI.md`). `live` without a webhook is refused (it behaves like `off` and says so in the run summary).
 
 ## What decides "expiry"
 `customer_services.renews_on` together with `customer_services.service_status` (LIVE services only; a service with no activation and no status is not called).
@@ -31,10 +31,9 @@ Invoice, payment and activation dates are never used. Set them with the Excel im
 
 | Variable | Meaning |
 |---|---|
-| `AUTOMATION_MODE_AI_CALL` | `off`, `dry_run` (default) or `live` (not available yet). |
+| `AUTOMATION_MODE_AI_CALL` | `off`, `dry_run` (default) or `live` (needs `BOLIFY_WEBHOOK_URL`). |
 | `CRON_SECRET` / `AUTOMATION_DISPATCH_SECRET` | Authenticate the scheduler endpoint (16+ characters). |
 
 ## Not built yet (waiting for answers)
-* The BolifyAI sender: the docs show no single-call endpoint and no call id; see the open questions in the project notes.
 * Call-outcome callbacks and the in-call lookup endpoint.
 * Import fix so a blank "Renewal / Expiry Date" does not erase a stored date, and the `save_customer_services` deletion of rows that hold term data.

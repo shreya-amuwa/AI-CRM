@@ -11,7 +11,8 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
  * AUTOMATION_MODE_AI_CALL:
  *   off      nothing happens.
  *   dry_run  (default) reminders are decided and logged as "would call"; nobody is called, nothing leaves the server.
- *   live     calls are placed. NOT AVAILABLE YET: no calling provider is connected, so live behaves like "off" and says so.
+ *   live     calls are placed through the calling provider (BolifyAI, see bolify.ts). Without BOLIFY_WEBHOOK_URL there is no provider, so live
+ *            behaves like "off" and says so: nobody is called.
  */
 export type AiCallMode = 'off' | 'dry_run' | 'live';
 
@@ -40,14 +41,16 @@ export interface ReminderCall {
   firstName: string;
   lastName: string;
   company: string | null;
+  email: string | null;
+  location: string | null;
   serviceCode: string;
   serviceName: string | null;
   planName: string | null;
 }
 
-/** A calling provider. None is connected yet; this is where one plugs in once its API contract is confirmed. */
+/** A calling provider (BolifyAI: bolify.ts). SKIPPED is for a call the provider layer chose not to place (for example a staging allow-list). */
 export interface ReminderCallSender {
-  place(call: ReminderCall): Promise<{ outcome: 'ACCEPTED' | 'RETRY' | 'FAILED'; detail: string; code?: number | null; callId?: string | null }>;
+  place(call: ReminderCall): Promise<{ outcome: 'ACCEPTED' | 'RETRY' | 'FAILED' | 'SKIPPED'; detail: string; code?: number | null; callId?: string | null }>;
 }
 
 export function aiCallMode(env: NodeJS.ProcessEnv = process.env): AiCallMode {
@@ -66,7 +69,7 @@ export async function runSubscriptionReminders(
   if (mode === 'off') return { ...out, note: 'Reminder calls are switched off (AUTOMATION_MODE_AI_CALL=off).' };
   if (!opts.db && !hasServiceClient()) return { ...out, note: 'The server has no service key.' };
   if (mode === 'live' && !opts.sender) {
-    return { ...out, mode: 'off', note: 'Live calling is not available: no calling provider is connected. Nothing was scheduled or called.' };
+    return { ...out, mode: 'off', note: 'Live calling is not available: no calling provider is connected (set BOLIFY_WEBHOOK_URL). Nothing was scheduled or called.' };
   }
   const db = opts.db ?? getServiceClient();
   try {
@@ -82,7 +85,7 @@ export async function runSubscriptionReminders(
       if (calls.length === 0) break;
       for (const call of calls) {
         out.claimed += 1;
-        let result: { outcome: 'DRY_RUN' | 'ACCEPTED' | 'RETRY' | 'FAILED'; detail: string; code?: number | null; callId?: string | null };
+        let result: { outcome: 'DRY_RUN' | 'ACCEPTED' | 'RETRY' | 'FAILED' | 'SKIPPED'; detail: string; code?: number | null; callId?: string | null };
         if (mode !== 'live' || !opts.sender) {
           result = {
             outcome: 'DRY_RUN',
