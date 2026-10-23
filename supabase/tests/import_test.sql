@@ -88,8 +88,10 @@ select test.check((select exists (select 1 from jsonb_array_elements(import_cust
                     where e ->> 'message' ilike '%already has a login%')), 'a staff e-mail cannot be a client login');
 select test.check((select exists (select 1 from jsonb_array_elements(import_customer_data(jsonb_set((select j from imp where k = 'file'), '{customers,1,mobile}', '"9000000101"'), false) -> 'errors') e
                     where e ->> 'message' ilike '%another row%')), 'the same mobile twice in sheet 1 is reported');
-select test.check((select exists (select 1 from jsonb_array_elements(import_customer_data(jsonb_set((select j from imp where k = 'file'), '{whatsapp,0,mobile}', '"9000000102"'), false) -> 'errors') e
-                    where e ->> 'message' ilike '%in sheet "2 Services" first%')), 'usage for a service the customer does not have is reported');
+-- usage for a service the customer does not have no longer needs a hand-made row in "2 Services": the service is added (and counted)
+select test.check((select (r -> 'errors') = '[]'::jsonb and (r -> 'summary' ->> 'services')::int = (select (import_customer_data((select j from imp where k = 'file'), false) -> 'summary' ->> 'services')::int + 1)
+                     from (select import_customer_data(jsonb_set((select j from imp where k = 'file'), '{whatsapp,0,mobile}', '"9000000102"'), false) as r) x),
+  'usage for a service the customer does not have adds that service instead of failing');
 
 -- a Team Lead must name the member; an unknown or other-team member is refused
 select test.login('sup_th');
