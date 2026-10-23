@@ -20,6 +20,11 @@ record calls, set the confirmation, search by name or e-mail, filter by position
 (upcoming calls, planned calls not recorded, overdue follow-ups, overdue items) and each candidate's full history. The same e-mail can apply for different
 positions but not twice for the same one.
 
+### Where the dropdowns get their options (migration `20261117000100_recruitment_dropdowns.sql`)
+* **Position**: the positions HR added (Positions tab) **plus every designation already in the employee records** (the HR directory and the CRM positions of active people). A designation that is not a position yet is offered under "Designations in the employee records" and becomes a position the first time it is chosen (the same title in another capitalisation reuses the existing position). A designation given to an employee later appears by itself.
+* **Responsible HR employee** (and "Assigned to" on a pending item): every active employee of the HR department in the HR directory, with their employee key: people with a CRM login and HR-directory records without one (marked "no CRM login"). A person with a login is notified; one without is recorded by key and name. Employees of other departments and the Super Admin are not offered, and the database refuses them.
+* With no positions or designations at all the form says so instead of showing dummy options.
+
 ## Training
 Programs are three days on consecutive dates from the start date (change the start date and the schedule follows): **Day 1 Initial Training, Day 2 Practical
 Training, Day 3 Final Training and Assessment**. HR configures the topics, the trainer (a name, and optionally a CRM login who may record that day) and the

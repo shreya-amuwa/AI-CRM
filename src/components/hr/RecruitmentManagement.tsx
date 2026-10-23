@@ -30,6 +30,10 @@ const OUTCOME: Record<RecruitmentCallOutcome, string> = { ANSWERED: 'Answered', 
 const ACTION_KIND: Record<RecruitmentActionKind, string> = { INTERVIEW: 'Interview', DOCUMENTS: 'Documents', ASSESSMENT: 'Assessment', BACKGROUND_CHECK: 'Background check', REFERENCE_CHECK: 'Reference check', OTHER: 'Other' };
 
 type Tab = 'candidates' | 'agenda' | 'positions';
+/** A position is chosen by its id; a designation found in the employee records (not a position yet) by its title, and it becomes a position when saved. */
+const posValue = (p: RecruitmentPosition) => (p.id ? p.id : `title:${p.title}`);
+const posBody = (v: string): { positionId?: string; positionTitle?: string } => (v.startsWith('title:') ? { positionTitle: v.slice(6) } : v ? { positionId: v } : {});
+const recruiterLabel = (r: HrRecruiter) => `${r.name}${r.designation ? ` · ${r.designation}` : ''}${r.hasLogin ? '' : ' (no CRM login)'}`;
 const PAGE = 25;
 
 const Stat: React.FC<{ label: string; value: number; alert?: boolean }> = ({ label, value, alert }) => (
@@ -112,7 +116,7 @@ export const RecruitmentManagement: React.FC = () => {
     try {
       setList(await recruitmentApi.list({
         search: debounced || undefined, positionId: position || undefined, confirmation: confirmation || undefined, pending: pending || undefined,
-        call: call || undefined, ownerId: owner || undefined, limit: PAGE, offset: (page - 1) * PAGE
+        call: call || undefined, ownerKey: owner || undefined, limit: PAGE, offset: (page - 1) * PAGE
       }));
     } catch (e) {
       setError(errText(e));
@@ -162,7 +166,7 @@ export const RecruitmentManagement: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
               <input className={`${inputCls} !pl-9`} placeholder="Search name or e-mail" value={search} onChange={e => setSearch(e.target.value)} /></label>
             <select aria-label="Position" className={selectCls} value={position} onChange={e => { setPosition(e.target.value); setPage(1); }}>
-              <option value="">All positions</option>{(positions ?? []).map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+              <option value="">All positions</option>{(positions ?? []).filter(p => p.id).map(p => <option key={p.id} value={p.id!}>{p.title}</option>)}
             </select>
             <select aria-label="Pending" className={selectCls} value={pending} onChange={e => { setPending(e.target.value); setPage(1); }}>
               <option value="">Pending: any</option><option value="OPEN">Has pending items</option><option value="OVERDUE">Has overdue items</option><option value="NONE">Nothing pending</option>
@@ -174,7 +178,7 @@ export const RecruitmentManagement: React.FC = () => {
               <option value="">Confirmation: any</option>{(Object.keys(CONFIRMATION) as RecruitmentConfirmation[]).map(k => <option key={k} value={k}>{CONFIRMATION[k].label}</option>)}
             </select>
             <select aria-label="Responsible HR employee" className={selectCls} value={owner} onChange={e => { setOwner(e.target.value); setPage(1); }}>
-              <option value="">Anyone responsible</option>{recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              <option value="">Anyone responsible</option>{recruiters.map(r => <option key={r.employeeKey} value={r.employeeKey}>{r.name}</option>)}
             </select>
           </div>
           {!list ? <Spinner label="Loading candidates…" /> : list.items.length === 0 ? (
@@ -271,7 +275,7 @@ const PositionsTab: React.FC<{ positions: RecruitmentPosition[] | null; onChange
     }
   };
   const toggle = async (p: RecruitmentPosition) => {
-    try { await recruitmentApi.savePosition({ id: p.id, title: p.title, departmentId: p.departmentId, isOpen: !p.isOpen }); onChanged(); } catch (err) { setError(errText(err)); }
+    try { if (!p.id) return; await recruitmentApi.savePosition({ id: p.id, title: p.title, departmentId: p.departmentId, isOpen: !p.isOpen }); onChanged(); } catch (err) { setError(errText(err)); }
   };
   return (
     <Card className="p-4 space-y-3">
@@ -280,13 +284,22 @@ const PositionsTab: React.FC<{ positions: RecruitmentPosition[] | null; onChange
         <button type="submit" className={btn.primary} disabled={busy || title.trim().length < 2}><Plus className="w-3.5 h-3.5" /> Add position</button>
       </form>
       {error && <ErrorBanner message={error} />}
-      {!positions ? <Spinner /> : positions.length === 0 ? <p className="text-xs text-slate-500">No positions yet. Add the roles you are hiring for, then add candidates against them.</p> : (
+      {!positions ? <Spinner /> : positions.length === 0 ? <p className="text-xs text-slate-500">No positions or employee designations yet. Add the roles you are hiring for, or add employees with their designations; candidates are added against them.</p> : (
         <ul className="divide-y divide-slate-100">
           {positions.map(p => (
-            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-              <div><span className="font-bold text-slate-900">{p.title}</span> <span className="text-xs text-slate-500">· {p.candidates} candidate{p.candidates === 1 ? '' : 's'}{p.department ? ` · ${p.department}` : ''}</span></div>
-              <div className="flex items-center gap-2"><Pill tone={p.isOpen ? 'green' : 'slate'}>{p.isOpen ? 'Open' : 'Closed'}</Pill>
-                <button type="button" className={btn.secondary} onClick={() => void toggle(p)}>{p.isOpen ? 'Close position' : 'Reopen'}</button></div>
+            <li key={posValue(p)} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+              {p.id ? (
+                <>
+                  <div><span className="font-bold text-slate-900">{p.title}</span> <span className="text-xs text-slate-500">· {p.candidates} candidate{p.candidates === 1 ? '' : 's'}{p.department ? ` · ${p.department}` : ''}</span></div>
+                  <div className="flex items-center gap-2"><Pill tone={p.isOpen ? 'green' : 'slate'}>{p.isOpen ? 'Open' : 'Closed'}</Pill>
+                    <button type="button" className={btn.secondary} onClick={() => void toggle(p)}>{p.isOpen ? 'Close position' : 'Reopen'}</button></div>
+                </>
+              ) : (
+                <>
+                  <div><span className="font-bold text-slate-900">{p.title}</span> <span className="text-xs text-slate-500">· a designation of {p.employees} employee{p.employees === 1 ? '' : 's'} (from the employee records)</span></div>
+                  <Pill tone="slate">Becomes a position when a candidate is added for it</Pill>
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -304,15 +317,15 @@ const CandidateDialog: React.FC<{ id: string | 'new'; positions: RecruitmentPosi
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [form, setForm] = useState(() => ({ name: '', email: '', phone: '', positionId: positions.find(p => p.isOpen)?.id ?? positions[0]?.id ?? '', ownerId: '', source: '', notes: '' }));
-  const [act, setAct] = useState({ kind: 'INTERVIEW' as RecruitmentActionKind, title: '', dueDate: '', assigneeId: '' });
+  const [form, setForm] = useState(() => ({ name: '', email: '', phone: '', position: positions.find(p => p.id && p.isOpen) ? posValue(positions.find(p => p.id && p.isOpen)!) : '', ownerKey: '', source: '', notes: '' }));
+  const [act, setAct] = useState({ kind: 'INTERVIEW' as RecruitmentActionKind, title: '', dueDate: '', assigneeKey: '' });
   const [sched, setSched] = useState(toLocalInput(new Date(Date.now() + 86_400_000)));
   const [rec, setRec] = useState({ callId: '', outcome: 'ANSWERED' as RecruitmentCallOutcome, note: '', followUpDate: '' });
   const [conf, setConf] = useState({ status: 'NOT_STARTED' as RecruitmentConfirmation, date: '', note: '' });
 
   const apply = useCallback((x: RecruitmentDetail) => {
     setD(x);
-    setForm({ name: x.name, email: x.email, phone: x.phone ?? '', positionId: x.positionId, ownerId: x.ownerId ?? '', source: x.source ?? '', notes: x.notes ?? '' });
+    setForm({ name: x.name, email: x.email, phone: x.phone ?? '', position: x.positionId, ownerKey: x.ownerKey ?? '', source: x.source ?? '', notes: x.notes ?? '' });
     setConf({ status: x.confirmation.status, date: x.confirmation.date ?? '', note: x.confirmation.note ?? '' });
   }, []);
   const load = useCallback(async () => {
@@ -320,7 +333,7 @@ const CandidateDialog: React.FC<{ id: string | 'new'; positions: RecruitmentPosi
     try { apply(await recruitmentApi.get(id)); } catch (e) { setError(errText(e)); }
   }, [id, isNew, apply]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (isNew && !form.positionId && positions[0]) setForm(f => ({ ...f, positionId: positions.find(p => p.isOpen)?.id ?? positions[0].id })); }, [isNew, positions, form.positionId]);
+  useEffect(() => { const first = positions.find(p => p.id && p.isOpen); if (isNew && !form.position && first) setForm(f => ({ ...f, position: posValue(first) })); }, [isNew, positions, form.position]);
 
   const run = async (key: string, fn: () => Promise<unknown>, done: string, reload = true) => {
     setBusy(key);
@@ -339,7 +352,7 @@ const CandidateDialog: React.FC<{ id: string | 'new'; positions: RecruitmentPosi
   };
   const save = (e: React.FormEvent) => {
     e.preventDefault();
-    const body = { name: form.name, email: form.email, phone: form.phone || null, positionId: form.positionId, ownerId: form.ownerId || null, source: form.source || null, notes: form.notes || null };
+    const body = { name: form.name, email: form.email, phone: form.phone || null, ...posBody(form.position), ownerKey: form.ownerKey || null, source: form.source || null, notes: form.notes || null };
     if (isNew) {
       void run('save', async () => { await recruitmentApi.create(body); onClose(); }, 'Candidate added.', false);
     } else void run('save', () => recruitmentApi.update(id, body), 'Details saved.');
@@ -358,21 +371,23 @@ const CandidateDialog: React.FC<{ id: string | 'new'; positions: RecruitmentPosi
             <Field label="Email" required htmlFor="c-email"><input id="c-email" type="email" className={inputCls} value={form.email} maxLength={254} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
             <Field label="Phone" htmlFor="c-phone"><input id="c-phone" className={inputCls} value={form.phone} maxLength={40} onChange={e => setForm({ ...form, phone: e.target.value })} /></Field>
             <Field label="Position applied for" required htmlFor="c-pos">
-              <select id="c-pos" className={inputCls} value={form.positionId} onChange={e => setForm({ ...form, positionId: e.target.value })}>
-                <option value="">Choose a position</option>{positions.map(p => <option key={p.id} value={p.id}>{p.title}{p.isOpen ? '' : ' (closed)'}</option>)}
+              <select id="c-pos" className={inputCls} value={form.position} onChange={e => setForm({ ...form, position: e.target.value })}>
+                <option value="">Choose a position</option>
+                {positions.some(p => p.id) && <optgroup label="Positions">{positions.filter(p => p.id).map(p => <option key={posValue(p)} value={posValue(p)}>{p.title}{p.isOpen ? '' : ' (closed)'}</option>)}</optgroup>}
+                {positions.some(p => !p.id) && <optgroup label="Designations in the employee records">{positions.filter(p => !p.id).map(p => <option key={posValue(p)} value={posValue(p)}>{p.title}</option>)}</optgroup>}
               </select>
-              {positions.length === 0 && <p className="mt-1 text-[11px] text-amber-700">Add a position first (Positions tab).</p>}
+              {positions.length === 0 && <p className="mt-1 text-[11px] text-amber-700">No positions or employee designations found. Add a position first (Positions tab).</p>}
             </Field>
             <Field label="Responsible HR employee" htmlFor="c-owner">
-              <select id="c-owner" className={inputCls} value={form.ownerId} onChange={e => setForm({ ...form, ownerId: e.target.value })}>
-                <option value="">Not assigned</option>{recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              <select id="c-owner" className={inputCls} value={form.ownerKey} onChange={e => setForm({ ...form, ownerKey: e.target.value })}>
+                <option value="">Not assigned</option>{recruiters.map(r => <option key={r.employeeKey} value={r.employeeKey}>{recruiterLabel(r)}</option>)}
               </select>
             </Field>
             <Field label="Source" htmlFor="c-source"><input id="c-source" className={inputCls} value={form.source} maxLength={80} onChange={e => setForm({ ...form, source: e.target.value })} placeholder="Referral, job portal…" /></Field>
             <div className="sm:col-span-2"><Field label="Notes" htmlFor="c-notes"><textarea id="c-notes" rows={2} maxLength={2000} className={inputCls} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></Field></div>
             <div className="sm:col-span-2 flex justify-end gap-2">
               <button type="button" className={btn.secondary} onClick={onClose}>Close</button>
-              <button type="submit" className={btn.primary} disabled={busy === 'save' || !form.name.trim() || !form.email.trim() || !form.positionId}>{busy === 'save' ? 'Saving…' : isNew ? 'Add candidate' : 'Save details'}</button>
+              <button type="submit" className={btn.primary} disabled={busy === 'save' || !form.name.trim() || !form.email.trim() || !form.position}>{busy === 'save' ? 'Saving…' : isNew ? 'Add candidate' : 'Save details'}</button>
             </div>
           </form>
 
@@ -395,11 +410,11 @@ const CandidateDialog: React.FC<{ id: string | 'new'; positions: RecruitmentPosi
                     ))}
                   </ul>
                 )}
-                <form className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end" onSubmit={e => { e.preventDefault(); void run('action', async () => { await recruitmentApi.addAction(id, { kind: act.kind, title: act.title, dueDate: act.dueDate || null, assigneeId: act.assigneeId || null }); setAct({ ...act, title: '', dueDate: '' }); }, 'Pending item added.'); }} aria-label="Add a pending item">
+                <form className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end" onSubmit={e => { e.preventDefault(); void run('action', async () => { await recruitmentApi.addAction(id, { kind: act.kind, title: act.title, dueDate: act.dueDate || null, assigneeKey: act.assigneeKey || null }); setAct({ ...act, title: '', dueDate: '' }); }, 'Pending item added.'); }} aria-label="Add a pending item">
                   <Field label="What" htmlFor="a-kind"><select id="a-kind" className={inputCls} value={act.kind} onChange={e => setAct({ ...act, kind: e.target.value as RecruitmentActionKind })}>{(Object.keys(ACTION_KIND) as RecruitmentActionKind[]).map(k => <option key={k} value={k}>{ACTION_KIND[k]}</option>)}</select></Field>
                   <div className="sm:col-span-2"><Field label="Details" htmlFor="a-title"><input id="a-title" className={inputCls} value={act.title} maxLength={200} onChange={e => setAct({ ...act, title: e.target.value })} placeholder="e.g. Technical interview with the team lead" /></Field></div>
                   <Field label="Due" htmlFor="a-due"><input id="a-due" type="date" className={inputCls} value={act.dueDate} onChange={e => setAct({ ...act, dueDate: e.target.value })} /></Field>
-                  <Field label="Assigned to" htmlFor="a-who"><select id="a-who" className={inputCls} value={act.assigneeId} onChange={e => setAct({ ...act, assigneeId: e.target.value })}><option value="">{d.owner ? `${d.owner} (responsible)` : 'Nobody'}</option>{recruiters.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></Field>
+                  <Field label="Assigned to" htmlFor="a-who"><select id="a-who" className={inputCls} value={act.assigneeKey} onChange={e => setAct({ ...act, assigneeKey: e.target.value })}><option value="">{d.owner ? `${d.owner} (responsible)` : 'Nobody'}</option>{recruiters.map(r => <option key={r.employeeKey} value={r.employeeKey}>{recruiterLabel(r)}</option>)}</select></Field>
                   <div className="sm:col-span-5 flex justify-end"><button type="submit" className={btn.secondary} disabled={!!busy || act.title.trim().length < 2}><Plus className="w-3.5 h-3.5" /> Add pending item</button></div>
                 </form>
               </section>
