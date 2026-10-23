@@ -19,6 +19,10 @@ Write the member's name as it appears in the CRM. If two people share a name, us
 3. **Save.** All rows are saved together, or none if anything is wrong.
    - A mobile number that already exists in the department **updates** that customer; it is never added twice. Usage rows and campaigns are replaced as well, so importing the same file again is safe.
    - The caller must already look after that customer (its member, its Team Lead, or the Department Head).
+   - **Usage for a service the customer does not have yet.** A customer on sheet 3 / 4 (WhatsApp), 5 (AI Calling), 6 (RCS & Voice) or 7 (Monthly Deliverables)
+     gets that service added automatically (status Live, no price or dates; counted under "Services" in the preview). To set the plan, price and
+     dates, add the customer's row for that service in "2 Services" (one row per service, so a customer with 3 services has 3 rows); migration
+     `20261117000200_import_auto_service.sql`.
 
 Limits: one .xlsx file of up to 5 MB, 500 customers and 5000 rows in total.
 
