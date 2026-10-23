@@ -1,0 +1,70 @@
+import { createHash } from 'node:crypto';
+import type {
+  TelecallerAssignee, TelecallerContactList, TelecallerHome, TelecallerLead, TelecallerLeadList, TelecallerSheet, TelecallerSheetCheck
+} from '../../shared/contracts.js';
+import {
+  TELECALLER_SHEET_MAX_BYTES, telecallerAssignableQuerySchema, telecallerContactsQuerySchema, telecallerContactUpdateSchema, telecallerLeadSchema,
+  telecallerLeadUpdateSchema, telecallerLeadsQuerySchema, telecallerSheetSchema, telecallerSheetSourceSchema, uuidSchema
+} from '../../shared/validation.js';
+import { AppError } from '../http/errors.js';
+import { parse } from '../http/validate.js';
+import type { StorageRepository } from '../repositories/StorageRepository.js';
+import type { TelecallerRepository } from '../repositories/TelecallerRepository.js';
+
+const BUCKET = 'telecaller-sheets';
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+/** A follow-up is a day; the lead keeps it as a time on that day (Indian time). */
+const followUpAt = (date: string | null | undefined) => (date === undefined ? undefined : date ? `${date}T09:00:00+05:30` : null);
+
+/**
+ * Telecaller. The browser reads the Excel file and the rows are checked again here and in the database; nothing is saved while a row is
+ * wrong. The original file is stored afterwards, only for a sheet the database has just allowed this person to assign.
+ */
+export class TelecallerService {
+  constructor(private readonly repo: TelecallerRepository, private readonly storage: StorageRepository) {}
+
+  home(): Promise<TelecallerHome> { return this.repo.home(); }
+  assignable(query: unknown): Promise<TelecallerAssignee[]> { return this.repo.assignable(parse(telecallerAssignableQuerySchema, query).departmentId); }
+  lists(query: unknown): Promise<TelecallerSheet[]> {
+    const q = (query ?? {}) as Record<string, unknown>;
+    return this.repo.lists(q.assigneeId ? parse(uuidSchema, q.assigneeId) : undefined);
+  }
+
+  /** Check a sheet (commit false: the preview) or assign it (commit true). */
+  assignSheet(body: unknown): Promise<TelecallerSheetCheck> { return this.repo.assignSheet(parse(telecallerSheetSchema, body)); }
+
+  /** The original .xlsx, base64, up to 700 KB: the first bytes must be a real .xlsx (zip) and the file must be the one that was assigned. */
+  async storeSource(listId: string, body: unknown) {
+    const id = parse(uuidSchema, listId);
+    const { data } = parse(telecallerSheetSourceSchema, body);
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new AppError('VALIDATION_ERROR', 'The file could not be read.');
+    const bytes = new Uint8Array(Buffer.from(data, 'base64'));
+    if (bytes.length === 0 || bytes.length > TELECALLER_SHEET_MAX_BYTES) throw new AppError('VALIDATION_ERROR', 'The Excel file is too large (700 KB at most).');
+    const head = Buffer.from(bytes.subarray(0, 4));
+    if (!(head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04)) throw new AppError('VALIDATION_ERROR', 'This is not an Excel (.xlsx) file.');
+    const sheet = await this.repo.sourceBegin(id); // the database decides who may attach a file to this sheet
+    if (createHash('sha256').update(bytes).digest('hex') !== sheet.contentHash) throw new AppError('VALIDATION_ERROR', 'The file is not the one that was checked.');
+    const path = `${sheet.departmentId}/${id}.xlsx`;
+    const file = await this.storage.storeGenerated(BUCKET, path, bytes, XLSX);
+    await this.repo.recordSource(id, { bucket: BUCKET, path, provider: file.provider, reference: file.reference, etag: file.etag, size: file.size });
+    return { stored: true as const, size: file.size };
+  }
+
+  contacts(query: unknown): Promise<TelecallerContactList> { return this.repo.contacts(parse(telecallerContactsQuerySchema, query)); }
+  updateContact(id: string, body: unknown) {
+    return this.repo.updateContact(parse(uuidSchema, id), parse(telecallerContactUpdateSchema, body));
+  }
+
+  leads(query: unknown): Promise<TelecallerLeadList> { return this.repo.leads(parse(telecallerLeadsQuerySchema, query)); }
+  lead(id: string): Promise<TelecallerLead> { return this.repo.lead(parse(uuidSchema, id)); }
+  createLead(body: unknown): Promise<TelecallerLead> {
+    const { services, leadTemperature, callStatus, followUpDate, ...fields } = parse(telecallerLeadSchema, body);
+    return this.repo.saveLead(null, { ...fields, nextFollowUpAt: followUpAt(followUpDate) ?? null }, services, leadTemperature, callStatus);
+  }
+  updateLead(id: string, body: unknown): Promise<TelecallerLead> {
+    const { services, leadTemperature, callStatus, followUpDate, ...fields } = parse(telecallerLeadUpdateSchema, body);
+    const at = followUpAt(followUpDate);
+    return this.repo.saveLead(parse(uuidSchema, id), { ...fields, ...(at !== undefined ? { nextFollowUpAt: at } : {}) }, services ?? null, leadTemperature, callStatus);
+  }
+}

@@ -19,6 +19,7 @@ export const usersController = {
   assign: (async ctx => ok(await svc(ctx).users.assign(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setStatus: (async ctx => ok(await svc(ctx).users.setStatus(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setTechnicalConsultant: (async ctx => ok(await svc(ctx).users.setTechnicalConsultant(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  setSalesSubRole: (async ctx => ok(await svc(ctx).users.setSalesSubRole(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   remove: (async ctx => {
     await svc(ctx).users.delete(ctx.actor, ctx.params.id);
     return ok(null);
@@ -405,4 +406,18 @@ export const businessReportController = {
     await svc(ctx).businessReport.tagInvoice(ctx.params.id, ctx.req.body);
     return ok(null);
   }) as Handler
+};
+
+export const telecallerController = {
+  home: (async ctx => ok(await svc(ctx).telecaller.home())) as Handler,
+  assignable: (async ctx => ok(await svc(ctx).telecaller.assignable(ctx.req.query))) as Handler,
+  lists: (async ctx => ok(await svc(ctx).telecaller.lists(ctx.req.query))) as Handler,
+  assignSheet: (async ctx => ok(await svc(ctx).telecaller.assignSheet(ctx.req.body))) as Handler,
+  storeSource: (async ctx => ok(await svc(ctx).telecaller.storeSource(ctx.params.id, ctx.req.body), 201)) as Handler,
+  contacts: (async ctx => ok(await svc(ctx).telecaller.contacts(ctx.req.query))) as Handler,
+  updateContact: (async ctx => ok(await svc(ctx).telecaller.updateContact(ctx.params.id, ctx.req.body))) as Handler,
+  leads: (async ctx => ok(await svc(ctx).telecaller.leads(ctx.req.query))) as Handler,
+  lead: (async ctx => ok(await svc(ctx).telecaller.lead(ctx.params.id))) as Handler,
+  createLead: (async ctx => ok(await svc(ctx).telecaller.createLead(ctx.req.body), 201)) as Handler,
+  updateLead: (async ctx => ok(await svc(ctx).telecaller.updateLead(ctx.params.id, ctx.req.body))) as Handler
 };

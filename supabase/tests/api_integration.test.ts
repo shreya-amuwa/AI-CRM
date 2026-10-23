@@ -4364,6 +4364,192 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(Number((await db.query(`select count(*) from audit_logs where action = 'CUSTOMER_DELETED' and entity_id in ($1, $2)`, [delId, delId2])).rows[0].count) === 2, 'delete: both deletions are audited');
 }
 
+
+// --- Telecaller: Sales role at creation, contact sheets, call updates, leads --------------------
+{
+  const serviceCode = (await db.query(`select code from crm_services where is_active order by sort_order limit 1`)).rows[0].code as string;
+  const rows = (n: number, tag: string) => Array.from({ length: n }, (_v, i) => ({ row: i + 2, name: `API Person ${tag}${i}`, company: `API Co ${i}`, phone: `+9197000${String(i).padStart(5, '0')}`, email: `api${tag}${i}@example.com` }));
+
+  // ---- creating the person: the Sales role is chosen by the Super Admin or the Department Head
+  r = await api('th', 'POST', '/users', { email: 'tc.th@amuwa.com', fullName: 'Not Allowed', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 403, 'telecaller API: a Team Lead cannot choose a Sales role', r);
+  r = await api('dh', 'POST', '/users', { email: 'tc.sup@amuwa.com', fullName: 'Support Tele', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 422 && /Sales team/.test(r.json.error.message), 'telecaller API: a Support member has no Sales role', r);
+  check(Number((await db.query(`select count(*) from auth.users where email = 'tc.sup@amuwa.com'`)).rows[0].count) === 0, 'telecaller API: and no account was left behind');
+  r = await api('dh', 'POST', '/users', { email: 'tc.head@amuwa.com', fullName: 'Head Tele', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 422, 'telecaller API: a Team Lead cannot be a Telecaller', r);
+  r = await api('dh', 'POST', '/users', { email: 'tc.a@amuwa.com', fullName: 'Tele Alpha', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 201 && r.json.data.salesSubRole === 'TELECALLER' && r.json.data.defaultDashboard === 'telecaller' && r.json.data.team.name === 'Sales' && r.json.data.department.slug === 'wabastore',
+    'telecaller API: the Department Head creates a Sales Telecaller (still in the Sales team); the dashboard is the Telecaller one', r);
+  const tcA = r.json.data.id as string;
+  tokens.set('tca', tokenFor(tcA));
+  r = await api('sa', 'POST', '/users', { email: 'tc.b@amuwa.com', fullName: 'Tele Beta', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 201 && r.json.data.defaultDashboard === 'telecaller', 'telecaller API: so does the Super Admin', r);
+  const tcB = r.json.data.id as string;
+  tokens.set('tcb', tokenFor(tcB));
+  r = await api('dh', 'POST', '/users', { email: 'va@amuwa.com', fullName: 'Visit Alpha', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'VISIT_SALES' });
+  check(r.status === 201 && r.json.data.salesSubRole === 'VISIT_SALES' && r.json.data.defaultDashboard === 'sales-visit-sales', 'telecaller API: another Sales role is stored with its own dashboard value, not the Telecaller one', r);
+  tokens.set('va', tokenFor(r.json.data.id));
+  r = await api('dh', 'POST', '/users', { email: 'plain@amuwa.com', fullName: 'Plain Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(r.status === 201 && r.json.data.salesSubRole === null && r.json.data.defaultDashboard === 'sales-member', 'telecaller API: a member created without a Sales role is unchanged', r);
+  const plainId = r.json.data.id as string;
+  r = await api('dh', 'POST', '/users', { email: 'badrole@amuwa.com', fullName: 'Bad', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'MANAGER' });
+  check(r.status === 422, 'telecaller API: only the five Sales roles exist', r);
+  r = await api('th', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'TELECALLER' });
+  check(r.status === 403, 'telecaller API: a Team Lead cannot give a Sales role later either', r);
+  r = await api('dh', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'TELECALLER' });
+  check(r.status === 200 && r.json.data.defaultDashboard === 'telecaller', 'telecaller API: the Department Head gives an existing Sales member the Telecaller role', r);
+  r = await api('dh', 'POST', `/users/${plainId}/sales-sub-role`, { role: null });
+  check(r.status === 200 && r.json.data.defaultDashboard === 'sales-member', 'telecaller API: and takes it away again', r);
+  r = await api('a', 'GET', '/me');
+  check(r.json.data.defaultDashboard === 'sales-member' && r.json.data.salesSubRole === null, 'telecaller API: existing Sales members keep the Sales member dashboard', r);
+
+  // ---- the Telecaller pages are for Telecallers only
+  for (const who of ['a', 'va', 'th', 'dh', 'sa']) {
+    r = await api(who, 'GET', '/telecaller/home');
+    check(r.status === 403, `telecaller API: ${who} cannot open the Telecaller home`, r);
+  }
+  r = await api(null, 'GET', '/telecaller/home');
+  check(r.status === 401, 'telecaller API: nor a visitor', r);
+  r = await api('tca', 'GET', '/telecaller/assignable');
+  check(r.status === 403, 'telecaller API: a Telecaller cannot assign sheets', r);
+  r = await api('th', 'GET', '/telecaller/assignable');
+  check(r.status === 403, 'telecaller API: nor a Team Lead', r);
+
+  // ---- the Department Head assigns a sheet
+  r = await api('dh', 'GET', '/telecaller/assignable');
+  check(r.status === 200 && r.json.data.length === 2 && r.json.data.every((x: any) => x.team === 'Sales'), 'telecaller API: the Department Head picks from the Telecallers of the department', r);
+  const hash = crypto.createHash('sha256').update('sheet-one').digest('hex');
+  const bad = [...rows(2, 'p'), { row: 9, name: '', phone: '9' }, { row: 10, name: 'Mail', phone: '9811111111', email: 'nope' }];
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'october.xlsx', hash, rows: bad, commit: false });
+  check(r.status === 200 && r.json.data.summary.invalid === 2 && r.json.data.summary.valid === 2 && r.json.data.preview.length === 2 && r.json.data.committed === false, 'telecaller API: the preview names the wrong rows and nothing is saved', r);
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'october.xlsx', hash, rows: bad, commit: true });
+  check(r.status === 200 && r.json.data.committed === false && Number((await db.query(`select count(*) from telecaller_contacts`)).rows[0].count) === 0, 'telecaller API: a sheet with wrong rows is not assigned even when confirmed', r);
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'october.xlsx', hash: 'short', rows: rows(2, 'p'), commit: true });
+  check(r.status === 422, 'telecaller API: the sheet needs a proper identity', r);
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'october.xlsx', hash, rows: rows(2, 'p'), commit: true, extra: 1 });
+  check(r.status === 422, 'telecaller API: unknown fields are refused', r);
+  r = await api('tca', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'self.xlsx', hash, rows: rows(2, 'p'), commit: true });
+  check(r.status === 403, 'telecaller API: a Telecaller cannot assign a sheet to themselves', r);
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: plainId, fileName: 'x.xlsx', hash, rows: rows(2, 'p'), commit: true });
+  check(r.status === 422, 'telecaller API: the sheet goes to a Telecaller only', r);
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'october.xlsx', note: 'Cold calls', hash, rows: rows(45, 'a'), commit: true });
+  check(r.status === 200 && r.json.data.committed === true && r.json.data.listId, 'telecaller API: the Department Head assigns a sheet of 45 contacts', r);
+  const listA = r.json.data.listId as string;
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'october.xlsx', hash, rows: rows(45, 'a'), commit: true });
+  check(r.status === 409, 'telecaller API: the same sheet cannot be assigned twice to one person', r);
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcB, fileName: 'october.xlsx', hash, rows: rows(3, 'b'), commit: true });
+  check(r.status === 200 && r.json.data.committed, 'telecaller API: another Telecaller can get it', r);
+  const listB = r.json.data.listId as string;
+
+  // ---- the original file
+  const fakeR2 = await startFakeR2({ key: 'r2-tc-key', secret: 'r2-tc-secret', bucket: 'amuwa-files', cors: false });
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fakeR2.endpoint, R2_ACCESS_KEY_ID: 'r2-tc-key', R2_SECRET_ACCESS_KEY: 'r2-tc-secret', R2_BUCKET: 'amuwa-files' });
+  const xlsxBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('sheet-one')]);
+  const realHash = crypto.createHash('sha256').update(xlsxBytes).digest('hex');
+  r = await api('dh', 'POST', '/telecaller/lists', { assigneeId: tcA, fileName: 'second.xlsx', hash: realHash, rows: rows(2, 's'), commit: true });
+  const listS = r.json.data.listId as string;
+  r = await api('tca', 'POST', `/telecaller/lists/${listS}/source`, { data: xlsxBytes.toString('base64') });
+  check(r.status === 403, 'telecaller API: a Telecaller cannot attach the file', r);
+  r = await api('dh', 'POST', `/telecaller/lists/${listS}/source`, { data: Buffer.from('not a spreadsheet').toString('base64') });
+  check(r.status === 422 && /Excel/.test(r.json.error.message), 'telecaller API: a file that is not .xlsx is refused', r);
+  r = await api('dh', 'POST', `/telecaller/lists/${listS}/source`, { data: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('another file')]).toString('base64') });
+  check(r.status === 422 && /not the one/.test(r.json.error.message), 'telecaller API: nor a file that is not the sheet that was checked', r);
+  r = await api('dh', 'POST', `/telecaller/lists/${listS}/source`, { data: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(710 * 1024)]).toString('base64') });
+  check(r.status === 422, 'telecaller API: nor one over 700 KB', r);
+  r = await api('dh', 'POST', `/telecaller/lists/${listS}/source`, { data: xlsxBytes.toString('base64') });
+  const srcRow = (await db.query(`select source_bucket, source_path, source_provider, source_ref, source_size from telecaller_contact_lists where id = $1`, [listS])).rows[0];
+  check(r.status === 201 && srcRow.source_provider === 'R2' && srcRow.source_path.endsWith(`${listS}.xlsx`) && Number(srcRow.source_size) === xlsxBytes.length && fakeR2.objects.has(`telecaller-sheets/${srcRow.source_path}`),
+    'telecaller API: the original file is stored privately and its reference is kept with the sheet', { status: r.status, srcRow });
+  r = await api('dh', 'POST', `/telecaller/lists/${listS}/source`, { data: xlsxBytes.toString('base64') });
+  check(r.status === 409, 'telecaller API: it is stored once', r);
+  fakeR2.server.close();
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']) delete process.env[k];
+
+  // ---- who sees which sheet
+  r = await api('dh', 'GET', '/telecaller/lists');
+  check(r.status === 200 && r.json.data.length === 3 && r.json.data.find((x: any) => x.id === listA)?.assignedBy === 'Dept Head', 'telecaller API: the Department Head sees the sheets with who assigned them', r);
+  r = await api('tca', 'GET', '/telecaller/lists');
+  check(r.status === 200 && r.json.data.length === 2 && r.json.data.every((x: any) => x.assigneeId === tcA), 'telecaller API: a Telecaller sees only their own sheets', r);
+
+  // ---- the Telecaller works the contacts
+  r = await api('tca', 'GET', `/telecaller/contacts?listId=${listA}&pageSize=20`);
+  check(r.status === 200 && r.json.data.total === 45 && r.json.data.items.length === 20 && r.json.data.counts.PENDING === 45, 'telecaller API: the Telecaller gets their contacts a page at a time', r);
+  const first = r.json.data.items[0];
+  r = await api('tca', 'GET', `/telecaller/contacts?listId=${listA}&page=3&pageSize=20`);
+  check(r.json.data.items.length === 5, 'telecaller API: the last page holds the rest', r);
+  r = await api('tca', 'GET', `/telecaller/contacts?listId=${listA}&search=${encodeURIComponent('api person a7')}`);
+  check(r.json.data.total === 1, 'telecaller API: search', r);
+  r = await api('tca', 'GET', '/telecaller/contacts?status=WEIRD');
+  check(r.status === 422, 'telecaller API: an unknown filter is refused', r);
+  r = await api('tcb', 'GET', `/telecaller/contacts?listId=${listA}`);
+  check(r.status === 200 && r.json.data.total === 0, 'telecaller API: another Telecaller asking for this sheet gets nothing', r);
+  r = await api('tcb', 'PATCH', `/telecaller/contacts/${first.id}`, { callStatus: 'CONTACTED', remarks: 'mine now' });
+  check(r.status === 404, 'telecaller API: nor can they update its contacts', r);
+  r = await api('dh', 'PATCH', `/telecaller/contacts/${first.id}`, { callStatus: 'CONTACTED' });
+  check(r.status === 403, 'telecaller API: the Department Head reads sheets but does not record calls', r);
+  r = await api('tca', 'PATCH', `/telecaller/contacts/${first.id}`, { callStatus: 'FOLLOW_UP_REQUIRED', remarks: 'Call after lunch' });
+  check(r.status === 422, 'telecaller API: a follow-up needs a date', r);
+  const tomorrow = new Date(Date.now() + 5.5 * 3600e3 + 86400e3).toISOString().slice(0, 10);
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  r = await api('tca', 'PATCH', `/telecaller/contacts/${first.id}`, { callStatus: 'FOLLOW_UP_REQUIRED', remarks: 'Call after lunch', followUpDate: tomorrow });
+  check(r.status === 200 && r.json.data.callStatus === 'FOLLOW_UP_REQUIRED' && r.json.data.followUpDate === tomorrow && r.json.data.callCount === 1 && r.json.data.lastCalledAt, 'telecaller API: a call is saved with its remarks, follow-up and time', r);
+  r = await api('tca', 'GET', `/telecaller/contacts?listId=${listA}&status=FOLLOW_UP_REQUIRED`);
+  check(r.json.data.total === 1 && r.json.data.items[0].remarks === 'Call after lunch' && r.json.data.items[0].followUpDate === tomorrow, 'telecaller API: the update persists and the filter finds it', r);
+  r = await api('tca', 'PATCH', `/telecaller/contacts/${r.json.data.items[0].id}`, { callStatus: 'INTERESTED', followUpDate: today });
+  check(r.status === 200 && r.json.data.callCount === 2, 'telecaller API: another call', r);
+
+  // ---- leads
+  const lead = (name: string, extra: Record<string, unknown> = {}) => ({ name, company: `${name} Co`, phone: '9811234561', leadSource: 'Cold Call', services: [serviceCode], leadTemperature: 'WARM', callStatus: 'PENDING', ...extra });
+  r = await api('a', 'POST', '/telecaller/leads', lead('Nope'));
+  check(r.status === 403, 'telecaller API: a Sales member cannot use the Telecaller lead pages', r);
+  r = await api('tca', 'POST', '/telecaller/leads', lead('No Temp', { leadTemperature: 'LUKEWARM' }));
+  check(r.status === 422, 'telecaller API: the temperature is Hot, Warm or Cold', r);
+  r = await api('tca', 'POST', '/telecaller/leads', lead('Bad Phone', { phone: '123' }));
+  check(r.status === 422, 'telecaller API: the phone number is validated', r);
+  r = await api('tca', 'POST', '/telecaller/leads', lead('No Service', { services: [] }));
+  check(r.status === 422, 'telecaller API: a service is required', r);
+  r = await api('tca', 'POST', '/telecaller/leads', lead('Hot Customer', { leadTemperature: 'HOT', callStatus: 'INTERESTED', email: 'hot@example.com', address: '1 Main Road', notes: 'Wants a demo', followUpDate: today }));
+  check(r.status === 201 && r.json.data.leadTemperature === 'HOT' && r.json.data.callStatus === 'INTERESTED' && r.json.data.followUpDate === today && r.json.data.address === '1 Main Road', 'telecaller API: a Hot lead is created', r);
+  const hotId = r.json.data.id as string;
+  r = await api('tca', 'POST', '/telecaller/leads', lead('Cold Customer', { leadTemperature: 'COLD', phone: '9811234562' }));
+  check(r.status === 201 && r.json.data.leadTemperature === 'COLD', 'telecaller API: a Cold lead', r);
+  const coldId = r.json.data.id as string;
+  r = await api('tca', 'POST', '/telecaller/leads', lead('Warm Customer', { phone: '9811234563', leadSource: 'Referral' }));
+  check(r.status === 201 && r.json.data.leadTemperature === 'WARM', 'telecaller API: and a Warm one', r);
+  const ownerRow = (await db.query(`select owner_id, lifecycle_stage, lead_temperature, call_status from customers where id = $1`, [hotId])).rows[0];
+  check(ownerRow.owner_id === tcA && ownerRow.lifecycle_stage === 'LEAD' && ownerRow.lead_temperature === 'HOT' && ownerRow.call_status === 'INTERESTED', 'telecaller API: it is an ordinary Sales lead owned by the Telecaller, temperature and call status kept apart', ownerRow);
+  r = await api('tca', 'GET', '/telecaller/leads');
+  check(r.status === 200 && r.json.data.total === 3 && r.json.data.items[0].name === 'Warm Customer' && r.json.data.sources.length === 2, 'telecaller API: the new leads are in the list (newest first)', r);
+  r = await api('tca', 'GET', '/telecaller/leads?temperature=HOT');
+  check(r.json.data.total === 1, 'telecaller API: filter by temperature', r);
+  r = await api('tca', 'GET', '/telecaller/leads?callStatus=PENDING&source=Cold%20Call');
+  check(r.json.data.total === 1 && r.json.data.items[0].name === 'Cold Customer', 'telecaller API: filter by call status and source', r);
+  r = await api('tca', 'GET', '/telecaller/leads?search=warm');
+  check(r.json.data.total === 1, 'telecaller API: search', r);
+  r = await api('tca', 'GET', '/telecaller/leads?page=2&pageSize=2');
+  check(r.json.data.items.length === 1 && r.json.data.total === 3, 'telecaller API: pagination', r);
+  r = await api('tca', 'PATCH', `/telecaller/leads/${coldId}`, { leadTemperature: 'HOT', callStatus: 'CONTACTED', phone: '9811234599' });
+  check(r.status === 200 && r.json.data.leadTemperature === 'HOT' && r.json.data.callStatus === 'CONTACTED' && r.json.data.phone === '9811234599' && r.json.data.services.length === 1, 'telecaller API: a lead can be edited (Cold to Hot) and keeps its service', r);
+  r = await api('tca', 'GET', `/telecaller/leads/${coldId}`);
+  check(r.status === 200 && r.json.data.leadTemperature === 'HOT', 'telecaller API: the edit persists', r);
+  r = await api('tcb', 'GET', `/telecaller/leads/${coldId}`);
+  check(r.status === 404, 'telecaller API: another Telecaller cannot open the lead', r);
+  r = await api('tcb', 'PATCH', `/telecaller/leads/${coldId}`, { leadTemperature: 'COLD', callStatus: 'PENDING' });
+  check(r.status === 404, 'telecaller API: nor edit it', r);
+  r = await api('tcb', 'GET', '/telecaller/leads');
+  check(r.json.data.total === 0, 'telecaller API: nor see it in their list', r);
+
+  // ---- the Home counts
+  r = await api('tca', 'GET', '/telecaller/home');
+  const h = r.json.data;
+  check(r.status === 200 && h.totalAssigned === 47 && h.callsPending === 46 && h.callsCompleted === 1 && h.totalLeads === 3 && h.hotLeads === 2 && h.followUpsDueToday === 2 && h.focus.followUps.length === 2 && h.focus.pendingCalls.length === 6,
+    'telecaller API: the Home counts come from the data', h);
+  r = await api('tcb', 'GET', '/telecaller/home');
+  check(r.json.data.totalAssigned === 3 && r.json.data.totalLeads === 0, 'telecaller API: another Telecaller has their own counts', r.json.data);
+  void listB;
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

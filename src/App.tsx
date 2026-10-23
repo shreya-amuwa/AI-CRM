@@ -44,6 +44,8 @@ const EduTrainingPanel = lazy(() => import('./components/departments/edutraining
 const AccountsDepartmentPanel = lazy(() => import('./components/departments/accounts/AccountsDepartmentPanel').then(m => ({ default: m.AccountsDepartmentPanel })));
 const DepartmentAccountsBillingView = lazy(() => import('./components/departments/shared/DepartmentAccountsBillingView').then(m => ({ default: m.DepartmentAccountsBillingView })));
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
+const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
+const SalesRolePending = lazy(() => import('./components/telecaller/SalesRolePending').then(m => ({ default: m.SalesRolePending })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
 const AccountsDashboard = lazy(() => import('./components/accounts/AccountsDashboard').then(m => ({ default: m.AccountsDashboard })));
 const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
@@ -125,6 +127,19 @@ const MainAppContent: React.FC = () => {
         navigateTo(base);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'telecaller') {
+      // /telecaller/dashboard/:id and its pages (…/tasks, …/leads) stay where they are.
+      const base = `/telecaller/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(base);
+        setRoute(parseCurrentRoute());
+      }
+    } else if (user.role === 'sales-role') {
+      const target = `/sales-role/${user.id}`;
+      if (window.location.pathname !== target) {
+        navigateTo(target);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'accounts-staff') {
       const target = `/accounts/dashboard/${user.id}`;
       if (window.location.pathname !== target) {
@@ -151,7 +166,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'telecaller' && user.role !== 'sales-role') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -217,6 +232,22 @@ const MainAppContent: React.FC = () => {
     return (
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
         <SupportLeadDashboard />
+      </Suspense>
+    );
+  }
+
+  // Step 1.57: Sales Telecaller dashboard (own route and sidebar), or the notice page of a Sales role that has no dashboard yet
+  if (user.role === 'telecaller') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <TelecallerDashboard />
+      </Suspense>
+    );
+  }
+  if (user.role === 'sales-role') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <SalesRolePending />
       </Suspense>
     );
   }

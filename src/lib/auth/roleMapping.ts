@@ -1,4 +1,4 @@
-import type { Profile, Role, TeamDivision } from '../../../shared/contracts';
+import { SALES_SUB_ROLE_LABELS, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
 import type { AuthUser } from '../../types/crm';
 
 /**
@@ -41,6 +41,12 @@ export function toAuthUser(profile: Profile): AuthUser {
       // Technical Consultants open the client-onboarding dashboard; other Support
       // team members open the Support dashboard; everyone else the team member
       // dashboard (Sales and other teams).
+      // A Sales member with a Sales role: Telecallers open the Telecaller dashboard; the other Sales roles have no dashboard yet and
+      // open a notice page - never another role's dashboard.
+      if (isSalesSubRoleMember(profile)) {
+        role = profile.salesSubRole === 'TELECALLER' ? 'telecaller' : 'sales-role';
+        break;
+      }
       role = isTechnicalConsultant(profile) ? 'technical-support' : isSupportMember(profile) ? 'support-member' : 'team-member';
   }
   return {
@@ -87,6 +93,11 @@ export function isSupportMember(p: Pick<Profile, 'role' | 'isTechnicalConsultant
   return p.role === 'TEAM_MEMBER' && p.team?.division === 'SUPPORT' && !isTechnicalConsultant(p);
 }
 
+/** A Team Member of a Sales team who has a Sales role (Telecaller, Business Associate, ...). */
+export function isSalesSubRoleMember(p: Pick<Profile, 'role' | 'team' | 'salesSubRole'>): boolean {
+  return p.role === 'TEAM_MEMBER' && p.team?.division === 'SALES' && !!p.salesSubRole;
+}
+
 /** A support team member created (or marked) as Technical Consultant. */
 export function isTechnicalConsultant(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): boolean {
   return p.role === 'TEAM_MEMBER' && !!p.isTechnicalConsultant && p.team?.division === 'SUPPORT';
@@ -126,7 +137,8 @@ export function defaultDashboardLabel(
   division?: TeamDivision | null,
   departmentName?: string,
   technicalConsultant = false,
-  departmentSlug?: string
+  departmentSlug?: string,
+  salesSubRole?: SalesSubRole | null
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
   // HR and Accounts staff open their department's own dashboard.
@@ -142,6 +154,8 @@ export function defaultDashboardLabel(
       return `Team Lead Dashboard${dept}`;
     default:
       if (technicalConsultant && division === 'SUPPORT') return `Technical Consultant Dashboard${dept}`;
+      if (division === 'SALES' && salesSubRole === 'TELECALLER') return `Telecaller Dashboard${dept}`;
+      if (division === 'SALES' && salesSubRole) return `${SALES_SUB_ROLE_LABELS[salesSubRole]} (dashboard not set up yet)${dept}`;
       // Only a Sales team opens as "Sales"; other teams get the plain label.
       if (division === 'SALES') return `Sales Team Member Dashboard${dept}`;
       if (division === 'SUPPORT') return `Support Team Member Dashboard${dept}`;

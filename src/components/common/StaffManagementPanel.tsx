@@ -3,7 +3,7 @@ import {
   UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import type { Profile, Role, Team, TeamDivision } from '../../../shared/contracts';
+import { SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
 import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -95,6 +95,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [designation, setDesignation] = useState<string>('Team Member');
   const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
   const [teamId, setTeamId] = useState('');
+  const [salesSubRole, setSalesSubRole] = useState<SalesSubRole | ''>('');
   const [formOpen, setFormOpen] = useState(false);
   const manage = view !== 'members';
   const showForm = view === 'manage' ? false : view !== 'members' || formOpen;
@@ -195,6 +196,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
   const selectedTeam = teams.find(t => t.id === teamId);
   const needsTeam = role !== 'DEPARTMENT_HEAD';
+  // The Sales role (Telecaller, ...) is chosen for a Team Member of a Sales team, by the Super Admin or the Department Head.
+  const canSetSalesRole = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD';
+  const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && selectedTeam?.division === 'SALES';
   const subDeptLabel = selectedTeam ? `${department?.name || ''} · ${selectedTeam.name}` : department?.name || departmentSlug;
 
   const resetForm = () => {
@@ -206,7 +210,21 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setDateOfBirth('');
     setBloodGroup('');
     setEmergencyContact('');
+    setSalesSubRole('');
     setShowPassword(false);
+  };
+
+  /** Give an existing Sales member a Sales role (or clear it); the database lets only the Super Admin and the Department Head do it. */
+  const changeSalesRole = async (member: Profile, value: SalesSubRole | '') => {
+    setActionNotice(null);
+    try {
+      await usersApi.setSalesSubRole(member.id, value || null);
+      setActionNotice({ text: value ? `${member.fullName} is now a ${SALES_SUB_ROLE_LABELS[value]}.` : `${member.fullName} no longer has a Sales role.`, ok: true });
+      await loadMembers();
+    } catch (err) {
+      setActionNotice({ text: errorMessage(err), ok: false });
+    }
+    setTimeout(() => setActionNotice(null), 6000);
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -228,6 +246,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       teamId: needsTeam ? teamId || undefined : undefined,
       position: position || undefined,
       technicalConsultant: consultant || undefined,
+      salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, emergencyContact }
     });
     if (!parsed.success) {
@@ -243,7 +262,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setCreated({
         profile: newProfile,
         password: newProfile.department?.slug === 'hr' ? password : undefined,
-        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug)
+        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole)
       });
       resetForm();
       await loadMembers();
@@ -504,6 +523,22 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </label>
           )}
 
+          {showSalesRole && (
+            <label className="block text-xs font-semibold text-slate-700">
+              Sales Role / Sales Sub-Role
+              <select
+                id="staff-sales-role"
+                className={`${inputClass} mt-1 cursor-pointer`}
+                value={salesSubRole}
+                onChange={e => setSalesSubRole(e.target.value as SalesSubRole | '')}
+              >
+                <option value="">Sales Team Member (no specific role)</option>
+                {SALES_SUB_ROLES.map(r => <option key={r} value={r}>{SALES_SUB_ROLE_LABELS[r]}</option>)}
+              </select>
+              <span className="block mt-1 font-normal text-slate-500">The person stays in the Sales team. Telecaller opens the Telecaller dashboard.</span>
+            </label>
+          )}
+
           <label className="block text-xs font-semibold text-slate-700">
             Designation *
             <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
@@ -540,7 +575,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null)}</strong>
           </div>
 
           {role === 'DEPARTMENT_HEAD' && existingHead && (
@@ -619,7 +654,21 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       </td>
                       <td className="py-2.5 pr-3 text-slate-700">
                         {staffRoleLabel(m)}
-                        {m.team && <div className="text-slate-400">{m.team.name}</div>}
+                        {m.team && <div className="text-slate-400">{m.team.name}{m.salesSubRole ? ` · ${SALES_SUB_ROLE_LABELS[m.salesSubRole]}` : ''}</div>}
+                        {manage && canSetSalesRole && m.role === 'TEAM_MEMBER' && m.team?.division === 'SALES' && m.status === 'ACTIVE' && (
+                          <label className="mt-1 block text-[11px] font-semibold text-blue-600">
+                            <span className="sr-only">Sales role of {m.fullName}</span>
+                            <select
+                              className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-slate-700 cursor-pointer"
+                              value={m.salesSubRole || ''}
+                              onChange={e => void changeSalesRole(m, e.target.value as SalesSubRole | '')}
+                              aria-label={`Sales role of ${m.fullName}`}
+                            >
+                              <option value="">No Sales role</option>
+                              {SALES_SUB_ROLES.map(r => <option key={r} value={r}>{SALES_SUB_ROLE_LABELS[r]}</option>)}
+                            </select>
+                          </label>
+                        )}
                         {manage && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
                           <button
                             type="button"
@@ -651,7 +700,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           </button>
                         )}
                       </td>
-                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug)}</td>}
+                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole)}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>

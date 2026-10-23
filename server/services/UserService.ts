@@ -1,6 +1,7 @@
 import type { Paginated, Profile } from '../../shared/contracts.js';
 import {
   profileSelfUpdateSchema,
+  salesSubRoleSchema,
   userAssignSchema,
   technicalConsultantSchema,
   userCreateSchema,
@@ -53,8 +54,22 @@ export class UserService {
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }
-    const { details, ...account } = input;
+    if (input.salesSubRole) {
+      // Only the Super Admin and the Department Head give a Sales role, and only to a member of a Sales team.
+      if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin or the Department Head can set a Sales role.');
+      if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
+    }
+    const { details, salesSubRole, ...account } = input;
     const id = await this.authAdmin.createProvisionedUser({ ...account, provisionedBy: actor.id });
+    if (salesSubRole) {
+      try {
+        await this.profiles.setSalesSubRole(id, salesSubRole);
+      } catch (err) {
+        // Never leave a Sales member without the role that was asked for.
+        await this.authAdmin.deleteUser(id).catch(() => undefined);
+        throw err;
+      }
+    }
     if (details) {
       try {
         await this.authAdmin.savePersonalDetails(id, details);
@@ -83,6 +98,15 @@ export class UserService {
     const input = parse(userAssignSchema, body);
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
     await this.profiles.assign(userId, input.role, input.departmentId, input.teamId);
+    return this.profiles.findById(userId);
+  }
+
+  /** Give a Sales team member a Sales role (Telecaller, ...) or clear it. The database lets only the Super Admin and the Department Head of that department do it. */
+  async setSalesSubRole(actor: Actor, id: string, body: unknown): Promise<Profile> {
+    assertManager(actor);
+    const userId = parse(uuidSchema, id);
+    const { role } = parse(salesSubRoleSchema, body);
+    await this.profiles.setSalesSubRole(userId, role);
     return this.profiles.findById(userId);
   }
 

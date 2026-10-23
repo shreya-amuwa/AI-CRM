@@ -10,6 +10,31 @@ export type Role = (typeof ROLES)[number];
 export const ACCOUNT_STATUSES = ['PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED', 'REJECTED'] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
+/** What a Sales team member is: stored next to the team (it never replaces it). Only Telecaller has a dashboard so far. */
+export const SALES_SUB_ROLES = ['TELECALLER', 'BUSINESS_ASSOCIATE', 'INFLUENCER', 'VISIT_SALES', 'BUSINESS_PARTNER'] as const;
+export type SalesSubRole = (typeof SALES_SUB_ROLES)[number];
+export const SALES_SUB_ROLE_LABELS: Record<SalesSubRole, string> = {
+  TELECALLER: 'Telecaller',
+  BUSINESS_ASSOCIATE: 'Business Associate',
+  INFLUENCER: 'Influencer',
+  VISIT_SALES: 'Visit Sales',
+  BUSINESS_PARTNER: 'Business Partner'
+};
+
+/** Telecaller: the call status of a contact or a lead (separate from a lead's temperature). */
+export const CALL_STATUSES = ['PENDING', 'CONTACTED', 'INTERESTED', 'FOLLOW_UP_REQUIRED', 'NOT_INTERESTED', 'COMPLETED'] as const;
+export type CallStatus = (typeof CALL_STATUSES)[number];
+export const CALL_STATUS_LABELS: Record<CallStatus, string> = {
+  PENDING: 'Pending',
+  CONTACTED: 'Contacted',
+  INTERESTED: 'Interested',
+  FOLLOW_UP_REQUIRED: 'Follow-up Required',
+  NOT_INTERESTED: 'Not Interested',
+  COMPLETED: 'Completed'
+};
+export const LEAD_TEMPERATURES = ['HOT', 'WARM', 'COLD'] as const;
+export type LeadTemperature = (typeof LEAD_TEMPERATURES)[number];
+
 export const TEAM_DIVISIONS = ['SALES', 'SUPPORT', 'GENERAL'] as const;
 export type TeamDivision = (typeof TEAM_DIVISIONS)[number];
 
@@ -28,6 +53,9 @@ export type DefaultDashboard =
   | 'sales-member'
   | 'support-member'
   | 'technical-consultant'
+  | 'telecaller'
+  /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
+  | `sales-${string}`
   | 'team-member';
 
 export const CUSTOMER_SEGMENTS = ['RETAIL', 'WHOLESALE', 'CORPORATE', 'OTHER'] as const;
@@ -79,6 +107,8 @@ export interface Profile {
   role: Role;
   /** Team member of a support team who opens the Technical Consultant dashboard. */
   isTechnicalConsultant: boolean;
+  /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
+  salesSubRole?: SalesSubRole | null;
   /** Stored default dashboard (resolved by the database from role + team division). */
   defaultDashboard?: DefaultDashboard | null;
   status: AccountStatus;
@@ -2737,4 +2767,107 @@ export interface TrainingEmployee {
   department: string | null;
   code: string | null;
   designation: string | null;
+}
+
+
+// ---------------------------------------------------------------------------
+// Telecaller
+// ---------------------------------------------------------------------------
+export interface TelecallerFocusFollowUp {
+  kind: 'CONTACT' | 'LEAD';
+  id: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  date: string;
+  overdue: boolean;
+}
+export interface TelecallerHome {
+  today: string;
+  totalAssigned: number;
+  callsPending: number;
+  callsCompleted: number;
+  totalLeads: number;
+  hotLeads: number;
+  followUpsDueToday: number;
+  followUpsOverdue: number;
+  focus: {
+    followUps: TelecallerFocusFollowUp[];
+    pendingCalls: { id: string; name: string; company: string | null; phone: string; assignedAt: string }[];
+  };
+}
+export interface TelecallerSheet {
+  id: string;
+  fileName: string;
+  note: string | null;
+  assignedAt: string;
+  hasSourceFile: boolean;
+  assignedBy: string | null;
+  assignedTo: string | null;
+  assigneeId: string;
+  total: number;
+  pending: number;
+  called: number;
+  followUps: number;
+}
+export interface TelecallerContact {
+  id: string;
+  listId: string;
+  name: string;
+  company: string | null;
+  phone: string;
+  email: string | null;
+  assignedAt: string;
+  callStatus: CallStatus;
+  callCount: number;
+  lastCalledAt: string | null;
+  followUpDate: string | null;
+  remarks: string | null;
+  followUpDue: boolean;
+}
+export interface TelecallerContactList {
+  total: number;
+  page: number;
+  pageSize: number;
+  counts: Partial<Record<CallStatus, number>>;
+  items: TelecallerContact[];
+}
+export interface TelecallerLead {
+  id: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  leadSource: string | null;
+  leadTemperature: LeadTemperature | null;
+  callStatus: CallStatus | null;
+  followUpDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  services: string[];
+  serviceNames: string;
+}
+export interface TelecallerLeadList {
+  total: number;
+  page: number;
+  pageSize: number;
+  sources: string[];
+  items: TelecallerLead[];
+}
+export interface TelecallerAssignee {
+  id: string;
+  name: string;
+  team: string;
+  departmentId: string;
+  openContacts: number;
+}
+export interface TelecallerSheetCheck {
+  committed: boolean;
+  listId: string | null;
+  alreadyAssigned: boolean;
+  errors: { row: number; message: string }[];
+  summary: { rows: number; valid: number; invalid: number };
+  preview: { row: number; name: string; company: string | null; phone: string; email: string | null; remarks: string | null }[];
 }
