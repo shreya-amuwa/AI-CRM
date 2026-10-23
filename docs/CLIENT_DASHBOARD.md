@@ -140,11 +140,13 @@ add-on and service-request updates, plan request/approval/activation, ticket rep
 ## Notices: office closed and new services
 
 * A **Department Head** (for the clients of their department) or the **Super Admin / HR head** (one department or all
-  clients; the **Client notices** button in the top bar) publishes a notice: **Office closed** (a day, a run of days, or the
+  clients; the **Client notices** button in the top bar) publishes a notice. The HR department has no clients of its own, so the
+  database lets its head (like the Super Admin) choose the audience; every other Department Head reaches only their own
+  department's clients (migration `20261117000100_hr_client_notices.sql`). A notice: **Office closed** (a day, a run of days, or the
   same date every month - for example the monthly performance review - and how many days ahead clients start seeing it) or
   **New service** (pick a service; clients get a pop-up).
 * Clients see "office closed" notices as a banner at the top of every page ("Our office will be closed in 3 days"; "closed
-  today" on the day), with the Department Head's message, and in their Notification Center. Each client can dismiss a notice;
+  today" on the day) from the number of days you chose ahead of the closure (7 by default; the bell shows it at once), with the Department Head's message, and in their Notification Center. Each client can dismiss a notice;
   it is remembered per client and per occurrence (next month's closure shows again).
 * A **new service** pop-up has **Know more**, which opens that service's details in Explore Services
   (`/client/dashboard/explore?service=CODE`), and **Maybe later**. It is shown once per client and not at all to a client

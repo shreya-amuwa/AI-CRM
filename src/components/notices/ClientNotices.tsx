@@ -43,7 +43,8 @@ const todayIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60
 
 export const ClientNotices: React.FC = () => {
   const { profile } = useAuth();
-  const isSuperAdmin = profile?.role === 'SUPER_ADMIN';
+  // The Super Admin and the HR head choose the audience (one department, or every client); other heads reach their own clients.
+  const isSuperAdmin = profile?.role === 'SUPER_ADMIN' || (profile?.role === 'DEPARTMENT_HEAD' && profile.department?.slug === 'hr');
   const { items: services } = useServiceCatalog();
   const [list, setList] = useState<Notice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
