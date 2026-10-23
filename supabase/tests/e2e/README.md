@@ -38,3 +38,14 @@ Business Associate), and a phone-sized window.
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-telecaller.sh ./telecaller-screenshots
 ```
+
+## Business Associate workspace
+
+`run-business-associate.sh` (own ports) checks the hand-over from a Telecaller, Tasks, Leads, quotations (approved prices, AI draft, review, PDF stored privately,
+revision), demos (validation, conflicts, reschedule, cancel, calendar), Scope of Project (AI draft, section regeneration, review, finalise, new version, PDFs),
+routing and permissions, the Department Head's Service Prices page and a phone-sized window. The AI service is a local stand-in started by the test (the runner
+points `ANTHROPIC_API_BASE_URL` at it); no external service is called.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-business-associate.sh ./ba-screenshots
+```

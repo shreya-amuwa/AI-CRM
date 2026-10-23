@@ -125,7 +125,7 @@ const COL_X: number[] = COLS.reduce<number[]>((acc, c, i) => [...acc, i === 0 ? 
 const REPLACE: Record<string, string> = { '‘': "'", '’': "'", '“': '"', '”': '"', '–': '-', '—': '-', '…': '...', ' ': ' ', '₹': 'Rs.', '\t': ' ' };
 
 /** Text the standard fonts can draw: typographic characters become plain ones, anything else (e.g. Devanagari) becomes "?". */
-function winAnsi(font: PDFFont, input: string, keepNewlines = false): string {
+export function winAnsi(font: PDFFont, input: string, keepNewlines = false): string {
   const supported = new Set(font.getCharacterSet());
   let out = '';
   for (const ch of (input ?? '').normalize('NFC')) {

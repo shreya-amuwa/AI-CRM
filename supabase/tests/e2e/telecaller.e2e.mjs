@@ -107,8 +107,8 @@ const mk = async (email, fullName, extra = {}) => {
   return api(root, 'POST', '/users', { email, fullName, password: pw, role: 'TEAM_MEMBER', teamId: salesTeam.id, ...extra });
 };
 const toTwo = await mk('tele.two@amuwa.com', 'Tele Two', { salesSubRole: 'TELECALLER' });
-const biz = await mk('biz.assoc@amuwa.com', 'Biz Associate', { salesSubRole: 'BUSINESS_ASSOCIATE' });
-ok('fixture: a Telecaller and a Business Associate were created through the API (Sales role at creation)');
+const biz = await mk('biz.assoc@amuwa.com', 'Visit Sales Person', { salesSubRole: 'VISIT_SALES' });
+ok('fixture: a Telecaller and a Visit Sales person were created through the API (Sales role at creation)');
 
 // ------------------------------------------------------------------ 1. the Department Head creates a Telecaller in the form
 const dh = await login('dh@amuwa.com', { width: 1440, height: 900 }, 'nav button');
@@ -361,7 +361,7 @@ await rahul.waitForFunction(() => location.pathname.startsWith('/team-member/das
 ok('routing: a Sales member cannot open the Telecaller dashboard');
 await rahul.close();
 const ba = await login('biz.assoc@amuwa.com', { width: 1440, height: 900 }, 'text=dashboard is not set up yet');
-await expect(/\/sales-role\//.test(ba.url()) && !/Today's Focus/.test(await ba.locator('body').innerText()), 'routing: a Business Associate sees a "not set up yet" page, never the Telecaller or Sales dashboard', ba.url());
+await expect(/\/sales-role\//.test(ba.url()) && !/Today's Focus/.test(await ba.locator('body').innerText()), 'routing: a Visit Sales person sees a "not set up yet" page, never the Telecaller or Sales dashboard', ba.url());
 await ba.screenshot({ path: `${OUT}/tc-8-sales-role-pending.png` });
 await ba.close();
 const tlPage = await login('lead@amuwa.com', { width: 1440, height: 900 }, 'nav button');

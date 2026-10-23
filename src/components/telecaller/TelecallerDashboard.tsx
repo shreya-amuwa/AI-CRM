@@ -7,6 +7,7 @@ import { DashboardShell, groupNavItems } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HomePage } from './HomePage';
+import { ConvertLead } from './ConvertLead';
 import { LeadsPage } from './LeadsPage';
 import { TasksPage } from './TasksPage';
 
@@ -82,7 +83,7 @@ export const TelecallerDashboard: React.FC = () => {
       <div className="mx-auto w-full max-w-[1400px]">
         {page === 'home' && <HomePage go={go} />}
         {page === 'tasks' && <TasksPage key={`tasks-${intent.n}`} initialStatus={intent.status} />}
-        {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} openAdd={!!intent.addLead} />}
+        {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
         {page === 'notifications' && <NotificationsPage />}
       </div>
     </DashboardShell>

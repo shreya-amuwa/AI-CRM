@@ -54,6 +54,7 @@ export type DefaultDashboard =
   | 'support-member'
   | 'technical-consultant'
   | 'telecaller'
+  | 'business-associate'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -2848,6 +2849,8 @@ export interface TelecallerLead {
   updatedAt: string;
   services: string[];
   serviceNames: string;
+  /** Set once a Telecaller has converted the lead into a contact for a Business Associate. */
+  converted?: { contactId: string; convertedAt: string; businessAssociate: string | null } | null;
 }
 export interface TelecallerLeadList {
   total: number;
@@ -2871,3 +2874,188 @@ export interface TelecallerSheetCheck {
   summary: { rows: number; valid: number; invalid: number };
   preview: { row: number; name: string; company: string | null; phone: string; email: string | null; remarks: string | null }[];
 }
+
+
+// ---------------------------------------------------------------------------
+// Business Associate
+// ---------------------------------------------------------------------------
+export const BA_STAGES = ['NEW', 'IN_PROGRESS', 'QUOTATION_PENDING', 'DEMO_SCHEDULED', 'SCOPE_PENDING', 'COMPLETED'] as const;
+export type BaStage = (typeof BA_STAGES)[number];
+export const BA_STAGE_LABELS: Record<BaStage, string> = {
+  NEW: 'New',
+  IN_PROGRESS: 'In Progress',
+  QUOTATION_PENDING: 'Quotation Pending',
+  DEMO_SCHEDULED: 'Demo Scheduled',
+  SCOPE_PENDING: 'Scope of Project Pending',
+  COMPLETED: 'Completed'
+};
+export const DEMO_STATUSES = ['SCHEDULED', 'RESCHEDULED', 'COMPLETED', 'CANCELLED'] as const;
+export type DemoStatus = (typeof DEMO_STATUSES)[number];
+export const DEMO_MODES = ['ONLINE', 'IN_PERSON'] as const;
+export type DemoMode = (typeof DEMO_MODES)[number];
+export type BaDocumentStatus = 'DRAFT' | 'FINAL';
+
+export interface BaDocRef { id: string; number?: string; revision?: number; version?: number; status: BaDocumentStatus; total?: number }
+export interface BaContactRow {
+  id: string;
+  leadId: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  leadSource: string | null;
+  telecaller: string | null;
+  telecallerId: string | null;
+  assignedAt: string;
+  businessAssociate: string | null;
+  assignedTo: string;
+  stage: BaStage;
+  stageChangedAt: string;
+  nextFollowUp: string | null;
+  quotation: BaDocRef | null;
+  nextDemo: { id: string; startsAt: string; status: DemoStatus } | null;
+  scope: BaDocRef | null;
+}
+export interface BaContactList {
+  total: number;
+  page: number;
+  pageSize: number;
+  counts: Partial<Record<BaStage, number>>;
+  items: BaContactRow[];
+}
+export interface BaContactEvent { id: string; kind: string; note: string; at: string; by: string | null }
+export interface BaQuotationRow {
+  id: string;
+  contactId: string;
+  number: string;
+  revision: number;
+  status: BaDocumentStatus;
+  total: number;
+  aiGenerated: boolean;
+  reviewed: boolean;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt: string | null;
+  validUntil: string | null;
+  hasPdf: boolean;
+  createdBy: string | null;
+  client?: string;
+  company?: string | null;
+}
+export interface BaDemo {
+  id: string;
+  contactId: string;
+  title: string;
+  description: string | null;
+  startsAt: string;
+  endsAt: string;
+  mode: DemoMode;
+  location: string | null;
+  meetingLink: string | null;
+  assignedTo: string;
+  assignee: string | null;
+  internalNotes: string | null;
+  status: DemoStatus;
+  rescheduleCount: number;
+  feedback: string | null;
+  followUpNotes: string | null;
+  client: string | null;
+  company: string | null;
+}
+export interface BaScopeRow {
+  id: string;
+  contactId: string;
+  version: number;
+  status: BaDocumentStatus;
+  title: string;
+  aiGenerated: boolean;
+  reviewed: boolean;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt: string | null;
+  hasPdf: boolean;
+  createdBy: string | null;
+}
+export interface BaContactDetail extends BaContactRow {
+  address: string | null;
+  notes: string | null;
+  leadTemperature: LeadTemperature | null;
+  callStatus: CallStatus | null;
+  handoverNote: string | null;
+  services: { code: string; name: string }[];
+  requirements: string | null;
+  profile: Record<string, string>;
+  events: BaContactEvent[];
+  quotations: BaQuotationRow[];
+  demos: BaDemo[];
+  scopes: BaScopeRow[];
+}
+export interface BaQuotationLine {
+  position: number;
+  serviceCode: string;
+  name: string;
+  description: string | null;
+  unitLabel: string;
+  quantity: number;
+  unitPrice: number;
+  discountPct: number;
+  gstRate: number;
+  amount: number;
+  discount: number;
+  taxable: number;
+  gst: number;
+  total: number;
+}
+export interface BaPriceFlag { line: number; serviceCode: string; kind: 'NOT_IN_PRICE_LIST' | 'PRICE_DIFFERS' | 'GST_DIFFERS'; message: string }
+export interface BaQuotation extends Omit<BaQuotationRow, 'client' | 'company'> {
+  items: BaQuotationLine[];
+  gstApplicable: boolean;
+  subtotal: number;
+  discountTotal: number;
+  taxableTotal: number;
+  taxTotal: number;
+  validityDays: number | null;
+  paymentTerms: string | null;
+  timeline: string | null;
+  notes: string | null;
+  content: Partial<import('./baContent').QuotationContent>;
+  priceFlags: BaPriceFlag[];
+  aiModel: string | null;
+  reviewedAt: string | null;
+  client: { name: string; company: string | null; phone: string | null; email: string | null; address: string | null; city: string | null; businessCategory: string | null };
+  requirements: string | null;
+  businessProfile: Record<string, string>;
+}
+export interface BaScope extends BaScopeRow {
+  inputs: Record<string, string>;
+  content: Partial<import('./baContent').ScopeContent>;
+  aiModel: string | null;
+  reviewedAt: string | null;
+  client?: { name: string; company: string | null };
+}
+export interface ServicePrice {
+  serviceCode: string;
+  name: string;
+  category: string;
+  unitLabel: string | null;
+  unitPrice: number | null;
+  gstRate: number | null;
+  maxDiscountPct: number | null;
+  isActive: boolean;
+  priced: boolean;
+}
+export interface BaHome {
+  today: string;
+  assignedContacts: number;
+  newContacts: number;
+  leadsInProgress: number;
+  quotationsDrafted: number;
+  quotationsAwaitingReview: number;
+  upcomingDemos: number;
+  scopeDocumentsGenerated: number;
+  followUpsDue: number;
+  stageCounts: Partial<Record<BaStage, number>>;
+  upcoming: BaDemo[];
+  recent: { contactId: string; client: string; kind: string; note: string; at: string }[];
+}
+export interface BaAssignee { id: string; name: string; departmentId: string; openContacts: number }

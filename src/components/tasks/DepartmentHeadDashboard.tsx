@@ -42,6 +42,7 @@ import { HeadDaily } from './head/HeadDaily';
 import { HeadSearch } from './head/HeadSearch';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { ContactSheets } from '../telecaller/ContactSheets';
+import { ServicePrices } from '../business-associate/ServicePrices';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -79,6 +80,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
       work.push({ id: 'income', label: 'Department Income', icon: TrendingUp });
       // Excel contact sheets for the department's Telecallers (the page explains what to do when there are none)
       work.push({ id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet });
+      // The approved prices Business Associates quote from
+      work.push({ id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee });
     }
     return [
       { items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }] },
@@ -161,6 +164,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'plans' && <AccountsPlans />}
       {nav === 'income' && <DepartmentIncome own />}
       {nav === 'telecaller-sheets' && <ContactSheets />}
+      {nav === 'service-prices' && <ServicePrices />}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'notifications' && <NotificationsPage />}
       {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}

@@ -12,8 +12,26 @@ import {
   CALL_STATUS_OPTIONS, CallStatusBadge, EmptyState, TEMPERATURE_DOT, TEMPERATURE_LABELS, TEMPERATURE_STYLE, TemperatureBadge, dateText, notifyTelecallerChanged, tcBtn, tcInput, tcSelect
 } from './ui';
 
-/** Leads: the leads this Telecaller owns (the same Sales leads the rest of the CRM shows), with their temperature and call status. */
-export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) => {
+/** The calls the Leads page makes: the Telecaller and the Business Associate each have their own endpoints (and their own data), the page is the same. */
+export interface LeadsApi {
+  list: typeof telecallerApi.leads;
+  create: typeof telecallerApi.createLead;
+  update: typeof telecallerApi.updateLead;
+}
+export const telecallerLeadsApi: LeadsApi = { list: telecallerApi.leads, create: telecallerApi.createLead, update: telecallerApi.updateLead };
+
+/**
+ * Leads: the leads the signed-in person owns (the same Sales leads the rest of the CRM shows), with their temperature and call status.
+ * The Telecaller and the Business Associate use this one page with their own `api`; `onChanged` tells that dashboard's Home to reload,
+ * and `renderRowAction` lets the Telecaller convert a qualified lead.
+ */
+export const LeadsPage: React.FC<{
+  openAdd?: boolean;
+  api?: LeadsApi;
+  onChanged?: () => void;
+  subtitle?: string;
+  renderRowAction?: (lead: TelecallerLead, reload: () => void) => React.ReactNode;
+}> = ({ openAdd = false, api = telecallerLeadsApi, onChanged = notifyTelecallerChanged, subtitle, renderRowAction }) => {
   const [search, setSearch] = useState('');
   const query = useDebounced(search.trim(), 300);
   const [temperature, setTemperature] = useState('');
@@ -32,7 +50,7 @@ export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) 
     const mine = ++seq.current;
     setLoading(true);
     setError(null);
-    telecallerApi.leads({ search: query || undefined, temperature: temperature || undefined, callStatus: callStatus || undefined, source: source || undefined, page, pageSize }).then(
+    api.list({ search: query || undefined, temperature: temperature || undefined, callStatus: callStatus || undefined, source: source || undefined, page, pageSize }).then(
       d => mine === seq.current && (setData(d), setLoading(false)),
       err => mine === seq.current && (setError(errorMessage(err)), setLoading(false))
     );
@@ -46,7 +64,7 @@ export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) 
     setTimeout(() => setNotice(null), 4000);
     if (created) setPage(1);
     load(); // the new lead appears without a manual refresh
-    notifyTelecallerChanged();
+    onChanged();
   };
 
   const filtered = !!(query || temperature || callStatus || source);
@@ -55,7 +73,7 @@ export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) 
     <div className="space-y-5">
       <PageTitle
         title="Leads"
-        subtitle="Customers you have spoken to. Mark each one Hot, Warm or Cold and keep track of the next call."
+        subtitle={subtitle ?? 'Customers you have spoken to. Mark each one Hot, Warm or Cold and keep track of the next call.'}
         actions={<button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button>}
       />
 
@@ -116,6 +134,7 @@ export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) 
                         <button type="button" className={tcBtn.link} onClick={() => setDialog({ mode: 'view', lead: l })} aria-label={`View ${l.name}`}>View</button>
                         <span className="mx-2 text-slate-300" aria-hidden="true">|</span>
                         <button type="button" className={tcBtn.link} onClick={() => setDialog({ mode: 'edit', lead: l })} aria-label={`Edit ${l.name}`}>Edit</button>
+                        {renderRowAction && <span className="ml-2">{renderRowAction(l, load)}</span>}
                       </td>
                     </tr>
                   ))}
@@ -140,6 +159,7 @@ export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) 
                   <div className="flex gap-2">
                     <button type="button" className={tcBtn.secondary} onClick={() => setDialog({ mode: 'view', lead: l })}>View</button>
                     <button type="button" className={tcBtn.secondary} onClick={() => setDialog({ mode: 'edit', lead: l })}>Edit</button>
+                    {renderRowAction?.(l, load)}
                   </div>
                 </li>
               ))}
@@ -149,8 +169,8 @@ export const LeadsPage: React.FC<{ openAdd?: boolean }> = ({ openAdd = false }) 
         )}
       </section>
 
-      {dialog?.mode === 'add' && <LeadDialog onClose={() => setDialog(null)} onSaved={l => saved(l, true)} />}
-      {dialog?.mode === 'edit' && <LeadDialog lead={dialog.lead} onClose={() => setDialog(null)} onSaved={l => saved(l, false)} />}
+      {dialog?.mode === 'add' && <LeadDialog api={api} onClose={() => setDialog(null)} onSaved={l => saved(l, true)} />}
+      {dialog?.mode === 'edit' && <LeadDialog api={api} lead={dialog.lead} onClose={() => setDialog(null)} onSaved={l => saved(l, false)} />}
       {dialog?.mode === 'view' && <LeadView lead={dialog.lead} onClose={() => setDialog(null)} onEdit={() => setDialog({ mode: 'edit', lead: dialog.lead })} />}
     </div>
   );
@@ -196,7 +216,7 @@ const emptyForm = (lead?: TelecallerLead) => ({
 });
 
 /** Add or edit a lead. The same rules run here (for early feedback), in the API and in the database. */
-const LeadDialog: React.FC<{ lead?: TelecallerLead; onClose: () => void; onSaved: (lead: TelecallerLead) => void }> = ({ lead, onClose, onSaved }) => {
+const LeadDialog: React.FC<{ api: LeadsApi; lead?: TelecallerLead; onClose: () => void; onSaved: (lead: TelecallerLead) => void }> = ({ api, lead, onClose, onSaved }) => {
   const catalog = useServiceCatalog();
   const [form, setForm] = useState(() => emptyForm(lead));
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -230,7 +250,7 @@ const LeadDialog: React.FC<{ lead?: TelecallerLead; onClose: () => void; onSaved
     setError(null);
     try {
       const body = parsed.data;
-      onSaved(lead ? await telecallerApi.updateLead(lead.id, body) : await telecallerApi.createLead(body));
+      onSaved(lead ? await api.update(lead.id, body) : await api.create(body));
     } catch (err) {
       setError(errorMessage(err));
       busy.current = false;

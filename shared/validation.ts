@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { mobileProblem, normalizeWebsite } from './contactValidation.js';
+import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
 import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
@@ -31,6 +32,9 @@ import {
   NOTIFICATION_PRIORITIES,
   ROLES,
   SALES_SUB_ROLES,
+  BA_STAGES,
+  DEMO_MODES,
+  DEMO_STATUSES,
   CALL_STATUSES,
   LEAD_TEMPERATURES,
   TEAM_DIVISIONS
@@ -1419,3 +1423,84 @@ export const telecallerLeadUpdateSchema = telecallerLeadSchema.partial().extend(
   leadTemperature: telecallerLeadSchema.shape.leadTemperature,
   callStatus: telecallerLeadSchema.shape.callStatus
 }).strict();
+
+
+// ---- Business Associate ----
+export const baContactsQuerySchema = z.object({ search: trimmed(120).optional(), stage: z.enum(BA_STAGES).optional(), ...pageParams }).strict();
+export const baContactUpdateSchema = z
+  .object({
+    requirements: optionalText(5000),
+    profile: businessProfileSchema.optional(),
+    nextFollowUp: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    stage: z.enum(BA_STAGES).optional()
+  })
+  .strict()
+  .refine(v => Object.keys(v).length > 0, { message: 'Nothing to update.' });
+export const baNoteSchema = z.object({ note: trimmed(2000).min(1, 'Write the note.') }).strict();
+export const baConvertSchema = z.object({ assigneeId: uuidSchema.nullish(), note: optionalText(1000) }).strict();
+export const baReassignSchema = z.object({ assigneeId: uuidSchema }).strict();
+
+const money = (max: number) => z.coerce.number().min(0).max(max);
+export const baQuotationLineSchema = z
+  .object({
+    serviceCode: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Choose a service.'),
+    description: optionalText(1500),
+    quantity: z.coerce.number().gt(0, 'Enter a quantity above 0.').max(100000),
+    unitPrice: money(1_000_000_000),
+    discountPct: money(100).default(0),
+    gstRate: money(100).default(0)
+  })
+  .strict();
+export const baQuotationSchema = z
+  .object({
+    items: z.array(baQuotationLineSchema).min(1, 'Add at least one service.').max(30),
+    gstApplicable: z.boolean().optional(),
+    validityDays: z.preprocess(v => (v === '' ? null : v), z.coerce.number().int().min(1).max(365).nullable().optional()),
+    paymentTerms: optionalText(2000),
+    timeline: optionalText(1000),
+    notes: optionalText(3000),
+    content: quotationContentSchema.partial().optional(),
+    reviewed: z.boolean().optional()
+  })
+  .partial()
+  .strict();
+export const baQuotationCreateSchema = baQuotationSchema.extend({ contactId: uuidSchema });
+export const baAiExtraSchema = z.object({ instructions: optionalText(600) }).strict();
+export const baQuotationAiSchema = baAiExtraSchema;
+export const baScopeAiSchema = baAiExtraSchema.extend({ section: z.enum(SCOPE_SECTIONS).optional() });
+
+const instant = z.string().datetime({ offset: true, message: 'Enter a valid date and time.' });
+const baDemoFields = z.object({
+  title: trimmed(200).min(1, 'Enter the demo title.'),
+  description: optionalText(3000),
+  startsAt: instant,
+  endsAt: instant,
+  mode: z.enum(DEMO_MODES),
+  location: optionalText(300),
+  meetingLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().url('Enter a valid link.').max(500).nullable().optional()),
+  internalNotes: optionalText(3000)
+});
+const endAfterStart = { message: 'The end time must be after the start time.', path: ['endsAt'] };
+export const baDemoSchema = baDemoFields.strict().refine(v => new Date(v.endsAt) > new Date(v.startsAt), endAfterStart);
+export const baDemoCreateSchema = baDemoFields.extend({ contactId: uuidSchema }).strict().refine(v => new Date(v.endsAt) > new Date(v.startsAt), endAfterStart);
+export const baDemoUpdateSchema = z.object({
+  title: trimmed(200).min(1).optional(), description: optionalText(3000), startsAt: instant.optional(), endsAt: instant.optional(), mode: z.enum(DEMO_MODES).optional(),
+  location: optionalText(300), meetingLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().url().max(500).nullable().optional()), internalNotes: optionalText(3000)
+}).strict().refine(v => !(v.startsAt && v.endsAt) || new Date(v.endsAt) > new Date(v.startsAt), { message: 'The end time must be after the start time.', path: ['endsAt'] });
+export const baDemoStatusSchema = z.object({ status: z.enum(['COMPLETED', 'CANCELLED']), feedback: optionalText(3000), followUpNotes: optionalText(3000) }).strict();
+export const baDemosQuerySchema = z.object({ from: instant.optional(), to: instant.optional(), status: z.enum(DEMO_STATUSES).optional(), contactId: uuidSchema.optional() }).strict();
+
+export const baScopeSchema = z
+  .object({ title: trimmed(200).min(1).optional(), inputs: businessProfileSchema.optional(), content: scopeContentSchema.optional(), reviewed: z.boolean().optional() })
+  .strict();
+export const baScopeCreateSchema = baScopeSchema.extend({ contactId: uuidSchema });
+export const servicePriceSchema = z
+  .object({
+    unitLabel: trimmed(40).min(1).default('one time'),
+    unitPrice: z.coerce.number().min(0).max(1_000_000_000),
+    gstRate: z.coerce.number().min(0).max(100),
+    maxDiscountPct: z.coerce.number().min(0).max(100),
+    isActive: z.boolean().default(true)
+  })
+  .strict();
+export const baDocumentFileQuerySchema = z.object({ action: z.enum(['view', 'download']).default('view') });
