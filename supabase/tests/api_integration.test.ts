@@ -3615,6 +3615,23 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('hr', 'POST', '/hr/recruitment/positions', { title: 'Sales Executive' });
   check(r.status === 200 && r.json.data.title === 'Sales Executive', 'recruitment API: HR adds a position', r);
   const positionId = r.json.data.id;
+  // ---- the dropdowns read the real records
+  r = await api('hr', 'GET', '/hr/recruitment/positions');
+  check(r.status === 200 && r.json.data.some((p: any) => p.source === 'POSITION' && p.title === 'Sales Executive') && r.json.data.some((p: any) => p.source === 'EMPLOYEES' && p.id === null && p.employees >= 1),
+    'recruitment API: the position list has the added positions and the designations of the employee records', r.json.data);
+  const derived = r.json.data.find((p: any) => p.source === 'EMPLOYEES');
+  r = await api('hr', 'GET', '/hr/recruitment/recruiters');
+  check(r.status === 200 && ['HR Lead', 'HR Member'].every(n => r.json.data.some((x: any) => x.name === n && x.hasLogin && x.employeeKey)) && !r.json.data.some((x: any) => x.name === 'Member A'),
+    'recruitment API: the responsible-employee list has the active HR employees (and nobody from other departments)', r.json.data);
+  const recruiterKey = r.json.data.find((x: any) => x.name === 'HR Lead').employeeKey;
+  r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Dev Menon', email: 'dev.m@example.com', positionTitle: derived.title, ownerKey: recruiterKey });
+  check(r.status === 201 && r.json.data.position === derived.title && r.json.data.ownerKey === recruiterKey && r.json.data.owner === 'HR Lead', 'recruitment API: a designation from the employee records can be chosen as the position, and the HR employee is saved', r);
+  r = await api('hr', 'GET', '/hr/recruitment/positions');
+  check(!r.json.data.some((p: any) => p.source === 'EMPLOYEES' && p.title === derived.title) && r.json.data.some((p: any) => p.source === 'POSITION' && p.title === derived.title), 'recruitment API: that designation is now a position, listed once', r.json.data);
+  r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'No Position', email: 'np@example.com' });
+  check(r.status === 422, 'recruitment API: a position is required', r);
+  r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Bad Owner', email: 'bo@example.com', positionId, ownerKey: memberA });
+  check(r.status === 422, 'recruitment API: an employee of another department cannot be the responsible person', r);
   r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Kavya Nair', email: 'not-an-email', positionId });
   check(r.status === 422, 'recruitment API: an invalid e-mail address is refused', r);
   r = await api('hr', 'POST', '/hr/recruitment/candidates', { name: 'Kavya Nair', email: 'kavya.n@example.com', phone: '+91 98200 12345', positionId, source: 'Referral' });
@@ -3640,7 +3657,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('hr', 'PATCH', `/hr/recruitment/candidates/${cand.id}`, { name: 'Kavya N Nair', email: 'kavya.n@example.com', positionId });
   check(r.status === 200 && r.json.data.name === 'Kavya N Nair', 'recruitment API: HR edits the candidate', r);
   r = await api('hr', 'GET', '/hr/recruitment/overview');
-  check(r.status === 200 && r.json.data.candidates === 1 && r.json.data.withPending === 1 && r.json.data.overdueActions === 1 && r.json.data.upcomingCalls === 1, 'recruitment API: the overview counts the real records', r);
+  check(r.status === 200 && r.json.data.candidates === 2 && r.json.data.withPending === 1 && r.json.data.overdueActions === 1 && r.json.data.upcomingCalls === 1, 'recruitment API: the overview counts the real records', r);
   r = await api('dh', 'GET', '/hr/recruitment/overview');
   check(r.status === 403, 'recruitment API: another department\'s head is refused', r);
 

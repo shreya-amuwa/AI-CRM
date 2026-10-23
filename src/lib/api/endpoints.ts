@@ -495,11 +495,11 @@ export const recruitmentApi = {
   positions: () => api.get<RecruitmentPosition[]>('/hr/recruitment/positions'),
   savePosition: (body: { id?: string; title: string; departmentId?: string | null; isOpen: boolean }) => api.post<{ id: string; title: string; isOpen: boolean }>('/hr/recruitment/positions', body),
   recruiters: () => api.get<HrRecruiter[]>('/hr/recruitment/recruiters'),
-  list: (q: { search?: string; positionId?: string; confirmation?: string; pending?: string; call?: string; ownerId?: string; limit?: number; offset?: number }) => api.get<RecruitmentList>('/hr/recruitment/candidates', q),
+  list: (q: { search?: string; positionId?: string; confirmation?: string; pending?: string; call?: string; ownerKey?: string; limit?: number; offset?: number }) => api.get<RecruitmentList>('/hr/recruitment/candidates', q),
   get: (id: string) => api.get<RecruitmentDetail>(`/hr/recruitment/candidates/${id}`),
   create: (body: RecruitmentCandidateInput) => api.post<RecruitmentCandidate>('/hr/recruitment/candidates', body),
   update: (id: string, body: RecruitmentCandidateInput) => api.patch<RecruitmentCandidate>(`/hr/recruitment/candidates/${id}`, body),
-  addAction: (id: string, body: { kind: RecruitmentActionKind; title: string; dueDate?: string | null; assigneeId?: string | null }) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/actions`, body),
+  addAction: (id: string, body: { kind: RecruitmentActionKind; title: string; dueDate?: string | null; assigneeKey?: string | null }) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/actions`, body),
   closeAction: (id: string, body: { done: boolean; note?: string | null }) => api.post<{ id: string; status: string }>(`/hr/recruitment/actions/${id}/close`, body),
   scheduleCall: (id: string, at: string) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/calls`, { at }),
   recordCall: (id: string, body: { callId?: string | null; outcome: RecruitmentCallOutcome; note?: string | null; followUpDate?: string | null }) => api.post<{ id: string }>(`/hr/recruitment/candidates/${id}/calls/record`, body),
@@ -509,8 +509,9 @@ export interface RecruitmentCandidateInput {
   name: string;
   email: string;
   phone?: string | null;
-  positionId: string;
-  ownerId?: string | null;
+  positionId?: string | null;
+  positionTitle?: string | null;
+  ownerKey?: string | null;
   source?: string | null;
   notes?: string | null;
 }

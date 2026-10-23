@@ -23,14 +23,14 @@ select test.must_fail($$insert into hr_candidates (name, email, position_id) val
 select hr_position_save(null, 'Backend Developer', test.dept('wabastore'), true);
 select hr_position_save(null, 'HR Executive', test.dept('hr'), true);
 select test.must_fail($$select hr_position_save(null, 'backend developer', test.dept('wabastore'), true)$$, 'a position cannot be added twice', 'already exists');
-select test.must_fail($$select hr_candidate_save(null, 'A', 'cand@example.com', null, (select id from hr_positions where title = 'Backend Developer'))$$, 'a candidate needs a real name', 'name');
-select test.must_fail($$select hr_candidate_save(null, 'Cand Bad', 'not-an-email', null, (select id from hr_positions where title = 'Backend Developer'))$$, 'and a valid e-mail', 'valid e-mail');
-select test.must_fail($$select hr_candidate_save(null, 'Cand Bad', 'bad@example.com', null, gen_random_uuid())$$, 'and an existing position', 'position');
-select test.must_fail($$select hr_candidate_save(null, 'Cand Bad', 'bad@example.com', null, (select id from hr_positions where title = 'Backend Developer'), test.id('tm_a'))$$, 'the responsible person must be an HR employee', 'HR employee');
-select hr_candidate_save(null, 'Rhea Kapoor', 'rhea.k@example.com', '+91 98200 00001', (select id from hr_positions where title = 'Backend Developer'), test.id('hrx_tm'), 'Referral', 'Strong profile');
-select hr_candidate_save(null, 'Sameer Joshi', 'sameer.j@example.com', null, (select id from hr_positions where title = 'HR Executive'));
-select test.must_fail($$select hr_candidate_save(null, 'Rhea K', 'RHEA.K@example.com', null, (select id from hr_positions where title = 'Backend Developer'))$$, 'the same e-mail cannot apply twice for the same position', 'already applied');
-select hr_candidate_save(null, 'Rhea Kapoor', 'rhea.k@example.com', null, (select id from hr_positions where title = 'HR Executive'));
+select test.must_fail($$select hr_candidate_save(null, 'A', 'cand@example.com', null, (select id from hr_positions where title = 'Backend Developer'), null)$$, 'a candidate needs a real name', 'name');
+select test.must_fail($$select hr_candidate_save(null, 'Cand Bad', 'not-an-email', null, (select id from hr_positions where title = 'Backend Developer'), null)$$, 'and a valid e-mail', 'valid e-mail');
+select test.must_fail($$select hr_candidate_save(null, 'Cand Bad', 'bad@example.com', null, gen_random_uuid(), null)$$, 'and an existing position', 'position');
+select test.must_fail($$select hr_candidate_save(null, 'Cand Bad', 'bad@example.com', null, (select id from hr_positions where title = 'Backend Developer'), null, test.id('tm_a')::text)$$, 'the responsible person must be an HR employee', 'HR employee');
+select hr_candidate_save(null, 'Rhea Kapoor', 'rhea.k@example.com', '+91 98200 00001', (select id from hr_positions where title = 'Backend Developer'), null, test.id('hrx_tm')::text, 'Referral', 'Strong profile');
+select hr_candidate_save(null, 'Sameer Joshi', 'sameer.j@example.com', null, (select id from hr_positions where title = 'HR Executive'), null);
+select test.must_fail($$select hr_candidate_save(null, 'Rhea K', 'RHEA.K@example.com', null, (select id from hr_positions where title = 'Backend Developer'), null)$$, 'the same e-mail cannot apply twice for the same position', 'already applied');
+select hr_candidate_save(null, 'Rhea Kapoor', 'rhea.k@example.com', null, (select id from hr_positions where title = 'HR Executive'), null);
 select test.check((select count(*) = 3 from hr_candidates), 'but the same person can apply for another position');
 
 \echo '   the six columns'
@@ -40,10 +40,10 @@ select test.check((select j ->> 'name' = 'Rhea Kapoor' and j ->> 'email' = 'rhea
   'a new candidate shows name, e-mail, position and empty Pending / Call / Confirmation (distinct fields)');
 -- Pending
 select hr_candidate_action_add((select id from hr_candidates where email = 'rhea.k@example.com' and position_id = (select id from hr_positions where title = 'Backend Developer')), 'DOCUMENTS', 'Collect ID proof and degree', current_date - 2);
-select hr_candidate_action_add((select id from hr_candidates where email = 'rhea.k@example.com' and position_id = (select id from hr_positions where title = 'Backend Developer')), 'INTERVIEW', 'Technical interview', current_date + 3, test.id('hr_head'));
+select hr_candidate_action_add((select id from hr_candidates where email = 'rhea.k@example.com' and position_id = (select id from hr_positions where title = 'Backend Developer')), 'INTERVIEW', 'Technical interview', current_date + 3, test.id('hr_head')::text);
 reset role;
 select test.check((select count(*) = 1 from notifications where type = 'RECRUITMENT_TASK' and recipient_id = test.id('hrx_tm') and title like '%Collect ID proof%'), 'the responsible HR employee is notified of a pending item (default: the candidate''s owner)');
-select test.check((select a.assignee_id = test.id('hr_head') from hr_candidate_actions a where a.title = 'Technical interview'), 'an item can be given to a different HR employee');
+select test.check((select a.assignee_id = test.id('hr_head') and a.assignee_key = test.id('hr_head')::text from hr_candidate_actions a where a.title = 'Technical interview'), 'an item can be given to a different HR employee');
 set role authenticated;
 select test.login('hr_head');
 select test.check((select j -> 'pending' ->> 'open' = '2' and j -> 'pending' ->> 'overdue' = '1' and j -> 'pending' ->> 'nextDue' = (current_date - 2)::text
@@ -85,7 +85,7 @@ select test.check((hr_recruitment_list('%', null, null, null, null, null, 25, 0)
 select test.check((hr_recruitment_list(null, (select id from hr_positions where title = 'HR Executive'), null, null, null, null, 25, 0) ->> 'total')::int = 2, 'filter by position');
 select test.check((hr_recruitment_list(null, null, 'CONFIRMED', null, null, null, 25, 0) ->> 'total')::int = 1, 'filter by confirmation status');
 select test.check((hr_recruitment_list(null, null, null, 'OVERDUE', null, null, 25, 0) ->> 'total')::int = 1 and (hr_recruitment_list(null, null, null, 'OPEN', null, null, 25, 0) ->> 'total')::int = 1 and (hr_recruitment_list(null, null, null, 'NONE', null, null, 25, 0) ->> 'total')::int = 2, 'filter by pending items (overdue / open / none)');
-select test.check((hr_recruitment_list(null, null, null, null, null, test.id('hrx_tm'), 25, 0) ->> 'total')::int = 1, 'filter by the responsible HR employee');
+select test.check((hr_recruitment_list(null, null, null, null, null, test.id('hrx_tm')::text, 25, 0) ->> 'total')::int = 1, 'filter by the responsible HR employee');
 select test.check((hr_recruitment_list(null, null, null, null, null, null, 1, 0) -> 'items' -> 0 ->> 'name') is not null and jsonb_array_length(hr_recruitment_list(null, null, null, null, null, null, 1, 1) -> 'items') = 1, 'paging');
 select test.must_fail($$select hr_recruitment_list(null, null, 'WHATEVER')$$, 'an unknown status filter is refused', 'Unknown');
 select test.check((select count(*) >= 6 from jsonb_array_elements(hr_recruitment_get((select id from hr_candidates where email = 'rhea.k@example.com' and position_id = (select id from hr_positions where title = 'Backend Developer'))) -> 'history')),
@@ -93,7 +93,7 @@ select test.check((select count(*) >= 6 from jsonb_array_elements(hr_recruitment
 select test.check((select jsonb_array_length(h -> 'actions') = 2 and jsonb_array_length(h -> 'calls') = 2 from (select hr_recruitment_get((select id from hr_candidates where email = 'rhea.k@example.com' and position_id = (select id from hr_positions where title = 'Backend Developer'))) h) x),
   'the detail lists the pending items and the calls');
 -- edit and reassign
-select hr_candidate_save((select id from hr_candidates where email = 'sameer.j@example.com'), 'Sameer R Joshi', 'sameer.j@example.com', '+91 98200 00002', (select id from hr_positions where title = 'Backend Developer'), test.id('hrx_tm'), null, null);
+select hr_candidate_save((select id from hr_candidates where email = 'sameer.j@example.com'), 'Sameer R Joshi', 'sameer.j@example.com', '+91 98200 00002', (select id from hr_positions where title = 'Backend Developer'), null, test.id('hrx_tm')::text, null, null);
 select test.check((select j ->> 'name' = 'Sameer R Joshi' and j ->> 'position' = 'Backend Developer' and j ->> 'owner' is not null
                      from jsonb_array_elements(hr_recruitment_list('sameer', null, null, null, null, null, 25, 0) -> 'items') j), 'an edit changes the name, the position and the responsible person');
 select test.check((select count(*) = 1 from jsonb_array_elements(hr_recruitment_get((select id from hr_candidates where email = 'sameer.j@example.com')) -> 'history') e where e ->> 'summary' like 'Updated:%position%'), 'and is written to the history');
@@ -102,11 +102,56 @@ select hr_candidate_action_close((select id from hr_candidate_actions where titl
 select test.must_fail($$select hr_candidate_action_close((select id from hr_candidate_actions where title = 'Collect ID proof and degree'), true)$$, 'a closed item cannot be closed again', 'already closed');
 select test.check((hr_recruitment_overview() ->> 'overdueActions')::int = 0 and (hr_recruitment_overview() ->> 'confirmed')::int = 1 and (hr_recruitment_overview() ->> 'candidates')::int = 3 and (hr_recruitment_overview() ->> 'withPending')::int = 1,
   'the overview counts what is real: candidates, pending, overdue, confirmed');
+
+\echo '   the dropdowns read the real records'
+-- positions: the ones HR added + every designation already in the employee records
+select test.check((select count(*) filter (where x ->> 'source' = 'POSITION') = 2 and count(*) filter (where x ->> 'source' = 'EMPLOYEES') >= 2
+                          and bool_and(x ->> 'title' not in ('Backend Developer', 'HR Executive') or x ->> 'source' = 'POSITION')
+                     from jsonb_array_elements(hr_positions_list()) x),
+  'positions: the added ones plus the designations of the employee records, without repeating one that is already a position');
+select test.check((select count(*) = 1 from jsonb_array_elements(hr_positions_list()) x where x ->> 'title' = 'Office Assistant' and x ->> 'source' = 'EMPLOYEES' and (x ->> 'employees')::int >= 1),
+  'a designation from the HR directory is offered as a position');
+-- choosing such a designation makes it a position (no second list to keep in step)
+select hr_candidate_save(null, 'Dev Menon', 'dev.m@example.com', null, null, 'Office Assistant');
+select test.check((select count(*) = 1 from hr_positions where title = 'Office Assistant') and (select count(*) = 0 from jsonb_array_elements(hr_positions_list()) x where x ->> 'title' = 'Office Assistant' and x ->> 'source' = 'EMPLOYEES'),
+  'choosing it creates the position once and it is no longer listed twice');
+select hr_candidate_save(null, 'Dev Menon Two', 'dev.m2@example.com', null, null, 'office assistant');
+select test.check((select count(*) = 1 from hr_positions where lower(title) = 'office assistant'), 'the same designation in another capitalisation reuses the position');
+select test.must_fail($$select hr_candidate_save(null, 'No Position', 'np@example.com', null, null, null)$$, 'a position is required', 'position');
+-- a new designation appears by itself
+reset role;
+update hr_employees set designation = 'Growth Marketer' where id = 'HR-EMP-9001';
+set role authenticated;
+select test.login('hr_head');
+select test.check((select count(*) = 1 from jsonb_array_elements(hr_positions_list()) x where x ->> 'title' = 'Growth Marketer'), 'a newly given designation appears without any code change');
+-- responsible HR employee: every active employee of the HR department in the HR directory
+select test.check((select count(*) >= 3 and bool_or(x ->> 'name' = 'HR Head') and bool_or(x ->> 'name' = 'HR Only Person' and (x ->> 'hasLogin')::boolean = false) and bool_or(x ->> 'name' = 'HRX Member')
+                     from jsonb_array_elements(hr_recruiters()) x),
+  'HR employees: those with a CRM login and the HR-directory ones without');
+select test.check(not exists (select 1 from jsonb_array_elements(hr_recruiters()) x where x ->> 'name' in ('Member A', 'DH Wabastore', 'Root')), 'and nobody from another department, and not the Super Admin');
+select hr_candidate_save(null, 'Isha Rao', 'isha.r@example.com', null, (select id from hr_positions where title = 'Backend Developer'), null, 'HR:HR-EMP-9001');
+select test.check((select j ->> 'owner' = 'HR Only Person' and j ->> 'ownerKey' = 'HR:HR-EMP-9001' and j ->> 'ownerId' is null
+                     from jsonb_array_elements(hr_recruitment_list('isha', null, null, null, null, null, 25, 0) -> 'items') j),
+  'an HR employee without a login can be the responsible person (recorded by employee key and name)');
+select test.check((hr_recruitment_list(null, null, null, null, null, 'HR:HR-EMP-9001', 25, 0) ->> 'total')::int = 1, 'and the candidates can be filtered by them');
+select hr_candidate_action_add((select id from hr_candidates where email = 'isha.r@example.com'), 'DOCUMENTS', 'Collect documents', current_date + 2);
+select test.check((select a.assignee_key = 'HR:HR-EMP-9001' and a.assignee_id is null and a.assignee_name = 'HR Only Person' from hr_candidate_actions a where a.title = 'Collect documents'), 'a pending item defaults to the responsible person');
+select test.must_fail($$select hr_candidate_save(null, 'Bad Owner', 'bo@example.com', null, (select id from hr_positions where title = 'Backend Developer'), null, 'not-a-key')$$, 'an unknown employee key is refused', 'HR employee');
+select test.must_fail($$select hr_candidate_save(null, 'Bad Owner', 'bo@example.com', null, (select id from hr_positions where title = 'Backend Developer'), null, test.id('tm_a')::text)$$, 'an employee of another department is refused', 'HR employee');
+select test.check((select count(*) = 0 from notifications where type = 'RECRUITMENT_ASSIGNED' and title like '%Isha Rao%'), 'an employee without a login is recorded but there is nobody to notify');
+-- a newly created HR employee appears automatically
+reset role;
+update hr_employees set designation = 'Office Assistant' where id = 'HR-EMP-9001';
+select test.create_auth_user('rec_new_hr', 'rec.new.hr@amuwa.com', '{"full_name":"New HR Recruiter"}',
+  jsonb_build_object('provisioned_by', test.id('hr_head'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select t.id from teams t where t.department_id = test.dept('hr') order by t.created_at limit 1)));
+set role authenticated;
+select test.login('hr_head');
+select test.check((select count(*) = 1 from jsonb_array_elements(hr_recruiters()) x where x ->> 'name' = 'New HR Recruiter' and (x ->> 'hasLogin')::boolean), 'a newly created HR employee appears in the list by itself');
 select test.login('hrx_tm');
-select test.check((hr_recruitment_list(null, null, null, null, null, null, 25, 0) ->> 'total')::int = 3, 'another HR employee sees the same records (they are shared)');
+select test.check((hr_recruitment_list(null, null, null, null, null, null, 25, 0) ->> 'total')::int = 6, 'another HR employee sees the same records (they are shared)');
 select test.check(jsonb_array_length(hr_recruiters()) >= 2, 'the list of HR employees to assign to comes from the HR department');
 select test.login('sa');
-select test.check((hr_recruitment_list(null, null, null, null, null, null, 25, 0) ->> 'total')::int = 3, 'the Super Admin can read them');
+select test.check((hr_recruitment_list(null, null, null, null, null, null, 25, 0) ->> 'total')::int = 6, 'the Super Admin can read them');
 reset role;
 set role anon;
 select test.must_fail($$select hr_recruitment_list()$$, 'a signed-out visitor cannot', 'permission denied');

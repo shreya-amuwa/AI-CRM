@@ -2550,6 +2550,8 @@ export interface RecruitmentCandidate {
   positionId: string;
   position: string;
   ownerId: string | null;
+  /** The responsible HR employee's key in the HR directory (also set for an employee without a CRM login). */
+  ownerKey: string | null;
   owner: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2564,7 +2566,7 @@ export interface RecruitmentCandidate {
   confirmation: { status: RecruitmentConfirmation; date: string | null; note: string | null };
 }
 export interface RecruitmentDetail extends RecruitmentCandidate {
-  actions: { id: string; kind: RecruitmentActionKind; title: string; dueDate: string | null; status: 'OPEN' | 'DONE' | 'CANCELLED'; note: string | null; doneAt: string | null; assigneeId: string | null; assignee: string | null; overdue: boolean; createdAt: string }[];
+  actions: { id: string; kind: RecruitmentActionKind; title: string; dueDate: string | null; status: 'OPEN' | 'DONE' | 'CANCELLED'; note: string | null; doneAt: string | null; assigneeId: string | null; assigneeKey: string | null; assignee: string | null; overdue: boolean; createdAt: string }[];
   calls: { id: string; scheduledAt: string | null; calledAt: string | null; outcome: RecruitmentCallOutcome | null; note: string | null; followUpDate: string | null; madeBy: string | null }[];
   history: { id: string; kind: string; summary: string; actor: string | null; at: string }[];
 }
@@ -2589,18 +2591,25 @@ export interface RecruitmentAgenda {
   overdueFollowUps: { candidateId: string; name: string; position: string | null; followUpDate: string }[];
   overdueActions: { candidateId: string; name: string; actionId: string; title: string; dueDate: string; assignee: string | null }[];
 }
+/** A position HR added (source POSITION), or a designation found in the employee records that is not a position yet (source EMPLOYEES, id null: it becomes one when chosen). */
 export interface RecruitmentPosition {
-  id: string;
+  id: string | null;
   title: string;
   departmentId: string | null;
   department: string | null;
   isOpen: boolean;
   candidates: number;
+  source: 'POSITION' | 'EMPLOYEES';
+  employees: number;
 }
+/** An active HR employee from the HR directory. */
 export interface HrRecruiter {
-  id: string;
+  employeeKey: string;
+  profileId: string | null;
   name: string;
-  position: string | null;
+  code: string | null;
+  designation: string | null;
+  hasLogin: boolean;
 }
 
 // ---------------------------------------------------------------------------

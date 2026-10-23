@@ -162,6 +162,16 @@ const hr = await login('hr.head@amuwa.com', { width: 1440, height: 900 }, 'text=
 await signOutChecks(hr, 'HR');
 await hr.getByText('Recruitment Management', { exact: true }).first().click();
 await hr.getByRole('heading', { name: 'Recruitment Management' }).waitFor({ timeout: 15000 });
+// the dropdowns read the real records, before any position was added by hand
+await hr.getByRole('button', { name: 'Add candidate' }).first().click();
+const pre = hr.getByRole('dialog');
+await pre.locator('#c-pos').waitFor({ timeout: 10000 });
+await hr.waitForTimeout(500);
+const posGroups = await pre.locator('#c-pos optgroup').evaluateAll(els => els.map(e => ({ label: e.label, options: [...e.querySelectorAll('option')].map(o => o.textContent) })));
+await expect(posGroups.some(g => /Designations in the employee records/.test(g.label) && g.options.includes('Department Head')), 'Recruitment: the Position dropdown lists the designations of the real employee records (no hard-coded or empty list)', posGroups);
+const ownerOptions = await pre.locator('#c-owner option').allInnerTexts();
+await expect(ownerOptions.some(o => /Payal HR/.test(o)), 'Recruitment: the Responsible HR employee dropdown lists the HR department\'s employees', ownerOptions);
+await pre.getByRole('button', { name: 'Close' }).click();
 await hr.getByRole('tab', { name: 'Positions' }).click();
 await hr.getByLabel('New position').fill('Backend Developer');
 await hr.getByRole('button', { name: 'Add position' }).click();
@@ -194,7 +204,9 @@ await hr.screenshot({ path: `${OUT}/ws-4-candidate.png`, fullPage: true });
 await cd.getByRole('button', { name: 'Close' }).first().click();
 const crow = hr.locator('tr', { hasText: 'Rhea Kapoor' });
 await crow.getByText('Confirmed').waitFor({ timeout: 10000 }).catch(() => {});
+await crow.getByText('Scheduled').waitFor({ timeout: 10000 }).catch(() => {});
 const ctext = await crow.innerText();
+console.log('row text:', JSON.stringify(ctext));
 await expect(/rhea\.k@example\.com/.test(ctext) && /1 open/.test(ctext) && /1 overdue/.test(ctext) && /Scheduled/.test(ctext) && /Confirmed/.test(ctext), 'Recruitment: Pending, Call and Confirmation each show their own stage', ctext);
 await hr.getByPlaceholder('Search name or e-mail').fill('nobody-here');
 await hr.getByText('No candidate matches these filters.').waitFor({ timeout: 10000 });

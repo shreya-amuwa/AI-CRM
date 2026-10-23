@@ -1065,7 +1065,7 @@ export const recruitmentListQuerySchema = z
     confirmation: z.enum(CONFIRMATIONS).optional(),
     pending: z.enum(['OPEN', 'OVERDUE', 'NONE']).optional(),
     call: z.enum(['SCHEDULED', 'FOLLOW_UP_OVERDUE', 'NONE']).optional(),
-    ownerId: uuidSchema.optional(),
+    ownerKey: trimmed(80).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(25),
     offset: z.coerce.number().int().min(0).max(100000).default(0)
   })
@@ -1075,12 +1075,15 @@ export const recruitmentCandidateSchema = z
     name: trimmed(160).min(2, 'Enter the candidate\'s name.'),
     email: emailSchema,
     phone: optionalText(40),
-    positionId: uuidSchema,
-    ownerId: uuidSchema.nullable().optional(),
+    positionId: uuidSchema.nullable().optional(),
+    /** A designation from the employee records that is not a position yet: it becomes one. */
+    positionTitle: optionalText(120),
+    ownerKey: optionalText(80),
     source: optionalText(80),
     notes: optionalText(2000)
   })
-  .strict();
+  .strict()
+  .refine(v => !!v.positionId || !!v.positionTitle, { message: 'Choose the position the candidate applied for.', path: ['positionId'] });
 export const recruitmentPositionSchema = z
   .object({ id: uuidSchema.optional(), title: trimmed(120).min(2, 'Enter the position title.'), departmentId: uuidSchema.nullable().optional(), isOpen: z.boolean().default(true) })
   .strict();
@@ -1089,7 +1092,7 @@ export const recruitmentActionSchema = z
     kind: z.enum(['INTERVIEW', 'DOCUMENTS', 'ASSESSMENT', 'BACKGROUND_CHECK', 'REFERENCE_CHECK', 'OTHER']),
     title: trimmed(200).min(2, 'Describe what is pending.'),
     dueDate: isoDate.nullable().optional(),
-    assigneeId: uuidSchema.nullable().optional()
+    assigneeKey: optionalText(80)
   })
   .strict();
 export const recruitmentActionCloseSchema = z.object({ done: z.boolean(), note: optionalText(500) }).strict();

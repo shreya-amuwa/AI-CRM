@@ -303,7 +303,7 @@ const ProgramView: React.FC<{ id: string; onBack: () => void }> = ({ id, onBack 
           </Card>
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 mb-2">The three days</h3>
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">{p.days.map(d => <DayConfig key={`${d.dayNo}-${d.title}-${d.topics.length}`} programId={p.id} day={d} trainers={employees} onSaved={() => void load()} />)}</div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">{p.days.map(d => <DayConfig key={d.dayNo} programId={p.id} day={d} trainers={employees} onSaved={() => void load()} />)}</div>
           </div>
           <Card className="overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-b border-slate-100">
@@ -389,7 +389,7 @@ const EnrollmentDialog: React.FC<{ id: string; onClose: () => void; onChanged: (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-3"><Pill tone={STATUS[d.status].tone}>{STATUS[d.status].label}</Pill><DayChips days={d.days} />
             <span className="text-xs text-slate-500">{d.preview.daysCompleted} of 3 days complete · assessment {d.preview.assessmentPercent === null ? 'Insufficient data' : `${d.preview.assessmentPercent}%`}</span></div>
-          {[1, 2, 3].map(n => <DayReportForm key={`${n}-${d.reports.find(r => r.dayNo === n)?.reportedAt ?? 'new'}`} d={d} day={n} onSaved={changed} />)}
+          {[1, 2, 3].map(n => <DayReportForm key={n} d={d} day={n} onSaved={changed} />)}
           <ReviewForm d={d} onSaved={changed} />
           {d.consolidated && (
             <section aria-label="Consolidated report" className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-1.5">
