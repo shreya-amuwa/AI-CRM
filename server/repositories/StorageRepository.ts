@@ -82,7 +82,7 @@ export class StorageRepository {
     await driver.put(bucket, path, bytes, mimeType);
     const seen = await driver.inspect(bucket, path, mimeType);
     if (!seen.exists || !seen.matches || seen.size !== bytes.length) {
-      throw new AppError('SERVICE_UNAVAILABLE', 'The invoice file could not be stored. Please try again.');
+      throw new AppError('SERVICE_UNAVAILABLE', 'The file could not be stored. Please try again.');
     }
     return { provider: driver.provider, reference: driver.reference(bucket, path), etag: seen.etag, size: seen.size };
   }

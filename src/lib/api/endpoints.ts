@@ -3,6 +3,15 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  SalesSubRole,
+  TelecallerAssignee,
+  TelecallerContact,
+  TelecallerContactList,
+  TelecallerHome,
+  TelecallerLead,
+  TelecallerLeadList,
+  TelecallerSheet,
+  TelecallerSheetCheck,
   TrainingAttendance,
   TrainingEmployee,
   TrainingEnrollmentDetail,
@@ -451,6 +460,7 @@ export const usersApi = {
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
   setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
+  setSalesSubRole: (id: string, role: SalesSubRole | null) => api.post<Profile>(`/users/${id}/sales-sub-role`, { role }),
   remove: (id: string) => api.delete<null>(`/users/${id}`)
 };
 
@@ -487,6 +497,35 @@ export const trainingApi = {
   saveReport: (id: string, day: number, body: { attendance: TrainingAttendance | null; topicsCompleted: string[]; tasks: { title: string; done: boolean }[]; scores: { criterion: string; score: number }[]; feedback?: string | null; trainerRemarks?: string | null; report?: string | null }) =>
     api.post<{ dayNo: number; completed: boolean; status: string; assessmentResult: string | null }>(`/hr/training/enrollments/${id}/days/${day}`, body),
   review: (id: string, body: { strengths?: string | null; improvements?: string | null; trainerRemarks?: string | null }) => api.post<{ id: string; status: string }>(`/hr/training/enrollments/${id}/review`, body)
+};
+
+export interface TelecallerLeadBody {
+  name: string;
+  company: string;
+  phone: string;
+  email?: string | null;
+  address?: string | null;
+  leadSource: string;
+  notes?: string | null;
+  services: string[];
+  leadTemperature: string;
+  callStatus: string;
+  followUpDate?: string | null;
+}
+export const telecallerApi = {
+  home: () => api.get<TelecallerHome>('/telecaller/home'),
+  assignable: (departmentId?: string) => api.get<TelecallerAssignee[]>('/telecaller/assignable', { departmentId }),
+  lists: (assigneeId?: string) => api.get<TelecallerSheet[]>('/telecaller/lists', { assigneeId }),
+  checkSheet: (body: { assigneeId: string; fileName: string; note?: string | null; hash: string; rows: { row: number; name: string; company?: string; phone: string; email?: string; remarks?: string }[]; commit: boolean }) =>
+    api.post<TelecallerSheetCheck>('/telecaller/lists', body),
+  storeSource: (listId: string, data: string) => api.post<{ stored: true; size: number }>(`/telecaller/lists/${listId}/source`, { data }),
+  contacts: (q: { listId?: string; search?: string; status?: string; page?: number; pageSize?: number }) => api.get<TelecallerContactList>('/telecaller/contacts', q),
+  updateContact: (id: string, body: { callStatus: string; remarks?: string | null; followUpDate?: string | null; called?: boolean }) =>
+    api.patch<Pick<TelecallerContact, 'id' | 'callStatus' | 'lastCalledAt' | 'followUpDate' | 'remarks' | 'callCount'>>(`/telecaller/contacts/${id}`, body),
+  leads: (q: { search?: string; temperature?: string; callStatus?: string; source?: string; page?: number; pageSize?: number }) => api.get<TelecallerLeadList>('/telecaller/leads', q),
+  lead: (id: string) => api.get<TelecallerLead>(`/telecaller/leads/${id}`),
+  createLead: (body: TelecallerLeadBody) => api.post<TelecallerLead>('/telecaller/leads', body),
+  updateLead: (id: string, body: Partial<TelecallerLeadBody> & { leadTemperature: string; callStatus: string }) => api.patch<TelecallerLead>(`/telecaller/leads/${id}`, body)
 };
 
 export const recruitmentApi = {

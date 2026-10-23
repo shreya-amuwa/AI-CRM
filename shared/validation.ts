@@ -30,6 +30,9 @@ import {
   CUSTOMER_STATUSES,
   NOTIFICATION_PRIORITIES,
   ROLES,
+  SALES_SUB_ROLES,
+  CALL_STATUSES,
+  LEAD_TEMPERATURES,
   TEAM_DIVISIONS
 } from './contracts.js';
 
@@ -185,6 +188,8 @@ export const userCreateSchema = z
     position: optionalText(120),
     /** Team member of a support team who opens the Technical Consultant dashboard. */
     technicalConsultant: z.boolean().optional(),
+    /** Sales role of a Sales team member (Telecaller, ...). Only a Team Member of a Sales team has one. */
+    salesSubRole: z.enum(SALES_SUB_ROLES).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
   })
@@ -196,6 +201,14 @@ export const userCreateSchema = z
   .refine(u => !u.technicalConsultant || u.role === 'TEAM_MEMBER', {
     message: 'A Technical Consultant is created as a team member of a support team.',
     path: ['role']
+  })
+  .refine(u => !u.salesSubRole || u.role === 'TEAM_MEMBER', {
+    message: 'A Sales role is given to a team member of a Sales team.',
+    path: ['salesSubRole']
+  })
+  .refine(u => !(u.salesSubRole && u.technicalConsultant), {
+    message: 'A person is either a Technical Consultant or has a Sales role.',
+    path: ['salesSubRole']
   });
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 
@@ -1326,3 +1339,83 @@ export const orderAttributionSchema = z
 export type OrderAttributionInput = z.infer<typeof orderAttributionSchema>;
 export const customerAcquisitionSchema = z.object({ division: z.enum(['SALES', 'SUPPORT']), reason: attributionReason }).strict();
 export const revenueSettingsSchema = z.object({ clientPurchaseAttribution: z.enum(['SUPPORT', 'ACQUISITION', 'SALES']) }).strict();
+
+
+// ---- Telecaller ----
+export const salesSubRoleSchema = z.object({ role: z.enum(SALES_SUB_ROLES).nullable() }).strict();
+
+/** One row of a contact sheet, read in the browser: the database checks every value again. */
+export const telecallerSheetRowSchema = z
+  .object({
+    row: z.coerce.number().int().min(1).max(100000),
+    name: z.string().max(400).default(''),
+    company: z.string().max(400).nullish(),
+    phone: z.string().max(60).default(''),
+    email: z.string().max(400).nullish(),
+    remarks: z.string().max(2000).nullish()
+  })
+  .strict();
+export const telecallerSheetSchema = z
+  .object({
+    assigneeId: uuidSchema,
+    fileName: trimmed(200).min(1, 'The file name is missing.'),
+    note: optionalText(500),
+    /** SHA-256 of the file (hex): the same file is not assigned twice to one person. */
+    hash: z.string().regex(/^[a-f0-9]{64}$/, 'The sheet could not be identified.'),
+    rows: z.array(telecallerSheetRowSchema).min(1, 'The sheet has no contact rows.').max(2000, 'A sheet can have at most 2,000 contacts.'),
+    commit: z.boolean().default(false)
+  })
+  .strict();
+export const TELECALLER_SHEET_MAX_BYTES = 700 * 1024;
+export const telecallerSheetSourceSchema = z.object({ data: z.string().min(8).max(1_000_000) }).strict();
+export const telecallerAssignableQuerySchema = z.object({ departmentId: uuidSchema.optional() });
+
+export const telecallerContactsQuerySchema = z
+  .object({
+    listId: uuidSchema.optional(),
+    search: trimmed(120).optional(),
+    status: z.enum(CALL_STATUSES).optional(),
+    ...pageParams
+  })
+  .strict();
+export const telecallerContactUpdateSchema = z
+  .object({
+    callStatus: z.enum(CALL_STATUSES),
+    remarks: optionalText(1000),
+    followUpDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    /** false: only the remarks / follow-up changed, no call took place */
+    called: z.boolean().optional()
+  })
+  .strict()
+  .refine(v => v.callStatus !== 'FOLLOW_UP_REQUIRED' || !!v.followUpDate, { message: 'Enter the follow-up date.', path: ['followUpDate'] });
+
+export const telecallerLeadsQuerySchema = z
+  .object({
+    search: trimmed(120).optional(),
+    temperature: z.enum(LEAD_TEMPERATURES).optional(),
+    callStatus: z.enum(CALL_STATUSES).optional(),
+    source: trimmed(60).optional(),
+    ...pageParams
+  })
+  .strict();
+/** Add / edit a lead: the Sales lead fields plus the temperature and the call status. The follow-up is a date. */
+export const telecallerLeadSchema = z
+  .object({
+    name: leadCreateSchema.shape.name,
+    company: leadCreateSchema.shape.company,
+    phone: leadCreateSchema.shape.phone,
+    email: leadCreateSchema.shape.email,
+    address: leadCreateSchema.shape.address,
+    leadSource: leadCreateSchema.shape.leadSource,
+    notes: leadCreateSchema.shape.notes,
+    services: serviceCodes.min(1, 'Select the service the customer is interested in.'),
+    leadTemperature: z.enum(LEAD_TEMPERATURES, { errorMap: () => ({ message: 'Choose Hot, Warm or Cold.' }) }),
+    callStatus: z.enum(CALL_STATUSES, { errorMap: () => ({ message: 'Choose the call status.' }) }),
+    followUpDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional())
+  })
+  .strict();
+export type TelecallerLeadInput = z.infer<typeof telecallerLeadSchema>;
+export const telecallerLeadUpdateSchema = telecallerLeadSchema.partial().extend({
+  leadTemperature: telecallerLeadSchema.shape.leadTemperature,
+  callStatus: telecallerLeadSchema.shape.callStatus
+}).strict();

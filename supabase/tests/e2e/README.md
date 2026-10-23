@@ -28,3 +28,13 @@ width for sideways scrolling and saves screenshots to the directory you pass.
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-dashboards.sh ./dashboard-screenshots
 ```
+
+## Telecaller workspace
+
+`run-telecaller.sh` (own ports) checks the Sales role dropdown in the creation form, the Department Head's Excel upload (errors block it, preview,
+confirm, stored file), a Telecaller's Home / Tasks / Leads against the database, routing and permissions (another Telecaller, a Sales member and a
+Business Associate), and a phone-sized window.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-telecaller.sh ./telecaller-screenshots
+```
