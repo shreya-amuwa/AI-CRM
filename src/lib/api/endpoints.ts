@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   TelecallerAssignee,
   TelecallerContact,
@@ -526,6 +527,56 @@ export const telecallerApi = {
   lead: (id: string) => api.get<TelecallerLead>(`/telecaller/leads/${id}`),
   createLead: (body: TelecallerLeadBody) => api.post<TelecallerLead>('/telecaller/leads', body),
   updateLead: (id: string, body: Partial<TelecallerLeadBody> & { leadTemperature: string; callStatus: string }) => api.patch<TelecallerLead>(`/telecaller/leads/${id}`, body)
+};
+
+export interface BaQuotationBody {
+  items?: { serviceCode: string; description?: string | null; quantity: number; unitPrice: number; discountPct?: number; gstRate?: number }[];
+  gstApplicable?: boolean;
+  validityDays?: number | null;
+  paymentTerms?: string | null;
+  timeline?: string | null;
+  notes?: string | null;
+  content?: Record<string, unknown>;
+  reviewed?: boolean;
+}
+export interface BaDemoBody { title: string; description?: string | null; startsAt: string; endsAt: string; mode: 'ONLINE' | 'IN_PERSON'; location?: string | null; meetingLink?: string | null; internalNotes?: string | null }
+export const businessAssociateApi = {
+  home: () => api.get<BaHome>('/ba/home'),
+  assignees: () => api.get<BaAssignee[]>('/telecaller/ba-assignees'),
+  convertLead: (leadId: string, body: { assigneeId?: string | null; note?: string | null }) =>
+    api.post<{ contactId: string; assignedTo: string; assigneeName: string }>(`/telecaller/leads/${leadId}/convert`, body),
+  contacts: (q: { search?: string; stage?: string; page?: number; pageSize?: number }) => api.get<BaContactList>('/ba/contacts', q),
+  contact: (id: string) => api.get<BaContactDetail>(`/ba/contacts/${id}`),
+  updateContact: (id: string, body: { requirements?: string | null; profile?: Record<string, string>; nextFollowUp?: string | null; stage?: string }) => api.patch<BaContactDetail>(`/ba/contacts/${id}`, body),
+  addNote: (id: string, note: string) => api.post<{ ok: true }>(`/ba/contacts/${id}/notes`, { note }),
+  reassign: (id: string, assigneeId: string) => api.post<{ contactId: string }>(`/ba/contacts/${id}/reassign`, { assigneeId }),
+  prices: () => api.get<ServicePrice[]>('/ba/prices'),
+  savePrice: (code: string, body: { unitLabel: string; unitPrice: number; gstRate: number; maxDiscountPct: number; isActive: boolean }) => api.post<{ serviceCode: string }>(`/ba/prices/${code}`, body),
+  quotations: (contactId?: string) => api.get<BaQuotationRow[]>('/ba/quotations', { contactId }),
+  quotation: (id: string) => api.get<BaQuotation>(`/ba/quotations/${id}`),
+  createQuotation: (contactId: string, body: BaQuotationBody) => api.post<BaQuotation>('/ba/quotations', { contactId, ...body }),
+  saveQuotation: (id: string, body: BaQuotationBody) => api.patch<BaQuotation>(`/ba/quotations/${id}`, body),
+  aiQuotation: (id: string, instructions?: string) => api.post<BaQuotation>(`/ba/quotations/${id}/ai`, { instructions: instructions || undefined }),
+  reviewQuotation: (id: string) => api.post<BaQuotation>(`/ba/quotations/${id}/review`),
+  reviseQuotation: (id: string) => api.post<BaQuotation>(`/ba/quotations/${id}/revise`),
+  finalizeQuotation: (id: string) => api.post<BaQuotation>(`/ba/quotations/${id}/finalize`),
+  quotationFile: (id: string, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/ba/quotations/${id}/file`, { action }),
+  demos: (q: { from?: string; to?: string; status?: string; contactId?: string }) => api.get<BaDemo[]>('/ba/demos', q),
+  createDemo: (contactId: string, body: BaDemoBody) => api.post<BaDemo>('/ba/demos', { contactId, ...body }),
+  updateDemo: (id: string, body: Partial<BaDemoBody>) => api.patch<BaDemo>(`/ba/demos/${id}`, body),
+  demoStatus: (id: string, status: 'COMPLETED' | 'CANCELLED', feedback?: string | null, followUpNotes?: string | null) => api.post<BaDemo>(`/ba/demos/${id}/status`, { status, feedback, followUpNotes }),
+  scopes: (contactId: string) => api.get<BaScopeRow[]>(`/ba/contacts/${contactId}/scope`),
+  scope: (id: string) => api.get<BaScope>(`/ba/scope/${id}`),
+  createScope: (contactId: string, body: { title?: string; inputs?: Record<string, string>; content?: Record<string, unknown>; reviewed?: boolean }) => api.post<BaScope>('/ba/scope', { contactId, ...body }),
+  saveScope: (id: string, body: { title?: string; inputs?: Record<string, string>; content?: Record<string, unknown>; reviewed?: boolean }) => api.patch<BaScope>(`/ba/scope/${id}`, body),
+  aiScope: (id: string, body: { section?: string; instructions?: string }) => api.post<BaScope>(`/ba/scope/${id}/ai`, body),
+  reviewScope: (id: string) => api.post<BaScope>(`/ba/scope/${id}/review`),
+  finalizeScope: (id: string) => api.post<BaScope>(`/ba/scope/${id}/finalize`),
+  scopeFile: (id: string, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/ba/scope/${id}/file`, { action }),
+  leads: (q: { search?: string; temperature?: string; callStatus?: string; source?: string; page?: number; pageSize?: number }) => api.get<TelecallerLeadList>('/ba/leads', q),
+  lead: (id: string) => api.get<TelecallerLead>(`/ba/leads/${id}`),
+  createLead: (body: TelecallerLeadBody) => api.post<TelecallerLead>('/ba/leads', body),
+  updateLead: (id: string, body: Partial<TelecallerLeadBody> & { leadTemperature: string; callStatus: string }) => api.patch<TelecallerLead>(`/ba/leads/${id}`, body)
 };
 
 export const recruitmentApi = {

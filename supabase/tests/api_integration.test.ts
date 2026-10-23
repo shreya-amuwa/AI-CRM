@@ -4550,6 +4550,307 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   void listB;
 }
 
+
+// --- Business Associate: Telecaller hand-over, price list, quotations (AI + PDF), demos, Scope of Project (AI + PDF), leads ----
+{
+  const { PDFDocument } = await import('pdf-lib');
+  const ids = async (email: string) => (await db.query(`select id from profiles where email = $1`, [email])).rows[0].id as string;
+  const svcCodes = (await db.query(`select code from crm_services where is_active order by sort_order limit 4`)).rows.map(r => r.code as string);
+  const invoiceCounts = async () => ['member_invoices', 'generated_invoices', 'customer_payments'].map(async t => Number((await db.query(`select count(*) from ${t}`)).rows[0].count));
+  const before = await Promise.all(await invoiceCounts());
+
+  // ---- creating the person: the Department Head chooses Business Associate in the creation form
+  r = await api('dh', 'POST', '/users', { email: 'ba.one@amuwa.com', fullName: 'Biz One', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'BUSINESS_ASSOCIATE' });
+  check(r.status === 201 && r.json.data.salesSubRole === 'BUSINESS_ASSOCIATE' && r.json.data.defaultDashboard === 'business-associate', 'business associate API: created with the Sales role; the dashboard value is business-associate (never the Telecaller one)', r);
+  const baOne = r.json.data.id as string;
+  tokens.set('ba1', tokenFor(baOne));
+  r = await api('dh', 'POST', '/users', { email: 'ba.two@amuwa.com', fullName: 'Biz Two', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'BUSINESS_ASSOCIATE' });
+  const baTwo = r.json.data.id as string;
+  tokens.set('ba2', tokenFor(baTwo));
+  r = await api('dh', 'POST', '/users', { email: 'influ@amuwa.com', fullName: 'Influ Encer', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'INFLUENCER' });
+  check(r.status === 201 && r.json.data.defaultDashboard === 'sales-influencer', 'business associate API: another Sales role does not get the Business Associate dashboard', r);
+  tokens.set('influ', tokenFor(r.json.data.id));
+  for (const who of ['a', 'tca', 'influ', 'th']) {
+    r = await api(who, 'GET', '/ba/home');
+    check(r.status === 403, `business associate API: ${who} cannot open the Business Associate pages`, r);
+  }
+  r = await api('ba1', 'GET', '/telecaller/home');
+  check(r.status === 403, 'business associate API: nor can a Business Associate open the Telecaller pages', r);
+
+  // ---- the Telecaller converts a qualified lead
+  const leadId = (await db.query(`select id from customers where name = 'Hot Customer'`)).rows[0].id as string;
+  const warmId = (await db.query(`select id from customers where name = 'Warm Customer'`)).rows[0].id as string;
+  r = await api('tca', 'GET', '/telecaller/ba-assignees');
+  check(r.status === 200 && r.json.data.length === 2, 'business associate API: a Telecaller lists the Business Associates of the department', r);
+  r = await api('tca', 'POST', `/telecaller/leads/${warmId}/convert`, {});
+  check(r.status === 422 && /Interested/.test(r.json.error.message), 'business associate API: a lead that is not qualified cannot be converted', r);
+  r = await api('tcb', 'POST', `/telecaller/leads/${leadId}/convert`, {});
+  check(r.status === 404, 'business associate API: another Telecaller cannot convert this lead', r);
+  r = await api('a', 'POST', `/telecaller/leads/${leadId}/convert`, {});
+  check(r.status === 403, 'business associate API: nor a Sales member', r);
+  r = await api('tca', 'POST', `/telecaller/leads/${leadId}/convert`, { assigneeId: baOne, note: 'Keen on WhatsApp API' });
+  check(r.status === 201 && r.json.data.assigneeName === 'Biz One', 'business associate API: a qualified lead is converted and assigned', r);
+  const contactId = r.json.data.contactId as string;
+  r = await api('tca', 'POST', `/telecaller/leads/${leadId}/convert`, { assigneeId: baTwo });
+  check(r.status === 409, 'business associate API: converting the same lead again is refused (no duplicate contact)', r);
+  check(Number((await db.query(`select count(*) from ba_contacts where lead_id = $1`, [leadId])).rows[0].count) === 1, 'business associate API: one contact exists for the lead');
+  r = await api('tca', 'GET', '/telecaller/leads?temperature=HOT');
+  check(r.json.data.items.some((l: any) => l.id === leadId && l.converted?.businessAssociate === 'Biz One'), 'business associate API: the Telecaller\'s list shows the lead was converted', r.json.data.items);
+
+  // ---- Tasks
+  r = await api('ba1', 'GET', '/ba/contacts');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].name === 'Hot Customer' && r.json.data.items[0].telecaller === 'Tele Alpha' && r.json.data.items[0].stage === 'NEW', 'business associate API: the Business Associate sees the converted contact with its Telecaller and stage', r);
+  r = await api('ba2', 'GET', '/ba/contacts');
+  check(r.json.data.total === 0, 'business associate API: another Business Associate sees nothing', r);
+  r = await api('ba2', 'GET', `/ba/contacts/${contactId}`);
+  check(r.status === 404, 'business associate API: nor opens it', r);
+  r = await api('ba1', 'GET', '/ba/contacts?stage=WEIRD');
+  check(r.status === 422, 'business associate API: a stage filter is validated', r);
+  r = await api('ba1', 'PATCH', `/ba/contacts/${contactId}`, { requirements: 'A WhatsApp API and an AI QR menu for order updates', profile: { industry: 'Restaurants', website: 'https://hot.example.com', businessGoals: 'More repeat orders' }, nextFollowUp: '' });
+  check(r.status === 200 && r.json.data.requirements.startsWith('A WhatsApp') && r.json.data.profile.industry === 'Restaurants' && r.json.data.stage === 'IN_PROGRESS', 'business associate API: requirements and the business profile are saved', r);
+  r = await api('ba1', 'POST', `/ba/contacts/${contactId}/notes`, { note: 'Owner prefers calls after 4 pm' });
+  check(r.status === 201, 'business associate API: a communication note is saved', r);
+  r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
+  check(r.json.data.events.some((e: any) => e.kind === 'NOTE') && r.json.data.leadId === leadId && r.json.data.handoverNote === 'Keen on WhatsApp API', 'business associate API: the detail view has the history and the hand-over note, linked to the source lead', r.json.data.events);
+
+  // ---- price list and quotation
+  r = await api('ba1', 'POST', `/ba/prices/${svcCodes[0]}`, { unitLabel: 'one time', unitPrice: 5000, gstRate: 18, maxDiscountPct: 10 });
+  check(r.status === 403, 'business associate API: a Business Associate cannot set prices', r);
+  r = await api('dh', 'POST', `/ba/prices/${svcCodes[0]}`, { unitLabel: 'one time', unitPrice: 5000, gstRate: 18, maxDiscountPct: 10 });
+  check(r.status === 200, 'business associate API: the Department Head sets an approved price', r);
+  await api('dh', 'POST', `/ba/prices/${svcCodes[1]}`, { unitLabel: 'per month', unitPrice: 2000, gstRate: 18, maxDiscountPct: 0 });
+  r = await api('ba1', 'GET', '/ba/prices');
+  check(r.status === 200 && r.json.data.filter((p: any) => p.priced).length === 2, 'business associate API: the Business Associate reads the price list', r);
+  const items = [{ serviceCode: svcCodes[0], quantity: 2, unitPrice: 5000, discountPct: 10, gstRate: 18 }, { serviceCode: svcCodes[1], quantity: 1, unitPrice: 2000, discountPct: 0, gstRate: 18 }];
+  r = await api('ba2', 'POST', '/ba/quotations', { contactId, items, gstApplicable: true });
+  check(r.status === 404, 'business associate API: another Business Associate cannot quote for this contact', r);
+  r = await api('ba1', 'POST', '/ba/quotations', { contactId, items: [{ ...items[0], discountPct: 30 }] });
+  check(r.status === 403, 'business associate API: a discount above the approved limit is refused', r);
+  r = await api('ba1', 'POST', '/ba/quotations', { contactId, items: [{ ...items[0], quantity: 0 }] });
+  check(r.status === 422, 'business associate API: a zero quantity is refused', r);
+  r = await api('ba1', 'POST', '/ba/quotations', { contactId, items, gstApplicable: true, validityDays: 30, paymentTerms: '50% advance, 50% on delivery', timeline: '3 weeks from the advance' });
+  check(r.status === 201 && r.json.data.total === 12980 && r.json.data.taxTotal === 1980 && r.json.data.status === 'DRAFT' && r.json.data.priceFlags.length === 0, 'business associate API: totals come from the database (11,000 + 18% GST = 12,980) with no price flags', r);
+  const quoteId = r.json.data.id as string;
+  const quoteNo = r.json.data.number as string;
+  r = await api('ba1', 'POST', '/ba/quotations', { contactId, items: [{ ...items[0], unitPrice: 4000 }], gstApplicable: false });
+  check(r.status === 201 && r.json.data.priceFlags[0]?.kind === 'PRICE_DIFFERS' && r.json.data.total === 7200 && r.json.data.taxTotal === 0, 'business associate API: a changed price is flagged, and no GST is added unless chosen', r);
+
+  // ---- AI: off without a key, then a local stand-in for the AI service
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/ai`, {});
+  check(r.status === 503 && /not set up/.test(r.json.error.message), 'business associate API: without an AI key the AI action says so (the document can still be written by hand)', r);
+  const aiCalls: { system: string; user: string }[] = [];
+  let aiMode: 'ok' | 'bad' | 'http' = 'ok';
+  const aiServer = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      aiCalls.push({ system: body.system, user: body.messages[0].content });
+      if (aiMode === 'http') { res.writeHead(500).end('{}'); return; }
+      const user = JSON.parse(body.messages[0].content);
+      let answer: unknown;
+      if (/client quotation/.test(body.system)) {
+        answer = aiMode === 'bad' ? { introduction: 12 } : {
+          introduction: `Dear ${user.client.company}, thank you for your time.`, understanding: 'You need order updates on WhatsApp.', recommendedServices: 'The services below.',
+          scopeSummary: 'Set up and hand over.', commercialTerms: 'Payment terms as entered: 50% advance, 50% on delivery.', implementationTimeline: 'As entered: 3 weeks from the advance.',
+          exclusions: ['Third-party fees'], notes: ['Prices exclude nothing else'], serviceDescriptions: { [user.lines[0].code]: 'First service in plain words.', 'MADE_UP_SERVICE': 'Should be dropped' }, missingInformation: []
+        };
+      } else if (user.section === 'projectScope') {
+        answer = { projectScope: { overview: 'Regenerated overview', objectives: ['Regenerated objective'] }, missingInformation: ['Who approves the work?'] };
+      } else {
+        answer = {
+          businessAnalysis: { swot: { strengths: [{ text: 'Owner wants WhatsApp order updates (stated by the client)', basis: 'VERIFIED' }], weaknesses: [{ text: 'No online ordering channel is mentioned', basis: 'ASSUMPTION' }], opportunities: [{ text: 'Repeat orders', basis: 'VERIFIED' }], threats: [] },
+            keyChallenges: [{ text: 'Keeping customers informed', basis: 'ASSUMPTION' }], growthAreas: [], improvementAreas: [] },
+          recommendedSolutions: [{ serviceCode: user.services[0]?.code ?? user.catalogue[0].code, reason: 'Stated requirement', benefits: 'Customers get updates', integrations: '', dependencies: '', considerations: '' }, { serviceCode: 'MADE_UP_SERVICE', reason: 'Not ours' }],
+          projectScope: { overview: 'Original overview', objectives: ['Objective'], phases: [{ name: 'Setup', duration: 'about 2 weeks, to be confirmed', activities: ['Configure'] }], assumptions: ['Timelines are proposals'], nextSteps: ['Review with the client'] },
+          missingInformation: ['How many orders a day?']
+        };
+      }
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(answer) }] }));
+    });
+  });
+  await new Promise<void>(rs => aiServer.listen(0, '127.0.0.1', rs));
+  Object.assign(process.env, { ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_API_BASE_URL: `http://127.0.0.1:${(aiServer.address() as any).port}` });
+
+  r = await api('ba2', 'POST', `/ba/quotations/${quoteId}/ai`, {});
+  check(r.status === 404 && aiCalls.length === 0, 'business associate API: another Business Associate cannot make the AI read this client (no AI call was made)', r);
+  aiMode = 'bad';
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/ai`, {});
+  check(r.status === 503 && /expected form/.test(r.json.error.message), 'business associate API: an AI answer in the wrong shape is refused, not patched', r);
+  aiMode = 'http';
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/ai`, {});
+  check(r.status === 503 && /HTTP 500/.test(r.json.error.message), 'business associate API: an AI service error is reported clearly', r);
+  aiMode = 'ok';
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/ai`, { instructions: 'Keep it short' });
+  check(r.status === 200 && r.json.data.aiGenerated && !r.json.data.reviewed && r.json.data.content.introduction.startsWith('Dear Hot Customer Co') && r.json.data.total === 12980 && !('MADE_UP_SERVICE' in r.json.data.content.serviceDescriptions),
+    'business associate API: the AI drafts the words only; the amounts are unchanged and an invented service is dropped; the draft is not reviewed', r);
+  const sent = aiCalls[aiCalls.length - 1].user;
+  check(!/@|\+91|9811234/.test(sent) && /Hot Customer Co/.test(sent) && !/Second Qualified|Warm Customer|Cold Customer|BA Own/.test(sent) && JSON.parse(sent).totals.total === 12980,
+    'business associate API: the AI got this client only (no e-mail or phone, no other client) and the fixed totals', sent);
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/finalize`, {});
+  check(r.status === 422 && /Review the AI draft/.test(r.json.error.message), 'business associate API: an AI draft cannot be finalised before the Business Associate reviews it', r);
+  r = await api('ba1', 'PATCH', `/ba/quotations/${quoteId}`, { content: { introduction: 'Dear Hot Co, thank you.' }, reviewed: true });
+  check(r.status === 200 && r.json.data.reviewed && r.json.data.content.introduction === 'Dear Hot Co, thank you.', 'business associate API: the draft is edited and marked reviewed', r);
+
+  // ---- PDF and private storage
+  const fake = await startFakeR2({ key: 'r2-ba-key', secret: 'r2-ba-secret', bucket: 'amuwa-files', cors: false });
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: 'r2-ba-key', R2_SECRET_ACCESS_KEY: 'r2-ba-secret', R2_BUCKET: 'amuwa-files' });
+  r = await api('ba2', 'POST', `/ba/quotations/${quoteId}/finalize`, {});
+  check(r.status === 404, 'business associate API: another Business Associate cannot generate its PDF', r);
+  r = await api('ba1', 'GET', `/ba/quotations/${quoteId}/file`);
+  check(r.status === 404, 'business associate API: there is no file before it is finalised', r);
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/finalize`, {});
+  check(r.status === 200 && r.json.data.status === 'FINAL' && r.json.data.hasPdf, 'business associate API: the quotation is finalised and its PDF generated', r);
+  const qRow = (await db.query(`select pdf_bucket, pdf_path, pdf_provider, pdf_size, valid_until::text, status from ba_quotations where id = $1`, [quoteId])).rows[0];
+  check(qRow.pdf_bucket === 'ba-documents' && qRow.pdf_provider === 'R2' && fake.objects.has(`ba-documents/${qRow.pdf_path}`) && Number(qRow.pdf_size) > 1500, 'business associate API: the PDF is stored in the private bucket and its reference kept in the database', qRow);
+  r = await api('ba1', 'GET', `/ba/quotations/${quoteId}/file?action=download`);
+  const pdfBytes = Buffer.from(await fetch(r.json.data.url).then(x => x.arrayBuffer()));
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  check(r.status === 200 && pdfBytes.subarray(0, 5).toString() === '%PDF-' && pdfDoc.getPageCount() >= 1 && /Quotation/.test(pdfDoc.getTitle() || ''), 'business associate API: the PDF downloads through a signed link and is a real PDF', { status: r.status, title: pdfDoc.getTitle() });
+  r = await api('dh', 'GET', `/ba/quotations/${quoteId}/file`);
+  check(r.status === 200, 'business associate API: the Department Head can open it', r);
+  r = await api('ba2', 'GET', `/ba/quotations/${quoteId}/file`);
+  check(r.status === 404, 'business associate API: another Business Associate cannot', r);
+  r = await api('a', 'GET', `/ba/quotations/${quoteId}/file`);
+  check(r.status === 404, 'business associate API: nor an unrelated Sales member', r);
+  r = await api('ba1', 'PATCH', `/ba/quotations/${quoteId}`, { notes: 'changed' });
+  check(r.status === 409, 'business associate API: a finalised quotation cannot be edited', r);
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/ai`, {});
+  check(r.status === 409, 'business associate API: nor rewritten by the AI', r);
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/finalize`, {});
+  check(r.status === 409, 'business associate API: nor finalised twice', r);
+  r = await api('ba1', 'POST', `/ba/quotations/${quoteId}/revise`, {});
+  check(r.status === 201 && r.json.data.revision === 2 && r.json.data.number === quoteNo && r.json.data.status === 'DRAFT', 'business associate API: a revision is a new draft with the same number', r);
+  const rev2 = r.json.data.id as string;
+  r = await api('ba1', 'PATCH', `/ba/quotations/${rev2}`, { reviewed: true, validityDays: 20 });
+  r = await api('ba1', 'POST', `/ba/quotations/${rev2}/finalize`, {});
+  check(r.status === 200 && r.json.data.revision === 2, 'business associate API: revision 2 is finalised', r);
+  check(fake.objects.size === 2, 'business associate API: both revisions\' PDFs are kept', [...fake.objects.keys()]);
+  r = await api('ba1', 'GET', `/ba/quotations?contactId=${contactId}`);
+  check(r.json.data.filter((x: any) => x.number === quoteNo).length === 2, 'business associate API: previous quotations are listed', r);
+  const after = await Promise.all(await invoiceCounts());
+  check(JSON.stringify(after) === JSON.stringify(before), 'business associate API: a quotation creates no invoice and no payment', { before, after });
+
+  // ---- demos
+  const at = (days: number, h = 10) => { const d = new Date(Date.now() + days * 86400e3); d.setUTCHours(h, 0, 0, 0); return d.toISOString(); };
+  const demo = { title: 'Product demo', startsAt: at(2), endsAt: at(2, 11), mode: 'ONLINE', location: 'Google Meet', meetingLink: 'https://meet.example.com/abc', internalNotes: 'Show the QR menu' };
+  r = await api('ba1', 'POST', '/ba/demos', { contactId, ...demo, endsAt: at(2, 9) });
+  check(r.status === 422, 'business associate API: an end before the start is refused', r);
+  r = await api('ba1', 'POST', '/ba/demos', { contactId, ...demo, startsAt: at(-3), endsAt: at(-3, 11) });
+  check(r.status === 422 && /passed/.test(r.json.error.message), 'business associate API: a time in the past is refused', r);
+  r = await api('ba1', 'POST', '/ba/demos', { contactId, ...demo, mode: 'IN_PERSON', location: '' });
+  check(r.status === 422, 'business associate API: an in-person demo needs a place', r);
+  r = await api('ba2', 'POST', '/ba/demos', { contactId, ...demo });
+  check(r.status === 404, 'business associate API: another Business Associate cannot book a demo for this contact', r);
+  r = await api('ba1', 'POST', '/ba/demos', { contactId, ...demo });
+  check(r.status === 201 && r.json.data.status === 'SCHEDULED' && r.json.data.client === 'Hot Customer' && r.json.data.assignee === 'Biz One', 'business associate API: a demo is scheduled for the contact', r);
+  const demoId = r.json.data.id as string;
+  r = await api('ba1', 'POST', '/ba/demos', { contactId, ...demo, startsAt: new Date(new Date(at(2)).getTime() + 1800e3).toISOString(), endsAt: new Date(new Date(at(2)).getTime() + 5400e3).toISOString() });
+  check(r.status === 409, 'business associate API: an overlapping demo is a conflict', r);
+  r = await api('ba1', 'PATCH', `/ba/demos/${demoId}`, { startsAt: at(4), endsAt: at(4, 11) });
+  check(r.status === 200 && r.json.data.status === 'RESCHEDULED' && r.json.data.rescheduleCount === 1, 'business associate API: a changed time is a reschedule', r);
+  r = await api('ba2', 'POST', `/ba/demos/${demoId}/status`, { status: 'CANCELLED' });
+  check(r.status === 404, 'business associate API: another Business Associate cannot cancel it', r);
+  r = await api('ba1', 'GET', '/ba/demos?status=RESCHEDULED');
+  check(r.json.data.length === 1, 'business associate API: the list filters by status', r);
+  r = await api('ba1', 'POST', `/ba/demos/${demoId}/status`, { status: 'COMPLETED', feedback: 'x' });
+  check(r.status === 422, 'business associate API: a demo that has not started cannot be completed', r);
+  await db.query(`update ba_demos set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour' where id = $1`, [demoId]);
+  r = await api('ba1', 'POST', `/ba/demos/${demoId}/status`, { status: 'COMPLETED', feedback: 'They liked it', followUpNotes: 'Send the scope' });
+  check(r.status === 200 && r.json.data.status === 'COMPLETED', 'business associate API: a finished demo is completed with feedback', r);
+  r = await api('ba1', 'POST', '/ba/demos', { contactId, ...demo, title: 'Second demo', startsAt: at(6), endsAt: at(6, 11) });
+  r = await api('ba1', 'POST', `/ba/demos/${r.json.data.id}/status`, { status: 'CANCELLED' });
+  check(r.status === 200 && r.json.data.status === 'CANCELLED', 'business associate API: a demo can be cancelled', r);
+  r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
+  check(r.json.data.demos.length === 2 && r.json.data.demos.every((d: any) => d.client === 'Hot Customer') && r.json.data.stage === 'SCOPE_PENDING', 'business associate API: demos stay with the client; the stage follows the demo', r.json.data.stage);
+
+  // ---- Scope of Project
+  r = await api('ba2', 'POST', '/ba/scope', { contactId });
+  check(r.status === 404, 'business associate API: another Business Associate cannot start a scope for this contact', r);
+  r = await api('ba1', 'POST', '/ba/scope', { contactId, title: 'Scope - Hot Co', inputs: { industry: 'Restaurants', operationalChallenges: 'Customers keep calling to ask about orders' } });
+  check(r.status === 201 && r.json.data.version === 1 && r.json.data.status === 'DRAFT', 'business associate API: scope version 1 starts as a draft', r);
+  const scopeId = r.json.data.id as string;
+  r = await api('ba1', 'POST', '/ba/scope', { contactId });
+  check(r.status === 409, 'business associate API: only one open draft per contact', r);
+  r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
+  check(r.json.data.profile.operationalChallenges === 'Customers keep calling to ask about orders', 'business associate API: what is typed in the scope form is kept with the contact', r.json.data.profile);
+  r = await api('ba1', 'POST', `/ba/scope/${scopeId}/finalize`, {});
+  check(r.status === 422 && /empty/.test(r.json.error.message), 'business associate API: an empty scope cannot be finalised', r);
+  const callsBefore = aiCalls.length;
+  r = await api('ba2', 'POST', `/ba/scope/${scopeId}/ai`, {});
+  check(r.status === 404 && aiCalls.length === callsBefore, 'business associate API: another Business Associate cannot trigger the AI for this client', r);
+  r = await api('ba1', 'POST', `/ba/scope/${scopeId}/ai`, {});
+  check(r.status === 200 && r.json.data.aiGenerated && !r.json.data.reviewed && r.json.data.content.businessAnalysis.swot.strengths[0].basis === 'VERIFIED' && r.json.data.content.businessAnalysis.swot.weaknesses[0].basis === 'ASSUMPTION', 'business associate API: the AI writes the analysis; verified facts are told apart from assumptions', r);
+  check(r.json.data.content.recommendedSolutions.length === 1 && r.json.data.content.recommendedSolutions[0].serviceCode !== 'MADE_UP_SERVICE', 'business associate API: only services from the approved catalogue are recommended', r.json.data.content.recommendedSolutions);
+  check(r.json.data.content.missingInformation[0] === 'How many orders a day?', 'business associate API: missing information is listed as a question, not invented', r.json.data.content.missingInformation);
+  const scopePayload = JSON.parse(aiCalls[aiCalls.length - 1].user);
+  check(scopePayload.client.name === 'Hot Customer' && scopePayload.requirements.startsWith('A WhatsApp') && !/Second Qualified|Warm Customer|Cold Customer/.test(JSON.stringify(scopePayload)) && !('phone' in scopePayload.client) && !('email' in scopePayload.client),
+    'business associate API: the AI got this client\'s own facts only (no phone or e-mail, no other client)', Object.keys(scopePayload));
+  check(scopePayload.catalogue.length > 5 && scopePayload.quotation?.number === quoteNo, 'business associate API: and the approved catalogue and the finalised quotation', scopePayload.quotation);
+  r = await api('ba1', 'POST', `/ba/scope/${scopeId}/ai`, { section: 'projectScope' });
+  check(r.status === 200 && r.json.data.content.projectScope.overview === 'Regenerated overview' && r.json.data.content.businessAnalysis.swot.strengths.length === 1 && r.json.data.content.missingInformation.length === 2, 'business associate API: one section is regenerated; the rest is untouched', r.json.data.content.projectScope);
+  r = await api('ba1', 'POST', `/ba/scope/${scopeId}/finalize`, {});
+  check(r.status === 422 && /Review the AI draft/.test(r.json.error.message), 'business associate API: the AI scope needs the Business Associate\'s review first', r);
+  r = await api('ba1', 'PATCH', `/ba/scope/${scopeId}`, { content: { ...((await api('ba1', 'GET', `/ba/scope/${scopeId}`)).json.data.content), projectScope: { overview: 'Edited overview', objectives: ['Edited objective'] } }, reviewed: true });
+  check(r.status === 200 && r.json.data.content.projectScope.overview === 'Edited overview' && r.json.data.reviewed, 'business associate API: the Business Associate edits and reviews it', r);
+  r = await api('ba1', 'POST', `/ba/scope/${scopeId}/finalize`, {});
+  check(r.status === 200 && r.json.data.status === 'FINAL' && r.json.data.hasPdf, 'business associate API: version 1 is finalised and its PDF generated', r);
+  r = await api('ba1', 'GET', `/ba/scope/${scopeId}/file`);
+  const sPdf = await PDFDocument.load(Buffer.from(await fetch(r.json.data.url).then(x => x.arrayBuffer())));
+  check(r.status === 200 && sPdf.getPageCount() >= 1 && /Scope/.test(sPdf.getTitle() || ''), 'business associate API: the scope PDF downloads and is a real PDF', sPdf.getTitle());
+  r = await api('ba1', 'PATCH', `/ba/scope/${scopeId}`, { title: 'changed' });
+  check(r.status === 409, 'business associate API: a finalised version cannot be edited', r);
+  r = await api('ba1', 'POST', '/ba/scope', { contactId });
+  check(r.status === 201 && r.json.data.version === 2 && r.json.data.status === 'DRAFT' && r.json.data.content.projectScope.overview === 'Edited overview', 'business associate API: version 2 starts from version 1', r);
+  r = await api('ba1', 'GET', `/ba/contacts/${contactId}/scope`);
+  check(r.json.data.length === 2 && r.json.data[1].status === 'FINAL' && r.json.data[0].status === 'DRAFT', 'business associate API: both versions are listed, the finalised one kept', r);
+  r = await api('ba2', 'GET', `/ba/scope/${scopeId}/file`);
+  check(r.status === 404, 'business associate API: another Business Associate cannot download it', r);
+  r = await api('dh', 'GET', `/ba/scope/${scopeId}/file`);
+  check(r.status === 200, 'business associate API: the Department Head can', r);
+  fake.server.close();
+  aiServer.close();
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'ANTHROPIC_API_KEY', 'ANTHROPIC_API_BASE_URL']) delete process.env[k];
+
+  // ---- leads
+  const lead = (name: string, extra: Record<string, unknown> = {}) => ({ name, company: `${name} Co`, phone: '9811234581', leadSource: 'Referral', services: [svcCodes[0]], leadTemperature: 'WARM', callStatus: 'CONTACTED', ...extra });
+  r = await api('tca', 'POST', '/ba/leads', lead('Nope'));
+  check(r.status === 403, 'business associate API: a Telecaller cannot use the Business Associate lead pages', r);
+  r = await api('ba1', 'POST', '/ba/leads', lead('BA Lead One', { leadTemperature: 'LUKEWARM' }));
+  check(r.status === 422, 'business associate API: the temperature is Hot, Warm or Cold', r);
+  r = await api('ba1', 'POST', '/ba/leads', lead('BA Lead One'));
+  check(r.status === 201 && r.json.data.leadTemperature === 'WARM' && r.json.data.callStatus === 'CONTACTED', 'business associate API: a lead is added with temperature and call status stored separately', r);
+  const baLead = r.json.data.id as string;
+  check((await db.query(`select owner_id from customers where id = $1`, [baLead])).rows[0].owner_id === baOne, 'business associate API: it is owned by the Business Associate');
+  r = await api('ba1', 'GET', '/ba/leads');
+  check(r.json.data.total === 1 && r.json.data.items[0].name === 'BA Lead One', 'business associate API: the list shows only their own leads (not the Telecaller\'s)', r);
+  r = await api('ba1', 'PATCH', `/ba/leads/${baLead}`, { leadTemperature: 'HOT', callStatus: 'INTERESTED', phone: '9811234582' });
+  check(r.status === 200 && r.json.data.leadTemperature === 'HOT' && r.json.data.callStatus === 'INTERESTED', 'business associate API: a lead can be edited', r);
+  r = await api('ba1', 'GET', '/ba/leads?temperature=HOT&callStatus=INTERESTED&search=lead');
+  check(r.json.data.total === 1, 'business associate API: filters and search', r);
+  r = await api('ba2', 'GET', `/ba/leads/${baLead}`);
+  check(r.status === 404, 'business associate API: another Business Associate cannot open it', r);
+  r = await api('tca', 'GET', '/telecaller/leads');
+  check(!r.json.data.items.some((l: any) => l.id === baLead), 'business associate API: the Telecaller\'s lead page does not show it (role separation)', r);
+
+  // ---- Home
+  r = await api('ba1', 'GET', '/ba/home');
+  const h = r.json.data;
+  check(r.status === 200 && h.assignedContacts === 1 && h.quotationsDrafted === 1 && h.scopeDocumentsGenerated === 2 && h.upcomingDemos === 0 && h.leadsInProgress === 1 && h.recent.length > 3 && h.stageCounts.IN_PROGRESS === 1, 'business associate API: the Home counts come from the data', h);
+  r = await api('ba2', 'GET', '/ba/home');
+  check(r.json.data.assignedContacts === 0 && r.json.data.scopeDocumentsGenerated === 0, 'business associate API: another Business Associate has their own counts', r.json.data);
+
+  // ---- reassignment
+  r = await api('ba1', 'POST', `/ba/contacts/${contactId}/reassign`, { assigneeId: baTwo });
+  check(r.status === 403, 'business associate API: a Business Associate cannot reassign', r);
+  r = await api('dh', 'POST', `/ba/contacts/${contactId}/reassign`, { assigneeId: baTwo });
+  check(r.status === 200, 'business associate API: the Department Head reassigns a contact', r);
+  r = await api('ba2', 'GET', `/ba/contacts/${contactId}`);
+  check(r.status === 200 && r.json.data.quotations.length === 3 && r.json.data.scopes.length === 2, 'business associate API: the new owner gets the contact with its quotations and scope versions', r);
+  r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
+  check(r.status === 404, 'business associate API: the former owner no longer has it', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

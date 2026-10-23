@@ -95,7 +95,7 @@ export interface AuthUser {
   name: string;
   email: string;
   avatar?: string;
-  role: 'superadmin' | 'admin' | 'hr' | 'client' | 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'telecaller' | 'sales-role';
+  role: 'superadmin' | 'admin' | 'hr' | 'client' | 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'telecaller' | 'business-associate' | 'sales-role';
   clientCompany?: string;
   departmentId?: string;
   subDepartment?: string;

@@ -44,7 +44,7 @@ export function toAuthUser(profile: Profile): AuthUser {
       // A Sales member with a Sales role: Telecallers open the Telecaller dashboard; the other Sales roles have no dashboard yet and
       // open a notice page - never another role's dashboard.
       if (isSalesSubRoleMember(profile)) {
-        role = profile.salesSubRole === 'TELECALLER' ? 'telecaller' : 'sales-role';
+        role = profile.salesSubRole === 'TELECALLER' ? 'telecaller' : profile.salesSubRole === 'BUSINESS_ASSOCIATE' ? 'business-associate' : 'sales-role';
         break;
       }
       role = isTechnicalConsultant(profile) ? 'technical-support' : isSupportMember(profile) ? 'support-member' : 'team-member';
@@ -155,6 +155,7 @@ export function defaultDashboardLabel(
     default:
       if (technicalConsultant && division === 'SUPPORT') return `Technical Consultant Dashboard${dept}`;
       if (division === 'SALES' && salesSubRole === 'TELECALLER') return `Telecaller Dashboard${dept}`;
+      if (division === 'SALES' && salesSubRole === 'BUSINESS_ASSOCIATE') return `Business Associate Dashboard${dept}`;
       if (division === 'SALES' && salesSubRole) return `${SALES_SUB_ROLE_LABELS[salesSubRole]} (dashboard not set up yet)${dept}`;
       // Only a Sales team opens as "Sales"; other teams get the plain label.
       if (division === 'SALES') return `Sales Team Member Dashboard${dept}`;
