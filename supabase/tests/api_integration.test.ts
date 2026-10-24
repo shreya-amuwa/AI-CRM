@@ -3850,6 +3850,15 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const emails = () => outbox.filter(o => o.path === '/emails');
   const hrMail = (to: string, subjectPart: string) => emails().filter(o => o.body?.to?.[0] === to && String(o.body?.subject).includes(subjectPart));
   const hrRun = async () => (await dispatch('dispatch-secret-0123456789')).json.data.hr;
+  // Probation ends on "joining date + 6 months". When today + 7 days is the 31st and the month six months earlier has 30 days (31 Oct: 30 Apr + 6 months
+  // is 30 Oct), no joining date ends exactly seven days ahead, so the seven-day reminder cannot be tested on such a day. For this section only, the HR clock
+  // (private.hr_today) is then set back to the nearest earlier day where it can be tested; it is restored at the end.
+  const probationOk = async (back: number) => (await db.query(
+    `select ((d + 7 - interval '6 months')::date + interval '6 months')::date = d + 7 as ok from (select private.hr_today() - $1::int as d) x`, [back])).rows[0].ok as boolean;
+  let hrBack = 0;
+  while (!(await probationOk(hrBack))) hrBack++;
+  const setHrClock = (back: number) => db.query(`create or replace function private.hr_today() returns date language sql stable set search_path = '' as $$ select ((now() at time zone 'Asia/Kolkata')::date - ${back}) $$`);
+  if (hrBack > 0) await setHrClock(hrBack);
   const { rows: [{ today }] } = await db.query(`select to_char(private.hr_today(), 'YYYY-MM-DD') as today`);
   const md = today.slice(5);
   await db.query(`insert into public.crm_settings (key, value) values ('hr.notify_emails', '["hr.inbox@example.com"]') on conflict (key) do update set value = excluded.value`);
@@ -4015,6 +4024,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const unauth = await dispatch();
   check(unauth.status === 401, 'HR automation: the scheduler endpoint needs its secret', unauth.status);
 
+  if (hrBack > 0) await setHrClock(0);
   mailMock.close();
   for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 }
