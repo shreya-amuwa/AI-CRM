@@ -1523,8 +1523,10 @@ export interface CustomerDataImportLogin {
   businessName?: string;
   /** CREATED: the login exists; FAILED: see detail. */
   login: 'CREATED' | 'FAILED';
-  /** SENT: the "Set your password" e-mail went out; NOT_SENT: see detail (it can be sent again later). */
+  /** SENT: the client's e-mail went out (their sign-in details when the team chose the password, else the "Set your password" link); NOT_SENT: see detail. */
   mail: 'SENT' | 'NOT_SENT';
+  /** TEAM: the password came from the file (hashed by Supabase Auth, e-mailed to the client once, never kept by the CRM); CLIENT: the client sets their own from the e-mail. */
+  passwordBy?: 'TEAM' | 'CLIENT';
   detail?: string;
 }
 export interface CustomerDataImportResult {
@@ -1532,6 +1534,8 @@ export interface CustomerDataImportResult {
   errors: CustomerDataImportError[];
   summary: { added: number; updated: number; services: number; usage: number; campaigns: number; logins: number };
   logins: CustomerDataImportLogin[];
+  /** Login e-mails whose "Client Password" in the file was not used because the customer already had a login. */
+  passwordsNotUsed?: string[];
 }
 export type ServiceRequestStatus = 'REQUESTED' | 'IN_REVIEW' | 'IN_ADDON_WORKFLOW' | 'ACTIVATED' | 'REJECTED' | 'CANCELLED';
 export interface ClientCatalogService {

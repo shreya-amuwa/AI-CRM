@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 status=0
-for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_email_templates performance_narrative workflow_layout telecaller_sheet; do
+for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_email_templates performance_narrative workflow_layout telecaller_sheet import_template; do
   f="supabase/tests/$t.test.ts"
   [ -f "$f" ] || continue
   echo "=== $t"
