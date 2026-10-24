@@ -3080,16 +3080,25 @@ export type SalesLeadFilter = (typeof SALES_LEAD_FILTERS)[number];
 export const SALES_TASK_FILTERS = ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'] as const;
 export type SalesTaskFilter = (typeof SALES_TASK_FILTERS)[number];
 
-/** A Sales person a lead sheet can be assigned to. `mode` says how: LEADS = leads in their pipeline, TELECALLER = the Telecaller contact sheet. */
+/** The Telecaller a lead sheet is given to (the sheet goes to a Telecaller, who calls the contacts and passes the interested ones on). */
 export interface SalesLeadAssignee {
+  id: string;
+  name: string;
+  team: string;
+  teamId: string;
+  role: 'Team Member';
+  subRole: SalesSubRole | null;
+  mode: 'TELECALLER';
+  openContacts: number;
+}
+/** An active Sales Team Lead or Team Member (the Lead List owner filter; who an unassigned enquiry can be given to). */
+export interface SalesTeamPerson {
   id: string;
   name: string;
   team: string;
   teamId: string;
   role: 'Team Lead' | 'Team Member';
   subRole: SalesSubRole | null;
-  mode: 'LEADS' | 'TELECALLER';
-  openLeads: number;
 }
 export interface SalesSheetIssue { row: number; kind: 'INVALID' | 'DUPLICATE'; message: string }
 export interface SalesSheetCheck {
@@ -3100,7 +3109,7 @@ export interface SalesSheetCheck {
   assignee: { id: string; name: string; role: string; team: string };
   issues: SalesSheetIssue[];
   summary: { rows: number; valid: number; invalid: number; duplicates: number };
-  preview: { row: number; name: string; company: string | null; phone: string; email: string | null; source: string | null; temperature: LeadTemperature | null; remarks: string | null }[];
+  preview: { row: number; name: string; company: string | null; phone: string; email: string | null; remarks: string | null }[];
 }
 export interface SalesSheet {
   id: string;

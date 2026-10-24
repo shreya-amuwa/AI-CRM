@@ -1,5 +1,5 @@
 -- =============================================================================
--- Sales Department Head dashboard (migration 20261121000100): who the Sales head is, the separation from Support, Lead Assign (Excel sheets),
+-- Sales Department Head dashboard (migration 20261121000100): who the Sales head is, the separation from Support, Lead Assign (Excel sheets given to a Telecaller),
 -- Lead List, Daily Tasks, Overview, Reports, Income. Uses the Wabastore users of the authorization suite plus those made here.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -58,49 +58,46 @@ select test.check((select jsonb_array_length(performance_people('WEEK', (date_tr
 select test.login('dh_wab');
 select test.check((select count(*) > 0 from customers where name = 'Support Customer') and (select count(*) > 0 from work_tasks where title = 'Support only task'), 'the Support head still reads Support data');
 
-\echo '   Lead Assign'
+\echo '   Lead Assign (the sheet goes to a Telecaller)'
 select test.login('sh_head');
-select test.check((select jsonb_array_length(sales_lead_assignees()) >= 4 and not exists (select 1 from jsonb_array_elements(sales_lead_assignees()) x where x ->> 'id' in (test.id('sup_b')::text, test.id('sh_ba')::text))),
-  'assignees: Sales members and leads only (no Support, no Business Associate)');
+select test.check((select jsonb_array_length(sales_lead_assignees()) >= 1 and bool_and(x ->> 'subRole' = 'TELECALLER') and bool_and(x ->> 'mode' = 'TELECALLER')
+                   and not exists (select 1 from jsonb_array_elements(sales_lead_assignees()) y where y ->> 'id' in (test.id('tm_a')::text, test.id('th_wab')::text, test.id('sup_b')::text, test.id('sh_ba')::text))
+                     from jsonb_array_elements(sales_lead_assignees()) x),
+  'assignees: Telecallers only (no Team Lead, member, Business Associate or Support person)');
+select test.check((select count(*) >= 5 from jsonb_array_elements(sales_team_people())) and not exists (select 1 from jsonb_array_elements(sales_team_people()) x where x ->> 'id' = test.id('sup_b')::text), 'team people: every Sales Team Lead and member, no Support');
 create temp table sheet_rows as select '[
-  {"row":2,"name":"Anil Kumar","company":"Kumar Traders","phone":"+91 98100 00001","email":"anil@kumar.example","source":"Expo","temperature":"hot","remarks":"Met at stall"},
-  {"row":3,"name":"Bina Shah","company":"","phone":"9810000002","email":"","source":"","temperature":"","remarks":""},
-  {"row":4,"name":"Chirag","company":"","phone":"abc","email":"","source":"","temperature":"","remarks":""},
-  {"row":5,"name":"Anil Again","company":"","phone":"+919810000001","email":"","source":"","temperature":"","remarks":""},
-  {"row":6,"name":"Known Person","company":"","phone":"+919800000001","email":"","source":"","temperature":"","remarks":""},
-  {"row":7,"name":"Dev Rao","company":"","phone":"9810000007","email":"dev@rao.example","source":"","temperature":"lukewarm","remarks":""},
-  {"row":8,"name":"Esha","company":"","phone":"9810000008","email":"esha@x.example","source":"Referral","temperature":"COLD","remarks":""}]'::jsonb as r;
-select test.check((sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false) -> 'summary') = '{"rows":7,"valid":3,"invalid":2,"duplicates":2}'::jsonb, 'preview summary: 7 rows = 3 valid + 2 invalid + 2 duplicates');
-select test.check(((sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false)) -> 'summary' ->> 'valid') = '3'
-              and ((sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false)) -> 'summary' ->> 'invalid') = '2'
-              and ((sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false)) -> 'summary' ->> 'duplicates') = '2', 'the preview counts valid, invalid and duplicate rows');
-select test.check((select count(*) = 0 from customers where lead_source = 'Expo'), 'a preview saves nothing');
-select test.check((select count(*) = 4 from jsonb_array_elements(sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false) -> 'issues')), 'every problem row is listed (none dropped silently)');
-select test.must_fail($$select sales_lead_sheet_assign(test.id('sup_b'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'cannot assign to a Support member', 'Sales Team Lead or Team Member');
-select test.must_fail($$select sales_lead_sheet_assign(test.id('sh_ba'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'cannot assign to a Business Associate', 'Sales Team Lead or Team Member');
-select test.must_fail($$select sales_lead_sheet_assign(test.id('tm_a'), 'bad.xlsx', null, '[{"row":2,"name":"","phone":"x"}]'::jsonb, repeat('b', 64), true)$$, 'nothing valid: nothing is assigned', 'no valid lead');
-select test.check(((sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', 'Expo list', (select r from sheet_rows), repeat('a', 64), true)) ->> 'committed')::boolean, 'the valid leads are assigned');
-select test.check((select count(*) = 3 from customers where source_sheet_id is not null and owner_id = test.id('tm_a') and lifecycle_stage = 'LEAD'), 'three leads are owned by the member');
-select test.check((select lead_temperature = 'HOT' and lead_source = 'Expo' and notes = 'Met at stall' from customers where phone = '+919810000001'), 'temperature, source and remarks are kept');
-select test.check((select count(*) = 1 from sales_lead_sheets where file_name = 'leads.xlsx' and valid_count = 3 and invalid_count = 2 and duplicate_count = 2 and uploaded_by = test.id('sh_head') and mode = 'LEADS'), 'the upload is recorded with who and the counts');
-select test.must_fail($$select sales_lead_sheet_assign(test.id('tm_s2'), 'again.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'the same file cannot be imported twice', 'already been uploaded');
-select test.check((select jsonb_array_length(sales_lead_sheets_list()) = 1 and (sales_lead_sheets_list() -> 0 ->> 'assignedTo') = 'Member A'), 'the history lists the sheet and its assignee');
-select test.login('tm_a');
-select test.check((select count(*) >= 5 from customers where owner_id = test.id('tm_a') and lifecycle_stage = 'LEAD'), 'the member sees the assigned leads');
-select test.check((select count(*) = 1 from notifications where recipient_id = test.id('tm_a') and type = 'LEAD_SHEET_ASSIGNED'), 'and is notified');
+  {"row":2,"name":"Anil Kumar","company":"Kumar Traders","phone":"+91 98100 00001","email":"anil@kumar.example","remarks":"Met at stall"},
+  {"row":3,"name":"Bina Shah","company":"","phone":"9810000002","email":"","remarks":""},
+  {"row":4,"name":"Chirag","company":"","phone":"abc","email":"","remarks":""},
+  {"row":5,"name":"Anil Again","company":"","phone":"+919810000001","email":"","remarks":""},
+  {"row":6,"name":"Known Person","company":"","phone":"+919800000001","email":"","remarks":""},
+  {"row":7,"name":"Dev Rao","company":"","phone":"9810000007","email":"dev@","remarks":""},
+  {"row":8,"name":"Esha","company":"","phone":"9810000008","email":"esha@x.example","remarks":""}]'::jsonb as r;
+select test.check((sales_lead_sheet_assign(test.id('sh_tc'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false) -> 'summary') = '{"rows":7,"valid":3,"invalid":2,"duplicates":2}'::jsonb, 'preview summary: 7 rows = 3 valid + 2 invalid + 2 duplicates');
+select test.check((select count(*) = 0 from telecaller_contacts where assigned_to = test.id('sh_tc')) and (select count(*) = 0 from sales_lead_sheets), 'a preview saves nothing');
+select test.check((select count(*) = 4 from jsonb_array_elements(sales_lead_sheet_assign(test.id('sh_tc'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), false) -> 'issues')), 'every problem row is listed (none dropped silently)');
+select test.must_fail($$select sales_lead_sheet_assign(test.id('tm_a'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'a sheet cannot go to a Team Member', 'goes to a Telecaller');
+select test.must_fail($$select sales_lead_sheet_assign(test.id('th_wab'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'nor to a Team Lead', 'goes to a Telecaller');
+select test.must_fail($$select sales_lead_sheet_assign(test.id('sup_b'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'nor to a Support member', 'goes to a Telecaller');
+select test.must_fail($$select sales_lead_sheet_assign(test.id('sh_ba'), 'leads.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'nor to a Business Associate', 'goes to a Telecaller');
+select test.must_fail($$select sales_lead_sheet_assign(test.id('sh_tc'), 'bad.xlsx', null, '[{"row":2,"name":"","phone":"x"}]'::jsonb, repeat('b', 64), true)$$, 'nothing valid: nothing is assigned', 'no valid contact');
+select test.check(((sales_lead_sheet_assign(test.id('sh_tc'), 'leads.xlsx', 'Expo list', (select r from sheet_rows), repeat('a', 64), true)) ->> 'committed')::boolean, 'the sheet is given to the Telecaller');
+select test.check((select count(*) = 3 from telecaller_contacts where assigned_to = test.id('sh_tc')), 'the three valid contacts are in the Telecaller''s list');
+select test.check((select count(*) = 0 from customers where phone in ('+919810000001', '9810000001', '+919810000002', '9810000002')), 'and no lead is made behind their back');
+select test.check((select count(*) = 1 from sales_lead_sheets where file_name = 'leads.xlsx' and valid_count = 3 and invalid_count = 2 and duplicate_count = 2 and uploaded_by = test.id('sh_head') and mode = 'TELECALLER' and telecaller_list_id is not null), 'the upload is recorded with who and the counts');
+select test.must_fail($$select sales_lead_sheet_assign(test.id('sh_tc'), 'again.xlsx', null, (select r from sheet_rows), repeat('a', 64), true)$$, 'the same file cannot be imported twice', 'already been uploaded');
+select test.check((select jsonb_array_length(sales_lead_sheets_list()) = 1 and (sales_lead_sheets_list() -> 0 ->> 'assignedTo') = 'Sheet Telecaller' and (sales_lead_sheets_list() -> 0 ->> 'contactsPending')::int = 3), 'the history lists the sheet, the Telecaller and what is still to call');
+select test.login('sh_tc');
+select test.check((select count(*) = 1 from notifications where recipient_id = test.id('sh_tc') and type = 'CONTACT_SHEET_ASSIGNED'), 'the Telecaller is notified');
 select test.login('tm_s2');
-select test.check((select count(*) = 0 from customers where source_sheet_id is not null), 'another member does not see them');
+select test.check((select count(*) = 0 from telecaller_contacts), 'another member does not see the sheet');
 select test.login('sh_head');
--- a Telecaller gets the sheet through the Telecaller workflow
-select test.check(((sales_lead_sheet_assign(test.id('sh_tc'), 'calls.xlsx', null, '[{"row":2,"name":"Fatima","phone":"9810000050"},{"row":3,"name":"Gopal","phone":"9810000051"}]'::jsonb, repeat('c', 64), true)) ->> 'mode') = 'TELECALLER', 'a Telecaller gets a Telecaller contact sheet');
-select test.check((select count(*) = 2 from telecaller_contacts where assigned_to = test.id('sh_tc')), 'the contacts are in the Telecaller''s list');
-select test.check((select count(*) = 0 from customers where phone in ('9810000050', '+919810000050')), 'and no lead is created behind their back');
 
 \echo '   Lead List'
-select test.check((sales_leads_list() ->> 'total')::int >= 5, 'the list has the Sales leads');
+select test.check((sales_leads_list() ->> 'total')::int >= 2, 'the list has the Sales leads');
 select test.check((select bool_and(x ->> 'temperature' = 'HOT') from jsonb_array_elements(sales_leads_list(null, 'HOT') -> 'items') x), 'Hot filter');
-select test.check((sales_leads_list(null, 'ALL') -> 'counts' ->> 'hot')::int >= 2 and (sales_leads_list() -> 'counts' ->> 'cold')::int >= 2, 'counts by temperature');
-select test.check((select count(*) = 1 from jsonb_array_elements(sales_leads_list('anil') -> 'items')), 'search by name');
+select test.check((sales_leads_list(null, 'ALL') -> 'counts' ->> 'hot')::int >= 1 and (sales_leads_list() -> 'counts' ->> 'cold')::int >= 1, 'counts by temperature');
+select test.check((select count(*) = 1 from jsonb_array_elements(sales_leads_list('lead one') -> 'items')), 'search by name');
 select test.check((select count(*) >= 1 from jsonb_array_elements(sales_leads_list(null, 'FOLLOW_UP') -> 'items')), 'follow-up filter');
 select test.must_fail($$select sales_leads_list(null, 'BOGUS')$$, 'unknown filter', 'Unknown lead filter');
 select test.check(not exists (select 1 from jsonb_array_elements(sales_leads_list(null, 'ALL', null, 'name', 'asc', 1, 100) -> 'items') x where x ->> 'name' = 'Support Customer'), 'no Support customer is in the list');
@@ -112,7 +109,7 @@ select test.check((select count(*) = 1 from jsonb_array_elements(sales_leads_lis
 select test.must_fail($$select sales_inbound_assign('inb-test-1', test.id('sup_b'))$$, 'not to a Support member', 'Sales Team Lead or Team Member');
 select test.check((sales_inbound_assign('inb-test-1', test.id('tm_s2')) ->> 'assignee') = 'Second Sales Member', 'the head assigns it');
 select test.check((select count(*) = 0 from jsonb_array_elements(sales_leads_list(null, 'UNASSIGNED') -> 'items') x where x ->> 'name' = 'Inbound Ivan') and (select count(*) = 1 from customers where owner_id = test.id('tm_s2') and name = 'Inbound Ivan'), 'it leaves the unassigned list and is the member''s lead');
-select test.check((sales_lead_get((select id from jsonb_to_recordset(sales_leads_list('anil') -> 'items') as x(id text) limit 1)) ->> 'name') = 'Anil Kumar', 'lead details');
+select test.check((sales_lead_get((select id from jsonb_to_recordset(sales_leads_list('lead one') -> 'items') as x(id text) limit 1)) ->> 'name') = 'Sales Lead One', 'lead details');
 select test.must_fail($$select sales_lead_get((select id::text from customers where name = 'Support Customer' limit 1))$$, 'a Support customer is not a lead of this dashboard', 'not found|NOT_FOUND|Lead not found');
 
 \echo '   Daily Tasks'
@@ -123,12 +120,12 @@ select test.check(not exists (select 1 from jsonb_array_elements(sales_tasks_lis
 select test.check((select count(*) = 1 from jsonb_array_elements(sales_task_assignees()) x where x ->> 'id' = test.id('th_wab')::text) and (select count(*) = 0 from jsonb_array_elements(sales_task_assignees()) x where x ->> 'id' = test.id('sup_th')::text), 'task assignees are Sales Team Leads');
 
 \echo '   Overview, Reports, Income'
-select test.check((sales_head_overview() -> 'cards' ->> 'totalLeads')::int >= 6 and (sales_head_overview() -> 'cards' ->> 'teamMembers')::int >= 3, 'overview counts');
+select test.check((sales_head_overview() -> 'cards' ->> 'totalLeads')::int >= 3 and (sales_head_overview() -> 'cards' ->> 'teamMembers')::int >= 3, 'overview counts');
 select test.check((sales_head_overview() -> 'cards' ->> 'pendingAssignment')::int = (sales_leads_list(null, 'UNASSIGNED') ->> 'total')::int, 'overview: pending assignment matches the unassigned list');
 select test.check(not exists (select 1 from jsonb_array_elements(sales_head_overview() -> 'teamActivity') x where x ->> 'id' = test.id('sup_b')::text), 'overview: no Support people');
 select test.check((select count(*) >= 1 from jsonb_array_elements(sales_head_reports('TEAM_LEAD', null, null) -> 'rows') x where x ->> 'id' = test.id('th_wab')::text)
               and not exists (select 1 from jsonb_array_elements(sales_head_reports('TEAM_LEAD', null, null) -> 'rows') x where x ->> 'id' = test.id('sup_th')::text), 'team lead report: Sales leads only');
-select test.check((select (x ->> 'leadsAssigned')::int >= 5 and (x ->> 'hot')::int >= 2 from jsonb_array_elements(sales_head_reports('TEAM_MEMBER', null, null) -> 'rows') x where x ->> 'id' = test.id('tm_a')::text), 'team member report: leads and temperature');
+select test.check((select (x ->> 'leadsAssigned')::int >= 2 and (x ->> 'hot')::int >= 1 from jsonb_array_elements(sales_head_reports('TEAM_MEMBER', null, null) -> 'rows') x where x ->> 'id' = test.id('tm_a')::text), 'team member report: leads and temperature');
 select test.check(not exists (select 1 from jsonb_array_elements(sales_head_reports('TEAM_MEMBER', null, null) -> 'rows') x where x ->> 'id' = test.id('sup_b')::text), 'team member report: no Support members');
 select test.must_fail($$select sales_head_reports('MANAGER', null, null)$$, 'report kind is checked', 'Team Lead or Team Member');
 select test.check((sales_head_income() -> 'figures') is not null and (sales_head_income() ->> 'expenses') is null, 'income: Sales figures; no invented expense figure');
