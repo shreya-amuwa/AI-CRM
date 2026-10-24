@@ -153,77 +153,97 @@ export interface ParsedImport {
 }
 
 /**
- * The single-tab template ("Import"): one row per record, the first column says what kind of record it is. Every kind uses only
- * its own columns (the sheet greys out the rest); columns that mean the same thing (Sent, Delivered, Valid Until ...) are shared.
+ * The single-sheet template ("Import"): ONE plain table, one row per customer and service (plus a row per campaign or month). No "record type":
+ * what a row holds is read from the blocks of columns that are filled in. Blocks:
+ *   CUSTOMER       typed on the customer's first row only (the other rows of that customer carry just the mobile number)
+ *   SERVICE        the service they bought: plan, price, dates, status
+ *   WHATSAPP API   the account and its totals          WHATSAPP CAMPAIGN  one campaign
+ *   AI CALLING     usage                               RCS / VOICE        usage
+ *   MONTHLY WORK   one month of a service that has no usage panel (posts, reels, leads ...)
+ * A block creates its record when any of its columns is filled. Headings are unique per block (Messages Sent (total) is the WhatsApp account,
+ * Campaign Sent is a campaign), so nothing is ambiguous.
  */
-export const ONE_SHEET_TYPES: { key: SheetKey; label: string; aliases: string[]; columns: Record<string, [field: string, kind: Kind]> }[] = [
+export interface OneSheetBlock {
+  key: SheetKey;
+  /** The name of the block, as shown on the sheet and in the import screen. */
+  label: string;
+  columns: Record<string, [field: string, kind: Kind]>;
+  /** Fields that do not make the block "filled" by themselves (the Service column is shared with other blocks). */
+  shared?: string[];
+  /** The Service column must be empty or contain this when the block is filled. */
+  service?: RegExp;
+}
+export const ONE_SHEET_BLOCKS: OneSheetBlock[] = [
   {
-    key: 'customers', label: 'Customer', aliases: ['customer', 'customers'],
+    key: 'customers', label: 'Customer', shared: ['mobile'],
     columns: {
       'mobile number': ['mobile', 'mobile'], 'customer name': ['name', 'text'], 'business name': ['businessName', 'text'], 'e-mail': ['email', 'text'], city: ['city', 'text'],
       'business address': ['address', 'text'], 'business category': ['category', 'text'], 'customer since': ['customerSince', 'date'],
       'handled by - support team member': ['member', 'text'], 'brought by (sales / support)': ['broughtByType', 'text'], 'brought by - name': ['broughtBy', 'text'],
-      'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'], notes: ['notes', 'text']
+      'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'], 'customer notes': ['notes', 'text']
     }
   },
   {
-    key: 'services', label: 'Service', aliases: ['service', 'services'],
+    key: 'services', label: 'Service', shared: ['mobile', 'service'],
     columns: {
       'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], 'plan / package name': ['plan', 'text'], 'price paid (₹, excl. gst)': ['price', 'num'],
       'billing cycle': ['billingCycle', 'text'], 'start date': ['startDate', 'date'], 'renewal / expiry date': ['renewsOn', 'date'], status: ['status', 'text'],
-      'panel / platform': ['platform', 'text'], 'panel login e-mail / account id': ['panelAccount', 'text'], notes: ['notes', 'text']
+      'panel / platform': ['platform', 'text'], 'panel login e-mail / account id': ['panelAccount', 'text'], 'service notes': ['notes', 'text']
     }
   },
   {
-    key: 'whatsapp', label: 'WhatsApp account', aliases: ['whatsapp account', 'whatsapp'],
+    key: 'whatsapp', label: 'WhatsApp API', shared: ['mobile'], service: /whatsapp/i,
     columns: {
       'mobile number': ['mobile', 'mobile'], 'whatsapp api number': ['apiNumber', 'mobile'], 'waba id': ['wabaId', 'mobile'], 'display name': ['displayName', 'text'],
       'blue tick': ['blueTick', 'text'], 'quality rating': ['quality', 'text'], 'messaging limit': ['messagingLimit', 'text'], 'message package': ['packageName', 'text'],
-      'messages in package': ['packageMessages', 'num'], 'extra messages added': ['extraMessages', 'num'], sent: ['sent', 'num'], delivered: ['delivered', 'num'],
-      'read / answered': ['read', 'num'], replied: ['replied', 'num'], failed: ['failed', 'num'], 'campaigns sent / run': ['campaigns', 'num'],
-      'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
+      'messages in package': ['packageMessages', 'num'], 'extra messages added': ['extraMessages', 'num'], 'messages sent (total)': ['sent', 'num'],
+      'messages delivered (total)': ['delivered', 'num'], 'messages read (total)': ['read', 'num'], 'replies (total)': ['replied', 'num'], 'failed (total)': ['failed', 'num'],
+      'campaigns sent (total)': ['campaigns', 'num'], 'subscription ends': ['validUntil', 'date'], 'whatsapp data as of': ['asOf', 'date']
     }
   },
   {
-    key: 'campaigns', label: 'WhatsApp campaign', aliases: ['whatsapp campaign', 'campaign', 'campaigns'],
+    key: 'campaigns', label: 'WhatsApp campaign', shared: ['mobile'], service: /whatsapp/i,
     columns: {
       'mobile number': ['mobile', 'mobile'], 'campaign name': ['name', 'text'], 'template name': ['template', 'text'], 'sent on': ['sentOn', 'date'],
-      'audience type': ['audienceType', 'text'], 'audience size': ['audienceSize', 'num'], sent: ['sent', 'num'], delivered: ['delivered', 'num'],
-      'read / answered': ['read', 'num'], replied: ['replied', 'num'], failed: ['failed', 'num'], 'campaign status': ['status', 'text']
+      'audience type': ['audienceType', 'text'], 'audience size': ['audienceSize', 'num'], 'campaign sent': ['sent', 'num'], 'campaign delivered': ['delivered', 'num'],
+      'campaign read': ['read', 'num'], 'campaign replied': ['replied', 'num'], 'campaign failed': ['failed', 'num'], 'campaign status': ['status', 'text']
     }
   },
   {
-    key: 'aiCalling', label: 'AI Calling', aliases: ['ai calling'],
+    key: 'aiCalling', label: 'AI Calling', shared: ['mobile'], service: /ai calling/i,
     columns: {
-      'mobile number': ['mobile', 'mobile'], 'panel / platform': ['platform', 'text'], 'calling plan': ['plan', 'text'], 'calling number(s)': ['numbers', 'mobile'],
+      'mobile number': ['mobile', 'mobile'], 'ai platform': ['platform', 'text'], 'calling plan': ['plan', 'text'], 'calling number(s)': ['numbers', 'mobile'],
       'ai agent name': ['agent', 'text'], 'credits bought (₹)': ['creditsBought', 'num'], 'credits left (₹)': ['creditsLeft', 'num'], 'minutes bought': ['minutesBought', 'num'],
       'minutes left': ['minutesLeft', 'num'], 'total calls': ['totalCalls', 'num'], 'connected calls': ['connectedCalls', 'num'], 'not answered': ['notAnswered', 'num'],
-      'interested / leads': ['interested', 'num'], 'campaigns sent / run': ['campaigns', 'num'], 'contacts uploaded': ['contacts', 'num'],
-      'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
+      'interested / leads': ['interested', 'num'], 'ai campaigns run': ['campaigns', 'num'], 'contacts uploaded': ['contacts', 'num'],
+      'ai plan valid until': ['validUntil', 'date'], 'ai data as of': ['asOf', 'date']
     }
   },
   {
-    key: 'rcsVoice', label: 'RCS / Voice', aliases: ['rcs / voice', 'rcs/voice', 'rcs & voice', 'rcs', 'voice'],
+    key: 'rcsVoice', label: 'RCS / Voice', shared: ['mobile', 'service'], service: /rcs|voice/i,
     columns: {
-      'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], 'sender id / brand name': ['senderId', 'text'], 'messages in package': ['packageMessages', 'num'],
-      sent: ['sent', 'num'], delivered: ['delivered', 'num'], 'read / answered': ['read', 'num'], 'clicks / key-press replies': ['clicks', 'num'], failed: ['failed', 'num'],
-      'campaigns sent / run': ['campaigns', 'num'], 'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
+      'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], 'sender id / brand name': ['senderId', 'text'], 'rcs / voice messages in package': ['packageMessages', 'num'],
+      'rcs / voice sent': ['sent', 'num'], 'rcs / voice delivered': ['delivered', 'num'], 'rcs read / voice answered': ['read', 'num'],
+      'rcs clicks / voice key-press replies': ['clicks', 'num'], 'rcs / voice failed': ['failed', 'num'], 'rcs / voice campaigns run': ['campaigns', 'num'],
+      'rcs / voice valid until': ['validUntil', 'date'], 'rcs / voice data as of': ['asOf', 'date']
     }
   },
   {
-    key: 'monthly', label: 'Monthly deliverable', aliases: ['monthly deliverable', 'monthly', 'monthly deliverables'],
+    key: 'monthly', label: 'Monthly work', shared: ['mobile', 'service'],
     columns: {
       'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], month: ['month', 'month'], 'what is delivered (unit)': ['unit', 'text'], 'included in plan': ['included', 'num'],
-      delivered: ['delivered', 'num'], 'result 1 - name': ['result1Name', 'text'], 'result 1 - value': ['result1Value', 'text'], 'result 2 - name': ['result2Name', 'text'],
-      'result 2 - value': ['result2Value', 'text'], 'link (page / profile / website)': ['link', 'text'], notes: ['notes', 'text']
+      'delivered this month': ['delivered', 'num'], 'result 1 - name': ['result1Name', 'text'], 'result 1 - value': ['result1Value', 'text'], 'result 2 - name': ['result2Name', 'text'],
+      'result 2 - value': ['result2Value', 'text'], 'link (page / profile / website)': ['link', 'text'], 'monthly notes': ['notes', 'text']
     }
   }
 ];
+/** What the sheet is recognised by (no tab of the older template has all of these). */
+const ONE_SHEET_MARKERS = ['mobile number', 'business name', 'service'];
 
-/** The name the server uses for each kind of record in its messages ("4 WhatsApp Campaigns, row 7"), as the person sees it in the one-tab template. */
+/** The name the server uses for each kind of record in its messages ("4 WhatsApp Campaigns, row 7"), as the person sees it on the one sheet. */
 export const SHEET_LABEL: Record<string, string> = {
-  '1 Customers': 'Customer', '2 Services': 'Service', '3 WhatsApp Account': 'WhatsApp account', '4 WhatsApp Campaigns': 'WhatsApp campaign',
-  '5 AI Calling': 'AI Calling', '6 RCS & Voice': 'RCS / Voice', '7 Monthly Deliverables': 'Monthly deliverable'
+  '1 Customers': 'Customer', '2 Services': 'Service', '3 WhatsApp Account': 'WhatsApp API', '4 WhatsApp Campaigns': 'WhatsApp campaign',
+  '5 AI Calling': 'AI Calling', '6 RCS & Voice': 'RCS / Voice', '7 Monthly Deliverables': 'Monthly work'
 };
 
 function parseOneSheet(sheet: { name: string; rows: Cell[][] }, hdr: number): ParsedImport {
@@ -232,48 +252,57 @@ function parseOneSheet(sheet: { name: string; rows: Cell[][] }, hdr: number): Pa
   const ignored: string[] = [];
   const problems: ParsedImport['problems'] = [];
   const warnings: string[] = [];
-  const known = new Set(ONE_SHEET_TYPES.flatMap(t => Object.keys(t.columns)));
+  const known = new Set(ONE_SHEET_BLOCKS.flatMap(b => Object.keys(b.columns)));
   const head = (sheet.rows[hdr] ?? []).map(h => header(h));
   head.forEach((key, j) => {
-    if (key && key !== 'record type' && !known.has(key) && !CALCULATED.has(key) && !key.endsWith('(helper)')) ignored.push(`${sheet.name}: ${String(sheet.rows[hdr]?.[j])}`);
+    if (key && !known.has(key) && !CALCULATED.has(key) && !key.endsWith('(helper)')) ignored.push(`${sheet.name}: ${String(sheet.rows[hdr]?.[j])}`);
   });
-  const typeOf = (v: Cell) => {
-    const t = String(v ?? '').replace(/\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-    return t ? ONE_SHEET_TYPES.find(x => x.aliases.includes(t)) ?? null : null;
-  };
+  const at = (key: string) => head.indexOf(key);
   for (let i = hdr + 1; i < sheet.rows.length; i++) {
     const cells = sheet.rows[i] ?? [];
-    const raw = cells[0] ?? null;
-    const t = typeOf(raw);
-    const typed = (j: number) => {
-      const key = head[j];
-      return j > 0 && !!key && known.has(key) && !CALCULATED.has(key) && cells[j] !== null && cells[j] !== undefined && cells[j] !== '';
-    };
-    if (!t) {
-      if (raw !== null && raw !== '') problems.push({ row: i + 1, message: `Record type "${String(raw)}" is not one of: ${ONE_SHEET_TYPES.map(x => x.label).join(', ')}.` });
-      else if (head.some((_, j) => typed(j))) problems.push({ row: i + 1, message: 'Choose the Record type for this row (Customer, Service, WhatsApp account ...).' });
+    const val = (key: string, kind: Kind) => (at(key) < 0 ? null : convert(cells[at(key)] ?? null, kind));
+    const mobile = String(val('mobile number', 'mobile') ?? '').replace(/\D/g, '');
+    if (mobile === EXAMPLE_MOBILE || cells.some(x => typeof x === 'string' && /\bEXAMPLE\b/.test(x))) continue;
+    const service = String(val('service', 'text') ?? '');
+    const made: Row[] = [];
+    const filled = new Map<SheetKey, boolean>();
+    for (const b of ONE_SHEET_BLOCKS) {
+      const out: Row = { row: i + 1 };
+      let any = false;
+      for (const [key, [field, kind]] of Object.entries(b.columns)) {
+        const v = val(key, kind);
+        out[field] = v;
+        if (v !== null && !b.shared?.includes(field)) any = true;
+      }
+      filled.set(b.key, any);
+      if (any) made.push(Object.assign(out, { __block: b.key } as never));
+    }
+    // a service record is made when its columns are filled; a Service chosen on a usage row alone is that usage row's service (the import adds it if missing)
+    const usage = ['whatsapp', 'campaigns', 'aiCalling', 'rcsVoice', 'monthly'].some(k => filled.get(k as SheetKey));
+    if (service && !filled.get('services') && !usage) made.push({ row: i + 1, mobile: val('mobile number', 'mobile'), service, __block: 'services' } as never);
+    if (!made.length) continue;
+    if (!mobile) {
+      problems.push({ row: i + 1, message: 'The Mobile Number is missing (every row needs the number of its customer).' });
       continue;
     }
-    const out: Row = { row: i + 1 };
-    for (const [key, [field, kind]] of Object.entries(t.columns)) {
-      const j = head.indexOf(key);
-      out[field] = j < 0 ? null : convert(cells[j] ?? null, kind);
+    for (const b of ONE_SHEET_BLOCKS) {
+      if (!filled.get(b.key) || !b.service || !service) continue;
+      if (!b.service.test(service)) problems.push({ row: i + 1, message: `The ${b.label} columns are filled, but the Service on this row is "${service}". Use another row for that service.` });
     }
-    const mobile = String(out.mobile ?? '').replace(/\D/g, '');
-    if (mobile === EXAMPLE_MOBILE || cells.some(x => typeof x === 'string' && /\bEXAMPLE\b/.test(x))) continue;
-    head.forEach((key, j) => {
-      if (warnings.length < 20 && typed(j) && !t.columns[key]) warnings.push(`Row ${i + 1}: "${String(sheet.rows[hdr]?.[j])}" is not used by a ${t.label} row, so it was ignored.`);
-    });
-    (data[t.key] ??= []).push(out);
-    counts[t.key]++;
+    for (const rec of made) {
+      const { __block, ...row } = rec as Row & { __block: SheetKey };
+      (data[__block] ??= []).push(row as Row);
+      counts[__block]++;
+    }
   }
   return { data, counts, missing: [], ignored, format: 'one-sheet', problems, warnings };
 }
 
 export function parseExistingCustomers(wb: Workbook): ParsedImport {
   for (const sheet of wb.sheets) {
-    const hdr = sheet.rows.slice(0, 6).findIndex(r => header(r?.[0]) === 'record type');
-    if (hdr >= 0 && !/guide|how to|lists/i.test(sheet.name)) return parseOneSheet(sheet, hdr);
+    if (/guide|how to|lists|team/i.test(sheet.name)) continue;
+    const hdr = sheet.rows.slice(0, 6).findIndex(r => ONE_SHEET_MARKERS.every(m => (r ?? []).some(c => header(c) === m)));
+    if (hdr >= 0) return parseOneSheet(sheet, hdr);
   }
   const data: ImportData = {};
   const counts = Object.fromEntries(IMPORT_SHEETS.map(s => [s.key, 0])) as Record<SheetKey, number>;
