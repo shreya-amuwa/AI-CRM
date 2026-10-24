@@ -1,6 +1,7 @@
 import type { Paginated, Profile } from '../../shared/contracts.js';
 import {
   profileSelfUpdateSchema,
+  headDivisionSchema,
   salesSubRoleSchema,
   userAssignSchema,
   technicalConsultantSchema,
@@ -50,7 +51,7 @@ export class UserService {
   async create(actor: Actor, body: unknown): Promise<Profile> {
     const input = parse(userCreateSchema, body);
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
-    await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId);
+    await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }
@@ -107,6 +108,15 @@ export class UserService {
     const userId = parse(uuidSchema, id);
     const { role } = parse(salesSubRoleSchema, body);
     await this.profiles.setSalesSubRole(userId, role);
+    return this.profiles.findById(userId);
+  }
+
+  /** Label a Department Head Sales or Support. Only the Super Admin; the database refuses a second head for the same side. */
+  async setHeadDivision(actor: Actor, id: string, body: unknown): Promise<Profile> {
+    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can set a Department Head\'s side.');
+    const userId = parse(uuidSchema, id);
+    const { division } = parse(headDivisionSchema, body);
+    await this.profiles.setHeadDivision(userId, division);
     return this.profiles.findById(userId);
   }
 

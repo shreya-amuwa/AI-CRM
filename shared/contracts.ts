@@ -7,6 +7,11 @@
 export const ROLES = ['SUPER_ADMIN', 'DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER'] as const;
 export type Role = (typeof ROLES)[number];
 
+/** Which side of the department a Department Head leads: a department can have one Sales head and one Support head. */
+export const HEAD_DIVISIONS = ['SALES', 'SUPPORT'] as const;
+export type HeadDivision = (typeof HEAD_DIVISIONS)[number];
+export const HEAD_DIVISION_LABELS: Record<HeadDivision, string> = { SALES: 'Sales', SUPPORT: 'Support' };
+
 export const ACCOUNT_STATUSES = ['PENDING', 'ACTIVE', 'SUSPENDED', 'REVOKED', 'REJECTED'] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
@@ -110,6 +115,8 @@ export interface Profile {
   isTechnicalConsultant: boolean;
   /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
   salesSubRole?: SalesSubRole | null;
+  /** Sales or Support side of a Department Head (null when not specified or not a Department Head). */
+  headDivision?: HeadDivision | null;
   /** Stored default dashboard (resolved by the database from role + team division). */
   defaultDashboard?: DefaultDashboard | null;
   status: AccountStatus;
