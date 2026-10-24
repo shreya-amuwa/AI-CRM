@@ -72,13 +72,13 @@ await sa.locator('select').filter({ has: sa.locator('option', { hasText: 'A+' })
 await sa.getByPlaceholder('+91 98765 43210').fill('+91 98765 43210');
 await expect(await sa.getByRole('button', { name: /Create|Add team member|Add member/i }).last().isDisabled(), 'creating is blocked until Sales or Support is chosen');
 await sa.locator('#staff-head-division').selectOption('SALES');
-await expect(/Department Head Dashboard/.test(await sa.locator('[role=dialog]').innerText()), '"Will open: Department Head Dashboard"');
+await expect(/Sales Department Head Dashboard/.test(await sa.locator('[role=dialog]').innerText()), '"Will open: Sales Department Head Dashboard"');
 await sa.screenshot({ path: `${OUT}/dh-division-form.png`, fullPage: true });
 await sa.getByRole('button', { name: /Create|Add team member|Add member/i }).last().click();
 const until = async (fn, ms = 15000) => { for (const t = Date.now(); Date.now() - t < ms;) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 250)); } return null; };
 await until(async () => (await q(`select 1 from profiles where email = 'sales.head@amuwa.com'`)).length) || await fail('the Sales Department Head was not created');
 const head = (await q(`select role, head_division, default_dashboard, team_id from profiles where email = 'sales.head@amuwa.com'`))[0];
-await expect(head && head.role === 'DEPARTMENT_HEAD' && head.head_division === 'SALES' && head.default_dashboard === 'department-head' && head.team_id === null, 'the Sales Department Head is stored next to the existing head', head);
+await expect(head && head.role === 'DEPARTMENT_HEAD' && head.head_division === 'SALES' && head.default_dashboard === 'sales-department-head' && head.team_id === null, 'the Sales Department Head is stored next to the existing head', head);
 const two = (await q(`select count(*)::int n from profiles p join departments d on d.id = p.department_id where d.slug = 'wabastore' and p.role = 'DEPARTMENT_HEAD'`))[0].n;
 await expect(two === 2, 'Wabastore now has two Department Heads', two);
 

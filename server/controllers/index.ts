@@ -423,6 +423,22 @@ export const telecallerController = {
   updateLead: (async ctx => ok(await svc(ctx).telecaller.updateLead(ctx.params.id, ctx.req.body))) as Handler
 };
 
+export const salesHeadController = {
+  overview: (async ctx => ok(await svc(ctx).salesHead.overview())) as Handler,
+  assignees: (async ctx => ok(await svc(ctx).salesHead.assignees())) as Handler,
+  sheets: (async ctx => ok(await svc(ctx).salesHead.sheets())) as Handler,
+  assignSheet: (async ctx => ok(await svc(ctx).salesHead.assignSheet(ctx.req.body))) as Handler,
+  storeSource: (async ctx => ok(await svc(ctx).salesHead.storeSource(ctx.params.id, ctx.req.body), 201)) as Handler,
+  leads: (async ctx => ok(await svc(ctx).salesHead.leads(ctx.req.query))) as Handler,
+  lead: (async ctx => ok(await svc(ctx).salesHead.lead(ctx.params.id))) as Handler,
+  assignInbound: (async ctx => ok(await svc(ctx).salesHead.assignInbound(ctx.params.id, ctx.req.body))) as Handler,
+  tasks: (async ctx => ok(await svc(ctx).salesHead.tasks(ctx.req.query))) as Handler,
+  taskAssignees: (async ctx => ok(await svc(ctx).salesHead.taskAssignees())) as Handler,
+  createTask: (async ctx => ok(await svc(ctx).salesHead.createTask(ctx.req.body), 201)) as Handler,
+  reports: (async ctx => ok(await svc(ctx).salesHead.reports(ctx.req.query))) as Handler,
+  income: (async ctx => ok(await svc(ctx).salesHead.income(ctx.req.query))) as Handler
+};
+
 export const businessAssociateController = {
   home: (async ctx => ok(await svc(ctx).ba.home())) as Handler,
   assignees: (async ctx => ok(await svc(ctx).ba.assignees())) as Handler,

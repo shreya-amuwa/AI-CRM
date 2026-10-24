@@ -1,4 +1,4 @@
-import { SALES_SUB_ROLE_LABELS, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
+import { SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
 import type { AuthUser } from '../../types/crm';
 
 /**
@@ -14,7 +14,8 @@ export function toAuthUser(profile: Profile): AuthUser {
       role = 'superadmin';
       break;
     case 'DEPARTMENT_HEAD':
-      role = departmentSlug === 'hr' ? 'hr' : 'admin';
+      // The Department Head of the Sales side has their own dashboard; every other Department Head keeps the shared one.
+      role = departmentSlug === 'hr' ? 'hr' : isSalesHead(profile) ? 'sales-head' : 'admin';
       break;
     case 'TEAM_HEAD':
       if (isAccountsStaff(profile)) {
@@ -60,6 +61,15 @@ export function toAuthUser(profile: Profile): AuthUser {
     position: profile.position || undefined,
     profile
   };
+}
+
+/**
+ * The Department Head of the Sales side of a department (the database stores it as head_division = SALES and resolves the dashboard
+ * value 'sales-department-head'). The Support Department Head, and a head with no side set, keep the Department Head dashboard.
+ */
+export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivision' | 'defaultDashboard'>): boolean {
+  if (p.role !== 'DEPARTMENT_HEAD' || p.department?.slug === 'hr' || p.department?.slug === 'accounts') return false;
+  return p.defaultDashboard === 'sales-department-head' || p.headDivision === 'SALES';
 }
 
 /** Team members and leads of the Accounts department confirm payments sent by Sales. */
@@ -138,7 +148,8 @@ export function defaultDashboardLabel(
   departmentName?: string,
   technicalConsultant = false,
   departmentSlug?: string,
-  salesSubRole?: SalesSubRole | null
+  salesSubRole?: SalesSubRole | null,
+  headDivision?: HeadDivision | null
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
   // HR and Accounts staff open their department's own dashboard.
@@ -147,6 +158,7 @@ export function defaultDashboardLabel(
     case 'SUPER_ADMIN':
       return 'Super Admin Department Hub';
     case 'DEPARTMENT_HEAD':
+      if (headDivision === 'SALES') return `Sales Department Head Dashboard${dept}`;
       return `Department Head Dashboard${dept}`;
     case 'TEAM_HEAD':
       if (division === 'SUPPORT') return `Support Team Lead Dashboard${dept}`;

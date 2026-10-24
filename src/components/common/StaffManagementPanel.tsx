@@ -10,7 +10,7 @@ import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
 import {
-  ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isTechnicalConsultant, staffRoleLabel
+  ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
 
 /**
@@ -180,8 +180,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
   useEffect(() => {
     if (!departmentId) return;
-    organizationApi.teams(departmentId).then(setTeams).catch(err => setListError(errorMessage(err)));
-  }, [departmentId]);
+    // The Sales Department Head works with the Sales teams only (the database refuses the rest as well).
+    organizationApi.teams(departmentId).then(ts => setTeams(profile && isSalesHead(profile) ? ts.filter(t => t.division === 'SALES') : ts)).catch(err => setListError(errorMessage(err)));
+  }, [departmentId, profile]);
 
   useEffect(() => {
     void loadMembers();
@@ -282,7 +283,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setCreated({
         profile: newProfile,
         password: newProfile.department?.slug === 'hr' ? password : undefined,
-        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole)
+        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision)
       });
       resetForm();
       await loadMembers();
@@ -619,7 +620,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' ? headDivision || null : null)}</strong>
           </div>
 
           {role === 'DEPARTMENT_HEAD' && existingHead && (
@@ -759,7 +760,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           </button>
                         )}
                       </td>
-                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole)}</td>}
+                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision)}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>
