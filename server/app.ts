@@ -23,6 +23,7 @@ import { runHrAutomation } from './automations/hrDispatcher.js';
 import { runPerformanceAutomation } from './performance/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
+import { bolifySender } from './automations/bolify.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
@@ -113,8 +114,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
   const hr = await runHrAutomation();
-  // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run until a calling provider is connected.
-  const subscriptionReminders = await runSubscriptionReminders();
+  // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
+  // calls through BolifyAI when BOLIFY_WEBHOOK_URL is set.
+  const subscriptionReminders = await runSubscriptionReminders({ sender: bolifySender() });
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));

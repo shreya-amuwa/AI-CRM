@@ -4,6 +4,7 @@ import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { uuidSchema } from '../../shared/validation.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
+import { bolifySender } from '../automations/bolify.js';
 
 /**
  * Onboarding automations. Each one is a Google Sheet behind an Apps Script web
@@ -42,7 +43,7 @@ export class AutomationService {
       const r = runs.get(code);
       return {
         code,
-        connected: webhookUrl(code) !== null,
+        connected: webhookUrl(code) !== null || (code === 'AI_CALLING' && bolifySender() !== null),
         lastRun: r ? { status: r.status, triggeredAt: r.triggered_at, triggeredBy: r.triggerer?.full_name ?? null, detail: r.detail } : null
       };
     });
@@ -52,10 +53,20 @@ export class AutomationService {
   async trigger(customerId: string, automation: string): Promise<AutomationStatus> {
     const id = parse(uuidSchema, customerId);
     const code = parse(automationSchema, automation);
+    // AI calling goes straight to BolifyAI when its webhook is configured (no Google Sheet in between)
+    const bolify = code === 'AI_CALLING' ? bolifySender() : null;
     const url = webhookUrl(code);
-    if (!url) throw new AppError('CONFLICT', 'This automation is not connected to a Google Sheet yet.');
+    if (!url && !bolify) throw new AppError('CONFLICT', 'This automation is not connected to a Google Sheet yet.');
 
     const run = await this.repo.beginAutomation(id, code);
+    if (bolify) {
+      const r = await bolify.callCustomer(run.customer, run.services ?? []);
+      const ok = r.outcome === 'ACCEPTED';
+      await this.repo.finishAutomation(run.runId, ok, ok ? `BolifyAI accepted the request${r.code ? ` (HTTP ${r.code})` : ''}` : r.detail);
+      if (!ok) throw new AppError('SERVICE_UNAVAILABLE', `The automation did not run: ${r.detail}`);
+      return (await this.list(id)).find(a => a.code === code)!;
+    }
+    if (!url) throw new AppError('CONFLICT', 'This automation is not connected to a Google Sheet yet.');
     let ok = false;
     let detail = '';
     try {

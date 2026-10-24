@@ -4022,6 +4022,102 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.json.data.subscriptionReminders.mode === 'off' && /not available/.test(r.json.data.subscriptionReminders.note) && r.json.data.subscriptionReminders.claimed === 0,
     'reminder calls: live is refused while no calling provider is connected (nobody is called)', r.json);
 
+  // --- BolifyAI: live calls go to the webhook (a local mock stands in for it) ---
+  const bolifyHits: { body: any; auth: string | undefined }[] = [];
+  let bolifyReply: { status: number; body: string } = { status: 200, body: '{"call_id":"BOL-1001"}' };
+  const bolify = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', d => (raw += d));
+    req.on('end', () => {
+      bolifyHits.push({ body: JSON.parse(raw), auth: req.headers.authorization });
+      res.writeHead(bolifyReply.status, { 'content-type': 'application/json' });
+      res.end(bolifyReply.body);
+    });
+  });
+  await new Promise<void>(res => bolify.listen(0, '127.0.0.1', res));
+  const bolifyUrl = `http://127.0.0.1:${(bolify.address() as net.AddressInfo).port}/hook`;
+  await db.query(`update public.customers set email = 'bolify.test@example.com', city = 'Pune' where id = $1`, [cust]);
+  const reset = async () => {
+    await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+    await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 7), service_status = 'LIVE' where customer_id = $1 and service_code = $2`, [cust, svc]);
+  };
+  const inWindow = () => db.query(`update public.subscription_reminders set status = 'SCHEDULED', attempts = 0, reason = null, send_after = now() - interval '1 hour', send_until = now() + interval '1 hour', next_attempt_at = now()
+                                    where customer_id = $1 and stage = 7`, [cust]);
+  process.env.AUTOMATION_MODE_AI_CALL = 'live';
+  process.env.BOLIFY_WEBHOOK_URL = bolifyUrl;
+  process.env.BOLIFY_API_KEY = 'bolify-key-123';
+  await reset();
+  await dispatch('dispatch-secret-0123456789'); // schedules it
+  await inWindow();
+  bolifyHits.length = 0;
+  r = await dispatch('dispatch-secret-0123456789');
+  x = (await row())[0];
+  check(r.json.data.subscriptionReminders.mode === 'live' && r.json.data.subscriptionReminders.accepted >= 1 && bolifyHits.length === 1, 'bolify: a due reminder is sent to the BolifyAI webhook in live mode', r.json);
+  check(JSON.stringify(Object.keys(bolifyHits[0].body)) === JSON.stringify(['name', 'phone', 'email', 'service', 'location']) && bolifyHits[0].body.phone === '+919000000201'
+        && bolifyHits[0].body.email === 'bolify.test@example.com' && bolifyHits[0].body.location === 'Pune' && bolifyHits[0].auth === 'Bearer bolify-key-123',
+    'bolify: the request is name, phone, email, service and location, with the key in the Authorization header', bolifyHits[0]);
+  check(x.status === 'ACCEPTED' && x.external_call_id === 'BOL-1001' && x.attempts === 1 && !JSON.stringify(x).includes('9000000201') && !JSON.stringify(x).includes('bolify-key-123'),
+    'bolify: recorded as ACCEPTED with BolifyAI\'s call id; no full number and no key is stored', x);
+  r = await dispatch('dispatch-secret-0123456789');
+  check(bolifyHits.length === 1 && r.json.data.subscriptionReminders.claimed === 0, 'bolify: an accepted reminder is never sent a second time', r.json);
+
+  // busy: tried again; refused: failed and not tried again
+  await reset();
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  bolifyHits.length = 0;
+  bolifyReply = { status: 503, body: 'down' };
+  r = await dispatch('dispatch-secret-0123456789');
+  x = (await row())[0];
+  check(x.status === 'RETRY' && x.attempts === 1 && bolifyHits.length === 1 && !/down/.test(x.reason ?? ''), 'bolify: an unavailable webhook (503) leaves the reminder to be tried again, and its reply is not stored', x);
+  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1 and stage = 7`, [cust]);
+  bolifyReply = { status: 400, body: '{"error":"bad"}' };
+  r = await dispatch('dispatch-secret-0123456789');
+  x = (await row())[0];
+  check(x.status === 'FAILED' && x.attempts === 2 && bolifyHits.length === 2, 'bolify: a refused request (400) fails the reminder at once', x);
+  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1 and stage = 7`, [cust]);
+  r = await dispatch('dispatch-secret-0123456789');
+  check(bolifyHits.length === 2, 'bolify: a failed reminder is not sent again', r.json);
+
+  // no consent: nobody is called, nothing reaches the webhook
+  await reset();
+  await db.query(`update public.customer_reminder_consent set status = 'DO_NOT_CALL' where customer_id = $1`, [cust]);
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  bolifyReply = { status: 200, body: '{}' };
+  bolifyHits.length = 0;
+  r = await dispatch('dispatch-secret-0123456789');
+  x = (await row())[0];
+  check(x.status === 'SKIPPED' && bolifyHits.length === 0, 'bolify: a customer who asked not to be called never reaches the webhook', x);
+
+  // dry run never reaches it either, and live without a webhook is still refused
+  await db.query(`update public.customer_reminder_consent set status = 'ALLOWED' where customer_id = $1`, [cust]);
+  await reset();
+  process.env.AUTOMATION_MODE_AI_CALL = 'dry_run';
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  bolifyHits.length = 0;
+  r = await dispatch('dispatch-secret-0123456789');
+  check(bolifyHits.length === 0 && r.json.data.subscriptionReminders.dryRun >= 1, 'bolify: dry run never calls the webhook', r.json);
+  process.env.AUTOMATION_MODE_AI_CALL = 'live';
+  delete process.env.BOLIFY_WEBHOOK_URL;
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.subscriptionReminders.mode === 'off' && /BOLIFY_WEBHOOK_URL/.test(r.json.data.subscriptionReminders.note) && bolifyHits.length === 0, 'bolify: live with no webhook set is refused and names the missing setting', r.json);
+
+  // the Technical Consultant's on-demand AI Calling goes straight to BolifyAI too
+  process.env.BOLIFY_WEBHOOK_URL = bolifyUrl;
+  bolifyReply = { status: 200, body: '{"id":"BOL-2002"}' };
+  const odc = await autoCustomer({ name: 'Onboard Caller', company: 'Caller Co', phone: '9820011122', email: 'caller@example.com', city: 'Nashik' }, null);
+  r = await api('tc', 'GET', `/pipeline/customers/${odc}/automations`);
+  check(r.status === 200 && r.json.data.find((a: any) => a.code === 'AI_CALLING').connected === true, 'bolify: AI Calling shows as connected once the webhook is set', r);
+  bolifyHits.length = 0;
+  r = await api('tc', 'POST', `/pipeline/customers/${odc}/automations/AI_CALLING`);
+  check(r.status === 200 && bolifyHits.length === 1 && bolifyHits[0].body.name === 'Onboard Caller' && bolifyHits[0].body.phone === '+919820011122' && bolifyHits[0].body.location === 'Nashik' && r.json.data.lastRun.status === 'SENT',
+    'bolify: the Technical Consultant\'s AI Calling posts the customer to BolifyAI and records the run', r.json);
+  bolify.close();
+  delete process.env.BOLIFY_WEBHOOK_URL;
+  delete process.env.BOLIFY_API_KEY;
+
   delete process.env.AUTOMATION_MODE_AI_CALL;
   delete process.env.AUTOMATION_DISPATCH_SECRET;
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
