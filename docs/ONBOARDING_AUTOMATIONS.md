@@ -5,8 +5,8 @@ They are triggered by the Technical Consultant's work. **Nothing is sent when th
 Technical Consultant**: the first messages go out when the Technical Consultant clicks **Send for onboarding**, once,
 whether or not the customer wants add-on services. Asking for add-ons later never sends them again. No sheet and no "Trigger" button are involved.
 
-**Scope for now:** Wabastore customers with the **WhatsApp API + Blue Tick** service. Other departments and services
-are not automated yet.
+**Scope for now:** Wabastore customers with the **WhatsApp API + Blue Tick**, **WhatsApp API** or **Blue Tick** service (the three
+WhatsApp services need the same documents and are onboarded the same way). Other departments and services are not automated yet.
 
 Migration: `supabase/migrations/20261016000100_onboarding_automations.sql` (re-runnable).
 

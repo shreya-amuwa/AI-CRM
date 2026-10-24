@@ -289,7 +289,7 @@ tokens.set('b', tokenFor(orphanId)); // second sales team member
 const GW = process.env.GATEWAY_URL!;
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 r = await api('a', 'GET', '/pipeline/services');
-check(r.status === 200 && r.json.data.length === 31 && r.json.data[0].category, 'service catalogue comes from the database', r);
+check(r.status === 200 && r.json.data.length === 33 && r.json.data[0].category, 'service catalogue comes from the database', r);
 {
   const ds = r.json.data.filter((s: any) => s.category === 'Amuwa Design Studio');
   check(ds.length === 6 && ds.map((s: any) => s.name).join('|') === 'Social Media Marketing|Google My Business Ranking|Meta Ads|AI Video Production|Yearly Creative Package|Graphic Design',
@@ -1765,7 +1765,7 @@ const un = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-messages
 check(un.status === 409 || un.status === 404, 'not for customers that are not automated', un);
 // --- Excel import of existing customers (Support) + client "Set your password" e-mails ---
 {
-  Object.assign(process.env, { RATE_LIMIT_IMPORT_PER_MIN: '50', AUTOMATION_MODE: 'live', APP_URL: 'https://crm.example.test', AUTOMATION_TEST_RECIPIENTS: 'imp.client@example.com, imp.other@example.com' });
+  Object.assign(process.env, { RATE_LIMIT_IMPORT_PER_MIN: '50', AUTOMATION_MODE: 'live', APP_URL: 'https://crm.example.test', AUTOMATION_TEST_RECIPIENTS: 'imp.client@example.com, imp.other@example.com, pw.three@example.com' });
   const file = {
     customers: [
       { row: 3, mobile: '9000000201', name: 'Import Client', businessName: 'Import Traders (TEST)', customerSince: '2025-04-01', loginEmail: 'imp.client@example.com' },
@@ -1840,6 +1840,55 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 200 && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: never for a staff login', r);
   r = await forgot('not-an-email');
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
+
+  // --- the team chooses the client's password (column "Client Password"): validated, hashed by Auth, never stored or e-mailed by the CRM ---
+  const pw0 = 'Team#Chosen-2026';
+  const pwFile = (extra: Record<string, unknown>[]) => ({
+    customers: extra,
+    services: extra.map((c, i) => ({ row: 3 + i, mobile: c.mobile, service: 'AI Calling', startDate: '2026-05-01', status: 'Live' }))
+  });
+  const pwRow = (n: number, o: Record<string, unknown> = {}) => ({ row: 2 + n, mobile: `90000003${String(n).padStart(2, '0')}`, name: `Pw Client ${n}`, businessName: `Pw Co ${n} (TEST)`, ...o });
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: pwFile([pwRow(1, { email: 'pw.one@example.com', loginPassword: 'short1' })]) });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.errors.some((e: any) => e.sheet === '1 Customers' && e.row === 3 && /10 characters/.test(e.message)),
+    'password: a short Client Password is named by sheet and row', r);
+  check(!JSON.stringify(r.json).includes('short1'), 'password: the response never contains it', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: pwFile([pwRow(1, { loginPassword: pw0 })]) });
+  check(r.status === 200 && r.json.data.errors.some((e: any) => /needs a Client Login E-mail/.test(e.message)), 'password: it needs an e-mail to sign in with', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: pwFile([pwRow(1, { email: 'pw.one@example.com', loginPassword: 'pw.one@example.com' })]) });
+  check(r.status === 200 && r.json.data.errors.some((e: any) => /cannot be the e-mail/.test(e.message)), 'password: not the e-mail address', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: pwFile([pwRow(1, { email: 'pw.one@example.com', loginPassword: 'short1' }), pwRow(2, { email: 'pw.two@example.com', loginPassword: pw0 })]) });
+  check(r.status === 200 && !r.json.data.committed && (await db.query(`select count(*)::int as n from public.customers where phone like '90000003%'`)).rows[0].n === 0,
+    'password: one bad password stops the whole save', r);
+
+  const mailsBeforePw = outbox.filter(o => o.path === '/emails').length;
+  const pwSpecial = 'Team&Chosen<2026>';
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: pwFile([pwRow(3, { email: 'pw.three@example.com', loginPassword: pwSpecial }), pwRow(4)]) });
+  const lg = r.json.data?.logins?.[0];
+  check(r.status === 200 && r.json.data.committed && r.json.data.logins.length === 1 && lg.email === 'pw.three@example.com' && lg.login === 'CREATED' && lg.passwordBy === 'TEAM' && lg.mail === 'SENT',
+    'password: saved; the login uses the customer\'s e-mail when no Client Login E-mail is given, and the client is e-mailed', r);
+  const cm = outbox.filter(o => o.path === '/emails').slice(mailsBeforePw);
+  const cred = cm.find(o => o.body.to?.[0] === 'pw.three@example.com');
+  check(cm.length === 1 && !!cred && /sign-in details/i.test(cred.body.subject) && cred.body.text.includes('pw.three@example.com') && cred.body.text.includes(pwSpecial)
+    && cred.body.html.includes('https://crm.example.test/client/login') && !/set-password/.test(cred.body.html),
+    'password: that one e-mail has the dashboard address, the login e-mail and the password (and no set-password link)', cred?.body);
+  const pw = pwSpecial;
+  const signedPw = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'pw.three@example.com', password: pw }) });
+  check(signedPw.status === 200 && !!((await signedPw.json()) as any).access_token, 'password: the client signs in with the password the team chose');
+  const wrongPw = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'pw.three@example.com', password: 'Not-the-password-1' }) });
+  check(wrongPw.status >= 400, 'password: and not with another one');
+  const leak = (await db.query(
+    `select (select count(*) from public.audit_logs where metadata::text like '%' || $1 || '%')
+          + (select count(*) from public.customer_activities where note like '%' || $1 || '%')
+          + (select count(*) from public.customers where notes like '%' || $1 || '%' or name like '%' || $1 || '%') as n`, [pw])).rows[0].n;
+  check(Number(leak) === 0, 'password: it is not stored anywhere in the CRM (audit log, activity, customer)');
+  const ev = (await db.query(`select actor_id, entity_id, metadata::text as m from public.audit_logs where action = 'CLIENT_PASSWORD_SET_BY_TEAM' and entity_id = $1`, [lg.customerId])).rows;
+  check(ev.length === 1 && !ev[0].m.includes(pw), 'password: the audit log says who set a password for which customer (not the password)', ev);
+
+  // the same file again: the customer already has a login, so the password is not used (and the existing one keeps working)
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: pwFile([pwRow(3, { email: 'pw.three@example.com', loginPassword: 'Another#Pass-2027' })]) });
+  check(r.status === 200 && r.json.data.committed && r.json.data.logins.length === 0 && r.json.data.passwordsNotUsed?.[0] === 'pw.three@example.com', 'password: for a customer who already has a login it is not used', r);
+  const still = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'pw.three@example.com', password: pw }) });
+  check(still.status === 200, 'password: the first password still works');
   delete process.env.APP_URL; process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 }
 // --- Chat: client chat, reviewers, internal direct messages, groups and files -------------------------------------
@@ -3821,6 +3870,15 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const emails = () => outbox.filter(o => o.path === '/emails');
   const hrMail = (to: string, subjectPart: string) => emails().filter(o => o.body?.to?.[0] === to && String(o.body?.subject).includes(subjectPart));
   const hrRun = async () => (await dispatch('dispatch-secret-0123456789')).json.data.hr;
+  // Probation ends on "joining date + 6 months". When today + 7 days is the 31st and the month six months earlier has 30 days (31 Oct: 30 Apr + 6 months
+  // is 30 Oct), no joining date ends exactly seven days ahead, so the seven-day reminder cannot be tested on such a day. For this section only, the HR clock
+  // (private.hr_today) is then set back to the nearest earlier day where it can be tested; it is restored at the end.
+  const probationOk = async (back: number) => (await db.query(
+    `select ((d + 7 - interval '6 months')::date + interval '6 months')::date = d + 7 as ok from (select private.hr_today() - $1::int as d) x`, [back])).rows[0].ok as boolean;
+  let hrBack = 0;
+  while (!(await probationOk(hrBack))) hrBack++;
+  const setHrClock = (back: number) => db.query(`create or replace function private.hr_today() returns date language sql stable set search_path = '' as $$ select ((now() at time zone 'Asia/Kolkata')::date - ${back}) $$`);
+  if (hrBack > 0) await setHrClock(hrBack);
   const { rows: [{ today }] } = await db.query(`select to_char(private.hr_today(), 'YYYY-MM-DD') as today`);
   const md = today.slice(5);
   await db.query(`insert into public.crm_settings (key, value) values ('hr.notify_emails', '["hr.inbox@example.com"]') on conflict (key) do update set value = excluded.value`);
@@ -3986,6 +4044,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const unauth = await dispatch();
   check(unauth.status === 401, 'HR automation: the scheduler endpoint needs its secret', unauth.status);
 
+  if (hrBack > 0) await setHrClock(0);
   mailMock.close();
   for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 }
@@ -4965,6 +5024,20 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.quotations.length === 3 && r.json.data.scopes.length === 2, 'business associate API: the new owner gets the contact with its quotations and scope versions', r);
   r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
   check(r.status === 404, 'business associate API: the former owner no longer has it', r);
+}
+
+// --- the three WhatsApp services ------------------------------------------------
+{
+  r = await api('a', 'GET', '/pipeline/services');
+  const byCode = (c: string) => (r.json.data as any[]).find(x => x.code === c);
+  const need = (c: string) => (byCode(c)?.requirements ?? []).map((x: any) => x.label).sort().join('|');
+  check(r.status === 200 && ['WHATSAPP_API_BLUE_TICK', 'WHATSAPP_API', 'BLUE_TICK'].map(c => byCode(c)?.name).join('|') === 'WhatsApp API + Blue Tick|WhatsApp API|Blue Tick', 'whatsapp: Sales can choose WhatsApp API + Blue Tick, WhatsApp API and Blue Tick', r);
+  check(need('WHATSAPP_API_BLUE_TICK').length > 0 && need('WHATSAPP_API') === need('WHATSAPP_API_BLUE_TICK') && need('BLUE_TICK') === need('WHATSAPP_API_BLUE_TICK'),
+    'whatsapp: each of the three asks for the same documents and details', [need('WHATSAPP_API_BLUE_TICK'), need('WHATSAPP_API'), need('BLUE_TICK')]);
+  for (const [code, phone] of [['WHATSAPP_API', '+91 98200 72222'], ['BLUE_TICK', '+91 98200 71111']] as const) {
+    r = await api('a', 'POST', '/pipeline/leads', { name: `Only ${code}`, company: `${code} Co`, phone, leadSource: 'Walk-in', services: [code] });
+    check(r.status === 201, `whatsapp: a lead with only ${code} is created`, r);
+  }
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
