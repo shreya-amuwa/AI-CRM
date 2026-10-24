@@ -129,34 +129,35 @@ export const TasksPage: React.FC<{ initialStatus?: string }> = ({ initialStatus 
               </EmptyState>
             ) : (
               <>
-                <div className="hidden md:block overflow-x-auto">
-                  <table className="w-full text-left text-sm min-w-[1100px]" aria-busy={loading}>
+                <div className="hidden xl:block">
+                  <table className="w-full table-fixed text-left text-[13px]" aria-busy={loading}>
+                    <colgroup>{[13, 10, 10, 14, 8, 11, 9, 8, 9, 8].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
                     <thead>
                       <tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">
                         {['Contact Name', 'Company Name', 'Phone Number', 'Email', 'Assigned Date', 'Call Status', 'Last Called', 'Follow-up Date', 'Remarks', 'Actions'].map(h => (
-                          <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>
+                          <th key={h} scope="col" className="px-3 py-2.5 font-medium">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {data.items.map(c => (
                         <tr key={c.id} className="hover:bg-slate-50/60 align-top">
-                          <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={c.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{c.name}</span></div></td>
-                          <td className="px-4 py-3 text-slate-600">{c.company || '-'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap"><a href={`tel:${c.phone}`} className="text-blue-600 hover:underline">{c.phone}</a></td>
-                          <td className="px-4 py-3 text-slate-600 break-all">{c.email || '-'}</td>
-                          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(c.assignedAt)}</td>
-                          <td className="px-4 py-3"><CallStatusBadge status={c.callStatus} /></td>
-                          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateTimeText(c.lastCalledAt)}</td>
-                          <td className={`px-4 py-3 whitespace-nowrap ${c.followUpDue ? 'text-rose-600 font-semibold' : 'text-slate-600'}`}>{dateText(c.followUpDate)}{c.followUpDue ? ' · due' : ''}</td>
-                          <td className="px-4 py-3 text-slate-600 max-w-[16rem]"><span className="line-clamp-2" title={c.remarks || undefined}>{c.remarks || '-'}</span></td>
-                          <td className="px-4 py-3"><button type="button" className={tcBtn.row} onClick={() => setEditing(c)} aria-label={`Update call for ${c.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Update</button></td>
+                          <td className="px-3 py-3"><div className="flex items-center gap-2.5"><Avatar name={c.name} /><span className="font-semibold text-slate-900 break-words min-w-0">{c.name}</span></div></td>
+                          <td className="px-3 py-3 text-slate-600 break-words">{c.company || '-'}</td>
+                          <td className="px-3 py-3 whitespace-nowrap"><a href={`tel:${c.phone}`} className="text-blue-600 hover:underline">{c.phone}</a></td>
+                          <td className="px-3 py-3 text-slate-600"><span className="block truncate" title={c.email || undefined}>{c.email || '-'}</span></td>
+                          <td className="px-3 py-3 text-slate-600">{dateText(c.assignedAt)}</td>
+                          <td className="px-3 py-3 [&>span]:whitespace-normal [&>span]:text-center"><CallStatusBadge status={c.callStatus} /></td>
+                          <td className="px-3 py-3 text-slate-600">{dateTimeText(c.lastCalledAt)}</td>
+                          <td className={`px-3 py-3 ${c.followUpDue ? 'text-rose-600 font-semibold' : 'text-slate-600'}`}>{dateText(c.followUpDate)}{c.followUpDue ? ' · due' : ''}</td>
+                          <td className="px-3 py-3 text-slate-600"><span className="line-clamp-2" title={c.remarks || undefined}>{c.remarks || '-'}</span></td>
+                          <td className="px-3 py-3"><button type="button" className={tcBtn.row} onClick={() => setEditing(c)} aria-label={`Update call for ${c.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Update</button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <ul className="md:hidden divide-y divide-slate-100">
+                <ul className="xl:hidden divide-y divide-slate-100">
                   {data.items.map(c => (
                     <li key={c.id} className="p-4 space-y-2">
                       <div className="flex items-start justify-between gap-3">

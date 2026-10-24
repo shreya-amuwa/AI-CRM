@@ -110,29 +110,30 @@ export const LeadsPage: React.FC<{
           </EmptyState>
         ) : (
           <>
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-sm min-w-[1100px]" aria-busy={loading}>
+            <div className="hidden xl:block">
+              <table className="w-full table-fixed text-left text-[13px]" aria-busy={loading}>
+                <colgroup>{[14, 10, 10, 18, 7, 8, 11, 7, 7, 8].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
                 <thead>
                   <tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">
                     {['Customer Name', 'Company / Business Name', 'Phone', 'Email', 'Lead Source', 'Lead Temperature', 'Call Status', 'Follow-up Date', 'Created Date', 'Actions'].map(h => (
-                      <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>
+                      <th key={h} scope="col" className="px-3 py-2.5 font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.items.map(l => (
                     <tr key={l.id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={l.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{l.name}</span></div></td>
-                      <td className="px-4 py-3 text-slate-600">{l.company || '-'}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{l.phone ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">{l.phone}</a> : '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 break-all">{l.email || '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{l.leadSource || '-'}</td>
-                      <td className="px-4 py-3"><TemperatureBadge value={l.leadTemperature} /></td>
-                      <td className="px-4 py-3"><CallStatusBadge status={l.callStatus} /></td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(l.followUpDate)}</td>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(l.createdAt)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
+                      <td className="px-3 py-3"><div className="flex items-center gap-2.5"><Avatar name={l.name} /><span className="font-semibold text-slate-900 break-words min-w-0">{l.name}</span></div></td>
+                      <td className="px-3 py-3 text-slate-600 break-words">{l.company || '-'}</td>
+                      <td className="px-3 py-3 whitespace-nowrap">{l.phone ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">{l.phone}</a> : '-'}</td>
+                      <td className="px-3 py-3 text-slate-600"><span className="block truncate" title={l.email || undefined}>{l.email || '-'}</span></td>
+                      <td className="px-3 py-3 text-slate-600 break-words">{l.leadSource || '-'}</td>
+                      <td className="px-3 py-3"><TemperatureBadge value={l.leadTemperature} /></td>
+                      <td className="px-3 py-3 [&>span]:whitespace-normal [&>span]:text-center"><CallStatusBadge status={l.callStatus} /></td>
+                      <td className="px-3 py-3 text-slate-600">{dateText(l.followUpDate)}</td>
+                      <td className="px-3 py-3 text-slate-600">{dateText(l.createdAt)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-col items-stretch gap-1.5">
                           <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'view', lead: l })} aria-label={`View ${l.name}`}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> View</button>
                           <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'edit', lead: l })} aria-label={`Edit ${l.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit</button>
                           {renderRowAction?.(l, load)}
@@ -143,7 +144,7 @@ export const LeadsPage: React.FC<{
                 </tbody>
               </table>
             </div>
-            <ul className="md:hidden divide-y divide-slate-100">
+            <ul className="xl:hidden divide-y divide-slate-100">
               {data.items.map(l => (
                 <li key={l.id} className="p-4 space-y-2">
                   <div className="flex items-start justify-between gap-3">
