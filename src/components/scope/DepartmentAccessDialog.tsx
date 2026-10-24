@@ -11,6 +11,9 @@ import { Dialog } from '../team-member/pipeline/shared';
  */
 const DIVISIONS: HeadDivision[] = ['SALES', 'SUPPORT'];
 
+/** The department that carries this function of `dep` (D Talk's Support is Wabatalk), if it has one. */
+const sideOf = (dep: DepartmentAccessInfo['departments'][number], d: HeadDivision) => (d === 'SUPPORT' ? dep.supportDepartment : dep.salesDepartment) || null;
+
 export const DepartmentAccessDialog: React.FC<{ member: Pick<Profile, 'id' | 'fullName'>; onClose: () => void }> = ({ member, onClose }) => {
   const [info, setInfo] = useState<DepartmentAccessInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +85,7 @@ export const DepartmentAccessDialog: React.FC<{ member: Pick<Profile, 'id' | 'fu
                             className="h-4 w-4 cursor-pointer disabled:cursor-not-allowed"
                             checked={granted(dep.id, d)}
                             disabled={!available || busyKey !== null}
-                            title={available ? undefined : `${dep.name} has no ${HEAD_DIVISION_LABELS[d]} team yet`}
+                            title={available ? undefined : sideOf(dep, d) ? `${HEAD_DIVISION_LABELS[d]} of ${dep.name} is ${sideOf(dep, d)} - give ${sideOf(dep, d)} instead` : `${dep.name} has no ${HEAD_DIVISION_LABELS[d]} team yet`}
                             aria-label={`${HEAD_DIVISION_LABELS[d]} access to ${dep.name}`}
                             onChange={e => void toggle(dep.id, d, e.target.checked)}
                             data-testid={`access-${dep.slug}-${d.toLowerCase()}`}

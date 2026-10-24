@@ -15,7 +15,7 @@ function check(ok: unknown, label: string, extra?: unknown) {
   console.log(`ok - ${label}`);
 }
 
-const dep = (id: string, divisions: ('SALES' | 'SUPPORT')[], wholeDepartment = false) => ({ id, slug: id, name: id.toUpperCase(), divisions, wholeDepartment });
+const dep = (id: string, divisions: ('SALES' | 'SUPPORT')[], wholeDepartment = false) => ({ id, slug: id, name: id.toUpperCase(), dataDepartmentId: id, dataSlug: id, divisions, wholeDepartment });
 const profile = { id: 'p1', role: 'DEPARTMENT_HEAD', departmentId: 'a', headDivision: 'SALES', defaultDashboard: 'sales-department-head' } as unknown as Profile;
 
 // Group A: a shared Sales head (three departments, one function)
@@ -28,6 +28,14 @@ check(normaliseScope(shared, { departmentId: 'b', division: 'SUPPORT' }).divisio
 const asB = applyScope(profile, shared, normaliseScope(shared, { departmentId: 'b', division: null }))!;
 check(asB.departmentId === 'b' && asB.department?.slug === 'b' && asB.defaultDashboard === 'sales-department-head', 'shared head: dashboard sees the active department', asB);
 check(applyScope(profile, shared, normaliseScope(shared, null)) === profile, 'shared head: home scope returns the same profile object');
+
+// Wabatalk: the Support department of D Talk. It is offered as a department of its own but works on D Talk's data.
+const wabatalk = { id: 'wt', slug: 'wabatalk', name: 'Wabatalk', dataDepartmentId: 'dt', dataSlug: 'dtalk', divisions: ['SUPPORT'], wholeDepartment: false };
+const withWt = { homeDepartmentId: 'a', activeDepartmentId: 'a', activeDivision: 'SUPPORT', departments: [dep('a', ['SUPPORT']), wabatalk] } as unknown as MyDepartmentScopes;
+const asWt = applyScope(profile, withWt, normaliseScope(withWt, { departmentId: 'wt', division: null }))!;
+check(asWt.departmentId === 'dt' && asWt.department?.slug === 'dtalk' && asWt.department?.name === 'Wabatalk' && asWt.headDivision === 'SUPPORT', 'Wabatalk: works on D Talk\'s data, shown as Wabatalk, Support function', asWt);
+check(normaliseScope(withWt, { departmentId: 'wt', division: 'SALES' }).division === 'SUPPORT', 'Wabatalk: always the Support function');
+check(requestScopeFor(withWt, { departmentId: 'wt', division: 'SUPPORT' }).departmentId === 'wt', 'Wabatalk: its own id is what the browser sends');
 
 // Group B: one head, both functions of one department
 const both = { homeDepartmentId: 'm', activeDepartmentId: 'm', activeDivision: null, departments: [dep('m', ['SALES', 'SUPPORT'])] } as unknown as MyDepartmentScopes;

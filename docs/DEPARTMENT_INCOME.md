@@ -60,3 +60,7 @@ Super Admin and Accounts: every department and the reconciliation. A Department 
 * The monthly-plan "payment" is Accounts confirming a plan as paid, not a payment record: it appears in the business reports (type Subscription) but not in the payment-based Accounts income, as before.
 * Add-on payments have no reversal state in the existing workflow, so a reversed add-on payment cannot occur.
 * The orders list shows the 200 most recent orders; totals cover all.
+
+
+## Departments with a Support side (Wabatalk)
+A department can be the Support side of another (`departments.facet_of`): Wabatalk is D Talk's. An order is recorded in the department of the division that earns it (`private.revenue_department`): Support's orders in Wabatalk, Sales' in D Talk. See [DEPARTMENT_SCOPES.md](DEPARTMENT_SCOPES.md#0-wabatalk-d-talks-support-department).

@@ -96,6 +96,9 @@ export interface Department extends DepartmentRef {
   accentColor: string;
   logoUrl: string | null;
   isLocked: boolean;
+  /** Set for a department that is the Sales or Support side of another one (Wabatalk = the Support side of D Talk). */
+  facetOf: string | null;
+  facetDivision: HeadDivision | null;
   createdAt: string;
 }
 
@@ -137,6 +140,9 @@ export interface DepartmentScopeDepartment {
   name: string;
   iconName: string | null;
   accentColor: string | null;
+  /** The department whose people, customers and tickets this entry works on (D Talk for Wabatalk). */
+  dataDepartmentId: string;
+  dataSlug: string;
   /** The head's own department (the one they are placed in). */
   isHome: boolean;
   /** The functions authorised in this department. Empty for a head with no side set (the whole department). */
@@ -159,7 +165,7 @@ export interface DepartmentAccessInfo {
   homeDepartmentId: string | null;
   headDivision: HeadDivision | null;
   grants: { departmentId: string; division: HeadDivision }[];
-  departments: { id: string; slug: string; name: string; hasSales: boolean; hasSupport: boolean }[];
+  departments: { id: string; slug: string; name: string; hasSales: boolean; hasSupport: boolean; supportDepartment?: string | null; salesDepartment?: string | null }[];
 }
 
 export interface ProfileSummary {

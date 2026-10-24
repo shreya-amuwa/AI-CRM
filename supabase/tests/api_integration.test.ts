@@ -72,7 +72,7 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-check(r.status === 200 && r.json.data.length === 11, 'departments come from the database');
+check(r.status === 200 && r.json.data.length === 12 && r.json.data.some((d: any) => d.slug === 'wabatalk'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -5263,6 +5263,35 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await names('gp', scope('whatsbox', 'SALES'))).join() === 'SCOPE whatsbox Support', 'scopes: asking for Sales gives no Sales data');
   r = await api('gp', 'GET', '/sales-head/overview', undefined, undefined, scope('mpillar'));
   check(r.status === 403, 'scopes: the Support head cannot open the Sales head pages', r);
+
+  // Wabatalk: the Support department of D Talk. The shared Support head (home D Talk Support) is offered it as a department of its own.
+  r = await api('gp', 'GET', '/me/department-scopes');
+  const wtScope = r.json.data.departments.find((d: any) => d.slug === 'wabatalk');
+  check(wtScope && wtScope.dataSlug === 'dtalk' && wtScope.divisions.join() === 'SUPPORT' && !r.json.data.departments.some((d: any) => d.slug === 'dtalk'),
+    'scopes: D Talk\'s Support is offered as Wabatalk, working on D Talk\'s data', r);
+  const wtId = wtScope?.id as string;
+  check((await names('gp', { 'x-active-department': wtId })).join() === 'SCOPE dtalk Support', 'scopes: in Wabatalk the head sees D Talk\'s Support customer only');
+  check((await names('gs', { 'x-active-department': wtId })).join() === 'SCOPE dtalk Sales', 'scopes: D Talk\'s Sales head sending Wabatalk\'s id still gets Sales data only');
+  r = await api('sa', 'POST', `/users/${gpId}/department-access`, { departmentId: dep('dtalk').id, division: 'SUPPORT', granted: true });
+  check(r.status === 422 && /Give Wabatalk instead/.test(r.json.error.message), 'scopes: D Talk\'s Support can only be given as Wabatalk', r);
+  r = await api('sa', 'GET', '/departments');
+  check(r.status === 200 && r.json.data.some((d: any) => d.slug === 'wabatalk' && d.facetOf === dep('dtalk').id && d.facetDivision === 'SUPPORT'), 'scopes: the department list marks Wabatalk as D Talk\'s Support side', r);
+  // revenue: a verified payment on a customer the D Talk Support member sold is Wabatalk's, one on a Sales customer is D Talk's
+  for (const [side, amount] of [['Support', 30000], ['Sales', 40000]] as const) {
+    const cust = (await db.query(`insert into public.customers (owner_id, name, phone, lifecycle_stage, deal_amount) values ($1, $2, $3, 'CUSTOMER', $4) returning id`,
+      [owners[`dtalk:${side}`], `WT revenue ${side}`, side === 'Support' ? '+919812100001' : '+919812100002', amount])).rows[0].id;
+    await db.query(`insert into public.payment_requests (customer_id, status, agreed_amount, requested_by) values ($1, 'CONFIRMED', $2, $3)`, [cust, amount, owners[`dtalk:${side}`]]);
+    await db.query(`insert into public.customer_payments (customer_id, payment_type, amount, method, reference, status, source, recorded_by, verified_by, verified_at)
+                    select $1, 'FULL', $2, 'UPI', $3, 'VERIFIED', 'ACCOUNTS', p.id, p.id, now() from public.profiles p where p.role = 'SUPER_ADMIN' limit 1`, [cust, amount, `WT-${side}`]);
+  }
+  r = await api('sa', 'GET', `/reports/department-income?departmentId=${wtId}`);
+  check(r.status === 200 && r.json.data.scope.name === 'Wabatalk' && Number(r.json.data.byDivision.support.collected) >= 30000 && Number(r.json.data.byDivision.sales.collected) === 0, 'scopes: the Wabatalk income report holds Support revenue only', r);
+  r = await api('sa', 'GET', `/reports/department-income?departmentId=${dep('dtalk').id}`);
+  check(r.status === 200 && Number(r.json.data.byDivision.sales.collected) >= 40000 && Number(r.json.data.byDivision.support.collected) === 0, 'scopes: the D Talk income report holds Sales revenue only', r);
+  r = await api('gp', 'GET', '/reports/department-income', undefined, undefined, { 'x-active-department': wtId });
+  check(r.status === 200 && r.json.data.scope.name === 'Wabatalk' && Number(r.json.data.byDivision.support.collected) >= 30000, 'scopes: the shared Support head working Wabatalk sees its revenue', r);
+  r = await api('gs', 'GET', '/reports/department-income');
+  check(r.status === 200 && r.json.data.scope.name !== 'Wabatalk' && Number(r.json.data.byDivision.support.collected) === 0, 'scopes: D Talk\'s Sales head sees none of Wabatalk\'s revenue', r);
 
   // Group B: the department head 'dh' (Wabastore, no side set) handles both functions
   for (const division of ['SALES', 'SUPPORT']) {

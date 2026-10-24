@@ -1,8 +1,8 @@
 import React from 'react';
-import { Building2, Cpu, DollarSign, GraduationCap, Layers, MessageSquare, PhoneCall, ShoppingBag, Sparkles, Star, Users } from 'lucide-react';
+import { Building2, Cpu, DollarSign, GraduationCap, Headset, Layers, MessageSquare, PhoneCall, ShoppingBag, Sparkles, Star, Users } from 'lucide-react';
 
 const ICONS: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
-  Building2, Sparkles, Star, ShoppingBag, MessageSquare, PhoneCall, Cpu, Layers, GraduationCap, Users, DollarSign
+  Building2, Sparkles, Star, ShoppingBag, MessageSquare, PhoneCall, Headset, Cpu, Layers, GraduationCap, Users, DollarSign
 };
 
 /** The icon the department record names (the same names the Super Admin hub uses). */

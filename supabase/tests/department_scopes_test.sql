@@ -9,7 +9,6 @@
 \set QUIET 1
 \echo '--- department scopes'
 reset role;
-\i supabase/migrations/20261123000100_department_scopes.sql
 
 create or replace function test.hdr(p_department uuid, p_division text default null) returns void language sql as $$
   select set_config('request.headers', jsonb_strip_nulls(jsonb_build_object('x-active-department', p_department::text, 'x-active-division', p_division))::text, false)

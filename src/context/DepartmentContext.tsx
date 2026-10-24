@@ -49,7 +49,9 @@ export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshDepartments = useCallback(async () => {
     setLoading(true);
     try {
-      setDepartments((await organizationApi.departments()).map(toDepartment));
+      // A department that is only the Sales / Support side of another (Wabatalk = D Talk's Support) has no people or teams of its own,
+      // so the department hub, staff forms and sign-up lists show the real department; Accounts and the scope picker list the side too.
+      setDepartments((await organizationApi.departments()).filter(d => !d.facetOf).map(toDepartment));
     } catch {
       setDepartments([]); // signed out / not yet approved
     } finally {

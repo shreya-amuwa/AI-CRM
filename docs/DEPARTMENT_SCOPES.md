@@ -9,6 +9,22 @@ Two kinds of Department Head exist beyond "one head, one department, one side":
 
 Nothing about *which* departments are in Group A or Group B is hard-coded. It is data, set by the Super Admin, and the database enforces it.
 
+## 0. Wabatalk (D Talk's Support department)
+
+**D Talk is the Sales department. Wabatalk is the Support department of D Talk.** D Talk's Support is looked after by the same Support Department Head who looks after Wabastore, Whatsbox and Wabastar (a shared Support head, Group A).
+
+Migration `20261124000100_wabatalk_support_department.sql` (run it after `20261123000100_department_scopes.sql`; safe to run again):
+
+* creates the department **Wabatalk** (slug `wabatalk`) if no department of that name exists – an existing one is linked, never renamed – and links it to the department with the slug `dtalk` as its **Support side** (`departments.facet_of` / `facet_division`). If no `dtalk` department exists, nothing is created.
+* **People, teams, customers and tickets stay in D Talk.** The customer a D Talk salesperson sold is the same customer D Talk's Support looks after, and every access rule of the CRM is built around that one shared department; splitting it in two would hide each customer from the other half. Wabatalk therefore has no teams of its own.
+* **Heads:** the Super Admin gives the shared Support head **Wabatalk** (Support) in *Departments & functions* – the same way as Wabastore, Whatsbox and Wabastar. The picker and the header show *Wabatalk* as a department; the database turns it into "D Talk, Support" for every access rule, so the head sees D Talk's Support team, customers, tickets and tasks and nothing of D Talk's Sales side. D Talk's Support cannot be granted under the name D Talk (the Super Admin is told to give Wabatalk), and Wabatalk can only be given for Support.
+* **Revenue:** every order belongs to the department of the division that earns it. Support's orders (add-ons, renewals, monthly plans, Client Dashboard purchases the rule gives to Support, a first sale to a customer Support acquired) are recorded in **Wabatalk**; Sales' orders in **D Talk**. This is applied when an order is first recorded, in every ledger/order/income function, in the Accounts department income, the Super Admin dashboard, the business reports and the manual correction (`set_order_attribution`). A Sales head's income report is D Talk's; the shared Support head working in Wabatalk gets Wabatalk's.
+* **History:** orders recorded before Wabatalk existed as *D Talk / Support* are moved to Wabatalk by the migration (a notice says how many); D Talk's Sales orders stay. Nothing else is moved, and a second run changes nothing.
+* The sign-up page and the department hub list real departments only, not Wabatalk; Accounts' income and expense screens list it.
+* Other departments (Wabastore, Whatsbox, Wabastar, Digitree, M Pillar, …) have no sides: their Sales and Support revenue both stay in the department, exactly as before.
+
+Not changed: the Super Admin dashboard's head-count, customer and ticket columns for the D Talk row still count D Talk's Sales **and** Support people and customers (they live there); the Wabatalk row there shows Wabatalk's income and expenses. If Wabatalk already existed in your database with people or teams of its own, run the audit query below first – those are not moved.
+
 ## 1. Audit first (read-only)
 
 Run this in the Supabase SQL editor to see the departments, their teams and their heads as they really are. Use the result to decide the Group A / Group B split – do not guess from the names.
@@ -38,6 +54,7 @@ A department can only be granted for a function it has a team for (a Sales grant
 ## 2. Assigning (Super Admin only)
 
 * Open **Team Members & Access**, find the Department Head, click **Departments & functions**, tick the (department, function) pairs. Each tick is one row in `department_access`; every change is written to the audit log (`DEPARTMENT_ACCESS_GRANTED` / `DEPARTMENT_ACCESS_REVOKED`).
+* **Group A (Support head):** home department Wabastar (or any of the three), then tick **Support** for Whatsbox, Wabastore (if not home), and **Wabatalk**. The Sales head ticks **Sales** for the other two. (Wabastar needs a Support team before it can be ticked.)
 * **Group A:** make a Department Head, set their side (Sales head / Support head), and tick the other departments for that same function. One Sales head and one Support head can be ticked into the same three departments.
 * **Group B:** make a Department Head with *no side set* in that department, tick **Sales** and **Support** for the department. (A head with no side already sees the whole department; the ticks make both views selectable.)
 * The head's own department is always available; revoking a pair removes it immediately.

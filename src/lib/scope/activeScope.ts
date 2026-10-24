@@ -73,12 +73,14 @@ export function applyScope(profile: Profile | null, scopes: MyDepartmentScopes |
   const dept = departmentOf(scopes, scope.departmentId) ?? departmentOf(scopes, scopes.homeDepartmentId);
   if (!dept) return profile;
   const division = scope.division ?? (dept.divisions.length === 1 && !dept.wholeDepartment ? dept.divisions[0] : null);
-  const same = dept.id === profile.departmentId && (division ?? null) === (profile.headDivision ?? null);
+  // a department that is the Sales / Support side of another (Wabatalk) works on the data of that other department
+  const dataId = dept.dataDepartmentId ?? dept.id;
+  const same = dataId === profile.departmentId && (division ?? null) === (profile.headDivision ?? null) && dataId === dept.id;   // an entry whose id differs from its data department is a side department (Wabatalk): shown under its own name
   if (same) return profile;
   return {
     ...profile,
-    departmentId: dept.id,
-    department: { id: dept.id, slug: dept.slug, name: dept.name },
+    departmentId: dataId,
+    department: { id: dataId, slug: dept.dataSlug ?? dept.slug, name: dept.name },
     headDivision: division,
     defaultDashboard: division === 'SALES' ? 'sales-department-head' : 'department-head'
   };
