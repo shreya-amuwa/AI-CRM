@@ -161,8 +161,9 @@ export const ONE_SHEET_TYPES: { key: SheetKey; label: string; aliases: string[];
     key: 'customers', label: 'Customer', aliases: ['customer', 'customers'],
     columns: {
       'mobile number': ['mobile', 'mobile'], 'customer name': ['name', 'text'], 'business name': ['businessName', 'text'], 'e-mail': ['email', 'text'], city: ['city', 'text'],
-      'business address': ['address', 'text'], 'business category': ['category', 'text'], 'customer since': ['customerSince', 'date'], 'support team member': ['member', 'text'],
-      'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'], 'sold by (sales)': ['soldBy', 'text'], notes: ['notes', 'text']
+      'business address': ['address', 'text'], 'business category': ['category', 'text'], 'customer since': ['customerSince', 'date'],
+      'handled by - support team member': ['member', 'text'], 'brought by (sales / support)': ['broughtByType', 'text'], 'brought by - name': ['broughtBy', 'text'],
+      'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'], notes: ['notes', 'text']
     }
   },
   {

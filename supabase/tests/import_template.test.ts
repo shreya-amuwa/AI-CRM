@@ -66,7 +66,7 @@ check(p.counts.customers === 1 && p.counts.whatsapp === 1 && p.data.whatsapp?.[0
 // ---- the one-tab template ("Import"): a Record type on every row ------------------------------------------------------------------
 check(IMPORT_SHEETS.every(sh => !!SHEET_LABEL[sh.title]) && ONE_SHEET_TYPES.length === IMPORT_SHEETS.length, 'every kind of record has a one-tab label and a column map');
 const headers = [
-  'Record type *', 'Mobile Number *', 'Customer (auto)', 'Customer Name *', 'Business Name *', 'Support Team Member *', 'Client Password', 'Service *', 'Start Date *', 'Status *',
+  'Record type *', 'Mobile Number *', 'Customer (auto)', 'Customer Name *', 'Business Name *', 'Handled by - Support Team Member *', 'Brought by (Sales / Support)', 'Brought by - Name', 'Client Password', 'Service *', 'Start Date *', 'Status *',
   'Renewal / Expiry Date', 'Days Left', 'Messages in Package *', 'Message Package', 'Sent *', 'Delivered', 'Read / Answered', 'Replied', 'Messages Left', '% Used',
   'Valid Until', 'Data as of *', 'Campaign Name *', 'Sent On *', 'Audience Size *', 'Calling Plan *', 'Month *', 'What is delivered (unit) *', 'Notes', 'Mobile key (helper)'
 ];
@@ -76,7 +76,7 @@ p = parseExistingCustomers(wb({
   Import: [
     headers,
     rowOf({ 'Record type *': 'Customer', 'Mobile Number *': '9820011111', 'Customer Name *': 'Example', 'Notes': 'EXAMPLE - delete' }),
-    rowOf({ 'Record type *': 'Customer', 'Mobile Number *': 9324123476, 'Customer Name *': 'Devanshi', 'Business Name *': 'Ayraa', 'Support Team Member *': 'Avantika', 'Client Password': 'Pass1234567', 'Customer (auto)': 'Ayraa (Devanshi)' }),
+    rowOf({ 'Record type *': 'Customer', 'Mobile Number *': 9324123476, 'Customer Name *': 'Devanshi', 'Business Name *': 'Ayraa', 'Handled by - Support Team Member *': 'Avantika', 'Brought by (Sales / Support)': 'Sales', 'Brought by - Name': 'Shreya', 'Client Password': 'Pass1234567', 'Customer (auto)': 'Ayraa (Devanshi)' }),
     rowOf({ 'Record type *': 'service', 'Mobile Number *': '9324123476', 'Service *': 'WhatsApp API + Blue Tick', 'Start Date *': '29-10-2025', 'Status *': 'Live', 'Renewal / Expiry Date': '29-10-2026', 'Days Left': 5 }),
     rowOf({ 'Record type *': 'WhatsApp account', 'Mobile Number *': '9324123476', 'Message Package': '1 Lakh', 'Messages in Package *': 100000, 'Sent *': 50000, 'Messages Left': 50000, '% Used': 0.5, 'Valid Until': '29-10-2026', 'Data as of *': '23-10-2026' }),
     rowOf({ 'Record type *': 'WhatsApp campaign', 'Mobile Number *': '9324123476', 'Campaign Name *': 'Dussehara', 'Sent On *': '20-10-2026', 'Audience Size *': 4000, 'Sent *': 3500, 'Delivered': 3200 }),
@@ -89,7 +89,7 @@ p = parseExistingCustomers(wb({
   ]
 }));
 check(p.format === 'one-sheet' && p.ignored.length === 0, 'the one-tab template is recognised by its Record type column, and every heading is known', { f: p.format, i: p.ignored });
-check(p.counts.customers === 1 && p.data.customers?.[0].row === 3 && p.data.customers?.[0].mobile === '9324123476' && p.data.customers?.[0].loginPassword === 'Pass1234567', 'a Customer row is read with its Excel row number (the example is skipped)', p.data.customers);
+check(p.counts.customers === 1 && p.data.customers?.[0].row === 3 && p.data.customers?.[0].mobile === '9324123476' && p.data.customers?.[0].loginPassword === 'Pass1234567' && p.data.customers?.[0].member === 'Avantika' && p.data.customers?.[0].broughtByType === 'Sales' && p.data.customers?.[0].broughtBy === 'Shreya', 'a Customer row is read with its Excel row number, who handles it and who brought it (the example is skipped)', p.data.customers);
 check(p.counts.services === 2 && p.data.services?.[0].service === 'WhatsApp API + Blue Tick' && p.data.services?.[0].renewsOn === '2026-10-29' && p.data.services?.[0].startDate === '2025-10-29', 'a Record type is case-insensitive and a Service row reads its own columns', p.data.services);
 check(p.counts.whatsapp === 1 && p.data.whatsapp?.[0].packageMessages === 100000 && p.data.whatsapp?.[0].sent === 50000 && p.data.whatsapp?.[0].validUntil === '2026-10-29' && p.data.whatsapp?.[0].asOf === '2026-10-23',
   'WhatsApp account: shared columns (Sent, Valid Until, Data as of) go to the right fields', p.data.whatsapp);
