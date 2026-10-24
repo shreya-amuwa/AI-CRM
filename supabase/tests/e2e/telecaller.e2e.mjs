@@ -301,6 +301,15 @@ await expect((await q(`select count(*)::int n from customers where name = 'Meera
 await expect((await t1.locator('tbody tr', { hasText: 'Meera Kapoor' }).count()) === 1, 'Add Lead: the lead appears in the list without a manual refresh');
 const leadHeads = (await t1.locator('thead th').allInnerTexts()).map(s => s.trim());
 await expect(leadHeads.join('|').toLowerCase() === 'Customer Name|Company / Business Name|Phone|Email|Lead Source|Lead Temperature|Call Status|Follow-up Date|Created Date|Actions'.toLowerCase(), 'Leads: the ten required columns', leadHeads);
+// a long address, as real data has them (it used to break letter by letter and force a sideways scrollbar)
+await q(`update customers set email = 'siddheshtukaramshinde192@gmail.com', company = 'Shinde Industrial Supplies Pvt Ltd' where name = 'Meera Kapoor'`);
+await t1.reload();
+await t1.locator('tbody tr', { hasText: 'Meera Kapoor' }).waitFor({ timeout: 15000 });
+await t1.screenshot({ path: `${OUT}/tc-6b-leads-table.png` });
+const fit = await t1.evaluate(() => { const t = document.querySelector('table'); const box = t?.parentElement; return { table: t ? Math.round(t.getBoundingClientRect().width) : 0, box: box ? Math.round(box.clientWidth) : 0, scrollbar: box ? box.scrollWidth > box.clientWidth + 1 : true, page: document.documentElement.scrollWidth - document.documentElement.clientWidth }; });
+await expect(!fit.scrollbar && fit.page <= 1 && fit.table <= fit.box, 'Leads: the table fits the page - no horizontal scrollbar', fit);
+const longMail = await t1.locator('tbody tr', { hasText: 'Meera Kapoor' }).locator('td').nth(3).evaluate(e => ({ h: e.querySelector('span').getBoundingClientRect().height, ellipsis: getComputedStyle(e.querySelector('span')).textOverflow }));
+await expect(longMail.ellipsis === 'ellipsis' && longMail.h < 30, 'Leads: an e-mail address stays on one line (shortened with an ellipsis, not broken letter by letter)', longMail);
 const hotColor = await t1.locator('tbody tr', { hasText: 'Meera Kapoor' }).locator('[data-temperature="HOT"]').evaluate(e => getComputedStyle(e).color);
 const rgb = c => c.match(/\d+/g).map(Number);
 const [hr_, hg, hb] = rgb(hotColor);
@@ -413,8 +422,8 @@ await ph.close();
 const tb = await login('tele.one@amuwa.com', { width: 820, height: 1180 }, 'text=Today\'s Focus');
 const tabletOk = async label => expect(await tb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `tablet: no sideways scrolling on ${label}`);
 await tabletOk('Home');
-await menu(tb, 'Tasks'); await tb.waitForSelector('tbody tr', { timeout: 15000 }); await tabletOk('Tasks');
-await menu(tb, 'Leads'); await tb.waitForSelector('tbody tr', { timeout: 15000 }); await tabletOk('Leads');
+await menu(tb, 'Tasks'); await tb.waitForSelector('tbody tr:visible, main ul li:visible', { timeout: 15000 }); await tabletOk('Tasks');
+await menu(tb, 'Leads'); await tb.waitForSelector('tbody tr:visible, main ul li:visible', { timeout: 15000 }); await tabletOk('Leads');
 await tb.screenshot({ path: `${OUT}/tc-11-tablet.png` });
 await tb.close();
 
