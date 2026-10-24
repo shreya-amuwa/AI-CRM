@@ -19,6 +19,7 @@ export const usersController = {
   assign: (async ctx => ok(await svc(ctx).users.assign(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setStatus: (async ctx => ok(await svc(ctx).users.setStatus(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setTechnicalConsultant: (async ctx => ok(await svc(ctx).users.setTechnicalConsultant(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  setHeadDivision: (async ctx => ok(await svc(ctx).users.setHeadDivision(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setSalesSubRole: (async ctx => ok(await svc(ctx).users.setSalesSubRole(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   remove: (async ctx => {
     await svc(ctx).users.delete(ctx.actor, ctx.params.id);

@@ -43,6 +43,7 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/users/:id', handler: users.assign, options: S },
   { method: 'POST', path: '/users/:id/status', handler: users.setStatus, options: S },
   { method: 'POST', path: '/users/:id/technical-consultant', handler: users.setTechnicalConsultant, options: S },
+  { method: 'POST', path: '/users/:id/head-division', handler: users.setHeadDivision, options: S },
   { method: 'POST', path: '/users/:id/sales-sub-role', handler: users.setSalesSubRole, options: S },
   { method: 'DELETE', path: '/users/:id', handler: users.remove, options: S },
 

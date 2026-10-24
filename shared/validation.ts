@@ -32,6 +32,7 @@ import {
   NOTIFICATION_PRIORITIES,
   ROLES,
   SALES_SUB_ROLES,
+  HEAD_DIVISIONS,
   BA_STAGES,
   DEMO_MODES,
   DEMO_STATUSES,
@@ -194,6 +195,8 @@ export const userCreateSchema = z
     technicalConsultant: z.boolean().optional(),
     /** Sales role of a Sales team member (Telecaller, ...). Only a Team Member of a Sales team has one. */
     salesSubRole: z.enum(SALES_SUB_ROLES).optional(),
+    /** Sales or Support side of a Department Head (a department has one head for each). */
+    headDivision: z.enum(HEAD_DIVISIONS).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
   })
@@ -205,6 +208,10 @@ export const userCreateSchema = z
   .refine(u => !u.technicalConsultant || u.role === 'TEAM_MEMBER', {
     message: 'A Technical Consultant is created as a team member of a support team.',
     path: ['role']
+  })
+  .refine(u => !u.headDivision || u.role === 'DEPARTMENT_HEAD', {
+    message: 'Only a Department Head is a Sales or Support head.',
+    path: ['headDivision']
   })
   .refine(u => !u.salesSubRole || u.role === 'TEAM_MEMBER', {
     message: 'A Sales role is given to a team member of a Sales team.',
@@ -1346,6 +1353,7 @@ export const revenueSettingsSchema = z.object({ clientPurchaseAttribution: z.enu
 
 
 // ---- Telecaller ----
+export const headDivisionSchema = z.object({ division: z.enum(HEAD_DIVISIONS).nullable() }).strict();
 export const salesSubRoleSchema = z.object({ role: z.enum(SALES_SUB_ROLES).nullable() }).strict();
 
 /** One row of a contact sheet, read in the browser: the database checks every value again. */
