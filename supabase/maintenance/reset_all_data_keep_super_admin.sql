@@ -80,9 +80,20 @@ begin
   -- 3. the Super Admin keeps the account, not the old placement
   update public.profiles set team_id = null where id = any (v_admins) and team_id is not null;
 
-  -- 4. counters start again (customer codes, ticket numbers, invoice numbers, ...)
-  for s in select sequencename, start_value from pg_sequences where schemaname = 'public' loop
+  -- 4. counters start again (customer codes, ticket numbers, invoice numbers, ...): the sequences that belong to no column.
+  --    (The numbering of an emptied table restarts with TRUNCATE ... RESTART IDENTITY above; the numbering of a table that is KEPT -
+  --    the audit log - must go on after its last row, never back to 1, or the next audit entry would collide with an old one.)
+  for s in select sequencename, start_value from pg_sequences q
+            where schemaname = 'public'
+              and not exists (select 1 from pg_depend d join pg_class c on c.oid = d.objid
+                               where c.relname = q.sequencename and c.relnamespace = 'public'::regnamespace and d.deptype in ('a', 'i')) loop
     execute format('select setval(%L, %s, false)', 'public.' || s.sequencename, s.start_value);
+  end loop;
+  for s in select format('%I.%I', n.nspname, t.relname) as tbl, a.attname as col, pg_get_serial_sequence(format('%I.%I', n.nspname, t.relname), a.attname) as seq
+             from pg_class t join pg_namespace n on n.oid = t.relnamespace
+             join pg_attribute a on a.attrelid = t.oid and a.attnum > 0 and not a.attisdropped
+            where n.nspname = 'public' and t.relkind = 'r' and t.relname = any (v_keep_tables) and pg_get_serial_sequence(format('%I.%I', n.nspname, t.relname), a.attname) is not null loop
+    execute format('select setval(%L, coalesce((select max(%I) from %s), 0) + 1, false)', s.seq, s.col, s.tbl);
   end loop;
 
   raise notice 'Done. Kept % Super Admin account(s); removed % other login(s) and emptied % tables. Now run: node scripts/purge-all-files.mjs --apply', cardinality(v_admins), v_people, cardinality(string_to_array(v_list, ', '));

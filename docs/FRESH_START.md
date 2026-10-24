@@ -31,3 +31,6 @@ Counters start again: customer codes, ticket numbers, invoice numbers (INV-YYYY-
 * Browsers that were signed in as deleted users show the sign-in page after the next request; the Super Admin's own session continues.
 * To keep another table (for example your HR job positions), add its name to `v_keep_tables` and to the `keep_tables` list in STEP 1 before running.
 * Tested on a copy of the test database: afterwards only the Super Admin remained, every other table was empty, counters were back at 1, and the catalogue, departments and teams were intact.
+
+## If you ran the first version of the reset and creating people fails
+Symptom: *Could not create the user account* (HTTP 500) when adding anyone. Cause: the first version kept the audit log but set its numbering back to 1, so the next audit entry collided with an old one (`duplicate key ... audit_logs_pkey`). Run `supabase/maintenance/repair_audit_log_numbering.sql` once in the SQL editor (it deletes nothing); the reset script itself is fixed (it now continues the audit numbering).
