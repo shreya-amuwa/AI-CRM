@@ -84,7 +84,7 @@ export async function sweep(supabase, { apply = false } = {}) {
 const enc = s => encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
 const hmac = (k, d) => createHmac('sha256', k).update(d).digest();
 
-function r2Config(env = process.env) {
+export function r2Config(env = process.env) {
   const accountId = (env.R2_ACCOUNT_ID || '').trim();
   const endpoint = (env.R2_ENDPOINT || '').trim();
   const accessKeyId = (env.R2_ACCESS_KEY_ID || '').trim();
@@ -95,7 +95,7 @@ function r2Config(env = process.env) {
   return { host: u.host, protocol: u.protocol.replace(':', ''), bucket, accessKeyId, secretAccessKey };
 }
 
-function r2Url(cfg, method, key, query = {}) {
+export function r2Url(cfg, method, key, query = {}) {
   const now = new Date();
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
   const day = amzDate.slice(0, 8);
@@ -110,7 +110,7 @@ function r2Url(cfg, method, key, query = {}) {
 }
 
 /** Every object key under a prefix. */
-async function r2List(cfg, prefix) {
+export async function r2List(cfg, prefix) {
   const keys = [];
   let token;
   do {
