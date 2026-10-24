@@ -46,6 +46,10 @@ interface StaffManagementPanelProps {
    * 'members' and 'access' list every team of the sub-department's division.
    */
   view?: 'all' | 'members' | 'access' | 'add' | 'manage';
+  /** The Access Control tab: when given, "Edit Access" opens it for that person; otherwise a small editor opens here. */
+  onEditAccess?: (member: Profile) => void;
+  /** Changes when access was saved elsewhere: the lists reload. */
+  refreshToken?: number;
 }
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
@@ -69,7 +73,7 @@ function generatePassword(): string {
   return Array.from(bytes, b => chars[b % chars.length]).join('');
 }
 
-export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all' }) => {
+export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0 }) => {
   const { profile } = useAuth();
   const { departments, allDepartments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
@@ -116,6 +120,15 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [total, setTotal] = useState(0);
   const [confirmBox, setConfirmBox] = useState<ConfirmRequest | null>(null);
   const [accessFor, setAccessFor] = useState<Profile | null>(null);
+  // Search and filters of the member list (role and status; the department is the one chosen for the panel).
+  const [search, setSearch] = useState('');
+  const [searchApplied, setSearchApplied] = useState('');
+  const [roleFilter, setRoleFilter] = useState<Role | ''>('');
+  const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'SUSPENDED' | 'REVOKED' | ''>('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearchApplied(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   // Heads already in the chosen department; one per side (Sales / Support) is allowed.
   const [existingHeads, setExistingHeads] = useState<Profile[]>([]);
   // Department Head account: the function (Sales / Support / one person for both) and the departments ONE account manages (the first is the home department).
@@ -167,7 +180,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     try {
       const bySubDept = view !== 'all' && !isTeamLead && scope === 'subdept' && !!division;
       const listTeamId = isTeamLead ? profile?.teamId || undefined : bySubDept ? undefined : scope === 'subdept' ? defaultTeam?.id : undefined;
-      const result = await usersApi.list({ departmentId, teamId: listTeamId, division: bySubDept ? division : undefined, page, pageSize: MEMBERS_PAGE_SIZE });
+      const result = await usersApi.list({
+        departmentId, teamId: listTeamId, division: bySubDept ? division : undefined, page, pageSize: MEMBERS_PAGE_SIZE,
+        search: searchApplied || undefined, role: roleFilter || undefined, status: statusFilter || undefined
+      });
       setMembers(result.items.filter(m => m.id !== profile?.id));
       setTotal(result.total);
     } catch (err) {
@@ -175,10 +191,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     } finally {
       setLoading(false);
     }
-  }, [departmentId, scope, defaultTeam?.id, isTeamLead, profile?.teamId, profile?.id, page, view, division]);
+  }, [departmentId, scope, defaultTeam?.id, isTeamLead, profile?.teamId, profile?.id, page, view, division, searchApplied, roleFilter, statusFilter]);
 
   // Back to page 1 when the list changes scope.
-  useEffect(() => setPage(1), [scope, departmentId]);
+  useEffect(() => setPage(1), [scope, departmentId, searchApplied, roleFilter, statusFilter]);
 
   const assignable = useMemo<AssignableDepartment[]>(
     () => allDepartments.filter(d => d.dbId).map(d => ({ id: d.dbId as string, name: d.name, slug: d.id, facetOf: d.facetOf, facetDivision: d.facetDivision })),
@@ -216,7 +232,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   }, [departmentId, view, profile?.role]);
   useEffect(() => {
     void loadHeadAccess();
-  }, [loadHeadAccess, created]);
+  }, [loadHeadAccess, created, refreshToken]);
 
   useEffect(() => {
     if (!departmentId) return;
@@ -226,7 +242,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
   useEffect(() => {
     void loadMembers();
-  }, [loadMembers]);
+  }, [loadMembers, refreshToken]);
 
   if (!profile || allowedRoles.length === 0) {
     return (
@@ -725,6 +741,30 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             )}
           </div>
 
+          {manage && !isTeamLead && view === 'all' && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="search" aria-label="Filter members">
+              <input
+                type="search"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search name or e-mail"
+                aria-label="Search members by name or e-mail"
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                data-testid="member-search"
+              />
+              <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as Role | '')} aria-label="Filter by role" className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white cursor-pointer" data-testid="member-role-filter">
+                <option value="">All roles</option>
+                {(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER'] as Role[]).map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              </select>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)} aria-label="Filter by account status" className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white cursor-pointer" data-testid="member-status-filter">
+                <option value="">All statuses</option>
+                <option value="ACTIVE">Active</option>
+                <option value="SUSPENDED">Suspended</option>
+                <option value="REVOKED">Removed</option>
+              </select>
+            </div>
+          )}
+
           {actionNotice && (
             <div className={`p-2.5 rounded-xl text-xs border ${actionNotice.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
               {actionNotice.text}
@@ -756,9 +796,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       <td className="py-2.5 pr-3 text-slate-700">
                         {staffRoleLabel(m)}
                         {m.role === 'DEPARTMENT_HEAD' && m.headDivision && <div className="text-slate-400">{HEAD_DIVISION_LABELS[m.headDivision]}</div>}
-                        {m.role === 'DEPARTMENT_HEAD' && (accessOf.get(m.id)?.length ?? 0) > 1 && (
+                        {m.role === 'DEPARTMENT_HEAD' && (accessOf.get(m.id)?.length ?? 0) > 0 && (
                           <div className="mt-0.5 text-[11px] text-indigo-700" data-testid={`head-access-${m.id}`}>
-                            Works in: {accessOf.get(m.id)!.map(a => `${a.department}${a.division ? ` (${HEAD_DIVISION_LABELS[a.division]})` : ''}`).join(', ')}
+                            Home: {m.department?.name || '-'} · Works in: {accessOf.get(m.id)!.map(a => `${a.department}${a.division ? ` (${HEAD_DIVISION_LABELS[a.division]})` : ''}`).join(', ')}
                           </div>
                         )}
                         {m.role === 'DEPARTMENT_HEAD' && sharedIds.has(m.id) && <div className="text-[11px] text-slate-400">Shared head · home department {m.department?.name || '-'}</div>}
@@ -779,12 +819,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                         {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
                           <button
                             type="button"
-                            onClick={() => setAccessFor(m)}
+                            onClick={() => (onEditAccess ? onEditAccess(m) : setAccessFor(m))}
                             className="mt-1 block text-[11px] font-semibold text-blue-600 hover:text-blue-700"
-                            aria-label={`Departments and functions of ${m.fullName}`}
+                            aria-label={`Edit access of ${m.fullName}`}
                             data-testid={`departments-functions-${m.id}`}
                           >
-                            Departments &amp; functions
+                            Edit Access
                           </button>
                         )}
                         {m.team && <div className="text-slate-400">{m.team.name}{m.salesSubRole ? ` · ${SALES_SUB_ROLE_LABELS[m.salesSubRole]}` : ''}</div>}

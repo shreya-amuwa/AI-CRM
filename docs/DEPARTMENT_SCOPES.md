@@ -36,6 +36,22 @@ Why a single department was not enough: `profiles.department_id` holds ONE depar
 * **The list** (Whole department): heads who work in the department without being placed in it are listed too (*Shared head · home department …*), and a head with several departments shows *Works in: A (Sales), B (Support) …* (`public.department_heads_overview`, which only the Super Admin and a head who works in that department can read).
 * One-per-side rule: the department a head is PLACED in still has one Sales and one Support head; extra departments are access, not placement.
 
+## Team Members & Access: two tabs (Super Admin, Department Hub > Add Team Member)
+
+* **Team Members** - create an account (the Department Head form above) and list / manage members: search, role and status filters, the department chosen in *Show members of*, "This team" / "Whole department" as before. A Department Head row shows the home department and every department and function the person works in; **Edit Access** opens the Access Control tab for that person.
+* **Access Control** - choose an existing Department Head, then tick the department x Sales / Support matrix (the department list comes from the database). The head's own department and side is locked on and marked HOME; a department without a team of that function is disabled with the reason (D Talk's Support points to Wabatalk). Nothing is sent until **Save Changes**; **Cancel** restores the saved state; unsaved changes are flagged and switching employee / tab / closing asks first. Save calls `POST /users/:id/department-access/apply` (`department_access_apply`): the database validates every pair, adds the new ones and removes the unticked ones in one transaction (all or nothing), each change audited, and the Team Members lists reload.
+* **The member list follows the assignments:** `GET /users?departmentId=…` returns the people placed in the department AND the Department Heads who work there through an assignment (the same person once, with their other departments), so a shared head appears in every department they serve. A team or function filter keeps its old meaning (heads belong to no team, so they are not in it).
+
+### Your organisation (set it up once, as Super Admin)
+| Who | Account | Access Control ticks |
+|---|---|---|
+| Shared **Sales** head | one account, home Whatsbox (Sales head) | Sales: Wabastar, Wabastore |
+| Shared **Support** head | one account, home Whatsbox (Support head) | Support: Wabatalk, Wabastore, Wabastar |
+| M Pillar, Digitree, Amuwa Design Studio | one person each, "Sales & Support" | Sales + Support of that department |
+| D Talk | one person, "Sales & Support" | Sales: D Talk, Support: **Wabatalk** (D Talk's Support department) - shown as ONE department "D Talk" with the Sales \| Support selector |
+
+Migration `20261126000100` gives **Wabastar** and **Amuwa Design Studio** a Sales team and a Support team (they only had a General team, so no function could be given there); the General team and everyone in it are untouched.
+
 ## 1. Audit first (read-only)
 
 Run this in the Supabase SQL editor to see the departments, their teams and their heads as they really are. Use the result to decide the Group A / Group B split – do not guess from the names.

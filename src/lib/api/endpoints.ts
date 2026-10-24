@@ -471,6 +471,8 @@ export const usersApi = {
   /** Department Heads who work in a department (own or authorised), with all their departments. */
   departmentHeads: (departmentId: string) => api.get<DepartmentHeadAccess[]>('/users/department-heads', { departmentId }),
   departmentAccess: (id: string) => api.get<DepartmentAccessInfo>(`/users/${id}/department-access`),
+  /** Save the whole matrix of extra (department, function) pairs of a Department Head in one step (Super Admin). */
+  applyDepartmentAccess: (id: string, pairs: { departmentId: string; division: HeadDivision }[]) => api.post<DepartmentAccessInfo>(`/users/${id}/department-access/apply`, { pairs }),
   setDepartmentAccess: (id: string, body: { departmentId: string; division: HeadDivision; granted: boolean }) => api.post<DepartmentAccessInfo>(`/users/${id}/department-access`, body),
   setSalesSubRole: (id: string, role: SalesSubRole | null) => api.post<Profile>(`/users/${id}/sales-sub-role`, { role }),
   remove: (id: string) => api.delete<null>(`/users/${id}`)

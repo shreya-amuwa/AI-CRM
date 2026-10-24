@@ -1364,6 +1364,10 @@ export const revenueSettingsSchema = z.object({ clientPurchaseAttribution: z.enu
 export const headDivisionSchema = z.object({ division: z.enum(HEAD_DIVISIONS).nullable() }).strict();
 /** The Super Admin authorises (or withdraws) one department and function for a Department Head. */
 export const departmentAccessSchema = z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS), granted: z.boolean() }).strict();
+/** The Access Control tab's Save: the WHOLE set of extra (department, function) pairs the head should hold. */
+export const departmentAccessApplySchema = z
+  .object({ pairs: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(60) })
+  .strict();
 export const salesSubRoleSchema = z.object({ role: z.enum(SALES_SUB_ROLES).nullable() }).strict();
 
 /** One row of a contact sheet, read in the browser: the database checks every value again. */

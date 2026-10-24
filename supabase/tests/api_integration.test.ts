@@ -5344,6 +5344,87 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.json.data.departments.map((d: any) => d.slug).sort().join() === 'wabastar,wabatalk', 'create: and no longer offered', r);
   check((await headCount('multi.support@amuwa.com')) === 1, 'create: assignment changes never create another account');
 
+  // Access Control tab: save the whole matrix. Shared Sales head (Whatsbox, Wabastar, Wabastore), shared Support head (Whatsbox, Wabatalk, Wabastore, Wabastar), combined heads.
+  const acx = async (who: string, headers: Record<string, string> = {}) =>
+    (((await api(who, 'GET', '/customers?search=ACX&pageSize=50', undefined, undefined, headers)).json.data?.items ?? []) as any[]).map(c => c.name).sort();
+  const inList = async (slug: string, id: string) => {
+    const x = await api('sa', 'GET', `/users?departmentId=${dep(slug).id}&pageSize=100`);
+    return x.status === 200 ? (x.json.data.items as any[]).filter(u => u.id === id).length : -1;
+  };
+  const apply = (id: string, pairs: { departmentId: string; division: string }[], who = 'sa') => api(who, 'POST', `/users/${id}/department-access/apply`, { pairs });
+  const wabatalkId = wtId;
+  const salesHeadId = await mk('shared.sales.acx@amuwa.com', 'Shared Sales Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('whatsbox').id, headDivision: 'SALES' });
+  const supportHeadId = await mk('shared.support.acx@amuwa.com', 'Shared Support Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('whatsbox').id, headDivision: 'SUPPORT' });
+  tokens.set('acs', tokenFor(salesHeadId));
+  tokens.set('acp', tokenFor(supportHeadId));
+  for (const slug of ['wabastar', 'wabastore', 'whatsbox', 'dtalk']) {
+    for (const side of ['Sales', 'Support']) {
+      const owner = await mk(`acx.${slug}.${side.toLowerCase()}@amuwa.com`, `ACX ${slug} ${side} Member`, { role: 'TEAM_MEMBER', teamId: await teamId(slug, side) });
+      await db.query(`insert into public.customers (owner_id, name, phone, lifecycle_stage) values ($1, $2, $3, $4)`,
+        [owner, `ACX ${slug} ${side}`, `+91981400${String(Math.floor(Math.random() * 9000) + 1000)}`, side === 'Sales' ? 'LEAD' : 'CUSTOMER']);
+    }
+  }
+  check((await inList('wabastar', salesHeadId)) === 0, 'access: before any assignment the shared Sales head is not listed in Wabastar');
+  r = await apply(salesHeadId, [{ departmentId: dep('wabastar').id, division: 'SALES' }, { departmentId: dep('wabastore').id, division: 'SALES' }], 'dh');
+  check(r.status === 403, 'access: only the Super Admin can save a matrix', r);
+  r = await apply(salesHeadId, [{ departmentId: dep('accounts').id, division: 'SALES' }]);
+  check(r.status === 422 && (await db.query(`select count(*)::int n from public.department_access where profile_id = $1`, [salesHeadId])).rows[0].n === 0, 'access: a wrong pair is refused and nothing is saved', r);
+  r = await apply(salesHeadId, [{ departmentId: dep('whatsbox').id, division: 'SALES' }, { departmentId: dep('wabastar').id, division: 'SALES' }, { departmentId: dep('wabastore').id, division: 'SALES' }]);
+  check(r.status === 200 && r.json.data.added === 2 && r.json.data.grants.length === 2, 'access: Save stores Wabastar and Wabastore (Whatsbox is the head\'s own placement)', r);
+  check((await inList('whatsbox', salesHeadId)) === 1 && (await inList('wabastar', salesHeadId)) === 1 && (await inList('wabastore', salesHeadId)) === 1, 'access: the same person is listed once in Whatsbox, Wabastar and Wabastore');
+  check((await inList('dtalk', salesHeadId)) === 0, 'access: and not in a department they were not given');
+  check((await headCount('shared.sales.acx@amuwa.com')) === 1, 'access: still one account');
+  check((await acx('acs', scope('wabastar'))).join() === 'ACX wabastar Sales' && (await acx('acs', scope('wabastore'))).join() === 'ACX wabastore Sales' && (await acx('acs', scope('whatsbox'))).join() === 'ACX whatsbox Sales', 'access: Sales data of each of the three departments');
+  check((await acx('acs', scope('wabastar', 'SUPPORT'))).join() === 'ACX wabastar Sales', 'access: no Support through Sales access');
+  r = await api('acs', 'GET', '/sales-head/overview', undefined, undefined, scope('wabastar'));
+  check(r.status === 200, 'access: the Sales head pages open in Wabastar', r);
+  check((await acx('acs', scope('dtalk'))).join() === 'ACX whatsbox Sales', 'access: another department\'s id gives nothing (still the home department)');
+
+  r = await apply(supportHeadId, [{ departmentId: wabatalkId, division: 'SUPPORT' }, { departmentId: dep('wabastore').id, division: 'SUPPORT' }, { departmentId: dep('wabastar').id, division: 'SUPPORT' }]);
+  check(r.status === 200 && r.json.data.grants.length === 3, 'access: the shared Support head gets Wabatalk, Wabastore and Wabastar', r);
+  check((await inList('whatsbox', supportHeadId)) === 1 && (await inList('wabastar', supportHeadId)) === 1 && (await inList('wabastore', supportHeadId)) === 1 && (await inList('dtalk', supportHeadId)) === 1,
+    'access: the same person is listed once in Whatsbox, Wabastar, Wabastore and D Talk (Wabatalk)');
+  r = await api('acp', 'GET', '/me/department-scopes');
+  check(r.json.data.departments.map((d: any) => d.slug).sort().join() === 'wabastar,wabastore,wabatalk,whatsbox' && r.json.data.departments.every((d: any) => d.divisions.join() === 'SUPPORT'), 'access: offered the four departments, Support only', r);
+  for (const [headers, expect] of [[scope('wabastar'), 'ACX wabastar Support'], [scope('wabastore'), 'ACX wabastore Support'], [scope('whatsbox'), 'ACX whatsbox Support'], [{ 'x-active-department': wabatalkId }, 'ACX dtalk Support']] as const) {
+    check((await acx('acp', headers as any)).join() === expect, `access: Support head switches department: ${expect}`);
+  }
+  r = await api('acp', 'GET', '/sales-head/overview', undefined, undefined, scope('wabastar'));
+  check(r.status === 403, 'access: Support access brings no Sales access', r);
+  r = await apply(supportHeadId, [{ departmentId: dep('dtalk').id, division: 'SUPPORT' }]);
+  check(r.status === 422 && /Give Wabatalk instead/.test(r.json.error.message), 'access: D Talk\'s Support is given as Wabatalk', r);
+
+  // one person for Sales and Support: Amuwa Design Studio and D Talk (its Support is Wabatalk)
+  const dsId = await mk('combined.ds.acx@amuwa.com', 'Design Studio Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('designstudio').id });
+  tokens.set('acds', tokenFor(dsId));
+  r = await apply(dsId, [{ departmentId: dep('designstudio').id, division: 'SALES' }, { departmentId: dep('designstudio').id, division: 'SUPPORT' }]);
+  check(r.status === 200, 'access: Amuwa Design Studio can be given both functions (it has Sales and Support teams now)', r);
+  r = await api('acds', 'GET', '/me/department-scopes');
+  check(r.json.data.departments.length === 1 && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'access: one department with the Sales | Support selector', r);
+  const dtId = await mk('combined.dt.acx@amuwa.com', 'D Talk Combined Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id });
+  tokens.set('acdt', tokenFor(dtId));
+  r = await apply(dtId, [{ departmentId: dep('dtalk').id, division: 'SALES' }, { departmentId: wabatalkId, division: 'SUPPORT' }]);
+  check(r.status === 200, 'access: D Talk Sales + Wabatalk Support', r);
+  r = await api('acdt', 'GET', '/me/department-scopes');
+  check(r.json.data.departments.length === 1 && r.json.data.departments[0].slug === 'dtalk' && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'access: D Talk is ONE department with the selector', r);
+  check((await acx('acdt', scope('dtalk', 'SALES'))).join() === 'ACX dtalk Sales' && (await acx('acdt', scope('dtalk', 'SUPPORT'))).join() === 'ACX dtalk Support', 'access: switching the function changes the data, not the department');
+
+  // removal, persistence, no new accounts
+  r = await apply(salesHeadId, [{ departmentId: dep('wabastore').id, division: 'SALES' }]);
+  check(r.status === 200 && r.json.data.removed === 1, 'access: unticking Wabastar removes it', r);
+  check((await inList('wabastar', salesHeadId)) === 0 && (await inList('wabastore', salesHeadId)) === 1, 'access: the lists follow at once');
+  check((await acx('acs', scope('wabastar'))).join() === 'ACX whatsbox Sales', 'access: and the data is no longer reachable');
+  r = await api('sa', 'GET', `/users/${salesHeadId}/department-access`);
+  check(r.json.data.grants.length === 1, 'access: the saved assignments persist', r);
+  check((await headCount('shared.sales.acx@amuwa.com')) === 1 && (await headCount('shared.support.acx@amuwa.com')) === 1, 'access: no account was created or removed');
+  // the list API keeps its meaning: with a team filter heads are not listed
+  r = await api('sa', 'GET', `/users?departmentId=${dep('wabastore').id}&teamId=${await teamId('wabastore', 'Sales')}&pageSize=100`);
+  check(r.status === 200 && !(r.json.data.items as any[]).some(u => u.id === salesHeadId), 'access: a team filter does not list Department Heads (as before)', r);
+  r = await api('sa', 'GET', `/users?departmentId=${dep('wabastar').id}&search=${encodeURIComponent('Shared Support Head ACX')}&role=DEPARTMENT_HEAD&status=ACTIVE&pageSize=100`);
+  check(r.status === 200 && (r.json.data.items as any[]).filter(u => u.id === supportHeadId).length === 1 && r.json.data.total === 1, 'access: search, role and status filters work together with the shared-head listing', r);
+  r = await api('sa', 'GET', `/users?departmentId=${dep('wabastar').id}&role=TEAM_MEMBER&pageSize=100`);
+  check(r.status === 200 && !(r.json.data.items as any[]).some(u => u.id === supportHeadId), 'access: a Team Member filter lists no Department Head', r);
+
   // Group B: the department head 'dh' (Wabastore, no side set) handles both functions
   for (const division of ['SALES', 'SUPPORT']) {
     r = await api('sa', 'POST', `/users/${(await api('dh', 'GET', '/me')).json.data.id}/department-access`, { departmentId: wab.id, division, granted: true });

@@ -49,6 +49,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/users/:id/head-division', handler: users.setHeadDivision, options: S },
   { method: 'GET', path: '/users/:id/department-access', handler: users.departmentAccess, options: S },
   { method: 'POST', path: '/users/:id/department-access', handler: users.setDepartmentAccess, options: S },
+  { method: 'POST', path: '/users/:id/department-access/apply', handler: users.applyDepartmentAccess, options: S },
   { method: 'POST', path: '/users/:id/sales-sub-role', handler: users.setSalesSubRole, options: S },
   { method: 'DELETE', path: '/users/:id', handler: users.remove, options: S },
 
