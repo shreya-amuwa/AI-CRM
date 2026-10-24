@@ -10,7 +10,7 @@ import { readXlsx } from '../../lib/xlsxReader';
 import { PageTitle } from '../layout/shell';
 import { Card } from '../tasks/head/headParts';
 import { Dialog, ErrorBanner, Spinner } from '../team-member/pipeline/shared';
-import { EmptyState, TemperatureBadge, dateText, tcBtn, tcInput } from '../telecaller/ui';
+import { EmptyState, dateText, tcBtn, tcInput } from '../telecaller/ui';
 
 const XLSX_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream', ''];
 
@@ -23,9 +23,10 @@ interface Picked {
 }
 
 /**
- * Lead Assign: the Sales Department Head uploads an Excel sheet of leads and assigns it to one Sales team member. The file is read in the browser,
- * the columns are matched (and can be corrected), every row is checked by the database - nothing is saved on a preview - and only after the head
- * confirms are the leads assigned and the original file stored. Rows with a problem are listed, never dropped silently.
+ * Lead Assign: the Sales Department Head gives an Excel sheet of contacts to a Telecaller (who calls them and turns the interested ones into
+ * leads). The file is read in the browser, the columns are matched (and can be corrected), every row is checked by the database - nothing is
+ * saved on a preview - and only after the head confirms is the sheet assigned and the original file stored. Rows with a problem are listed,
+ * never dropped silently.
  */
 export const LeadAssign: React.FC = () => {
   const [people, setPeople] = useState<SalesLeadAssignee[] | null>(null);
@@ -53,6 +54,10 @@ export const LeadAssign: React.FC = () => {
     );
   }, []);
   useEffect(load, [load]);
+  // with a single Telecaller there is nothing to choose
+  useEffect(() => {
+    if (people && people.length === 1 && !assigneeId) setAssigneeId(people[0].id);
+  }, [people, assigneeId]);
 
   const assignee = people?.find(p => p.id === assigneeId) ?? null;
   const missing = picked ? missingFields(mapping) : [];
@@ -124,14 +129,12 @@ export const LeadAssign: React.FC = () => {
         setConfirming(false);
         return;
       }
-      let text = r.mode === 'TELECALLER'
-        ? `${r.summary.valid} contacts from ${picked.fileName} were assigned to ${assignee.name} as a Telecaller contact sheet.`
-        : `${r.summary.valid} leads from ${picked.fileName} were assigned to ${assignee.name}.`;
+      let text = `${r.summary.valid} contacts from ${picked.fileName} were given to ${assignee.name}, who will call them.`;
       if (r.summary.invalid + r.summary.duplicates > 0) text += ` ${r.summary.invalid + r.summary.duplicates} rows were left out (see the history).`;
       try {
         await salesHeadApi.storeSource(r.sheetId, toBase64(picked.bytes));
       } catch {
-        text += ' The original file could not be stored; the leads are assigned.';
+        text += ' The original file could not be stored; the contacts are assigned.';
       }
       setDone(text);
       setNote('');
@@ -151,26 +154,26 @@ export const LeadAssign: React.FC = () => {
 
   return (
     <div className="space-y-5">
-      <PageTitle title="Lead Assign" subtitle="Upload an Excel sheet of leads and assign it to one of your Sales team members." />
+      <PageTitle title="Lead Assign" subtitle="Give an Excel sheet of contacts to your Telecaller. They call the contacts and pass the interested ones on as leads." />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {done && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" aria-hidden="true" />{done}</div>}
 
       {people === null ? <Spinner /> : people.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white">
-          <EmptyState title="No Sales team member to assign leads to">Add a Sales Team Lead or Team Member in <em>Team Members &amp; Access</em>, then upload a sheet here.</EmptyState>
+          <EmptyState title="No Telecaller in your department yet">Add a Sales team member with the Sales role <strong>Telecaller</strong> in <em>Team Members &amp; Access</em>, then give a sheet to them here.</EmptyState>
         </div>
       ) : (
         <Card className="p-5 space-y-4" label="Upload and assign a lead sheet">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="la-assignee" className="block text-xs font-medium text-slate-600 mb-1">Assign to <span aria-hidden="true">*</span></label>
+              <label htmlFor="la-assignee" className="block text-xs font-medium text-slate-600 mb-1">Give the sheet to <span aria-hidden="true">*</span></label>
               <select id="la-assignee" className={tcInput} value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
-                <option value="">Choose a Sales team member…</option>
-                {people.map(p => <option key={p.id} value={p.id}>{p.name} · {p.role} · {p.team}{p.mode === 'TELECALLER' ? ' · Telecaller' : ` (${p.openLeads} open leads)`}</option>)}
+                <option value="">Choose a Telecaller…</option>
+                {people.map(p => <option key={p.id} value={p.id}>{p.name} · Telecaller · {p.team} ({p.openContacts} calls pending)</option>)}
               </select>
               {assignee && (
                 <p className="mt-1.5 text-xs text-slate-500" data-testid="assign-mode">
-                  {assignee.mode === 'TELECALLER' ? 'A Telecaller receives the sheet as contacts to call; the interested ones become leads.' : 'The leads go straight into this person\'s lead pipeline.'}
+                  The Telecaller sees these contacts in their Tasks, calls them, and turns the interested ones into leads.
                 </p>
               )}
             </div>
@@ -190,7 +193,7 @@ export const LeadAssign: React.FC = () => {
               onChange={e => void onFile(e.target.files?.[0])}
               className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-blue-50 file:px-4 file:py-2.5 file:text-sm file:font-bold file:text-blue-700 hover:file:bg-blue-100"
             />
-            <p className="mt-1.5 text-xs text-slate-500">Columns: Customer Name and Phone Number are required; Company / Business Name, Email, Lead Source, Lead Temperature (Hot, Warm or Cold) and Remarks are optional. Other headings can be matched below. Only .xlsx files are read.</p>
+            <p className="mt-1.5 text-xs text-slate-500">Columns: Contact Name and Phone Number are required; Company Name, Email and Remarks are optional. Other headings can be matched below. Only .xlsx files are read.</p>
           </div>
 
           {reading && <Spinner label="Reading the sheet…" />}
@@ -244,20 +247,20 @@ export const LeadAssign: React.FC = () => {
               {check.preview.length > 0 && (
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full text-left text-sm min-w-[900px]">
-                    <caption className="sr-only">Preview of the first {check.preview.length} valid leads</caption>
-                    <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 bg-slate-50">{['Row', 'Customer Name', 'Company', 'Phone', 'Email', 'Source', 'Temperature', 'Remarks'].map(h => <th key={h} scope="col" className="px-3 py-2 font-bold">{h}</th>)}</tr></thead>
+                    <caption className="sr-only">Preview of the first {check.preview.length} valid contacts</caption>
+                    <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 bg-slate-50">{['Row', 'Contact Name', 'Company', 'Phone', 'Email', 'Remarks'].map(h => <th key={h} scope="col" className="px-3 py-2 font-bold">{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
                       {check.preview.map(p => (
-                        <tr key={p.row}><td className="px-3 py-2 text-slate-500">{p.row}</td><td className="px-3 py-2 font-semibold text-slate-900">{p.name}</td><td className="px-3 py-2">{p.company || '-'}</td><td className="px-3 py-2">{p.phone}</td><td className="px-3 py-2">{p.email || '-'}</td><td className="px-3 py-2">{p.source || '-'}</td><td className="px-3 py-2"><TemperatureBadge value={p.temperature} /></td><td className="px-3 py-2">{p.remarks || '-'}</td></tr>
+                        <tr key={p.row}><td className="px-3 py-2 text-slate-500">{p.row}</td><td className="px-3 py-2 font-semibold text-slate-900">{p.name}</td><td className="px-3 py-2">{p.company || '-'}</td><td className="px-3 py-2">{p.phone}</td><td className="px-3 py-2">{p.email || '-'}</td><td className="px-3 py-2">{p.remarks || '-'}</td></tr>
                       ))}
                     </tbody>
                   </table>
-                  {check.summary.valid > check.preview.length && <p className="px-3 py-2 text-xs text-slate-500 bg-slate-50">Showing the first {check.preview.length} of {check.summary.valid} valid leads.</p>}
+                  {check.summary.valid > check.preview.length && <p className="px-3 py-2 text-xs text-slate-500 bg-slate-50">Showing the first {check.preview.length} of {check.summary.valid} valid contacts.</p>}
                 </div>
               )}
               <div className="flex justify-end gap-2">
                 <button type="button" className={tcBtn.secondary} onClick={reset} disabled={assigning}>Cancel</button>
-                <button type="button" className={tcBtn.primary} onClick={() => setConfirming(true)} disabled={blocked || assigning}>Review and assign {check.summary.valid} {check.mode === 'TELECALLER' ? 'contacts' : 'leads'}</button>
+                <button type="button" className={tcBtn.primary} onClick={() => setConfirming(true)} disabled={blocked || assigning}>Review and give {check.summary.valid} contacts to {assignee?.name ?? 'the Telecaller'}</button>
               </div>
             </div>
           )}
@@ -265,13 +268,13 @@ export const LeadAssign: React.FC = () => {
       )}
 
       {confirming && check && assignee && picked && (
-        <Dialog title="Assign these leads?" description="Please check who receives them." onClose={() => !assigning && setConfirming(false)} persistent={assigning}>
+         <Dialog title="Give this sheet to the Telecaller?" description="Please check who receives it." onClose={() => !assigning && setConfirming(false)} persistent={assigning}>
           <div className="space-y-4">
             <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="text-[11px] font-semibold text-slate-500">Assign to</dt><dd className="font-bold text-slate-900" data-testid="confirm-name">{assignee.name}</dd></div>
-              <div><dt className="text-[11px] font-semibold text-slate-500">Role</dt><dd className="text-slate-900" data-testid="confirm-role">{assignee.role}{assignee.mode === 'TELECALLER' ? ' · Telecaller' : ''} · {assignee.team}</dd></div>
+              <div><dt className="text-[11px] font-semibold text-slate-500">Give to</dt><dd className="font-bold text-slate-900" data-testid="confirm-name">{assignee.name}</dd></div>
+              <div><dt className="text-[11px] font-semibold text-slate-500">Role</dt><dd className="text-slate-900" data-testid="confirm-role">Telecaller · {assignee.team}</dd></div>
               <div><dt className="text-[11px] font-semibold text-slate-500">Sheet</dt><dd className="text-slate-900 break-all">{picked.fileName}</dd></div>
-              <div><dt className="text-[11px] font-semibold text-slate-500">{check.mode === 'TELECALLER' ? 'Contacts' : 'Leads'}</dt><dd className="text-slate-900">{check.summary.valid} valid · {check.summary.invalid + check.summary.duplicates} left out</dd></div>
+              <div><dt className="text-[11px] font-semibold text-slate-500">Contacts</dt><dd className="text-slate-900">{check.summary.valid} valid · {check.summary.invalid + check.summary.duplicates} left out</dd></div>
             </dl>
             <div className="flex justify-end gap-2">
               <button type="button" className={tcBtn.secondary} onClick={() => setConfirming(false)} disabled={assigning}>Back</button>
@@ -291,7 +294,7 @@ export const LeadAssign: React.FC = () => {
                 {sheets.map(s => (
                   <tr key={s.id}>
                     <td className="px-4 py-3 font-semibold text-slate-900">{s.fileName}{s.note ? <span className="block text-xs font-normal text-slate-500">{s.note}</span> : null}</td>
-                    <td className="px-4 py-3">{s.assignedTo}<span className="block text-xs text-slate-500">{s.mode === 'TELECALLER' ? 'Telecaller contact sheet' : 'Leads'}</span></td>
+                    <td className="px-4 py-3">{s.assignedTo}<span className="block text-xs text-slate-500">{s.mode === 'TELECALLER' ? 'Telecaller contact sheet' : 'Leads (earlier upload)'}</span></td>
                     <td className="px-4 py-3">{s.uploadedBy || '-'}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{dateText(s.uploadedAt)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{dateText(s.assignedAt)}</td>

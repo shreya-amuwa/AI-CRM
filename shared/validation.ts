@@ -1516,7 +1516,7 @@ export const servicePriceSchema = z
 export const baDocumentFileQuerySchema = z.object({ action: z.enum(['view', 'download']).default('view') });
 
 // ---- Sales Department Head ----
-/** One row of a lead sheet, read in the browser: the database checks every value again. */
+/** One row of a lead sheet (name, company, phone, e-mail, remarks), read in the browser: the database checks every value again. */
 export const salesLeadRowSchema = z
   .object({
     row: z.coerce.number().int().min(1).max(100000),
@@ -1524,8 +1524,6 @@ export const salesLeadRowSchema = z
     company: z.string().max(400).nullish(),
     phone: z.string().max(60).default(''),
     email: z.string().max(400).nullish(),
-    source: z.string().max(200).nullish(),
-    temperature: z.string().max(40).nullish(),
     remarks: z.string().max(2000).nullish()
   })
   .strict();

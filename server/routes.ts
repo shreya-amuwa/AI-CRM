@@ -279,6 +279,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/hr/recruitment/candidates/:id/confirmation', handler: recruitment.setConfirmation, options: S },
   { method: 'GET', path: '/sales-head/overview', handler: salesHead.overview },
   { method: 'GET', path: '/sales-head/lead-assignees', handler: salesHead.assignees },
+  { method: 'GET', path: '/sales-head/team-people', handler: salesHead.teamPeople },
   { method: 'GET', path: '/sales-head/sheets', handler: salesHead.sheets },
   { method: 'POST', path: '/sales-head/sheets', handler: salesHead.assignSheet, options: S },
   { method: 'POST', path: '/sales-head/sheets/:id/source', handler: salesHead.storeSource, options: S },

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList
+  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import { getServiceClient } from '../db/supabase.js';
 import { unwrap } from './base.js';
@@ -16,6 +16,7 @@ export class SalesHeadRepository {
   overview() { return this.rpc<SalesOverview>('sales_head_overview'); }
 
   assignees() { return this.rpc<SalesLeadAssignee[]>('sales_lead_assignees'); }
+  teamPeople() { return this.rpc<SalesTeamPerson[]>('sales_team_people'); }
   sheets() { return this.rpc<SalesSheet[]>('sales_lead_sheets_list'); }
   assignSheet(i: { assigneeId: string; fileName: string; note?: string | null; rows: unknown[]; hash: string; commit: boolean }) {
     return this.rpc<SalesSheetCheck>('sales_lead_sheet_assign', {

@@ -6,7 +6,7 @@ import type {
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
-  SalesIncome, SalesLeadAssignee, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList,
+  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
   TelecallerContactList,
@@ -516,10 +516,11 @@ export interface TelecallerLeadBody {
   callStatus: string;
   followUpDate?: string | null;
 }
-export interface SalesSheetRowBody { row: number; name: string; company?: string; phone: string; email?: string; source?: string; temperature?: string; remarks?: string }
+export interface SalesSheetRowBody { row: number; name: string; company?: string; phone: string; email?: string; remarks?: string }
 export const salesHeadApi = {
   overview: () => api.get<SalesOverview>('/sales-head/overview'),
   assignees: () => api.get<SalesLeadAssignee[]>('/sales-head/lead-assignees'),
+  teamPeople: () => api.get<SalesTeamPerson[]>('/sales-head/team-people'),
   sheets: () => api.get<SalesSheet[]>('/sales-head/sheets'),
   checkSheet: (body: { assigneeId: string; fileName: string; note?: string | null; hash: string; rows: SalesSheetRowBody[]; commit: boolean }) => api.post<SalesSheetCheck>('/sales-head/sheets', body),
   storeSource: (sheetId: string, data: string) => api.post<{ stored: true; size: number }>(`/sales-head/sheets/${sheetId}/source`, { data }),

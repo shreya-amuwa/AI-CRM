@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList
+  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import {
   TELECALLER_SHEET_MAX_BYTES, salesInboundAssignSchema, salesIncomeQuerySchema, salesLeadSheetSchema, salesLeadsQuerySchema, salesReportsQuerySchema,
@@ -24,6 +24,7 @@ export class SalesHeadService {
   overview(): Promise<SalesOverview> { return this.repo.overview(); }
 
   assignees(): Promise<SalesLeadAssignee[]> { return this.repo.assignees(); }
+  teamPeople(): Promise<SalesTeamPerson[]> { return this.repo.teamPeople(); }
   sheets(): Promise<SalesSheet[]> { return this.repo.sheets(); }
   /** Check a sheet (commit false: the preview) or assign it (commit true). */
   assignSheet(body: unknown): Promise<SalesSheetCheck> { return this.repo.assignSheet(parse(salesLeadSheetSchema, body)); }

@@ -25,7 +25,7 @@ Team Members & Access · Chat · Notification Center. Sign out and Leave are in 
 |---|---|---|
 | Overview | 12 live cards (leads by temperature, assigned, pending assignment, team, tasks, follow-ups due, converted, income), status distribution, team activity, follow-ups, pending tasks, recent activities / sheets / conversions, highlights | `sales_head_overview` |
 | Lead List | searchable, filterable (All, Hot, Warm, Cold, Unassigned, Assigned, Follow-up, Converted), sortable, paged table; lead detail; assign an unassigned enquiry | `sales_leads_list`, `sales_lead_get`, `sales_inbound_assign` |
-| Lead Assign | upload `.xlsx`, column mapping, preview (valid / invalid / duplicate), confirmation naming the person, assignment, history | `sales_lead_sheet_assign`, `sales_lead_sheets_list` |
+| Lead Assign | give an `.xlsx` of contacts to the Telecaller: column mapping, preview (valid / invalid / duplicate), confirmation naming the Telecaller, history | `sales_lead_assignees`, `sales_lead_sheet_assign`, `sales_lead_sheets_list` |
 | Daily Tasks | all / pending / in progress / completed / overdue, create a task for a Sales Team Lead | `sales_tasks_list`, `sales_task_assign` (the existing task workflow) |
 | Performance Management | card per Team Lead / member (assigned leads, tasks completed / pending / overdue, follow-ups, conversions, an indicator from the recorded tasks); workspace per person; the existing AI-assisted performance report | `sales_head_reports`, `sales_leads_list`, `sales_tasks_list`, `ReportView` |
 | Department Income | gross (collected) income, awaiting verification, refunded, outstanding, transactions | `sales_head_income` (the department income report's Sales division) |
@@ -33,21 +33,25 @@ Team Members & Access · Chat · Notification Center. Sign out and Leave are in 
 | Client Notices, Team Members & Access, Chat, Notification Center | the existing pages, scoped as above | existing |
 
 ## Lead Assign in detail
-1. Choose who gets the sheet: active Sales **Team Leads** and **Team Members** without a Sales role, or with the role **Telecaller**. Business
-   Associates, Influencers, Visit Sales and Business Partners have their own workflows and are not offered.
-2. Upload an `.xlsx` (up to 700 KB, 2,000 rows; `.xls` is not read - save it as `.xlsx`). Customer Name and Phone Number are required;
-   Company / Business Name, Email, Lead Source, Lead Temperature (Hot, Warm, Cold) and Remarks are optional. The headings are matched by name and can
-   be corrected by hand.
-3. The preview is a database check that saves nothing: valid rows, invalid rows (missing name, bad phone / e-mail / temperature) and duplicates
-   (twice in the sheet, or already in the CRM by phone or e-mail) - every left-out row is listed with its reason.
-4. Confirm. A member gets the leads in their own pipeline (stage Lead, with source, temperature and remarks) and a notification; a Telecaller
-   gets the sheet through the existing Telecaller contact-sheet workflow (they call, and the interested ones become leads).
-5. Recorded: who uploaded, upload and assignment dates, counts, the assignee, and the original file (stored privately, referenced from the row).
-   The same file (SHA-256) cannot be imported twice in a department.
+The flow of a sheet: **Sales Department Head → Telecaller → (interested contacts become leads) → Business Associate / the Sales team.**
+1. The sheet can only be given to a **Telecaller** (active, in a Sales team of the department). With one Telecaller they are already chosen.
+   A Team Lead, a Team Member, a Business Associate or anyone from Support cannot be chosen - the database refuses it.
+2. Upload an `.xlsx` (up to 700 KB, 2,000 rows; `.xls` is not read - save it as `.xlsx`). Contact Name and Phone Number are required;
+   Company Name, Email and Remarks are optional. The headings are matched by name and can be corrected by hand.
+3. The preview is a database check that saves nothing: valid rows, invalid rows (missing name, bad phone / e-mail) and duplicates (twice in the
+   sheet, or already in the CRM by phone or e-mail) - every left-out row is listed with its reason.
+4. Confirm. The contacts go to the Telecaller through the existing Telecaller contact-sheet workflow: they appear in the Telecaller's **Tasks**
+   (and the Telecaller is notified); they call, mark the call status, and turn the interested ones into leads (and hand those to a Business
+   Associate). No lead is created before the call.
+5. Recorded: who uploaded, upload and assignment dates, counts, the Telecaller, and the original file (stored privately, referenced from the row).
+   The history shows how many contacts are still to call. The same file (SHA-256) cannot be imported twice in a department.
+
+An enquiry nobody has taken (an "unassigned" inbound lead) is different: in the Lead List the head can give it to a Sales Team Lead or Team Member.
 
 ## Technical
-- Migrations: `20261120000100_department_head_division.sql` then `20261121000100_sales_department_head.sql`. One paste each:
-  `supabase/run_this_department_head_division.sql`, `supabase/run_this_sales_department_head.sql`.
+- Migrations: `20261120000100_department_head_division.sql`, `20261121000100_sales_department_head.sql`, then `20261122000100_sales_lead_sheets_to_telecallers.sql`
+  (sheets only to Telecallers). One paste each: `supabase/run_this_department_head_division.sql`, `supabase/run_this_sales_department_head.sql`,
+  `supabase/run_this_sales_lead_sheets_to_telecallers.sql`.
 - New table `sales_lead_sheets` (read-only to users, written by functions); `customers.source_sheet_id`.
 - API: `GET/POST /sales-head/...` (overview, lead-assignees, sheets, sheets/:id/source, leads, leads/:id, leads/:id/assign, tasks, task-assignees,
   reports, income). Code: `server/{repositories,services}/SalesHead*`, `src/components/sales-head/*`, `src/lib/salesLeadSheet.ts`.

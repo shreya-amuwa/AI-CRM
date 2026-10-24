@@ -2,16 +2,14 @@ import { cellText } from './telecallerSheet';
 import type { Cell } from './xlsxReader';
 
 /**
- * Reads the lead sheet the Sales Department Head uploads. The first non-empty row is the heading row; each column is matched to a lead field by
+ * Reads the contact sheet the Sales Department Head gives to a Telecaller. The first non-empty row is the heading row; each column is matched to a lead field by
  * its heading (the usual names are known) and the head can correct the match before the sheet is checked. The database checks every value again.
  */
 export const LEAD_FIELDS = [
-  { key: 'name', label: 'Customer Name', required: true },
-  { key: 'company', label: 'Company / Business Name', required: false },
+  { key: 'name', label: 'Contact Name', required: true },
+  { key: 'company', label: 'Company Name', required: false },
   { key: 'phone', label: 'Phone Number', required: true },
   { key: 'email', label: 'Email', required: false },
-  { key: 'source', label: 'Lead Source', required: false },
-  { key: 'temperature', label: 'Lead Temperature', required: false },
   { key: 'remarks', label: 'Remarks', required: false }
 ] as const;
 export type LeadField = (typeof LEAD_FIELDS)[number]['key'];
@@ -23,8 +21,6 @@ const ALIASES: Record<LeadField, string[]> = {
   company: ['company', 'company name', 'business name', 'business', 'company business name', 'company / business name', 'organisation', 'organization', 'firm'],
   phone: ['phone number', 'phone', 'mobile', 'mobile number', 'mobile no', 'contact number', 'contact no', 'phone no', 'cell', 'whatsapp number'],
   email: ['email', 'e-mail', 'email address', 'email id', 'mail'],
-  source: ['lead source', 'source', 'channel', 'lead channel', 'origin'],
-  temperature: ['lead temperature', 'temperature', 'lead temp', 'hot warm cold', 'priority'],
   remarks: ['remarks', 'remark', 'notes', 'note', 'comments', 'comment']
 };
 
@@ -67,7 +63,7 @@ export function readLeadSheet(sheetRows: Cell[][]): LeadSheetRead {
 
 export const missingFields = (m: LeadMapping) => LEAD_FIELDS.filter(f => f.required && m[f.key] === undefined).map(f => f.label);
 
-export interface LeadRowBody { row: number; name: string; company: string; phone: string; email: string; source: string; temperature: string; remarks: string }
+export interface LeadRowBody { row: number; name: string; company: string; phone: string; email: string; remarks: string }
 
 /** Apply a mapping: one row body per non-empty row. */
 export function buildLeadRows(read: LeadSheetRead, mapping: LeadMapping): LeadRowBody[] {
@@ -78,8 +74,6 @@ export function buildLeadRows(read: LeadSheetRead, mapping: LeadMapping): LeadRo
     company: get(cells, 'company'),
     phone: get(cells, 'phone'),
     email: get(cells, 'email'),
-    source: get(cells, 'source'),
-    temperature: get(cells, 'temperature'),
     remarks: get(cells, 'remarks')
   }));
 }

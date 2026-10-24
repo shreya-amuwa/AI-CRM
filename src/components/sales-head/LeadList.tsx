@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowDownUp, Eye, Search, UserCheck } from 'lucide-react';
-import { SALES_LEAD_FILTERS, type SalesLeadAssignee, type SalesLeadDetail, type SalesLeadFilter, type SalesLeadList, type SalesLeadRow } from '../../../shared/contracts';
+import { SALES_LEAD_FILTERS, type SalesTeamPerson, type SalesLeadDetail, type SalesLeadFilter, type SalesLeadList, type SalesLeadRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { salesHeadApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
@@ -43,14 +43,14 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
   const [data, setData] = useState<SalesLeadList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [people, setPeople] = useState<SalesLeadAssignee[]>([]);
+  const [people, setPeople] = useState<SalesTeamPerson[]>([]);
   const [detail, setDetail] = useState<{ id: string; lead: SalesLeadDetail | null; error?: string } | null>(null);
   const [assigning, setAssigning] = useState<SalesLeadRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setPage(1), [filter, query, assignee, sort, dir, pageSize]);
   useEffect(() => {
-    salesHeadApi.assignees().then(setPeople, () => setPeople([]));
+    salesHeadApi.teamPeople().then(setPeople, () => setPeople([]));
   }, []);
 
   const load = useCallback(() => {
@@ -181,7 +181,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
       {assigning && (
         <AssignInbound
           lead={assigning}
-          people={people.filter(p => p.mode === 'LEADS')}
+          people={people.filter(p => p.subRole === null)}
           onClose={() => setAssigning(null)}
           onDone={name => {
             setAssigning(null);
@@ -233,7 +233,7 @@ const LeadDetailBody: React.FC<{ lead: SalesLeadDetail }> = ({ lead }) => {
   );
 };
 
-const AssignInbound: React.FC<{ lead: SalesLeadRow; people: SalesLeadAssignee[]; onClose: () => void; onDone: (name: string) => void }> = ({ lead, people, onClose, onDone }) => {
+const AssignInbound: React.FC<{ lead: SalesLeadRow; people: SalesTeamPerson[]; onClose: () => void; onDone: (name: string) => void }> = ({ lead, people, onClose, onDone }) => {
   const [who, setWho] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
