@@ -10,6 +10,18 @@
 
 Write the member's name as it appears in the CRM. If two people share a name, use their CRM e-mail instead.
 
+## One sheet for the whole Support team (`Existing_Customers_One_Sheet.xlsx`)
+
+The Import screen offers this template first. Everything is on **one tab, "Import"**, and the whole Support team can type into the same file (for example a shared Google Sheet): the Team Lead or Department Head downloads it as `.xlsx` and uploads it **once**.
+
+- **One row per record.** The first column, **Record type**, says what the row is: *Customer, Service, WhatsApp account, WhatsApp campaign, AI Calling, RCS / Voice* or *Monthly deliverable*. The second column is the **Mobile Number**, which links the rows of one customer. The order of the rows does not matter.
+- **Only the columns of that kind are used.** The other cells turn grey. Columns that mean the same thing in several kinds are shared (Sent, Delivered, Read / Answered, Failed, Valid Until, Data as of, Service, Notes), so the sheet is 74 columns wide instead of seven tabs.
+- **Who looks after the customer** is written on the Customer row (*Support Team Member*, a drop-down from the *Support Team* tab). A Team Member who uploads always gets the customers for themselves; a Team Lead / Department Head must name the member.
+- **It fills itself:** *Customer (auto)* shows whose row it is (red mobile = not on a Customer row); the renewal date, panel, display name, package size, Valid Until and the unit come from the other rows; "Data as of" is typed once on the *Set once* tab. Examples are on rows 2 to 8 (skipped); your rows start on row 9; 3000 rows are prepared.
+- **Checks before saving:** a row with an unknown Record type, or data typed without one, is listed by row and stops the save; a value typed in a column that does not apply to the row's kind is ignored and shown as a note. Everything else (required fields, numbers, the customer's service) is checked by the database exactly as before, and errors say "Record type, row N".
+- The older templates with one tab per kind (`Existing_Customers_Services_Usage*.xlsx`) still import; the import recognises the format by the Record type column.
+- Built by `scripts/build_one_sheet_template.py`; the column headings must match `ONE_SHEET_TYPES` in `src/lib/existingCustomerImport.ts`.
+
 ## Steps
 
 1. **Download the template** from the Import screen (`/templates/Existing_Customers_Services_Usage.xlsx`). It has one tab per kind of data:
