@@ -5,7 +5,7 @@ import { clientAccountSchema, clientForgotPasswordSchema, customerDataImportSche
 import type { Actor } from '../auth/authenticate.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
 import { sendEmail } from '../automations/providers.js';
-import { renderClientCredentialsEmail, renderClientPasswordEmail, type ClientPasswordMailData, type RenderedEmail } from '../automations/templates.js';
+import { renderClientCredentialsEmail, renderClientPasswordEmail, type RenderedEmail } from '../automations/templates.js';
 import { hasServiceClient } from '../db/supabase.js';
 import { requestInfo } from '../http/context.js';
 import { recordSecurityEvent } from '../security/events.js';
@@ -83,7 +83,7 @@ export function takeClientPasswords(rows: ImportRows | undefined): { rows: Impor
     else if (login.includes('@') && raw.toLowerCase() === login) fail('The Client Password cannot be the e-mail address.');
     else if (passwords.has(login)) fail('Another row uses the same Client Login E-mail.');
     else passwords.set(login, raw);
-    return { ...rest, loginEmail: login } as typeof r;
+    return { ...rest, loginEmail: login } as unknown as typeof r;
   });
   return { rows: out, passwords, errors };
 }
