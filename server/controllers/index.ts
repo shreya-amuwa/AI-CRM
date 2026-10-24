@@ -24,6 +24,7 @@ export const usersController = {
   setSalesSubRole: (async ctx => ok(await svc(ctx).users.setSalesSubRole(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   departmentHeads: (async ctx => ok(await svc(ctx).users.departmentHeads(ctx.actor, (ctx.req.query as Record<string, unknown>).departmentId))) as Handler,
   departmentAccess: (async ctx => ok(await svc(ctx).users.departmentAccess(ctx.actor, ctx.params.id))) as Handler,
+  applyDepartmentAccess: (async ctx => ok(await svc(ctx).users.applyDepartmentAccess(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setDepartmentAccess: (async ctx => ok(await svc(ctx).users.setDepartmentAccess(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   remove: (async ctx => {
     await svc(ctx).users.delete(ctx.actor, ctx.params.id);

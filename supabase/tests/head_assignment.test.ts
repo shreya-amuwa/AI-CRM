@@ -37,4 +37,30 @@ r = buildHeadAssignment({ fn: '', selectedIds: ['wabastore'], departments: deps,
 check(!r.ok, 'a function must be chosen');
 r = buildHeadAssignment({ fn: 'SALES', selectedIds: ['wabastore'], departments: deps, teams });
 check(r.ok && r.additionalAccess.length === 0, 'a single department needs no extra access');
+
+// ---- the Access Control matrix
+import { cellKey, cellReason, isDirty, lockedCell, pairsToSave, savedSet, summary } from '../../src/lib/scope/accessMatrix.js';
+const info = (over: Record<string, unknown> = {}) => ({
+  profileId: 'h', name: 'Head', role: 'DEPARTMENT_HEAD', homeDepartmentId: 'whatsbox', headDivision: 'SALES', grants: [{ departmentId: 'wabastar', division: 'SALES' }],
+  departments: [
+    { id: 'whatsbox', slug: 'whatsbox', name: 'Whatsbox', hasSales: true, hasSupport: true },
+    { id: 'wabastar', slug: 'wabastar', name: 'Wabastar', hasSales: true, hasSupport: true },
+    { id: 'dtalk', slug: 'dtalk', name: 'D Talk', hasSales: true, hasSupport: false, supportDepartment: 'Wabatalk' },
+    { id: 'wabatalk', slug: 'wabatalk', name: 'Wabatalk', hasSales: false, hasSupport: true },
+    { id: 'accounts', slug: 'accounts', name: 'Accounts', hasSales: false, hasSupport: false }
+  ], ...over }) as any;
+let i = info();
+check(lockedCell(i) === cellKey('whatsbox', 'SALES'), "the head's own placement is the locked cell");
+check(lockedCell(info({ headDivision: null })) === null, 'a head with no side has no locked cell');
+let saved = savedSet(i);
+check(saved.has(cellKey('whatsbox', 'SALES')) && saved.has(cellKey('wabastar', 'SALES')) && saved.size === 2, 'ticked = saved grants + the locked cell');
+let draft = new Set(saved);
+check(!isDirty(draft, saved), 'nothing changed: not dirty');
+draft.add(cellKey('wabatalk', 'SUPPORT'));
+check(isDirty(draft, saved), 'a new tick is an unsaved change');
+check(JSON.stringify(pairsToSave(draft, i).map(p => `${p.departmentId}:${p.division}`).sort()) === JSON.stringify(['wabastar:SALES', 'wabatalk:SUPPORT']), 'Save sends every tick except the locked home cell');
+draft.delete(cellKey('wabatalk', 'SUPPORT'));
+check(!isDirty(draft, saved), 'unticking it again is not a change');
+check(cellReason(i.departments[2], 'SUPPORT')!.includes('Wabatalk') && cellReason(i.departments[4], 'SALES') !== null && cellReason(i.departments[0], 'SALES') === null, 'the reasons name the department that carries the function');
+check(summary(draft, i).join('; ') === 'Whatsbox (Sales, home); Wabastar (Sales)', 'the summary lists the ticks, home marked', summary(draft, i));
 console.log(`\n${passed} checks passed`);

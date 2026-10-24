@@ -44,7 +44,13 @@ export class ProfileRepository {
     let query = this.db.from('profiles').select(COLUMNS, { count: 'exact' });
     if (q.status) query = query.eq('status', q.status);
     if (q.role) query = query.eq('role', q.role);
-    if (q.departmentId) query = query.eq('department_id', q.departmentId);
+    if (q.departmentId) {
+      // "Whole department": the people placed here AND the Department Heads who work here without being placed here (shared heads, and a
+      // head given another department or function). Heads belong to no team, so a team / function filter keeps its meaning and skips them.
+      const withHeads = !q.teamId && !q.division && (!q.role || q.role === 'DEPARTMENT_HEAD');
+      const sharedIds = withHeads ? await this.departmentHeadIds(q.departmentId) : [];
+      query = sharedIds.length ? query.or(`department_id.eq.${q.departmentId},id.in.(${sharedIds.join(',')})`) : query.eq('department_id', q.departmentId);
+    }
     if (q.teamId) query = query.eq('team_id', q.teamId);
     if (q.division && q.departmentId) {
       const teams = unwrap(await this.db.from('teams').select('id').eq('department_id', q.departmentId).eq('division', q.division)) as { id: string }[];
@@ -86,6 +92,17 @@ export class ProfileRepository {
 
   async setDepartmentAccess(id: string, departmentId: string, division: HeadDivision, granted: boolean): Promise<DepartmentAccessInfo> {
     return unwrap(await this.db.rpc('department_access_set', { p_profile: id, p_department: departmentId, p_division: division, p_granted: granted })) as DepartmentAccessInfo;
+  }
+
+  /** Ids of the Department Heads who work in a department (own or authorised); the database returns [] to anyone who may not see them. */
+  async departmentHeadIds(departmentId: string): Promise<string[]> {
+    const rows = unwrap(await this.db.rpc('department_heads_overview', { p_department: departmentId })) as { profileId: string }[];
+    return rows.map(r => r.profileId).filter(id => /^[0-9a-f-]{36}$/i.test(id));
+  }
+
+  /** Save the whole matrix of a head's extra (department, function) pairs in one step. */
+  async applyDepartmentAccess(id: string, pairs: { departmentId: string; division: HeadDivision }[]): Promise<DepartmentAccessInfo> {
+    return unwrap(await this.db.rpc('department_access_apply', { p_profile: id, p_pairs: pairs })) as DepartmentAccessInfo;
   }
 
   /** The (department, function) pairs the database would refuse, with the reason ([] = all fine). */

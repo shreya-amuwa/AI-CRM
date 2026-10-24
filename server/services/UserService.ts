@@ -1,5 +1,6 @@
 import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, Paginated, Profile } from '../../shared/contracts.js';
 import {
+  departmentAccessApplySchema,
   departmentAccessSchema,
   profileSelfUpdateSchema,
   headDivisionSchema,
@@ -161,6 +162,14 @@ export class UserService {
     const userId = parse(uuidSchema, id);
     const { departmentId, division, granted } = parse(departmentAccessSchema, body);
     return this.profiles.setDepartmentAccess(userId, departmentId, division, granted);
+  }
+
+  /** Save a Department Head's whole department / function matrix (Super Admin). The database validates every pair and applies all of them or none. */
+  async applyDepartmentAccess(actor: Actor, id: string, body: unknown): Promise<DepartmentAccessInfo> {
+    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can give a Department Head more departments.');
+    const userId = parse(uuidSchema, id);
+    const { pairs } = parse(departmentAccessApplySchema, body);
+    return this.profiles.applyDepartmentAccess(userId, pairs);
   }
 
   async setTechnicalConsultant(actor: Actor, id: string, body: unknown): Promise<Profile> {

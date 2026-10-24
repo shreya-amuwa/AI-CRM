@@ -166,6 +166,9 @@ export interface DepartmentAccessInfo {
   headDivision: HeadDivision | null;
   grants: { departmentId: string; division: HeadDivision }[];
   departments: { id: string; slug: string; name: string; hasSales: boolean; hasSupport: boolean; supportDepartment?: string | null; salesDepartment?: string | null }[];
+  /** Set by a whole-matrix save: how many pairs were added / removed. */
+  added?: number;
+  removed?: number;
 }
 
 /** A Department Head who works in a department (their own or authorised), with every department and function they work in. */
