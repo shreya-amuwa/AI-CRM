@@ -90,7 +90,7 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
 
   const teams = data?.teams ?? [];
   const tabs: { id: View; label: string; count?: number }[] = mode === 'DEPARTMENT_HEAD'
-    ? [{ id: 'people', label: 'People', count: data?.people.length }, { id: 'teams', label: 'Teams', count: teams.length }, { id: 'department', label: 'Department' }]
+    ? [{ id: 'people', label: 'People', count: data?.people.length }, { id: 'teams', label: 'Teams', count: teams.length }, ...(data?.department === null ? [] : [{ id: 'department' as const, label: 'Department' }])]
     : [{ id: 'people', label: 'Team members', count: data?.people.length }, { id: 'teams', label: 'My team' }];
   const entryRow = (e: PerformanceListEntry, extra: React.ReactNode) => (
     <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">

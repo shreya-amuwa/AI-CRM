@@ -50,6 +50,7 @@ export type TeamDivision = (typeof TEAM_DIVISIONS)[number];
 export type DefaultDashboard =
   | 'super-admin'
   | 'department-head'
+  | 'sales-department-head'
   | 'hr-head'
   | 'sales-lead'
   | 'support-lead'
@@ -3070,3 +3071,172 @@ export interface BaHome {
   recent: { contactId: string; client: string; kind: string; note: string; at: string }[];
 }
 export interface BaAssignee { id: string; name: string; departmentId: string; openContacts: number }
+
+// ---------------------------------------------------------------------------
+// Sales Department Head dashboard
+// ---------------------------------------------------------------------------
+export const SALES_LEAD_FILTERS = ['ALL', 'HOT', 'WARM', 'COLD', 'UNASSIGNED', 'ASSIGNED', 'FOLLOW_UP', 'CONVERTED'] as const;
+export type SalesLeadFilter = (typeof SALES_LEAD_FILTERS)[number];
+export const SALES_TASK_FILTERS = ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'] as const;
+export type SalesTaskFilter = (typeof SALES_TASK_FILTERS)[number];
+
+/** A Sales person a lead sheet can be assigned to. `mode` says how: LEADS = leads in their pipeline, TELECALLER = the Telecaller contact sheet. */
+export interface SalesLeadAssignee {
+  id: string;
+  name: string;
+  team: string;
+  teamId: string;
+  role: 'Team Lead' | 'Team Member';
+  subRole: SalesSubRole | null;
+  mode: 'LEADS' | 'TELECALLER';
+  openLeads: number;
+}
+export interface SalesSheetIssue { row: number; kind: 'INVALID' | 'DUPLICATE'; message: string }
+export interface SalesSheetCheck {
+  committed: boolean;
+  sheetId: string | null;
+  mode: 'LEADS' | 'TELECALLER';
+  alreadyAssigned: boolean;
+  assignee: { id: string; name: string; role: string; team: string };
+  issues: SalesSheetIssue[];
+  summary: { rows: number; valid: number; invalid: number; duplicates: number };
+  preview: { row: number; name: string; company: string | null; phone: string; email: string | null; source: string | null; temperature: LeadTemperature | null; remarks: string | null }[];
+}
+export interface SalesSheet {
+  id: string;
+  fileName: string;
+  note: string | null;
+  mode: 'LEADS' | 'TELECALLER';
+  uploadedAt: string;
+  assignedAt: string;
+  uploadedBy: string | null;
+  assigneeId: string;
+  assignedTo: string;
+  rows: number;
+  valid: number;
+  invalid: number;
+  duplicates: number;
+  status: 'ASSIGNED';
+  hasSourceFile: boolean;
+  leadsNow: number | null;
+  converted: number | null;
+  contactsPending: number | null;
+  contactsCalled: number | null;
+}
+
+export interface SalesLeadRow {
+  id: string;
+  leadCode: string;
+  kind: 'CUSTOMER' | 'INBOUND';
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  source: string | null;
+  temperature: LeadTemperature | null;
+  callStatus: CallStatus | null;
+  assigneeId: string | null;
+  assignee: string | null;
+  team: string | null;
+  assignedAt: string | null;
+  lastContacted: string | null;
+  followUp: string | null;
+  converted: boolean;
+  stage: string;
+  sheet: string | null;
+}
+export interface SalesLeadList {
+  total: number;
+  page: number;
+  pageSize: number;
+  counts: { all: number; hot: number; warm: number; cold: number; unassigned: number; assigned: number; followUp: number; converted: number };
+  items: SalesLeadRow[];
+}
+export interface SalesLeadDetail extends SalesLeadRow {
+  details: Record<string, unknown> | null;
+  history: { at: string; type: string; note: string | null }[];
+}
+
+export interface SalesTaskRow {
+  id: string;
+  title: string;
+  description: string | null;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  startDate: string;
+  dueDate: string | null;
+  status: 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'NOT_COMPLETED' | 'BLOCKED';
+  progress: number;
+  remarks: string | null;
+  lastUpdateAt: string | null;
+  assigneeId: string;
+  assignee: string;
+  assignedById: string;
+  assignedBy: string;
+  team: string;
+  overdue: boolean;
+  dueSoon: boolean;
+  level: 'LEAD' | 'MEMBER';
+  subtasks: number;
+}
+export interface SalesTaskList {
+  total: number;
+  page: number;
+  pageSize: number;
+  today: string;
+  counts: { all: number; pending: number; inProgress: number; completed: number; overdue: number };
+  items: SalesTaskRow[];
+}
+export interface SalesTaskAssignee { id: string; name: string; team: string; teamId: string; role: 'Team Lead' }
+
+export interface SalesOverview {
+  today: string;
+  cards: {
+    totalLeads: number; hot: number; warm: number; cold: number; assigned: number; pendingAssignment: number; teamMembers: number;
+    tasksPending: number; tasksCompleted: number; followUpsDue: number; converted: number; income: number | null;
+  };
+  statusDistribution: { temperature: Record<'HOT' | 'WARM' | 'COLD' | 'NONE', number>; callStatus: Record<string, number> };
+  recentActivities: { at: string; type: string; note: string | null; customer: string; customerId: string; by: string | null }[];
+  teamActivity: { id: string; name: string; role: string; team: string; leads: number; contacted7d: number; tasksOpen: number; tasksDone: number }[];
+  upcomingFollowUps: { id: string; name: string; company: string | null; followUp: string; assignee: string | null; temperature: LeadTemperature | null }[];
+  pendingTasks: { id: string; title: string; dueDate: string | null; priority: string; status: string; assignee: string; overdue: boolean }[];
+  recentSheets: { id: string; fileName: string; mode: 'LEADS' | 'TELECALLER'; valid: number; assignedAt: string; assignedTo: string }[];
+  recentConversions: { id: string; name: string; company: string | null; stage: string; at: string; owner: string | null }[];
+  highlights: { id: string; name: string; tasksDone: number; converted: number }[];
+}
+
+export interface SalesReportRow {
+  id: string;
+  name: string;
+  team: string;
+  subRole: SalesSubRole | null;
+  members: number | null;
+  leadsAssigned: number;
+  leadsContacted: number;
+  hot: number;
+  warm: number;
+  cold: number;
+  followUps: number;
+  conversions: number;
+  tasksAssigned: number;
+  tasksCompleted: number;
+  tasksPending: number;
+  tasksOverdue: number;
+}
+export interface SalesReport {
+  who: 'TEAM_LEAD' | 'TEAM_MEMBER';
+  from: string;
+  to: string;
+  taskStatus: string | null;
+  today: string;
+  rows: SalesReportRow[];
+}
+
+export interface SalesIncome {
+  from: string | null;
+  to: string | null;
+  basis: string;
+  figures: Partial<IncomeFigures>;
+  transactions: { date: string; customer: string; customerId: string; reference: string | null; type: string; service: string | null; amount: number; status: string; method: string | null; source: string }[];
+  /** Expenses are recorded per department, not per Sales / Support side: there is no Sales-only figure, so this is null. */
+  expenses: null;
+}

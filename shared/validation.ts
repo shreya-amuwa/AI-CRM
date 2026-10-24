@@ -33,6 +33,8 @@ import {
   ROLES,
   SALES_SUB_ROLES,
   HEAD_DIVISIONS,
+  SALES_LEAD_FILTERS,
+  SALES_TASK_FILTERS,
   BA_STAGES,
   DEMO_MODES,
   DEMO_STATUSES,
@@ -1512,3 +1514,61 @@ export const servicePriceSchema = z
   })
   .strict();
 export const baDocumentFileQuerySchema = z.object({ action: z.enum(['view', 'download']).default('view') });
+
+// ---- Sales Department Head ----
+/** One row of a lead sheet, read in the browser: the database checks every value again. */
+export const salesLeadRowSchema = z
+  .object({
+    row: z.coerce.number().int().min(1).max(100000),
+    name: z.string().max(400).default(''),
+    company: z.string().max(400).nullish(),
+    phone: z.string().max(60).default(''),
+    email: z.string().max(400).nullish(),
+    source: z.string().max(200).nullish(),
+    temperature: z.string().max(40).nullish(),
+    remarks: z.string().max(2000).nullish()
+  })
+  .strict();
+export const salesLeadSheetSchema = z
+  .object({
+    assigneeId: uuidSchema,
+    fileName: trimmed(200).min(1, 'The file name is missing.'),
+    note: optionalText(500),
+    /** SHA-256 of the file (hex): the same file is not uploaded twice. */
+    hash: z.string().regex(/^[a-f0-9]{64}$/, 'The sheet could not be identified.'),
+    rows: z.array(salesLeadRowSchema).min(1, 'The sheet has no lead rows.').max(2000, 'A sheet can have at most 2,000 leads.'),
+    commit: z.boolean().default(false)
+  })
+  .strict();
+export const salesLeadsQuerySchema = z
+  .object({
+    search: trimmed(120).optional(),
+    filter: z.enum(SALES_LEAD_FILTERS).default('ALL'),
+    assigneeId: uuidSchema.optional(),
+    sort: z.enum(['assignedAt', 'name', 'company', 'temperature', 'callStatus', 'lastContacted', 'followUp', 'assignee']).default('assignedAt'),
+    dir: z.enum(['asc', 'desc']).default('desc'),
+    ...pageParams
+  })
+  .strict();
+export const salesInboundAssignSchema = z.object({ assigneeId: uuidSchema }).strict();
+export const salesTasksQuerySchema = z
+  .object({ filter: z.enum(SALES_TASK_FILTERS).default('ALL'), search: trimmed(120).optional(), assigneeId: uuidSchema.optional(), ...pageParams })
+  .strict();
+export const salesTaskCreateSchema = z
+  .object({
+    assigneeId: uuidSchema,
+    title: trimmed(200).min(1, 'Enter a task title.'),
+    description: optionalText(4000),
+    priority: z.enum(['LOW', 'MEDIUM', 'HIGH']).default('MEDIUM'),
+    dueDate: isoDate.nullish()
+  })
+  .strict();
+export const salesReportsQuerySchema = z
+  .object({
+    who: z.enum(['TEAM_LEAD', 'TEAM_MEMBER']).default('TEAM_MEMBER'),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    taskStatus: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE']).optional()
+  })
+  .strict();
+export const salesIncomeQuerySchema = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();

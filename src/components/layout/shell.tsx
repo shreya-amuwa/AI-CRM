@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { BookOpen, HelpCircle, LogOut, Menu, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { BookOpen, ChevronDown, HelpCircle, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
@@ -22,6 +22,8 @@ export interface ShellNavItem {
   badge?: number;
   /** A plain count that is always shown, even when 0 (neutral pill). */
   count?: number;
+  /** Sub-pages: the entry opens and closes a nested list (Leads → Lead List, Lead Assign). It is not a page itself. */
+  children?: { id: string; label: string; badge?: number }[];
 }
 export interface ShellNavGroup {
   label?: string;
@@ -77,6 +79,60 @@ export const NavButton: React.FC<{
     {children}
   </button>
 );
+
+/** A menu entry with a nested list of pages. Open while one of its pages is the active one; the button opens and closes it. */
+export const NavParent: React.FC<{
+  item: ShellNavItem;
+  active: string;
+  onSelect: (id: string) => void;
+}> = ({ item, active, onSelect }) => {
+  const kids = item.children ?? [];
+  const hasActive = kids.some(k => k.id === active);
+  const [open, setOpen] = useState(hasActive);
+  useEffect(() => {
+    if (hasActive) setOpen(true);
+  }, [hasActive]);
+  const Icon = item.icon;
+  const listId = `nav-sub-${item.id}`;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-controls={listId}
+        className={`w-full flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm text-left transition-colors ${
+          hasActive ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50 hover:text-slate-900'
+        }`}
+      >
+        <Icon className={`w-[18px] h-[18px] shrink-0 ${hasActive ? '' : 'text-slate-500'}`} strokeWidth={1.9} aria-hidden="true" />
+        <span className="flex-1 min-w-0 truncate">{item.label}</span>
+        <ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {open && (
+        <div id={listId} className="flex flex-col gap-0.5 pl-[29px]">
+          {kids.map(k => {
+            const on = active === k.id;
+            return (
+              <button
+                key={k.id}
+                type="button"
+                onClick={() => onSelect(k.id)}
+                aria-current={on ? 'page' : undefined}
+                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-[9px] text-[13.5px] text-left transition-colors ${
+                  on ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <span className="flex-1 min-w-0 truncate">{k.label}</span>
+                {k.badge ? <span className="shrink-0 text-[11px] font-bold bg-amber-50 text-amber-700 rounded-full px-2 py-0.5">{k.badge > 99 ? '99+' : k.badge}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const NavGroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</div>
@@ -301,7 +357,18 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
           {groups.map((g, i) => (
             <div key={g.label || i} className="flex flex-col gap-0.5">
               {g.label && <NavGroupLabel>{g.label}</NavGroupLabel>}
-              {g.items.map(it => (
+              {g.items.map(it =>
+                it.children?.length ? (
+                  <NavParent
+                    key={it.id}
+                    item={it}
+                    active={active}
+                    onSelect={id => {
+                      onSelect(id);
+                      closeMenu();
+                    }}
+                  />
+                ) : (
                 <NavButton
                   key={it.id}
                   label={it.label}
@@ -314,7 +381,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                     closeMenu();
                   }}
                 />
-              ))}
+                )
+              )}
             </div>
           ))}
         </nav>
