@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, CalendarPlus, ClipboardList, Download, FilePlus2, FileSignature, Phone, Search } from 'lucide-react';
+import { ArrowLeft, CalendarPlus, Download, Eye, FilePlus2, FileSignature, Phone, Search } from 'lucide-react';
 import { BA_STAGES, BA_STAGE_LABELS, type BaContactDetail, type BaContactList, type BaStage } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { businessAssociateApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
-import { ErrorBanner, Field, Pager, Spinner, useDebounced } from '../team-member/pipeline/shared';
+import { Avatar, ErrorBanner, Field, Pager, Spinner, useDebounced } from '../team-member/pipeline/shared';
+import { Card, CardHead, Tabs } from '../tasks/head/headParts';
 import { CallStatusBadge, EmptyState, StatCard, TemperatureBadge, dateText, dateTimeText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
 import { DocBadge, StageBadge, inr, notifyBaChanged, openFile } from './ui';
@@ -62,28 +63,17 @@ const ContactList: React.FC<{ go: BaNavigate; initialStage?: string; onOpen: (id
       <PageTitle title="Tasks" subtitle="Contacts your Telecallers have qualified and handed over to you." />
       {error && <ErrorBanner message={error} onRetry={load} />}
       <section aria-label="Summary" className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <StatCard label="Total Assigned Contacts" value={total} icon={ClipboardList} tone="bg-blue-50 text-blue-600" />
-        <StatCard label="New Contacts" value={n('NEW')} icon={ClipboardList} tone="bg-sky-50 text-sky-600" onClick={() => setStage('NEW')} />
-        <StatCard label="In Progress" value={n('IN_PROGRESS')} icon={ClipboardList} tone="bg-indigo-50 text-indigo-600" onClick={() => setStage('IN_PROGRESS')} />
-        <StatCard label="Quotations Pending" value={n('QUOTATION_PENDING')} icon={ClipboardList} tone="bg-amber-50 text-amber-600" onClick={() => setStage('QUOTATION_PENDING')} />
-        <StatCard label="Demos Scheduled" value={n('DEMO_SCHEDULED')} icon={ClipboardList} tone="bg-violet-50 text-violet-600" onClick={() => setStage('DEMO_SCHEDULED')} />
-        <StatCard label="Scope Documents Pending" value={n('SCOPE_PENDING')} icon={ClipboardList} tone="bg-orange-50 text-orange-600" onClick={() => setStage('SCOPE_PENDING')} />
+        <StatCard label="Total Assigned Contacts" value={total} tone="blue" />
+        <StatCard label="New Contacts" value={n('NEW')} tone="blue" onClick={() => setStage('NEW')} />
+        <StatCard label="In Progress" value={n('IN_PROGRESS')} tone="blue" onClick={() => setStage('IN_PROGRESS')} />
+        <StatCard label="Quotations Pending" value={n('QUOTATION_PENDING')} tone="amber" onClick={() => setStage('QUOTATION_PENDING')} />
+        <StatCard label="Demos Scheduled" value={n('DEMO_SCHEDULED')} tone="blue" onClick={() => setStage('DEMO_SCHEDULED')} />
+        <StatCard label="Scope Documents Pending" value={n('SCOPE_PENDING')} tone="amber" onClick={() => setStage('SCOPE_PENDING')} />
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Card className="overflow-hidden">
         <div className="p-4 flex flex-col gap-3 border-b border-slate-100">
-          <div role="tablist" aria-label="Stage" className="flex flex-wrap gap-1.5">
-            {FILTERS.map(f => {
-              const on = stage === f.value;
-              const c = f.value ? n(f.value) : total;
-              return (
-                <button key={f.value || 'all'} type="button" role="tab" aria-selected={on} onClick={() => setStage(f.value)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                  {f.label} <span className={on ? 'text-blue-100' : 'text-slate-400'}>{c}</span>
-                </button>
-              );
-            })}
-          </div>
+          <Tabs label="Stage" value={stage} onChange={v => setStage(v as '' | BaStage)} options={FILTERS.map(f => ({ id: f.value as string, label: f.label, count: f.value ? n(f.value) : total }))} />
           <div className="relative max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
             <input className={`${tcInput} pl-9`} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, company, phone, email or source" aria-label="Search contacts" />
@@ -93,24 +83,24 @@ const ContactList: React.FC<{ go: BaNavigate; initialStage?: string; onOpen: (id
         {loading && !data ? (
           <Spinner label="Loading contacts…" />
         ) : !data || data.items.length === 0 ? (
-          <EmptyState icon={ClipboardList} title={query || stage ? 'No contacts match' : 'No contacts have been handed over to you yet'}>
+          <EmptyState title={query || stage ? 'No contacts match' : 'No contacts have been handed over to you yet'}>
             {query || stage ? 'Try another filter or clear the search.' : 'When a Telecaller qualifies a lead and converts it, the client appears here.'}
           </EmptyState>
         ) : (
           <>
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm" aria-busy={loading}>
+              <table className="w-full text-left text-sm min-w-[1250px]" aria-busy={loading}>
                 <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
+                  <tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">
                     {['Contact Name', 'Company/Business Name', 'Phone Number', 'Email', 'Lead Source', 'Assigned Telecaller', 'Assigned Date', 'Business Associate', 'Requirement Status', 'Next Follow-up', 'Actions'].map(h => (
-                      <th key={h} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>
+                      <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.items.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/70 cursor-pointer" onClick={() => onOpen(c.id)}>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{c.name}</td>
+                    <tr key={c.id} className="hover:bg-slate-50/60 cursor-pointer" onClick={() => onOpen(c.id)}>
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={c.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{c.name}</span></div></td>
                       <td className="px-4 py-3 text-slate-600">{c.company || '-'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{c.phone ? <a href={`tel:${c.phone}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline">{c.phone}</a> : '-'}</td>
                       <td className="px-4 py-3 text-slate-600 break-all">{c.email || '-'}</td>
@@ -120,7 +110,7 @@ const ContactList: React.FC<{ go: BaNavigate; initialStage?: string; onOpen: (id
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{c.businessAssociate || '-'}</td>
                       <td className="px-4 py-3"><StageBadge stage={c.stage} /></td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(c.nextFollowUp)}</td>
-                      <td className="px-4 py-3"><button type="button" className={tcBtn.link} onClick={e => { e.stopPropagation(); onOpen(c.id); }} aria-label={`Open ${c.name}`}>Open</button></td>
+                      <td className="px-4 py-3"><button type="button" className={tcBtn.row} onClick={e => { e.stopPropagation(); onOpen(c.id); }} aria-label={`Open ${c.name}`}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> Open</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -141,19 +131,19 @@ const ContactList: React.FC<{ go: BaNavigate; initialStage?: string; onOpen: (id
             <Pager page={page} pageSize={pageSize} total={data.total} noun="contacts" onPage={setPage} onPageSize={setPageSize} />
           </>
         )}
-      </section>
+      </Card>
     </div>
   );
 };
 
-const Card: React.FC<{ title: string; actions?: React.ReactNode; children: React.ReactNode }> = ({ title, actions, children }) => (
-  <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3"><h2 className="text-base font-extrabold text-slate-900">{title}</h2>{actions}</div>
-    <div className="p-5">{children}</div>
-  </section>
+const Section: React.FC<{ title: string; actions?: React.ReactNode; children: React.ReactNode }> = ({ title, actions, children }) => (
+  <Card>
+    <CardHead title={title} right={actions} />
+    <div className="px-5 pb-5">{children}</div>
+  </Card>
 );
 const Fact: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="text-sm text-slate-800 break-words">{children || '-'}</dd></div>
+  <div><dt className="text-xs font-medium text-slate-500">{label}</dt><dd className="text-sm text-slate-800 break-words">{children || '-'}</dd></div>
 );
 
 /** One client: details, requirements, notes and every document, with a way into each next step. */
@@ -201,7 +191,7 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         <div className="xl:col-span-2 space-y-5">
-          <Card title="Client information">
+          <Section title="Client information">
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
               <Fact label="Phone">{c.phone ? <a href={`tel:${c.phone}`} className="text-blue-600 inline-flex items-center gap-1"><Phone className="w-3.5 h-3.5" aria-hidden="true" />{c.phone}</a> : null}</Fact>
               <Fact label="Email">{c.email}</Fact>
@@ -214,9 +204,9 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
               <div className="sm:col-span-2"><Fact label="Hand-over note">{c.handoverNote}</Fact></div>
               <div className="sm:col-span-2"><Fact label="Lead notes">{c.notes}</Fact></div>
             </dl>
-          </Card>
+          </Section>
 
-          <Card title="Business requirements">
+          <Section title="Business requirements">
             <div className="space-y-3">
               <Field label="What the client needs" htmlFor="ba-req">
                 <textarea id="ba-req" className={`${tcInput} min-h-[120px]`} maxLength={5000} value={requirements} onChange={e => setRequirements(e.target.value)} placeholder="Describe the client's business, what they want to achieve and which services they need." />
@@ -227,9 +217,9 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
               </div>
               <p className="text-xs text-slate-500">The business profile (industry, goals, current tools…) is kept in <button type="button" className="text-blue-600 underline" onClick={() => go('scope', { contactId: c.id })}>Scope of Project</button>; quotations and the scope read the same facts.</p>
             </div>
-          </Card>
+          </Section>
 
-          <Card title="Communication notes">
+          <Section title="Communication notes">
             <form className="flex flex-col sm:flex-row gap-2 mb-4" onSubmit={e => { e.preventDefault(); if (note.trim()) void run(() => businessAssociateApi.addNote(c.id, note.trim()).then(() => setNote('')), 'Note added.'); }}>
               <input className={tcInput} value={note} onChange={e => setNote(e.target.value)} maxLength={2000} placeholder="Add a note about a call or meeting" aria-label="New note" />
               <button type="submit" className={tcBtn.primary} disabled={saving || !note.trim()}>Add note</button>
@@ -241,11 +231,11 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
                 ))}
               </ul>
             )}
-          </Card>
+          </Section>
         </div>
 
         <div className="space-y-5">
-          <Card title="Current progress">
+          <Section title="Current progress">
             <div className="space-y-3">
               <StageBadge stage={c.stage} />
               <Field label="Change stage" htmlFor="ba-stage">
@@ -255,9 +245,9 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
               </Field>
               <p className="text-xs text-slate-500">The stage moves by itself as you draft a quotation, book and complete a demo and finalise the scope. Set it yourself when you need to.</p>
             </div>
-          </Card>
+          </Section>
 
-          <Card title="Quotations" actions={<button type="button" className={tcBtn.link} onClick={() => go('quotation', { contactId: c.id })}>New / open</button>}>
+          <Section title="Quotations" actions={<button type="button" className={tcBtn.link} onClick={() => go('quotation', { contactId: c.id })}>New / open</button>}>
             {c.quotations.length === 0 ? <p className="text-sm text-slate-500">No quotation yet.</p> : (
               <ul className="space-y-3">
                 {c.quotations.map(q => (
@@ -269,17 +259,17 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
                 ))}
               </ul>
             )}
-          </Card>
+          </Section>
 
-          <Card title="Demos" actions={<button type="button" className={tcBtn.link} onClick={() => go('demos', { contactId: c.id, newDemo: true })}>Schedule</button>}>
+          <Section title="Demos" actions={<button type="button" className={tcBtn.link} onClick={() => go('demos', { contactId: c.id, newDemo: true })}>Schedule</button>}>
             {c.demos.length === 0 ? <p className="text-sm text-slate-500">No demo yet.</p> : (
               <ul className="space-y-2.5">
                 {c.demos.map(d => (<li key={d.id} className="text-sm"><div className="font-semibold text-slate-900">{d.title}</div><div className="text-xs text-slate-500">{dateTimeText(d.startsAt)} · {d.mode === 'ONLINE' ? 'Online' : 'In person'} · {d.status.toLowerCase()}</div></li>))}
               </ul>
             )}
-          </Card>
+          </Section>
 
-          <Card title="Scope of Project" actions={<button type="button" className={tcBtn.link} onClick={() => go('scope', { contactId: c.id })}>Open</button>}>
+          <Section title="Scope of Project" actions={<button type="button" className={tcBtn.link} onClick={() => go('scope', { contactId: c.id })}>Open</button>}>
             {c.scopes.length === 0 ? <p className="text-sm text-slate-500">No scope document yet.</p> : (
               <ul className="space-y-3">
                 {c.scopes.map(s => (
@@ -291,7 +281,7 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
                 ))}
               </ul>
             )}
-          </Card>
+          </Section>
         </div>
       </div>
     </div>

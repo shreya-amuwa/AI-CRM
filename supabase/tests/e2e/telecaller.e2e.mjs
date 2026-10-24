@@ -74,6 +74,27 @@ const menu = async (p, label) => {
 };
 const text = p => p.locator('main').innerText();
 const todayIST = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+const styleOf = async p => { await p.waitForSelector('main .bg-white.rounded-2xl.border, main h1', { timeout: 20000 }); await p.waitForSelector('main .bg-white.rounded-2xl.border', { timeout: 20000 }).catch(() => {}); return p.evaluate(() => {
+  const cs = (el, props) => (el ? Object.fromEntries(props.map(k => [k, getComputedStyle(el)[k]])) : null);
+  const aside = document.querySelector('aside');
+  const active = aside?.querySelector('nav button[aria-current="page"]');
+  const inactive = [...(aside?.querySelectorAll('nav button:not([aria-current])') ?? [])][0];
+  const header = document.querySelector('header');
+  const title = document.querySelector('main h1');
+  const primary = [...document.querySelectorAll('main button')].find(b => /\bbg-blue-600\b/.test(b.className) && !b.getAttribute('role'));
+  const card = document.querySelector('main .bg-white.rounded-2xl.border');
+  return {
+    page: cs(aside?.parentElement, ['backgroundColor']),
+    sidebar: { ...cs(aside, ['backgroundColor', 'borderRightColor']), width: Math.round(aside?.getBoundingClientRect().width ?? 0) },
+    active: cs(active, ['backgroundColor', 'color', 'fontWeight', 'borderRadius']),
+    inactive: cs(inactive, ['color', 'fontWeight']),
+    header: cs(header, ['backgroundColor', 'borderBottomColor']),
+    title: cs(title, ['fontSize', 'fontWeight', 'color']),
+    primary: cs(primary, ['backgroundColor', 'color', 'borderRadius', 'height']),
+    card: cs(card, ['backgroundColor', 'borderTopColor', 'borderRadius'])
+  };
+}); };
+const sameDesign = (a, b, keys) => keys.every(k => JSON.stringify(a[k]) === JSON.stringify(b[k]));
 const stat = async (p, label) => Number(await p.getByTestId(`stat-${label}`).innerText());
 
 // A minimal .xlsx (a real zip) with the given rows, written for the test.
@@ -192,10 +213,12 @@ const t1 = await login('tele.one@amuwa.com', { width: 1440, height: 900 }, 'text
 await expect(/\/telecaller\/dashboard\//.test(t1.url()), 'routing: a Sales Telecaller lands on the Telecaller dashboard', t1.url());
 const navLabels = await t1.locator('aside nav button').allInnerTexts();
 await expect(navLabels.map(s => s.trim()).join('|') === 'Home|Tasks|Leads', 'sidebar: Home, Tasks, Leads', navLabels);
-const sidebarBg = await t1.locator('aside').evaluate(e => getComputedStyle(e).backgroundColor);
-const activeBg = await t1.locator('aside nav button[aria-current="page"]').evaluate(e => getComputedStyle(e).backgroundColor);
-const [ar, ag, ab] = activeBg.match(/\d+/g).map(Number);
-await expect(sidebarBg === 'rgb(11, 31, 75)' && ab > 200 && ab > ar + 100 && ab > ag + 80, 'design: navy sidebar with a blue active item', { sidebarBg, activeBg });
+const tcDesign = await styleOf(t1);
+const refPage = await login('dh@amuwa.com', { width: 1440, height: 900 }, 'nav button');
+const refDesign = await styleOf(refPage); // the Department Head's dashboard is the reference for the design
+await refPage.close();
+await expect(sameDesign(tcDesign, refDesign, ['page', 'sidebar', 'active', 'inactive', 'header', 'title', 'card']), 'design: the page background, sidebar, active menu item, header, page title and cards are the Department Head dashboard\'s', { tcDesign, refDesign });
+await expect(tcDesign.primary && sameDesign(tcDesign, refDesign, ['primary']), 'design: the primary button is the Department Head dashboard\'s (colour, radius, height)', { tcDesign: tcDesign.primary, refDesign: refDesign.primary });
 await expect(await t1.locator('header').getByRole('button', { name: 'Sign out' }).count() === 1, 'the existing Sign out is still in the top bar');
 await t1.getByTestId('stat-total-assigned-contacts').waitFor({ timeout: 15000 });
 const home0 = { assigned: await stat(t1, 'total-assigned-contacts'), pending: await stat(t1, 'calls-pending'), completed: await stat(t1, 'calls-completed'), leads: await stat(t1, 'total-leads'), due: await stat(t1, 'follow-ups-due-today') };
@@ -385,6 +408,15 @@ await ph.getByRole('heading', { name: 'Add Lead' }).waitFor({ timeout: 5000 });
 await noSideways('the Add Lead form');
 await ph.screenshot({ path: `${OUT}/tc-10-phone-add-lead.png` });
 await ph.close();
+
+// ------------------------------------------------------------------ a tablet-sized window
+const tb = await login('tele.one@amuwa.com', { width: 820, height: 1180 }, 'text=Today\'s Focus');
+const tabletOk = async label => expect(await tb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `tablet: no sideways scrolling on ${label}`);
+await tabletOk('Home');
+await menu(tb, 'Tasks'); await tb.waitForSelector('tbody tr', { timeout: 15000 }); await tabletOk('Tasks');
+await menu(tb, 'Leads'); await tb.waitForSelector('tbody tr', { timeout: 15000 }); await tabletOk('Leads');
+await tb.screenshot({ path: `${OUT}/tc-11-tablet.png` });
+await tb.close();
 
 const bad = errors.filter(e => !/favicon/.test(e));
 await expect(bad.length === 0, 'no console errors or page errors in any window', bad.slice(0, 5));

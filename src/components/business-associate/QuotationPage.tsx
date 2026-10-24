@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Download, Eye, FilePlus2, FileText, Plus, Save, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FilePlus2, FileText, Pencil, Plus, Save, Sparkles, Trash2 } from 'lucide-react';
 import type { BaContactDetail, BaQuotation, BaQuotationRow, ServicePrice } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { businessAssociateApi, type BaQuotationBody } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
-import { ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
+import { Card, CardHead } from '../tasks/head/headParts';
+import { Avatar, ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, dateText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
 import { DocBadge, inr, notifyBaChanged, openFile, useContactOptions } from './ui';
@@ -92,26 +93,28 @@ const QuotationList: React.FC<{ onNew: () => void; onOpen: (id: string) => void 
     <div className="space-y-5">
       <PageTitle title="Quotation" subtitle="Draft client quotations with AI, check them, and save them as PDFs against the client." actions={<button type="button" className={tcBtn.primary} onClick={onNew}><Plus className="w-4 h-4" aria-hidden="true" /> New quotation</button>} />
       {error && <ErrorBanner message={error} onRetry={load} />}
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Card>
         {rows === null ? <Spinner label="Loading quotations…" /> : rows.length === 0 ? (
-          <EmptyState icon={FileText} title="No quotation yet">Open one of your contacts and create the first quotation.<div className="mt-4"><button type="button" className={tcBtn.primary} onClick={onNew}><Plus className="w-4 h-4" aria-hidden="true" /> New quotation</button></div></EmptyState>
+          <EmptyState title="No quotation yet">Open one of your contacts and create the first quotation.<div className="mt-4"><button type="button" className={tcBtn.primary} onClick={onNew}><Plus className="w-4 h-4" aria-hidden="true" /> New quotation</button></div></EmptyState>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">{['Quotation', 'Client', 'Company', 'Status', 'Total', 'Valid until', 'Updated', 'Actions'].map(h => <th key={h} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>)}</tr></thead>
+            <table className="w-full text-left text-sm min-w-[900px]">
+              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Quotation', 'Client', 'Company', 'Status', 'Total', 'Valid until', 'Updated', 'Actions'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map(q => (
-                  <tr key={q.id} className="hover:bg-slate-50/70">
+                  <tr key={q.id} className="hover:bg-slate-50/60">
                     <td className="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{q.number} · r{q.revision}</td>
-                    <td className="px-4 py-3">{q.client}</td>
+                    <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={q.client || q.number} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{q.client}</span></div></td>
                     <td className="px-4 py-3 text-slate-600">{q.company || '-'}</td>
                     <td className="px-4 py-3"><DocBadge status={q.status} aiGenerated={q.aiGenerated} reviewed={q.reviewed} /></td>
                     <td className="px-4 py-3 whitespace-nowrap">{inr(q.total)}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(q.validUntil)}</td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(q.updatedAt)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <button type="button" className={tcBtn.link} onClick={() => onOpen(q.id)} aria-label={`Open ${q.number} revision ${q.revision}`}>{q.status === 'DRAFT' ? 'Edit' : 'View'}</button>
-                      {q.hasPdf && <button type="button" className={`${tcBtn.link} ml-3`} onClick={() => void download(q.id)} aria-label={`Download ${q.number}`}>PDF</button>}
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" className={tcBtn.row} onClick={() => onOpen(q.id)} aria-label={`Open ${q.number} revision ${q.revision}`}>{q.status === 'DRAFT' ? <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />} {q.status === 'DRAFT' ? 'Edit' : 'View'}</button>
+                        {q.hasPdf && <button type="button" className={tcBtn.row} onClick={() => void download(q.id)} aria-label={`Download ${q.number}`}><Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF</button>}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -119,16 +122,16 @@ const QuotationList: React.FC<{ onNew: () => void; onOpen: (id: string) => void 
             </table>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 };
 
-const Card: React.FC<{ title: string; hint?: string; children: React.ReactNode }> = ({ title, hint, children }) => (
-  <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <div className="px-5 py-3.5 border-b border-slate-100"><h2 className="text-base font-extrabold text-slate-900">{title}</h2>{hint && <p className="text-xs text-slate-500 mt-0.5">{hint}</p>}</div>
-    <div className="p-5">{children}</div>
-  </section>
+const Section: React.FC<{ title: string; hint?: string; children: React.ReactNode }> = ({ title, hint, children }) => (
+  <Card>
+    <CardHead title={title} hint={hint} />
+    <div className="px-5 pb-5">{children}</div>
+  </Card>
 );
 
 const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; onClose: () => void; onOpen: (id: string) => void }> = ({ id, contactId: startContact, onClose, onOpen }) => {
@@ -238,7 +241,7 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
       {final && <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-sm">This quotation is final and cannot be changed. To change it, create a new revision; this one is kept.</div>}
 
-      <Card title="Client">
+      <Section title="Client">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Select client" htmlFor="qt-client" required>
             <select id="qt-client" className={tcInput} value={contactId} disabled={!!q || contacts.items === null} onChange={e => setContactId(e.target.value)}>
@@ -248,17 +251,17 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
           </Field>
           {contact && (
             <dl className="grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="text-[11px] font-bold uppercase text-slate-500">Company</dt><dd>{contact.company || '-'}</dd></div>
-              <div><dt className="text-[11px] font-bold uppercase text-slate-500">Contact</dt><dd>{contact.phone || '-'}{contact.email ? ` · ${contact.email}` : ''}</dd></div>
-              <div className="col-span-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Business details</dt><dd className="whitespace-pre-wrap">{[contact.address, contact.profile.industry, contact.profile.productsServices].filter(Boolean).join(' · ') || '-'}</dd></div>
-              <div className="col-span-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Requirements</dt><dd className="whitespace-pre-wrap">{client && 'requirements' in client && client.requirements ? client.requirements : 'Not written yet. Add them in Tasks so the AI can use them.'}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-500">Company</dt><dd>{contact.company || '-'}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-500">Contact</dt><dd>{contact.phone || '-'}{contact.email ? ` · ${contact.email}` : ''}</dd></div>
+              <div className="col-span-2"><dt className="text-xs font-medium text-slate-500">Business details</dt><dd className="whitespace-pre-wrap">{[contact.address, contact.profile.industry, contact.profile.productsServices].filter(Boolean).join(' · ') || '-'}</dd></div>
+              <div className="col-span-2"><dt className="text-xs font-medium text-slate-500">Requirements</dt><dd className="whitespace-pre-wrap">{client && 'requirements' in client && client.requirements ? client.requirements : 'Not written yet. Add them in Tasks so the AI can use them.'}</dd></div>
             </dl>
           )}
         </div>
         {contactId && contacts.items?.length === 0 && <p className="text-sm text-amber-700 mt-2">You have no contacts yet.</p>}
-      </Card>
+      </Section>
 
-      <Card title="Services and pricing" hint="Prices start from the approved price list. A price that differs, or a service with no approved price, is flagged for review.">
+      <Section title="Services and pricing" hint="Prices start from the approved price list. A price that differs, or a service with no approved price, is flagged for review.">
         {prices.length > 0 && prices.every(p => !p.priced) && <p className="mb-3 text-sm text-amber-700">No approved prices have been set up yet. Ask your Department Head to add them; prices you type are flagged.</p>}
         <div className="space-y-3">
           {form.lines.map((l, i) => {
@@ -266,16 +269,16 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
             return (
               <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2">
                 <div className="grid grid-cols-2 lg:grid-cols-12 gap-2 items-end">
-                  <div className="col-span-2 lg:col-span-4"><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`qt-svc-${i}`}>Service</label>
+                  <div className="col-span-2 lg:col-span-4"><label className="text-xs font-medium text-slate-500" htmlFor={`qt-svc-${i}`}>Service</label>
                     <select id={`qt-svc-${i}`} className={tcInput} disabled={ro} value={l.serviceCode} onChange={e => chooseService(i, e.target.value)}>
                       <option value="">Choose a service…</option>
                       {prices.map(s => <option key={s.serviceCode} value={s.serviceCode}>{s.name}{s.priced ? '' : ' (no approved price)'}</option>)}
                     </select></div>
-                  <div className="lg:col-span-1"><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`qt-qty-${i}`}>Qty</label><input id={`qt-qty-${i}`} type="number" min="0" step="any" className={tcInput} disabled={ro} value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
-                  <div className="lg:col-span-2"><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`qt-price-${i}`}>Unit price</label><input id={`qt-price-${i}`} type="number" min="0" step="0.01" className={tcInput} disabled={ro} value={l.unitPrice} onChange={e => setLine(i, { unitPrice: e.target.value })} /></div>
-                  <div className="lg:col-span-1"><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`qt-disc-${i}`}>Disc. %</label><input id={`qt-disc-${i}`} type="number" min="0" max="100" step="0.01" className={tcInput} disabled={ro || !p?.priced || !(p.maxDiscountPct ?? 0)} value={l.discountPct} onChange={e => setLine(i, { discountPct: e.target.value })} title={p?.priced ? (p.maxDiscountPct ? `Up to ${p.maxDiscountPct}% is allowed` : 'No discount is allowed on this service') : 'Discounts need an approved price'} /></div>
-                  <div className="lg:col-span-1"><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`qt-gst-${i}`}>GST %</label><input id={`qt-gst-${i}`} type="number" min="0" max="100" step="0.01" className={tcInput} disabled={ro || !form.gstApplicable} value={form.gstApplicable ? l.gstRate : '0'} onChange={e => setLine(i, { gstRate: e.target.value })} /></div>
-                  <div className="lg:col-span-2 text-right"><div className="text-[11px] font-bold uppercase text-slate-500">Line total</div><div className="text-sm font-bold text-slate-900 py-2.5">{inr(est.per[i])}</div></div>
+                  <div className="lg:col-span-1"><label className="text-xs font-medium text-slate-500" htmlFor={`qt-qty-${i}`}>Qty</label><input id={`qt-qty-${i}`} type="number" min="0" step="any" className={tcInput} disabled={ro} value={l.quantity} onChange={e => setLine(i, { quantity: e.target.value })} /></div>
+                  <div className="lg:col-span-2"><label className="text-xs font-medium text-slate-500" htmlFor={`qt-price-${i}`}>Unit price</label><input id={`qt-price-${i}`} type="number" min="0" step="0.01" className={tcInput} disabled={ro} value={l.unitPrice} onChange={e => setLine(i, { unitPrice: e.target.value })} /></div>
+                  <div className="lg:col-span-1"><label className="text-xs font-medium text-slate-500" htmlFor={`qt-disc-${i}`}>Disc. %</label><input id={`qt-disc-${i}`} type="number" min="0" max="100" step="0.01" className={tcInput} disabled={ro || !p?.priced || !(p.maxDiscountPct ?? 0)} value={l.discountPct} onChange={e => setLine(i, { discountPct: e.target.value })} title={p?.priced ? (p.maxDiscountPct ? `Up to ${p.maxDiscountPct}% is allowed` : 'No discount is allowed on this service') : 'Discounts need an approved price'} /></div>
+                  <div className="lg:col-span-1"><label className="text-xs font-medium text-slate-500" htmlFor={`qt-gst-${i}`}>GST %</label><input id={`qt-gst-${i}`} type="number" min="0" max="100" step="0.01" className={tcInput} disabled={ro || !form.gstApplicable} value={form.gstApplicable ? l.gstRate : '0'} onChange={e => setLine(i, { gstRate: e.target.value })} /></div>
+                  <div className="lg:col-span-2 text-right"><div className="text-xs font-medium text-slate-500">Line total</div><div className="text-sm font-bold text-slate-900 py-2.5">{inr(est.per[i])}</div></div>
                   <div className="lg:col-span-1 text-right">{!ro && <button type="button" className={`${tcBtn.link} text-rose-600`} onClick={() => set('lines', form.lines.filter((_, j) => j !== i))} aria-label={`Remove line ${i + 1}`}><Trash2 className="w-4 h-4 inline" aria-hidden="true" /></button>}</div>
                 </div>
                 {p && <p className="text-[11px] text-slate-500">{p.priced ? `Approved price: ${inr(p.unitPrice)} ${p.unitLabel || ''}${p.gstRate !== null ? ` · GST ${p.gstRate}%` : ''}` : 'This service has no approved price: the price you type will be flagged.'}</p>}
@@ -299,16 +302,16 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
           <div className="flex justify-between border-t border-slate-200 pt-1.5 font-extrabold text-slate-900"><dt>Total quotation value</dt><dd data-testid="quote-total">{inr(q ? q.total : est.total)}</dd></div>
           <p className="text-[11px] text-slate-400 text-right">{q ? 'Calculated by the system when you save.' : 'Estimate; the system calculates the real figures when you save.'}</p>
         </dl>
-      </Card>
+      </Section>
 
-      <Card title="Commercial terms">
+      <Section title="Commercial terms">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Field label="Validity period (days)" htmlFor="qt-valid" required><input id="qt-valid" type="number" min="1" max="365" className={tcInput} disabled={ro} value={form.validityDays} onChange={e => set('validityDays', e.target.value)} /></Field>
           <div className="md:col-span-2"><Field label="Payment terms" htmlFor="qt-pay" required><input id="qt-pay" className={tcInput} disabled={ro} maxLength={2000} value={form.paymentTerms} onChange={e => set('paymentTerms', e.target.value)} placeholder="Type the agreed terms. The AI will not make them up." /></Field></div>
           <div className="md:col-span-3"><Field label="Delivery / implementation timeline" htmlFor="qt-time"><input id="qt-time" className={tcInput} disabled={ro} maxLength={1000} value={form.timeline} onChange={e => set('timeline', e.target.value)} /></Field></div>
           <div className="md:col-span-3"><Field label="Additional notes" htmlFor="qt-notes"><textarea id="qt-notes" className={`${tcInput} min-h-[70px]`} disabled={ro} maxLength={3000} value={form.notes} onChange={e => set('notes', e.target.value)} /></Field></div>
         </div>
-      </Card>
+      </Section>
 
       {!final && (
         <div className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 flex flex-col lg:flex-row lg:items-end gap-3">
@@ -319,7 +322,7 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
         </div>
       )}
 
-      <Card title="Quotation text" hint="Review and edit everything the AI wrote. It is a draft until you finalise it.">
+      <Section title="Quotation text" hint="Review and edit everything the AI wrote. It is a draft until you finalise it.">
         {(q?.content.missingInformation?.length ?? 0) > 0 && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-bold mb-1">The AI needs you to confirm</p><ul className="list-disc pl-5">{q!.content.missingInformation!.map(m => <li key={m}>{m}</li>)}</ul></div>
         )}
@@ -331,7 +334,7 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
             <div>
               <span className={`${'block text-xs font-medium text-slate-600 mb-1'}`}>Service descriptions</span>
               <div className="space-y-2">{form.lines.filter(l => l.serviceCode).map(l => (
-                <div key={l.serviceCode}><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`qt-sd-${l.serviceCode}`}>{priceOf.get(l.serviceCode)?.name || l.serviceCode}</label>
+                <div key={l.serviceCode}><label className="text-xs font-medium text-slate-500" htmlFor={`qt-sd-${l.serviceCode}`}>{priceOf.get(l.serviceCode)?.name || l.serviceCode}</label>
                   <textarea id={`qt-sd-${l.serviceCode}`} className={`${tcInput} min-h-[60px]`} disabled={ro} maxLength={1500} value={form.serviceDescriptions[l.serviceCode] || ''} onChange={e => set('serviceDescriptions', { ...form.serviceDescriptions, [l.serviceCode]: e.target.value })} /></div>
               ))}</div>
             </div>
@@ -339,7 +342,7 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
           <Field label="Exclusions (one per line)" htmlFor="qt-excl"><textarea id="qt-excl" className={`${tcInput} min-h-[70px]`} disabled={ro} value={form.exclusions} onChange={e => set('exclusions', e.target.value)} /></Field>
           <Field label="Other notes for the client (one per line)" htmlFor="qt-xnotes"><textarea id="qt-xnotes" className={`${tcInput} min-h-[70px]`} disabled={ro} value={form.extraNotes} onChange={e => set('extraNotes', e.target.value)} /></Field>
         </div>
-      </Card>
+      </Section>
 
       {preview && <QuotationPreview form={form} q={q} est={est} names={Object.fromEntries(prices.map(p => [p.serviceCode, p.name]))} client={client ? { name: client.name, company: client.company ?? null } : null} />}
 
@@ -367,12 +370,12 @@ const QuotationEditor: React.FC<{ id: string | null; contactId: string | null; o
 
 const QuotationPreview: React.FC<{ form: Form; q: BaQuotation | null; est: ReturnType<typeof estimate>; names: Record<string, string>; client: { name: string; company: string | null } | null }> = ({ form, q, est, names, client }) => (
   <section className="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-6 space-y-3" aria-label="Quotation preview">
-    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Preview (draft; the PDF is made when you generate it)</p>
+    <p className="text-xs font-medium text-slate-400">Preview (draft; the PDF is made when you generate it)</p>
     <h2 className="text-xl font-extrabold text-slate-900">Quotation {q ? q.number : ''}</h2>
     {client && <p className="text-sm text-slate-600">Prepared for {client.company || client.name}</p>}
     {form.introduction && <p className="text-sm whitespace-pre-wrap">{form.introduction}</p>}
     {form.understanding && <><h3 className="font-bold text-sm">Understanding of your requirements</h3><p className="text-sm whitespace-pre-wrap">{form.understanding}</p></>}
-    <table className="w-full text-sm"><thead><tr className="text-left text-xs text-slate-500"><th>Service</th><th className="text-right">Qty</th><th className="text-right">Unit price</th><th className="text-right">Total</th></tr></thead>
+    <table className="w-full text-left text-sm min-w-[900px]"><thead><tr className="text-left text-xs text-slate-500"><th>Service</th><th className="text-right">Qty</th><th className="text-right">Unit price</th><th className="text-right">Total</th></tr></thead>
       <tbody>{form.lines.map((l, i) => <tr key={i} className="border-t border-slate-100"><td className="py-1.5">{names[l.serviceCode] || l.serviceCode}{form.serviceDescriptions[l.serviceCode] ? <div className="text-xs text-slate-500">{form.serviceDescriptions[l.serviceCode]}</div> : null}</td><td className="text-right">{l.quantity}</td><td className="text-right">{inr(Number(l.unitPrice))}</td><td className="text-right">{inr(est.per[i])}</td></tr>)}</tbody></table>
     <p className="text-right font-bold">Total {inr(q ? q.total : est.total)}{form.gstApplicable ? ' (including GST)' : ' (GST not applied)'}</p>
     {form.paymentTerms && <p className="text-sm"><b>Payment terms:</b> {form.paymentTerms}</p>}

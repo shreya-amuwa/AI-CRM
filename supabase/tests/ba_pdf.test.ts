@@ -34,7 +34,7 @@ const odd = quote(true);
 odd.content = { introduction: 'Hello नमस्ते “quoted” – dash ₹ 5,000 ' + 'a'.repeat(300), exclusions: ['Ünïcode ✓'] };
 odd.client.company = 'Café Ünï ' + 'X'.repeat(120);
 check((await renderQuotationPdf(odd)).length > 1000, 'text the standard fonts cannot draw, and a word longer than the line, do not break the PDF');
-fs.writeFileSync(`${process.env.SAMPLE_DIR || '.'}/sample-quotation.pdf`, b);
+if (process.env.SAMPLE_DIR) fs.writeFileSync(`${process.env.SAMPLE_DIR}/sample-quotation.pdf`, b); // only when asked: for a look at the page
 
 const items = (n: number) => Array.from({ length: n }, (_v, i) => ({ text: `Point ${i + 1} about the business ` + 'detail '.repeat(12), basis: i % 2 ? 'ASSUMPTION' as const : 'VERIFIED' as const }));
 const scope: BaScope & { issuedOn: string; serviceNames: Record<string, string>; client: { name: string; company: string | null } } = {
@@ -58,5 +58,5 @@ check(d.getPageCount() >= 2 && /Scope of Project/.test(d.getTitle() || '') && /v
 check(Buffer.compare(Buffer.from(b), Buffer.from(await renderScopePdf(scope))) === 0, 'the same scope gives the same bytes');
 const sparse = await renderScopePdf({ ...scope, content: { projectScope: { overview: 'Only an overview' } } });
 check((await PDFDocument.load(sparse)).getPageCount() === 1, 'a sparse scope prints only what exists (no empty headings invented)');
-fs.writeFileSync(`${process.env.SAMPLE_DIR || '.'}/sample-scope.pdf`, b);
+if (process.env.SAMPLE_DIR) fs.writeFileSync(`${process.env.SAMPLE_DIR}/sample-scope.pdf`, b);
 console.log(`=== ${passed} BUSINESS ASSOCIATE PDF CHECKS PASSED ===`);

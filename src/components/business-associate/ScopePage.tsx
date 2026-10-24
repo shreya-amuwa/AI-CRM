@@ -5,6 +5,7 @@ import type { BaScope, BaScopeRow, ServicePrice } from '../../../shared/contract
 import { errorMessage } from '../../lib/api/client';
 import { businessAssociateApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
+import { Card, CardHead } from '../tasks/head/headParts';
 import { ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, dateText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
@@ -47,7 +48,7 @@ const ScopeStart: React.FC<{ initialContactId?: string; onOpen: (id: string) => 
     <div className="space-y-5">
       <PageTitle title="Scope of Project" subtitle="An AI-assisted business analysis and project blueprint for one client. You review it, edit it and finalise it as a PDF." />
       {error && <ErrorBanner message={error} />}
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
+      <Card className="p-5 space-y-4">
         <Field label="Select client" htmlFor="sc-client">
           <select id="sc-client" className={`${tcInput} max-w-lg`} value={contactId} onChange={e => setContactId(e.target.value)} disabled={contacts.items === null}>
             <option value="">{contacts.items === null ? 'Loading…' : 'Choose one of your contacts…'}</option>
@@ -57,23 +58,23 @@ const ScopeStart: React.FC<{ initialContactId?: string; onOpen: (id: string) => 
         {contactId && (
           <button type="button" className={tcBtn.primary} onClick={() => void start()} disabled={busy || versions === null}><FilePlus2 className="w-4 h-4" aria-hidden="true" /> {draft ? `Continue the draft (version ${draft.version})` : versions && versions.length ? 'Start a new version' : 'Start the Scope of Project'}</button>
         )}
-      </section>
+      </Card>
       {contactId && versions && (
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label="Versions">
-          <h2 className="px-5 py-4 border-b border-slate-100 text-base font-extrabold text-slate-900">Versions</h2>
-          {versions.length === 0 ? <EmptyState icon={FileSignature} title="No scope document for this client yet" /> : (
+        <Card label="Versions">
+          <h2 className="px-5 pt-5 pb-3 text-base font-extrabold text-slate-900">Versions</h2>
+          {versions.length === 0 ? <EmptyState title="No scope document for this client yet" /> : (
             <ul className="divide-y divide-slate-100">
               {versions.map(v => (
                 <li key={v.id} className="px-5 py-3 flex flex-wrap items-center gap-3">
                   <div className="min-w-0 flex-1"><div className="font-semibold text-slate-900">Version {v.version}</div><div className="text-xs text-slate-500">{v.status === 'FINAL' ? `Finalised ${dateText(v.finalizedAt)}` : `Updated ${dateText(v.updatedAt)}`} · {v.createdBy || ''}</div></div>
                   <DocBadge status={v.status} aiGenerated={v.aiGenerated} reviewed={v.reviewed} />
-                  <button type="button" className={tcBtn.link} onClick={() => onOpen(v.id)}>{v.status === 'DRAFT' ? 'Edit' : 'View'}</button>
-                  {v.hasPdf && <button type="button" className={tcBtn.link} onClick={() => void download(v.id)} aria-label={`Download version ${v.version}`}><Download className="w-3.5 h-3.5 inline" aria-hidden="true" /> PDF</button>}
+                  <button type="button" className={tcBtn.row} onClick={() => onOpen(v.id)}>{v.status === 'DRAFT' ? 'Edit' : 'View'}</button>
+                  {v.hasPdf && <button type="button" className={tcBtn.row} onClick={() => void download(v.id)} aria-label={`Download version ${v.version}`}><Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF</button>}
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </Card>
       )}
     </div>
   );
@@ -113,13 +114,17 @@ const AnalysisList: React.FC<{ label: string; items: AnalysisItem[]; onChange: (
 );
 
 const SectionCard: React.FC<{ title: string; section?: ScopeSection; busy: string | null; onRegenerate?: (s: ScopeSection) => void; canAi: boolean; children: React.ReactNode }> = ({ title, section, busy, onRegenerate, canAi, children }) => (
-  <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3">
-      <h2 className="text-base font-extrabold text-slate-900">{title}</h2>
-      {section && canAi && onRegenerate && <button type="button" className={tcBtn.secondary} disabled={busy !== null} onClick={() => onRegenerate(section)} aria-label={`Regenerate ${SCOPE_SECTION_LABELS[section]}`}><RefreshCw className={`w-3.5 h-3.5 ${busy === section ? 'animate-spin' : ''}`} aria-hidden="true" /> {busy === section ? 'Writing…' : 'Regenerate this section'}</button>}
-    </div>
-    <div className="p-5 space-y-4">{children}</div>
-  </section>
+  <Card>
+    <CardHead
+      title={title}
+      right={section && canAi && onRegenerate ? (
+        <button type="button" className={tcBtn.row} disabled={busy !== null} onClick={() => onRegenerate(section)} aria-label={`Regenerate ${SCOPE_SECTION_LABELS[section]}`}>
+          <RefreshCw className={`w-3.5 h-3.5 ${busy === section ? 'animate-spin' : ''}`} aria-hidden="true" /> {busy === section ? 'Writing…' : 'Regenerate this section'}
+        </button>
+      ) : undefined}
+    />
+    <div className="px-5 pb-5 space-y-4">{children}</div>
+  </Card>
 );
 
 const text = (v: string | undefined) => v ?? '';
@@ -242,7 +247,7 @@ const ScopeEditor: React.FC<{ id: string; onClose: () => void; onOpen: (id: stri
         {content.recommendedSolutions.map((r, i) => (
           <div key={i} className="rounded-xl border border-slate-200 p-3 space-y-2">
             <div className="flex gap-2 items-end">
-              <div className="flex-1"><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`sc-rs-${i}`}>Service</label>
+              <div className="flex-1"><label className="text-xs font-medium text-slate-500" htmlFor={`sc-rs-${i}`}>Service</label>
                 <select id={`sc-rs-${i}`} className={tcInput} disabled={ro} value={r.serviceCode} onChange={e => setC({ recommendedSolutions: content.recommendedSolutions.map((x, j) => (j === i ? { ...x, serviceCode: e.target.value } : x)) })}>
                   {!names.has(r.serviceCode) && <option value={r.serviceCode}>{r.serviceCode}</option>}
                   {catalogue.map(s => <option key={s.serviceCode} value={s.serviceCode}>{s.name}</option>)}
@@ -251,7 +256,7 @@ const ScopeEditor: React.FC<{ id: string; onClose: () => void; onOpen: (id: stri
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {([['reason', 'Why we recommend it'], ['benefits', 'Expected business benefits'], ['integrations', 'Proposed integrations'], ['dependencies', 'Dependencies and prerequisites'], ['considerations', 'Implementation considerations']] as const).map(([k, label]) => (
-                <div key={k}><label className="text-[11px] font-bold uppercase text-slate-500" htmlFor={`sc-rs-${i}-${k}`}>{label}</label>
+                <div key={k}><label className="text-xs font-medium text-slate-500" htmlFor={`sc-rs-${i}-${k}`}>{label}</label>
                   <textarea id={`sc-rs-${i}-${k}`} className={`${tcInput} min-h-[60px]`} disabled={ro} maxLength={1200} value={r[k]} onChange={e => setC({ recommendedSolutions: content.recommendedSolutions.map((x, j) => (j === i ? { ...x, [k]: e.target.value } : x)) })} /></div>
               ))}
             </div>
@@ -305,15 +310,15 @@ const ScopeEditor: React.FC<{ id: string; onClose: () => void; onOpen: (id: stri
       </SectionCard>
 
       {versions.length > 1 && (
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label="Version history">
-          <h2 className="px-5 py-3.5 border-b border-slate-100 text-base font-extrabold text-slate-900">Version history</h2>
+        <Card label="Version history">
+          <h2 className="px-5 pt-5 pb-3 text-base font-extrabold text-slate-900">Version history</h2>
           <ul className="divide-y divide-slate-100">{versions.map(v => (
             <li key={v.id} className="px-5 py-2.5 flex flex-wrap items-center gap-3 text-sm">
               <span className="font-semibold">Version {v.version}</span><DocBadge status={v.status} aiGenerated={v.aiGenerated} reviewed={v.reviewed} /><span className="text-xs text-slate-500 flex-1">{dateText(v.finalizedAt || v.updatedAt)}</span>
-              {v.id !== id && <button type="button" className={tcBtn.link} onClick={() => onOpen(v.id)}>Open</button>}
-              {v.hasPdf && <button type="button" className={tcBtn.link} onClick={() => void onFile('download', v.id)} aria-label={`Download version ${v.version}`}><Download className="w-3.5 h-3.5 inline" aria-hidden="true" /> PDF</button>}
+              {v.id !== id && <button type="button" className={tcBtn.row} onClick={() => onOpen(v.id)}>Open</button>}
+              {v.hasPdf && <button type="button" className={tcBtn.row} onClick={() => void onFile('download', v.id)} aria-label={`Download version ${v.version}`}><Download className="w-3.5 h-3.5" aria-hidden="true" /> PDF</button>}
             </li>))}</ul>
-        </section>
+        </Card>
       )}
 
       <div className="sticky bottom-0 z-10 -mx-4 sm:mx-0 border-t sm:border sm:rounded-2xl border-slate-200 bg-white/95 backdrop-blur p-3 flex flex-wrap items-center gap-2 shadow-sm">

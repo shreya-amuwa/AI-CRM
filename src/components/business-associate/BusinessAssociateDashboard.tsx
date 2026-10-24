@@ -3,6 +3,7 @@ import { CalendarClock, ClipboardList, FileText, FileSignature, Home, Target } f
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
+import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { LeadsPage, type LeadsApi } from '../telecaller/LeadsPage';
 import { businessAssociateApi } from '../../lib/api/endpoints';
@@ -68,7 +69,6 @@ export const BusinessAssociateDashboard: React.FC = () => {
       title="Amuwa Sales"
       subtitle="Business Associate"
       ariaLabel="Business Associate navigation"
-      tone="navy"
       groups={groups}
       active={page}
       onSelect={id => go(id as BaPage)}
@@ -80,7 +80,12 @@ export const BusinessAssociateDashboard: React.FC = () => {
           {profile?.team?.name ? ` · ${profile.team.name}` : ''}
         </div>
       }
-      topActions={<NotificationBell />}
+      topActions={
+        <>
+          <LeaveCenter />
+          <NotificationBell />
+        </>
+      }
       wide
     >
       <div className="mx-auto w-full max-w-[1400px]">

@@ -13,14 +13,14 @@ import { tcBtn, tcInput } from './ui';
 export const ConvertLead: React.FC<{ lead: TelecallerLead; onDone: () => void }> = ({ lead, onDone }) => {
   const [open, setOpen] = useState(false);
   if (lead.converted) {
-    return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200" title={`Handed over to ${lead.converted.businessAssociate || 'a Business Associate'}`}>Converted</span>;
+    return <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-emerald-50 text-emerald-700" title={`Handed over to ${lead.converted.businessAssociate || 'a Business Associate'}`}>Converted</span>;
   }
   const qualified = lead.callStatus === 'INTERESTED';
   return (
     <>
       <button
         type="button"
-        className={`${tcBtn.link} inline-flex items-center gap-1 ${qualified ? '' : 'opacity-40 cursor-not-allowed no-underline'}`}
+        className={tcBtn.row}
         disabled={!qualified}
         title={qualified ? 'Hand this qualified lead over to a Business Associate' : 'Set the call status to Interested first'}
         onClick={() => setOpen(true)}

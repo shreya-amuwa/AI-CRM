@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FileSpreadsheet, PhoneCall, Search } from 'lucide-react';
+import { FileSpreadsheet, Pencil, Search } from 'lucide-react';
 import { CALL_STATUSES, type CallStatus, type TelecallerContact, type TelecallerContactList, type TelecallerSheet } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { telecallerApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
-import { Dialog, ErrorBanner, Field, Pager, Spinner, todayIso, useDebounced } from '../team-member/pipeline/shared';
+import { Avatar, Dialog, ErrorBanner, Field, Pager, Spinner, todayIso, useDebounced } from '../team-member/pipeline/shared';
+import { Card, StatCard as HeadStat, Tabs } from '../tasks/head/headParts';
 import { CallStatusBadge, CALL_STATUS_OPTIONS, EmptyState, dateText, dateTimeText, notifyTelecallerChanged, tcBtn, tcInput, tcSelect } from './ui';
 
 const FILTERS: { value: '' | CallStatus; label: string }[] = [
@@ -79,17 +80,17 @@ export const TasksPage: React.FC<{ initialStatus?: string }> = ({ initialStatus 
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
 
       {sheetsLoaded && sheets.length === 0 && !error ? (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <Card>
           <EmptyState icon={FileSpreadsheet} title="No contact sheet has been assigned to you yet">
             When your Department Head assigns you an Excel contact sheet, its contacts appear here and you will get a notification.
           </EmptyState>
-        </div>
+        </Card>
       ) : (
         <>
-          <section aria-label="Contact sheet" className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 sm:p-5">
+          <Card label="Contact sheet" className="p-5">
             <div className="flex flex-wrap items-start gap-4">
               <div className="min-w-0 flex-1">
-                <label htmlFor="tc-sheet" className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Sheet</label>
+                <label htmlFor="tc-sheet" className="block text-xs font-medium text-slate-600 mb-1">Sheet</label>
                 <select id="tc-sheet" className={`${tcSelect} w-full sm:w-auto sm:min-w-[20rem] max-w-full`} value={listId} onChange={e => setListId(e.target.value)}>
                   <option value="">All sheets ({sheets.length})</option>
                   {sheets.map(s => <option key={s.id} value={s.id}>{s.fileName} · {dateText(s.assignedAt)}</option>)}
@@ -103,37 +104,17 @@ export const TasksPage: React.FC<{ initialStatus?: string }> = ({ initialStatus 
                   <p className="mt-2 text-sm text-slate-500">Showing the contacts of all your sheets.</p>
                 )}
               </div>
-              <dl className="grid grid-cols-3 gap-3 text-center shrink-0">
-                {[['Total', summary.total, 'text-slate-900'], ['Pending', summary.pending, 'text-amber-600'], ['Completed', summary.completed, 'text-emerald-600']].map(([label, value, tone]) => (
-                  <div key={label as string} className="rounded-xl bg-slate-50 px-4 py-2.5 min-w-[5.5rem]">
-                    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-                    <dd className={`text-xl font-extrabold ${tone}`} data-testid={`sheet-${(label as string).toLowerCase()}`}>{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="p-4 flex flex-col gap-3 border-b border-slate-100">
-              <div role="tablist" aria-label="Call status" className="flex flex-wrap gap-1.5">
-                {FILTERS.map(f => {
-                  const n = f.value ? counts[f.value] ?? 0 : allCount;
-                  const on = status === f.value;
-                  return (
-                    <button
-                      key={f.value || 'all'}
-                      type="button"
-                      role="tab"
-                      aria-selected={on}
-                      onClick={() => setStatus(f.value)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-                    >
-                      {f.label} <span className={on ? 'text-blue-100' : 'text-slate-400'}>{n}</span>
-                    </button>
-                  );
-                })}
+              <div className="grid grid-cols-3 gap-3 shrink-0 w-full sm:w-auto sm:min-w-[24rem]">
+                <HeadStat label="Total" value={summary.total} testId="sheet-total" />
+                <HeadStat label="Pending" value={summary.pending} tone="amber" testId="sheet-pending" />
+                <HeadStat label="Completed" value={summary.completed} tone="green" testId="sheet-completed" />
               </div>
+            </div>
+          </Card>
+
+          <Card className="overflow-hidden">
+            <div className="p-4 flex flex-col gap-3 border-b border-slate-100">
+              <Tabs label="Call status" value={status} onChange={v => setStatus(v as '' | CallStatus)} options={FILTERS.map(f => ({ id: f.value as string, label: f.label, count: f.value ? counts[f.value] ?? 0 : allCount }))} />
               <div className="relative max-w-md">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input className={`${tcInput} pl-9`} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, company, phone, email or remarks" aria-label="Search contacts" />
@@ -143,24 +124,24 @@ export const TasksPage: React.FC<{ initialStatus?: string }> = ({ initialStatus 
             {loading && !data ? (
               <Spinner label="Loading contacts…" />
             ) : !data || data.items.length === 0 ? (
-              <EmptyState icon={PhoneCall} title={query || status ? 'No contacts match' : 'No contacts here'}>
+              <EmptyState title={query || status ? 'No contacts match' : 'No contacts here'}>
                 {query || status ? 'Try another filter or clear the search.' : 'This sheet has no contacts.'}
               </EmptyState>
             ) : (
               <>
                 <div className="hidden md:block overflow-x-auto">
-                  <table className="w-full text-sm" aria-busy={loading}>
+                  <table className="w-full text-left text-sm min-w-[1100px]" aria-busy={loading}>
                     <thead>
-                      <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
+                      <tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">
                         {['Contact Name', 'Company Name', 'Phone Number', 'Email', 'Assigned Date', 'Call Status', 'Last Called', 'Follow-up Date', 'Remarks', 'Actions'].map(h => (
-                          <th key={h} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>
+                          <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {data.items.map(c => (
-                        <tr key={c.id} className="hover:bg-slate-50/70 align-top">
-                          <td className="px-4 py-3 font-semibold text-slate-900">{c.name}</td>
+                        <tr key={c.id} className="hover:bg-slate-50/60 align-top">
+                          <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={c.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{c.name}</span></div></td>
                           <td className="px-4 py-3 text-slate-600">{c.company || '-'}</td>
                           <td className="px-4 py-3 whitespace-nowrap"><a href={`tel:${c.phone}`} className="text-blue-600 hover:underline">{c.phone}</a></td>
                           <td className="px-4 py-3 text-slate-600 break-all">{c.email || '-'}</td>
@@ -169,7 +150,7 @@ export const TasksPage: React.FC<{ initialStatus?: string }> = ({ initialStatus 
                           <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateTimeText(c.lastCalledAt)}</td>
                           <td className={`px-4 py-3 whitespace-nowrap ${c.followUpDue ? 'text-rose-600 font-semibold' : 'text-slate-600'}`}>{dateText(c.followUpDate)}{c.followUpDue ? ' · due' : ''}</td>
                           <td className="px-4 py-3 text-slate-600 max-w-[16rem]"><span className="line-clamp-2" title={c.remarks || undefined}>{c.remarks || '-'}</span></td>
-                          <td className="px-4 py-3"><button type="button" className={tcBtn.link} onClick={() => setEditing(c)} aria-label={`Update call for ${c.name}`}>Update</button></td>
+                          <td className="px-4 py-3"><button type="button" className={tcBtn.row} onClick={() => setEditing(c)} aria-label={`Update call for ${c.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Update</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -198,7 +179,7 @@ export const TasksPage: React.FC<{ initialStatus?: string }> = ({ initialStatus 
                 <Pager page={page} pageSize={pageSize} total={data.total} noun="contacts" onPage={setPage} onPageSize={setPageSize} />
               </>
             )}
-          </section>
+          </Card>
         </>
       )}
 

@@ -36,10 +36,10 @@ const STAT_TONE: Record<StatTone, string> = {
   red: 'text-rose-700'
 };
 
-export const StatCard: React.FC<{ label: string; value: number | string; foot?: string; tone?: StatTone }> = ({ label, value, foot, tone = 'neutral' }) => (
+export const StatCard: React.FC<{ label: string; value: number | string; foot?: string; tone?: StatTone; testId?: string }> = ({ label, value, foot, tone = 'neutral', testId }) => (
   <div className="bg-white rounded-2xl border border-slate-200 p-5">
     <div className="text-[13px] font-semibold text-slate-500">{label}</div>
-    <div className={`mt-1.5 text-[32px] leading-none font-extrabold ${STAT_TONE[tone]}`}>{value}</div>
+    <div className={`mt-1.5 text-[32px] leading-none font-extrabold ${STAT_TONE[tone]}`} data-testid={testId}>{value}</div>
     {foot && <div className="mt-2 text-xs text-slate-500">{foot}</div>}
   </div>
 );

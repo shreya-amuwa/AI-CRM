@@ -7,6 +7,7 @@ import { telecallerApi } from '../../lib/api/endpoints';
 import { parseContactSheet, sha256Hex, SHEET_COLUMNS, toBase64, type SheetRow } from '../../lib/telecallerSheet';
 import { readXlsx } from '../../lib/xlsxReader';
 import { PageTitle } from '../layout/shell';
+import { Card } from '../tasks/head/headParts';
 import { ErrorBanner, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, dateText, tcBtn, tcInput } from './ui';
 
@@ -128,13 +129,13 @@ export const ContactSheets: React.FC = () => {
       {assignees === null ? (
         <Spinner />
       ) : assignees.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <EmptyState icon={FileSpreadsheet} title="No Telecaller in your department yet">
+        <div className="rounded-2xl border border-slate-200 bg-white">
+          <EmptyState title="No Telecaller in your department yet">
             Create a Sales team member with the Sales role <strong>Telecaller</strong> in <em>Team Members &amp; Access</em>, then assign a sheet here.
           </EmptyState>
         </div>
       ) : (
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4" aria-label="Assign a contact sheet">
+        <Card className="p-5 space-y-4" label="Assign a contact sheet">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label htmlFor="cs-assignee" className="block text-xs font-medium text-slate-600 mb-1">Assign to <span aria-hidden="true">*</span></label>
@@ -186,7 +187,7 @@ export const ContactSheets: React.FC = () => {
               )}
               {check.preview.length > 0 && (
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-left text-sm min-w-[860px]">
                     <caption className="sr-only">Preview of the first {check.preview.length} valid contacts</caption>
                     <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 bg-slate-50">{['Row', 'Contact Name', 'Company', 'Phone', 'Email', 'Remarks'].map(h => <th key={h} scope="col" className="px-3 py-2 font-bold">{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">
@@ -204,17 +205,17 @@ export const ContactSheets: React.FC = () => {
               </div>
             </div>
           )}
-        </section>
+        </Card>
       )}
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label="Assigned sheets">
-        <h2 className="px-5 py-4 border-b border-slate-100 text-base font-extrabold text-slate-900">Assigned sheets</h2>
+      <Card label="Assigned sheets">
+        <h2 className="px-5 pt-5 pb-3 text-base font-extrabold text-slate-900">Assigned sheets</h2>
         {sheets.length === 0 ? (
-          <EmptyState icon={FileSpreadsheet} title="Nothing assigned yet" />
+          <EmptyState title="Nothing assigned yet" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">{['Sheet', 'Assigned to', 'Assigned by', 'Date', 'Total', 'Pending', 'Completed', 'Original file'].map(h => <th key={h} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>)}</tr></thead>
+            <table className="w-full text-left text-sm min-w-[860px]">
+              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Sheet', 'Assigned to', 'Assigned by', 'Date', 'Total', 'Pending', 'Completed', 'Original file'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {sheets.map(s => (
                   <tr key={s.id}>
@@ -232,7 +233,7 @@ export const ContactSheets: React.FC = () => {
             </table>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 };
