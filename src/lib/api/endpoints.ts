@@ -7,7 +7,7 @@ import type {
   SalesSubRole,
   HeadDivision,
   MyDepartmentScopes,
-  DepartmentAccessInfo,
+  DepartmentAccessInfo, DepartmentHeadAccess,
   SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
@@ -468,6 +468,8 @@ export const usersApi = {
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
   setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
   setHeadDivision: (id: string, division: HeadDivision | null) => api.post<Profile>(`/users/${id}/head-division`, { division }),
+  /** Department Heads who work in a department (own or authorised), with all their departments. */
+  departmentHeads: (departmentId: string) => api.get<DepartmentHeadAccess[]>('/users/department-heads', { departmentId }),
   departmentAccess: (id: string) => api.get<DepartmentAccessInfo>(`/users/${id}/department-access`),
   setDepartmentAccess: (id: string, body: { departmentId: string; division: HeadDivision; granted: boolean }) => api.post<DepartmentAccessInfo>(`/users/${id}/department-access`, body),
   setSalesSubRole: (id: string, role: SalesSubRole | null) => api.post<Profile>(`/users/${id}/sales-sub-role`, { role }),

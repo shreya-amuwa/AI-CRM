@@ -5293,6 +5293,57 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('gs', 'GET', '/reports/department-income');
   check(r.status === 200 && r.json.data.scope.name !== 'Wabatalk' && Number(r.json.data.byDivision.support.collected) === 0, 'scopes: D Talk\'s Sales head sees none of Wabatalk\'s revenue', r);
 
+  // Add Team Member: ONE account created for several departments (shared Support head), or for both functions of a department
+  const headCount = async (email: string) => (await db.query(`select count(*)::int n from public.profiles where lower(email) = lower($1)`, [email])).rows[0].n as number;
+  r = await api('sa', 'POST', '/users', { email: 'multi.support@amuwa.com', fullName: 'Multi Support Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SUPPORT',
+    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SUPPORT' }, { departmentId: wtId, division: 'SUPPORT' }] });
+  check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SUPPORT', 'create: one Department Head account is created with three departments', r);
+  const multiId = r.json.data.id as string;
+  check((await headCount('multi.support@amuwa.com')) === 1, 'create: one account, no duplicates');
+  r = await api('sa', 'GET', `/users/${multiId}/department-access`);
+  check(r.status === 200 && r.json.data.grants.length === 2, 'create: the extra departments are persisted as grants', r);
+  tokens.set('multi', tokenFor(multiId));
+  r = await api('multi', 'GET', '/me/department-scopes');
+  check(r.status === 200 && r.json.data.departments.map((d: any) => d.slug).sort().join() === 'wabastar,wabatalk,whatsbox' && r.json.data.departments.every((d: any) => d.divisions.join() === 'SUPPORT'),
+    'create: the new head is offered Wabastar, Whatsbox and Wabatalk, Support only', r);
+  r = await api('sa', 'GET', `/users/department-heads?departmentId=${dep('whatsbox').id}`);
+  const entry = (r.json.data ?? []).find((h: any) => h.profile.id === multiId);
+  check(r.status === 200 && entry && entry.access.length === 3 && entry.profile.departmentId === dep('wabastar').id, 'create: Whatsbox lists the shared head with all three departments', r);
+  r = await api('multi', 'GET', `/users/department-heads?departmentId=${dep('whatsbox').id}`);
+  check(r.status === 200 && r.json.data.some((h: any) => h.profile.id === multiId), 'create: a head can list the heads of a department they work in', r);
+  r = await api('multi', 'GET', `/users/department-heads?departmentId=${dep('digitree').id}`);
+  check(r.status === 200 && r.json.data.length === 0, 'create: but not of a department they do not work in', r);
+  r = await api('a', 'GET', `/users/department-heads?departmentId=${dep('whatsbox').id}`);
+  check(r.status === 403, 'create: a Team Member cannot', r);
+  // a wrong pair never leaves a half-made account
+  r = await api('sa', 'POST', '/users', { email: 'multi.bad@amuwa.com', fullName: 'Bad Pair', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SALES',
+    additionalAccess: [{ departmentId: dep('accounts').id, division: 'SALES' }] });
+  check(r.status === 422 && /no Sales team/.test(r.json.error.message) && (await headCount('multi.bad@amuwa.com')) === 0, 'create: a department without such a team is refused and no account is made', r);
+  r = await api('sa', 'POST', '/users', { email: 'multi.bad2@amuwa.com', fullName: 'Bad Pair Two', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('amuwa').id, headDivision: 'SUPPORT',
+    additionalAccess: [{ departmentId: dep('dtalk').id, division: 'SUPPORT' }] });
+  check(r.status === 422 && /Give Wabatalk instead/.test(r.json.error.message) && (await headCount('multi.bad2@amuwa.com')) === 0, 'create: D Talk\'s Support must be given as Wabatalk', r);
+  r = await api('sa', 'POST', '/users', { email: 'multi.bad3@amuwa.com', fullName: 'Not A Head', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Sales'),
+    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SALES' }] });
+  check(r.status === 422 && (await headCount('multi.bad3@amuwa.com')) === 0, 'create: only a Department Head can be given extra departments', r);
+  r = await api('dh', 'POST', '/users', { email: 'multi.bad4@amuwa.com', fullName: 'Not Allowed', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastore').id, headDivision: 'SALES',
+    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SALES' }] });
+  check(r.status === 403 && (await headCount('multi.bad4@amuwa.com')) === 0, 'create: a Department Head cannot create heads or give departments', r);
+  // one person for both functions of a department
+  r = await api('sa', 'POST', '/users', { email: 'multi.both@amuwa.com', fullName: 'Both Functions Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('mpillar').id,
+    additionalAccess: [{ departmentId: dep('mpillar').id, division: 'SALES' }, { departmentId: dep('mpillar').id, division: 'SUPPORT' }] });
+  check(r.status === 201 && !r.json.data.headDivision, 'create: one person for Sales and Support of a department', r);
+  tokens.set('both', tokenFor(r.json.data.id));
+  r = await api('both', 'GET', '/me/department-scopes');
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'create: that head gets the Sales | Support selector', r);
+  check((await names('both', scope('mpillar', 'SALES'))).join() === 'SCOPE mpillar Sales' && (await names('both', scope('mpillar', 'SUPPORT'))).join() === 'SCOPE mpillar Support', 'create: switching function changes the data, not the department');
+  // removing an assignment removes the access at once
+  r = await api('sa', 'POST', `/users/${multiId}/department-access`, { departmentId: dep('whatsbox').id, division: 'SUPPORT', granted: false });
+  check(r.status === 200, 'create: the Super Admin removes Whatsbox from the head', r);
+  check((await names('multi', scope('whatsbox'))).join() === '', 'create: Whatsbox data is no longer reachable by that head');
+  r = await api('multi', 'GET', '/me/department-scopes');
+  check(r.json.data.departments.map((d: any) => d.slug).sort().join() === 'wabastar,wabatalk', 'create: and no longer offered', r);
+  check((await headCount('multi.support@amuwa.com')) === 1, 'create: assignment changes never create another account');
+
   // Group B: the department head 'dh' (Wabastore, no side set) handles both functions
   for (const division of ['SALES', 'SUPPORT']) {
     r = await api('sa', 'POST', `/users/${(await api('dh', 'GET', '/me')).json.data.id}/department-access`, { departmentId: wab.id, division, granted: true });

@@ -3,13 +3,15 @@ import {
   UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
+import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type DepartmentHeadAccess, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
 import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
 import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
+import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
+import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, type HeadFunction } from '../../lib/scope/headAssignment';
 import {
   ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
@@ -69,7 +71,7 @@ function generatePassword(): string {
 
 export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all' }) => {
   const { profile } = useAuth();
-  const { departments } = useDepartments();
+  const { departments, allDepartments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
   const departmentId = department?.dbId || (profile?.department?.slug === departmentSlug ? profile.departmentId || undefined : undefined);
   const division = subDept ? DIVISION_BY_SUBDEPT[subDept] : undefined;
@@ -116,7 +118,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [accessFor, setAccessFor] = useState<Profile | null>(null);
   // Heads already in the chosen department; one per side (Sales / Support) is allowed.
   const [existingHeads, setExistingHeads] = useState<Profile[]>([]);
-  const [headDivision, setHeadDivision] = useState<HeadDivision | ''>('');
+  // Department Head account: the function (Sales / Support / one person for both) and the departments ONE account manages (the first is the home department).
+  const [headFn, setHeadFn] = useState<HeadFunction | ''>('');
+  const [headDepts, setHeadDepts] = useState<string[]>([]);
+  const [headDeptsInit, setHeadDeptsInit] = useState(false);
+  const [assignTeams, setAssignTeams] = useState<AssignableTeam[]>([]);
+  const [headAccess, setHeadAccess] = useState<DepartmentHeadAccess[]>([]);
+  const headDivision: HeadDivision | '' = headFn === 'SALES' || headFn === 'SUPPORT' ? headFn : '';
   const ask = (req: ConfirmRequest) => setConfirmBox(req);
 
   /** The team that matches the current sub-department (e.g. Support). */
@@ -172,13 +180,43 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // Back to page 1 when the list changes scope.
   useEffect(() => setPage(1), [scope, departmentId]);
 
+  const assignable = useMemo<AssignableDepartment[]>(
+    () => allDepartments.filter(d => d.dbId).map(d => ({ id: d.dbId as string, name: d.name, slug: d.id, facetOf: d.facetOf, facetDivision: d.facetDivision })),
+    [allDepartments]
+  );
+  // The department list at the top only chooses whose members are shown; the head starts with that department selected.
+  useEffect(() => {
+    if (departmentId && !headDeptsInit) {
+      setHeadDepts([departmentId]);
+      setHeadDeptsInit(true);
+    }
+  }, [departmentId, headDeptsInit]);
+  // The functions each department has teams for (a head can only be given a function the department really has).
+  useEffect(() => {
+    if (profile?.role !== 'SUPER_ADMIN' || !allowedRoles.includes('DEPARTMENT_HEAD')) return;
+    organizationApi.teams().then(ts => setAssignTeams(ts.map(t => ({ departmentId: t.departmentId, division: t.division }))), () => setAssignTeams([]));
+  }, [profile?.role, allowedRoles]);
+  // The department the head is placed in (the first one chosen; a side department such as Wabatalk is placed in its base department).
+  const headHome = headDepts[0] ? assignable.find(d => d.id === headDepts[0]) : undefined;
+  const headHomeId = headHome ? headHome.facetOf ?? headHome.id : departmentId;
+  const headHomeName = (headHome && (assignable.find(d => d.id === headHomeId)?.name || headHome.name)) || department?.name;
+
   // One Department Head per department and side (Sales / Support): warn before trying to create a second.
   useEffect(() => {
-    if (!departmentId || !allowedRoles.includes('DEPARTMENT_HEAD')) return setExistingHeads([]);
+    if (!headHomeId || !allowedRoles.includes('DEPARTMENT_HEAD')) return setExistingHeads([]);
     usersApi
-      .list({ departmentId, role: 'DEPARTMENT_HEAD', pageSize: 10 })
+      .list({ departmentId: headHomeId, role: 'DEPARTMENT_HEAD', pageSize: 10 })
       .then(r => setExistingHeads(r.items.filter(p => p.status !== 'REVOKED' && p.status !== 'REJECTED')), () => setExistingHeads([]));
-  }, [departmentId, allowedRoles, created, members]);
+  }, [headHomeId, allowedRoles, created, members]);
+
+  // Heads who work in this department without being placed in it (shared heads), with every department they work in.
+  const loadHeadAccess = useCallback(async () => {
+    if (!departmentId || view === 'members' || (profile?.role !== 'SUPER_ADMIN' && profile?.role !== 'DEPARTMENT_HEAD')) return setHeadAccess([]);
+    setHeadAccess(await usersApi.departmentHeads(departmentId).catch(() => []));
+  }, [departmentId, view, profile?.role]);
+  useEffect(() => {
+    void loadHeadAccess();
+  }, [loadHeadAccess, created]);
 
   useEffect(() => {
     if (!departmentId) return;
@@ -209,6 +247,14 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && selectedTeam?.division === 'SALES';
   const subDeptLabel = selectedTeam ? `${department?.name || ''} · ${selectedTeam.name}` : department?.name || departmentSlug;
 
+  // Heads who work here without being placed here (shared heads) are listed too, with every department they work in.
+  const accessOf = new Map(headAccess.map(h => [h.profile.id, h.access]));
+  const memberIds = new Set(members.map(m => m.id));
+  const sharedIds = new Set(headAccess.filter(h => !memberIds.has(h.profile.id) && h.profile.id !== profile.id).map(h => h.profile.id));
+  // Department Heads belong to no team, so (as the heads placed here) they show under "Whole department".
+  const showShared = !isTeamLead && scope === 'department';
+  const rows = [...members, ...(showShared ? headAccess.filter(h => sharedIds.has(h.profile.id)).map(h => h.profile) : [])];
+
   const resetForm = () => {
     setFullName('');
     setEmail('');
@@ -219,7 +265,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setBloodGroup('');
     setEmergencyContact('');
     setSalesSubRole('');
-    setHeadDivision('');
+    setHeadFn('');
+    setHeadDepts(departmentId ? [departmentId] : []);
     setShowPassword(false);
   };
 
@@ -259,17 +306,27 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setFormError('Date of birth cannot be in the future. Please enter the real date of birth.');
       return;
     }
+    let headPlan: { departmentId: string; headDivision?: HeadDivision; additionalAccess: { departmentId: string; division: HeadDivision }[] } | null = null;
+    if (role === 'DEPARTMENT_HEAD') {
+      const plan = buildHeadAssignment({ fn: headFn, selectedIds: headDepts, departments: assignable, teams: assignTeams });
+      if (!plan.ok) {
+        setFormError(plan.error);
+        return;
+      }
+      headPlan = plan;
+    }
     const parsed = userCreateSchema.safeParse({
       email,
       fullName,
       password,
       role,
-      departmentId: role === 'DEPARTMENT_HEAD' ? departmentId : undefined,
+      departmentId: headPlan ? headPlan.departmentId : undefined,
       teamId: needsTeam ? teamId || undefined : undefined,
       position: position || undefined,
       technicalConsultant: consultant || undefined,
       salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
-      headDivision: role === 'DEPARTMENT_HEAD' && headDivision ? headDivision : undefined,
+      headDivision: headPlan?.headDivision,
+      additionalAccess: headPlan && headPlan.additionalAccess.length ? headPlan.additionalAccess : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, emergencyContact }
     });
     if (!parsed.success) {
@@ -510,10 +567,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </div>
           </label>
 
-          <label className="block text-xs font-semibold text-slate-700">
-            Department
-            <input className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={department?.name || departmentSlug} readOnly aria-readonly="true" />
-          </label>
+          {role !== 'DEPARTMENT_HEAD' && (
+            <label className="block text-xs font-semibold text-slate-700">
+              Department
+              <input className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={department?.name || departmentSlug} readOnly aria-readonly="true" />
+              <span className="block mt-1 font-normal text-slate-500">The department chosen at the top of this window.</span>
+            </label>
+          )}
 
           <label className="block text-xs font-semibold text-slate-700">
             Role *
@@ -547,27 +607,21 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           )}
 
           {role === 'DEPARTMENT_HEAD' && (
-            <label className="block text-xs font-semibold text-slate-700">
-              Department Head of *
-              <select
-                id="staff-head-division"
-                className={`${inputClass} mt-1 cursor-pointer`}
-                value={headDivision}
-                onChange={e => setHeadDivision(e.target.value as HeadDivision | '')}
-                required
-              >
-                <option value="">Select Sales or Support…</option>
-                {HEAD_DIVISIONS.map(d => (
-                  <option key={d} value={d} disabled={!!headOfSide(d)}>
-                    {HEAD_DIVISION_LABELS[d]} Department Head{headOfSide(d) ? ` (taken by ${headOfSide(d)!.fullName})` : ''}
-                  </option>
-                ))}
-              </select>
-              <span className="block mt-1 font-normal text-slate-500">
-                A department has one Sales head and one Support head. Both open the Department Head dashboard.
+            <>
+              <HeadDepartmentsField
+                fn={headFn}
+                onFn={setHeadFn}
+                selected={headDepts}
+                onSelected={setHeadDepts}
+                departments={assignable}
+                teams={assignTeams}
+                inputClass={inputClass}
+              />
+              <p className="text-[11px] text-slate-500">
+                A department has one Sales head and one Support head (the department the head is placed in is checked for this); a head can also be given other departments they share.
                 {unlabelledHead && ` ${unlabelledHead.fullName} has no side set yet — set it in the list below.`}
-              </span>
-            </label>
+              </p>
+            </>
           )}
 
           {showSalesRole && (
@@ -629,7 +683,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                {department?.name || 'This department'} already has a {HEAD_DIVISION_LABELS[headDivision as HeadDivision]} Department Head (<strong>{existingHead.fullName}</strong>). A department can have only one for each side.
+                {headHomeName || 'This department'} already has a {HEAD_DIVISION_LABELS[headDivision as HeadDivision]} Department Head (<strong>{existingHead.fullName}</strong>). A department can have only one for each side.
               </span>
             </div>
           )}
@@ -642,7 +696,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <button
             type="submit"
-            disabled={saving || !departmentId || (role === 'DEPARTMENT_HEAD' && (!headDivision || !!existingHead))}
+            disabled={saving || !departmentId || (role === 'DEPARTMENT_HEAD' && (!headFn || headDepts.length === 0 || !!existingHead))}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}
@@ -678,7 +732,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           )}
           {listError && <div className="p-2.5 rounded-xl text-xs border bg-rose-50 border-rose-200 text-rose-700">{listError}</div>}
 
-          {!loading && members.length === 0 && !listError ? (
+          {!loading && rows.length === 0 && !listError ? (
             <p className="text-xs text-slate-500 py-8 text-center">{view === 'manage' ? 'No members yet. Use Add Member to create the first account.' : manage ? 'No members yet. Create the first account using the form.' : 'No members yet. Use Add Team Member to create the first account.'}</p>
           ) : (
             <div className="overflow-x-auto">
@@ -693,7 +747,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map(m => (
+                  {rows.map(m => (
                     <tr key={m.id} className="border-b border-slate-50 align-top">
                       <td className="py-2.5 pr-3">
                         <div className="font-semibold text-slate-900">{m.fullName}</div>
@@ -702,6 +756,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       <td className="py-2.5 pr-3 text-slate-700">
                         {staffRoleLabel(m)}
                         {m.role === 'DEPARTMENT_HEAD' && m.headDivision && <div className="text-slate-400">{HEAD_DIVISION_LABELS[m.headDivision]}</div>}
+                        {m.role === 'DEPARTMENT_HEAD' && (accessOf.get(m.id)?.length ?? 0) > 1 && (
+                          <div className="mt-0.5 text-[11px] text-indigo-700" data-testid={`head-access-${m.id}`}>
+                            Works in: {accessOf.get(m.id)!.map(a => `${a.department}${a.division ? ` (${HEAD_DIVISION_LABELS[a.division]})` : ''}`).join(', ')}
+                          </div>
+                        )}
+                        {m.role === 'DEPARTMENT_HEAD' && sharedIds.has(m.id) && <div className="text-[11px] text-slate-400">Shared head · home department {m.department?.name || '-'}</div>}
                         {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
                           <label className="mt-1 block text-[11px] font-semibold text-blue-600">
                             <span className="sr-only">Side of {m.fullName}</span>
@@ -837,7 +897,16 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           </p>
         </div>
       </div>
-      {accessFor && <DepartmentAccessDialog member={accessFor} onClose={() => setAccessFor(null)} />}
+      {accessFor && (
+        <DepartmentAccessDialog
+          member={accessFor}
+          onClose={() => {
+            setAccessFor(null);
+            void loadMembers();
+            void loadHeadAccess();
+          }}
+        />
+      )}
       {confirmBox && <ConfirmDialog request={confirmBox} onClose={() => setConfirmBox(null)} />}
     </div>
   );

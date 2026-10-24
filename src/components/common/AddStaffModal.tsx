@@ -33,17 +33,17 @@ export const AddStaffModal: React.FC<{ onClose: () => void }> = ({ onClose }) =>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 id="add-staff-title" className="text-lg font-bold text-slate-900">Add Team Member</h2>
-            <p className="text-xs text-slate-500">Choose the department, then the role: Department Head, Team Lead, Team Member or Technical Consultant.</p>
+            <p className="text-xs text-slate-500">Create a Department Head, Team Lead, Team Member or Technical Consultant. The department list on the right only chooses whose members are shown; a Department Head's own departments are chosen in the form.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold text-slate-700" htmlFor="add-staff-department">
-              Department
+          <div className="flex items-center gap-2 min-w-0">
+            <label className="text-xs font-semibold text-slate-700 shrink-0" htmlFor="add-staff-department">
+              Show members of
             </label>
             <select
               id="add-staff-department"
               value={slug}
               onChange={e => setSlug(e.target.value)}
-              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm min-w-[220px]"
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm min-w-0 flex-1 sm:flex-none sm:min-w-[220px]"
             >
               {usable.map(d => (
                 <option key={d.id} value={d.id}>

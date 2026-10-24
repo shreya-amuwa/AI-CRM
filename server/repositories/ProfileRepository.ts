@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DepartmentAccessInfo, HeadDivision, MyDepartmentScopes, Paginated, Profile, Role } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
@@ -86,6 +86,20 @@ export class ProfileRepository {
 
   async setDepartmentAccess(id: string, departmentId: string, division: HeadDivision, granted: boolean): Promise<DepartmentAccessInfo> {
     return unwrap(await this.db.rpc('department_access_set', { p_profile: id, p_department: departmentId, p_division: division, p_granted: granted })) as DepartmentAccessInfo;
+  }
+
+  /** The (department, function) pairs the database would refuse, with the reason ([] = all fine). */
+  async checkDepartmentAccess(pairs: { departmentId: string; division: HeadDivision }[]): Promise<{ departmentId: string; division: string; problem: string }[]> {
+    return unwrap(await this.db.rpc('department_access_check', { p_pairs: pairs })) as { departmentId: string; division: string; problem: string }[];
+  }
+
+  /** Department Heads who work in a department (own or authorised) with all their departments. */
+  async departmentHeads(departmentId: string): Promise<DepartmentHeadAccess[]> {
+    const rows = unwrap(await this.db.rpc('department_heads_overview', { p_department: departmentId })) as { profileId: string; access: DepartmentHeadAccess['access'] }[];
+    if (!rows.length) return [];
+    const profiles = unwrap(await this.db.from('profiles').select(COLUMNS).in('id', rows.map(r => r.profileId))) as any[];
+    const byId = new Map(profiles.map(p => [p.id, mapProfile(p)]));
+    return rows.filter(r => byId.has(r.profileId)).map(r => ({ profile: byId.get(r.profileId)!, access: r.access ?? [] }));
   }
 
   async setHeadDivision(id: string, division: HeadDivision | null): Promise<void> {

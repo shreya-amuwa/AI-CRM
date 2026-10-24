@@ -41,6 +41,7 @@ export const routes: RouteDef[] = [
 
   { method: 'GET', path: '/users', handler: users.list },
   { method: 'POST', path: '/users', handler: users.create, options: S },
+  { method: 'GET', path: '/users/department-heads', handler: users.departmentHeads },
   { method: 'GET', path: '/users/:id', handler: users.get },
   { method: 'PATCH', path: '/users/:id', handler: users.assign, options: S },
   { method: 'POST', path: '/users/:id/status', handler: users.setStatus, options: S },

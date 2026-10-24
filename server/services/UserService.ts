@@ -1,4 +1,4 @@
-import type { DepartmentAccessInfo, MyDepartmentScopes, Paginated, Profile } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, Paginated, Profile } from '../../shared/contracts.js';
 import {
   departmentAccessSchema,
   profileSelfUpdateSchema,
@@ -61,8 +61,25 @@ export class UserService {
       if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin or the Department Head can set a Sales role.');
       if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
     }
-    const { details, salesSubRole, ...account } = input;
+    const { details, salesSubRole, additionalAccess, ...account } = input;
+    // One account for a head who works in several departments / both functions: every extra pair is checked BEFORE the account exists
+    // (a wrong pair never leaves a half-made user), and given right after it by the Super Admin's own database call.
+    const extra = additionalAccess?.length ? [...new Map(additionalAccess.map(a => [`${a.departmentId}:${a.division}`, a])).values()] : [];
+    if (extra.length) {
+      if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can give a Department Head more departments.');
+      const problems = await this.profiles.checkDepartmentAccess(extra);
+      if (problems.length) throw new AppError('VALIDATION_ERROR', problems[0].problem);
+    }
     const id = await this.authAdmin.createProvisionedUser({ ...account, provisionedBy: actor.id });
+    for (const a of extra) {
+      try {
+        await this.profiles.setDepartmentAccess(id, a.departmentId, a.division, true);
+      } catch (err) {
+        // Never leave a head without the departments that were asked for.
+        await this.authAdmin.deleteUser(id).catch(() => undefined);
+        throw err;
+      }
+    }
     if (salesSubRole) {
       try {
         await this.profiles.setSalesSubRole(id, salesSubRole);
@@ -124,6 +141,12 @@ export class UserService {
   /** The departments and functions the signed-in Department Head may switch between (the database decides; a member or a head with one scope gets what they already have). */
   myDepartmentScopes(): Promise<MyDepartmentScopes> {
     return this.profiles.myDepartmentScopes();
+  }
+
+  /** Department Heads who work in a department (their own, or authorised by the Super Admin) with every department they work in. */
+  async departmentHeads(actor: Actor, departmentId: unknown): Promise<DepartmentHeadAccess[]> {
+    assertManager(actor);
+    return this.profiles.departmentHeads(parse(uuidSchema, departmentId));
   }
 
   /** The Super Admin sees which departments and functions a Department Head is authorised for. */
