@@ -426,6 +426,7 @@ export const telecallerController = {
 export const salesHeadController = {
   overview: (async ctx => ok(await svc(ctx).salesHead.overview())) as Handler,
   assignees: (async ctx => ok(await svc(ctx).salesHead.assignees())) as Handler,
+  teamPeople: (async ctx => ok(await svc(ctx).salesHead.teamPeople())) as Handler,
   sheets: (async ctx => ok(await svc(ctx).salesHead.sheets())) as Handler,
   assignSheet: (async ctx => ok(await svc(ctx).salesHead.assignSheet(ctx.req.body))) as Handler,
   storeSource: (async ctx => ok(await svc(ctx).salesHead.storeSource(ctx.params.id, ctx.req.body), 201)) as Handler,

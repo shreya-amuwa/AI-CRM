@@ -1,6 +1,6 @@
 // The Sales Department Head dashboard in real browsers against the local stack (Postgres + PostgREST + gateway + the web app):
 //   - the Sales head opens their own dashboard with the menu in the agreed order; the Support head keeps the Department Head dashboard
-//   - Lead Assign: an Excel sheet is read, the columns matched, rows checked (invalid / duplicate listed), confirmed and assigned; the member sees the leads
+//   - Lead Assign: an Excel sheet is read, the columns matched, rows checked (invalid / duplicate listed), confirmed and given to the Telecaller, who sees the contacts
 //   - Lead List (filters, search, detail, an unassigned enquiry), Daily Tasks, Performance, Reports (Team Lead / Team Member), Income, Notices, Team, Chat, Notifications
 //   - nothing of the Support team is shown, and a phone-sized window has no sideways scrolling
 // See supabase/tests/e2e/README.md. Passwords come from E2E_PASSWORDS (made up by the runner); nothing is stored.
@@ -105,7 +105,7 @@ const mk = async (email, fullName, extra) => {
   return api(root, 'POST', '/users', { email, fullName, password: pw, ...extra });
 };
 const head = await mk('sales.head@amuwa.com', 'Sana Sales-Head', { role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES' });
-await mk('sales.tele@amuwa.com', 'Tara Telecaller', { role: 'TEAM_MEMBER', teamId: salesTeam.id, salesSubRole: 'TELECALLER' });
+await mk('apurva.tele@amuwa.com', 'Apurva Telecaller', { role: 'TEAM_MEMBER', teamId: salesTeam.id, salesSubRole: 'TELECALLER' });
 // Support data that must never show up on the Sales dashboard
 const supportOwner = await idOf('tm.delivery@amuwa.com');
 await db.query(`insert into customers (owner_id, name, phone, email, lifecycle_stage, lead_temperature) values ($1, 'Support Only Customer', '+919000000001', 'support.only@example.com', 'CUSTOMER', null)`, [supportOwner]);
@@ -148,71 +148,59 @@ await expect(shown >= total + 1 && Number(await sh.getByTestId('stat-hot-leads')
 await expect(!/Support Only|Delivery|Mohan Member|Dina Delivery/.test(await text(sh)), 'Overview: nothing from the Support team');
 await expect(Number(await sh.getByTestId('stat-pending-assignment').innerText()) >= 1, 'Overview: the unassigned enquiry is counted as pending assignment');
 
-// ------------------------------------------------------------------ 3. Lead Assign
+// ------------------------------------------------------------------ 3. Lead Assign: the sheet goes to the Telecaller
 await page(sh, 'Lead Assign');
 await sh.locator('#la-assignee').waitFor({ timeout: 15000 });
 const options = await sh.locator('#la-assignee option').allInnerTexts();
-await expect(options.some(o => /Rahul Mehta/.test(o)) && options.some(o => /Tara Telecaller/.test(o)) && !options.some(o => /Mohan|Rina|Dina|Tara Consultant/.test(o)), 'Lead Assign: only Sales people can be chosen (no Support)', options);
-await sh.locator('#la-assignee').selectOption({ label: options.find(o => /Rahul Mehta/.test(o)) });
+await expect(options.some(o => /Apurva Telecaller/.test(o)) && !options.some(o => /Rahul Mehta|Neha Shah|Lead Person|Mohan|Rina|Dina|Tara Consultant/.test(o)), 'Lead Assign: only the Telecaller can be chosen (no Team Lead, Team Member or Support person)', options);
+const apurva = await idOf('apurva.tele@amuwa.com');
+await expect((await sh.locator('#la-assignee').inputValue()) === apurva, 'Lead Assign: with one Telecaller, they are already chosen');
 const sheet = await xlsx([
-  ['Party', 'Company/Business Name', 'Mobile', 'E-mail', 'Source', 'Hot Warm Cold', 'Notes'],
-  ['Anil Kumar', 'Kumar Traders', 9811200001, 'anil@kumar.example', 'Expo', 'Hot', 'Met at stall'],
-  ['Bina Shah', '', '9811200002', '', 'Expo', 'Cold', ''],
-  ['', 'No Name Co', '9811200003', '', '', '', ''],
-  ['Bad Phone', '', 'abc', '', '', '', ''],
-  ['Anil Again', '', '98112 00001', '', '', '', ''],
-  ['Existing Hot Lead', '', '+919000000010', '', '', '', '']
+  ['Party', 'Company Name', 'Mobile', 'E-mail', 'Notes'],
+  ['Anil Kumar', 'Kumar Traders', 9811200001, 'anil@kumar.example', 'Met at stall'],
+  ['Bina Shah', '', '9811200002', '', ''],
+  ['', 'No Name Co', '9811200003', '', ''],
+  ['Bad Phone', '', 'abc', '', ''],
+  ['Anil Again', '', '98112 00001', '', ''],
+  ['Existing Hot Lead', '', '+919000000010', '', '']
 ], 'fair.xlsx');
 await sh.locator('#la-file').setInputFiles(sheet);
 await sh.getByText('Column mapping').first().waitFor({ timeout: 15000 });
-await expect(/choose a column for Customer Name/.test(await sh.locator('summary').first().innerText()), 'Lead Assign: an unknown heading ("Party") is reported so it can be mapped');
-await sh.getByLabel('Column for Customer Name').selectOption({ label: 'Party' });
+await expect(/choose a column for Contact Name/.test(await sh.locator('summary').first().innerText()), 'Lead Assign: an unknown heading ("Party") is reported so it can be mapped');
+await sh.getByLabel('Column for Contact Name').selectOption({ label: 'Party' });
 await sh.getByTestId('preview-valid').waitFor({ timeout: 15000 });
 await expect((await sh.getByTestId('preview-valid').innerText()) === '2' && (await sh.getByTestId('preview-invalid').innerText()) === '2' && (await sh.getByTestId('preview-duplicates').innerText()) === '2', 'Lead Assign: the preview counts valid, invalid and duplicate rows');
 const body = await text(sh);
 await expect(/Row 4 \(invalid\)/.test(body) && /Row 5 \(invalid\)/.test(body) && /Row 6 \(duplicate\)/.test(body) && /Row 7 \(duplicate\)/.test(body) && /already in the CRM/.test(body), 'Lead Assign: every problem row is listed with its reason');
-await expect((await q(`select count(*)::int n from customers where lead_source = 'Expo'`))[0].n === 0, 'Lead Assign: the preview saved nothing');
+await expect((await q(`select count(*)::int n from telecaller_contacts where assigned_to = $1`, [apurva]))[0].n === 0, 'Lead Assign: the preview saved nothing');
 await sh.screenshot({ path: `${OUT}/sh-2-lead-assign-preview.png`, fullPage: true });
-await sh.getByRole('button', { name: /Review and assign 2 leads/ }).click();
-await expect((await sh.getByTestId('confirm-name').innerText()) === 'Rahul Mehta' && /Team Member/.test(await sh.getByTestId('confirm-role').innerText()), 'Lead Assign: the confirmation names the person and their role');
+await sh.getByRole('button', { name: /Review and give 2 contacts to Apurva Telecaller/ }).click();
+await expect((await sh.getByTestId('confirm-name').innerText()) === 'Apurva Telecaller' && /Telecaller/.test(await sh.getByTestId('confirm-role').innerText()), 'Lead Assign: the confirmation names the Telecaller');
 await sh.getByRole('button', { name: 'Confirm and assign' }).click();
 await until(async () => (await q(`select 1 from sales_lead_sheets where file_name = 'fair.xlsx'`)).length);
-const leadsNow = await q(`select name, lead_temperature, lead_source, owner_id, lifecycle_stage from customers where lead_source = 'Expo' order by name`);
-await expect(leadsNow.length === 2 && leadsNow.every(l => l.owner_id === rahul && l.lifecycle_stage === 'LEAD') && leadsNow[0].lead_temperature === 'HOT', 'Lead Assign: the two valid leads are in the member\'s pipeline with their temperature', leadsNow);
-await sh.getByText(/2 leads from fair.xlsx were assigned to Rahul Mehta/).waitFor({ timeout: 15000 }).catch(() => fail('no success message'));
-const hist = (await q(`select s.uploaded_by, s.valid_count, s.invalid_count, s.duplicate_count, s.source_stored_at is not null as stored, p.email from sales_lead_sheets s join profiles p on p.id = s.uploaded_by where file_name = 'fair.xlsx'`))[0];
-await expect(hist.email === 'sales.head@amuwa.com' && hist.valid_count === 2 && hist.invalid_count === 2 && hist.duplicate_count === 2, 'Lead Assign: the upload is recorded with who uploaded it and the counts', hist);
-await expect(/fair\.xlsx/.test(await text(sh)) && /Sana Sales-Head/.test(await text(sh)), 'Lead Assign: the history lists the sheet and who uploaded it');
+const given = await q(`select name, call_status from telecaller_contacts where assigned_to = $1 order by name`, [apurva]);
+await expect(given.length === 2 && given.every(c => c.call_status === 'PENDING') && given[0].name === 'Anil Kumar', 'Lead Assign: the two valid contacts are in the Telecaller\'s list, still to call', given);
+await expect((await q(`select count(*)::int n from customers where name in ('Anil Kumar', 'Bina Shah')`))[0].n === 0, 'Lead Assign: no lead is made behind the Telecaller\'s back');
+await sh.getByText(/2 contacts from fair.xlsx were given to Apurva Telecaller/).waitFor({ timeout: 15000 }).catch(() => fail('no success message'));
+const hist = (await q(`select s.uploaded_by, s.valid_count, s.invalid_count, s.duplicate_count, s.mode, p.email from sales_lead_sheets s join profiles p on p.id = s.uploaded_by where file_name = 'fair.xlsx'`))[0];
+await expect(hist.email === 'sales.head@amuwa.com' && hist.valid_count === 2 && hist.invalid_count === 2 && hist.duplicate_count === 2 && hist.mode === 'TELECALLER', 'Lead Assign: the upload is recorded with who uploaded it and the counts', hist);
+await expect(/fair\.xlsx/.test(await text(sh)) && /Sana Sales-Head/.test(await text(sh)) && /2 to call/.test(await text(sh)), 'Lead Assign: the history lists the sheet, who uploaded it and what is still to call');
 // the same file again
-await sh.locator('#la-assignee').selectOption(rahul);
 await sh.locator('#la-file').setInputFiles(sheet);
-await sh.getByLabel('Column for Customer Name').selectOption({ label: 'Party' });
+await sh.getByLabel('Column for Contact Name').selectOption({ label: 'Party' });
 await sh.getByTestId('preview-valid').waitFor({ timeout: 15000 });
-await expect(/already been uploaded and assigned/.test(await text(sh)) && await sh.getByRole('button', { name: /Review and assign/ }).isDisabled(), 'Lead Assign: the same file cannot be imported twice');
+await expect(/already been uploaded and assigned/.test(await text(sh)) && await sh.getByRole('button', { name: /Review and give/ }).isDisabled(), 'Lead Assign: the same file cannot be imported twice');
 await sh.getByRole('button', { name: 'Cancel' }).click();
 // an old .xls file
 fs.writeFileSync(`${OUT}/old.xls`, 'x');
 await sh.locator('#la-file').setInputFiles(`${OUT}/old.xls`);
 await expect(/save it as \.xlsx/.test(await text(sh)), 'Lead Assign: an old .xls file is refused with what to do');
-// the Telecaller gets the contact sheet
-await sh.locator('#la-assignee').selectOption({ label: (await sh.locator('#la-assignee option').allInnerTexts()).find(o => /Tara Telecaller/.test(o)) });
-await expect(/Telecaller receives the sheet as contacts/.test(await sh.getByTestId('assign-mode').innerText()), 'Lead Assign: a Telecaller is told they get a contact sheet');
-const teleSheet = await xlsx([['Customer Name', 'Phone Number'], ['Gopal', 9811200050], ['Hema', 9811200051]], 'tele.xlsx');
-await sh.locator('#la-file').setInputFiles(teleSheet);
-await sh.getByTestId('preview-valid').waitFor({ timeout: 15000 });
-await sh.getByRole('button', { name: /Review and assign 2 contacts/ }).click();
-await sh.getByRole('button', { name: 'Confirm and assign' }).click();
-await until(async () => (await q(`select 1 from telecaller_contacts where name = 'Gopal'`)).length);
-await expect((await q(`select count(*)::int n from customers where name = 'Gopal'`))[0].n === 0, 'Lead Assign: the Telecaller\'s contacts are in the existing Telecaller sheet list, not made into leads');
-// Rahul sees his leads
-const rahulPage = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'aside nav button');
-await rahulPage.getByText('Anil Kumar').first().waitFor({ timeout: 20000 }).catch(async () => {
-  const link = rahulPage.locator('aside nav button').filter({ hasText: /Leads/i }).first();
-  if (await link.count()) await link.click();
-  await rahulPage.getByText('Anil Kumar').first().waitFor({ timeout: 20000 }).catch(() => fail('the member does not see the assigned lead'));
-});
-ok('the assigned leads appear in the member\'s own dashboard');
-await rahulPage.context().close();
+// the Telecaller sees the contacts in their Tasks
+const tele = await login('apurva.tele@amuwa.com', { width: 1440, height: 900 }, 'aside nav button');
+await tele.locator('aside nav button').filter({ hasText: /^\s*Tasks\s*$/ }).first().click();
+await tele.getByText('Anil Kumar').first().waitFor({ timeout: 20000 }).catch(() => fail('the Telecaller does not see the contact in their Tasks'));
+ok('the Telecaller sees the contacts in their own Tasks');
+await tele.context().close();
 current = sh;
 
 // ------------------------------------------------------------------ 4. Lead List
@@ -224,15 +212,15 @@ ok('Lead List: the Hot filter shows Hot leads only (red badges)');
 const hot = await sh.locator('[data-temperature="HOT"]').first().evaluate(e => getComputedStyle(e).color);
 await expect(/^rgb\(\s*(1[5-9]\d|2\d\d)\s*,\s*[0-9]{1,2}\s*,/.test(hot) || /^rgb\(\s*1[5-9]\d/.test(hot), 'Lead List: Hot is red', hot);
 await sh.getByRole('tab', { name: /All Leads/ }).click();
-await sh.getByLabel('Search leads').fill('anil');
-await sh.getByText('Anil Kumar').first().waitFor({ timeout: 15000 });
+await sh.getByLabel('Search leads').fill('hot lead');
+await sh.getByText('Existing Hot Lead').first().waitFor({ timeout: 15000 });
 await expect(await until(async () => (await sh.locator('tbody tr').count()) === 1), 'Lead List: search finds the lead');
 await expect(/Rahul Mehta/.test(await sh.locator('tbody tr').first().innerText()), 'Lead List: it shows who owns the lead');
 await sh.getByLabel('Search leads').fill('');
-await sh.getByRole('button', { name: 'View Anil Kumar' }).click().catch(async () => { await sh.getByLabel('Search leads').fill('anil'); await sh.getByRole('button', { name: 'View Anil Kumar' }).click(); });
+await sh.getByRole('button', { name: 'View Existing Hot Lead' }).click().catch(async () => { await sh.getByLabel('Search leads').fill('hot lead'); await sh.getByRole('button', { name: 'View Existing Hot Lead' }).click(); });
 await sh.getByRole('dialog').waitFor({ timeout: 15000 });
 await sh.getByText('Latest follow-up details').waitFor({ timeout: 15000 });
-await expect(/Expo/.test(await sh.getByRole('dialog').innerText()) && /Latest follow-up details/.test(await sh.getByRole('dialog').innerText()), 'Lead List: the detail shows the lead and its follow-up history');
+await expect(/Website/.test(await sh.getByRole('dialog').innerText()) && /Latest follow-up details/.test(await sh.getByRole('dialog').innerText()), 'Lead List: the detail shows the lead and its follow-up history');
 await sh.keyboard.press('Escape');
 await sh.getByLabel('Search leads').fill('');
 await sh.getByRole('tab', { name: /Unassigned/ }).click();
