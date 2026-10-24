@@ -26,13 +26,26 @@ Write the member's name as it appears in the CRM. If two people share a name, us
 
 Limits: one .xlsx file of up to 5 MB, 500 customers and 5000 rows in total.
 
-## Client logins: no passwords anywhere
+## Client logins: the team's password, or the client's own
 
 - Every row in "1 Customers" with a **Client Login E-mail** gets a client login when the file is saved.
-- The client receives a **"Set your password"** e-mail from meta@amuwa.com. The link opens `/client/set-password`, where the client chooses their own password. The link works once.
-- Nobody types, stores or sends a password. The login is created with a random password that nobody knows.
-- After saving, the screen shows each login and whether its e-mail went out. **Send again** sends a fresh link.
+- **With a Client Password** (optional column in "1 Customers", right after the Client Login E-mail): the login is created with the password the team chose, and **the client is e-mailed their sign-in details: the client dashboard address (`/client/login`), the login e-mail and the password** ("Your Amuwa client dashboard - sign-in details", from meta@amuwa.com, sent straight away). If the Client Login E-mail is empty, the customer's **E-mail** is the login.
+- **Without one**, the client receives a **"Set your password"** e-mail from meta@amuwa.com. The link opens `/client/set-password`, where the client chooses their own password. The link works once. The login is created with a random password that nobody knows.
+- **How the password is kept.** The password goes to Supabase Auth, which keeps only a hash (the same way as a login made for a new customer). The CRM does not store it, log it or audit it: it is taken out of the rows before they reach the database, so no database call, audit entry or activity ever contains it; it exists in the server's memory for the length of the request, and in that one e-mail. Because it is not kept, that e-mail cannot be sent again and the password cannot be shown again: if the e-mail did not go out (the screen says so), give the client the password yourself or send a set-password link; a client who forgets it uses "Forgot password?". The audit log records only who set a password for which customer (`CLIENT_PASSWORD_SET_BY_TEAM`).
+- **Rules:** at least 10 characters (72 at most), not the e-mail address, and one e-mail per row. A password that breaks a rule is listed with its sheet and row, and nothing is saved until it is fixed. For a customer who already has a login the password is not used (the screen says so); they can use "Forgot password?".
+- Two places hold the password as plain text: the Excel file and the client's e-mail. Keep the file somewhere private and **delete the column or the file as soon as the import is done**; the e-mail says to keep it private and offers "Forgot password?" for a new one (the same trade-off as the panel password e-mailed when a new customer's Meta verification is completed).
 - **Forgot password?** on the client sign-in page sends a new link. The page gives the same answer whatever e-mail is entered, and a link is only ever sent to a client login, never to a staff account.
+
+## Less typing in the template
+
+The template does the repeating work (the import reads the sheets by their headings, so files made from the older template still import):
+
+- **Set once** tab: "Data as of" (and, in the Team template, the Support Team Member) are typed once and used in every sheet.
+- The **mobile number is typed once**, in "1 Customers". Sheets 2, 4 and 7 take it from a drop-down; **Customer (auto)** next to it shows the customer's business and name (red mobile = not in sheet 1).
+- Sheets **3 WhatsApp Account, 5 AI Calling and 6 RCS & Voice list their customers by themselves**: every customer who has that service in "2 Services" appears, so only the numbers are typed. A row where nothing has been typed yet is skipped by the import.
+- Worked out by the sheet (light green; type over any of them): the **renewal date** (Start Date + Billing Cycle), **Panel / Platform** (from the service), **Panel login** (the customer's e-mail), **Display Name**, **Messages in Package** (from the package), **Subscription ends / Valid until** (from "2 Services"), the **unit** of a monthly deliverable.
+- A customer with several services has several rows in "2 Services"; a service with usage data that has no row there is added automatically (migration `20261117000200_import_auto_service.sql`).
+- The templates are produced by `scripts/build_import_template.py` (run it only on a template that does not have these changes yet).
 
 ## What the client sees
 

@@ -13,8 +13,9 @@ import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
  * Department Heads (for a named member).
  *   1. Download the template, fill it in.
  *   2. Upload: everything is checked first and nothing is saved; problems are listed by sheet and row.
- *   3. Save: all rows at once (or none). Rows with a "Client Login E-mail" get a client login, and the client
- *      gets an e-mail to set their own password. Nobody types or sends a password.
+ *   3. Save: all rows at once (or none). Rows with a "Client Login E-mail" get a client login. With a "Client Password" the
+ *      login uses the password the team chose (Supabase Auth keeps only its hash; the CRM never stores it) and the client is
+ *      e-mailed the dashboard address, login e-mail and password; without one the client gets an e-mail to set their own.
  */
 const TEMPLATE = '/templates/Existing_Customers_Services_Usage.xlsx';
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -110,7 +111,7 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
             <span className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center shrink-0">3</span>
             <div>
               <div className="font-bold text-slate-900 text-sm">Save</div>
-              <p className="mt-0.5">All rows are saved together. Clients with a "Client Login E-mail" get an e-mail to set their own password.</p>
+              <p className="mt-0.5">All rows are saved together. A client with a "Client Password" gets an e-mail with the dashboard address, their login e-mail and that password. Without one, the client gets an e-mail to set their own.</p>
             </div>
           </li>
         </ol>
@@ -205,7 +206,16 @@ const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: bool
         result.logins.length > 0 && (
           <p className="text-xs text-slate-600">
             <Mail className="w-4 h-4 inline -mt-0.5 mr-1 text-indigo-500" aria-hidden="true" />
-            {result.logins.length} client{result.logins.length === 1 ? '' : 's'} will get a login and an e-mail to set their password: {result.logins.map(l => l.email).join(', ')}.
+            {(() => {
+              const team = result.logins.filter(l => l.passwordBy === 'TEAM');
+              const client = result.logins.filter(l => l.passwordBy !== 'TEAM');
+              return (
+                <>
+                  {team.length > 0 && <>{team.length} client{team.length === 1 ? '' : 's'} will be e-mailed their sign-in details with the password you chose: {team.map(l => l.email).join(', ')}. </>}
+                  {client.length > 0 && <>{client.length} client{client.length === 1 ? '' : 's'} will get an e-mail to set their own password: {client.map(l => l.email).join(', ')}.</>}
+                </>
+              );
+            })()}
           </p>
         )
       )}
@@ -258,18 +268,31 @@ const Saved: React.FC<{ result: CustomerDataImportResult; onReset: () => void; o
                 </div>
                 <div className="flex items-center gap-2">
                   <Pill tone={l.login === 'CREATED' ? 'green' : 'red'}>{l.login === 'CREATED' ? 'Login created' : 'Login not created'}</Pill>
-                  {l.login === 'CREATED' && <Pill tone={l.mail === 'SENT' ? 'green' : 'orange'}>{l.mail === 'SENT' ? 'Set-password e-mail sent' : 'E-mail not sent'}</Pill>}
                   {l.login === 'CREATED' && (
+                    <Pill tone={l.mail === 'SENT' ? 'green' : 'orange'}>
+                      {l.passwordBy === 'TEAM' ? (l.mail === 'SENT' ? 'Sign-in details e-mailed' : 'E-mail not sent') : l.mail === 'SENT' ? 'Set-password e-mail sent' : 'E-mail not sent'}
+                    </Pill>
+                  )}
+                  {/* the password is not kept, so it cannot be e-mailed again: after a team password only a set-password link can still be sent */}
+                  {l.login === 'CREATED' && !(l.passwordBy === 'TEAM' && l.mail === 'SENT') && (
                     <button type="button" className={btn.secondary} disabled={busy === l.customerId} onClick={() => void resend(l)}>
-                      <Mail className="w-4 h-4" aria-hidden="true" /> {busy === l.customerId ? 'Sending…' : l.mail === 'SENT' ? 'Send again' : 'Send e-mail'}
+                      <Mail className="w-4 h-4" aria-hidden="true" /> {busy === l.customerId ? 'Sending…' : l.passwordBy === 'TEAM' ? 'Send set-password link' : l.mail === 'SENT' ? 'Send again' : 'Send e-mail'}
                     </button>
                   )}
                 </div>
               </li>
             ))}
           </ul>
-          <p className="text-[11px] text-slate-500 mt-2">The client opens the e-mail, chooses a password and signs in at the client dashboard. If the link expires they can use "Forgot password?" on the sign-in page.</p>
+          <p className="text-[11px] text-slate-500 mt-2">
+            {logins.some(l => l.passwordBy === 'TEAM') && 'Each client with a password you chose gets an e-mail with the dashboard address, their login e-mail and that password. The CRM does not keep the password, so it cannot be shown or e-mailed again. Delete the "Client Password" column from your file now. '}
+            {logins.some(l => l.passwordBy !== 'TEAM') && 'A client without a password opens the e-mail, chooses one and signs in at the client dashboard. If the link expires they can use "Forgot password?" on the sign-in page.'}
+          </p>
         </div>
+      )}
+      {result.passwordsNotUsed && result.passwordsNotUsed.length > 0 && (
+        <p className="text-[11px] text-orange-700">
+          The password in the file was not used for {result.passwordsNotUsed.join(', ')}: that customer already had a login. They can use "Forgot password?" on the sign-in page.
+        </p>
       )}
       <div className="flex justify-end gap-2">
         <button type="button" className={btn.secondary} onClick={onReset}>

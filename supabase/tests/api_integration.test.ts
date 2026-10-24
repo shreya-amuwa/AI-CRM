@@ -1745,7 +1745,7 @@ const un = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-messages
 check(un.status === 409 || un.status === 404, 'not for customers that are not automated', un);
 // --- Excel import of existing customers (Support) + client "Set your password" e-mails ---
 {
-  Object.assign(process.env, { RATE_LIMIT_IMPORT_PER_MIN: '50', AUTOMATION_MODE: 'live', APP_URL: 'https://crm.example.test', AUTOMATION_TEST_RECIPIENTS: 'imp.client@example.com, imp.other@example.com' });
+  Object.assign(process.env, { RATE_LIMIT_IMPORT_PER_MIN: '50', AUTOMATION_MODE: 'live', APP_URL: 'https://crm.example.test', AUTOMATION_TEST_RECIPIENTS: 'imp.client@example.com, imp.other@example.com, pw.three@example.com' });
   const file = {
     customers: [
       { row: 3, mobile: '9000000201', name: 'Import Client', businessName: 'Import Traders (TEST)', customerSince: '2025-04-01', loginEmail: 'imp.client@example.com' },
@@ -1820,6 +1820,55 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 200 && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: never for a staff login', r);
   r = await forgot('not-an-email');
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
+
+  // --- the team chooses the client's password (column "Client Password"): validated, hashed by Auth, never stored or e-mailed by the CRM ---
+  const pw0 = 'Team#Chosen-2026';
+  const pwFile = (extra: Record<string, unknown>[]) => ({
+    customers: extra,
+    services: extra.map((c, i) => ({ row: 3 + i, mobile: c.mobile, service: 'AI Calling', startDate: '2026-05-01', status: 'Live' }))
+  });
+  const pwRow = (n: number, o: Record<string, unknown> = {}) => ({ row: 2 + n, mobile: `90000003${String(n).padStart(2, '0')}`, name: `Pw Client ${n}`, businessName: `Pw Co ${n} (TEST)`, ...o });
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: pwFile([pwRow(1, { email: 'pw.one@example.com', loginPassword: 'short1' })]) });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.errors.some((e: any) => e.sheet === '1 Customers' && e.row === 3 && /10 characters/.test(e.message)),
+    'password: a short Client Password is named by sheet and row', r);
+  check(!JSON.stringify(r.json).includes('short1'), 'password: the response never contains it', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: pwFile([pwRow(1, { loginPassword: pw0 })]) });
+  check(r.status === 200 && r.json.data.errors.some((e: any) => /needs a Client Login E-mail/.test(e.message)), 'password: it needs an e-mail to sign in with', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: false, data: pwFile([pwRow(1, { email: 'pw.one@example.com', loginPassword: 'pw.one@example.com' })]) });
+  check(r.status === 200 && r.json.data.errors.some((e: any) => /cannot be the e-mail/.test(e.message)), 'password: not the e-mail address', r);
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: pwFile([pwRow(1, { email: 'pw.one@example.com', loginPassword: 'short1' }), pwRow(2, { email: 'pw.two@example.com', loginPassword: pw0 })]) });
+  check(r.status === 200 && !r.json.data.committed && (await db.query(`select count(*)::int as n from public.customers where phone like '90000003%'`)).rows[0].n === 0,
+    'password: one bad password stops the whole save', r);
+
+  const mailsBeforePw = outbox.filter(o => o.path === '/emails').length;
+  const pwSpecial = 'Team&Chosen<2026>';
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: pwFile([pwRow(3, { email: 'pw.three@example.com', loginPassword: pwSpecial }), pwRow(4)]) });
+  const lg = r.json.data?.logins?.[0];
+  check(r.status === 200 && r.json.data.committed && r.json.data.logins.length === 1 && lg.email === 'pw.three@example.com' && lg.login === 'CREATED' && lg.passwordBy === 'TEAM' && lg.mail === 'SENT',
+    'password: saved; the login uses the customer\'s e-mail when no Client Login E-mail is given, and the client is e-mailed', r);
+  const cm = outbox.filter(o => o.path === '/emails').slice(mailsBeforePw);
+  const cred = cm.find(o => o.body.to?.[0] === 'pw.three@example.com');
+  check(cm.length === 1 && !!cred && /sign-in details/i.test(cred.body.subject) && cred.body.text.includes('pw.three@example.com') && cred.body.text.includes(pwSpecial)
+    && cred.body.html.includes('https://crm.example.test/client/login') && !/set-password/.test(cred.body.html),
+    'password: that one e-mail has the dashboard address, the login e-mail and the password (and no set-password link)', cred?.body);
+  const pw = pwSpecial;
+  const signedPw = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'pw.three@example.com', password: pw }) });
+  check(signedPw.status === 200 && !!((await signedPw.json()) as any).access_token, 'password: the client signs in with the password the team chose');
+  const wrongPw = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'pw.three@example.com', password: 'Not-the-password-1' }) });
+  check(wrongPw.status >= 400, 'password: and not with another one');
+  const leak = (await db.query(
+    `select (select count(*) from public.audit_logs where metadata::text like '%' || $1 || '%')
+          + (select count(*) from public.customer_activities where note like '%' || $1 || '%')
+          + (select count(*) from public.customers where notes like '%' || $1 || '%' or name like '%' || $1 || '%') as n`, [pw])).rows[0].n;
+  check(Number(leak) === 0, 'password: it is not stored anywhere in the CRM (audit log, activity, customer)');
+  const ev = (await db.query(`select actor_id, entity_id, metadata::text as m from public.audit_logs where action = 'CLIENT_PASSWORD_SET_BY_TEAM' and entity_id = $1`, [lg.customerId])).rows;
+  check(ev.length === 1 && !ev[0].m.includes(pw), 'password: the audit log says who set a password for which customer (not the password)', ev);
+
+  // the same file again: the customer already has a login, so the password is not used (and the existing one keeps working)
+  r = await api('sm', 'POST', '/customers/import-existing', { commit: true, data: pwFile([pwRow(3, { email: 'pw.three@example.com', loginPassword: 'Another#Pass-2027' })]) });
+  check(r.status === 200 && r.json.data.committed && r.json.data.logins.length === 0 && r.json.data.passwordsNotUsed?.[0] === 'pw.three@example.com', 'password: for a customer who already has a login it is not used', r);
+  const still = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'pw.three@example.com', password: pw }) });
+  check(still.status === 200, 'password: the first password still works');
   delete process.env.APP_URL; process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 }
 // --- Chat: client chat, reviewers, internal direct messages, groups and files -------------------------------------

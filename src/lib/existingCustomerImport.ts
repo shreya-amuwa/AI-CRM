@@ -17,6 +17,11 @@ interface SheetSpec {
   title: string;
   match: RegExp;
   columns: Record<string, [field: string, kind: Kind]>;
+  /**
+   * Fields the template fills in by itself for a row (the mobile list of the customers who have this service, their name, the date the
+   * subscription ends, "Data as of"). A row where only these have a value is a row nobody has typed anything into yet: it is skipped.
+   */
+  auto?: string[];
 }
 
 export const IMPORT_SHEETS: SheetSpec[] = [
@@ -25,7 +30,8 @@ export const IMPORT_SHEETS: SheetSpec[] = [
     columns: {
       'mobile number': ['mobile', 'mobile'], 'customer name': ['name', 'text'], 'business name': ['businessName', 'text'], 'e-mail': ['email', 'text'],
       city: ['city', 'text'], 'business address': ['address', 'text'], 'business category': ['category', 'text'], 'customer since': ['customerSince', 'date'],
-      'support team member': ['member', 'text'], 'client login e-mail': ['loginEmail', 'text'], 'sold by (sales)': ['soldBy', 'text'], notes: ['notes', 'text']
+      'support team member': ['member', 'text'], 'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'],
+      'sold by (sales)': ['soldBy', 'text'], notes: ['notes', 'text']
     }
   },
   {
@@ -44,7 +50,8 @@ export const IMPORT_SHEETS: SheetSpec[] = [
       'messages in package': ['packageMessages', 'num'], 'extra messages added': ['extraMessages', 'num'], 'messages sent (total)': ['sent', 'num'],
       'messages delivered (total)': ['delivered', 'num'], 'messages read (total)': ['read', 'num'], 'replies (total)': ['replied', 'num'], 'failed (total)': ['failed', 'num'],
       'campaigns sent (total)': ['campaigns', 'num'], 'subscription ends': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
-    }
+    },
+    auto: ['mobile', 'displayName', 'validUntil', 'asOf']
   },
   {
     key: 'campaigns', title: '4 WhatsApp Campaigns', match: /campaigns/i,
@@ -62,7 +69,8 @@ export const IMPORT_SHEETS: SheetSpec[] = [
       'minutes left': ['minutesLeft', 'num'], 'total calls': ['totalCalls', 'num'], 'connected calls': ['connectedCalls', 'num'], 'not answered': ['notAnswered', 'num'],
       'interested / leads': ['interested', 'num'], 'ai campaigns run': ['campaigns', 'num'], 'contacts uploaded': ['contacts', 'num'],
       'plan valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
-    }
+    },
+    auto: ['mobile', 'platform', 'validUntil', 'asOf']
   },
   {
     key: 'rcsVoice', title: '6 RCS & Voice', match: /rcs/i,
@@ -70,7 +78,8 @@ export const IMPORT_SHEETS: SheetSpec[] = [
       'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], 'sender id / brand name': ['senderId', 'text'], 'package (messages)': ['packageMessages', 'num'],
       sent: ['sent', 'num'], delivered: ['delivered', 'num'], 'read / answered': ['read', 'num'], 'clicks / replies': ['clicks', 'num'], failed: ['failed', 'num'],
       'campaigns run': ['campaigns', 'num'], 'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
-    }
+    },
+    auto: ['mobile', 'service', 'validUntil', 'asOf']
   },
   {
     key: 'monthly', title: '7 Monthly Deliverables', match: /monthly/i,
@@ -85,7 +94,7 @@ export const IMPORT_SHEETS: SheetSpec[] = [
 /** The template's example rows use this mobile number (or say EXAMPLE); they are never imported. */
 const EXAMPLE_MOBILE = '9820011111';
 /** Columns the template calculates itself (shown again on the dashboard, so not imported). */
-const CALCULATED = new Set(['days left', 'messages left', '% used', 'delivery %', 'read %', 'reply %', 'minutes used', 'left', 'pending']);
+const CALCULATED = new Set(['customer (auto)', 'days left', 'messages left', '% used', 'delivery %', 'read %', 'reply %', 'minutes used', 'left', 'pending']);
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 const header = (v: Cell) => String(v ?? '').replace(/\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -154,7 +163,7 @@ export function parseExistingCustomers(wb: Workbook): ParsedImport {
     }
     const cols = (sheet.rows[hdr] ?? []).map(h => {
       const key = header(h);
-      if (key && !spec.columns[key] && !CALCULATED.has(key)) ignored.push(`${sheet.name}: ${String(h)}`);
+      if (key && !spec.columns[key] && !CALCULATED.has(key) && !key.endsWith('(helper)')) ignored.push(`${sheet.name}: ${String(h)}`);
       return spec.columns[key] ?? null;
     });
     const rows: Row[] = [];
@@ -166,7 +175,7 @@ export function parseExistingCustomers(wb: Workbook): ParsedImport {
         if (!c) return;
         const v = convert(cells[j] ?? null, c[1]);
         out[c[0]] = v;
-        if (v !== null) filled = true;
+        if (v !== null && !spec.auto?.includes(c[0])) filled = true;
       });
       if (!filled) continue;
       const mobile = String(out.mobile ?? '').replace(/\D/g, '');

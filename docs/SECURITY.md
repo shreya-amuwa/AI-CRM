@@ -33,7 +33,7 @@ There are four different kinds of record. They are not interchangeable:
 | Kind | Where | What it holds |
 | --- | --- | --- |
 | Business audit trail | `public.audit_logs` (database) | Who did what to which record: customers, payments, invoices, documents, roles, expenses, imports, chat group membership, exports ... Written by database triggers and `SECURITY DEFINER` functions in the same transaction as the change. |
-| Security events from the API server | `public.audit_logs` (through `record_server_event`, service role only) | Refused requests (`ACCESS_DENIED` for 403, `AUTH_REJECTED` for 401, `RATE_LIMITED` for 429), the start of a sign-in session (`SESSION_STARTED`), client password links and reset requests. A refused request rolls its own transaction back, so only the server can record it. |
+| Security events from the API server | `public.audit_logs` (through `record_server_event`, service role only) | Refused requests (`ACCESS_DENIED` for 403, `AUTH_REJECTED` for 401, `RATE_LIMITED` for 429), the start of a sign-in session (`SESSION_STARTED`), client password links and reset requests, and a password the team chose for a client (`CLIENT_PASSWORD_SET_BY_TEAM`: who, which customer; never the password). A refused request rolls its own transaction back, so only the server can record it. |
 | Sign-in provider logs | Supabase Auth (dashboard > Logs) | Every sign-in, sign-out and token event. Not copied into the app. `LOGIN_FAILED` / `LOGIN_LOCKED` in `audit_logs` come from the password verification hook (see "Switch these on", step 3). |
 | Application logs | Vercel > Logs | One JSON line per API request (method, route, status, time, request id, user id). Retention is Vercel's. |
 

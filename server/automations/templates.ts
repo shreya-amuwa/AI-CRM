@@ -172,6 +172,33 @@ export function renderEmail(stage: CustomerStage, data: TemplateData): RenderedE
   return { subject: t.subject, html, text: toText(html) };
 }
 
+export interface ClientCredentialsMailData {
+  name: string;
+  businessName?: string | null;
+  loginEmail: string;
+  /** The password the team chose. It is in this e-mail and nowhere else: the CRM does not keep it. */
+  password: string;
+  /** The client dashboard sign-in page. */
+  loginUrl: string;
+}
+
+/** The client's sign-in details when the team chose the password (Excel import): the dashboard address, the login e-mail and the password. */
+export function renderClientCredentialsEmail(d: ClientCredentialsMailData): RenderedEmail {
+  const html = wrap(`
+  <p>Dear ${esc(d.name)},</p>
+  <p>Your <b>Amuwa client dashboard</b>${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''} is ready. There you can see your services, plans, message and calling usage, campaigns, invoices and support tickets.</p>
+  <p>Your sign-in details are below:</p>
+  <p>
+    <b>Dashboard:</b> <a href="${esc(d.loginUrl)}">${esc(d.loginUrl)}</a><br>
+    <b>Login e-mail:</b> ${esc(d.loginEmail)}<br>
+    <b>Password:</b> ${esc(d.password)}
+  </p>
+  <p>Please keep this e-mail private. If you want a new password at any time, use "Forgot password?" on the sign-in page.</p>
+  ${teamContact()}
+  ${signature('Support Team')}`);
+  return { subject: 'Your Amuwa client dashboard - sign-in details', html, text: toText(html) };
+}
+
 const ACCOUNTS_HEADING: Record<string, string> = {
   PAYMENT_CONFIRMATION_REQUESTED: 'New payment confirmation request',
   PAYMENT_TO_VERIFY: 'A payment is waiting for verification',
