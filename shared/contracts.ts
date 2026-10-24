@@ -168,6 +168,12 @@ export interface DepartmentAccessInfo {
   departments: { id: string; slug: string; name: string; hasSales: boolean; hasSupport: boolean; supportDepartment?: string | null; salesDepartment?: string | null }[];
 }
 
+/** A Department Head who works in a department (their own or authorised), with every department and function they work in. */
+export interface DepartmentHeadAccess {
+  profile: Profile;
+  access: { departmentId: string; department: string; division: HeadDivision | null }[];
+}
+
 export interface ProfileSummary {
   id: string;
   fullName: string;

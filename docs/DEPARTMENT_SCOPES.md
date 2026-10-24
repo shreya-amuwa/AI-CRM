@@ -25,6 +25,17 @@ Migration `20261124000100_wabatalk_support_department.sql` (run it after `202611
 
 Not changed: the Super Admin dashboard's head-count, customer and ticket columns for the D Talk row still count D Talk's Sales **and** Support people and customers (they live there); the Wabatalk row there shows Wabatalk's income and expenses. If Wabatalk already existed in your database with people or teams of its own, run the audit query below first – those are not moved.
 
+## Add Team Member: one account, several departments (Super Admin)
+
+Why a single department was not enough: `profiles.department_id` holds ONE department per person, and every access rule compares it with a row's department. A shared Department Head therefore needed a second table for the extra departments (`department_access`, migration `20261123000100`); the form only created the head for one department, so the Super Admin had to create the account and then open *Departments & functions*. The form now does it in one step.
+
+* **Add Team Member > Role: Department Head** shows **Department Head of** (Sales Department Head / Support Department Head / Sales & Support - one person handles both) and **Departments this head manages**: checkboxes plus removable chips. The first chosen department is the **home** department (*make home* changes it). At least one is required; departments that have no team of the chosen function are disabled with the reason; D Talk's Support is offered as **Wabatalk**.
+* The department list at the top of the window is now labelled **Show members of**: it only chooses whose members are listed, not what the new account manages.
+* Saving creates **one** login. The API (`POST /users`) takes `departmentId` (home), `headDivision` and `additionalAccess: [{ departmentId, division }]` (Super Admin only). Every pair is checked by the database BEFORE the account exists (`public.department_access_check`, which uses the same rule as `department_access_set`), so a wrong pair creates nothing; the grants are then written as the Super Admin and audited. If a grant fails after all, the new account is deleted again.
+* **Changing a head later:** *Departments & functions* in the member list (Super Admin). Removing a pair removes the access immediately (the next request is refused); no account is created or changed.
+* **The list** (Whole department): heads who work in the department without being placed in it are listed too (*Shared head · home department …*), and a head with several departments shows *Works in: A (Sales), B (Support) …* (`public.department_heads_overview`, which only the Super Admin and a head who works in that department can read).
+* One-per-side rule: the department a head is PLACED in still has one Sales and one Support head; extra departments are access, not placement.
+
 ## 1. Audit first (read-only)
 
 Run this in the Supabase SQL editor to see the departments, their teams and their heads as they really are. Use the result to decide the Group A / Group B split – do not guess from the names.

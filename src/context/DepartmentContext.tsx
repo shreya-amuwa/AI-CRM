@@ -12,6 +12,8 @@ import { getSupabase } from '../services/supabaseClient';
  */
 interface DepartmentContextType {
   departments: Department[];
+  /** Also the departments that are only the Sales / Support side of another (Wabatalk): for assigning a Department Head and for income screens. */
+  allDepartments: (Department & { facetOf: string | null; facetDivision: 'SALES' | 'SUPPORT' | null })[];
   loading: boolean;
   getDepartment: (id: DepartmentId) => Department | undefined;
   addDepartment: (input: DepartmentCreateInput) => Promise<{ ok: boolean; error?: string; department?: Department }>;
@@ -44,6 +46,7 @@ function toDepartment(d: DepartmentDto): Department {
 
 export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [allDepartments, setAllDepartments] = useState<DepartmentContextType['allDepartments']>([]);
   const [loading, setLoading] = useState(false);
 
   const refreshDepartments = useCallback(async () => {
@@ -51,9 +54,12 @@ export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       // A department that is only the Sales / Support side of another (Wabatalk = D Talk's Support) has no people or teams of its own,
       // so the department hub, staff forms and sign-up lists show the real department; Accounts and the scope picker list the side too.
-      setDepartments((await organizationApi.departments()).filter(d => !d.facetOf).map(toDepartment));
+      const all = await organizationApi.departments();
+      setAllDepartments(all.map(d => ({ ...toDepartment(d), facetOf: d.facetOf ?? null, facetDivision: d.facetDivision ?? null })));
+      setDepartments(all.filter(d => !d.facetOf).map(toDepartment));
     } catch {
       setDepartments([]); // signed out / not yet approved
+      setAllDepartments([]);
     } finally {
       setLoading(false);
     }
@@ -70,7 +76,7 @@ export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!supabase) return;
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       setTimeout(() => {
-        if (!session || event === 'SIGNED_OUT') setDepartments([]);
+        if (!session || event === 'SIGNED_OUT') { setDepartments([]); setAllDepartments([]); }
         else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') void refreshDepartments();
       }, 0);
     });
@@ -129,6 +135,7 @@ export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     <DepartmentContext.Provider
       value={{
         departments,
+        allDepartments,
         loading,
         getDepartment,
         addDepartment,
