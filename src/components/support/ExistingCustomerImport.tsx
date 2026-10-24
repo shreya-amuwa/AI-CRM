@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { CheckCircle2, Download, FileSpreadsheet, Mail, RotateCcw, Upload } from 'lucide-react';
 import type { CustomerDataImportLogin, CustomerDataImportResult } from '../../../shared/contracts';
 import { api, errorMessage } from '../../lib/api/client';
-import { IMPORT_SHEETS, parseExistingCustomers, type ParsedImport } from '../../lib/existingCustomerImport';
+import { IMPORT_SHEETS, ONE_SHEET_TYPES, SHEET_LABEL, parseExistingCustomers, type ParsedImport } from '../../lib/existingCustomerImport';
 import { readXlsx } from '../../lib/xlsxReader';
 import { useAuth } from '../../context/AuthContext';
 import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
@@ -17,7 +17,8 @@ import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
  *      login uses the password the team chose (Supabase Auth keeps only its hash; the CRM never stores it) and the client is
  *      e-mailed the dashboard address, login e-mail and password; without one the client gets an e-mail to set their own.
  */
-const TEMPLATE = '/templates/Existing_Customers_Services_Usage.xlsx';
+const ONE_SHEET_TEMPLATE = '/templates/Existing_Customers_One_Sheet.xlsx';
+const TABS_TEMPLATE = '/templates/Existing_Customers_Services_Usage.xlsx';
 const MAX_BYTES = 5 * 1024 * 1024;
 
 type Step = { kind: 'idle' } | { kind: 'checking' } | { kind: 'checked'; file: string; parsed: ParsedImport; result: CustomerDataImportResult } | { kind: 'saving' } | { kind: 'saved'; result: CustomerDataImportResult };
@@ -41,7 +42,7 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
     setStep({ kind: 'checking' });
     try {
       const parsed = parseExistingCustomers(await readXlsx(file));
-      if (!Object.keys(parsed.data).length) throw new Error('No rows are filled in. Fill the sheets below the grey example rows.');
+      if (!Object.keys(parsed.data).length && !parsed.problems.length) throw new Error('No rows are filled in. Fill the rows below the grey example rows.');
       const result = await importApi(parsed.data, false);
       const s: Extract<Step, { kind: 'checked' }> = { kind: 'checked', file: file.name, parsed, result };
       setChecked(s);
@@ -84,7 +85,7 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
         <h1 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">Import existing customers</h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-0.5 max-w-3xl">
           Add the customers you already look after from the Excel sheet: their services, plans, message and calling usage, campaigns and monthly work.
-          Your clients then see all of it on their dashboard. {isMember ? 'The customers are added as yours.' : 'Write the Support Team Member of each customer in sheet 1.'}
+          Your clients then see all of it on their dashboard. {isMember ? 'The customers are added as yours.' : 'Write the Support Team Member on each Customer row.'}
         </p>
       </div>
 
@@ -94,10 +95,11 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
             <span className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center shrink-0">1</span>
             <div>
               <div className="font-bold text-slate-900 text-sm">Download the template</div>
-              <p className="mt-0.5">Fill one tab per kind of data. Keep the headings; the grey rows are examples and are skipped.</p>
-              <a href={TEMPLATE} download className={`${btn.secondary} mt-2`}>
-                <Download className="w-4 h-4" aria-hidden="true" /> Excel template
+              <p className="mt-0.5">One sheet for the whole Support team: one row per customer, service, usage or campaign, with its Record type. Keep the headings; the grey rows are examples and are skipped.</p>
+              <a href={ONE_SHEET_TEMPLATE} download className={`${btn.secondary} mt-2`}>
+                <Download className="w-4 h-4" aria-hidden="true" /> Excel template (one sheet)
               </a>
+              <a href={TABS_TEMPLATE} download className="block mt-2 text-[11px] text-slate-500 underline">The older template with one tab per kind of data</a>
             </div>
           </li>
           <li className="flex gap-3">
@@ -163,14 +165,21 @@ const Summary: React.FC<{ s: CustomerDataImportResult['summary'] }> = ({ s }) =>
 
 const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: boolean; onSave: () => void; onReset: () => void }> = ({ step, saving, onSave, onReset }) => {
   const { result, parsed } = step;
-  const errors = result.errors;
+  const oneSheet = parsed.format === 'one-sheet';
+  // the sheet's own problems first (a row that cannot be read), then what the server found; in the one-sheet template the server's tab names are shown as Record types
+  const errors = [
+    ...parsed.problems.map(p => ({ sheet: 'Import', row: p.row, message: p.message })),
+    ...result.errors.map(e => (oneSheet ? { ...e, sheet: SHEET_LABEL[e.sheet] ?? e.sheet } : e))
+  ];
   return (
     <Card className="p-5 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <div className="text-sm font-bold text-slate-900">{step.file}</div>
           <div className="text-xs text-slate-500">
-            {IMPORT_SHEETS.filter(s => parsed.counts[s.key]).map(s => `${s.title}: ${parsed.counts[s.key]}`).join(' · ')}
+            {oneSheet
+              ? ONE_SHEET_TYPES.filter(t => parsed.counts[t.key]).map(t => `${t.label}: ${parsed.counts[t.key]}`).join(' · ')
+              : IMPORT_SHEETS.filter(s => parsed.counts[s.key]).map(s => `${s.title}: ${parsed.counts[s.key]}`).join(' · ')}
           </div>
         </div>
         {errors.length ? <Pill tone="red">{errors.length} problem{errors.length === 1 ? '' : 's'} to fix</Pill> : <Pill tone="green">Ready to save</Pill>}
@@ -184,7 +193,7 @@ const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: bool
             <table className="w-full text-xs">
               <thead className="bg-rose-50 text-rose-900">
                 <tr>
-                  <th className="text-left font-semibold px-3 py-2">Sheet</th>
+                  <th className="text-left font-semibold px-3 py-2">{oneSheet ? 'Record type' : 'Sheet'}</th>
                   <th className="text-left font-semibold px-3 py-2">Row</th>
                   <th className="text-left font-semibold px-3 py-2">What to fix</th>
                 </tr>
@@ -218,6 +227,11 @@ const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: bool
             })()}
           </p>
         )
+      )}
+      {parsed.warnings.length > 0 && (
+        <p className="text-[11px] text-orange-700">
+          {parsed.warnings.slice(0, 5).join(' ')}{parsed.warnings.length > 5 ? ` (and ${parsed.warnings.length - 5} more)` : ''}
+        </p>
       )}
       {parsed.ignored.length > 0 && <p className="text-[11px] text-slate-500">Columns not used by the import: {parsed.ignored.slice(0, 8).join('; ')}{parsed.ignored.length > 8 ? '…' : ''}</p>}
 

@@ -10,6 +10,19 @@
 
 Write the member's name as it appears in the CRM. If two people share a name, use their CRM e-mail instead.
 
+## One sheet for the whole Support team (`Existing_Customers_One_Sheet.xlsx`)
+
+The Import screen offers this template first. Everything is on **one plain tab, "Import"**, and the whole Support team can type into the same file (for example a shared Google Sheet): the Team Lead or Department Head downloads it as `.xlsx` and uploads it **once**. Nothing in it is calculated: no formulas, no hidden columns; the person types what they know.
+
+- **One row per record.** The first column, **Record type**, says what the row is: *Customer, Service, WhatsApp account, WhatsApp campaign, AI Calling, RCS / Voice* or *Monthly deliverable*. The second column is the **Mobile Number**, which links the rows of one customer. The order of the rows does not matter. A small line above every heading says which kinds of row use that column; columns that mean the same thing in several kinds are shared (Sent, Delivered, Read / Answered, Failed, Valid Until, Data as of, Service, Notes), so the sheet is 69 columns wide instead of seven tabs.
+- **Who handles the customer and who brought them** are on the Customer row:
+  - **Handled by - Support Team Member**: the Support member (or Team Lead) who looks after the customer; a drop-down from the *Support Team* tab. A Team Member who uploads always gets the customers for themselves; a Team Lead / Department Head must name the member.
+  - **Brought by (Sales / Support)** and **Brought by - Name**: who brought the customer, which is what department-wise income reads (`customers.acquisition_division` / `acquired_by`). The name is written as in the CRM (or the CRM e-mail); the person's team decides Sales or Support, so a name and a division that disagree are an error. Either one alone is enough ("Sales" with no name records the division only; "Support" alone records the importing member). Empty = the acquisition stays what it was before (the importing Support member). Only a customer the import **adds** gets it (the acquisition of an existing customer is never changed afterwards); the customer's history says who brought them. Migration `20261121000100_import_brought_by.sql`.
+- Examples are on rows 3 to 9 (skipped); your rows start on row 10; 3000 rows are prepared. Drop-downs help where the answer is a short list.
+- **Checks before saving:** a row with an unknown Record type, or data typed without one, is listed by row and stops the save; a value typed in a column that does not apply to the row's kind is ignored and shown as a note. Everything else (required fields, numbers, the customer's service) is checked by the database exactly as before, and errors say "Record type, row N".
+- The older templates with one tab per kind (`Existing_Customers_Services_Usage*.xlsx`) still import; the import recognises the format by the Record type column. Their "Sold By (Sales)" is still only a note.
+- Built by `scripts/build_one_sheet_template.py`; the column headings must match `ONE_SHEET_TYPES` in `src/lib/existingCustomerImport.ts`.
+
 ## Steps
 
 1. **Download the template** from the Import screen (`/templates/Existing_Customers_Services_Usage.xlsx`). It has one tab per kind of data:

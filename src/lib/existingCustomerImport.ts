@@ -144,9 +144,137 @@ export interface ParsedImport {
   missing: string[];
   /** Columns with a heading the import does not know (they are ignored). */
   ignored: string[];
+  /** "tabs": the template with one tab per kind of data; "one-sheet": the single "Import" tab with a Record type on every row. */
+  format: 'tabs' | 'one-sheet';
+  /** Rows that cannot be read at all (an unknown Record type, data without one). They stop the save, like a problem the server finds. */
+  problems: { row: number; message: string }[];
+  /** Things typed in a column that does not apply to that row's Record type (they are ignored): worth a look, they do not stop the save. */
+  warnings: string[];
+}
+
+/**
+ * The single-tab template ("Import"): one row per record, the first column says what kind of record it is. Every kind uses only
+ * its own columns (the sheet greys out the rest); columns that mean the same thing (Sent, Delivered, Valid Until ...) are shared.
+ */
+export const ONE_SHEET_TYPES: { key: SheetKey; label: string; aliases: string[]; columns: Record<string, [field: string, kind: Kind]> }[] = [
+  {
+    key: 'customers', label: 'Customer', aliases: ['customer', 'customers'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], 'customer name': ['name', 'text'], 'business name': ['businessName', 'text'], 'e-mail': ['email', 'text'], city: ['city', 'text'],
+      'business address': ['address', 'text'], 'business category': ['category', 'text'], 'customer since': ['customerSince', 'date'],
+      'handled by - support team member': ['member', 'text'], 'brought by (sales / support)': ['broughtByType', 'text'], 'brought by - name': ['broughtBy', 'text'],
+      'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'], notes: ['notes', 'text']
+    }
+  },
+  {
+    key: 'services', label: 'Service', aliases: ['service', 'services'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], 'plan / package name': ['plan', 'text'], 'price paid (₹, excl. gst)': ['price', 'num'],
+      'billing cycle': ['billingCycle', 'text'], 'start date': ['startDate', 'date'], 'renewal / expiry date': ['renewsOn', 'date'], status: ['status', 'text'],
+      'panel / platform': ['platform', 'text'], 'panel login e-mail / account id': ['panelAccount', 'text'], notes: ['notes', 'text']
+    }
+  },
+  {
+    key: 'whatsapp', label: 'WhatsApp account', aliases: ['whatsapp account', 'whatsapp'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], 'whatsapp api number': ['apiNumber', 'mobile'], 'waba id': ['wabaId', 'mobile'], 'display name': ['displayName', 'text'],
+      'blue tick': ['blueTick', 'text'], 'quality rating': ['quality', 'text'], 'messaging limit': ['messagingLimit', 'text'], 'message package': ['packageName', 'text'],
+      'messages in package': ['packageMessages', 'num'], 'extra messages added': ['extraMessages', 'num'], sent: ['sent', 'num'], delivered: ['delivered', 'num'],
+      'read / answered': ['read', 'num'], replied: ['replied', 'num'], failed: ['failed', 'num'], 'campaigns sent / run': ['campaigns', 'num'],
+      'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
+    }
+  },
+  {
+    key: 'campaigns', label: 'WhatsApp campaign', aliases: ['whatsapp campaign', 'campaign', 'campaigns'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], 'campaign name': ['name', 'text'], 'template name': ['template', 'text'], 'sent on': ['sentOn', 'date'],
+      'audience type': ['audienceType', 'text'], 'audience size': ['audienceSize', 'num'], sent: ['sent', 'num'], delivered: ['delivered', 'num'],
+      'read / answered': ['read', 'num'], replied: ['replied', 'num'], failed: ['failed', 'num'], 'campaign status': ['status', 'text']
+    }
+  },
+  {
+    key: 'aiCalling', label: 'AI Calling', aliases: ['ai calling'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], 'panel / platform': ['platform', 'text'], 'calling plan': ['plan', 'text'], 'calling number(s)': ['numbers', 'mobile'],
+      'ai agent name': ['agent', 'text'], 'credits bought (₹)': ['creditsBought', 'num'], 'credits left (₹)': ['creditsLeft', 'num'], 'minutes bought': ['minutesBought', 'num'],
+      'minutes left': ['minutesLeft', 'num'], 'total calls': ['totalCalls', 'num'], 'connected calls': ['connectedCalls', 'num'], 'not answered': ['notAnswered', 'num'],
+      'interested / leads': ['interested', 'num'], 'campaigns sent / run': ['campaigns', 'num'], 'contacts uploaded': ['contacts', 'num'],
+      'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
+    }
+  },
+  {
+    key: 'rcsVoice', label: 'RCS / Voice', aliases: ['rcs / voice', 'rcs/voice', 'rcs & voice', 'rcs', 'voice'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], 'sender id / brand name': ['senderId', 'text'], 'messages in package': ['packageMessages', 'num'],
+      sent: ['sent', 'num'], delivered: ['delivered', 'num'], 'read / answered': ['read', 'num'], 'clicks / key-press replies': ['clicks', 'num'], failed: ['failed', 'num'],
+      'campaigns sent / run': ['campaigns', 'num'], 'valid until': ['validUntil', 'date'], 'data as of': ['asOf', 'date']
+    }
+  },
+  {
+    key: 'monthly', label: 'Monthly deliverable', aliases: ['monthly deliverable', 'monthly', 'monthly deliverables'],
+    columns: {
+      'mobile number': ['mobile', 'mobile'], service: ['service', 'text'], month: ['month', 'month'], 'what is delivered (unit)': ['unit', 'text'], 'included in plan': ['included', 'num'],
+      delivered: ['delivered', 'num'], 'result 1 - name': ['result1Name', 'text'], 'result 1 - value': ['result1Value', 'text'], 'result 2 - name': ['result2Name', 'text'],
+      'result 2 - value': ['result2Value', 'text'], 'link (page / profile / website)': ['link', 'text'], notes: ['notes', 'text']
+    }
+  }
+];
+
+/** The name the server uses for each kind of record in its messages ("4 WhatsApp Campaigns, row 7"), as the person sees it in the one-tab template. */
+export const SHEET_LABEL: Record<string, string> = {
+  '1 Customers': 'Customer', '2 Services': 'Service', '3 WhatsApp Account': 'WhatsApp account', '4 WhatsApp Campaigns': 'WhatsApp campaign',
+  '5 AI Calling': 'AI Calling', '6 RCS & Voice': 'RCS / Voice', '7 Monthly Deliverables': 'Monthly deliverable'
+};
+
+function parseOneSheet(sheet: { name: string; rows: Cell[][] }, hdr: number): ParsedImport {
+  const data: ImportData = {};
+  const counts = Object.fromEntries(IMPORT_SHEETS.map(s => [s.key, 0])) as Record<SheetKey, number>;
+  const ignored: string[] = [];
+  const problems: ParsedImport['problems'] = [];
+  const warnings: string[] = [];
+  const known = new Set(ONE_SHEET_TYPES.flatMap(t => Object.keys(t.columns)));
+  const head = (sheet.rows[hdr] ?? []).map(h => header(h));
+  head.forEach((key, j) => {
+    if (key && key !== 'record type' && !known.has(key) && !CALCULATED.has(key) && !key.endsWith('(helper)')) ignored.push(`${sheet.name}: ${String(sheet.rows[hdr]?.[j])}`);
+  });
+  const typeOf = (v: Cell) => {
+    const t = String(v ?? '').replace(/\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    return t ? ONE_SHEET_TYPES.find(x => x.aliases.includes(t)) ?? null : null;
+  };
+  for (let i = hdr + 1; i < sheet.rows.length; i++) {
+    const cells = sheet.rows[i] ?? [];
+    const raw = cells[0] ?? null;
+    const t = typeOf(raw);
+    const typed = (j: number) => {
+      const key = head[j];
+      return j > 0 && !!key && known.has(key) && !CALCULATED.has(key) && cells[j] !== null && cells[j] !== undefined && cells[j] !== '';
+    };
+    if (!t) {
+      if (raw !== null && raw !== '') problems.push({ row: i + 1, message: `Record type "${String(raw)}" is not one of: ${ONE_SHEET_TYPES.map(x => x.label).join(', ')}.` });
+      else if (head.some((_, j) => typed(j))) problems.push({ row: i + 1, message: 'Choose the Record type for this row (Customer, Service, WhatsApp account ...).' });
+      continue;
+    }
+    const out: Row = { row: i + 1 };
+    for (const [key, [field, kind]] of Object.entries(t.columns)) {
+      const j = head.indexOf(key);
+      out[field] = j < 0 ? null : convert(cells[j] ?? null, kind);
+    }
+    const mobile = String(out.mobile ?? '').replace(/\D/g, '');
+    if (mobile === EXAMPLE_MOBILE || cells.some(x => typeof x === 'string' && /\bEXAMPLE\b/.test(x))) continue;
+    head.forEach((key, j) => {
+      if (warnings.length < 20 && typed(j) && !t.columns[key]) warnings.push(`Row ${i + 1}: "${String(sheet.rows[hdr]?.[j])}" is not used by a ${t.label} row, so it was ignored.`);
+    });
+    (data[t.key] ??= []).push(out);
+    counts[t.key]++;
+  }
+  return { data, counts, missing: [], ignored, format: 'one-sheet', problems, warnings };
 }
 
 export function parseExistingCustomers(wb: Workbook): ParsedImport {
+  for (const sheet of wb.sheets) {
+    const hdr = sheet.rows.slice(0, 6).findIndex(r => header(r?.[0]) === 'record type');
+    if (hdr >= 0 && !/guide|how to|lists/i.test(sheet.name)) return parseOneSheet(sheet, hdr);
+  }
   const data: ImportData = {};
   const counts = Object.fromEntries(IMPORT_SHEETS.map(s => [s.key, 0])) as Record<SheetKey, number>;
   const missing: string[] = [];
@@ -185,5 +313,5 @@ export function parseExistingCustomers(wb: Workbook): ParsedImport {
     if (rows.length) data[spec.key] = rows;
     counts[spec.key] = rows.length;
   }
-  return { data, counts, missing, ignored };
+  return { data, counts, missing, ignored, format: 'tabs', problems: [], warnings: [] };
 }
