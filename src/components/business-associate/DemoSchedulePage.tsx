@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarClock, ChevronLeft, ChevronRight, List, Plus } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, Eye, List, Plus } from 'lucide-react';
 import type { BaDemo, DemoStatus } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { businessAssociateApi } from '../../lib/api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { PageTitle } from '../layout/shell';
-import { Dialog, ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
+import { Card, Tabs } from '../tasks/head/headParts';
+import { Avatar, Dialog, ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, dateText, tcBtn, tcInput } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
 import { notifyBaChanged, toIsoDate, useContactOptions } from './ui';
@@ -61,11 +62,9 @@ export const DemoSchedulePage: React.FC<{ go: BaNavigate; initialContactId?: str
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
       <p className="text-xs text-slate-500">Meetings are recorded here. This page does not send invitations, create video meetings or send reminders; share the link with the client yourself.</p>
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Card>
         <div className="p-4 flex flex-wrap items-center gap-3 border-b border-slate-100">
-          <div role="tablist" aria-label="Demos" className="flex flex-wrap gap-1.5 flex-1">
-            {TABS.map(t => <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${tab === t.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{t.label} <span className={tab === t.id ? 'text-blue-100' : 'text-slate-400'}>{count(t.id)}</span></button>)}
-          </div>
+          <div className="flex-1 min-w-0"><Tabs label="Demos" value={tab} onChange={v => setTab(v as Tab)} options={TABS.map(t => ({ id: t.id as string, label: t.label, count: count(t.id) }))} /></div>
           <div className="inline-flex rounded-xl border border-slate-200 overflow-hidden" role="group" aria-label="View">
             <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')} className={`px-3 py-2 text-xs font-bold inline-flex items-center gap-1 ${view === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'}`}><List className="w-4 h-4" aria-hidden="true" /> List</button>
             <button type="button" aria-pressed={view === 'calendar'} onClick={() => setView('calendar')} className={`px-3 py-2 text-xs font-bold inline-flex items-center gap-1 ${view === 'calendar' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'}`}><CalendarClock className="w-4 h-4" aria-hidden="true" /> Calendar</button>
@@ -73,17 +72,17 @@ export const DemoSchedulePage: React.FC<{ go: BaNavigate; initialContactId?: str
         </div>
 
         {demos === null ? <Spinner label="Loading demos…" /> : view === 'list' ? (
-          shown.length === 0 ? <EmptyState icon={CalendarClock} title={tab === 'UPCOMING' ? 'No upcoming demo' : 'Nothing here'}>{tab === 'UPCOMING' ? 'Schedule a demo for one of your contacts.' : 'No demo matches this view.'}</EmptyState> : (
+          shown.length === 0 ? <EmptyState title={tab === 'UPCOMING' ? 'No upcoming demo' : 'Nothing here'}>{tab === 'UPCOMING' ? 'Schedule a demo for one of your contacts.' : 'No demo matches this view.'}</EmptyState> : (
             <>
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full text-sm"><thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">{['Client', 'Company', 'Demo', 'Date', 'Time', 'Mode', 'Assigned to', 'Status', 'Actions'].map(h => <th key={h} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>)}</tr></thead>
+                <table className="w-full text-left text-sm min-w-[1000px]"><thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Client', 'Company', 'Demo', 'Date', 'Time', 'Mode', 'Assigned to', 'Status', 'Actions'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-slate-100">{shown.map(d => (
-                    <tr key={d.id} className="hover:bg-slate-50/70">
-                      <td className="px-4 py-3 font-semibold text-slate-900">{d.client}</td><td className="px-4 py-3 text-slate-600">{d.company || '-'}</td><td className="px-4 py-3">{d.title}</td>
+                    <tr key={d.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={d.client || d.title} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{d.client}</span></div></td><td className="px-4 py-3 text-slate-600">{d.company || '-'}</td><td className="px-4 py-3">{d.title}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{dateText(d.startsAt)}</td><td className="px-4 py-3 whitespace-nowrap">{timeText(d.startsAt)} – {timeText(d.endsAt)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{d.mode === 'ONLINE' ? 'Online' : 'In person'}</td><td className="px-4 py-3 whitespace-nowrap">{d.assignee || '-'}</td>
                       <td className="px-4 py-3"><StatusBadge s={d.status} /></td>
-                      <td className="px-4 py-3"><button type="button" className={tcBtn.link} onClick={() => setDetail(d)} aria-label={`Open the demo ${d.title} for ${d.client}`}>Open</button></td>
+                      <td className="px-4 py-3"><button type="button" className={tcBtn.row} onClick={() => setDetail(d)} aria-label={`Open the demo ${d.title} for ${d.client}`}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> Open</button></td>
                     </tr>))}</tbody></table>
               </div>
               <ul className="md:hidden divide-y divide-slate-100">{shown.map(d => (
@@ -97,7 +96,7 @@ export const DemoSchedulePage: React.FC<{ go: BaNavigate; initialContactId?: str
         ) : (
           <CalendarView month={month} setMonth={setMonth} demos={(tab === 'ALL' ? demos : shown)} onOpen={setDetail} onDay={date => setForm({ date, contactId: initialContactId })} />
         )}
-      </section>
+      </Card>
 
       {form && <DemoForm demo={form.demo} date={form.date} contactId={form.contactId} onClose={() => setForm(null)} onSaved={(d, created) => changed(created ? `The demo with ${d.client} is scheduled.` : d.status === 'RESCHEDULED' ? 'The demo was rescheduled.' : 'The demo was updated.')} />}
       {detail && !form && !finish && <DemoDetail demo={detail} onClose={() => setDetail(null)} onEdit={() => { setForm({ demo: detail }); }} onFinish={status => setFinish({ demo: detail, status })} />}
@@ -120,7 +119,7 @@ const CalendarView: React.FC<{ month: Date; setMonth: (d: Date) => void; demos: 
         <h2 className="text-base font-extrabold text-slate-900" aria-live="polite">{month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</h2>
         <button type="button" className={tcBtn.secondary} onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Next month"><ChevronRight className="w-4 h-4" aria-hidden="true" /></button>
       </div>
-      <div className="grid grid-cols-7 text-[11px] font-bold uppercase text-slate-500 mb-1">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <div key={d} className="px-1 py-1">{d}</div>)}</div>
+      <div className="grid grid-cols-7 text-xs font-medium text-slate-500 mb-1">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <div key={d} className="px-1 py-1">{d}</div>)}</div>
       <div className="grid grid-cols-7 gap-px bg-slate-200 rounded-xl overflow-hidden border border-slate-200">
         {days.map(d => {
           const k = toIsoDate(d);
@@ -148,9 +147,9 @@ const DemoDetail: React.FC<{ demo: BaDemo; onClose: () => void; onEdit: () => vo
     <div className="flex items-center gap-2"><StatusBadge s={d.status} />{d.rescheduleCount > 0 && <span className="text-xs text-slate-500">Rescheduled {d.rescheduleCount}×</span>}</div>
     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
       {([['Date', dateText(d.startsAt)], ['Time', `${timeText(d.startsAt)} – ${timeText(d.endsAt)}`], ['Mode', d.mode === 'ONLINE' ? 'Online' : 'In person'], [d.mode === 'ONLINE' ? 'Platform' : 'Location', d.location], ['Assigned to', d.assignee], ['Description', d.description], ['Internal notes', d.internalNotes], ['Feedback', d.feedback], ['Follow-up notes', d.followUpNotes]] as [string, string | null][]).map(([k, v]) => (
-        <div key={k}><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{k}</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{v || '-'}</dd></div>
+        <div key={k}><dt className="text-xs font-medium text-slate-500">{k}</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{v || '-'}</dd></div>
       ))}
-      {d.meetingLink && <div className="sm:col-span-2"><dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Meeting link</dt><dd><a href={d.meetingLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{d.meetingLink}</a></dd></div>}
+      {d.meetingLink && <div className="sm:col-span-2"><dt className="text-xs font-medium text-slate-500">Meeting link</dt><dd><a href={d.meetingLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{d.meetingLink}</a></dd></div>}
     </dl>
     <div className="flex flex-wrap justify-end gap-2 pt-1">
       <button type="button" className={tcBtn.secondary} onClick={onClose}>Close</button>

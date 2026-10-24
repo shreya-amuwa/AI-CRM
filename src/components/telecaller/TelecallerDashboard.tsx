@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ClipboardList, Home, Target } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useNotifications } from '../../context/NotificationContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
+import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HomePage } from './HomePage';
@@ -35,7 +35,6 @@ export function parseTelecallerPage(path: string): TelecallerPage {
  */
 export const TelecallerDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
-  const { unreadCount } = useNotifications();
   const userId = user?.id || profile?.id || '';
   const [page, setPage] = useState<TelecallerPage>(() => parseTelecallerPage(window.location.pathname));
   // a filter or "open the Add Lead form" that the page being opened should start with
@@ -61,7 +60,6 @@ export const TelecallerDashboard: React.FC = () => {
       title="Amuwa Sales"
       subtitle="Telecaller"
       ariaLabel="Telecaller navigation"
-      tone="navy"
       groups={groups}
       active={page === 'notifications' ? '' : page}
       onSelect={id => go(id as TelecallerPage)}
@@ -74,9 +72,10 @@ export const TelecallerDashboard: React.FC = () => {
         </div>
       }
       topActions={
-        <span className="relative" title={unreadCount ? `${unreadCount} unread` : undefined}>
+        <>
+          <LeaveCenter />
           <NotificationBell />
-        </span>
+        </>
       }
       wide
     >

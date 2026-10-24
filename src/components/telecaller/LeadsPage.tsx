@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus, Search, Target } from 'lucide-react';
+import { Eye, Pencil, Plus, Search } from 'lucide-react';
 import {
   CALL_STATUSES, CALL_STATUS_LABELS, LEAD_TEMPERATURES, type CallStatus, type LeadTemperature, type TelecallerLead, type TelecallerLeadList
 } from '../../../shared/contracts';
@@ -7,7 +7,8 @@ import { telecallerLeadSchema } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { telecallerApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
-import { Dialog, ErrorBanner, Field, LEAD_SOURCES, Pager, Spinner, todayIso, useDebounced, useServiceCatalog } from '../team-member/pipeline/shared';
+import { Card } from '../tasks/head/headParts';
+import { Avatar, Dialog, ErrorBanner, Field, LEAD_SOURCES, Pager, Spinner, todayIso, useDebounced, useServiceCatalog } from '../team-member/pipeline/shared';
 import {
   CALL_STATUS_OPTIONS, CallStatusBadge, EmptyState, TEMPERATURE_DOT, TEMPERATURE_LABELS, TEMPERATURE_STYLE, TemperatureBadge, dateText, notifyTelecallerChanged, tcBtn, tcInput, tcSelect
 } from './ui';
@@ -80,7 +81,7 @@ export const LeadsPage: React.FC<{
       {error && <ErrorBanner message={error} onRetry={load} />}
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
 
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <Card className="overflow-hidden">
         <div className="p-4 flex flex-wrap items-center gap-3 border-b border-slate-100">
           <div className="relative flex-1 min-w-[14rem] max-w-md">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
@@ -103,25 +104,25 @@ export const LeadsPage: React.FC<{
         {loading && !data ? (
           <Spinner label="Loading leads…" />
         ) : !data || data.items.length === 0 ? (
-          <EmptyState icon={Target} title={filtered ? 'No leads match' : 'No leads yet'}>
+          <EmptyState title={filtered ? 'No leads match' : 'No leads yet'}>
             {filtered ? 'Try another filter or clear the search.' : 'Add the first lead after a call with a customer who is interested.'}
             {!filtered && <div className="mt-4"><button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button></div>}
           </EmptyState>
         ) : (
           <>
             <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm" aria-busy={loading}>
+              <table className="w-full text-left text-sm min-w-[1100px]" aria-busy={loading}>
                 <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">
+                  <tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">
                     {['Customer Name', 'Company / Business Name', 'Phone', 'Email', 'Lead Source', 'Lead Temperature', 'Call Status', 'Follow-up Date', 'Created Date', 'Actions'].map(h => (
-                      <th key={h} scope="col" className="px-4 py-3 font-bold whitespace-nowrap">{h}</th>
+                      <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.items.map(l => (
-                    <tr key={l.id} className="hover:bg-slate-50/70">
-                      <td className="px-4 py-3 font-semibold text-slate-900">{l.name}</td>
+                    <tr key={l.id} className="hover:bg-slate-50/60">
+                      <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={l.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{l.name}</span></div></td>
                       <td className="px-4 py-3 text-slate-600">{l.company || '-'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{l.phone ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">{l.phone}</a> : '-'}</td>
                       <td className="px-4 py-3 text-slate-600 break-all">{l.email || '-'}</td>
@@ -131,10 +132,11 @@ export const LeadsPage: React.FC<{
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(l.followUpDate)}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(l.createdAt)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <button type="button" className={tcBtn.link} onClick={() => setDialog({ mode: 'view', lead: l })} aria-label={`View ${l.name}`}>View</button>
-                        <span className="mx-2 text-slate-300" aria-hidden="true">|</span>
-                        <button type="button" className={tcBtn.link} onClick={() => setDialog({ mode: 'edit', lead: l })} aria-label={`Edit ${l.name}`}>Edit</button>
-                        {renderRowAction && <span className="ml-2">{renderRowAction(l, load)}</span>}
+                        <div className="flex items-center gap-1.5">
+                          <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'view', lead: l })} aria-label={`View ${l.name}`}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> View</button>
+                          <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'edit', lead: l })} aria-label={`Edit ${l.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit</button>
+                          {renderRowAction?.(l, load)}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -167,7 +169,7 @@ export const LeadsPage: React.FC<{
             <Pager page={page} pageSize={pageSize} total={data.total} noun="leads" onPage={setPage} onPageSize={setPageSize} />
           </>
         )}
-      </section>
+      </Card>
 
       {dialog?.mode === 'add' && <LeadDialog api={api} onClose={() => setDialog(null)} onSaved={l => saved(l, true)} />}
       {dialog?.mode === 'edit' && <LeadDialog api={api} lead={dialog.lead} onClose={() => setDialog(null)} onSaved={l => saved(l, false)} />}
@@ -187,7 +189,7 @@ const LeadView: React.FC<{ lead: TelecallerLead; onClose: () => void; onEdit: ()
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
         {rows.map(([k, v]) => (
           <div key={k} className={k === 'Notes' || k === 'Business address' ? 'sm:col-span-2' : ''}>
-            <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{k}</dt>
+            <dt className="text-xs font-medium text-slate-500">{k}</dt>
             <dd className="text-slate-800 whitespace-pre-wrap break-words">{v || '-'}</dd>
           </div>
         ))}
@@ -312,7 +314,7 @@ const LeadDialog: React.FC<{ api: LeadsApi; lead?: TelecallerLead; onClose: () =
                     role="radio"
                     aria-checked={on}
                     onClick={() => set('leadTemperature', t)}
-                    className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold ring-1 ring-inset transition ${on ? `${TEMPERATURE_STYLE[t]} ring-2` : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'}`}
+                    className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-bold ring-1 ring-inset transition ${on ? `${TEMPERATURE_STYLE[t]} ring-2 ring-current` : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50'}`}
                   >
                     <span className={`w-2 h-2 rounded-full ${TEMPERATURE_DOT[t]}`} aria-hidden="true" />{TEMPERATURE_LABELS[t]}
                   </button>

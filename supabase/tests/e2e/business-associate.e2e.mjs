@@ -77,6 +77,28 @@ const todayIST = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const stat = async (p, label) => Number(await p.getByTestId(`stat-${label}`).innerText());
 
 
+const styleOf = async p => { await p.waitForSelector('main .bg-white.rounded-2xl.border, main h1', { timeout: 20000 }); await p.waitForSelector('main .bg-white.rounded-2xl.border', { timeout: 20000 }).catch(() => {}); return p.evaluate(() => {
+  const cs = (el, props) => (el ? Object.fromEntries(props.map(k => [k, getComputedStyle(el)[k]])) : null);
+  const aside = document.querySelector('aside');
+  const active = aside?.querySelector('nav button[aria-current="page"]');
+  const inactive = [...(aside?.querySelectorAll('nav button:not([aria-current])') ?? [])][0];
+  const header = document.querySelector('header');
+  const title = document.querySelector('main h1');
+  const primary = [...document.querySelectorAll('main button')].find(b => /\bbg-blue-600\b/.test(b.className) && !b.getAttribute('role'));
+  const card = document.querySelector('main .bg-white.rounded-2xl.border');
+  return {
+    page: cs(aside?.parentElement, ['backgroundColor']),
+    sidebar: { ...cs(aside, ['backgroundColor', 'borderRightColor']), width: Math.round(aside?.getBoundingClientRect().width ?? 0) },
+    active: cs(active, ['backgroundColor', 'color', 'fontWeight', 'borderRadius']),
+    inactive: cs(inactive, ['color', 'fontWeight']),
+    header: cs(header, ['backgroundColor', 'borderBottomColor']),
+    title: cs(title, ['fontSize', 'fontWeight', 'color']),
+    primary: cs(primary, ['backgroundColor', 'color', 'borderRadius', 'height']),
+    card: cs(card, ['backgroundColor', 'borderTopColor', 'borderRadius'])
+  };
+}); };
+const sameDesign = (a, b, keys) => keys.every(k => JSON.stringify(a[k]) === JSON.stringify(b[k]));
+
 // ------------------------------------------------------------------ the AI service stand-in (the API server calls it; nothing external is reached)
 const aiCalls = [];
 const ai = http.createServer((req, res) => {
@@ -133,6 +155,7 @@ ok('fixture: a Telecaller, two Business Associates and an approved price list we
 
 // ------------------------------------------------------------------ 1. the Department Head: creation form and Service Prices
 const dh = await login('dh@amuwa.com', { width: 1440, height: 900 }, 'nav button');
+const refDesign = await styleOf(dh); // the Department Head's dashboard is the reference for the design
 await menu(dh, 'Team Members & Access');
 await dh.locator('#staff-role').waitFor({ timeout: 15000 });
 await dh.locator('#staff-role').selectOption('TEAM_MEMBER');
@@ -176,13 +199,14 @@ const b1 = await login('ba.one@amuwa.com', { width: 1440, height: 900 }, 'text=Q
 await expect(/\/business-associate\/dashboard\//.test(b1.url()), 'routing: a Business Associate lands on the Business Associate dashboard', b1.url());
 const nav = (await b1.locator('aside nav button').allInnerTexts()).map(s => s.trim());
 await expect(nav.join('|') === 'Home|Tasks|Leads|Quotation|Demo Schedule|Scope of Project', 'sidebar: Tasks, Leads, Quotation, Demo Schedule, Scope of Project (after Home)', nav);
-const sidebarBg = await b1.locator('aside').evaluate(e => getComputedStyle(e).backgroundColor);
-await expect(sidebarBg === 'rgb(11, 31, 75)', 'design: the navy sidebar', sidebarBg);
+const baDesign = await styleOf(b1);
+await expect(sameDesign(baDesign, refDesign, ['page', 'sidebar', 'active', 'inactive', 'header', 'title', 'card']), 'design: the page background, sidebar, active menu item, header, page title and cards are the Department Head dashboard\'s', { baDesign, refDesign });
+await expect(baDesign.primary && refDesign.primary && sameDesign(baDesign, refDesign, ['primary']), 'design: the primary button is the Department Head dashboard\'s (colour, radius, height)', { baDesign: baDesign.primary, refDesign: refDesign.primary });
 await expect(await b1.locator('header').getByRole('button', { name: 'Sign out' }).count() === 1, 'the Sign out button is in the top bar');
 await b1.getByTestId('stat-assigned-contacts').waitFor({ timeout: 15000 });
 await expect(Number(await b1.getByTestId('stat-assigned-contacts').innerText()) === 1 && Number(await b1.getByTestId('stat-upcoming-demos').innerText()) === 0 && Number(await b1.getByTestId('stat-scope-documents-generated').innerText()) === 0, 'Home: the counts come from the data (1 contact; zeros where nothing exists)');
 await expect(/Meera Kapoor/.test(await text(b1)) && /Converted by Tele One/.test(await text(b1)), 'Home: recent activity shows the hand-over');
-const quick = (await b1.locator('section[aria-labelledby="ba-quick"] button').allInnerTexts()).map(s => s.trim());
+const quick = (await b1.locator('section[aria-label="Quick actions"] button').allInnerTexts()).map(s => s.trim());
 await expect(quick.join('|') === 'Open Tasks|Add Lead|Generate Quotation|Schedule Demo|Generate Scope of Project', 'Home: the five quick actions', quick);
 await b1.screenshot({ path: `${OUT}/ba-3-home.png`, fullPage: true });
 
@@ -447,6 +471,18 @@ await menu(ph, 'Demo Schedule'); await ph.getByRole('heading', { name: 'Demo Sch
 await ph.getByRole('button', { name: 'Calendar' }).click(); await noSideways('the calendar');
 await menu(ph, 'Scope of Project'); await ph.locator('#sc-client').waitFor({ timeout: 10000 }); await noSideways('Scope of Project');
 await ph.close();
+
+// ------------------------------------------------------------------ 10. a tablet-sized window
+const tb = await login('ba.one@amuwa.com', { width: 820, height: 1180 }, 'text=Quick actions');
+const tabletOk = async label => expect(await tb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `tablet: no sideways scrolling on ${label}`);
+await tabletOk('Home');
+for (const [label, ready] of [['Tasks', 'tbody tr'], ['Leads', 'tbody tr'], ['Quotation', 'tbody tr'], ['Demo Schedule', 'text=Demo Schedule'], ['Scope of Project', '#sc-client']]) {
+  await menu(tb, label);
+  await tb.waitForSelector(ready, { timeout: 15000 });
+  await tabletOk(label);
+}
+await tb.screenshot({ path: `${OUT}/ba-11-tablet.png` });
+await tb.close();
 
 const bad = errors.filter(e => !/favicon/.test(e));
 await expect(bad.length === 0, 'no console errors or page errors in any window', bad.slice(0, 5));

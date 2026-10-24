@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BadgeIndianRupee } from 'lucide-react';
 import type { ServicePrice } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { businessAssociateApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
+import { Card } from '../tasks/head/headParts';
 import { ErrorBanner, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, tcBtn, tcInput } from '../telecaller/ui';
 
@@ -42,11 +42,11 @@ export const ServicePrices: React.FC = () => {
       <PageTitle title="Service prices" subtitle="The approved prices Business Associates quote from. Set the price, the GST rate and the largest discount allowed for each service." />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        {items === null ? <Spinner /> : items.length === 0 ? <EmptyState icon={BadgeIndianRupee} title="No services in the catalogue" /> : (
+      <Card>
+        {items === null ? <Spinner /> : items.length === 0 ? <EmptyState title="No services in the catalogue" /> : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100">{['Service', 'Charged', 'Unit price (INR)', 'GST %', 'Max discount %', 'Active', ''].map(h => <th key={h} scope="col" className="px-3 py-3 font-bold whitespace-nowrap">{h}</th>)}</tr></thead>
+            <table className="w-full text-left text-sm min-w-[820px]">
+              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Service', 'Charged', 'Unit price (INR)', 'GST %', 'Max discount %', 'Active', ''].map(h => <th key={h} scope="col" className="px-3 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {items.map(p => {
                   const r = rows[p.serviceCode];
@@ -59,7 +59,7 @@ export const ServicePrices: React.FC = () => {
                       <td className="px-3 py-2"><input type="number" min="0" max="100" step="0.01" className={`${tcInput} w-20`} value={r.gstRate} onChange={e => set(p.serviceCode, { gstRate: e.target.value })} aria-label={`GST rate, ${p.name}`} /></td>
                       <td className="px-3 py-2"><input type="number" min="0" max="100" step="0.01" className={`${tcInput} w-20`} value={r.maxDiscountPct} onChange={e => set(p.serviceCode, { maxDiscountPct: e.target.value })} aria-label={`Largest discount, ${p.name}`} /></td>
                       <td className="px-3 py-2"><input type="checkbox" checked={r.isActive} onChange={e => set(p.serviceCode, { isActive: e.target.checked })} aria-label={`Active, ${p.name}`} className="rounded border-slate-300" /></td>
-                      <td className="px-3 py-2"><button type="button" className={tcBtn.secondary} disabled={saving !== null} onClick={() => void save(p)} aria-label={`Save the price of ${p.name}`}>{saving === p.serviceCode ? 'Saving…' : 'Save'}</button></td>
+                      <td className="px-3 py-2"><button type="button" className={tcBtn.row} disabled={saving !== null} onClick={() => void save(p)} aria-label={`Save the price of ${p.name}`}>{saving === p.serviceCode ? 'Saving…' : 'Save'}</button></td>
                     </tr>
                   );
                 })}
@@ -67,7 +67,7 @@ export const ServicePrices: React.FC = () => {
             </table>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 };

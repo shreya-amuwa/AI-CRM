@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { BookOpen, HelpCircle, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
@@ -13,11 +13,6 @@ import { closeMenu, toggleMenu, useMenu } from './menuState';
  * Simple dashboards use <DashboardShell>. Dashboards with custom navigation (a pipeline sub-tree, department
  * sub-menus) use the smaller pieces: <SidebarFrame>, <SidebarBrand>, <NavButton>, <NavGroupLabel>, <TopBar>.
  */
-
-/** 'navy': a dark-blue sidebar with a blue active item (the Telecaller workspace); every other dashboard keeps the white one. */
-export type ShellTone = 'light' | 'navy';
-const ToneContext = createContext<ShellTone>('light');
-const useTone = () => useContext(ToneContext) === 'navy';
 
 export interface ShellNavItem {
   id: string;
@@ -64,20 +59,16 @@ export const NavButton: React.FC<{
   badge?: number;
   count?: number;
   children?: React.ReactNode;
-}> = ({ label, icon: Icon, active, onClick, badge, count, children }) => {
-  const navy = useTone();
-  return (
+}> = ({ label, icon: Icon, active, onClick, badge, count, children }) => (
   <button
     type="button"
     onClick={onClick}
     aria-current={active ? 'page' : undefined}
     className={`w-full flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm text-left transition-colors ${
-      navy
-        ? active ? 'bg-blue-600 text-white font-bold shadow-sm' : 'text-slate-200 font-medium hover:bg-white/10 hover:text-white'
-        : active ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50 hover:text-slate-900'
+      active ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50 hover:text-slate-900'
     }`}
   >
-    <Icon className={`w-[18px] h-[18px] shrink-0 ${active ? '' : navy ? 'text-slate-300' : 'text-slate-500'}`} strokeWidth={1.9} aria-hidden="true" />
+    <Icon className={`w-[18px] h-[18px] shrink-0 ${active ? '' : 'text-slate-500'}`} strokeWidth={1.9} aria-hidden="true" />
     <span className="flex-1 min-w-0 truncate">{label}</span>
     {count !== undefined && (
       <span className={`shrink-0 text-[11px] font-bold rounded-full px-2 py-0.5 ${active ? 'bg-white text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{count}</span>
@@ -85,11 +76,10 @@ export const NavButton: React.FC<{
     {badge ? <span className="shrink-0 text-[11px] font-bold bg-amber-50 text-amber-700 rounded-full px-2 py-0.5">{badge > 99 ? '99+' : badge}</span> : null}
     {children}
   </button>
-  );
-};
+);
 
 export const NavGroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className={`px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] ${useTone() ? 'text-slate-400' : 'text-slate-500'}`}>{children}</div>
+  <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</div>
 );
 
 /** The hamburger that lives in the sidebar, to the right of the brand: collapses the sidebar on desktop, closes the drawer on small screens. */
@@ -97,7 +87,7 @@ export const SidebarToggle: React.FC = () => (
   <button
     type="button"
     onClick={toggleMenu}
-    className={`shrink-0 w-10 h-10 rounded-[9px] flex items-center justify-center ${useTone() ? 'text-slate-200 hover:bg-white/10' : 'text-slate-600 hover:bg-slate-100'}`}
+    className="shrink-0 w-10 h-10 rounded-[9px] text-slate-600 hover:bg-slate-100 flex items-center justify-center"
     aria-label="Collapse menu"
     aria-controls="app-sidebar"
   >
@@ -106,19 +96,16 @@ export const SidebarToggle: React.FC = () => (
   </button>
 );
 
-export const SidebarBrand: React.FC<{ title: string; subtitle?: string; onClose?: () => void }> = ({ title, subtitle }) => {
-  const navy = useTone();
-  return (
+export const SidebarBrand: React.FC<{ title: string; subtitle?: string; onClose?: () => void }> = ({ title, subtitle }) => (
   <div className="flex items-center gap-2.5 pl-2 pr-1">
     <AmuwaLogo size="sm" />
     <div className="flex-1 min-w-0 leading-tight">
-      <span className={`block text-base font-extrabold truncate ${navy ? 'text-white' : 'text-slate-900'}`}>{title}</span>
-      {subtitle && <span className={`block text-xs truncate ${navy ? 'text-slate-300' : 'text-slate-500'}`}>{subtitle}</span>}
+      <span className="block text-base font-extrabold text-slate-900 truncate">{title}</span>
+      {subtitle && <span className="block text-xs text-slate-500 truncate">{subtitle}</span>}
     </div>
     <SidebarToggle />
   </div>
-  );
-};
+);
 
 /** The sidebar: a drawer on small screens (opened by the hamburger), a sticky column from lg up that the hamburger can collapse. */
 export const SidebarFrame: React.FC<{
@@ -130,7 +117,6 @@ export const SidebarFrame: React.FC<{
   onClose?: () => void;
 }> = ({ ariaLabel, children, footer }) => {
   const { open, collapsed } = useMenu();
-  const navy = useTone();
   const ref = useRef<HTMLElement>(null);
   // an opened drawer takes keyboard focus, so Tab walks its links instead of the page behind the backdrop
   useEffect(() => {
@@ -144,13 +130,13 @@ export const SidebarFrame: React.FC<{
         id="app-sidebar"
         tabIndex={-1}
         // closed on a phone or tablet it is off screen and out of the tab order; from lg up it is a sticky column (or hidden when collapsed)
-        className={`fixed lg:sticky top-0 left-0 h-screen w-[264px] max-w-[85vw] shrink-0 ${navy ? 'bg-[#0b1f4b] border-r border-[#0b1f4b]' : 'bg-white border-r border-slate-200'} z-50 flex flex-col p-3.5 pb-5 gap-5 overflow-y-auto overscroll-contain outline-none transition-[transform,visibility] ${
+        className={`fixed lg:sticky top-0 left-0 h-screen w-[264px] max-w-[85vw] shrink-0 bg-white border-r border-slate-200 z-50 flex flex-col p-3.5 pb-5 gap-5 overflow-y-auto overscroll-contain outline-none transition-[transform,visibility] ${
           open ? 'translate-x-0 shadow-xl' : '-translate-x-full max-lg:invisible'
         } ${collapsed ? 'lg:hidden' : 'lg:translate-x-0'}`}
         aria-label={ariaLabel}
       >
         {children}
-        <div className={`mt-auto pt-3 border-t flex flex-col gap-0.5 ${navy ? 'border-white/10' : 'border-slate-100'}`}>
+        <div className="mt-auto pt-3 border-t border-slate-100 flex flex-col gap-0.5">
           <DocumentationLink />
           {footer}
         </div>
@@ -160,19 +146,16 @@ export const SidebarFrame: React.FC<{
 };
 
 /** "User Documentation": opens /documentation (the help pages) in a new tab, from every dashboard. */
-export const DocumentationLink: React.FC = () => {
-  const navy = useTone();
-  return (
+export const DocumentationLink: React.FC = () => (
   <a
     href={DOCUMENTATION_ROUTE}
     target="_blank"
     rel="noopener noreferrer"
-    className={`flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-medium ${navy ? 'text-slate-200 hover:bg-white/10 hover:text-white' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'}`}
+    className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900"
   >
-    <BookOpen className={`w-[18px] h-[18px] ${navy ? 'text-slate-300' : 'text-slate-500'}`} strokeWidth={1.9} aria-hidden="true" /> User Documentation
+    <BookOpen className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.9} aria-hidden="true" /> User Documentation
   </a>
-  );
-};
+);
 
 /**
  * Sign out: a compact icon button that sits in the top bar, right beside the profile avatar (every dashboard uses this one component;
@@ -278,8 +261,6 @@ interface DashboardShellProps {
   /** Extra sidebar footer rows. */
   footerExtra?: React.ReactNode;
   showHelp?: boolean;
-  /** 'navy' gives the sidebar the dark-blue look of the Telecaller workspace; the default is the white sidebar. */
-  tone?: ShellTone;
   /** Let the page use the full width (wide tables); default keeps the calm 1240px column. */
   wide?: boolean;
   /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
@@ -300,13 +281,11 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   topActions,
   footerExtra,
   showHelp = false,
-  tone = 'light',
   wide = false,
   flush = false,
   children
 }) => {
   return (
-    <ToneContext.Provider value={tone}>
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased">
       <SidebarFrame
         ariaLabel={ariaLabel}
@@ -345,6 +324,5 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{children}</main>
       </div>
     </div>
-    </ToneContext.Provider>
   );
 };
