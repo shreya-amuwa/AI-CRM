@@ -6,6 +6,8 @@ import type {
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
+  MyDepartmentScopes,
+  DepartmentAccessInfo,
   SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
@@ -436,6 +438,8 @@ export const documentsApi = {
 
 export const meApi = {
   get: () => api.get<Profile>('/me'),
+  /** The departments and functions a Department Head may switch between (nothing for anyone else). */
+  departmentScopes: () => api.get<MyDepartmentScopes>('/me/department-scopes'),
   update: (body: { fullName?: string; phone?: string | null; position?: string | null; avatarUrl?: string | null }) =>
     api.patch<Profile>('/me', body)
 };
@@ -464,6 +468,8 @@ export const usersApi = {
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
   setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
   setHeadDivision: (id: string, division: HeadDivision | null) => api.post<Profile>(`/users/${id}/head-division`, { division }),
+  departmentAccess: (id: string) => api.get<DepartmentAccessInfo>(`/users/${id}/department-access`),
+  setDepartmentAccess: (id: string, body: { departmentId: string; division: HeadDivision; granted: boolean }) => api.post<DepartmentAccessInfo>(`/users/${id}/department-access`, body),
   setSalesSubRole: (id: string, role: SalesSubRole | null) => api.post<Profile>(`/users/${id}/sales-sub-role`, { role }),
   remove: (id: string) => api.delete<null>(`/users/${id}`)
 };

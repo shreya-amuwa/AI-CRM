@@ -46,6 +46,7 @@ const DepartmentAccountsBillingView = lazy(() => import('./components/department
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
 const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
 const BusinessAssociateDashboard = lazy(() => import('./components/business-associate/BusinessAssociateDashboard').then(m => ({ default: m.BusinessAssociateDashboard })));
+import { DepartmentPicker } from './components/scope/DepartmentPicker';
 const SalesHeadDashboard = lazy(() => import('./components/sales-head/SalesHeadDashboard').then(m => ({ default: m.SalesHeadDashboard })));
 const SalesRolePending = lazy(() => import('./components/telecaller/SalesRolePending').then(m => ({ default: m.SalesRolePending })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
@@ -62,7 +63,7 @@ const ScreenLoader = () => (
 );
 
 const MainAppContent: React.FC = () => {
-  const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout } = useAuth();
+  const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout, needsDepartmentChoice, scopeKey } = useAuth();
   const { departments } = useDepartments();
   const { tabs, activeTabId, updateTabState, closeAllTabs } = useTabs();
   // a notification can ask for the Chat page of whichever dashboard layout is showing
@@ -223,6 +224,9 @@ const MainAppContent: React.FC = () => {
     return <LoginForm />;
   }
 
+  // A Department Head authorised for several departments (the shared Sales / Support head) first chooses one of them.
+  if (needsDepartmentChoice) return <DepartmentPicker />;
+
   // Step 1.4: Dedicated Technical Support Dashboard (Wabastore Support Sub-Department)
   if (user.role === 'technical-support') {
     return <TechnicalSupportDashboard currentUserId={user.id} userName={user.name} />;
@@ -270,7 +274,7 @@ const MainAppContent: React.FC = () => {
   if (user.role === 'sales-head') {
     return (
       <Suspense fallback={<ScreenLoader />}>
-        <SalesHeadDashboard />
+        <SalesHeadDashboard key={scopeKey} />
       </Suspense>
     );
   }
@@ -302,7 +306,7 @@ const MainAppContent: React.FC = () => {
   if (user.role === 'admin') {
     return (
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-slate-500">Loading…</div>}>
-        <DepartmentHeadDashboard />
+        <DepartmentHeadDashboard key={scopeKey} />
       </Suspense>
     );
   }

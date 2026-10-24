@@ -37,6 +37,7 @@ const S = { rate: 'sensitive' } as const;
 export const routes: RouteDef[] = [
   { method: 'GET', path: '/me', handler: me.get, options: { allowInactive: true } },
   { method: 'PATCH', path: '/me', handler: me.update },
+  { method: 'GET', path: '/me/department-scopes', handler: me.departmentScopes },
 
   { method: 'GET', path: '/users', handler: users.list },
   { method: 'POST', path: '/users', handler: users.create, options: S },
@@ -45,6 +46,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/users/:id/status', handler: users.setStatus, options: S },
   { method: 'POST', path: '/users/:id/technical-consultant', handler: users.setTechnicalConsultant, options: S },
   { method: 'POST', path: '/users/:id/head-division', handler: users.setHeadDivision, options: S },
+  { method: 'GET', path: '/users/:id/department-access', handler: users.departmentAccess, options: S },
+  { method: 'POST', path: '/users/:id/department-access', handler: users.setDepartmentAccess, options: S },
   { method: 'POST', path: '/users/:id/sales-sub-role', handler: users.setSalesSubRole, options: S },
   { method: 'DELETE', path: '/users/:id', handler: users.remove, options: S },
 

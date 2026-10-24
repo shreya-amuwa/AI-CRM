@@ -52,10 +52,13 @@ import { ServicePrices } from '../business-associate/ServicePrices';
  *   Daily Tasks - what was due on a day and how much of it is completed.
  *   The rest are the existing hand-over, customer, support, notice, staff and notification pages.
  */
+// The page the head was on, kept while the dashboard is re-opened for another department (the page does not reset to the Overview).
+let lastHeadPage: HeadPage | null = null;
+
 export const DepartmentHeadDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const isAccounts = profile?.department?.slug === 'accounts';
-  const [nav, setNav] = useState<HeadPage>(isAccounts ? 'payments' : 'overview');
+  const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : 'overview'));
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
   const data = useWorkTasks();
@@ -108,7 +111,14 @@ export const DepartmentHeadDashboard: React.FC = () => {
   }, [isAccounts, waiting, chatUnread]);
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
-  const go = (p: HeadPage) => setNav(p);
+  const go = (p: HeadPage) => {
+    lastHeadPage = p;
+    setNav(p);
+  };
+  // a page this department does not have (for example Accounts' Payment confirmations): its own first page, never a blank or stale one
+  React.useEffect(() => {
+    if (!pages.some(p => p.id === nav)) setNav(isAccounts ? 'payments' : 'overview');
+  }, [pages, nav, isAccounts]);
 
   return (
     <DashboardShell

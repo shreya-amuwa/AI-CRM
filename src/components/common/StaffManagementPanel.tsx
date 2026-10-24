@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
+import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import {
   ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
@@ -112,6 +113,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [confirmBox, setConfirmBox] = useState<ConfirmRequest | null>(null);
+  const [accessFor, setAccessFor] = useState<Profile | null>(null);
   // Heads already in the chosen department; one per side (Sales / Support) is allowed.
   const [existingHeads, setExistingHeads] = useState<Profile[]>([]);
   const [headDivision, setHeadDivision] = useState<HeadDivision | ''>('');
@@ -714,6 +716,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             </select>
                           </label>
                         )}
+                        {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => setAccessFor(m)}
+                            className="mt-1 block text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                            aria-label={`Departments and functions of ${m.fullName}`}
+                            data-testid={`departments-functions-${m.id}`}
+                          >
+                            Departments &amp; functions
+                          </button>
+                        )}
                         {m.team && <div className="text-slate-400">{m.team.name}{m.salesSubRole ? ` · ${SALES_SUB_ROLE_LABELS[m.salesSubRole]}` : ''}</div>}
                         {manage && canSetSalesRole && m.role === 'TEAM_MEMBER' && m.team?.division === 'SALES' && m.status === 'ACTIVE' && (
                           <label className="mt-1 block text-[11px] font-semibold text-blue-600">
@@ -824,6 +837,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           </p>
         </div>
       </div>
+      {accessFor && <DepartmentAccessDialog member={accessFor} onClose={() => setAccessFor(null)} />}
       {confirmBox && <ConfirmDialog request={confirmBox} onClose={() => setConfirmBox(null)} />}
     </div>
   );

@@ -39,11 +39,18 @@ type Env = { Variables: { requestId: string; actor?: Actor; db?: SupabaseClient;
 // ---------------------------------------------------------------------------
 // App + global middleware
 // ---------------------------------------------------------------------------
+/** Only the shape of the two scope headers is checked here; whether the caller may use them is the database's decision. */
+function requestedScope(department: string | undefined, division: string | undefined): { department?: string; division?: string } | undefined {
+  const d = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(department ?? '') ? department!.toLowerCase() : undefined;
+  const v = /^(SALES|SUPPORT)$/i.test(division ?? '') ? division!.toUpperCase() : undefined;
+  return d || v ? { department: d, division: v } : undefined;
+}
+
 export const app = new Hono<Env>().basePath(API_PREFIX);
 
 app.use('*', requestId());
 // the request id (and caller address) follow the request into the database client, so audit rows can be tied back to it
-app.use('*', (c, next) => requestInfo.run({ requestId: c.get('requestId'), ip: clientIp(c) }, next));
+app.use('*', (c, next) => requestInfo.run({ requestId: c.get('requestId'), ip: clientIp(c), scope: requestedScope(c.req.header('x-active-department'), c.req.header('x-active-division')) }, next));
 app.use('*', accessLog());
 app.use('*', securityAudit());
 app.use('*', secureHeaders({ crossOriginResourcePolicy: 'same-site' }));
@@ -53,7 +60,7 @@ app.use(
     // Same-origin calls need no CORS; only explicitly allowed origins get headers.
     origin: origin => (allowedOrigins().includes(origin) ? origin : null),
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Authorization', 'Content-Type'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Active-Department', 'X-Active-Division'],
     exposeHeaders: ['X-Request-Id', 'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset', 'Retry-After'],
     maxAge: 600
   })

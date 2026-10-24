@@ -21,3 +21,6 @@ holder's name.
   `provisioned_head_division` read by `private.provision_auth_user`.
 - API: `POST /users` accepts `headDivision` (Department Head only); `POST /users/:id/head-division` `{ division: 'SALES' | 'SUPPORT' | null }`.
 - Tests: `supabase/tests/department_head_division_test.sql`, the API block in `api_integration.test.ts`, `e2e/department-head-division.e2e.mjs`.
+
+
+See also [DEPARTMENT_SCOPES.md](DEPARTMENT_SCOPES.md) for heads that serve several departments (shared) or both Sales and Support (combined).

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { HeadDivision, Paginated, Profile, Role } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, HeadDivision, MyDepartmentScopes, Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
@@ -74,6 +74,18 @@ export class ProfileRepository {
       p_team_id: teamId ?? null,
       p_head_division: headDivision ?? null
     }));
+  }
+
+  async myDepartmentScopes(): Promise<MyDepartmentScopes> {
+    return unwrap(await this.db.rpc('my_department_scopes')) as MyDepartmentScopes;
+  }
+
+  async departmentAccess(id: string): Promise<DepartmentAccessInfo> {
+    return unwrap(await this.db.rpc('department_access_get', { p_profile: id })) as DepartmentAccessInfo;
+  }
+
+  async setDepartmentAccess(id: string, departmentId: string, division: HeadDivision, granted: boolean): Promise<DepartmentAccessInfo> {
+    return unwrap(await this.db.rpc('department_access_set', { p_profile: id, p_department: departmentId, p_division: division, p_granted: granted })) as DepartmentAccessInfo;
   }
 
   async setHeadDivision(id: string, division: HeadDivision | null): Promise<void> {
