@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import type { Profile } from '../../shared/contracts';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { HeadDivision, MyDepartmentScopes, Profile } from '../../shared/contracts';
 import { AuthUser, DepartmentId, UserSession, Department } from '../types/crm';
 import { sessionManager } from '../services/sessionManager';
 import { useDepartments } from './DepartmentContext';
@@ -9,6 +9,10 @@ import { officeToday } from '../lib/officeTime';
 import { errorMessage } from '../lib/api/client';
 import { toAuthUser } from '../lib/auth/roleMapping';
 import { purgeInsecureLegacyKeys } from '../lib/legacyStorage';
+import {
+  applyScope, choosableDivisions, hasSeveralDepartments, normaliseScope, NO_SCOPE, readChosen, readStoredScope, requestScopeFor, setRequestScope, storeChosen, storeScope,
+  type ActiveScope
+} from '../lib/scope/activeScope';
 
 /**
  * Authentication is Supabase Auth; identity, role and account status come
@@ -32,7 +36,18 @@ export interface SignUpInput {
 
 interface AuthContextType {
   user: AuthUser | null;
+  /** The profile the dashboards see: for a Department Head with several scopes, the department and function they are working in. */
   profile: Profile | null;
+  /** The departments and functions the Department Head is authorised for (null for everybody else, and until loaded). */
+  scopes: MyDepartmentScopes | null;
+  /** The department and function the head works in now (the database applies it only if authorised). */
+  scope: ActiveScope;
+  /** More than one department is authorised and the head has not chosen one yet in this browser session: show the department cards. */
+  needsDepartmentChoice: boolean;
+  /** Changes whenever the scope changes: dashboards use it as a React key so every list and count is read again. */
+  scopeKey: string;
+  chooseDepartment: (departmentId: string) => void;
+  chooseDivision: (division: HeadDivision) => void;
   authLoading: boolean;
   /** Shown on the login screen, e.g. "Your account is awaiting approval." */
   accountNotice: string | null;
@@ -84,8 +99,10 @@ async function sendClientToDashboard(): Promise<boolean> {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { getDepartment } = useDepartments();
 
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [rawProfile, setRawProfile] = useState<Profile | null>(null);
+  const [scopes, setScopes] = useState<MyDepartmentScopes | null>(null);
+  const [scope, setScope] = useState<ActiveScope>(NO_SCOPE);
+  const [scopeChosen, setScopeChosen] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [activeDepartmentId, setActiveDepartmentId] = useState<DepartmentId | null>(null);
@@ -99,10 +116,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const activeDepartment = (activeDepartmentId && getDepartment(activeDepartmentId)) || null;
 
+  // The profile and the dashboard the head sees follow the active scope. The request headers are set while rendering (before any child
+  // asks for data), so the first request after a switch already carries the new department / function.
+  const profile = useMemo(() => applyScope(rawProfile, scopes, scope), [rawProfile, scopes, scope]);
+  const user = useMemo(() => (profile ? toAuthUser(profile) : null), [profile]);
+  setRequestScope(requestScopeFor(scopes, scope));
+
   const clearState = useCallback(() => {
     loadedUserId.current = null;
-    setProfile(null);
-    setUser(null);
+    setRawProfile(null);
+    setScopes(null);
+    setScope(NO_SCOPE);
+    setScopeChosen(false);
+    setRequestScope(NO_SCOPE);
     setActiveDepartmentId(null);
     setCurrentSession(null);
   }, []);
@@ -126,8 +152,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         attendanceRecordedFor.current = dayKey;
         void hrApi.recordRmLogin().catch(() => { attendanceRecordedFor.current = null; });
       }
-      setProfile(me);
-      setUser(toAuthUser(me));
+      // A Department Head may be authorised for more departments or for both functions: read what, and restore their last choice.
+      let offered: MyDepartmentScopes | null = null;
+      if (me.role === 'DEPARTMENT_HEAD') {
+        try {
+          const s = await meApi.departmentScopes();
+          offered = s.departments.length > 0 ? s : null;
+        } catch {
+          offered = null; // the migration is not applied yet: the head works in their own department as before
+        }
+      }
+      const initial = normaliseScope(offered, readStoredScope(me.id));
+      setRequestScope(requestScopeFor(offered, initial));
+      setScopes(offered);
+      setScope(initial);
+      setScopeChosen(readChosen(me.id));
+      setRawProfile(me);
       setAccountNotice(null);
       return { ok: true, profile: me };
     } catch (err) {
@@ -237,11 +277,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
+    if (rawProfile) storeChosen(rawProfile.id, false); // the next sign-in shows the department cards again
     if (currentSession && activeDepartmentId) {
       sessionManager.leaveSession(currentSession.sessionId, activeDepartmentId);
     }
     clearState();
     await getSupabase()?.auth.signOut();
+  };
+
+  const needsDepartmentChoice = !!rawProfile && hasSeveralDepartments(scopes) && !scopeChosen;
+  const scopeKey = `${scope.departmentId ?? ''}:${scope.division ?? ''}`;
+
+  const applyChoice = (next: ActiveScope) => {
+    if (!rawProfile) return;
+    const valid = normaliseScope(scopes, next);
+    storeScope(rawProfile.id, valid);
+    storeChosen(rawProfile.id, true);
+    setScopeChosen(true);
+    setScope(valid);
+  };
+  /** Another authorised department; the function stays the same where the new department offers it. */
+  const chooseDepartment = (departmentId: string) => applyChoice({ departmentId, division: scope.division });
+  /** The other function (Sales / Support) of the same department. */
+  const chooseDivision = (division: HeadDivision) => {
+    if (!choosableDivisions(scopes, scope.departmentId).includes(division)) return;
+    applyChoice({ departmentId: scope.departmentId, division });
   };
 
   const resetDepartmentSelection = () => {
@@ -294,6 +354,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         profile,
+        scopes,
+        scope,
+        needsDepartmentChoice,
+        scopeKey,
+        chooseDepartment,
+        chooseDivision,
         authLoading,
         accountNotice,
         activeDepartmentId,

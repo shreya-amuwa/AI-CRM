@@ -9,7 +9,8 @@ const ok = <T>(data: T, status = 200) => ({ status, data });
 
 export const meController = {
   get: (async ctx => ok(await svc(ctx).users.me(ctx.actor))) as Handler,
-  update: (async ctx => ok(await svc(ctx).users.updateMe(ctx.actor, ctx.req.body))) as Handler
+  update: (async ctx => ok(await svc(ctx).users.updateMe(ctx.actor, ctx.req.body))) as Handler,
+  departmentScopes: (async ctx => ok(await svc(ctx).users.myDepartmentScopes())) as Handler
 };
 
 export const usersController = {
@@ -21,6 +22,8 @@ export const usersController = {
   setTechnicalConsultant: (async ctx => ok(await svc(ctx).users.setTechnicalConsultant(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setHeadDivision: (async ctx => ok(await svc(ctx).users.setHeadDivision(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setSalesSubRole: (async ctx => ok(await svc(ctx).users.setSalesSubRole(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  departmentAccess: (async ctx => ok(await svc(ctx).users.departmentAccess(ctx.actor, ctx.params.id))) as Handler,
+  setDepartmentAccess: (async ctx => ok(await svc(ctx).users.setDepartmentAccess(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   remove: (async ctx => {
     await svc(ctx).users.delete(ctx.actor, ctx.params.id);
     return ok(null);

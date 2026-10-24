@@ -15,7 +15,15 @@ export function createUserClient(accessToken: string): SupabaseClient {
   return createClient(env.supabaseUrl, env.supabaseAnonKey, {
     auth: SERVER_AUTH_OPTIONS,
     // The request id travels with every query (PostgREST exposes it to the database), so audit rows can be tied to the request.
-    global: { headers: { Authorization: `Bearer ${accessToken}`, ...(requestInfo.getStore()?.requestId ? { 'X-Request-Id': requestInfo.getStore()!.requestId } : {}) } }
+    global: {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...(requestInfo.getStore()?.requestId ? { 'X-Request-Id': requestInfo.getStore()!.requestId } : {}),
+        // the department / function a Department Head works in; the database checks them against what the Super Admin authorised
+        ...(requestInfo.getStore()?.scope?.department ? { 'X-Active-Department': requestInfo.getStore()!.scope!.department! } : {}),
+        ...(requestInfo.getStore()?.scope?.division ? { 'X-Active-Division': requestInfo.getStore()!.scope!.division! } : {})
+      }
+    }
   });
 }
 

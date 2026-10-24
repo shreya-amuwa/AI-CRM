@@ -45,10 +45,10 @@ function check(cond: unknown, label: string, extra?: unknown) {
 const tokens = new Map<string, string>();
 const tokenFor = (id: string) => sign({ sub: id, role: 'authenticated' });
 
-async function api(who: string | null, method: string, path: string, body?: unknown, raw?: string) {
+async function api(who: string | null, method: string, path: string, body?: unknown, raw?: string, extraHeaders: Record<string, string> = {}) {
   const res = await fetch(base + path, {
     method,
-    headers: { 'content-type': 'application/json', ...(who ? { authorization: `Bearer ${tokens.get(who)}` } : {}) },
+    headers: { 'content-type': 'application/json', ...(who ? { authorization: `Bearer ${tokens.get(who)}` } : {}), ...extraHeaders },
     body: raw ?? (body === undefined ? undefined : JSON.stringify(body))
   });
   return { status: res.status, json: (await res.json()) as any, requestId: res.headers.get('x-request-id') };
@@ -72,7 +72,7 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-check(r.status === 200 && r.json.data.length === 11, 'departments come from the database');
+check(r.status === 200 && r.json.data.length === 12 && r.json.data.some((d: any) => d.slug === 'wabatalk'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -5185,6 +5185,145 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     r = await api('a', 'POST', '/pipeline/leads', { name: `Only ${code}`, company: `${code} Co`, phone, leadSource: 'Walk-in', services: [code] });
     check(r.status === 201, `whatsapp: a lead with only ${code} is created`, r);
   }
+}
+
+
+// --- Department Heads in several departments / functions (migration 20261123000100) ---------------------------------------
+{
+  const deps = (await api('sa', 'GET', '/departments')).json.data as any[];
+  const dep = (slug: string) => deps.find(d => d.slug === slug);
+  const teamId = async (slug: string, name: string) => ((await api('sa', 'GET', `/teams?departmentId=${dep(slug).id}`)).json.data as any[]).find(t => t.name === name).id as string;
+  const scope = (slug: string, division?: string) => ({ 'x-active-department': dep(slug).id, ...(division ? { 'x-active-division': division } : {}) });
+  const mk = async (email: string, fullName: string, body: Record<string, unknown>) => {
+    const x = await api('sa', 'POST', '/users', { email, fullName, password: 'Sup3rSecret!', ...body });
+    if (x.status !== 201) throw new Error(`could not create ${email}: ${JSON.stringify(x.json)}`);
+    return x.json.data.id as string;
+  };
+  // Group A: a shared Sales head (home DTalk) for DTalk, M Pillar and Whatsbox; a shared Support head for the same three
+  const gsId = await mk('shared.sales@amuwa.com', 'Shared Sales Head', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id, headDivision: 'SALES' });
+  const gpId = await mk('shared.support@amuwa.com', 'Shared Support Head', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id, headDivision: 'SUPPORT' });
+  tokens.set('gs', tokenFor(gsId));
+  tokens.set('gp', tokenFor(gpId));
+  const owners: Record<string, string> = {};
+  for (const slug of ['dtalk', 'mpillar', 'whatsbox']) {
+    for (const side of ['Sales', 'Support']) {
+      owners[`${slug}:${side}`] = await mk(`scope.${slug}.${side.toLowerCase()}@amuwa.com`, `Scope ${slug} ${side}`, { role: 'TEAM_MEMBER', teamId: await teamId(slug, side) });
+      await db.query(`insert into public.customers (owner_id, name, phone, lifecycle_stage) values ($1, $2, $3, $4)`,
+        [owners[`${slug}:${side}`], `SCOPE ${slug} ${side}`, `+9198110${String(Object.keys(owners).length).padStart(5, '0')}`, side === 'Sales' ? 'LEAD' : 'CUSTOMER']);
+    }
+  }
+  const names = async (who: string, headers: Record<string, string> = {}) =>
+    (((await api(who, 'GET', '/customers?search=SCOPE&pageSize=50', undefined, undefined, headers)).json.data?.items ?? []) as any[]).map(c => c.name).sort();
+
+  r = await api('gs', 'GET', '/me/department-scopes');
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].slug === 'dtalk', 'scopes: before any grant the shared head has only their own department', r);
+  r = await api('gs', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'SALES', granted: true });
+  check(r.status === 403, 'scopes: a Department Head cannot give themselves more departments', r);
+  r = await api('gs', 'GET', `/users/${gsId}/department-access`);
+  check(r.status === 403, 'scopes: nor read the grants', r);
+  r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'BOTH', granted: true });
+  check(r.status === 422, 'scopes: an unknown function is refused', r);
+  r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('accounts').id, division: 'SALES', granted: true });
+  check(r.status === 422 && /no Sales team/.test(r.json.error.message), 'scopes: a department with no such team is refused', r);
+  for (const [who, id, division] of [['gs', gsId, 'SALES'], ['gp', gpId, 'SUPPORT']] as const) {
+    for (const slug of ['mpillar', 'whatsbox']) {
+      r = await api('sa', 'POST', `/users/${id}/department-access`, { departmentId: dep(slug).id, division, granted: true });
+      check(r.status === 200 && r.json.data.grants.some((g: any) => g.departmentId === dep(slug).id && g.division === division), `scopes: the Super Admin authorises ${who} for ${slug} ${division}`, r);
+    }
+  }
+  r = await api('sa', 'GET', `/users/${gsId}/department-access`);
+  check(r.status === 200 && r.json.data.grants.length === 2 && r.json.data.departments.length >= 11, 'scopes: the Super Admin reads the grants and the departments', r);
+
+  // Group A: the shared Sales head
+  r = await api('gs', 'GET', '/me/department-scopes');
+  check(r.status === 200 && r.json.data.departments.map((d: any) => d.slug).sort().join() === 'dtalk,mpillar,whatsbox' && r.json.data.departments.every((d: any) => d.divisions.join() === 'SALES') && r.json.data.departments[0].isHome,
+    'scopes: the shared Sales head is offered exactly the three departments, Sales only', r);
+  check((await names('gs')).join() === 'SCOPE dtalk Sales', 'scopes: no header - the home department, Sales customers only');
+  check((await names('gs', scope('mpillar'))).join() === 'SCOPE mpillar Sales', 'scopes: X-Active-Department switches the data to M Pillar (Sales only)');
+  check((await names('gs', scope('whatsbox', 'SALES'))).join() === 'SCOPE whatsbox Sales', 'scopes: and to Whatsbox');
+  check((await names('gs', scope('wabastore'))).join() === 'SCOPE dtalk Sales', 'scopes: a department they are not authorised for is ignored (still the home department)');
+  check((await names('gs', scope('mpillar', 'SUPPORT'))).join() === 'SCOPE mpillar Sales', 'scopes: asking for the Support function gives no Support data');
+  check((await names('gs', { 'x-active-department': "' or 1=1 --", 'x-active-division': 'ADMIN' })).join() === 'SCOPE dtalk Sales', 'scopes: malformed headers are ignored');
+  r = await api('gs', 'GET', '/me/department-scopes', undefined, undefined, scope('mpillar'));
+  check(r.json.data.activeDepartmentId === dep('mpillar').id && r.json.data.activeDivision === 'SALES', 'scopes: the response says what the database applied', r);
+  // acting in the active department (the API checks the department too)
+  r = await api('gs', 'POST', '/users', { email: 'scope.new.mp@amuwa.com', fullName: 'Scope New', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Sales') });
+  check(r.status === 403, 'scopes: without switching, the head cannot create people in another department', r);
+  r = await api('gs', 'POST', '/users', { email: 'scope.new.mp@amuwa.com', fullName: 'Scope New', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Sales') }, undefined, scope('mpillar'));
+  check(r.status === 201, 'scopes: after switching to M Pillar the head creates a Sales employee there', r);
+  r = await api('gs', 'POST', '/users', { email: 'scope.new.mp2@amuwa.com', fullName: 'Scope New Two', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Support') }, undefined, scope('mpillar'));
+  check(r.status === 403, 'scopes: but not a Support employee (the Sales head works Sales only)', r);
+  r = await api('gs', 'GET', '/sales-head/overview', undefined, undefined, scope('mpillar'));
+  check(r.status === 200, 'scopes: the Sales head pages answer for the active department', r);
+
+  // Group A: the shared Support head sees the same departments, Support only
+  r = await api('gp', 'GET', '/me/department-scopes');
+  check(r.status === 200 && r.json.data.departments.length === 3 && r.json.data.departments.every((d: any) => d.divisions.join() === 'SUPPORT'), 'scopes: the shared Support head is offered the same three departments, Support only', r);
+  check((await names('gp', scope('mpillar'))).join() === 'SCOPE mpillar Support', 'scopes: Support head, M Pillar: its Support customer only');
+  check((await names('gp', scope('whatsbox', 'SALES'))).join() === 'SCOPE whatsbox Support', 'scopes: asking for Sales gives no Sales data');
+  r = await api('gp', 'GET', '/sales-head/overview', undefined, undefined, scope('mpillar'));
+  check(r.status === 403, 'scopes: the Support head cannot open the Sales head pages', r);
+
+  // Wabatalk: the Support department of D Talk. The shared Support head (home D Talk Support) is offered it as a department of its own.
+  r = await api('gp', 'GET', '/me/department-scopes');
+  const wtScope = r.json.data.departments.find((d: any) => d.slug === 'wabatalk');
+  check(wtScope && wtScope.dataSlug === 'dtalk' && wtScope.divisions.join() === 'SUPPORT' && !r.json.data.departments.some((d: any) => d.slug === 'dtalk'),
+    'scopes: D Talk\'s Support is offered as Wabatalk, working on D Talk\'s data', r);
+  const wtId = wtScope?.id as string;
+  check((await names('gp', { 'x-active-department': wtId })).join() === 'SCOPE dtalk Support', 'scopes: in Wabatalk the head sees D Talk\'s Support customer only');
+  check((await names('gs', { 'x-active-department': wtId })).join() === 'SCOPE dtalk Sales', 'scopes: D Talk\'s Sales head sending Wabatalk\'s id still gets Sales data only');
+  r = await api('sa', 'POST', `/users/${gpId}/department-access`, { departmentId: dep('dtalk').id, division: 'SUPPORT', granted: true });
+  check(r.status === 422 && /Give Wabatalk instead/.test(r.json.error.message), 'scopes: D Talk\'s Support can only be given as Wabatalk', r);
+  r = await api('sa', 'GET', '/departments');
+  check(r.status === 200 && r.json.data.some((d: any) => d.slug === 'wabatalk' && d.facetOf === dep('dtalk').id && d.facetDivision === 'SUPPORT'), 'scopes: the department list marks Wabatalk as D Talk\'s Support side', r);
+  // revenue: a verified payment on a customer the D Talk Support member sold is Wabatalk's, one on a Sales customer is D Talk's
+  for (const [side, amount] of [['Support', 30000], ['Sales', 40000]] as const) {
+    const cust = (await db.query(`insert into public.customers (owner_id, name, phone, lifecycle_stage, deal_amount) values ($1, $2, $3, 'CUSTOMER', $4) returning id`,
+      [owners[`dtalk:${side}`], `WT revenue ${side}`, side === 'Support' ? '+919812100001' : '+919812100002', amount])).rows[0].id;
+    await db.query(`insert into public.payment_requests (customer_id, status, agreed_amount, requested_by) values ($1, 'CONFIRMED', $2, $3)`, [cust, amount, owners[`dtalk:${side}`]]);
+    await db.query(`insert into public.customer_payments (customer_id, payment_type, amount, method, reference, status, source, recorded_by, verified_by, verified_at)
+                    select $1, 'FULL', $2, 'UPI', $3, 'VERIFIED', 'ACCOUNTS', p.id, p.id, now() from public.profiles p where p.role = 'SUPER_ADMIN' limit 1`, [cust, amount, `WT-${side}`]);
+  }
+  r = await api('sa', 'GET', `/reports/department-income?departmentId=${wtId}`);
+  check(r.status === 200 && r.json.data.scope.name === 'Wabatalk' && Number(r.json.data.byDivision.support.collected) >= 30000 && Number(r.json.data.byDivision.sales.collected) === 0, 'scopes: the Wabatalk income report holds Support revenue only', r);
+  r = await api('sa', 'GET', `/reports/department-income?departmentId=${dep('dtalk').id}`);
+  check(r.status === 200 && Number(r.json.data.byDivision.sales.collected) >= 40000 && Number(r.json.data.byDivision.support.collected) === 0, 'scopes: the D Talk income report holds Sales revenue only', r);
+  r = await api('gp', 'GET', '/reports/department-income', undefined, undefined, { 'x-active-department': wtId });
+  check(r.status === 200 && r.json.data.scope.name === 'Wabatalk' && Number(r.json.data.byDivision.support.collected) >= 30000, 'scopes: the shared Support head working Wabatalk sees its revenue', r);
+  r = await api('gs', 'GET', '/reports/department-income');
+  check(r.status === 200 && r.json.data.scope.name !== 'Wabatalk' && Number(r.json.data.byDivision.support.collected) === 0, 'scopes: D Talk\'s Sales head sees none of Wabatalk\'s revenue', r);
+
+  // Group B: the department head 'dh' (Wabastore, no side set) handles both functions
+  for (const division of ['SALES', 'SUPPORT']) {
+    r = await api('sa', 'POST', `/users/${(await api('dh', 'GET', '/me')).json.data.id}/department-access`, { departmentId: wab.id, division, granted: true });
+    check(r.status === 200, `scopes: the Super Admin authorises the Wabastore head for ${division}`, r);
+  }
+  for (const [side, id] of [['Sales', sales.id], ['Support', support.id]] as const) {
+    const owner = await mk(`scope.wabastore.${side.toLowerCase()}@amuwa.com`, `Scope wabastore ${side}`, { role: 'TEAM_MEMBER', teamId: id });
+    await db.query(`insert into public.customers (owner_id, name, phone, lifecycle_stage) values ($1, $2, $3, 'LEAD')`, [owner, `SCOPE wabastore ${side}`, side === 'Sales' ? '+919811088881' : '+919811088882']);
+  }
+  r = await api('dh', 'GET', '/me/department-scopes');
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'scopes: the combined head has one department and both functions', r);
+  check((await names('dh')).join() === 'SCOPE wabastore Sales,SCOPE wabastore Support', 'scopes: combined head, no function chosen: the whole department, as before');
+  check((await names('dh', scope('wabastore', 'SALES'))).join() === 'SCOPE wabastore Sales', 'scopes: combined head, Sales selected: Sales customers only');
+  check((await names('dh', scope('wabastore', 'SUPPORT'))).join() === 'SCOPE wabastore Support', 'scopes: combined head, Support selected: Support customers only, same department');
+  r = await api('dh', 'GET', '/sales-head/overview', undefined, undefined, { 'x-active-department': wab.id, 'x-active-division': 'SALES' });
+  check(r.status === 200, 'scopes: combined head, Sales selected: the Sales pages open', r);
+  r = await api('dh', 'GET', '/sales-head/overview', undefined, undefined, { 'x-active-department': wab.id, 'x-active-division': 'SUPPORT' });
+  check(r.status === 403, 'scopes: combined head, Support selected: the Sales pages are closed', r);
+  r = await api('dh', 'GET', '/me/department-scopes', undefined, undefined, { 'x-active-department': wab.id, 'x-active-division': 'SUPPORT' });
+  check(r.json.data.activeDepartmentId === wab.id && r.json.data.activeDivision === 'SUPPORT', 'scopes: switching function keeps the department', r);
+  r = await api('dh', 'GET', '/me/department-scopes', undefined, undefined, scope('dtalk', 'SALES'));
+  check(r.json.data.activeDepartmentId === wab.id, 'scopes: the combined head cannot reach another department', r);
+
+  // everybody else is untouched
+  check((await names('sa', scope('mpillar', 'SALES'))).length >= 6, 'scopes: the Super Admin still reads every department');
+  r = await api('a', 'GET', '/me/department-scopes', undefined, undefined, scope('mpillar'));
+  check(r.status === 200 && r.json.data.departments.length === 0, 'scopes: a Team Member is offered no departments (a header changes nothing)', r);
+  check((await names('a', scope('mpillar'))).length === 0, 'scopes: a Team Member cannot reach another department with a header');
+  r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'SALES', granted: false });
+  check(r.status === 200 && r.json.data.grants.length === 1, 'scopes: a grant is withdrawn', r);
+  check((await names('gs', scope('mpillar'))).join() === 'SCOPE dtalk Sales', 'scopes: and the department is no longer reachable');
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

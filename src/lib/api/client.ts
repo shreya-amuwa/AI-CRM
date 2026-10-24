@@ -1,5 +1,6 @@
 import type { ApiResponse, ErrorCode } from '../../../shared/contracts';
 import { getSupabase } from '../../services/supabaseClient';
+import { scopeHeaders } from '../scope/activeScope';
 
 const API_BASE = '/api/v1';
 
@@ -35,7 +36,9 @@ export async function apiRequest<T>(method: string, path: string, options: { que
       method,
       headers: {
         ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {})
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        // the department / function a Department Head works in (the server and the database check it against what was authorised)
+        ...scopeHeaders()
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined
     });

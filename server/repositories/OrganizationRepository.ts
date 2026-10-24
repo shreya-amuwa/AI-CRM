@@ -3,7 +3,7 @@ import type { Department, Team, TeamDivision } from '../../shared/contracts.js';
 import { AppError } from '../http/errors.js';
 import { compact, unwrap, unwrapOne } from './base.js';
 
-const DEPARTMENT_COLUMNS = 'id, slug, name, description, category, icon_name, accent_color, logo_url, is_locked, created_at';
+const DEPARTMENT_COLUMNS = 'id, slug, name, description, category, icon_name, accent_color, logo_url, is_locked, facet_of, facet_division, created_at';
 const TEAM_COLUMNS = 'id, department_id, name, division, created_at';
 
 function mapDepartment(row: any): Department {
@@ -17,6 +17,8 @@ function mapDepartment(row: any): Department {
     accentColor: row.accent_color,
     logoUrl: row.logo_url,
     isLocked: row.is_locked,
+    facetOf: row.facet_of ?? null,
+    facetDivision: row.facet_division ?? null,
     createdAt: row.created_at
   };
 }

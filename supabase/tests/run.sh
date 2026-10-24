@@ -66,4 +66,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/department_head_division_test.sql 
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/import_brought_by_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/department_scopes_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/wabatalk_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_department_head_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

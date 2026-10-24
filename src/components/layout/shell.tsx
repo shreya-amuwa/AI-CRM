@@ -1,3 +1,4 @@
+import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
 import { BookOpen, ChevronDown, HelpCircle, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
@@ -389,6 +390,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       </SidebarFrame>
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
+        <ScopeBar />
         <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{children}</main>
       </div>
     </div>

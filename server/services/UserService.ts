@@ -1,5 +1,6 @@
-import type { Paginated, Profile } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, MyDepartmentScopes, Paginated, Profile } from '../../shared/contracts.js';
 import {
+  departmentAccessSchema,
   profileSelfUpdateSchema,
   headDivisionSchema,
   salesSubRoleSchema,
@@ -118,6 +119,25 @@ export class UserService {
     const { division } = parse(headDivisionSchema, body);
     await this.profiles.setHeadDivision(userId, division);
     return this.profiles.findById(userId);
+  }
+
+  /** The departments and functions the signed-in Department Head may switch between (the database decides; a member or a head with one scope gets what they already have). */
+  myDepartmentScopes(): Promise<MyDepartmentScopes> {
+    return this.profiles.myDepartmentScopes();
+  }
+
+  /** The Super Admin sees which departments and functions a Department Head is authorised for. */
+  async departmentAccess(actor: Actor, id: string): Promise<DepartmentAccessInfo> {
+    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can see this.');
+    return this.profiles.departmentAccess(parse(uuidSchema, id));
+  }
+
+  /** Authorise (or withdraw) one department + function for a Department Head. Only the Super Admin; the database checks the head, the department and that it has such a team. */
+  async setDepartmentAccess(actor: Actor, id: string, body: unknown): Promise<DepartmentAccessInfo> {
+    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can give a Department Head more departments.');
+    const userId = parse(uuidSchema, id);
+    const { departmentId, division, granted } = parse(departmentAccessSchema, body);
+    return this.profiles.setDepartmentAccess(userId, departmentId, division, granted);
   }
 
   async setTechnicalConsultant(actor: Actor, id: string, body: unknown): Promise<Profile> {
