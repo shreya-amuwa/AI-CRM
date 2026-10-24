@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Paginated, Profile, Role } from '../../shared/contracts.js';
+import type { HeadDivision, Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, sales_sub_role, default_dashboard, status, status_reason,
+const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, sales_sub_role, head_division, default_dashboard, status, status_reason,
   department_id, team_id, approved_at, created_at,
   department:departments!profiles_department_id_fkey(id, slug, name),
   team:teams!profiles_team_in_department(id, name, division)`;
@@ -19,6 +19,7 @@ export function mapProfile(row: any): Profile {
     role: row.role,
     isTechnicalConsultant: !!row.is_technical_consultant,
     salesSubRole: row.sales_sub_role ?? null,
+    headDivision: row.head_division ?? null,
     defaultDashboard: row.default_dashboard ?? null,
     status: row.status,
     statusReason: row.status_reason,
@@ -66,8 +67,17 @@ export class ProfileRepository {
   }
 
   // ---- workflow functions (authorization enforced inside the database) ----
-  async assertCanCreate(role: Role, departmentId?: string, teamId?: string): Promise<void> {
-    unwrap(await this.db.rpc('assert_can_create_user', { p_role: role, p_department_id: departmentId ?? null, p_team_id: teamId ?? null }));
+  async assertCanCreate(role: Role, departmentId?: string, teamId?: string, headDivision?: HeadDivision): Promise<void> {
+    unwrap(await this.db.rpc('assert_can_create_user', {
+      p_role: role,
+      p_department_id: departmentId ?? null,
+      p_team_id: teamId ?? null,
+      p_head_division: headDivision ?? null
+    }));
+  }
+
+  async setHeadDivision(id: string, division: HeadDivision | null): Promise<void> {
+    unwrap(await this.db.rpc('set_head_division', { p_profile: id, p_division: division }));
   }
 
   async setStatus(id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string | null): Promise<void> {

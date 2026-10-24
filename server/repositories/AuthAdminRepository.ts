@@ -1,4 +1,4 @@
-import type { Role } from '../../shared/contracts.js';
+import type { HeadDivision, Role } from '../../shared/contracts.js';
 import type { MemberDetailsInput } from '../../shared/validation.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { AppError } from '../http/errors.js';
@@ -19,6 +19,7 @@ export class AuthAdminRepository {
     departmentId?: string;
     teamId?: string;
     technicalConsultant?: boolean;
+    headDivision?: HeadDivision;
     provisionedBy: string;
   }): Promise<string> {
     const { data, error } = await getServiceClient().auth.admin.createUser({
@@ -33,6 +34,7 @@ export class AuthAdminRepository {
         provisioned_role: input.role,
         provisioned_department_id: input.departmentId ?? null,
         provisioned_team_id: input.teamId ?? null,
+        provisioned_head_division: input.headDivision ?? null,
         provisioned_technical_consultant: input.technicalConsultant === true
       }
     });

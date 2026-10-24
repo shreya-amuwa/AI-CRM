@@ -113,6 +113,26 @@ const headless = (await api('sa', 'GET', '/departments')).json.data.find((d: any
 r = await api('sa', 'PATCH', `/users/${promoId}`, { role: 'DEPARTMENT_HEAD', departmentId: headless.id });
 check(r.status === 200 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.defaultDashboard === 'department-head', 'super admin makes a team lead the head of a department without one', r);
 
+// Sales and Support Department Heads: one per side of a department.
+r = await api('sa', 'POST', '/users', { email: 'dh.sales@amuwa.com', fullName: 'Sales Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES' });
+check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SALES' && r.json.data.defaultDashboard === 'department-head',
+  'super admin creates a Sales Department Head next to the existing head', r);
+const salesHeadId = r.json.data.id;
+r = await api('sa', 'POST', '/users', { email: 'dh.sales2@amuwa.com', fullName: 'Sales Head 2', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES' });
+check(r.status === 409 && /already has a Department Head for Sales/.test(r.json.error.message), 'a second Sales head is refused with a clear message', r);
+r = await api('sa', 'POST', '/users', { email: 'x.side@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: sales.id, headDivision: 'SALES' });
+check(r.status === 422, 'a side is only for a Department Head', r);
+r = await api('sa', 'POST', `/users/${salesHeadId}/head-division`, { division: 'SUPPORT' });
+check(r.status === 200 && r.json.data.headDivision === 'SUPPORT', 'super admin can move a head to the free Support side', r);
+r = await api('sa', 'POST', `/users/${salesHeadId}/head-division`, { division: 'SALES' });
+check(r.status === 200 && r.json.data.headDivision === 'SALES', 'and back to Sales', r);
+r = await api('dh', 'POST', `/users/${salesHeadId}/head-division`, { division: 'SUPPORT' });
+check(r.status === 403, 'a Department Head cannot change a side', r);
+r = await api('sa', 'POST', `/users/${salesHeadId}/head-division`, { division: 'GENERAL' });
+check(r.status === 422, 'only Sales or Support', r);
+r = await api('sa', 'GET', `/users?departmentId=${wab.id}&role=DEPARTMENT_HEAD`);
+check(r.status === 200 && r.json.data.items.some((u: any) => u.headDivision === 'SALES'), 'the user list shows the side', r);
+
 r = await api('a', 'POST', '/users', { email: 'x@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
 check(r.status === 403 && r.json.error.code === 'FORBIDDEN', 'team member cannot create users', r);
 r = await api('dh', 'POST', '/users', { email: 'x@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id });

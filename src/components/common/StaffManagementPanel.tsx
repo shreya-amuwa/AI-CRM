@@ -3,7 +3,7 @@ import {
   UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, ChevronLeft, ChevronRight
 } from 'lucide-react';
-import { SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
+import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
 import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -112,7 +112,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [confirmBox, setConfirmBox] = useState<ConfirmRequest | null>(null);
-  const [existingHead, setExistingHead] = useState<Profile | null>(null);
+  // Heads already in the chosen department; one per side (Sales / Support) is allowed.
+  const [existingHeads, setExistingHeads] = useState<Profile[]>([]);
+  const [headDivision, setHeadDivision] = useState<HeadDivision | ''>('');
   const ask = (req: ConfirmRequest) => setConfirmBox(req);
 
   /** The team that matches the current sub-department (e.g. Support). */
@@ -168,13 +170,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // Back to page 1 when the list changes scope.
   useEffect(() => setPage(1), [scope, departmentId]);
 
-  // One Department Head per department: warn before trying to create a second.
+  // One Department Head per department and side (Sales / Support): warn before trying to create a second.
   useEffect(() => {
-    if (!departmentId || !allowedRoles.includes('DEPARTMENT_HEAD')) return setExistingHead(null);
+    if (!departmentId || !allowedRoles.includes('DEPARTMENT_HEAD')) return setExistingHeads([]);
     usersApi
-      .list({ departmentId, role: 'DEPARTMENT_HEAD', pageSize: 5 })
-      .then(r => setExistingHead(r.items.find(p => p.status !== 'REVOKED' && p.status !== 'REJECTED') || null), () => setExistingHead(null));
-  }, [departmentId, allowedRoles, created]);
+      .list({ departmentId, role: 'DEPARTMENT_HEAD', pageSize: 10 })
+      .then(r => setExistingHeads(r.items.filter(p => p.status !== 'REVOKED' && p.status !== 'REJECTED')), () => setExistingHeads([]));
+  }, [departmentId, allowedRoles, created, members]);
 
   useEffect(() => {
     if (!departmentId) return;
@@ -196,6 +198,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
   const selectedTeam = teams.find(t => t.id === teamId);
   const needsTeam = role !== 'DEPARTMENT_HEAD';
+  const headOfSide = (side: HeadDivision) => existingHeads.find(h => h.headDivision === side) || null;
+  const unlabelledHead = existingHeads.find(h => !h.headDivision) || null;
+  const existingHead = role === 'DEPARTMENT_HEAD' && headDivision ? headOfSide(headDivision) : null;
   // The Sales role (Telecaller, ...) is chosen for a Team Member of a Sales team, by the Super Admin or the Department Head.
   const canSetSalesRole = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD';
   const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && selectedTeam?.division === 'SALES';
@@ -211,6 +216,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setBloodGroup('');
     setEmergencyContact('');
     setSalesSubRole('');
+    setHeadDivision('');
     setShowPassword(false);
   };
 
@@ -220,6 +226,19 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     try {
       await usersApi.setSalesSubRole(member.id, value || null);
       setActionNotice({ text: value ? `${member.fullName} is now a ${SALES_SUB_ROLE_LABELS[value]}.` : `${member.fullName} no longer has a Sales role.`, ok: true });
+      await loadMembers();
+    } catch (err) {
+      setActionNotice({ text: errorMessage(err), ok: false });
+    }
+    setTimeout(() => setActionNotice(null), 6000);
+  };
+
+  /** The Super Admin labels an existing Department Head Sales or Support. */
+  const changeHeadDivision = async (member: Profile, value: HeadDivision | '') => {
+    setActionNotice(null);
+    try {
+      await usersApi.setHeadDivision(member.id, value || null);
+      setActionNotice({ text: value ? `${member.fullName} is now the ${HEAD_DIVISION_LABELS[value]} Department Head.` : `${member.fullName} no longer has a Sales or Support label.`, ok: true });
       await loadMembers();
     } catch (err) {
       setActionNotice({ text: errorMessage(err), ok: false });
@@ -247,6 +266,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       position: position || undefined,
       technicalConsultant: consultant || undefined,
       salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
+      headDivision: role === 'DEPARTMENT_HEAD' && headDivision ? headDivision : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, emergencyContact }
     });
     if (!parsed.success) {
@@ -523,6 +543,30 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </label>
           )}
 
+          {role === 'DEPARTMENT_HEAD' && (
+            <label className="block text-xs font-semibold text-slate-700">
+              Department Head of *
+              <select
+                id="staff-head-division"
+                className={`${inputClass} mt-1 cursor-pointer`}
+                value={headDivision}
+                onChange={e => setHeadDivision(e.target.value as HeadDivision | '')}
+                required
+              >
+                <option value="">Select Sales or Support…</option>
+                {HEAD_DIVISIONS.map(d => (
+                  <option key={d} value={d} disabled={!!headOfSide(d)}>
+                    {HEAD_DIVISION_LABELS[d]} Department Head{headOfSide(d) ? ` (taken by ${headOfSide(d)!.fullName})` : ''}
+                  </option>
+                ))}
+              </select>
+              <span className="block mt-1 font-normal text-slate-500">
+                A department has one Sales head and one Support head. Both open the Department Head dashboard.
+                {unlabelledHead && ` ${unlabelledHead.fullName} has no side set yet — set it in the list below.`}
+              </span>
+            </label>
+          )}
+
           {showSalesRole && (
             <label className="block text-xs font-semibold text-slate-700">
               Sales Role / Sales Sub-Role
@@ -582,7 +626,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                {department?.name || 'This department'} already has a Department Head (<strong>{existingHead.fullName}</strong>). A department can have only one.
+                {department?.name || 'This department'} already has a {HEAD_DIVISION_LABELS[headDivision as HeadDivision]} Department Head (<strong>{existingHead.fullName}</strong>). A department can have only one for each side.
               </span>
             </div>
           )}
@@ -595,7 +639,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <button
             type="submit"
-            disabled={saving || !departmentId || (role === 'DEPARTMENT_HEAD' && !!existingHead)}
+            disabled={saving || !departmentId || (role === 'DEPARTMENT_HEAD' && (!headDivision || !!existingHead))}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}
@@ -654,6 +698,21 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       </td>
                       <td className="py-2.5 pr-3 text-slate-700">
                         {staffRoleLabel(m)}
+                        {m.role === 'DEPARTMENT_HEAD' && m.headDivision && <div className="text-slate-400">{HEAD_DIVISION_LABELS[m.headDivision]}</div>}
+                        {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
+                          <label className="mt-1 block text-[11px] font-semibold text-blue-600">
+                            <span className="sr-only">Side of {m.fullName}</span>
+                            <select
+                              className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-slate-700 cursor-pointer"
+                              value={m.headDivision || ''}
+                              onChange={e => void changeHeadDivision(m, e.target.value as HeadDivision | '')}
+                              aria-label={`Sales or Support side of ${m.fullName}`}
+                            >
+                              <option value="">No side set</option>
+                              {HEAD_DIVISIONS.map(d => <option key={d} value={d}>{HEAD_DIVISION_LABELS[d]} head</option>)}
+                            </select>
+                          </label>
+                        )}
                         {m.team && <div className="text-slate-400">{m.team.name}{m.salesSubRole ? ` · ${SALES_SUB_ROLE_LABELS[m.salesSubRole]}` : ''}</div>}
                         {manage && canSetSalesRole && m.role === 'TEAM_MEMBER' && m.team?.division === 'SALES' && m.status === 'ACTIVE' && (
                           <label className="mt-1 block text-[11px] font-semibold text-blue-600">
