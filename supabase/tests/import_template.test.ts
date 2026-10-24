@@ -2,7 +2,7 @@
  * Existing-customer import, the parts that need no database: the column headings of the Excel templates, the rows a template fills in
  * by itself (they are skipped until someone types a number), the optional Client Password and the rules a password must meet.
  */
-import { IMPORT_SHEETS, ONE_SHEET_TYPES, SHEET_LABEL, parseExistingCustomers } from '../../src/lib/existingCustomerImport.js';
+import { IMPORT_SHEETS, ONE_SHEET_BLOCKS, SHEET_LABEL, parseExistingCustomers } from '../../src/lib/existingCustomerImport.js';
 import { takeClientPasswords } from '../../server/services/CustomerImportService.js';
 
 let passed = 0;
@@ -63,43 +63,68 @@ p = parseExistingCustomers(wb({
 check(p.counts.customers === 1 && p.counts.whatsapp === 1 && p.data.whatsapp?.[0].packageMessages === 100000, 'an older file with a package typed and nothing else still imports that row', p.data.whatsapp);
 
 
-// ---- the one-tab template ("Import"): a Record type on every row ------------------------------------------------------------------
-check(IMPORT_SHEETS.every(sh => !!SHEET_LABEL[sh.title]) && ONE_SHEET_TYPES.length === IMPORT_SHEETS.length, 'every kind of record has a one-tab label and a column map');
+// ---- the one-sheet template ("Import"): one table, a row per customer and service, blocks of columns, no record type --------------------------
+check(IMPORT_SHEETS.every(sh => !!SHEET_LABEL[sh.title]) && ONE_SHEET_BLOCKS.length === IMPORT_SHEETS.length, 'every kind of record has a one-sheet label and a block of columns');
 const headers = [
-  'Record type *', 'Mobile Number *', 'Customer (auto)', 'Customer Name *', 'Business Name *', 'Handled by - Support Team Member *', 'Brought by (Sales / Support)', 'Brought by - Name', 'Client Password', 'Service *', 'Start Date *', 'Status *',
-  'Renewal / Expiry Date', 'Days Left', 'Messages in Package *', 'Message Package', 'Sent *', 'Delivered', 'Read / Answered', 'Replied', 'Messages Left', '% Used',
-  'Valid Until', 'Data as of *', 'Campaign Name *', 'Sent On *', 'Audience Size *', 'Calling Plan *', 'Month *', 'What is delivered (unit) *', 'Notes', 'Mobile key (helper)'
+  'Mobile Number *', 'Customer Name *', 'Business Name *', 'Handled by - Support Team Member *', 'Brought by (Sales / Support)', 'Brought by - Name', 'Client Password', 'Customer Notes',
+  'Service *', 'Plan / Package Name', 'Start Date *', 'Renewal / Expiry Date', 'Status *', 'Service Notes',
+  'Messages in Package *', 'Messages Sent (total) *', 'Messages Delivered (total)', 'WhatsApp Data as of *',
+  'Campaign Name *', 'Sent On *', 'Audience Size *', 'Campaign Sent *', 'Campaign Delivered *',
+  'Calling Plan *', 'Minutes Bought', 'AI Data as of *',
+  'RCS / Voice Messages in Package *', 'RCS / Voice Sent *',
+  'Month *', 'What is delivered (unit) *', 'Included in Plan', 'Delivered This Month', 'Mobile key (helper)'
 ];
 const rowOf = (vals: Record<string, string | number>) => headers.map(h => (h in vals ? vals[h] : null)) as (string | number | null)[];
+const blockRow = headers.map(() => null) as (string | number | null)[];
 p = parseExistingCustomers(wb({
   'How to fill': [['Rules']],
   Import: [
+    blockRow,
     headers,
-    rowOf({ 'Record type *': 'Customer', 'Mobile Number *': '9820011111', 'Customer Name *': 'Example', 'Notes': 'EXAMPLE - delete' }),
-    rowOf({ 'Record type *': 'Customer', 'Mobile Number *': 9324123476, 'Customer Name *': 'Devanshi', 'Business Name *': 'Ayraa', 'Handled by - Support Team Member *': 'Avantika', 'Brought by (Sales / Support)': 'Sales', 'Brought by - Name': 'Shreya', 'Client Password': 'Pass1234567', 'Customer (auto)': 'Ayraa (Devanshi)' }),
-    rowOf({ 'Record type *': 'service', 'Mobile Number *': '9324123476', 'Service *': 'WhatsApp API + Blue Tick', 'Start Date *': '29-10-2025', 'Status *': 'Live', 'Renewal / Expiry Date': '29-10-2026', 'Days Left': 5 }),
-    rowOf({ 'Record type *': 'WhatsApp account', 'Mobile Number *': '9324123476', 'Message Package': '1 Lakh', 'Messages in Package *': 100000, 'Sent *': 50000, 'Messages Left': 50000, '% Used': 0.5, 'Valid Until': '29-10-2026', 'Data as of *': '23-10-2026' }),
-    rowOf({ 'Record type *': 'WhatsApp campaign', 'Mobile Number *': '9324123476', 'Campaign Name *': 'Dussehara', 'Sent On *': '20-10-2026', 'Audience Size *': 4000, 'Sent *': 3500, 'Delivered': 3200 }),
-    rowOf({ 'Record type *': 'RCS / Voice', 'Mobile Number *': '8828628005', 'Service *': 'Voice Message (Bulk)', 'Messages in Package *': 50000, 'Sent *': 100 }),
-    rowOf({ 'Record type *': 'Monthly deliverable', 'Mobile Number *': '9324123476', 'Service *': 'AI QR', 'Month *': 'Oct-2026', 'What is delivered (unit) *': 'QR pages live' }),
-    rowOf({ 'Record type *': 'Banana', 'Mobile Number *': '9324123476' }),
-    rowOf({ 'Customer Name *': 'typed without a record type' }),
-    rowOf({ 'Record type *': 'Service', 'Mobile Number *': '9324123476', 'Service *': 'AI Calling', 'Sent *': 7 }),
+    rowOf({ 'Mobile Number *': '9820011111', 'Customer Name *': 'Example', 'Customer Notes': 'EXAMPLE - delete' }),
+    // customer + service + WhatsApp numbers on ONE row
+    rowOf({ 'Mobile Number *': 9324123476, 'Customer Name *': 'Devanshi', 'Business Name *': 'Ayraa', 'Handled by - Support Team Member *': 'Avantika', 'Brought by (Sales / Support)': 'Sales',
+      'Brought by - Name': 'Shreya', 'Client Password': 'Pass1234567', 'Service *': 'WhatsApp API + Blue Tick', 'Plan / Package Name': '1 Lakh messages', 'Start Date *': '29-10-2025',
+      'Renewal / Expiry Date': '29-10-2026', 'Status *': 'Live', 'Messages in Package *': 100000, 'Messages Sent (total) *': 50000, 'WhatsApp Data as of *': '23-10-2026' }),
+    // a campaign of the same customer: only the mobile, the service and the campaign block
+    rowOf({ 'Mobile Number *': '9324123476', 'Service *': 'WhatsApp API + Blue Tick', 'Campaign Name *': 'Dussehara', 'Sent On *': '20-10-2026', 'Audience Size *': 4000, 'Campaign Sent *': 3500, 'Campaign Delivered *': 3200 }),
+    // a second customer, AI Calling
+    rowOf({ 'Mobile Number *': '8828628005', 'Customer Name *': 'Shirish', 'Business Name *': 'Radha', 'Handled by - Support Team Member *': 'Avantika', 'Service *': 'AI Calling', 'Start Date *': '26-10-2026',
+      'Status *': 'Live', 'Calling Plan *': 'Credit-based', 'Minutes Bought': 1000, 'AI Data as of *': '23-10-2026' }),
+    // their RCS service, without the customer block
+    rowOf({ 'Mobile Number *': '8828628005', 'Service *': 'RCS Registration + Platform', 'Start Date *': '28-10-2026', 'Status *': 'Live', 'RCS / Voice Messages in Package *': 50000, 'RCS / Voice Sent *': 100 }),
+    // a month of another service
+    rowOf({ 'Mobile Number *': '8828628005', 'Service *': 'AI QR', 'Month *': 'Oct-2026', 'What is delivered (unit) *': 'QR pages live', 'Included in Plan': 5, 'Delivered This Month': 4 }),
+    // WhatsApp numbers on a row whose service is AI Calling
+    rowOf({ 'Mobile Number *': '8828628005', 'Service *': 'AI Calling', 'Messages in Package *': 1000 }),
+    // data without a mobile number
+    rowOf({ 'Customer Name *': 'typed without a mobile' }),
+    // WhatsApp numbers with no Service chosen (the service is added by the import)
+    rowOf({ 'Mobile Number *': '8828628005', 'Messages in Package *': 500, 'Messages Sent (total) *': 5, 'WhatsApp Data as of *': '23-10-2026' }),
+    // a Service chosen and nothing else
+    rowOf({ 'Mobile Number *': '8828628005', 'Service *': 'Voice Message (Bulk)' }),
     rowOf({})
   ]
 }));
-check(p.format === 'one-sheet' && p.ignored.length === 0, 'the one-tab template is recognised by its Record type column, and every heading is known', { f: p.format, i: p.ignored });
-check(p.counts.customers === 1 && p.data.customers?.[0].row === 3 && p.data.customers?.[0].mobile === '9324123476' && p.data.customers?.[0].loginPassword === 'Pass1234567' && p.data.customers?.[0].member === 'Avantika' && p.data.customers?.[0].broughtByType === 'Sales' && p.data.customers?.[0].broughtBy === 'Shreya', 'a Customer row is read with its Excel row number, who handles it and who brought it (the example is skipped)', p.data.customers);
-check(p.counts.services === 2 && p.data.services?.[0].service === 'WhatsApp API + Blue Tick' && p.data.services?.[0].renewsOn === '2026-10-29' && p.data.services?.[0].startDate === '2025-10-29', 'a Record type is case-insensitive and a Service row reads its own columns', p.data.services);
-check(p.counts.whatsapp === 1 && p.data.whatsapp?.[0].packageMessages === 100000 && p.data.whatsapp?.[0].sent === 50000 && p.data.whatsapp?.[0].validUntil === '2026-10-29' && p.data.whatsapp?.[0].asOf === '2026-10-23',
-  'WhatsApp account: shared columns (Sent, Valid Until, Data as of) go to the right fields', p.data.whatsapp);
-check(p.counts.campaigns === 1 && p.data.campaigns?.[0].name === 'Dussehara' && p.data.campaigns?.[0].audienceSize === 4000 && p.data.campaigns?.[0].delivered === 3200 && p.data.campaigns?.[0].sent === 3500, 'a campaign row reads the same Sent / Delivered columns as its own fields', p.data.campaigns);
-check(p.counts.rcsVoice === 1 && p.data.rcsVoice?.[0].service === 'Voice Message (Bulk)' && p.data.rcsVoice?.[0].packageMessages === 50000, 'RCS / Voice reads Messages in Package', p.data.rcsVoice);
-check(p.counts.monthly === 1 && p.data.monthly?.[0].month === '2026-10' && p.data.monthly?.[0].unit === 'QR pages live', 'a monthly row reads the month', p.data.monthly);
-check(p.problems.length === 2 && p.problems[0].row === 9 && /Banana/.test(p.problems[0].message) && p.problems[1].row === 10 && /Choose the Record type/.test(p.problems[1].message), 'an unknown Record type, and data without one, are problems named by row', p.problems);
-check(p.warnings.length === 1 && /Row 11/.test(p.warnings[0]) && /Sent/.test(p.warnings[0]), 'a value typed in a column that does not apply to the row is reported (and ignored)', p.warnings);
-check(p.data.services?.[1].service === 'AI Calling' && !('sent' in (p.data.services?.[1] ?? {})), 'and it is not sent to the server', p.data.services?.[1]);
+check(p.format === 'one-sheet' && p.ignored.length === 0, 'the one-sheet template is recognised by its columns (no record type), and every heading is known', { f: p.format, i: p.ignored });
+check(p.counts.customers === 2 && p.data.customers?.[0].row === 4 && p.data.customers?.[0].mobile === '9324123476' && p.data.customers?.[0].loginPassword === 'Pass1234567'
+  && p.data.customers?.[0].member === 'Avantika' && p.data.customers?.[0].broughtByType === 'Sales' && p.data.customers?.[0].broughtBy === 'Shreya', 'the customer block is read once, with who handles and who brought the customer (the example row is skipped)', p.data.customers);
+check(p.data.services?.length === 4 && p.data.services?.[0].service === 'WhatsApp API + Blue Tick' && p.data.services?.[0].renewsOn === '2026-10-29' && p.data.services?.[0].startDate === '2025-10-29',
+  'the service block becomes a service of that customer, on the same row as the customer and the usage', p.data.services);
+check(p.counts.whatsapp === 3 && p.data.whatsapp?.[0].packageMessages === 100000 && p.data.whatsapp?.[0].sent === 50000 && p.data.whatsapp?.[0].asOf === '2026-10-23', 'the WhatsApp block is read from its own headings', p.data.whatsapp);
+check(p.counts.campaigns === 1 && p.data.campaigns?.[0].row === 5 && p.data.campaigns?.[0].name === 'Dussehara' && p.data.campaigns?.[0].audienceSize === 4000 && p.data.campaigns?.[0].sent === 3500 && p.data.campaigns?.[0].delivered === 3200,
+  'a campaign row (mobile + service + the campaign block) is a campaign, whose Sent is its own', p.data.campaigns);
+check(p.data.services?.filter(sv => sv.row === 5).length === 0, 'a campaign row does not make a second service (its Service only says which one)');
+check(p.counts.aiCalling === 1 && p.data.aiCalling?.[0].plan === 'Credit-based' && p.data.aiCalling?.[0].minutesBought === 1000, 'the AI Calling block', p.data.aiCalling);
+check(p.counts.rcsVoice === 1 && p.data.rcsVoice?.[0].service === 'RCS Registration + Platform' && p.data.rcsVoice?.[0].packageMessages === 50000 && p.data.rcsVoice?.[0].sent === 100, 'the RCS / Voice block takes the row\'s Service', p.data.rcsVoice);
+check(p.counts.monthly === 1 && p.data.monthly?.[0].service === 'AI QR' && p.data.monthly?.[0].month === '2026-10' && p.data.monthly?.[0].delivered === 4, 'the monthly block is one month of a service', p.data.monthly);
+check(p.data.whatsapp?.some(w => w.row === 11 && w.sent === 5) && !p.data.services?.some(sv => sv.row === 11), 'a usage row with no Service is accepted (the import adds the service)');
+check(p.data.services?.some(sv => sv.row === 12 && sv.service === 'Voice Message (Bulk)'), 'a Service chosen with nothing else is still a service (the database says what is missing)');
+check(p.problems.length === 2 && p.problems.some(x => x.row === 9 && /WhatsApp API columns are filled, but the Service on this row is "AI Calling"/.test(x.message)) && p.problems.some(x => x.row === 10 && /Mobile Number is missing/.test(x.message)),
+  'WhatsApp numbers on an AI Calling row, and data without a mobile number, are problems named by row', p.problems);
 check(parseExistingCustomers(wb({ '1 Customers': [['Mobile Number *', 'Customer Name *'], ['9000000001', 'X']] })).format === 'tabs', 'the older template with one tab per kind is still read');
+const old = parseExistingCustomers(wb({ '1 Customers': [['Mobile Number *', 'Customer Name *', 'Business Name *'], ['9000000001', 'X', 'Y']], '2 Services': [['Mobile Number *', 'Service *', 'Start Date *'], ['9000000001', 'AI QR', '01-01-2026']] }));
+check(old.format === 'tabs' && old.counts.customers === 1 && old.counts.services === 1, 'each older tab is still a tab (no tab has both Business Name and Service)', old.counts);
 
 // ---- the team's client passwords ------------------------------------------------------------------------------------------------
 const rows = (...r: Record<string, string | number | null>[]) => r.map((x, i) => ({ row: i + 3, ...x }));
