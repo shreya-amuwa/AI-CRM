@@ -6,6 +6,7 @@ import type {
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
+  SalesIncome, SalesLeadAssignee, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
   TelecallerContactList,
@@ -515,6 +516,22 @@ export interface TelecallerLeadBody {
   callStatus: string;
   followUpDate?: string | null;
 }
+export interface SalesSheetRowBody { row: number; name: string; company?: string; phone: string; email?: string; source?: string; temperature?: string; remarks?: string }
+export const salesHeadApi = {
+  overview: () => api.get<SalesOverview>('/sales-head/overview'),
+  assignees: () => api.get<SalesLeadAssignee[]>('/sales-head/lead-assignees'),
+  sheets: () => api.get<SalesSheet[]>('/sales-head/sheets'),
+  checkSheet: (body: { assigneeId: string; fileName: string; note?: string | null; hash: string; rows: SalesSheetRowBody[]; commit: boolean }) => api.post<SalesSheetCheck>('/sales-head/sheets', body),
+  storeSource: (sheetId: string, data: string) => api.post<{ stored: true; size: number }>(`/sales-head/sheets/${sheetId}/source`, { data }),
+  leads: (q: { search?: string; filter?: string; assigneeId?: string; sort?: string; dir?: string; page?: number; pageSize?: number }) => api.get<SalesLeadList>('/sales-head/leads', q),
+  lead: (id: string) => api.get<SalesLeadDetail>(`/sales-head/leads/${encodeURIComponent(id)}`),
+  assignInbound: (id: string, assigneeId: string) => api.post<{ customerId: string; assignee: string }>(`/sales-head/leads/${encodeURIComponent(id)}/assign`, { assigneeId }),
+  tasks: (q: { filter?: string; search?: string; assigneeId?: string; page?: number; pageSize?: number }) => api.get<SalesTaskList>('/sales-head/tasks', q),
+  taskAssignees: () => api.get<SalesTaskAssignee[]>('/sales-head/task-assignees'),
+  createTask: (body: { assigneeId: string; title: string; description?: string | null; priority: 'LOW' | 'MEDIUM' | 'HIGH'; dueDate?: string | null }) => api.post<{ id: string }>('/sales-head/tasks', body),
+  reports: (q: { who?: string; from?: string; to?: string; taskStatus?: string }) => api.get<SalesReport>('/sales-head/reports', q),
+  income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q)
+};
 export const telecallerApi = {
   home: () => api.get<TelecallerHome>('/telecaller/home'),
   assignable: (departmentId?: string) => api.get<TelecallerAssignee[]>('/telecaller/assignable', { departmentId }),

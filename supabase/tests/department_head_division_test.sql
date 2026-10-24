@@ -8,8 +8,8 @@
 reset role;
 select test.create_auth_user('dh_sales', 'dh.sales@amuwa.com', '{"full_name":"Sales Head"}',
   jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('wabastore'), 'provisioned_head_division', 'SALES'));
-select test.check((select head_division = 'SALES' and role = 'DEPARTMENT_HEAD' and default_dashboard = 'department-head' from profiles where id = test.id('dh_sales')),
-  'a Sales Department Head is created next to the existing head and opens the Department Head dashboard');
+select test.check((select head_division = 'SALES' and role = 'DEPARTMENT_HEAD' and default_dashboard = 'sales-department-head' from profiles where id = test.id('dh_sales')),
+  'a Sales Department Head is created next to the existing head and opens the Sales Department Head dashboard');
 select test.must_fail($$select test.create_auth_user('dh_sales2', 'dh.sales2@amuwa.com', '{"full_name":"Second Sales Head"}',
   jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('wabastore'), 'provisioned_head_division', 'SALES'))$$,
   'a second Sales head of the same department is refused', 'already has a Department Head for Sales');
@@ -50,7 +50,7 @@ select set_head_division(test.id('dh_wab'), 'SUPPORT');
 \echo '   both heads keep department-wide access'
 select test.login('dh_sales');
 select test.check((select count(*) > 0 from teams where department_id = test.dept('wabastore')), 'the Sales head reads the department''s teams');
-select test.check((select count(*) = (select count(*) from profiles where department_id = test.dept('wabastore') and role = 'DEPARTMENT_HEAD') from profiles where department_id = test.dept('wabastore') and role = 'DEPARTMENT_HEAD'), 'and sees both heads');
+select test.check((select count(*) = 0 from profiles where id = test.id('dh_wab')), 'but not the Support head of the department (Sales and Support are separate)');
 select test.login('dh_wab');
 select test.check((select count(*) > 0 from profiles where id = test.id('dh_sales')), 'the Support head sees the Sales head');
 

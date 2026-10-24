@@ -115,7 +115,7 @@ check(r.status === 200 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.
 
 // Sales and Support Department Heads: one per side of a department.
 r = await api('sa', 'POST', '/users', { email: 'dh.sales@amuwa.com', fullName: 'Sales Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES' });
-check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SALES' && r.json.data.defaultDashboard === 'department-head',
+check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SALES' && r.json.data.defaultDashboard === 'sales-department-head',
   'super admin creates a Sales Department Head next to the existing head', r);
 const salesHeadId = r.json.data.id;
 r = await api('sa', 'POST', '/users', { email: 'dh.sales2@amuwa.com', fullName: 'Sales Head 2', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES' });
@@ -4965,6 +4965,150 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.quotations.length === 3 && r.json.data.scopes.length === 2, 'business associate API: the new owner gets the contact with its quotations and scope versions', r);
   r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
   check(r.status === 404, 'business associate API: the former owner no longer has it', r);
+}
+
+
+// ---------------------------------------------------------------------------
+// Sales Department Head dashboard
+// ---------------------------------------------------------------------------
+{
+  tokens.set('sh', tokenFor(salesHeadId));
+  r = await api('sh', 'GET', '/me');
+  check(r.status === 200 && r.json.data.defaultDashboard === 'sales-department-head' && r.json.data.headDivision === 'SALES', 'sales head API: signs in to the Sales Department Head dashboard', r);
+  r = await api('dh', 'GET', '/me');
+  check(r.json.data.defaultDashboard === 'department-head', 'sales head API: the other Department Head keeps the Department Head dashboard', r);
+
+  // ---- who may use the pages
+  for (const who of ['dh', 'th', 'a', 'tl2', 'sa']) {
+    r = await api(who, 'GET', '/sales-head/overview');
+    check(r.status === 403, `sales head API: ${who} cannot open the Sales Department Head pages`, r);
+  }
+  r = await api(null, 'GET', '/sales-head/overview');
+  check(r.status === 401, 'sales head API: nor a visitor', r);
+
+  // ---- Lead Assign
+  r = await api('sh', 'GET', '/sales-head/lead-assignees');
+  check(r.status === 200 && r.json.data.some((x: any) => x.id === memberA) && r.json.data.every((x: any) => x.team === 'Sales') && !r.json.data.some((x: any) => x.id === deliveryMember), 'sales head API: the assignees are Sales people of the department only', r);
+  const sheetBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('sales-sheet-one')]);
+  const sheetHash = crypto.createHash('sha256').update(sheetBytes).digest('hex');
+  const sheetRows = [
+    { row: 2, name: 'Meera Joshi', company: 'Joshi & Co', phone: '+91 98700 11111', email: 'meera@joshi.example', source: 'Trade fair', temperature: 'Hot', remarks: 'Wants a demo' },
+    { row: 3, name: 'Nitin Pawar', phone: '9870022222', temperature: '' },
+    { row: 4, name: '', phone: '9870033333' },
+    { row: 5, name: 'Nitin Again', phone: '98700 22222' },
+    { row: 6, name: 'Om Prakash', phone: '9870044444', email: 'not-an-email' }
+  ];
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: memberA, fileName: 'fair.xlsx', hash: 'xyz', rows: sheetRows, commit: false });
+  check(r.status === 422, 'sales head API: a sheet without a proper hash is refused', r);
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: memberA, fileName: 'fair.xlsx', hash: sheetHash, rows: [], commit: false });
+  check(r.status === 422, 'sales head API: an empty sheet is refused', r);
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: memberA, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: false });
+  check(r.status === 200 && !r.json.data.committed && r.json.data.summary.valid === 2 && r.json.data.summary.invalid === 2 && r.json.data.summary.duplicates === 1
+    && r.json.data.issues.length === 3 && r.json.data.assignee.name === 'Member A' && r.json.data.assignee.role === 'Team Member' && r.json.data.mode === 'LEADS', 'sales head API: the preview counts valid, invalid and duplicate rows and names the assignee', r);
+  check((await db.query(`select count(*)::int n from customers where lead_source = 'Trade fair'`)).rows[0].n === 0, 'sales head API: a preview saves nothing');
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: deliveryMember, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: true });
+  check(r.status === 422, 'sales head API: a Support member cannot be chosen', r);
+  r = await api('dh', 'POST', '/sales-head/sheets', { assigneeId: memberA, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: true });
+  check(r.status === 403, 'sales head API: the Support head cannot assign Sales sheets', r);
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: memberA, fileName: 'fair.xlsx', note: 'Trade fair', hash: sheetHash, rows: sheetRows, commit: true });
+  const sheetId = r.json.data?.sheetId as string;
+  check(r.status === 200 && r.json.data.committed && sheetId, 'sales head API: the valid leads are assigned', r);
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: memberA, fileName: 'fair-again.xlsx', hash: sheetHash, rows: sheetRows, commit: true });
+  check(r.status === 409, 'sales head API: the same file cannot be imported twice', r);
+  r = await api('a', 'GET', '/customers?pageSize=100');
+  check(r.status === 200, 'sales head API: the member opens their customers', r);
+  const own = (await db.query(`select name, lead_temperature, lead_source, lifecycle_stage, owner_id from customers where source_sheet_id = $1 order by name`, [sheetId])).rows;
+  check(own.length === 2 && own.every((x: any) => x.owner_id === memberA && x.lifecycle_stage === 'LEAD') && own[1].lead_temperature === null && own[0].lead_temperature === 'HOT' && own[0].lead_source === 'Trade fair',
+    'sales head API: the leads are in the member\'s pipeline with their temperature and source', own);
+  r = await api('a', 'GET', '/notifications');
+  check(r.status === 200 && JSON.stringify(r.json.data).includes('LEAD_SHEET_ASSIGNED'), 'sales head API: the member is notified', r);
+
+  // ---- the original file
+  const fakeR2 = await startFakeR2({ key: 'r2-sh-key', secret: 'r2-sh-secret', bucket: 'amuwa-files', cors: false });
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fakeR2.endpoint, R2_ACCESS_KEY_ID: 'r2-sh-key', R2_SECRET_ACCESS_KEY: 'r2-sh-secret', R2_BUCKET: 'amuwa-files' });
+  r = await api('dh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: sheetBytes.toString('base64') });
+  check(r.status === 403, 'sales head API: only the Sales head attaches the file', r);
+  r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: Buffer.from('not a spreadsheet').toString('base64') });
+  check(r.status === 422, 'sales head API: a file that is not .xlsx is refused', r);
+  r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('other')]).toString('base64') });
+  check(r.status === 422 && /not the one/.test(r.json.error.message), 'sales head API: nor a file that is not the sheet that was checked', r);
+  r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: sheetBytes.toString('base64') });
+  const srow = (await db.query(`select source_provider, source_path from sales_lead_sheets where id = $1`, [sheetId])).rows[0];
+  check(r.status === 201 && srow.source_provider === 'R2' && srow.source_path.endsWith(`${sheetId}.xlsx`) && fakeR2.objects.has(`telecaller-sheets/${srow.source_path}`), 'sales head API: the original file is stored privately and referenced', { status: r.status, srow });
+  r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: sheetBytes.toString('base64') });
+  check(r.status === 409, 'sales head API: it is stored once', r);
+  fakeR2.server.close();
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']) delete process.env[k];
+  r = await api('sh', 'GET', '/sales-head/sheets');
+  check(r.status === 200 && r.json.data.length >= 1 && r.json.data[0].hasSourceFile === true && r.json.data[0].leadsNow === 2 && r.json.data[0].uploadedBy === 'Sales Head', 'sales head API: the history shows the upload, who made it and where it stands', r);
+
+  // ---- a Telecaller gets the Telecaller contact sheet
+  const tcA = (await db.query(`select id from profiles where sales_sub_role = 'TELECALLER' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: tcA, fileName: 'tele.xlsx', hash: 'c'.repeat(64), rows: [{ row: 2, name: 'Tele Contact', phone: '9870055555' }], commit: true });
+  check(r.status === 200 && r.json.data.mode === 'TELECALLER' && r.json.data.committed, 'sales head API: a Telecaller gets a Telecaller contact sheet', r);
+
+  // ---- Lead List
+  r = await api('sh', 'GET', '/sales-head/leads?filter=HOT&pageSize=50');
+  check(r.status === 200 && r.json.data.items.length >= 1 && r.json.data.items.every((l: any) => l.temperature === 'HOT') && r.json.data.counts.all >= 2, 'sales head API: the Hot filter lists Hot leads and the counts come with it', r);
+  r = await api('sh', 'GET', '/sales-head/leads?search=joshi&sort=name&dir=asc');
+  const meera = r.json.data.items[0];
+  check(r.status === 200 && r.json.data.total === 1 && meera.assignee === 'Member A' && meera.source === 'Trade fair' && meera.converted === false, 'sales head API: search finds a lead with its owner', r);
+  r = await api('sh', 'GET', `/sales-head/leads/${meera.id}`);
+  check(r.status === 200 && r.json.data.name === 'Meera Joshi' && r.json.data.history.length >= 1, 'sales head API: a lead opens with its history', r);
+  r = await api('sh', 'GET', '/sales-head/leads?filter=NOPE');
+  check(r.status === 422, 'sales head API: an unknown filter is refused', r);
+  const supportCustomer = (await db.query(`select c.id from customers c join teams t on t.id = c.team_id where t.division = 'SUPPORT' limit 1`)).rows[0];
+  if (supportCustomer) {
+    r = await api('sh', 'GET', `/sales-head/leads/${supportCustomer.id}`);
+    check(r.status === 404, 'sales head API: a Support customer is not reachable from the Sales pages', r);
+    r = await api('sh', 'GET', `/customers/${supportCustomer.id}`);
+    check(r.status === 404, 'sales head API: nor through the customer API', r);
+  }
+  await db.query(`insert into crm_leads (id, name, phone, department, sub_department) values ('inb-api-1', 'Inbound Api', '+919870066666', 'wabastore', 'sales')`);
+  r = await api('sh', 'GET', '/sales-head/leads?filter=UNASSIGNED&search=inbound');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].kind === 'INBOUND', 'sales head API: an enquiry nobody took is listed as unassigned', r);
+  r = await api('sh', 'POST', '/sales-head/leads/inb-api-1/assign', { assigneeId: deliveryMember });
+  check(r.status === 422, 'sales head API: not to a Support member', r);
+  r = await api('sh', 'POST', '/sales-head/leads/inb-api-1/assign', { assigneeId: memberA });
+  check(r.status === 200 && r.json.data.assignee === 'Member A', 'sales head API: the head assigns it', r);
+
+  // ---- Daily Tasks
+  r = await api('sh', 'GET', '/sales-head/task-assignees');
+  check(r.status === 200 && r.json.data.some((x: any) => x.id === salesTeamLeadId) && !r.json.data.some((x: any) => x.id === deliveryLead), 'sales head API: tasks go to Sales Team Leads', r);
+  r = await api('sh', 'POST', '/sales-head/tasks', { assigneeId: deliveryLead, title: 'Support work' });
+  check(r.status === 422, 'sales head API: not to a Support lead', r);
+  r = await api('sh', 'POST', '/sales-head/tasks', { assigneeId: salesTeamLeadId, title: '', priority: 'HIGH' });
+  check(r.status === 422, 'sales head API: a task needs a title', r);
+  r = await api('sh', 'POST', '/sales-head/tasks', { assigneeId: salesTeamLeadId, title: 'Call the trade fair leads', description: 'All hot ones first', priority: 'HIGH', dueDate: '2020-01-01' });
+  check(r.status === 201 && r.json.data.id, 'sales head API: a task is created for a Sales Team Lead', r);
+  r = await api('sh', 'GET', '/sales-head/tasks?filter=OVERDUE');
+  check(r.status === 200 && r.json.data.items.some((t: any) => t.title === 'Call the trade fair leads' && t.overdue && t.assignee) && r.json.data.counts.overdue >= 1, 'sales head API: the overdue filter shows it', r);
+  r = await api('sh', 'GET', '/sales-head/tasks?filter=COMPLETED');
+  check(r.status === 200 && r.json.data.items.every((t: any) => t.status === 'COMPLETED'), 'sales head API: the Completed filter', r);
+
+  // ---- Overview, Reports, Income
+  r = await api('sh', 'GET', '/sales-head/overview');
+  check(r.status === 200 && r.json.data.cards.totalLeads >= 3 && r.json.data.cards.teamMembers >= 2 && r.json.data.teamActivity.every((p: any) => p.team === 'Sales'), 'sales head API: the overview is counted from the Sales teams', r);
+  r = await api('sh', 'GET', '/sales-head/reports?who=TEAM_LEAD');
+  check(r.status === 200 && r.json.data.who === 'TEAM_LEAD' && r.json.data.rows.every((x: any) => x.team === 'Sales') && r.json.data.rows.some((x: any) => x.id === salesTeamLeadId), 'sales head API: the Team Lead report', r);
+  r = await api('sh', 'GET', '/sales-head/reports?who=TEAM_MEMBER&taskStatus=COMPLETED');
+  check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === memberA && x.leadsAssigned >= 2 && x.hot >= 1), 'sales head API: the Team Member report', r);
+  r = await api('sh', 'GET', '/sales-head/reports?who=MANAGER');
+  check(r.status === 422, 'sales head API: the report kind is checked', r);
+  r = await api('sh', 'GET', '/sales-head/reports?from=2026-02-01&to=2026-01-01');
+  check(r.status === 422, 'sales head API: the period is checked', r);
+  r = await api('sh', 'GET', '/sales-head/income');
+  check(r.status === 200 && r.json.data.expenses === null && Array.isArray(r.json.data.transactions) && typeof r.json.data.basis === 'string', 'sales head API: income is the Sales side; no invented expense figure', r);
+
+  // ---- Support is separate: the Sales head reads and creates Sales people only
+  r = await api('sh', 'GET', '/users?pageSize=100');
+  check(r.status === 200 && !r.json.data.items.some((u: any) => u.id === deliveryMember || u.id === deliveryLead) && r.json.data.items.some((u: any) => u.id === memberA), 'sales head API: the people list has no Support people', r);
+  r = await api('sh', 'POST', '/users', { email: 'sup.new@amuwa.com', fullName: 'Support New', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: delivery });
+  check(r.status === 403, 'sales head API: cannot create a Support employee', r);
+  r = await api('sh', 'POST', '/users', { email: 'sales.new@amuwa.com', fullName: 'Sales New', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(r.status === 201, 'sales head API: can create a Sales employee', r);
+  r = await api('dh', 'GET', '/users?pageSize=100');
+  check(r.status === 200 && r.json.data.items.some((u: any) => u.id === deliveryMember), 'sales head API: the other Department Head still sees the whole department', r);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

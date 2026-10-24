@@ -46,6 +46,7 @@ const DepartmentAccountsBillingView = lazy(() => import('./components/department
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
 const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
 const BusinessAssociateDashboard = lazy(() => import('./components/business-associate/BusinessAssociateDashboard').then(m => ({ default: m.BusinessAssociateDashboard })));
+const SalesHeadDashboard = lazy(() => import('./components/sales-head/SalesHeadDashboard').then(m => ({ default: m.SalesHeadDashboard })));
 const SalesRolePending = lazy(() => import('./components/telecaller/SalesRolePending').then(m => ({ default: m.SalesRolePending })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
 const AccountsDashboard = lazy(() => import('./components/accounts/AccountsDashboard').then(m => ({ default: m.AccountsDashboard })));
@@ -142,6 +143,13 @@ const MainAppContent: React.FC = () => {
         navigateTo(base);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'sales-head') {
+      // /sales-head/dashboard/:id and its pages (…/leads/assign, …/tasks) stay where they are.
+      const base = `/sales-head/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(base);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'sales-role') {
       const target = `/sales-role/${user.id}`;
       if (window.location.pathname !== target) {
@@ -174,7 +182,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'telecaller' && user.role !== 'business-associate' && user.role !== 'sales-role') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'telecaller' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -256,6 +264,13 @@ const MainAppContent: React.FC = () => {
     return (
       <Suspense fallback={<ScreenLoader />}>
         <BusinessAssociateDashboard />
+      </Suspense>
+    );
+  }
+  if (user.role === 'sales-head') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <SalesHeadDashboard />
       </Suspense>
     );
   }

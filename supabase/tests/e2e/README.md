@@ -49,3 +49,11 @@ points `ANTHROPIC_API_BASE_URL` at it); no external service is called.
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-business-associate.sh ./ba-screenshots
 ```
+
+`run-sales-head.sh` (own ports) checks the Sales Department Head dashboard: it opens at /sales-head/dashboard/…, the menu order (Leads opens Lead List and Lead Assign), the Support
+head keeping the Department Head dashboard, Lead Assign with a real .xlsx (column mapping, valid / invalid / duplicate rows, confirmation, history, the same file refused, an old .xls
+refused, a Telecaller getting a contact sheet), the leads in the member's own dashboard, Lead List (filters, search, detail, an unassigned enquiry), Daily Tasks (create, overdue, refresh),
+Performance cards and workspace, Reports (Team Lead / Team Member, CSV), Income, Notices, Team Members & Access (Sales only), Chat, Notifications, and tablet / phone layouts.
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-sales-head.sh ./sales-head-screenshots
+```

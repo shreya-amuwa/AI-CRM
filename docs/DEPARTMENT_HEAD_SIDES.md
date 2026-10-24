@@ -1,7 +1,8 @@
 # Sales and Support Department Heads
 
-A department can have **one Department Head for each side**: a Sales head and a Support head. Both open the same
-Department Head dashboard with department-wide access; the side is a label stored on the person and shown in the member list.
+A department can have **one Department Head for each side**: a Sales head and a Support head. The Support head keeps the Department Head
+dashboard. The Sales head opens their own [Sales Department Head dashboard](SALES_DEPARTMENT_HEAD.md) and sees the Sales teams only.
+The side is a label stored on the person and shown in the member list.
 
 ## Creating one
 Super Admin → **Add Team Member** → pick the department → Role **Department Head** → **Department Head of** → *Sales* or *Support*.
