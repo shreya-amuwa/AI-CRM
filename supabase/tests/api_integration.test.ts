@@ -269,7 +269,7 @@ tokens.set('b', tokenFor(orphanId)); // second sales team member
 const GW = process.env.GATEWAY_URL!;
 const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 r = await api('a', 'GET', '/pipeline/services');
-check(r.status === 200 && r.json.data.length === 31 && r.json.data[0].category, 'service catalogue comes from the database', r);
+check(r.status === 200 && r.json.data.length === 33 && r.json.data[0].category, 'service catalogue comes from the database', r);
 {
   const ds = r.json.data.filter((s: any) => s.category === 'Amuwa Design Studio');
   check(ds.length === 6 && ds.map((s: any) => s.name).join('|') === 'Social Media Marketing|Google My Business Ranking|Meta Ads|AI Video Production|Yearly Creative Package|Graphic Design',
@@ -4945,6 +4945,20 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.quotations.length === 3 && r.json.data.scopes.length === 2, 'business associate API: the new owner gets the contact with its quotations and scope versions', r);
   r = await api('ba1', 'GET', `/ba/contacts/${contactId}`);
   check(r.status === 404, 'business associate API: the former owner no longer has it', r);
+}
+
+// --- the three WhatsApp services ------------------------------------------------
+{
+  r = await api('a', 'GET', '/pipeline/services');
+  const byCode = (c: string) => (r.json.data as any[]).find(x => x.code === c);
+  const need = (c: string) => (byCode(c)?.requirements ?? []).map((x: any) => x.label).sort().join('|');
+  check(r.status === 200 && ['WHATSAPP_API_BLUE_TICK', 'WHATSAPP_API', 'BLUE_TICK'].map(c => byCode(c)?.name).join('|') === 'WhatsApp API + Blue Tick|WhatsApp API|Blue Tick', 'whatsapp: Sales can choose WhatsApp API + Blue Tick, WhatsApp API and Blue Tick', r);
+  check(need('WHATSAPP_API_BLUE_TICK').length > 0 && need('WHATSAPP_API') === need('WHATSAPP_API_BLUE_TICK') && need('BLUE_TICK') === need('WHATSAPP_API_BLUE_TICK'),
+    'whatsapp: each of the three asks for the same documents and details', [need('WHATSAPP_API_BLUE_TICK'), need('WHATSAPP_API'), need('BLUE_TICK')]);
+  for (const [code, phone] of [['WHATSAPP_API', '+91 98200 72222'], ['BLUE_TICK', '+91 98200 71111']] as const) {
+    r = await api('a', 'POST', '/pipeline/leads', { name: `Only ${code}`, company: `${code} Co`, phone, leadSource: 'Walk-in', services: [code] });
+    check(r.status === 201, `whatsapp: a lead with only ${code} is created`, r);
+  }
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
