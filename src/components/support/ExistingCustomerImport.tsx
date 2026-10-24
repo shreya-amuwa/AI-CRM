@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { CheckCircle2, Download, FileSpreadsheet, Mail, RotateCcw, Upload } from 'lucide-react';
 import type { CustomerDataImportLogin, CustomerDataImportResult } from '../../../shared/contracts';
 import { api, errorMessage } from '../../lib/api/client';
-import { IMPORT_SHEETS, ONE_SHEET_TYPES, SHEET_LABEL, parseExistingCustomers, type ParsedImport } from '../../lib/existingCustomerImport';
+import { IMPORT_SHEETS, ONE_SHEET_BLOCKS, SHEET_LABEL, parseExistingCustomers, type ParsedImport } from '../../lib/existingCustomerImport';
 import { readXlsx } from '../../lib/xlsxReader';
 import { useAuth } from '../../context/AuthContext';
 import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
@@ -95,7 +95,7 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
             <span className="w-7 h-7 rounded-full bg-indigo-50 text-indigo-700 font-bold flex items-center justify-center shrink-0">1</span>
             <div>
               <div className="font-bold text-slate-900 text-sm">Download the template</div>
-              <p className="mt-0.5">One sheet for the whole Support team: one row per customer, service, usage or campaign, with its Record type. Keep the headings; the grey rows are examples and are skipped.</p>
+              <p className="mt-0.5">One sheet for the whole Support team: one row per customer and service they bought (more rows for campaigns and months). Keep the headings; the grey rows are examples and are skipped.</p>
               <a href={ONE_SHEET_TEMPLATE} download className={`${btn.secondary} mt-2`}>
                 <Download className="w-4 h-4" aria-hidden="true" /> Excel template (one sheet)
               </a>
@@ -178,7 +178,7 @@ const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: bool
           <div className="text-sm font-bold text-slate-900">{step.file}</div>
           <div className="text-xs text-slate-500">
             {oneSheet
-              ? ONE_SHEET_TYPES.filter(t => parsed.counts[t.key]).map(t => `${t.label}: ${parsed.counts[t.key]}`).join(' · ')
+              ? ONE_SHEET_BLOCKS.filter(t => parsed.counts[t.key]).map(t => `${t.label}: ${parsed.counts[t.key]}`).join(' · ')
               : IMPORT_SHEETS.filter(s => parsed.counts[s.key]).map(s => `${s.title}: ${parsed.counts[s.key]}`).join(' · ')}
           </div>
         </div>
@@ -193,7 +193,7 @@ const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: bool
             <table className="w-full text-xs">
               <thead className="bg-rose-50 text-rose-900">
                 <tr>
-                  <th className="text-left font-semibold px-3 py-2">{oneSheet ? 'Record type' : 'Sheet'}</th>
+                  <th className="text-left font-semibold px-3 py-2">{oneSheet ? 'Part of the row' : 'Sheet'}</th>
                   <th className="text-left font-semibold px-3 py-2">Row</th>
                   <th className="text-left font-semibold px-3 py-2">What to fix</th>
                 </tr>
