@@ -49,7 +49,7 @@ Empty-schema database size (all migrations applied, seed data only): **18 MB**. 
 | Chat channels are unfiltered on `chat_conversations` and `chat_members` | `src/lib/chat/useChatLive.ts` | Every membership/conversation change goes to every connected user, then RLS-filtered. |
 | Notifications channel is filtered to the recipient | `NotificationContext.tsx` | Good pattern; the others should follow it. |
 | `select('*')` in 13 places | support, tasks, team lead, lead store, field visits | Returns every column (including JSON) where a few are used. |
-| One write per API request for rate limiting | `rate_limit_consume` (up to 5 upserts per request) + `api_session` RPC | A hot-row upsert and a function call before every request; correct but it is write traffic (WAL) on every click. Low priority; an in-memory or edge counter would remove it. |
+| One tiny upsert per API request for rate limiting | `rate_limit_consume` inside `api_session` | **Correction (second review):** `private.rate_limit_counters` is an **UNLOGGED** table (no WAL) holding a few rows, and it is deliberately in Postgres because serverless instances share no memory. It costs almost nothing; leave it as it is. |
 | Browser polling of an external webhook every 30 s per open Wabastore tab (and 5 s when "auto sync" is on) | `WabastorePanel.tsx`, `WabastoreWebhookLiveBar.tsx` | This hits the webhook provider, not the database, but it is steady background traffic per tab; the 5 s loop should be off by default. |
 | Daily Vercel cron (2 runs) for automations | `vercel.json` | Negligible. |
 
@@ -155,3 +155,36 @@ Nothing below disables RLS, weakens authorisation or removes a required index.
 * Neon pricing (compute USD 0.106/CU-hour Launch, storage USD 0.35/GB-month; egress terms unconfirmed): [Neon pricing](https://neon.com/pricing), [Jet Admin Neon pricing](https://www.jetadmin.io/blog/neon-pricing/amp/), [Makerkit Neon calculator](https://makerkit.dev/pricing-calculator/neon)
 * Managed PostgreSQL comparisons (DigitalOcean ~USD 15, RDS small instances): [selfhost.dev comparison](https://selfhost.dev/managed-postgresql-comparison-2026/), [Infratally RDS vs DigitalOcean](https://infratally.com/articles/aws-rds-vs-digitalocean-managed-postgres-full-cost-comparison-2026/)
 * Hosted authentication pricing (Clerk / Auth0, figures disagree between sources): [Clerk pricing](https://clerk.com/articles/clerk-pricing-explained), [CIAM Compass](https://guptadeepak.com/ciam-compass/guides/ciam-pricing-at-scale-2026/)
+
+
+## Appendix - review of an independent audit (26 Oct 2026)
+A second audit with read-only access to the live project reported: **1,128 rows (~468 KB of data) in 19 populated tables, 3 users, 0 bytes in Supabase Storage, 5 objects (650 KB) in R2** (not re-measured here; consistent with the fresh-start reset). That confirms the system is tiny today, so every scale-driven item below is *prevention*, not saving. Each claim of that report was checked against the code:
+
+| Claim | Result | Evidence / decision |
+|---|---|---|
+| Do not migrate providers | **Agree** | same conclusion; TCO figures there differ (see "Cost figures" below) |
+| `scope_customers()` is `SETOF customers`, `SECURITY DEFINER`, called ~10 times per `dashboard_scope_overview` | **Verified** (in `20261110000100`, not `20261123`) | not inlinable (security definer + `set search_path`); cheap to fix by scanning once, but only matters above a few thousand customers. Defer until measured |
+| `audit_log_actions()` does `SELECT DISTINCT action FROM audit_logs` | **Verified** | full scan whenever the filter list loads; cheap fix (small lookup / loose index scan) - do when the audit log is large |
+| Browser `useTickets` calls a write RPC and a 4-table `select('*')` waterfall on every event, 3 channels | **Verified** | keep as P1. **But** removing `escalate_overdue_tickets` from the browser is safe **only if `pg_cron` is enabled** in the live project (the schedule is created only `if exists pg_extension pg_cron`; the Vercel cron runs just twice a day). Check Supabase > Database > Extensions first |
+| Pipeline Realtime registered twice per screen (counts + view) | **Verified** (`shared.tsx:408` plus each view) | P1 |
+| 16 hooks refetch on focus/visibility | **Roughly** (5 files add `focus`, 15 add `visibilitychange`) | add a short cooldown; P1 |
+| Every GET writes to Postgres (rate limit) -> move GETs to in-memory limits | **Reject** | the counter table is UNLOGGED (no WAL, tiny); in-memory counters per serverless instance do not limit anything across instances (the migration says exactly this). Removing the DB limit weakens abuse protection for no saving |
+| Cache the authenticated actor for 15 s keyed by the JWT | **Reject** | `api_session` also returns the *active department/function* chosen by request headers (shared and combined Department Heads), so a token-keyed cache would return the wrong department, and a suspended or demoted user would keep access for the cache lifetime. Saves one round trip, risks authorisation |
+| Gate `SESSION_STARTED` by token age to stop audit bloat | **Reject** | the event is already de-duplicated in the database per session id (`dedupeKey: session:<id>`); the 87 rows are 87 real sign-in sessions. Gating would lose genuine sign-in records |
+| `autoSync` is on by default (5 s polling) | **Incorrect** | `useState(false)` in `WabastoreWebhookLiveBar.tsx`; only the 30 s poll in `WabastorePanel.tsx` runs, and it calls the external webhook, not the database |
+| Drop `automation_jobs`, `support_ticket_reads`, `onboarding_automation_runs` from Realtime | **Reject for two of three** | `automation_jobs` feeds `ConsultantViews.tsx` and `support_ticket_reads` feeds `useTickets` (read markers across devices). `onboarding_automation_runs` has no consumer found: optional |
+| Lazy-mount `LeadStoreProvider` only in Wabastore | **Reject as written** | at least 12 components across departments use the lead store. A role/department check before hydrating and subscribing is possible, after checking each user |
+| `customers_telecaller_leads_idx` duplicates `customers_owner_created_idx` | **Incorrect** | it is a *partial* index (`where lifecycle_stage = 'LEAD'`): smaller and faster for lead lists. Keep. The two true duplicates are `chat_messages_history_idx` and `customer_documents_customer_idx` (found by catalog query) |
+| 155 of 277 foreign keys lack an index | **Method differs** | the catalog count on a real schema is 134. Index only the ones used to filter/join, after measuring |
+| `telecaller_contacts` / `ba_contacts` need `(department_id, team_id)` indexes because RLS scans | **Unproven** | the policy calls `telecaller_can_read(...)` per row; an index helps only where the query filters on those columns. Measure first |
+| `expire_stale_document_uploads` adds latency to uploads | **Incorrect** | it is fired without `await` and `.catch`-ed (`PipelineService.ts:512`) |
+| `CustomerService.import` loops up to 500 rows sequentially | **Verified, low value** | legacy browser-data migration route; ignore |
+| HR modal documents are `blob:` URLs that `saveHrRecord` never saves | **Verified (a bug, not a cost item)** | `EmployeeProfileModal.tsx` -> `hrDirectory.saveHrRecord` stores only flags/notes. Needs a product decision (HR files are sensitive) |
+| Archive/prune `audit_logs` older than 180 days to R2 | **Defer** | 735 rows today; pruning weakens tamper evidence unless a hash chain is added. Revisit when the table passes ~1-2 GB, with approval |
+| Add `pg_column_size` caps to unbounded JSONB | **Agree, with care** | use `NOT VALID` first so existing rows cannot make the migration fail; only after block 5 of `usage_report.sql` |
+| Nightly `pg_dump` + R2 copy workflow | **Agree** | highest operational value; also confirm the Supabase plan (Free has no automated backups) |
+| Stay on Supabase Free | **Not advised for production** | a CRM holding payments and invoices should be on Pro (backups, no pausing); verify the live plan |
+
+**Cost figures to prefer from this report:** Supabase Pro includes **5 M Realtime messages and 500 peak connections** (the other report says 2 M); Neon's paid plan is **usage-based** (about USD 0.106 per CU-hour, no fixed USD 19 minimum in the sources found). The conclusion (do not migrate) is the same either way.
+
+**Triggers to revisit the deferred items:** database over 1 GB; more than ~5,000 customers; egress above 50 GB a month; Realtime above 3 M messages a month; audit log above 1 GB. Until then the cheapest correct action is to leave them alone.
