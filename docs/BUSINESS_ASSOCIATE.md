@@ -14,9 +14,11 @@ Telecaller lead -> **Convert** (Telecaller's Leads page, only for a lead whose c
 * Stages (explicit, in `ba_contacts.stage`): New, In Progress, Quotation Pending, Demo Scheduled, Scope of Project Pending, Completed. They move by themselves
   (first piece of work, a quotation draft, a booked demo, a completed demo, a finalised document) and the Business Associate can set them.
 
-## Pages (Home, then the five sections in this order)
-Tasks - Leads - Quotation - Demo Schedule - Scope of Project. **Leads** is the same page the Telecaller uses (same table, form, validation, badges) with the Business
-Associate's own endpoints (`/ba/leads`): their leads are ordinary Sales leads they own, never the Telecaller's.
+## Pages (Home, then the sections in this order)
+Tasks - **Leads** (a group: Leads, Potential, Customer onboarding, Part payments) - Quotation - Demo Schedule - Scope of Project.
+The **Leads** group is the same Leads -> Potential -> Customer onboarding pipeline every Sales Team Member works in (the same pages, API and rules; one record moves through the
+steps, nothing is copied): *Add lead* is on Leads, *Save & move to Potential* takes a ready-to-buy lead to Potential, and a confirmed payment starts Customer onboarding.
+The earlier flat Leads page (`/ba/leads`, Hot/Warm/Cold and call status) is still in the code and the API but is no longer in the menu.
 
 ## Quotations
 * Prices start from the **approved price list** (`service_prices`, set by the Super Admin / Department Head in *Service Prices*: price, GST rate, largest discount allowed).
