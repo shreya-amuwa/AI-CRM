@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import type { SalesReport, SalesReportRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -30,12 +30,14 @@ export const SalesReports: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const latest = useRef(0);
   const load = useCallback(() => {
+    const mine = ++latest.current; // a slower, older answer must not overwrite a newer one
     setLoading(true);
     setError(null);
     salesHeadApi.reports({ who, from: range.from, to: range.to, taskStatus: taskStatus || undefined }).then(
-      d => (setData(d), setLoading(false)),
-      e => (setError(errorMessage(e)), setLoading(false))
+      d => mine === latest.current && (setData(d), setLoading(false)),
+      e => mine === latest.current && (setError(errorMessage(e)), setLoading(false))
     );
   }, [who, range, taskStatus]);
   useEffect(load, [load]);

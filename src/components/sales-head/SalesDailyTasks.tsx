@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { SALES_TASK_FILTERS, type SalesTaskAssignee, type SalesTaskFilter, type SalesTaskList, type SalesTaskRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -37,12 +37,14 @@ export const SalesDailyTasks: React.FC<{ initialFilter?: string }> = ({ initialF
   useEffect(() => {
     salesHeadApi.taskAssignees().then(setLeads, () => setLeads([]));
   }, []);
+  const latest = useRef(0);
   const load = useCallback(() => {
+    const mine = ++latest.current; // a slower, older answer must not overwrite a newer one
     setLoading(true);
     setError(null);
     salesHeadApi.tasks({ filter, search: query || undefined, assigneeId: assignee || undefined, page, pageSize }).then(
-      d => (setData(d), setLoading(false)),
-      e => (setError(errorMessage(e)), setLoading(false))
+      d => mine === latest.current && (setData(d), setLoading(false)),
+      e => mine === latest.current && (setError(errorMessage(e)), setLoading(false))
     );
   }, [filter, query, assignee, page, pageSize]);
   useEffect(load, [load]);

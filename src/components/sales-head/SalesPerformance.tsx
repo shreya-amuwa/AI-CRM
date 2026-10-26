@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, FileText, Search } from 'lucide-react';
 import type { SalesLeadList, SalesReportRow, SalesTaskList } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -30,11 +30,13 @@ export const SalesPerformance: React.FC = () => {
   const [employee, setEmployee] = useState('');
   const [open, setOpen] = useState<Person | null>(null);
 
+  const latest = useRef(0);
   const load = useCallback(() => {
+    const mine = ++latest.current; // a slower, older answer must not overwrite a newer one
     setError(null);
     Promise.all([salesHeadApi.reports({ who: 'TEAM_LEAD', from: range.from, to: range.to }), salesHeadApi.reports({ who: 'TEAM_MEMBER', from: range.from, to: range.to })]).then(
-      ([l, m]) => setPeople([...l.rows.map(r => ({ ...r, kind: 'TEAM_LEAD' as const })), ...m.rows.map(r => ({ ...r, kind: 'TEAM_MEMBER' as const }))]),
-      e => (setError(errorMessage(e)), setPeople(p => p ?? []))
+      ([l, m]) => mine === latest.current && setPeople([...l.rows.map(r => ({ ...r, kind: 'TEAM_LEAD' as const })), ...m.rows.map(r => ({ ...r, kind: 'TEAM_MEMBER' as const }))]),
+      e => mine === latest.current && (setError(errorMessage(e)), setPeople(p => p ?? []))
     );
   }, [range]);
   useEffect(load, [load]);

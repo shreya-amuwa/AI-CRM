@@ -33,7 +33,9 @@ set role authenticated;
 
 \echo '   access'
 select test.login('tm_a');
-select test.must_fail($$select ba_home()$$, 'a Sales member cannot open the Business Associate home', 'FORBIDDEN');
+select test.check((ba_home() is not null) and (ba_contacts_list() ->> 'total')::int = 0, 'a Sales member without a Sales role works as a Business Associate (migration 20261127000100): they open the pages and start with no contacts');
+select test.login('sup_plain');
+select test.must_fail($$select ba_home()$$, 'a Support member cannot open the Business Associate home', 'FORBIDDEN');
 select test.must_fail($$select ba_contacts_list()$$, 'nor the contacts', 'FORBIDDEN');
 select test.login('tc_a');
 select test.must_fail($$select ba_contacts_list()$$, 'nor can a Telecaller', 'FORBIDDEN');
@@ -45,10 +47,13 @@ select test.must_fail($$insert into ba_quotations (quotation_no, contact_id) val
 
 \echo '   converting a qualified lead'
 select test.login('tc_a');
-select test.check(jsonb_array_length(ba_assignees()) = 2, 'a Telecaller sees the Business Associates of their own department');
+select test.check((select count(*) = 4 from jsonb_array_elements(ba_assignees()) x where (x ->> 'id')::uuid in (test.id('ba_a'), test.id('ba_b'), test.id('tm_a'), test.id('tm_s2'))),
+  'a Telecaller sees who can take a contact in their own department: the Business Associates and the Sales members');
+select test.check((select count(*) = 0 from jsonb_array_elements(ba_assignees()) x where (x ->> 'id')::uuid in (test.id('tc_a'), test.id('tc_b'), test.id('ba_x'), test.id('tm_c'), test.id('sup_plain'))),
+  'but no Telecaller, nobody from another department and nobody from Support');
 select test.must_fail($$select telecaller_lead_convert(test.lead('Warm Customer'), null, null)$$, 'a lead that is not Interested is not qualified', 'Interested');
 select test.must_fail($$select telecaller_lead_convert(test.lead('Hot Customer'), test.id('ba_x'), null)$$, 'a Business Associate of another department is refused', 'Business Associate of your department');
-select test.must_fail($$select telecaller_lead_convert(test.lead('Hot Customer'), test.id('tm_a'), null)$$, 'so is somebody who is not a Business Associate', 'Business Associate of your department');
+select test.must_fail($$select telecaller_lead_convert(test.lead('Hot Customer'), test.id('tc_a'), null)$$, 'so is somebody who is not a Business Associate (a Telecaller)', 'Business Associate of your department');
 select test.must_fail($$select telecaller_lead_convert(gen_random_uuid(), null, null)$$, 'an unknown lead', 'not found');
 select test.login('tc_b');
 select test.must_fail($$select telecaller_lead_convert(test.lead('Hot Customer'), null, null)$$, 'another Telecaller cannot convert this lead', 'not found');
@@ -102,8 +107,10 @@ select service_price_save((test.svcs(2))[2], 'per month', 2000, 18, 0);
 select test.must_fail($$select service_price_save('NOPE', 'x', 1, 1, 1)$$, 'an unknown service is refused', 'Unknown service');
 select test.must_fail($$select service_price_save((test.svcs(1))[1], 'x', -5, 18, 0)$$, 'a negative price is refused', 'unit price');
 select test.check((select count(*) = 2 from jsonb_array_elements(service_prices_list()) x where (x ->> 'priced')::boolean), 'the list shows the two approved prices');
+select test.login('sup_plain');
+select test.must_fail($$select service_prices_list()$$, 'a Support member cannot open the price list', 'FORBIDDEN');
 select test.login('tm_a');
-select test.must_fail($$select service_prices_list()$$, 'a Sales member cannot open the price list', 'FORBIDDEN');
+select test.must_fail($$select service_price_save((test.svcs(1))[1], 'x', 1, 1, 1)$$, 'a Sales member can read the price list but not change it', 'FORBIDDEN');
 
 \echo '   quotations'
 select test.login('ba_a');
@@ -266,3 +273,30 @@ select test.login('ba_a');
 select test.must_fail($$select ba_contact_get(test.bac('Hot Customer'))$$, 'BA Alpha no longer has it', 'not found');
 reset role;
 select test.check((select count(*) >= 3 from audit_logs where action in ('BA_CONTACT_CREATED', 'BA_QUOTATION_FINALIZED', 'BA_SCOPE_FINALIZED', 'BA_CONTACT_REASSIGNED')), 'conversions, finalisations and reassignment are audited');
+
+\echo '   a Sales member works as a Business Associate (migration 20261127000100)'
+select test.login('tc_a');
+select telecaller_lead_save(null, jsonb_build_object('name','Member Handover','company','MH Co','phone','9811234580','leadSource','Referral'), test.svcs(2), 'HOT', 'INTERESTED');
+select test.check((telecaller_lead_convert(test.lead('Member Handover'), test.id('tm_a'), 'Please call today') ->> 'assigneeName') = 'Member A', 'a Telecaller hands a contact to a Sales member of the department');
+select telecaller_lead_save(null, jsonb_build_object('name','Member Auto','company','MA Co','phone','9811234581','leadSource','Referral'), test.svcs(1), 'HOT', 'INTERESTED');
+select test.check((telecaller_lead_convert(test.lead('Member Auto'), null, null) ->> 'assigneeName') in ('BA Alpha', 'BA Beta'), 'without a choice a dedicated Business Associate is still preferred, however busy');
+select telecaller_lead_save(null, jsonb_build_object('name','Other Dept','company','OD Co','phone','9811234582','leadSource','Referral'), test.svcs(1), 'HOT', 'INTERESTED');
+select test.must_fail($$select telecaller_lead_convert(test.lead('Other Dept'), test.id('tm_c'), null)$$, 'a Sales member of another department is refused', 'Business Associate of your department');
+select test.login('tm_a');
+select test.check((ba_contacts_list() ->> 'total')::int = 1 and (ba_contacts_list() -> 'items' -> 0 ->> 'name') = 'Member Handover', 'the Sales member sees only the contact handed to them');
+select test.must_fail($$select ba_contact_get(test.bac('Hot Customer'))$$, 'not a Business Associate''s contact', 'not found');
+select test.check((ba_contact_update(test.bac('Member Handover'), '{"requirements":"Needs a WhatsApp API"}') ->> 'requirements') = 'Needs a WhatsApp API', 'they work the contact like a Business Associate: requirements');
+select ba_contact_note_add(test.bac('Member Handover'), 'Called, wants a quotation');
+select test.login('tm_s2');
+select test.check((ba_contacts_list() ->> 'total')::int = 0, 'another Sales member sees none of them');
+select test.must_fail($$select ba_contact_get(test.bac('Member Handover'))$$, 'nor opens them', 'not found');
+select test.must_fail($$select ba_contact_update(test.bac('Member Handover'), '{"requirements":"x"}')$$, 'nor changes them', 'not found');
+select test.login('ba_a');
+select test.must_fail($$select ba_contact_get(test.bac('Member Handover'))$$, 'a Business Associate does not see a Sales member''s contacts either', 'not found');
+select test.login('dh_wab');
+select test.check((ba_contact_reassign(test.bac('Member Handover'), test.id('tm_s2')) ->> 'assignedTo') = test.id('tm_s2')::text, 'the Department Head can reassign a contact to a Sales member');
+select test.must_fail($$select ba_contact_reassign(test.bac('Member Handover'), test.id('tc_a'))$$, 'but not to a Telecaller', 'Business Associate of the department');
+select test.login('tm_a');
+select test.must_fail($$select ba_contact_get(test.bac('Member Handover'))$$, 'the first member no longer has it', 'not found');
+select test.login('tm_c');
+select test.check((ba_contacts_list() ->> 'total')::int = 0, 'a Sales member of another department sees nothing of this department');

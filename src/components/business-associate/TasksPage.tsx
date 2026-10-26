@@ -103,7 +103,7 @@ const ContactList: React.FC<{ go: BaNavigate; initialStage?: string; onOpen: (id
                       <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={c.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{c.name}</span></div></td>
                       <td className="px-4 py-3 text-slate-600">{c.company || '-'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{c.phone ? <a href={`tel:${c.phone}`} onClick={e => e.stopPropagation()} className="text-blue-600 hover:underline">{c.phone}</a> : '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 break-all">{c.email || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[200px]"><span className="block truncate" title={c.email || undefined}>{c.email || '-'}</span></td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{c.leadSource || '-'}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{c.telecaller || '-'}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{dateText(c.assignedAt)}</td>

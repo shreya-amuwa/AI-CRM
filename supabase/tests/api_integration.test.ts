@@ -4745,10 +4745,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('dh', 'POST', '/users', { email: 'influ@amuwa.com', fullName: 'Influ Encer', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'INFLUENCER' });
   check(r.status === 201 && r.json.data.defaultDashboard === 'sales-influencer', 'business associate API: another Sales role does not get the Business Associate dashboard', r);
   tokens.set('influ', tokenFor(r.json.data.id));
-  for (const who of ['a', 'tca', 'influ', 'th']) {
+  for (const who of ['tca', 'influ', 'th', 'sm']) {
     r = await api(who, 'GET', '/ba/home');
     check(r.status === 403, `business associate API: ${who} cannot open the Business Associate pages`, r);
   }
+  // a Sales member without a Sales role works as a Business Associate from the Sales Team Member dashboard (migration 20261127000100)
+  r = await api('a', 'GET', '/ba/home');
+  check(r.status === 200, 'business associate API: a Sales member opens the Business Associate pages', r);
+  r = await api('a', 'GET', '/ba/contacts');
+  check(r.status === 200 && r.json.data.total === 0, 'business associate API: and starts with no contacts', r);
+  r = await api('a', 'GET', '/ba/prices');
+  check(r.status === 200, 'business associate API: and reads the price list', r);
+  r = await api('a', 'POST', `/ba/prices/${svcCodes[0]}`, { unitLabel: 'one time', unitPrice: 1, gstRate: 0, maxDiscountPct: 0, isActive: true });
+  check(r.status === 403, 'business associate API: but cannot change it', r);
   r = await api('ba1', 'GET', '/telecaller/home');
   check(r.status === 403, 'business associate API: nor can a Business Associate open the Telecaller pages', r);
 
@@ -4756,7 +4765,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const leadId = (await db.query(`select id from customers where name = 'Hot Customer'`)).rows[0].id as string;
   const warmId = (await db.query(`select id from customers where name = 'Warm Customer'`)).rows[0].id as string;
   r = await api('tca', 'GET', '/telecaller/ba-assignees');
-  check(r.status === 200 && r.json.data.length === 2, 'business associate API: a Telecaller lists the Business Associates of the department', r);
+  check(r.status === 200 && [baOne, baTwo, memberA].every(id => r.json.data.some((x: any) => x.id === id)) && !r.json.data.some((x: any) => x.name === 'Tele Alpha'),
+    'business associate API: a Telecaller lists who can take a contact: the Business Associates and the Sales members, not Telecallers', r);
   r = await api('tca', 'POST', `/telecaller/leads/${warmId}/convert`, {});
   check(r.status === 422 && /Interested/.test(r.json.error.message), 'business associate API: a lead that is not qualified cannot be converted', r);
   r = await api('tcb', 'POST', `/telecaller/leads/${leadId}/convert`, {});
