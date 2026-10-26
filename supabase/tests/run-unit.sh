@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 status=0
-for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_email_templates performance_narrative workflow_layout telecaller_sheet ba_pdf sales_lead_sheet import_template bolify active_scope head_assignment; do
+for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_email_templates performance_narrative workflow_layout telecaller_sheet ba_pdf sales_lead_sheet import_template bolify active_scope head_assignment shop_text; do
   f="supabase/tests/$t.test.ts"
   [ -f "$f" ] || continue
   echo "=== $t"
@@ -17,7 +17,7 @@ for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_e
   rm -f "./.unit_$t.tmp.mjs"
 done
 # Browser tests: the "Same as mobile number" checkbox, and the scrolling of pop-ups / the page lock (need Playwright + Chromium, skipped when they are missing)
-for ui in ui_whatsapp ui_scroll ui_head_departments ui_access_control; do
+for ui in ui_whatsapp ui_scroll ui_head_departments ui_access_control ocr_shop_photo; do
   [ -f "supabase/tests/$ui.test.mjs" ] || continue
   echo "=== $ui"
   node "supabase/tests/$ui.test.mjs" || status=1
