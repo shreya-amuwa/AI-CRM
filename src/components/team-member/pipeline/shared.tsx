@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import type { LeadStatus, PipelineCounts, ServiceCatalogItem } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
-import { getSupabase } from '../../../services/supabaseClient';
+import { listenToTables } from '../../../lib/realtimeShared';
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -357,6 +357,9 @@ export function useServiceCatalog() {
  *  - the tab becomes visible or the window gets focus again.
  * There is no timer: nothing is requested while nothing changes. Several triggers close together become one reload.
  */
+// the pipeline tables; one Realtime channel per tab is shared by every screen that listens (see lib/realtimeShared)
+const PIPELINE_TABLES = ['customers', 'customer_documents', 'customer_onboarding', 'customer_onboarding_entries', 'member_invoices'] as const;
+
 export function usePipelineRealtime(onChange: () => void) {
   const cb = useRef(onChange);
   cb.current = onChange;
@@ -371,21 +374,13 @@ export function usePipelineRealtime(onChange: () => void) {
     window.addEventListener('crm:pipeline-changed', fire);
     window.addEventListener('focus', whenVisible);
     document.addEventListener('visibilitychange', whenVisible);
-    const sb = getSupabase();
-    const channel = sb
-      ?.channel(`pipeline-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, fire)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_documents' }, fire)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_onboarding' }, fire)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'customer_onboarding_entries' }, fire)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'member_invoices' }, fire)
-      .subscribe();
+    const stopListening = listenToTables(PIPELINE_TABLES, fire);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('crm:pipeline-changed', fire);
       window.removeEventListener('focus', whenVisible);
       document.removeEventListener('visibilitychange', whenVisible);
-      if (sb && channel) void sb.removeChannel(channel);
+      stopListening();
     };
   }, []);
 }

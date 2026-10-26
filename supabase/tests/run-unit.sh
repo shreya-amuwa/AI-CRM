@@ -6,11 +6,13 @@ cd "$(dirname "$0")/../.."
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 status=0
-for t in invoice_calc invoice_pdf invoice_delivery journey_service security hr_email_templates performance_narrative workflow_layout telecaller_sheet ba_pdf sales_lead_sheet import_template bolify active_scope head_assignment shop_text; do
+for t in api_client_cache realtime_shared invoice_calc invoice_pdf invoice_delivery journey_service security hr_email_templates performance_narrative workflow_layout telecaller_sheet ba_pdf sales_lead_sheet import_template bolify active_scope head_assignment shop_text; do
   f="supabase/tests/$t.test.ts"
   [ -f "$f" ] || continue
   echo "=== $t"
-  npx esbuild "$f" --bundle --platform=node --format=esm --packages=external --outfile="$WORK/$t.mjs" --log-level=warning
+  # the browser API client reads Vite's import.meta.env (empty in Node)
+  extra=(); { [ "$t" = api_client_cache ] || [ "$t" = realtime_shared ]; } && extra=(--define:import.meta.env={})
+  npx esbuild "$f" --bundle --platform=node --format=esm --packages=external --outfile="$WORK/$t.mjs" --log-level=warning "${extra[@]}"
   # run from the repo root so package imports resolve; the bundle itself lives in a temp directory
   cp "$WORK/$t.mjs" "./.unit_$t.tmp.mjs"
   node "./.unit_$t.tmp.mjs" || status=1

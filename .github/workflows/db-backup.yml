@@ -1,0 +1,90 @@
+name: Database backup
+
+# A daily copy of the Supabase database in a private Cloudflare R2 bucket (the Supabase free plan keeps no backups).
+# Does nothing until these repository secrets are set (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_DB_URL         the database connection string (Supabase -> Project Settings -> Database -> Connection string,
+#                           "Session pooler", with the password filled in)
+#   R2_ACCOUNT_ID           Cloudflare account id
+#   R2_ACCESS_KEY_ID        an R2 API token with Object Read & Write on the backup bucket only
+#   R2_SECRET_ACCESS_KEY
+#   R2_BACKUP_BUCKET        a PRIVATE bucket used only for backups (add a lifecycle rule there to delete copies older than 30 days)
+#   BACKUP_PASSPHRASE       optional but recommended: the copy is encrypted with it (AES-256); keep it somewhere safe, it is needed to restore
+# Restore: see docs/SCALING_AND_COST.md.
+
+on:
+  schedule:
+    - cron: '17 20 * * *' # 01:47 IST, a quiet hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BACKUP_BUCKET: ${{ secrets.R2_BACKUP_BUCKET }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      AWS_DEFAULT_REGION: auto
+    steps:
+      - name: Check the configuration
+        id: cfg
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$R2_ACCOUNT_ID" ] || [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$R2_BACKUP_BUCKET" ]; then
+            echo "::notice::Database backup is not configured yet (see the secrets listed in .github/workflows/db-backup.yml). Nothing to do."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install the PostgreSQL 17 client
+        if: steps.cfg.outputs.run == 'true'
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Dump the database
+        if: steps.cfg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          STAMP="$(date -u +%Y-%m-%dT%H%M%SZ)"
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          # the CRM's own schemas plus Supabase Auth (the users); custom format, compressed, restorable with pg_restore
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" \
+            --format=custom --compress=9 --no-owner --no-privileges \
+            --schema=public --schema=private --schema=auth \
+            --file="crm-$STAMP.dump"
+          ls -lh "crm-$STAMP.dump"
+          # a quick sanity check: the archive lists its contents
+          /usr/lib/postgresql/17/bin/pg_restore --list "crm-$STAMP.dump" | grep -c 'TABLE DATA' | xargs -I{} echo "table data entries: {}"
+
+      - name: Encrypt
+        if: steps.cfg.outputs.run == 'true' && env.BACKUP_PASSPHRASE != ''
+        run: |
+          set -euo pipefail
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --symmetric --cipher-algo AES256 \
+            --output "crm-$STAMP.dump.gpg" "crm-$STAMP.dump" <<< "$BACKUP_PASSPHRASE"
+          shred -u "crm-$STAMP.dump"
+
+      - name: Upload to R2
+        if: steps.cfg.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          FILE="$(ls crm-$STAMP.dump* | head -1)"
+          aws s3 cp "$FILE" "s3://$R2_BACKUP_BUCKET/daily/$FILE" \
+            --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" --only-show-errors
+          echo "::notice::Backup stored: daily/$FILE"
+          rm -f "$FILE"

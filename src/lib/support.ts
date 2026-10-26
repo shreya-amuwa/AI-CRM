@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getSupabase } from '../services/supabaseClient';
+import { listenToTables } from './realtimeShared';
 
 /**
  * Data access for the Support Team Member dashboard (migration
@@ -793,19 +794,15 @@ export function useRealtime(table: string, onChange: () => void) {
   const cb = useRef(onChange);
   cb.current = onChange;
   useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const channel = supabase
-      .channel(`support-${table}-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => cb.current(), 300);
-      })
-      .subscribe();
+    // one channel per tab and table, shared with every other listener of the same table
+    const stop = listenToTables([table], () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => cb.current(), 300);
+    });
     return () => {
       clearTimeout(timer);
-      void supabase.removeChannel(channel);
+      stop();
     };
   }, [table]);
 }
