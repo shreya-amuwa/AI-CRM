@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownUp, Eye, Search, UserCheck } from 'lucide-react';
 import { SALES_LEAD_FILTERS, type SalesTeamPerson, type SalesLeadDetail, type SalesLeadFilter, type SalesLeadList, type SalesLeadRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -53,12 +53,14 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
     salesHeadApi.teamPeople().then(setPeople, () => setPeople([]));
   }, []);
 
+  const latest = useRef(0);
   const load = useCallback(() => {
+    const mine = ++latest.current; // a slower, older answer must not overwrite a newer one
     setLoading(true);
     setError(null);
     salesHeadApi.leads({ search: query || undefined, filter, assigneeId: assignee || undefined, sort, dir, page, pageSize }).then(
-      d => (setData(d), setLoading(false)),
-      e => (setError(errorMessage(e)), setLoading(false))
+      d => mine === latest.current && (setData(d), setLoading(false)),
+      e => mine === latest.current && (setError(errorMessage(e)), setLoading(false))
     );
   }, [query, filter, assignee, sort, dir, page, pageSize]);
   useEffect(load, [load]);

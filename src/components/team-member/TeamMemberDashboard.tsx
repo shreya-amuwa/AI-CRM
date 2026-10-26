@@ -30,6 +30,8 @@ import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
 import { usePipelineCounts } from './pipeline/shared';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
+import { BusinessAssociateWorkspace, BA_WORKSPACE_NAV, baPageOfNav } from '../business-associate/BusinessAssociateWorkspace';
+import type { BaNavigate, BaTarget } from '../business-associate/BusinessAssociateDashboard';
 
 interface TeamMemberDashboardProps {
   currentUserId: string;
@@ -47,9 +49,19 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
   const [openAddLead, setOpenAddLead] = useState(false);
   // Bumped on every sidebar click so re-selecting a section returns to its list.
   const [navNonce, setNavNonce] = useState(0);
+  // The Business Associate pages (Sales Team Members only): a button on one page can point to a client on another.
+  const [baTarget, setBaTarget] = useState<BaTarget>({});
   const setActiveNav = (nav: TeamMemberNav) => {
     setOpenAddLead(false);
+    setBaTarget({});
     setActiveNavState(nav);
+    setNavNonce(n => n + 1);
+  };
+  const goBa: BaNavigate = (page, target) => {
+    // the Business Associate's Leads button leads to this member's own My Leads
+    setOpenAddLead(page === 'leads' && !!target?.addLead);
+    setBaTarget(target ?? {});
+    setActiveNavState((page === 'leads' ? 'leads' : BA_WORKSPACE_NAV.find(n => n.page === page)?.nav ?? 'ba-home') as TeamMemberNav);
     setNavNonce(n => n + 1);
   };
   const { counts: pipelineCounts } = usePipelineCounts();
@@ -454,6 +466,11 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
         )}
 
         {activeNav === 'delivery' && <DeliveryQueue />}
+
+        {/* Business Associate pages - a Sales Team Member works as a Business Associate; the sidebar only offers them to Sales members */}
+        {user?.subDepartment === 'sales' && baPageOfNav(activeNav) && (
+          <BusinessAssociateWorkspace page={baPageOfNav(activeNav)!} target={baTarget} resetKey={navNonce} onGo={goBa} />
+        )}
 
         {activeNav === 'notifications' && <NotificationsPage />}
 

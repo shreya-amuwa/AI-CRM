@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Info } from 'lucide-react';
 import type { SalesIncome } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -22,10 +22,12 @@ export const SalesIncomePage: React.FC = () => {
   const [preset, setPreset] = useState<Preset>('MONTH');
   const [data, setData] = useState<SalesIncome | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const latest = useRef(0);
   const load = useCallback(() => {
+    const mine = ++latest.current; // a slower, older answer must not overwrite a newer one
     setError(null);
     const r = presetRange(preset);
-    salesHeadApi.income({ from: r.from, to: r.to }).then(setData, e => setError(errorMessage(e)));
+    salesHeadApi.income({ from: r.from, to: r.to }).then(d => mine === latest.current && setData(d), e => mine === latest.current && setError(errorMessage(e)));
   }, [preset]);
   useEffect(() => {
     setData(null);

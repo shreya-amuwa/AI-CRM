@@ -452,6 +452,30 @@ await rahul.goto(`${BASE}/business-associate/dashboard/${baOne.id}`);
 await rahul.waitForFunction(() => location.pathname.startsWith('/team-member/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Sales member reached the Business Associate route'));
 ok('routing: a Sales member cannot open it either, and keeps the Sales member dashboard');
 await rahul.close();
+
+// ------------------------------------------------------------------ 8b. a Sales member works as a Business Associate from the Sales Team Member dashboard
+const rahulId = await idOf('rahul@amuwa.com');
+const sunita = await mkLead('Sunita Rao', 'INTERESTED', [svc[0].code]);
+const handed = await api(tele.id, 'POST', `/telecaller/leads/${sunita.id}/convert`, { assigneeId: rahulId, note: 'Please call today' });
+await expect(handed.assigneeName === 'Rahul' || !!handed.contactId, 'Sales member: a Telecaller hands a contact to a Sales member', handed);
+const sm = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'nav button');
+await expect(/\/team-member\/dashboard\//.test(sm.url()), 'Sales member: keeps the Sales Team Member dashboard', sm.url());
+await navItem(sm, 'Business Associate').waitFor({ timeout: 15000 }).catch(() => fail('Sales member: the Business Associate group is missing from the sidebar'));
+await expect(await navItem(sm, 'My Leads').count() === 1 && await navItem(sm, 'My Customers').count() === 1, 'Sales member: the existing menu (My Leads, My Customers) is still there');
+await navItem(sm, 'Business Associate').click();
+const subs = (await sm.locator('#business-associate-subtree button').allInnerTexts()).map(t => t.trim());
+await expect(JSON.stringify(subs) === JSON.stringify(['BA Overview', 'BA Tasks', 'Quotation', 'Demo Schedule', 'Scope of Project']), 'Sales member: the Business Associate group lists its pages', subs);
+await sm.locator('main').getByText('Quick actions').first().waitFor({ timeout: 15000 }).catch(() => fail('Sales member: BA Overview did not open'));
+await sm.locator('#business-associate-subtree button', { hasText: 'BA Tasks' }).click();
+await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Sunita Rao' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Sales member: the contact handed to them is not in BA Tasks'));
+await expect(!(await text(sm)).includes('Meera Kapoor'), 'Sales member: sees only their own contacts (not a Business Associate\'s)');
+await sm.screenshot({ path: `${OUT}/ba-8b-sales-member-contacts.png`, fullPage: true });
+for (const [label, heading] of [['Quotation', 'Quotation'], ['Demo Schedule', 'Demo Schedule'], ['Scope of Project', 'Scope of Project']]) {
+  await sm.locator('#business-associate-subtree button', { hasText: label }).click();
+  await sm.getByRole('heading', { name: heading }).first().waitFor({ timeout: 15000 }).catch(() => fail(`Sales member: ${label} did not open`));
+}
+ok('Sales member: Quotation, Demo Schedule and Scope of Project open');
+await sm.close();
 const vs = await login('visit.sales@amuwa.com', { width: 1440, height: 900 }, 'text=dashboard is not set up yet');
 await expect(/\/sales-role\//.test(vs.url()), 'routing: another Sales role (Visit Sales) still gets the "not set up yet" page, not this dashboard', vs.url());
 await vs.close();
@@ -476,7 +500,7 @@ await ph.close();
 const tb = await login('ba.one@amuwa.com', { width: 820, height: 1180 }, 'text=Quick actions');
 const tabletOk = async label => expect(await tb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `tablet: no sideways scrolling on ${label}`);
 await tabletOk('Home');
-for (const [label, ready] of [['Tasks', 'tbody tr'], ['Leads', 'tbody tr'], ['Quotation', 'tbody tr'], ['Demo Schedule', 'text=Demo Schedule'], ['Scope of Project', '#sc-client']]) {
+for (const [label, ready] of [['Tasks', 'tbody tr:visible, main ul li:visible'], ['Leads', 'tbody tr:visible, main ul li:visible'], ['Quotation', 'tbody tr:visible, main ul li:visible'], ['Demo Schedule', 'text=Demo Schedule'], ['Scope of Project', '#sc-client']]) {
   await menu(tb, label);
   await tb.waitForSelector(ready, { timeout: 15000 });
   await tabletOk(label);
