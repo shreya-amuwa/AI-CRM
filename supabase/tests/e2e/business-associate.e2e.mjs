@@ -470,6 +470,16 @@ await sm.locator('#business-associate-subtree button', { hasText: 'BA Tasks' }).
 await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Sunita Rao' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Sales member: the contact handed to them is not in BA Tasks'));
 await expect(!(await text(sm)).includes('Meera Kapoor'), 'Sales member: sees only their own contacts (not a Business Associate\'s)');
 await sm.screenshot({ path: `${OUT}/ba-8b-sales-member-contacts.png`, fullPage: true });
+// the Sales member's own pipeline is untouched: a lead created there appears in My Leads, once, and the Lead -> Potential -> Customer onboarding steps are all still in the menu
+const pipeLead = await api(rahulId, 'POST', '/pipeline/leads', { name: 'Pipeline Pal', company: 'Pal Co', phone: '+91 98200 33333', leadSource: 'Instagram', services: [svc[0].code] });
+await expect(!!pipeLead.id, 'Pipeline: a Sales member creates a lead', pipeLead);
+await navItem(sm, 'My Leads').click();
+const steps = (await sm.locator('#my-leads-subtree button').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim().replace(/\s*\d+$/, ''));
+await expect(steps.length === 4 && /^1 Leads/.test(steps[0]) && /^2 Potential/.test(steps[1]) && /^3 Customer onboarding/.test(steps[2]) && /^4 Part payments/.test(steps[3]), 'Pipeline: My Leads still has Leads, Potential, Customer onboarding and Part payments', steps);
+await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Pipeline Pal' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Pipeline: the new lead is not in My Leads'));
+await expect((await q(`select count(*)::int n from customers where name = 'Pipeline Pal'`))[0].n === 1, 'Pipeline: exactly one record exists for the lead');
+await expect((await q(`select count(*)::int n from ba_contacts c join customers l on l.id = c.lead_id where l.name = 'Pipeline Pal'`))[0].n === 0, 'Pipeline: the lead is not turned into a Business Associate contact by itself');
+await sm.screenshot({ path: `${OUT}/ba-8b-sales-member-my-leads.png`, fullPage: true });
 for (const [label, heading] of [['Quotation', 'Quotation'], ['Demo Schedule', 'Demo Schedule'], ['Scope of Project', 'Scope of Project']]) {
   await sm.locator('#business-associate-subtree button', { hasText: label }).click();
   await sm.getByRole('heading', { name: heading }).first().waitFor({ timeout: 15000 }).catch(() => fail(`Sales member: ${label} did not open`));
