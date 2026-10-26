@@ -72,6 +72,12 @@ const menu = async (p, label) => {
   if ((p.viewportSize()?.width ?? 1440) < 1024) { await p.getByRole('button', { name: 'Toggle menu' }).click(); await new Promise(r => setTimeout(r, 350)); }
   await navItem(p, label).click();
 };
+// the Leads group of the Business Associate sidebar: Leads, Potential, Customer onboarding, Part payments
+const pipeStep = async (p, label) => {
+  if ((p.viewportSize()?.width ?? 1440) < 1024) { await p.getByRole('button', { name: 'Toggle menu' }).click(); await new Promise(r => setTimeout(r, 350)); }
+  if (!(await p.locator('#nav-sub-leads-group').count())) await navItem(p, 'Leads').click();
+  await p.locator('#nav-sub-leads-group button', { hasText: new RegExp(`^${label}$`) }).click();
+};
 const text = p => p.locator('main').innerText();
 const todayIST = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const stat = async (p, label) => Number(await p.getByTestId(`stat-${label}`).innerText());
@@ -406,25 +412,39 @@ await b1.getByRole('heading', { name: 'Meera Kapoor' }).waitFor();
 const progress = await text(b1);
 await expect(new RegExp(qNo).test(progress) && /Version 1/.test(progress) && /Product demo/.test(progress), 'Tasks: the client view shows the quotations, the demo and the scope versions together');
 
-// ------------------------------------------------------------------ 7. Leads
-await menu(b1, 'Leads');
-await b1.getByText('No leads yet').waitFor({ timeout: 15000 });
-ok('Leads: the Business Associate does not see the Telecaller\'s leads');
-await b1.getByRole('button', { name: /Add Lead/ }).first().click();
-const ld = b1.getByRole('dialog');
-await ld.locator('#lead-name').fill('Ravi Menon');
-await ld.locator('#lead-company').fill('Menon Cafe');
-await ld.locator('#lead-phone').fill('9811234567');
-await ld.locator('[aria-label="Interested service"] button').first().click();
-await ld.getByRole('radio', { name: 'Warm' }).click();
-await ld.locator('#lead-callStatus').selectOption('CONTACTED');
-await ld.getByRole('button', { name: 'Add Lead' }).click();
-await b1.getByText('Ravi Menon was added to your leads.').waitFor({ timeout: 15000 }).catch(() => fail('Leads: the lead was not added'));
-await b1.locator('tbody tr', { hasText: 'Ravi Menon' }).waitFor({ timeout: 10000 }).catch(() => fail('Leads: the lead does not appear in the list without a refresh'));
-ok('Leads: the lead appears in the list without a refresh');
-const rl = (await q(`select owner_id, lead_temperature, call_status from customers where name = 'Ravi Menon'`))[0];
-await expect(rl.owner_id === baOne.id && rl.lead_temperature === 'WARM' && rl.call_status === 'CONTACTED', 'Leads: owned by the Business Associate; temperature and call status are separate', rl);
-await expect((await b1.getByRole('button', { name: /Convert/ }).count()) === 0, 'Leads: no Telecaller hand-over button on the Business Associate\'s Leads');
+// ------------------------------------------------------------------ 7. Leads -> Potential -> Customer onboarding (the pipeline every Sales member works in)
+await pipeStep(b1, 'Leads');
+await b1.getByRole('heading', { name: 'Leads' }).first().waitFor({ timeout: 15000 });
+const pipeSteps = (await b1.locator('#nav-sub-leads-group button').allInnerTexts()).map(t => t.trim());
+await expect(JSON.stringify(pipeSteps) === JSON.stringify(['Leads', 'Potential', 'Customer onboarding', 'Part payments']), 'Leads: the group has Leads, Potential, Customer onboarding and Part payments', pipeSteps);
+await expect(!(await text(b1)).includes('Hot Customer'), 'Leads: the Business Associate does not see the Telecaller\'s leads');
+await b1.getByRole('button', { name: /Add lead/i }).first().click();
+await b1.locator('#lead-name').fill('Ravi Menon');
+await b1.locator('#lead-company').fill('Menon Cafe');
+await b1.locator('#lead-phone').fill('9811234567');
+await b1.locator('#lead-leadSource').selectOption('Instagram');
+await b1.getByRole('button', { name: 'Select all services' }).click();
+await b1.getByRole('button', { name: 'Save lead' }).click();
+await b1.getByRole('button', { name: /Save & move to Potential|Back to leads|Back/ }).first().waitFor({ timeout: 15000 }).catch(() => fail('Leads: the lead was not saved from the Add lead form'));
+await pipeStep(b1, 'Leads');
+await b1.locator('tbody tr:visible, main ul li:visible', { hasText: 'Ravi Menon' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Leads: the new lead is not in the Leads list'));
+const rl = (await q(`select id, owner_id, lifecycle_stage from customers where name = 'Ravi Menon'`));
+await expect(rl.length === 1 && rl[0].owner_id === baOne.id && rl[0].lifecycle_stage === 'LEAD', 'Leads: one lead record, owned by the Business Associate', rl);
+await b1.screenshot({ path: `${OUT}/ba-7-leads.png`, fullPage: true });
+// the lead moves on as the same record: Potential, then Customer onboarding
+const dueTomorrow = new Date(Date.now() + 86400e3).toISOString().slice(0, 10);
+await api(baOne.id, 'PATCH', `/pipeline/leads/${rl[0].id}`, { leadStatus: 'READY_TO_BUY' }).catch(() => {});
+const toPotential = await api(baOne.id, 'POST', `/pipeline/customers/${rl[0].id}/move-to-potential`, { dealAmount: 40000, paymentDueDate: dueTomorrow });
+await expect(toPotential.lifecycleStage === 'POTENTIAL' && toPotential.id === rl[0].id, 'Potential: the same record moves from Leads to Potential', toPotential);
+await pipeStep(b1, 'Potential');
+await b1.locator('tbody tr:visible, main ul li:visible', { hasText: 'Menon Cafe' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Potential: the customer is not in Potential'));
+await b1.screenshot({ path: `${OUT}/ba-7-potential.png`, fullPage: true });
+const toOnboarding = await api(baOne.id, 'POST', `/pipeline/customers/${rl[0].id}/payments`, { amount: 40000, method: 'UPI' });
+await expect(toOnboarding.lifecycleStage === 'ONBOARDING', 'Customer onboarding: a full payment starts onboarding for the same record', toOnboarding);
+await pipeStep(b1, 'Customer onboarding');
+await b1.locator('tbody tr:visible, main ul li:visible', { hasText: 'Menon Cafe' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Customer onboarding: the customer is not in the list'));
+await expect((await q(`select count(*)::int n from customers where name = 'Ravi Menon'`))[0].n === 1, 'Customer onboarding: still exactly one record, nothing duplicated');
+await b1.screenshot({ path: `${OUT}/ba-7-onboarding.png`, fullPage: true });
 await b1.close();
 
 // ------------------------------------------------------------------ 8. routing and permissions
@@ -498,7 +518,7 @@ const ph = await login('ba.one@amuwa.com', { width: 390, height: 844 }, 'text=Qu
 const noSideways = async label => expect(await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `phone: no sideways scrolling on ${label}`);
 await noSideways('Home');
 await menu(ph, 'Tasks'); await ph.locator('ul li').first().waitFor({ timeout: 10000 }); await noSideways('Tasks');
-await menu(ph, 'Leads'); await ph.locator('ul li').first().waitFor({ timeout: 10000 }); await noSideways('Leads');
+await pipeStep(ph, 'Leads'); await ph.getByRole('heading', { name: 'Leads' }).first().waitFor({ timeout: 10000 }); await noSideways('Leads');
 await menu(ph, 'Quotation'); await ph.getByRole('heading', { name: 'Quotation' }).first().waitFor({ timeout: 10000 }); await noSideways('Quotation');
 await ph.screenshot({ path: `${OUT}/ba-10-phone-quotation.png`, fullPage: true });
 await menu(ph, 'Demo Schedule'); await ph.getByRole('heading', { name: 'Demo Schedule' }).waitFor({ timeout: 10000 }); await noSideways('Demo Schedule');
@@ -511,7 +531,7 @@ const tb = await login('ba.one@amuwa.com', { width: 820, height: 1180 }, 'text=Q
 const tabletOk = async label => expect(await tb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `tablet: no sideways scrolling on ${label}`);
 await tabletOk('Home');
 for (const [label, ready] of [['Tasks', 'tbody tr:visible, main ul li:visible'], ['Leads', 'tbody tr:visible, main ul li:visible'], ['Quotation', 'tbody tr:visible, main ul li:visible'], ['Demo Schedule', 'text=Demo Schedule'], ['Scope of Project', '#sc-client']]) {
-  await menu(tb, label);
+  if (label === 'Leads') await pipeStep(tb, 'Leads'); else await menu(tb, label);
   await tb.waitForSelector(ready, { timeout: 15000 });
   await tabletOk(label);
 }
