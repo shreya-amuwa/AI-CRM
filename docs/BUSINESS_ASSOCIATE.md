@@ -54,3 +54,16 @@ checked by the database first. Conversions, finalisations, reassignment and pric
 ## Tests
 `supabase/tests/business_associate_test.sql` (database), the Business Associate block of `api_integration.test.ts` (API, with a local stand-in for the AI service and a fake R2),
 `ba_pdf.test.ts` (the PDFs), `telecaller_sheet.test.ts`, and `supabase/tests/e2e/run-business-associate.sh` (real browser).
+
+## A Sales Team Member working as a Business Associate
+The Business Associate keeps its own dashboard, role and data. In addition, a **Sales Team Member who has no Sales role** (the "Sales Team Member" dashboard) works as a Business
+Associate from their own sidebar: a **Business Associate** group under *My Leads* with **BA Overview, BA Tasks, Quotation, Demo Schedule and Scope of Project** - the same pages, the same
+rules, the same AI drafts and PDFs. Only these pages are added; every other page of that dashboard is unchanged. The Business Associate's *Leads* page is not repeated: a Sales member's
+leads are the ones in *My Leads* (the Home buttons that point at Leads open *My Leads*).
+
+* Migration `20261127000100_sales_member_business_associate.sql` (`supabase/run_this_sales_member_business_associate.sql`, run once after `run_this_business_associate.sql`; safe to run again).
+  `private.ba_eligible()` is true for an active Team Member who is a Business Associate or a Sales Team Member with no Sales role; `private.is_business_associate()` uses it, so every
+  Business Associate function works for them - on **their own contacts only** (the ownership checks are unchanged).
+* A Telecaller (and the Department Head, when reassigning) can hand a contact to such a Sales member of the department. With no choice made, a dedicated Business Associate is still
+  preferred (then the fewest open contacts), so nobody's current workload moves.
+* Telecallers and the other Sales roles, Support and every other department stay refused; changing the price list stays with the Super Admin / Department Head.
