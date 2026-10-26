@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-ocr-assets.mjs",
     "dev": "vite --host 0.0.0.0 --port 3000",
+    "prebuild": "node scripts/copy-ocr-assets.mjs",
     "build": "tsc && vite build && node docs-site/build.mjs --out=dist/documentation",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
@@ -28,9 +30,11 @@
     "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tesseract.js": "^5.1.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^18.3.3",

@@ -28,6 +28,17 @@ export interface FieldVisitLocation {
   capturedAt: string; // ISO
 }
 
+/** What the shop-board photo showed besides name, address and phone (the form has no field for these, they are kept with the visit). */
+export interface ShopDetails {
+  email?: string;
+  website?: string;
+  gstin?: string;
+  pincode?: string;
+  category?: string;
+  /** The text read from the photo, so a wrong guess can be understood later. */
+  scanText?: string;
+}
+
 export interface FieldVisit {
   id: string;
   employeeId: string;
@@ -47,6 +58,7 @@ export interface FieldVisit {
   locationError?: string | null;
   stops: FieldVisitStop[];
   excessiveStopsCount: number; // count of stops > 15 min
+  shopDetails?: ShopDetails;
   createdAt: string;
 }
 
@@ -205,6 +217,7 @@ class FieldVisitStore {
     clientContact: string;
     purpose: string;
     estimatedArrivalTime?: string;
+    shopDetails?: ShopDetails;
   }): Promise<FieldVisit> {
     const { location, error: locationError } = await captureLocation();
     const details: Details = {
@@ -222,7 +235,8 @@ class FieldVisitStore {
       currentLocation: location,
       locationError,
       stops: [],
-      excessiveStopsCount: 0
+      excessiveStopsCount: 0,
+      ...(data.shopDetails && Object.values(data.shopDetails).some(Boolean) ? { shopDetails: { ...data.shopDetails, scanText: data.shopDetails.scanText?.slice(0, 2000) } } : {})
     };
     const { data: row, error } = await this.db()
       .from('field_visits')

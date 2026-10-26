@@ -23,6 +23,9 @@ import {
 } from 'lucide-react';
 import { fieldVisitStore, FieldVisit, FieldVisitStop } from '../../services/fieldVisitStore';
 import { useAuth } from '../../context/AuthContext';
+import { ShopPhotoScan } from './ShopPhotoScan';
+import type { ShopScan } from '../../lib/ocr/shopText';
+import { planFill } from '../../lib/ocr/scanFill';
 
 interface FieldVisitTrackerViewProps {
   viewerRole?: 'superadmin' | 'admin' | 'team-lead' | 'team-member';
@@ -50,6 +53,40 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
   const [newClientContact, setNewClientContact] = useState('');
   const [newPurpose, setNewPurpose] = useState('');
   const [newEstimatedArrival, setNewEstimatedArrival] = useState('');
+  // Fill from a photo of the shop: what the photo gave, and which fields still hold a value read from it (and need a look)
+  const [shopScan, setShopScan] = useState<ShopScan | null>(null);
+  const [fromPhoto, setFromPhoto] = useState<{ name?: boolean; address?: boolean; phone?: boolean }>({});
+  const [photoCheck, setPhotoCheck] = useState<{ name?: boolean; address?: boolean; phone?: boolean }>({});
+
+  /** Fills the fields from the photo: empty ones, and ones that still hold an earlier photo's value (never what the person typed). */
+  const applyScan = (scan: ShopScan) => {
+    setShopScan(scan);
+    const plan = planFill(scan, { name: newClientName, address: newClientAddress, phone: newClientContact }, fromPhoto);
+    if (plan.values.name !== undefined) setNewClientName(plan.values.name);
+    if (plan.values.address !== undefined) setNewClientAddress(plan.values.address);
+    if (plan.values.phone !== undefined) setNewClientContact(plan.values.phone);
+    setFromPhoto(plan.fromPhoto);
+    setPhotoCheck(plan.check);
+  };
+  const pickFromScan = (field: 'name' | 'address' | 'phone', value: string) => {
+    if (field === 'name') setNewClientName(value);
+    if (field === 'address') setNewClientAddress(value);
+    if (field === 'phone') setNewClientContact(value);
+    setFromPhoto(f => ({ ...f, [field]: true }));
+    setPhotoCheck(c => ({ ...c, [field]: false }));
+  };
+  const typed = (field: 'name' | 'address' | 'phone') => setFromPhoto(f => ({ ...f, [field]: false }));
+  const photoNote = (field: 'name' | 'address' | 'phone') =>
+    fromPhoto[field] ? (
+      <p className={`mt-1 font-sans text-[11px] ${photoCheck[field] ? 'text-amber-700' : 'text-emerald-700'}`} data-testid={`from-photo-${field}`}>
+        {photoCheck[field] ? 'Read from the photo - not sure, please check' : 'Read from the photo'}
+      </p>
+    ) : null;
+  const resetScan = () => {
+    setShopScan(null);
+    setFromPhoto({});
+    setPhotoCheck({});
+  };
 
   // Log Stop Form State
   const [stopLocation, setStopLocation] = useState('');
@@ -95,7 +132,10 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
         clientAddress: newClientAddress,
         clientContact: newClientContact,
         purpose: newPurpose || 'Client visit',
-        estimatedArrivalTime: newEstimatedArrival
+        estimatedArrivalTime: newEstimatedArrival,
+        shopDetails: shopScan
+          ? { email: shopScan.email?.value, website: shopScan.website?.value, gstin: shopScan.gstin?.value, pincode: shopScan.pincode?.value, category: shopScan.category || undefined, scanText: shopScan.rawText }
+          : undefined
       });
     });
     if (!ok || !started) return;
@@ -106,6 +146,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
     setNewClientAddress('');
     setNewClientContact('');
     setNewPurpose('');
+    resetScan();
     showToast(
       visit.currentLocation
         ? `📍 Field visit started for ${visit.clientName}. Your current location was recorded.`
@@ -511,6 +552,15 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                       Contact: <strong className="text-slate-800">{selectedVisit.clientContact}</strong>
                     </div>
                   )}
+                  {selectedVisit.shopDetails && (
+                    <div className="text-[11px] text-slate-500 pt-1 space-y-0.5" data-testid="visit-shop-details">
+                      {selectedVisit.shopDetails.category && <div>Shop type: <strong className="text-slate-700">{selectedVisit.shopDetails.category}</strong></div>}
+                      {selectedVisit.shopDetails.email && <div>E-mail: <strong className="text-slate-700">{selectedVisit.shopDetails.email}</strong></div>}
+                      {selectedVisit.shopDetails.website && <div>Website: <strong className="text-slate-700">{selectedVisit.shopDetails.website}</strong></div>}
+                      {selectedVisit.shopDetails.gstin && <div>GSTIN: <strong className="text-slate-700">{selectedVisit.shopDetails.gstin}</strong></div>}
+                      {selectedVisit.shopDetails.pincode && <div>Pincode: <strong className="text-slate-700">{selectedVisit.shopDetails.pincode}</strong></div>}
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
@@ -653,22 +703,25 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                   <p className="text-xs text-slate-500">Enable phone GPS tracking for on-site client visit</p>
                 </div>
               </div>
-              <button onClick={() => setShowStartVisitModal(false)} className="text-slate-400 hover:text-slate-700 p-1">
+              <button onClick={() => { setShowStartVisitModal(false); resetScan(); }} className="text-slate-400 hover:text-slate-700 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleStartVisit} className="space-y-4 text-xs font-mono">
+              <ShopPhotoScan scan={shopScan} onScan={applyScan} onPick={pickFromScan} />
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Client Company / Account Name *</label>
                 <input
                   type="text"
                   required
                   value={newClientName}
-                  onChange={(e) => setNewClientName(e.target.value)}
+                  onChange={(e) => { setNewClientName(e.target.value); typed('name'); }}
                   placeholder="e.g. DLF Commercial Holdings"
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
+                  data-testid="visit-client-name"
                 />
+                {photoNote('name')}
               </div>
 
               <div>
@@ -677,10 +730,12 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                   type="text"
                   required
                   value={newClientAddress}
-                  onChange={(e) => setNewClientAddress(e.target.value)}
+                  onChange={(e) => { setNewClientAddress(e.target.value); typed('address'); }}
                   placeholder="e.g. Building 10, DLF Cyber City Phase 2, Gurgaon"
                   className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
+                  data-testid="visit-client-address"
                 />
+                {photoNote('address')}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -689,10 +744,12 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                   <input
                     type="text"
                     value={newClientContact}
-                    onChange={(e) => setNewClientContact(e.target.value)}
+                    onChange={(e) => { setNewClientContact(e.target.value); typed('phone'); }}
                     placeholder="+91 98112 00000"
                     className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
+                    data-testid="visit-client-contact"
                   />
+                  {photoNote('phone')}
                 </div>
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Estimated Arrival</label>
@@ -730,7 +787,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowStartVisitModal(false)}
+                  onClick={() => { setShowStartVisitModal(false); resetScan(); }}
                   className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
                 >
                   Cancel
