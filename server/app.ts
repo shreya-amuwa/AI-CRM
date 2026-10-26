@@ -24,6 +24,7 @@ import { runPerformanceAutomation } from './performance/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { bolifySender } from './automations/bolify.js';
+import { runAllSubscriptionMessages } from './automations/subscriptionMessages.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
@@ -124,11 +125,13 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
   // calls through BolifyAI when BOLIFY_WEBHOOK_URL is set.
   const subscriptionReminders = await runSubscriptionReminders({ sender: bolifySender() });
+  // The same reminders by e-mail and WhatsApp (Wabastore): dry run by default; live only with an approved wording and a connected provider.
+  const subscriptionMessages = await runAllSubscriptionMessages();
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, performance, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, subscriptionMessages, performance, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

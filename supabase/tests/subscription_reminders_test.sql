@@ -9,6 +9,8 @@
 
 \echo '--- 56. Subscription reminders: scheduling, consent, window, renewals, retries'
 reset role;
+-- these checks are about the CALL reminders: the e-mail / WhatsApp channels (migration 20261128000100, tested in subscription_messages_test.sql) are off here
+update reminder_call_settings set email_enabled = false, whatsapp_enabled = false;
 create temp table sr (k text primary key, v text);
 grant all on sr to authenticated, service_role;
 create function pg_temp.g(p_k text) returns text language sql stable as $$ select v from sr where k = p_k $$;
@@ -211,3 +213,5 @@ select test.must_fail($$select set_customer_reminder_consent(gen_random_uuid(), 
 reset role;
 
 \echo '=== ALL SUBSCRIPTION REMINDER TESTS PASSED ==='
+reset role;
+update reminder_call_settings set email_enabled = true, whatsapp_enabled = true;

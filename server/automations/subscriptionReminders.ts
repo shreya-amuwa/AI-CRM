@@ -73,7 +73,7 @@ export async function runSubscriptionReminders(
   }
   const db = opts.db ?? getServiceClient();
   try {
-    const sched = await db.rpc('sub_reminder_schedule', { p_today: opts.today ?? null });
+    const sched = await db.rpc('sub_reminder_schedule', { p_today: opts.today ?? null, p_channels: ['CALL'] });
     if (sched.error) throw new Error(`sub_reminder_schedule: ${sched.error.message}`);
     out.schedule = sched.data as ReminderRunSummary['schedule'];
 

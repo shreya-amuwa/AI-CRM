@@ -4059,7 +4059,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const svc = (await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 7), service_status = 'LIVE'
                                  where customer_id = $1 returning service_code`, [cust])).rows[0].service_code as string;
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
-  const row = async () => (await db.query(`select status, reason, phone_masked, attempts, external_call_id, send_after, send_until from public.subscription_reminders where customer_id = $1 and service_code = $2 and stage = 7`, [cust, svc])).rows;
+  const row = async () => (await db.query(`select status, reason, phone_masked, attempts, external_call_id, send_after, send_until from public.subscription_reminders where customer_id = $1 and service_code = $2 and stage = 7 and channel = 'CALL'`, [cust, svc])).rows;
 
   let r = await dispatch();
   check(r.status === 401, 'reminder calls: the scheduler endpoint still needs its secret', r.status);
@@ -4075,7 +4075,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   await db.query(`insert into public.customer_reminder_consent (customer_id, status, note) values ($1, 'ALLOWED', 'test consent') on conflict (customer_id) do update set status = 'ALLOWED'`, [cust]);
   r = await dispatch('dispatch-secret-0123456789');
   await db.query(`update public.subscription_reminders set status = 'SCHEDULED', attempts = 0, reason = null, send_after = now() - interval '1 hour', send_until = now() + interval '1 hour', next_attempt_at = now()
-                   where customer_id = $1 and stage = 7`, [cust]);
+                   where customer_id = $1 and stage = 7 and channel = 'CALL'`, [cust]);
   r = await dispatch('dispatch-secret-0123456789');
   const sub = r.json.data.subscriptionReminders;
   check(r.status === 200 && sub.mode === 'dry_run' && sub.dryRun >= 1 && sub.accepted === 0, 'reminder calls: a due reminder is prepared as a dry run, and nothing is accepted by any provider', r.json);
@@ -4121,7 +4121,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 7), service_status = 'LIVE' where customer_id = $1 and service_code = $2`, [cust, svc]);
   };
   const inWindow = () => db.query(`update public.subscription_reminders set status = 'SCHEDULED', attempts = 0, reason = null, send_after = now() - interval '1 hour', send_until = now() + interval '1 hour', next_attempt_at = now()
-                                    where customer_id = $1 and stage = 7`, [cust]);
+                                    where customer_id = $1 and stage = 7 and channel = 'CALL'`, [cust]);
   process.env.AUTOMATION_MODE_AI_CALL = 'live';
   process.env.BOLIFY_WEBHOOK_URL = bolifyUrl;
   process.env.BOLIFY_API_KEY = 'bolify-key-123';
@@ -4149,12 +4149,12 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await dispatch('dispatch-secret-0123456789');
   x = (await row())[0];
   check(x.status === 'RETRY' && x.attempts === 1 && bolifyHits.length === 1 && !/down/.test(x.reason ?? ''), 'bolify: an unavailable webhook (503) leaves the reminder to be tried again, and its reply is not stored', x);
-  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1 and stage = 7`, [cust]);
+  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1 and stage = 7 and channel = 'CALL'`, [cust]);
   bolifyReply = { status: 400, body: '{"error":"bad"}' };
   r = await dispatch('dispatch-secret-0123456789');
   x = (await row())[0];
   check(x.status === 'FAILED' && x.attempts === 2 && bolifyHits.length === 2, 'bolify: a refused request (400) fails the reminder at once', x);
-  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1 and stage = 7`, [cust]);
+  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1 and stage = 7 and channel = 'CALL'`, [cust]);
   r = await dispatch('dispatch-secret-0123456789');
   check(bolifyHits.length === 2, 'bolify: a failed reminder is not sent again', r.json);
 
@@ -4201,6 +4201,127 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   delete process.env.AUTOMATION_DISPATCH_SECRET;
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
   await db.query(`delete from public.customer_reminder_consent where customer_id = $1`, [cust]);
+}
+
+// ---------------------------------------------------------------------------
+// Subscription expiry reminders by e-mail and WhatsApp (Wabastore): dry run by default, live only with approved wording and a provider
+// ---------------------------------------------------------------------------
+{
+  Object.assign(process.env, { AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789', AUTOMATION_MODE_AI_CALL: 'off' });
+  for (const k of ['AUTOMATION_MODE_SUB_EMAIL', 'AUTOMATION_MODE_SUB_WHATSAPP', 'WABASTORE_WEBHOOK_URL', 'WABASTORE_API_KEY']) delete process.env[k];
+  const cust = (await db.query(`select id from public.customers where phone = '9000000201'`)).rows[0].id as string;
+  const svc = (await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 7), service_status = 'LIVE'
+                                 where customer_id = $1 returning service_code`, [cust])).rows[0].service_code as string;
+  await db.query(`update public.customers set email = 'expiry.msg@example.com', whatsapp = null where id = $1`, [cust]);
+  const wipe = () => db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+  const rows = async () => (await db.query(`select channel, status, reason, phone_masked, external_call_id, attempts from public.subscription_reminders where customer_id = $1 and service_code = $2 and stage = 7 order by channel`, [cust, svc])).rows;
+  const of = async (channel: string) => (await rows()).find((x: any) => x.channel === channel);
+  const inWindow = () => db.query(`update public.subscription_reminders set status = 'SCHEDULED', attempts = 0, reason = null, send_after = now() - interval '1 hour', send_until = now() + interval '1 hour', next_attempt_at = now()
+                                    where customer_id = $1 and stage = 7 and channel in ('EMAIL', 'WHATSAPP')`, [cust]);
+  const S = 'dispatch-secret-0123456789';
+
+  const mails: any[] = [];
+  const waHits: { body: any; auth: string | undefined }[] = [];
+  const serve = (onReq: (req: http.IncomingMessage, raw: string) => void, reply: () => string) => {
+    const srv = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', d => (raw += d));
+      req.on('end', () => {
+        onReq(req, raw);
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(reply());
+      });
+    });
+    return new Promise<{ srv: http.Server; url: string }>(done => srv.listen(0, '127.0.0.1', () => done({ srv, url: `http://127.0.0.1:${(srv.address() as net.AddressInfo).port}` })));
+  };
+  const mailSrv = await serve((req, raw) => mails.push({ path: req.url, body: JSON.parse(raw) }), () => '{"id":"re_expiry_1"}');
+  const waSrv = await serve((req, raw) => waHits.push({ body: JSON.parse(raw), auth: req.headers.authorization }), () => '{"id":"wamid.expiry.1"}');
+
+  await wipe();
+  await db.query(`update public.reminder_message_templates set approved = false`);
+
+  // the daily run decides what is due; by default nothing is sent
+  let r = await dispatch(S);
+  check(r.status === 200 && r.json.data.subscriptionMessages.email.mode === 'dry_run' && r.json.data.subscriptionMessages.whatsapp.mode === 'dry_run', 'expiry messages: dry run by default for both channels', r.json.data?.subscriptionMessages);
+  check((await rows()).length === 2 && (await of('EMAIL')) && (await of('WHATSAPP')) && !(await of('CALL')), 'expiry messages: the 7-day reminder exists once per channel that is running (no call reminder while calls are off)', await rows());
+  await inWindow();
+  r = await dispatch(S);
+  check(r.json.data.subscriptionMessages.email.dryRun >= 1 && r.json.data.subscriptionMessages.whatsapp.dryRun >= 1 && r.json.data.subscriptionMessages.email.accepted === 0, 'expiry messages: a due reminder is a dry run', r.json.data.subscriptionMessages);
+  let x = await of('EMAIL');
+  check(x.status === 'DRY_RUN' && x.phone_masked === 'e***@example.com' && !JSON.stringify(x).includes('expiry.msg'), 'expiry messages: recorded as DRY_RUN with a masked address', x);
+  x = await of('WHATSAPP');
+  check(x.status === 'DRY_RUN' && !JSON.stringify(x).includes('9000000201'), 'expiry messages: ... and a masked number');
+  check(mails.length === 0 && waHits.length === 0, 'expiry messages: a dry run sends nothing');
+
+  // live, but the wording is still a draft: nothing is sent
+  Object.assign(process.env, { AUTOMATION_MODE_SUB_EMAIL: 'live', AUTOMATION_MODE_SUB_WHATSAPP: 'live', EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_exp_key', EMAIL_API_BASE_URL: mailSrv.url,
+    EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>', WABASTORE_WEBHOOK_URL: `${waSrv.url}/send`, WABASTORE_API_KEY: 'wb-key-1' });
+  await inWindow();
+  r = await dispatch(S);
+  check(r.json.data.subscriptionMessages.email.mode === 'live' && r.json.data.subscriptionMessages.email.claimed === 0 && r.json.data.subscriptionMessages.whatsapp.claimed === 0 && mails.length === 0 && waHits.length === 0,
+    'expiry messages: live, but wording that is not approved is never sent', r.json.data.subscriptionMessages);
+
+  // approved wording: both are sent once
+  await db.query(`update public.reminder_message_templates set approved = true where stage = 7`);
+  r = await dispatch(S);
+  check(r.json.data.subscriptionMessages.email.accepted === 1 && r.json.data.subscriptionMessages.whatsapp.accepted === 1, 'expiry messages: with approved wording, live sends the e-mail and the WhatsApp message', r.json.data.subscriptionMessages);
+  const mail = mails.find(m => m.path === '/emails');
+  check(mails.length === 1 && mail.body.to[0] === 'expiry.msg@example.com' && /expires/i.test(mail.body.subject) && /7/.test(mail.body.subject + mail.body.text), 'expiry messages: the e-mail goes to the customer with the filled subject', mail?.body);
+  check(!/\{\{/.test(mail.body.html) && !/\{\{/.test(mail.body.subject), 'expiry messages: no placeholder is left in the e-mail');
+  check(waHits.length === 1 && waHits[0].body.to === '+919000000201' && waHits[0].auth === 'Bearer wb-key-1' && waHits[0].body.reference.startsWith('subscription-reminder:') && !/\{\{/.test(waHits[0].body.text),
+    'expiry messages: the WhatsApp request goes to Wabastore with the key, the number, a reference and the filled text', waHits[0]);
+  x = await of('EMAIL');
+  check(x.status === 'ACCEPTED' && x.external_call_id === 're_expiry_1' && x.attempts === 1, 'expiry messages: the e-mail is ACCEPTED with the provider\'s reference', x);
+  x = await of('WHATSAPP');
+  check(x.status === 'ACCEPTED' && x.external_call_id === 'wamid.expiry.1', 'expiry messages: the WhatsApp message is ACCEPTED with its reference', x);
+  const audit = (await db.query(`select count(*)::int n from public.audit_logs where action = 'SUBSCRIPTION_REMINDER_ACCEPTED' and metadata->>'customer' = $1 and metadata->>'channel' in ('EMAIL', 'WHATSAPP')`, [cust])).rows[0].n;
+  check(audit === 2, 'expiry messages: each acceptance is audited with its channel', audit);
+  mails.length = 0; waHits.length = 0;
+  r = await dispatch(S);
+  check(mails.length === 0 && waHits.length === 0 && r.json.data.subscriptionMessages.email.claimed === 0, 'expiry messages: an accepted reminder is never sent a second time');
+
+  // a customer who opted out gets nothing
+  await wipe();
+  await db.query(`insert into public.customer_message_optout (customer_id, channel, note) values ($1, 'EMAIL', 'asked not to') on conflict do nothing`, [cust]);
+  await dispatch(S);
+  waHits.length = 0; // (inside the sending window the first run may already have sent; the window is forced below so the test does not depend on the time of day)
+  await inWindow();
+  r = await dispatch(S);
+  x = await of('EMAIL');
+  check(x.status === 'SKIPPED' && /asked not to receive/.test(x.reason) && mails.length === 0, 'expiry messages: an opted-out customer is skipped, with the reason', x);
+  check(waHits.length === 1, 'expiry messages: ... and the other channel is unaffected');
+  await db.query(`delete from public.customer_message_optout where customer_id = $1`, [cust]);
+
+  // a provider that is down: retried, and its answer is not stored
+  await wipe();
+  waHits.length = 0;
+  await dispatch(S);
+  await inWindow();
+  const waDown = await serve(() => undefined, () => '{}');
+  waDown.srv.close();
+  process.env.WABASTORE_WEBHOOK_URL = `${waDown.url}/send`;
+  r = await dispatch(S);
+  x = await of('WHATSAPP');
+  check(x.status === 'RETRY' && x.attempts === 1 && /Could not reach Wabastore/.test(x.reason), 'expiry messages: an unreachable WhatsApp provider leaves the reminder to be tried again', x);
+
+  // live with no provider connected: refused, and says what is missing
+  delete process.env.WABASTORE_WEBHOOK_URL;
+  delete process.env.EMAIL_PROVIDER;
+  delete process.env.EMAIL_API_KEY;
+  r = await dispatch(S);
+  check(r.json.data.subscriptionMessages.whatsapp.mode === 'off' && /WABASTORE_WEBHOOK_URL/.test(r.json.data.subscriptionMessages.whatsapp.note) && /EMAIL_PROVIDER/.test(r.json.data.subscriptionMessages.email.note),
+    'expiry messages: live without a provider is refused and names the missing setting', r.json.data.subscriptionMessages);
+
+  // switched off
+  Object.assign(process.env, { AUTOMATION_MODE_SUB_EMAIL: 'off', AUTOMATION_MODE_SUB_WHATSAPP: 'off' });
+  r = await dispatch(S);
+  check(r.json.data.subscriptionMessages.email.mode === 'off' && r.json.data.subscriptionMessages.whatsapp.mode === 'off' && r.json.data.subscriptionMessages.email.claimed === 0, 'expiry messages: off does nothing');
+
+  mailSrv.srv.close();
+  waSrv.srv.close();
+  for (const k of ['AUTOMATION_MODE_SUB_EMAIL', 'AUTOMATION_MODE_SUB_WHATSAPP', 'WABASTORE_WEBHOOK_URL', 'WABASTORE_API_KEY', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'AUTOMATION_MODE_AI_CALL', 'AUTOMATION_DISPATCH_SECRET']) delete process.env[k];
+  await db.query(`update public.reminder_message_templates set approved = false`);
+  await wipe();
 }
 
 // ---------------------------------------------------------------------------
