@@ -5,38 +5,50 @@ import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { LeadsPage, type LeadsApi } from '../telecaller/LeadsPage';
-import { businessAssociateApi } from '../../lib/api/endpoints';
+import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
+import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { HomePage } from './HomePage';
 import { TasksPage } from './TasksPage';
 import { QuotationPage } from './QuotationPage';
 import { DemoSchedulePage } from './DemoSchedulePage';
 import { ScopePage } from './ScopePage';
-import { notifyBaChanged } from './ui';
 
 export type BaPage = 'home' | 'tasks' | 'leads' | 'quotation' | 'demos' | 'scope';
+/** The pages of this dashboard: the Business Associate pages plus the rest of the Leads group (Leads is the first of its four). */
+type Section = BaPage | Exclude<PipelineSection, 'leads'>;
 /** Where a button sends the Business Associate: a page, and optionally the client (and document) to open there. */
 export interface BaTarget { contactId?: string; quotationId?: string; scopeId?: string; stage?: string; addLead?: boolean; newDemo?: boolean }
 export type BaNavigate = (page: BaPage, target?: BaTarget) => void;
 
-const NAV: { id: BaPage; label: string; icon: React.ElementType }[] = [
+const NAV: { id: string; label: string; icon: React.ElementType; children?: { id: string; label: string }[] }[] = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'tasks', label: 'Tasks', icon: ClipboardList },
-  { id: 'leads', label: 'Leads', icon: Target },
+  // the same Leads -> Potential -> Customer onboarding pipeline every Sales member works in; one record moves through the steps
+  {
+    id: 'leads-group',
+    label: 'Leads',
+    icon: Target,
+    children: [
+      { id: 'leads', label: 'Leads' },
+      { id: 'potential', label: 'Potential' },
+      { id: 'onboarding', label: 'Customer onboarding' },
+      { id: 'part-payments', label: 'Part payments' }
+    ]
+  },
   { id: 'quotation', label: 'Quotation', icon: FileText },
   { id: 'demos', label: 'Demo Schedule', icon: CalendarClock },
   { id: 'scope', label: 'Scope of Project', icon: FileSignature }
 ];
-const SEGMENT: Record<BaPage, string> = { home: '', tasks: 'tasks', leads: 'leads', quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project' };
+const SEGMENT: Record<Section, string> = {
+  home: '', tasks: 'tasks', leads: 'leads', potential: 'potential', onboarding: 'customer-onboarding', 'part-payments': 'part-payments',
+  quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project'
+};
 
 export const BA_BASE = (userId: string) => `/business-associate/dashboard/${userId}`;
-export function parseBaPage(path: string): BaPage {
+export function parseBaPage(path: string): Section {
   const seg = path.replace(/\/+$/, '').split('/')[4];
-  return (Object.keys(SEGMENT) as BaPage[]).find(p => SEGMENT[p] && SEGMENT[p] === seg) ?? 'home';
+  return (Object.keys(SEGMENT) as Section[]).find(p => SEGMENT[p] && SEGMENT[p] === seg) ?? 'home';
 }
-
-/** This role's own Leads data: the Business Associate's leads, not the Telecaller's. */
-const baLeadsApi: LeadsApi = { list: businessAssociateApi.leads, create: businessAssociateApi.createLead, update: businessAssociateApi.updateLead };
 
 /**
  * The Business Associate workspace: Tasks (contacts handed over by Telecallers), Leads, Quotation, Demo Schedule and Scope of Project, all around the
@@ -45,7 +57,7 @@ const baLeadsApi: LeadsApi = { list: businessAssociateApi.leads, create: busines
 export const BusinessAssociateDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const userId = user?.id || profile?.id || '';
-  const [page, setPage] = useState<BaPage>(() => parseBaPage(window.location.pathname));
+  const [page, setPage] = useState<Section>(() => parseBaPage(window.location.pathname));
   const [target, setTarget] = useState<BaTarget & { n: number }>({ n: 0 });
 
   useEffect(() => {
@@ -54,14 +66,17 @@ export const BusinessAssociateDashboard: React.FC = () => {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const go: BaNavigate = (next, t) => {
+  const { counts: pipelineCounts } = usePipelineCounts();
+
+  const open = (next: Section, t?: BaTarget) => {
     setTarget(prev => ({ ...t, n: prev.n + 1 }));
     setPage(next);
     navigateTo(next === 'home' ? BA_BASE(userId) : `${BA_BASE(userId)}/${SEGMENT[next]}`);
   };
+  const go: BaNavigate = (next, t) => open(next, t);
 
   const displayName = profile?.fullName || user?.name || 'Business Associate';
-  const groups = groupNavItems(NAV, [{ ids: ['home'] }, { ids: ['tasks', 'leads', 'quotation', 'demos', 'scope'] }]);
+  const groups = groupNavItems(NAV, [{ ids: ['home'] }, { ids: ['tasks', 'leads-group', 'quotation', 'demos', 'scope'] }]);
   const key = `${page}-${target.n}`;
 
   return (
@@ -71,7 +86,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
       ariaLabel="Business Associate navigation"
       groups={groups}
       active={page}
-      onSelect={id => go(id as BaPage)}
+      onSelect={id => open(id as Section)}
       user={{ name: displayName, role: 'Business Associate' }}
       onSignOut={() => void logout()}
       topLeft={
@@ -91,7 +106,9 @@ export const BusinessAssociateDashboard: React.FC = () => {
       <div className="mx-auto w-full max-w-[1400px]">
         {page === 'home' && <HomePage go={go} />}
         {page === 'tasks' && <TasksPage key={key} go={go} initialContactId={target.contactId} initialStage={target.stage} />}
-        {page === 'leads' && <LeadsPage key={key} openAdd={!!target.addLead} api={baLeadsApi} onChanged={notifyBaChanged} subtitle="Your own leads. Mark each one Hot, Warm or Cold and keep track of the next call." />}
+        {(page === 'leads' || page === 'potential' || page === 'onboarding' || page === 'part-payments') && (
+          <PipelineWorkspace section={page} counts={pipelineCounts} startWithAdd={page === 'leads' && !!target.addLead} resetKey={target.n} onNavigate={next => open(next)} />
+        )}
         {page === 'quotation' && <QuotationPage key={key} go={go} initialContactId={target.contactId} initialQuotationId={target.quotationId} />}
         {page === 'demos' && <DemoSchedulePage key={key} go={go} initialContactId={target.contactId} openNew={!!target.newDemo} />}
         {page === 'scope' && <ScopePage key={key} go={go} initialContactId={target.contactId} initialScopeId={target.scopeId} />}
