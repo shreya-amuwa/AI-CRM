@@ -9,7 +9,7 @@ import { useOpenChatRequest } from '../chat/chatEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
-import { StaffManagementPanel } from '../common/StaffManagementPanel';
+import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { TeamLeaderDashboard } from '../team-lead/dashboard/TeamLeaderDashboard';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { HandoverBoard } from '../handover/HandoverBoard';
@@ -172,7 +172,7 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
-      {page === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept="support" />}
+      {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="support" />}
     </DashboardShell>
   );
 };

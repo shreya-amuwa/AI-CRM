@@ -134,6 +134,7 @@ ok('fixture: a Telecaller and a Visit Sales person were created through the API 
 // ------------------------------------------------------------------ 1. the Department Head creates a Telecaller in the form
 const dh = await login('dh@amuwa.com', { width: 1440, height: 900 }, 'nav button');
 await menu(dh, 'Team Members & Access');
+await dh.locator('[data-testid="tab-add"]').click();
 await dh.locator('#staff-role').waitFor({ timeout: 15000 });
 await dh.locator('#staff-role').selectOption('TEAM_MEMBER');
 const teamSelect = dh.locator('select').filter({ has: dh.locator('option', { hasText: 'Select team…' }) }).first();
