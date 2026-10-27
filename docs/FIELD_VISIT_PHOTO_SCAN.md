@@ -22,3 +22,10 @@ Reading a sign is a good guess, not a fact. Filled fields say *Read from the pho
 * `vercel.json`: the Content-Security-Policy `script-src` now allows `'wasm-unsafe-eval'` (WebAssembly only; it does not allow `eval()` of strings). The `/ocr/` files are excluded from the single-page-app rewrite.
 * Hindi or another language: add its `*.traineddata.gz` (package `@tesseract.js-data/<lang>`) to `scripts/copy-ocr-assets.mjs` and `createWorker('eng+hin', ...)`; the data files are several MB each.
 * If real photos read badly, the next step is a fallback to Google Cloud Vision (first 1,000 images a month free) called from the API when the reader is unsure.
+
+## End-to-end check (real app, API, database and browser)
+`supabase/tests/e2e/run-visitor-ocr.sh [screenshot-dir]` draws a synthetic poster (made-up shop, address and number), then as a Team Lead: opens Field Visits -> Start New Field Visit, uploads it, sees the status, gets the fields read by the real engine (name, address, phone), corrects one, submits with a **double click**, and reads the row back from the database (one visit; corrected values; the raw reading in `details.shopDetails.scanText`; the location). It also checks a non-image file, a photo with no text (clear messages, nothing saved) and a 390 px window (`capture="environment"`, no sideways scrolling). 27 checks.
+
+Found and fixed by it: a double click on **Start Field Visit** saved the visit twice (one save at a time now, and the button is disabled while saving).
+
+What the feature does **not** do (by design, so decide if you want it): the photo is not uploaded or stored (only read on the phone), there is no file-size limit (the photo is scaled to 1600 px first), and the result is a **Field Visit**, not a lead or customer. Storing the original photo would need an upload endpoint, a private bucket and a migration; turning a scan into a lead would be a separate "create lead from visit" step.
