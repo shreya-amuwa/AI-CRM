@@ -18,6 +18,7 @@ import {
   INVOICE_STAGES,
   TAX_TREATMENTS,
   LEAD_STATUSES,
+  LEAD_SCOPES,
   ONBOARDING_FILTERS,
   HANDOVER_STAGES,
   REVIEW_FILTERS,
@@ -1424,6 +1425,23 @@ export const telecallerContactUpdateSchema = z
   })
   .strict()
   .refine(v => v.callStatus !== 'FOLLOW_UP_REQUIRED' || !!v.followUpDate, { message: 'Enter the follow-up date.', path: ['followUpDate'] });
+
+export const leadScopeQuerySchema = z
+  .object({
+    scope: z.enum(LEAD_SCOPES),
+    search: trimmed(120).optional(),
+    source: trimmed(60).optional(),
+    status: z.enum(LEAD_STATUSES).optional(),
+    temperature: z.enum(LEAD_TEMPERATURES).optional(),
+    callStatus: z.enum(CALL_STATUSES).optional(),
+    service: trimmed(60).optional(),
+    followUpFrom: z.string().datetime({ offset: true }).optional(),
+    followUpTo: z.string().datetime({ offset: true }).optional(),
+    noFollowUp: booleanParam.optional(),
+    sort: z.enum(['newest', 'followUp']).default('newest'),
+    ...pageParams
+  })
+  .strict();
 
 export const telecallerLeadsQuerySchema = z
   .object({

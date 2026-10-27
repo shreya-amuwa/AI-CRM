@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  TelecallerAssignee, TelecallerContact, TelecallerContactList, TelecallerHome, TelecallerLead, TelecallerLeadList, TelecallerSheet, TelecallerSheetCheck
+  LeadScopeCounts, LeadScopeList, TelecallerAssignee, TelecallerContact, TelecallerContactList, TelecallerHome, TelecallerLead, TelecallerLeadList, TelecallerSheet, TelecallerSheetCheck
 } from '../../shared/contracts.js';
 import { getServiceClient } from '../db/supabase.js';
 import { unwrap } from './base.js';
@@ -46,6 +46,18 @@ export class TelecallerRepository {
       p_search: i.search || null, p_temperature: i.temperature ?? null, p_call_status: i.callStatus ?? null, p_source: i.source || null, p_page: i.page, p_page_size: i.pageSize
     });
   }
+  /** The five filters of the Lead section (Telecaller and Business Associate): who sees which lead is decided in the database. */
+  leadScopeList(i: {
+    scope: string; search?: string; source?: string; status?: string; temperature?: string; callStatus?: string; service?: string;
+    followUpFrom?: string; followUpTo?: string; noFollowUp?: boolean; sort: string; page: number; pageSize: number;
+  }) {
+    return this.rpc<LeadScopeList>('lead_scope_list', {
+      p_scope: i.scope, p_search: i.search || null, p_source: i.source || null, p_status: i.status ?? null, p_page: i.page, p_page_size: i.pageSize,
+      p_temperature: i.temperature ?? null, p_call_status: i.callStatus ?? null, p_service: i.service || null,
+      p_follow_from: i.followUpFrom ?? null, p_follow_to: i.followUpTo ?? null, p_no_follow_up: i.noFollowUp ?? false, p_sort: i.sort
+    });
+  }
+  leadScopeCounts() { return this.rpc<LeadScopeCounts>('lead_scope_counts'); }
   lead(id: string) { return this.rpc<TelecallerLead>('telecaller_lead_get', { p_id: id }); }
   saveLead(id: string | null, fields: Record<string, unknown>, services: string[] | null, temperature: string, callStatus: string) {
     return this.rpc<TelecallerLead>('telecaller_lead_save', { p_id: id, p_fields: fields, p_services: services, p_temperature: temperature, p_call_status: callStatus });

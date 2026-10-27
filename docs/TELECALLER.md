@@ -32,6 +32,23 @@ only: every Telecaller API and table refuses anyone who is not an active Telecal
 * **Leads** - the leads the Telecaller owns: the existing Sales leads (`customers`, stage LEAD), so they stay in the Sales pipeline.
   *Lead Temperature* (Hot red, Warm amber, Cold blue) and *Call Status* are two separate fields. Add / View / Edit, search, filters, pagination.
 
+## Lead filters (Telecaller and Business Associate)
+The top of the **Leads** page has five filters, each with the number of leads it holds: **All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts**.
+Search, source, temperature / call status (Telecaller), service, follow-up, sort, paging and *Add Lead* work inside every filter.
+
+| Filter | Holds |
+|---|---|
+| My Leads | leads you own |
+| Department Leads | leads owned by the OTHER people of your department's Sales teams - **read-only** (view only: editing, converting and sending to Accounts stay with the owner; the lead's private notes are not shown) |
+| All Leads | My Leads + Department Leads (a lead appears once) |
+| To Accounts | visible leads whose `payment_workflow` is `PENDING_PAYMENT_CONFIRMATION` - sent to Accounts, waiting. Shows amount, who sent it, when, and the verification status |
+| Returned by Accounts | visible leads whose `payment_workflow` is `RETURNED_FROM_ACCOUNTS` - Accounts returned them. Shows when, by whom, the reason, and who is responsible |
+
+* The states are the ones the Accounts workflow already writes (`send_lead_to_accounts`, `accounts_return_to_leads`); nothing is inferred from amounts or from a generic pending status. The detail comes from the lead's latest `payment_requests` row (earlier submissions and returns stay in the history).
+* Resubmitting is the owner's existing *Send to Accounts*: the lead leaves Returned and returns to To Accounts. When Accounts confirms, the lead is no longer a lead (it moved on in the pipeline), so it leaves both filters.
+* The database decides who sees what (`private.lead_scope_ids`, used by `lead_scope_list` and `lead_scope_counts`, so a number beside a filter is always the number of rows the filter shows). Only an active Telecaller or Business Associate of a Sales team may call them; never another department, Support or company-wide. Migration `20261129000100_lead_scope_filters.sql` (`supabase/run_this_lead_scope_filters.sql`) adds functions only: no table, column or policy changes.
+* API: `GET /api/v1/lead-scope?scope=ALL|MINE|DEPARTMENT|TO_ACCOUNTS|RETURNED` and `GET /api/v1/lead-scope/counts`.
+
 ## Assigning an Excel sheet (Department Head: *Telecaller Sheets*)
 1. Choose the Telecaller, then the `.xlsx` file (up to 700 KB, at most 2,000 contacts). The first row needs the headings
    *Contact Name, Company Name, Phone Number, Email, Remarks* (Contact Name and Phone Number are required; common alternative headings work).

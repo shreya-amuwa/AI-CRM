@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Eye, Pencil, Plus, Search } from 'lucide-react';
 import {
-  CALL_STATUSES, CALL_STATUS_LABELS, LEAD_TEMPERATURES, type CallStatus, type LeadTemperature, type TelecallerLead, type TelecallerLeadList
+  CALL_STATUSES, CALL_STATUS_LABELS, LEAD_TEMPERATURES, type CallStatus, type LeadScope, type LeadScopeRow, type LeadTemperature, type TelecallerLead, type TelecallerLeadList
 } from '../../../shared/contracts';
 import { telecallerLeadSchema } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
-import { telecallerApi } from '../../lib/api/endpoints';
+import { leadScopeApi, telecallerApi } from '../../lib/api/endpoints';
+import { AccountsDetails, LEAD_SCOPE_EMPTY, LeadOwner, LeadScopeTabs, ReadOnlyLeadDialog, useLeadScopeCounts } from '../leads/LeadScope';
+import { WorkflowBadge } from '../payments/PaymentBits';
 import { PageTitle } from '../layout/shell';
 import { Card } from '../tasks/head/headParts';
 import { Avatar, Dialog, ErrorBanner, Field, LEAD_SOURCES, Pager, Spinner, todayIso, useDebounced, useServiceCatalog } from '../team-member/pipeline/shared';
@@ -26,13 +28,21 @@ export const telecallerLeadsApi: LeadsApi = { list: telecallerApi.leads, create:
  * The Telecaller and the Business Associate use this one page with their own `api`; `onChanged` tells that dashboard's Home to reload,
  * and `renderRowAction` lets the Telecaller convert a qualified lead.
  */
+/** A row of this page: an own lead, or (with the filters) a lead of the department with its owner and Accounts details. */
+type Row = TelecallerLead & Partial<Pick<LeadScopeRow, 'isMine' | 'owner' | 'accounts' | 'leadStatus' | 'paymentWorkflow'>>;
+type PageData = { total: number; sources: string[]; items: Row[] };
+
 export const LeadsPage: React.FC<{
   openAdd?: boolean;
   api?: LeadsApi;
   onChanged?: () => void;
   subtitle?: string;
   renderRowAction?: (lead: TelecallerLead, reload: () => void) => React.ReactNode;
-}> = ({ openAdd = false, api = telecallerLeadsApi, onChanged = notifyTelecallerChanged, subtitle, renderRowAction }) => {
+  /** Show the five filters (All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts) above the list. */
+  scopeFilters?: boolean;
+}> = ({ openAdd = false, api = telecallerLeadsApi, onChanged = notifyTelecallerChanged, subtitle, renderRowAction, scopeFilters = false }) => {
+  const [scope, setScope] = useState<LeadScope>('ALL');
+  const { counts, error: countsError, refresh: refreshCounts } = useLeadScopeCounts();
   const [search, setSearch] = useState('');
   const query = useDebounced(search.trim(), 300);
   const [temperature, setTemperature] = useState('');
@@ -40,10 +50,10 @@ export const LeadsPage: React.FC<{
   const [source, setSource] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [data, setData] = useState<TelecallerLeadList | null>(null);
+  const [data, setData] = useState<PageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<{ mode: 'add' } | { mode: 'view' | 'edit'; lead: TelecallerLead } | null>(openAdd ? { mode: 'add' } : null);
+  const [dialog, setDialog] = useState<{ mode: 'add' } | { mode: 'view' | 'edit'; lead: Row } | null>(openAdd ? { mode: 'add' } : null);
   const [notice, setNotice] = useState<string | null>(null);
   const seq = useRef(0);
 
@@ -51,13 +61,16 @@ export const LeadsPage: React.FC<{
     const mine = ++seq.current;
     setLoading(true);
     setError(null);
-    api.list({ search: query || undefined, temperature: temperature || undefined, callStatus: callStatus || undefined, source: source || undefined, page, pageSize }).then(
-      d => mine === seq.current && (setData(d), setLoading(false)),
+    const filters = { search: query || undefined, temperature: temperature || undefined, callStatus: callStatus || undefined, source: source || undefined, page, pageSize };
+    // with the filters the database decides what each one holds; without them the page is exactly what it was
+    const request: Promise<PageData> = scopeFilters ? leadScopeApi.list({ scope, ...filters }) : api.list(filters);
+    request.then(
+      d => mine === seq.current && (setData(d), setLoading(false), scopeFilters && refreshCounts()),
       err => mine === seq.current && (setError(errorMessage(err)), setLoading(false))
     );
-  }, [query, temperature, callStatus, source, page, pageSize]);
+  }, [query, temperature, callStatus, source, page, pageSize, scope, scopeFilters]);
   useEffect(load, [load]);
-  useEffect(() => setPage(1), [query, temperature, callStatus, source, pageSize]);
+  useEffect(() => setPage(1), [query, temperature, callStatus, source, pageSize, scope]);
 
   const saved = (lead: TelecallerLead, created: boolean) => {
     setDialog(null);
@@ -65,10 +78,14 @@ export const LeadsPage: React.FC<{
     setTimeout(() => setNotice(null), 4000);
     if (created) setPage(1);
     load(); // the new lead appears without a manual refresh
+    refreshCounts();
     onChanged();
   };
 
   const filtered = !!(query || temperature || callStatus || source);
+  // a colleague's lead is for reading only; editing and sending to Accounts stay with its owner
+  const own = (l: Row) => l.isMine !== false;
+  const withAccounts = (l: Row) => scopeFilters && (scope === 'TO_ACCOUNTS' || scope === 'RETURNED') && !!l.accounts;
 
   return (
     <div className="space-y-5">
@@ -78,6 +95,8 @@ export const LeadsPage: React.FC<{
         actions={<button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button>}
       />
 
+      {scopeFilters && <LeadScopeTabs scope={scope} onChange={setScope} counts={counts} />}
+      {scopeFilters && countsError && <ErrorBanner message={countsError} onRetry={refreshCounts} />}
       {error && <ErrorBanner message={error} onRetry={load} />}
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
 
@@ -104,9 +123,9 @@ export const LeadsPage: React.FC<{
         {loading && !data ? (
           <Spinner label="Loading leads…" />
         ) : !data || data.items.length === 0 ? (
-          <EmptyState title={filtered ? 'No leads match' : 'No leads yet'}>
-            {filtered ? 'Try another filter or clear the search.' : 'Add the first lead after a call with a customer who is interested.'}
-            {!filtered && <div className="mt-4"><button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button></div>}
+          <EmptyState title={filtered ? 'No leads match' : scopeFilters ? LEAD_SCOPE_EMPTY[scope].title : 'No leads yet'}>
+            {filtered ? 'Try another filter or clear the search.' : scopeFilters ? LEAD_SCOPE_EMPTY[scope].text : 'Add the first lead after a call with a customer who is interested.'}
+            {!filtered && (!scopeFilters || scope === 'ALL' || scope === 'MINE') && <div className="mt-4"><button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button></div>}
           </EmptyState>
         ) : (
           <>
@@ -122,8 +141,11 @@ export const LeadsPage: React.FC<{
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.items.map(l => (
-                    <tr key={l.id} className="hover:bg-slate-50/60">
-                      <td className="px-3 py-3"><div className="flex items-center gap-2.5"><Avatar name={l.name} /><span className="font-semibold text-slate-900 break-words min-w-0">{l.name}</span></div></td>
+                    <React.Fragment key={l.id}>
+                    <tr className="hover:bg-slate-50/60">
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-2.5"><Avatar name={l.name} /><div className="min-w-0"><span className="font-semibold text-slate-900 break-words">{l.name}</span>{scopeFilters && scope !== 'MINE' && <LeadOwner row={l as LeadScopeRow} />}{scopeFilters && l.paymentWorkflow && <WorkflowBadge workflow={l.paymentWorkflow} />}</div></div>
+                      </td>
                       <td className="px-3 py-3 text-slate-600 break-words">{l.company || '-'}</td>
                       <td className="px-3 py-3 whitespace-nowrap">{l.phone ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">{l.phone}</a> : '-'}</td>
                       <td className="px-3 py-3 text-slate-600"><span className="block truncate" title={l.email || undefined}>{l.email || '-'}</span></td>
@@ -135,11 +157,13 @@ export const LeadsPage: React.FC<{
                       <td className="px-3 py-3">
                         <div className="flex flex-col items-stretch gap-1.5">
                           <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'view', lead: l })} aria-label={`View ${l.name}`}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> View</button>
-                          <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'edit', lead: l })} aria-label={`Edit ${l.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit</button>
-                          {renderRowAction?.(l, load)}
+                          {own(l) && <button type="button" className={tcBtn.row} onClick={() => setDialog({ mode: 'edit', lead: l })} aria-label={`Edit ${l.name}`}><Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit</button>}
+                          {own(l) && renderRowAction?.(l, load)}
                         </div>
                       </td>
                     </tr>
+                    {withAccounts(l) && <tr><td colSpan={10} className="px-3 pb-3 pt-0"><AccountsDetails row={l as LeadScopeRow} scope={scope} /></td></tr>}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -154,6 +178,7 @@ export const LeadsPage: React.FC<{
                     </div>
                     <TemperatureBadge value={l.leadTemperature} />
                   </div>
+                  {scopeFilters && scope !== 'MINE' && <LeadOwner row={l as LeadScopeRow} />}
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     {l.phone && <a href={`tel:${l.phone}`} className="text-blue-600 font-semibold">{l.phone}</a>}
                     <CallStatusBadge status={l.callStatus} />
@@ -161,9 +186,10 @@ export const LeadsPage: React.FC<{
                   <div className="text-xs text-slate-500">{l.leadSource || 'No source'} · Follow-up {dateText(l.followUpDate)} · Created {dateText(l.createdAt)}</div>
                   <div className="flex gap-2">
                     <button type="button" className={tcBtn.secondary} onClick={() => setDialog({ mode: 'view', lead: l })}>View</button>
-                    <button type="button" className={tcBtn.secondary} onClick={() => setDialog({ mode: 'edit', lead: l })}>Edit</button>
-                    {renderRowAction?.(l, load)}
+                    {own(l) && <button type="button" className={tcBtn.secondary} onClick={() => setDialog({ mode: 'edit', lead: l })}>Edit</button>}
+                    {own(l) && renderRowAction?.(l, load)}
                   </div>
+                  {withAccounts(l) && <AccountsDetails row={l as LeadScopeRow} scope={scope} />}
                 </li>
               ))}
             </ul>
@@ -174,7 +200,8 @@ export const LeadsPage: React.FC<{
 
       {dialog?.mode === 'add' && <LeadDialog api={api} onClose={() => setDialog(null)} onSaved={l => saved(l, true)} />}
       {dialog?.mode === 'edit' && <LeadDialog api={api} lead={dialog.lead} onClose={() => setDialog(null)} onSaved={l => saved(l, false)} />}
-      {dialog?.mode === 'view' && <LeadView lead={dialog.lead} onClose={() => setDialog(null)} onEdit={() => setDialog({ mode: 'edit', lead: dialog.lead })} />}
+      {dialog?.mode === 'view' && own(dialog.lead) && <LeadView lead={dialog.lead} onClose={() => setDialog(null)} onEdit={() => setDialog({ mode: 'edit', lead: dialog.lead })} />}
+      {dialog?.mode === 'view' && !own(dialog.lead) && <ReadOnlyLeadDialog row={dialog.lead as LeadScopeRow} scope={scope} onClose={() => setDialog(null)} />}
     </div>
   );
 };

@@ -15,6 +15,9 @@ import type {
   TelecallerHome,
   TelecallerLead,
   TelecallerLeadList,
+  LeadScope,
+  LeadScopeCounts,
+  LeadScopeList,
   TelecallerSheet,
   TelecallerSheetCheck,
   TrainingAttendance,
@@ -552,6 +555,12 @@ export const salesHeadApi = {
   reports: (q: { who?: string; from?: string; to?: string; taskStatus?: string }) => api.get<SalesReport>('/sales-head/reports', q),
   income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q)
 };
+/** The five filters of the Lead section: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts. */
+export const leadScopeApi = {
+  list: (q: { scope: LeadScope; search?: string; source?: string; status?: string; temperature?: string; callStatus?: string; service?: string; followUpFrom?: string; followUpTo?: string; noFollowUp?: boolean; sort?: 'newest' | 'followUp'; page?: number; pageSize?: number }) => api.get<LeadScopeList>('/lead-scope', q),
+  counts: () => api.get<LeadScopeCounts>('/lead-scope/counts')
+};
+
 export const telecallerApi = {
   home: () => api.get<TelecallerHome>('/telecaller/home'),
   assignable: (departmentId?: string) => api.get<TelecallerAssignee[]>('/telecaller/assignable', { departmentId }),

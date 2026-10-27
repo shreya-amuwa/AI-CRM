@@ -418,7 +418,31 @@ await pipeStep(b1, 'Leads');
 await b1.getByRole('heading', { name: 'Leads' }).first().waitFor({ timeout: 15000 });
 const pipeSteps = (await b1.locator('#nav-sub-leads-group button').allInnerTexts()).map(t => t.trim());
 await expect(JSON.stringify(pipeSteps) === JSON.stringify(['Leads', 'Potential', 'Customer onboarding', 'Part payments']), 'Leads: the group has Leads, Potential, Customer onboarding and Part payments', pipeSteps);
-await expect(!(await text(b1)).includes('Hot Customer'), 'Leads: the Business Associate does not see the Telecaller\'s leads');
+// the five filters of the Lead section
+const scopeLabels = (await b1.locator('[data-testid="lead-scope-tabs"] [role="tab"]').allInnerTexts()).map(t => t.replace(/\s*\d+\s*$/, '').trim());
+await expect(JSON.stringify(scopeLabels) === JSON.stringify(['All Leads', 'My Leads', 'Department Leads', 'To Accounts', 'Returned by Accounts']), 'Lead filters: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts, in that order', scopeLabels);
+const scopeCount = async s => Number(await b1.locator(`[data-testid="lead-scope-count-${s}"]`).innerText());
+const dbMineLeads = async () => (await q(`select count(*)::int n from customers where lifecycle_stage = 'LEAD' and owner_id = $1`, [baOne.id]))[0].n;
+const dbDeptLeads = async () => (await q(`select count(*)::int n from customers c where c.lifecycle_stage = 'LEAD' and c.owner_id <> $1 and c.department_id = (select department_id from profiles where id = $1)
+  and exists (select 1 from teams t where t.id = c.team_id and t.department_id = c.department_id and t.division = 'SALES')`, [baOne.id]))[0].n;
+await expect((await scopeCount('MINE')) === (await dbMineLeads()) && (await scopeCount('DEPARTMENT')) === (await dbDeptLeads()) && (await scopeCount('DEPARTMENT')) >= 2 && (await scopeCount('ALL')) === (await scopeCount('MINE')) + (await scopeCount('DEPARTMENT')),
+  'Lead filters: the numbers beside the filters are the real counts (All = My + Department)');
+await b1.locator('[data-testid="lead-scope-DEPARTMENT"]').click();
+await b1.locator('tbody tr:visible, main ul li:visible', { hasText: 'Meera Kapoor' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Department Leads does not list the Telecaller\'s lead'));
+const deptRow = b1.locator('tbody tr', { hasText: 'Meera Kapoor' }).first();
+await expect(/Assigned to Tele One/.test(await deptRow.innerText()) && (await deptRow.getByRole('button', { name: /View lead Meera Kapoor/ }).count()) === 1, 'Department Leads: a colleague\'s lead shows its owner and can only be viewed');
+await deptRow.getByRole('button', { name: /View lead Meera Kapoor/ }).click();
+await b1.getByRole('dialog').getByText(/read-only/i).waitFor({ timeout: 10000 }).catch(() => fail('the colleague\'s lead did not open read-only'));
+await expect((await b1.getByRole('dialog').getByRole('button', { name: /^(Edit|Save)/ }).count()) === 0, 'Department Leads: the read-only view has no Edit or Save');
+await b1.getByRole('dialog').getByRole('button', { name: 'Close' }).first().click();
+await b1.locator('[data-testid="lead-scope-MINE"]').click();
+await b1.getByText('No leads assigned to you').waitFor({ timeout: 15000 }).catch(() => fail('My Leads has no empty state'));
+ok('Lead filters: My Leads shows only the Business Associate\'s own leads (none yet) with its own empty state');
+await b1.locator('[data-testid="lead-scope-TO_ACCOUNTS"]').click();
+await b1.getByText('Nothing is with Accounts').waitFor({ timeout: 15000 }).catch(() => fail('To Accounts has no empty state'));
+await b1.locator('[data-testid="lead-scope-RETURNED"]').click();
+await b1.getByText('Accounts has not returned any lead').waitFor({ timeout: 15000 }).catch(() => fail('Returned by Accounts has no empty state'));
+await b1.locator('[data-testid="lead-scope-ALL"]').click();
 await b1.getByRole('button', { name: /Add lead/i }).first().click();
 await b1.locator('#lead-name').fill('Ravi Menon');
 await b1.locator('#lead-company').fill('Menon Cafe');
@@ -432,6 +456,36 @@ await b1.locator('tbody tr:visible, main ul li:visible', { hasText: 'Ravi Menon'
 const rl = (await q(`select id, owner_id, lifecycle_stage from customers where name = 'Ravi Menon'`));
 await expect(rl.length === 1 && rl[0].owner_id === baOne.id && rl[0].lifecycle_stage === 'LEAD', 'Leads: one lead record, owned by the Business Associate', rl);
 await b1.screenshot({ path: `${OUT}/ba-7-leads.png`, fullPage: true });
+
+// To Accounts, Returned by Accounts and the resubmission: the real Accounts workflow, end to end
+const arunId = await idOf('acc.member@amuwa.com');
+const anita = await api(baOne.id, 'POST', '/pipeline/leads', { name: 'Anita Desai', company: 'Desai Foods', phone: '+91 98200 44444', leadSource: 'Referral', services: [svc[0].code], notes: 'Wants to start this month' });
+await api(baOne.id, 'POST', `/pipeline/customers/${anita.id}/send-to-accounts`, { amount: 25000, note: 'Pays by bank transfer' });
+await b1.reload();
+await b1.locator('[data-testid="lead-scope-tabs"]').waitFor({ timeout: 20000 });
+await expect((await scopeCount('TO_ACCOUNTS')) === 1 && (await scopeCount('RETURNED')) === 0, 'To Accounts: a lead sent to Accounts is counted there');
+await b1.locator('[data-testid="lead-scope-TO_ACCOUNTS"]').click();
+await b1.locator('tbody tr:visible', { hasText: 'Anita Desai' }).first().waitFor({ timeout: 15000 }).catch(() => fail('To Accounts does not list the lead'));
+const toAcc = await b1.locator('[data-testid="lead-accounts-TO_ACCOUNTS"]').innerText();
+await expect(/25,000/.test(toAcc) && /Biz One/.test(toAcc) && /Awaiting Accounts confirmation/.test(toAcc) && /Pays by bank transfer/.test(toAcc), 'To Accounts: amount, who sent it, the verification status and the note are shown', toAcc);
+await expect((await b1.locator('tbody tr', { hasText: 'Anita Desai' }).first().innerText()).includes('With Accounts'), 'To Accounts: the row says it is with Accounts');
+await b1.locator('[data-testid="lead-scope-RETURNED"]').click();
+await b1.getByText('Accounts has not returned any lead').waitFor({ timeout: 15000 });
+await api(arunId, 'POST', `/pipeline/customers/${anita.id}/accounts/back-off`, { reason: 'GST number is missing' });
+await b1.reload();
+await b1.locator('[data-testid="lead-scope-tabs"]').waitFor({ timeout: 20000 });
+await expect((await scopeCount('TO_ACCOUNTS')) === 0 && (await scopeCount('RETURNED')) === 1, 'Returned by Accounts: out of To Accounts, into Returned by Accounts');
+await b1.locator('[data-testid="lead-scope-RETURNED"]').click();
+await b1.locator('tbody tr:visible', { hasText: 'Anita Desai' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Returned by Accounts does not list the lead'));
+const ret = await b1.locator('[data-testid="lead-accounts-RETURNED"]').innerText();
+await expect(/GST number is missing/.test(ret) && /Arun Accounts/.test(ret) && /Returned on/.test(ret) && /Biz One/.test(ret), 'Returned by Accounts: when, by whom, why and who is responsible are shown', ret);
+await b1.screenshot({ path: `${OUT}/ba-7-returned.png`, fullPage: true });
+await api(baOne.id, 'POST', `/pipeline/customers/${anita.id}/send-to-accounts`, { amount: 26000, note: 'GST added' });
+await b1.reload();
+await b1.locator('[data-testid="lead-scope-tabs"]').waitFor({ timeout: 20000 });
+await expect((await scopeCount('TO_ACCOUNTS')) === 1 && (await scopeCount('RETURNED')) === 0, 'Resubmitted: out of Returned by Accounts, back in To Accounts');
+await expect((await q(`select count(*)::int n from payment_requests where customer_id = $1`, [anita.id]))[0].n === 2, 'the earlier submission and its return are kept in the history');
+await b1.locator('[data-testid="lead-scope-ALL"]').click();
 // the lead moves on as the same record: Potential, then Customer onboarding
 const dueTomorrow = new Date(Date.now() + 86400e3).toISOString().slice(0, 10);
 await api(baOne.id, 'PATCH', `/pipeline/leads/${rl[0].id}`, { leadStatus: 'READY_TO_BUY' }).catch(() => {});

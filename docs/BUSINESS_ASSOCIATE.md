@@ -69,3 +69,6 @@ leads are the ones in *My Leads* (the Home buttons that point at Leads open *My 
 * A Telecaller (and the Department Head, when reassigning) can hand a contact to such a Sales member of the department. With no choice made, a dedicated Business Associate is still
   preferred (then the fewest open contacts), so nobody's current workload moves.
 * Telecallers and the other Sales roles, Support and every other department stay refused; changing the price list stays with the Super Admin / Department Head.
+
+## Lead filters
+The **Leads** page of the Leads group has the same five filters as the Telecaller's: All Leads, My Leads, Department Leads (read-only), To Accounts and Returned by Accounts, with counts. See `docs/TELECALLER.md` ("Lead filters").

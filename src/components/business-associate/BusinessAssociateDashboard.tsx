@@ -107,7 +107,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
         {page === 'home' && <HomePage go={go} />}
         {page === 'tasks' && <TasksPage key={key} go={go} initialContactId={target.contactId} initialStage={target.stage} />}
         {(page === 'leads' || page === 'potential' || page === 'onboarding' || page === 'part-payments') && (
-          <PipelineWorkspace section={page} counts={pipelineCounts} startWithAdd={page === 'leads' && !!target.addLead} resetKey={target.n} onNavigate={next => open(next)} />
+          <PipelineWorkspace section={page} counts={pipelineCounts} leadFilters startWithAdd={page === 'leads' && !!target.addLead} resetKey={target.n} onNavigate={next => open(next)} />
         )}
         {page === 'quotation' && <QuotationPage key={key} go={go} initialContactId={target.contactId} initialQuotationId={target.quotationId} />}
         {page === 'demos' && <DemoSchedulePage key={key} go={go} initialContactId={target.contactId} openNew={!!target.newDemo} />}

@@ -299,6 +299,7 @@ await t1.screenshot({ path: `${OUT}/tc-6-add-lead.png`, fullPage: true });
 await addDlg.getByRole('button', { name: 'Add Lead' }).dblclick();
 await t1.getByText('Meera Kapoor was added to your leads.').waitFor({ timeout: 15000 }).catch(() => fail('Add Lead: the lead was not added'));
 await expect((await q(`select count(*)::int n from customers where name = 'Meera Kapoor'`))[0].n === 1, 'Add Lead: a double click creates only one lead');
+await t1.locator('tbody tr', { hasText: 'Meera Kapoor' }).first().waitFor({ timeout: 15000 }).catch(() => {}); // the list reloads by itself once the dialog closes
 await expect((await t1.locator('tbody tr', { hasText: 'Meera Kapoor' }).count()) === 1, 'Add Lead: the lead appears in the list without a manual refresh');
 const leadHeads = (await t1.locator('thead th').allInnerTexts()).map(s => s.trim());
 await expect(leadHeads.join('|').toLowerCase() === 'Customer Name|Company / Business Name|Phone|Email|Lead Source|Lead Temperature|Call Status|Follow-up Date|Created Date|Actions'.toLowerCase(), 'Leads: the ten required columns', leadHeads);
@@ -324,7 +325,20 @@ await api(oneProfile.id, 'POST', '/telecaller/leads', { name: 'Cold Carl', compa
 await menu(t1, 'Home');
 await menu(t1, 'Leads');
 await t1.locator('tbody tr').first().waitFor({ timeout: 10000 });
-await expect((await t1.locator('tbody tr').count()) === 3, 'Leads: three leads listed');
+// the five filters of the Lead section
+const scopeLabels = (await t1.locator('[data-testid="lead-scope-tabs"] [role="tab"]').allInnerTexts()).map(t => t.replace(/\s*\d+\s*$/, '').trim());
+await expect(JSON.stringify(scopeLabels) === JSON.stringify(['All Leads', 'My Leads', 'Department Leads', 'To Accounts', 'Returned by Accounts']), 'Lead filters: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts, in that order', scopeLabels);
+await t1.locator('[data-testid="lead-scope-MINE"]').click();
+await t1.waitForFunction(() => document.querySelectorAll('tbody tr').length === 3, null, { timeout: 10000 }).catch(() => fail('Leads: My Leads does not hold the three leads'));
+ok('Leads: three leads listed');
+const tScope = async s => Number(await t1.locator(`[data-testid="lead-scope-count-${s}"]`).innerText());
+await expect((await tScope('MINE')) === 3 && (await tScope('ALL')) === (await tScope('MINE')) + (await tScope('DEPARTMENT')) && (await tScope('TO_ACCOUNTS')) === 0 && (await tScope('RETURNED')) === 0, 'Lead filters: the numbers beside the filters are the real counts');
+await t1.locator('[data-testid="lead-scope-TO_ACCOUNTS"]').click();
+await t1.getByText('Nothing is with Accounts').waitFor({ timeout: 15000 }).catch(() => fail('To Accounts has no empty state'));
+await t1.locator('[data-testid="lead-scope-RETURNED"]').click();
+await t1.getByText('Accounts has not returned any lead').waitFor({ timeout: 15000 }).catch(() => fail('Returned by Accounts has no empty state'));
+await t1.locator('[data-testid="lead-scope-MINE"]').click();
+await t1.waitForFunction(() => document.querySelectorAll('tbody tr').length === 3, null, { timeout: 10000 });
 const warmColor = await t1.locator('tbody tr', { hasText: 'Warm Wendy' }).locator('[data-temperature="WARM"]').evaluate(e => getComputedStyle(e).color);
 const coldColor = await t1.locator('tbody tr', { hasText: 'Cold Carl' }).locator('[data-temperature="COLD"]').evaluate(e => getComputedStyle(e).color);
 const [wr, wg, wb] = rgb(warmColor), [cr, cg, cb] = rgb(coldColor);
@@ -382,8 +396,17 @@ await menu(t2, 'Tasks');
 await t2.getByText('No contact sheet has been assigned to you yet').waitFor({ timeout: 10000 }).catch(() => fail('Tasks: no empty state'));
 ok('Tasks: an empty state when no sheet is assigned');
 await menu(t2, 'Leads');
-await t2.getByText('No leads yet').waitFor({ timeout: 10000 }).catch(() => fail('Leads: no empty state'));
-ok('Leads: an empty state, with the prominent Add Lead button');
+await t2.locator('[data-testid="lead-scope-MINE"]').click();
+await t2.getByText('No leads assigned to you').waitFor({ timeout: 10000 }).catch(() => fail('Leads: no empty state'));
+ok('Leads: an empty state for My Leads');
+await t2.locator('[data-testid="lead-scope-DEPARTMENT"]').click();
+await t2.locator('tbody tr', { hasText: 'Warm Wendy' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Department Leads does not list the other Telecaller\'s leads'));
+const deptRow = t2.locator('tbody tr', { hasText: 'Warm Wendy' }).first();
+await expect(/Assigned to Tele One/.test(await deptRow.innerText()), 'Department Leads: another Telecaller\'s lead shows its owner');
+await expect((await deptRow.getByRole('button', { name: /^Edit/ }).count()) === 0 && (await deptRow.getByRole('button', { name: /Convert/ }).count()) === 0 && (await deptRow.getByRole('button', { name: /^View/ }).count()) === 1, 'Department Leads: a colleague\'s lead can be viewed, not edited or converted');
+await deptRow.getByRole('button', { name: /^View/ }).click();
+await t2.getByRole('dialog').getByText(/read-only/i).waitFor({ timeout: 10000 }).catch(() => fail('the colleague\'s lead did not open read-only'));
+await t2.getByRole('dialog').getByRole('button', { name: 'Close' }).first().click();
 await t2.close();
 
 // ------------------------------------------------------------------ 5. other roles never get a Telecaller dashboard
