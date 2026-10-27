@@ -613,10 +613,15 @@ export class PipelineService {
   }
 
   async recordAccountsPayment(id: string, body: unknown): Promise<PaymentOverview> {
+    return (await this.recordAccountsPaymentTracked(id, body)).overview;
+  }
+
+  /** Records the payment and says which one it is and what Accounts asked for, so the paid invoice of a verified payment can follow. */
+  async recordAccountsPaymentTracked(id: string, body: unknown): Promise<{ overview: PaymentOverview; paymentId: string; makeInvoice: boolean }> {
     const customerId = parse(uuidSchema, id);
     const input = parse(accountsRecordPaymentSchema, body);
-    await this.repo.recordAccountsPayment(customerId, input);
-    return this.repo.paymentOverview(customerId);
+    const paymentId = await this.repo.recordAccountsPayment(customerId, input);
+    return { overview: await this.repo.paymentOverview(customerId), paymentId, makeInvoice: input.verify && input.invoice };
   }
 
   /** Accounts chooses the GST rate of the order; the overview (with the new total payable) comes back. */
@@ -636,7 +641,16 @@ export class PipelineService {
   }
 
   async verifyAccountsPayment(paymentId: string, customerId: string, body: unknown): Promise<PaymentOverview> {
-    await this.repo.verifyAccountsPayment(parse(uuidSchema, paymentId), parse(paymentDecisionSchema, body ?? {}).note ?? null);
+    return (await this.verifyAccountsPaymentTracked(paymentId, customerId, body)).overview;
+  }
+
+  async verifyAccountsPaymentTracked(paymentId: string, customerId: string, body: unknown): Promise<{ overview: PaymentOverview; makeInvoice: boolean }> {
+    const input = parse(paymentDecisionSchema, body ?? {});
+    await this.repo.verifyAccountsPayment(parse(uuidSchema, paymentId), input.note ?? null);
+    return { overview: await this.repo.paymentOverview(parse(uuidSchema, customerId)), makeInvoice: input.invoice };
+  }
+
+  paymentOverviewOf(customerId: string): Promise<PaymentOverview> {
     return this.repo.paymentOverview(parse(uuidSchema, customerId));
   }
 

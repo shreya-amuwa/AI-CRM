@@ -79,6 +79,16 @@ export const InvoiceWhatsAppCard: React.FC<{ invoiceId: string; invoiceNumber: s
           </button>
         )}
       </div>
+      {settings && !settings.enabled && (
+        <p role="status" className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Sending invoices by WhatsApp is switched off. {settings.canEdit ? 'Open Settings and tick "Allow sending paid invoices by WhatsApp".' : 'Ask the Super Admin or the Accounts Department Head to switch it on.'}
+        </p>
+      )}
+      {settings?.delivery && !settings.delivery.ready && (
+        <p role="status" className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          {settings.delivery.note}
+        </p>
+      )}
       {st && latest && (
         <p className="text-[11px] text-slate-500">
           {st.hint} {latest.recipient} · {latest.attempts} attempt{latest.attempts === 1 ? '' : 's'}
@@ -149,6 +159,11 @@ const SettingsForm: React.FC<{ settings: InvoiceWhatsAppSettings; onSaved: (s: I
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3" role="group" aria-label="Invoice WhatsApp settings">
       <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Allow sending paid invoices by WhatsApp</label>
       <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={auto && enabled} disabled={!enabled} onChange={e => setAuto(e.target.checked)} /> Send automatically as soon as the paid invoice is ready</label>
+      {settings.delivery?.provider === 'BUILDER' && (
+        <p className="text-[11px] text-slate-600">
+          Messages go through the WhatsApp Automation Builder, where the template is chosen: in the builder, add a route for <b>stage_code = INVOICE_PAID</b> (the event carries the customer, the invoice number, amount, date and a short-lived PDF link). The template fields below are not used for it.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Template name (exactly as registered with the provider)" htmlFor="iwa-template">
           <input id="iwa-template" className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. invoice_paid" maxLength={255} />
@@ -157,7 +172,7 @@ const SettingsForm: React.FC<{ settings: InvoiceWhatsAppSettings; onSaved: (s: I
           <input id="iwa-lang" className={inputCls} value={lang} onChange={e => setLang(e.target.value)} placeholder="en" maxLength={10} />
         </Field>
       </div>
-      <label className="flex items-start gap-2 text-xs"><input type="checkbox" className="mt-0.5" checked={approved} disabled={!name.trim()} onChange={e => setApproved(e.target.checked)} /> <span>The provider has approved this template. Nothing is sent live until this is ticked.</span></label>
+      <label className="flex items-start gap-2 text-xs"><input type="checkbox" className="mt-0.5" checked={approved} disabled={!name.trim()} onChange={e => setApproved(e.target.checked)} /> <span>The provider has approved this template. Nothing is sent through Wabastore until this is ticked.</span></label>
       {error && <ErrorBanner message={error} />}
       <button type="button" className={btn.primary} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save settings'}</button>
     </div>

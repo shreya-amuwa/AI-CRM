@@ -161,6 +161,41 @@ await d3.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the di
 const c14 = (await q('select deal_amount, amount_verified, payment_status from customers where id = $1', [small]))[0];
 await expect(Number(c14.deal_amount) === 17 && Number(c14.amount_verified) === 17 && c14.payment_status === 'FULLY_PAID', 'the order of 14 is fully paid with 17');
 
+// ------------------------------------------------------------------ a paid invoice for each payment: 14 + 18% = payable 17, paid as 10 (part) and 7 (full)
+const split = (await api(rahul, 'POST', '/pipeline/leads', { name: 'Ashish Split', company: 'Ashish Traders', email: 'ashish.split@example.com', phone: '+91 98200 33333', address: 'Shop 4, MG Road, Pune 411001, Maharashtra', leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Pays in two parts.' })).id;
+await api(rahul, 'POST', `/pipeline/customers/${split}/send-to-accounts`, { amount: 14 });
+await acc.goto(BASE + '/');
+await menu(acc, 'Confirmation');
+await acc.getByText('Ashish Traders').first().click();
+await acc.getByTestId('order-gst-rate').selectOption('18');
+await acc.getByTestId('order-gst-payable').waitFor({ timeout: 10000 });
+await acc.getByRole('button', { name: 'Record payment' }).first().click();
+const d4 = acc.getByRole('dialog', { name: 'Record payment' });
+await d4.locator('#pay-amount').fill('10');
+await d4.locator('#pay-ref').fill('SPLIT-1');
+await expect(await d4.getByLabel(/Make the paid invoice for this payment/).count() === 0, 'the invoice box appears only once the payment is verified');
+await d4.getByLabel(/I have received this money and verified it/).check();
+await expect(await d4.getByLabel(/Make the paid invoice for this payment/).isChecked(), 'and it is ticked by default');
+await acc.screenshot({ path: `${OUT}/gst-7-invoice-box.png`, fullPage: true });
+await d4.getByRole('button', { name: 'Record & verify' }).click();
+await d4.waitFor({ state: 'detached', timeout: 20000 }).catch(() => fail('the dialog for the first part payment did not close'));
+await acc.getByText(/Paid invoice INV-/).first().waitFor({ timeout: 20000 }).catch(() => fail('the first payment shows no invoice'));
+await acc.getByRole('button', { name: 'Record payment' }).first().click();
+const d5 = acc.getByRole('dialog', { name: 'Record payment' });
+await d5.getByLabel('Full payment').check();
+await expect((await d5.locator('#pay-amount').inputValue()) === '7', 'the full payment is the 7 still to receive');
+await d5.locator('#pay-ref').fill('SPLIT-2');
+await d5.getByLabel(/I have received this money and verified it/).check();
+await d5.getByRole('button', { name: 'Record & verify' }).click();
+await d5.waitFor({ state: 'detached', timeout: 20000 }).catch(() => fail('the dialog for the second payment did not close'));
+await acc.waitForFunction(() => (document.body.innerText.match(/Paid invoice INV-/g) || []).length >= 2, null, { timeout: 20000 }).catch(() => fail('the second payment shows no invoice of its own'));
+const inv2 = await q('select count(*)::int n, count(distinct invoice_id)::int d from payment_invoices where customer_id = $1', [split]);
+await expect(inv2[0].n === 2 && inv2[0].d === 2, 'two payments, two different paid invoices');
+const sums = (await q('select sum(total_amount)::numeric s from generated_invoices where customer_id = $1', [split]))[0];
+await expect(Number(sums.s) <= 17 && Number(sums.s) >= 16.5, 'together the invoices are worth what was received (not more than 17)');
+await acc.getByRole('list', { name: 'Payment history' }).scrollIntoViewIfNeeded();
+await acc.screenshot({ path: `${OUT}/gst-8-two-invoices.png`, fullPage: true });
+
 // phone-sized
 const ph = await login('acc.member@amuwa.com', { width: 390, height: 800 }, 'main');
 await menu(ph, 'Confirmation');

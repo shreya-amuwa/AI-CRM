@@ -899,6 +899,19 @@ export interface LedgerPayment {
   recordedAt: string;
   verifiedBy: string | null;
   verifiedAt: string | null;
+  /** The paid invoice made for this payment (Accounts only; null while there is none). */
+  invoice?: { id: string; number: string; paid: boolean } | null;
+}
+
+/** What happened to the paid invoice of a payment right after it was recorded / verified (or when Accounts asked for it). */
+export interface PaymentInvoiceOutcome {
+  /** CREATED: made now. EXISTS: it was made before. FAILED: the payment stands, the invoice could not be made (see message). */
+  status: 'CREATED' | 'EXISTS' | 'FAILED';
+  invoiceId?: string;
+  number?: string;
+  /** PDF / e-mail / WhatsApp, one line each. */
+  steps?: InvoiceStep[];
+  message?: string | null;
 }
 
 export interface PaymentFollowUp {
@@ -943,6 +956,8 @@ export interface PaymentOverview {
   request: PaymentRequestSummary | null;
   followUps: PaymentFollowUp[] | null;
   isAccounts: boolean;
+  /** Set on the answer to "record payment" / "verify payment": the paid invoice of that payment. */
+  paymentInvoice?: PaymentInvoiceOutcome;
 }
 
 /** One Sales submission in the Accounts queue. */
@@ -1496,6 +1511,8 @@ export interface InvoiceWhatsAppSettings {
   updatedAt: string;
   /** Only the Super Admin and the Accounts Department Head change these. */
   canEdit: boolean;
+  /** What the SERVER does with a message right now (set by the server's configuration, not by these switches). */
+  delivery?: { mode: 'off' | 'dry_run' | 'live'; provider: 'WABASTORE' | 'BUILDER' | null; ready: boolean; note: string };
 }
 export interface InvoiceWhatsAppResult {
   /** false: nothing was requested (automatic request that cannot be made); `reason` says why. */

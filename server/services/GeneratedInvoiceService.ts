@@ -1,11 +1,11 @@
-import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
+import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, PaymentInvoiceOutcome, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
 import { invoiceDate, rs, toPaise } from '../../shared/invoiceCalc.js';
 import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, invoiceWhatsAppRequestSchema, invoiceWhatsAppSettingsSchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { sendInvoiceEmail } from '../invoices/mailer.js';
 import { renderInvoicePdf, type InvoicePdfInput } from '../invoices/pdf.js';
-import { invoiceWhatsAppMode, runInvoiceWhatsApp, type InvoiceWhatsAppRunSummary } from '../invoices/whatsapp.js';
+import { invoiceWhatsAppDelivery, invoiceWhatsAppMode, runInvoiceWhatsApp, type InvoiceWhatsAppRunSummary } from '../invoices/whatsapp.js';
 import type { ClaimedStage, GeneratedInvoiceRepository } from '../repositories/GeneratedInvoiceRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
 
@@ -122,6 +122,18 @@ export class GeneratedInvoiceService {
     return { invoice: run.invoice, steps: [first, ...run.steps] };
   }
 
+  /**
+   * The paid invoice of one verified payment: made for exactly that payment, marked paid by it, and then delivered (PDF, e-mail, WhatsApp) like
+   * any paid invoice. Idempotent: a second request returns the same invoice and only finishes what is missing. Throws the database's own
+   * message when the invoice cannot be made (no address on record, GST not chosen, the money already covered by another invoice ...);
+   * the payment itself is never touched.
+   */
+  async invoiceForPayment(paymentId: unknown): Promise<PaymentInvoiceOutcome> {
+    const issued = await this.repo.issueForPayment(parse(uuidSchema, paymentId));
+    const run = await this.runStage(issued.id, 'PAID');
+    return { status: issued.replayed ? 'EXISTS' : 'CREATED', invoiceId: issued.id, number: issued.number, steps: run.steps, message: null };
+  }
+
   /** Retry what is left of a stage (a missing PDF, a missing e-mail). Nothing already done is repeated. */
   async deliver(id: unknown, body: unknown): Promise<InvoiceRunResult> {
     return this.runStage(parse(uuidSchema, id), parse(invoiceDeliverSchema, body).stage);
@@ -151,13 +163,15 @@ export class GeneratedInvoiceService {
     return this.repo.whatsappHistory(parse(uuidSchema, id));
   }
 
-  whatsAppSettings(): Promise<InvoiceWhatsAppSettings> {
-    return this.repo.whatsappSettings();
+  /** The switches in the database, and what this server does with a message right now (test mode, no service connected ...). */
+  async whatsAppSettings(): Promise<InvoiceWhatsAppSettings> {
+    return { ...(await this.repo.whatsappSettings()), delivery: invoiceWhatsAppDelivery() };
   }
 
   async setWhatsAppSettings(body: unknown): Promise<InvoiceWhatsAppSettings> {
     const b = parse(invoiceWhatsAppSettingsSchema, body);
-    return this.repo.setWhatsappSettings({ enabled: b.enabled, autoSend: b.autoSend, templateName: b.templateName?.trim() || null, templateLanguage: b.templateLanguage?.trim() || 'en', templateApproved: b.templateApproved });
+    const saved = await this.repo.setWhatsappSettings({ enabled: b.enabled, autoSend: b.autoSend, templateName: b.templateName?.trim() || null, templateLanguage: b.templateLanguage?.trim() || 'en', templateApproved: b.templateApproved });
+    return { ...saved, delivery: invoiceWhatsAppDelivery() };
   }
 
   private async processWhatsApp(invoiceId: string, req: { requested: boolean; replayed?: boolean; reason?: string; dispatch?: InvoiceWhatsAppDispatch }): Promise<InvoiceWhatsAppResult> {
@@ -179,7 +193,9 @@ export class GeneratedInvoiceService {
   private async autoWhatsApp(invoiceId: string): Promise<InvoiceStep[]> {
     try {
       const settings = await this.repo.whatsappSettings();
-      if (!settings.enabled || !settings.autoSend) return [];
+      // say so instead of staying silent: "why was nothing sent?" is answered on the screen
+      if (!settings.enabled) return [{ step: 'WHATSAPP', stage: 'PAID', status: 'NOT_SENT', message: 'Invoice WhatsApp is switched off. The Super Admin or the Accounts Department Head switches it on in the invoice\'s WhatsApp settings.' }];
+      if (!settings.autoSend) return [{ step: 'WHATSAPP', stage: 'PAID', status: 'NOT_SENT', message: 'Automatic sending is off. Use "Send invoice via WhatsApp" on the invoice, or switch automatic sending on in its WhatsApp settings.' }];
       const req = await this.repo.whatsappRequest(invoiceId, 'AUTO');
       if (!req.requested) return [{ step: 'WHATSAPP', stage: 'PAID', status: 'NOT_SENT', message: req.reason ?? 'The WhatsApp message was not requested.' }];
       const r = await this.processWhatsApp(invoiceId, req);

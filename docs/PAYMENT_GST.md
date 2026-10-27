@@ -38,6 +38,15 @@ Sales agrees an amount **excluding GST**. Nothing is added when the order is sen
 ## Invoices
 * The invoice builder shows the order's rate on every line, read-only. The database checks it too (`tg_generated_invoice_item_order_gst`): a line with another rate is refused.
 * Overbilling is still refused: the invoices' taxable amounts together may not pass the agreed amount.
+
+## A paid invoice for each payment (migration `20261202000100_payment_invoices.sql`)
+Every **verified** payment, part or full, gets its own **paid invoice** for exactly that payment. This is what lets Accounts invoice the second part payment: the older rule only allowed invoices for the part of the agreed amount that no earlier invoice covered, and the first invoice usually took all of it.
+* **When.** On *Record & verify* (the box "Make the paid invoice for this payment" is ticked by default) and on *Verify* of a pending payment. The payment is saved first; if the invoice cannot be made, the payment stands and the screen says why (no address on record, GST not chosen, ...). A verified payment without an invoice shows **Generate invoice**; it is idempotent (a second click returns the same invoice and repeats nothing).
+* **What.** One line with the services of the order (and "part payment" for a part payment), GST at the order's rate, dated the day of the payment, marked paid by that payment. Then the paid stage runs like any paid invoice: PDF stored, e-mailed, sent by WhatsApp. The table `payment_invoices` links one payment to one invoice.
+* **Amount.** The invoice total is the money received. Because the GST is worked out to the paisa and a payment is whole rupees, the invoice can be a paisa below the payment, never above, so the invoices of an order together never exceed the money that was verified.
+* **The cap.** For an invoice made for a payment the rule is "all invoices together may not be worth more than the verified money" (the transaction flag `amuwa.payment_invoice`). A manual invoice for the whole agreed amount, made before the payments, already covers that money and leaves nothing to invoice: the screen then says "The money of this payment is already covered by the invoices issued so far".
+* **Billing details** come from the customer record and onboarding; what they lack (the address) is taken from the customer's last invoice. A customer with neither has no invoice made until the address is added.
+* The older ways are unchanged: Accounts can still create an invoice by hand and confirm its payment.
 * Two invoices of 60,000 at 18% (70,800 each) for an order of 1,20,000 + 18% (1,41,600): with 60,000 received, invoice 1 shows 60,000 paid / 10,800 balance, invoice 2 shows 70,800, and the **order** still has 81,600 to receive.
 * The PDF shows the taxable amount, the rate and CGST/SGST or IGST, the invoice total, then **Payments applied to this invoice**, **Invoice balance**, **Order total payable (incl. GST)**, **Total confirmed payments** and **Total order balance outstanding**, all from the saved figures.
 
