@@ -72,7 +72,7 @@ await sa.locator('select').filter({ has: sa.locator('option', { hasText: 'A+' })
 await sa.getByPlaceholder('+91 98765 43210').fill('+91 98765 43210');
 await expect(await sa.getByRole('button', { name: /Create|Add team member|Add member/i }).last().isDisabled(), 'creating is blocked until Sales or Support is chosen');
 await sa.locator('#staff-head-division').selectOption('SALES');
-await expect(/Sales Department Head Dashboard/.test(await sa.locator('[role=dialog]').innerText()), '"Will open: Sales Department Head Dashboard"');
+await expect(/Sales Department Head Dashboard/.test(await sa.locator('[data-testid="team-member-management"]').innerText()), '"Will open: Sales Department Head Dashboard"');
 await sa.screenshot({ path: `${OUT}/dh-division-form.png`, fullPage: true });
 await sa.getByRole('button', { name: /Create|Add team member|Add member/i }).last().click();
 const until = async (fn, ms = 15000) => { for (const t = Date.now(); Date.now() - t < ms;) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 250)); } return null; };
