@@ -1,7 +1,7 @@
 # Performance Management (Team Lead and Department Head dashboards)
 
 Migration: `supabase/migrations/20261116000100_performance_management.sql` (safe to run again; nothing is deleted).
-Tests: `npm run test:db` (`performance_test.sql`), `npm run test:api` (the "performance API" checks), `npm run test:unit` (`performance_narrative.test.ts`),
+Tests: `npm run test:db` (`performance_test.sql`, `performance_scope_test.sql`), `npm run test:api` (the "performance API" checks), `npm run test:unit` (`performance_narrative.test.ts`),
 browser: `supabase/tests/e2e/run-workspaces.sh`.
 
 ## What it does
@@ -17,6 +17,24 @@ A new **Performance Management** page in the Team Lead dashboards (Sales and Sup
   Weekly (Monday to Sunday), monthly and custom ranges (up to a year) are supported; the list also shows Teams and the Department for a Department Head.
 * Every report keeps its generated time, the time the data was last checked, the version, and what triggered it (scheduled or by whom). A new version is
   kept only when the task figures changed; a refresh that changes nothing creates nothing (one report per subject and period, enforced by a unique key).
+
+## The figures at the top of the page (how they are counted)
+The five cards describe the whole scope: the department (Department Head), the chosen team, or the Team Lead's own team. They come from that scope's own
+summary, in which **every task is counted once**. They are not the sum of the rows in the People table: a task a Team Lead split between members appears on the
+lead's row and on each member's row, so adding the rows would count it twice. The search box and the team / role filters narrow the table and the People card only.
+
+| Card | Rule |
+| --- | --- |
+| People | Active Team Leads and members of the scope (not the viewer), after the filters |
+| Tasks | Tasks whose deadline (or, with none, assignment day) falls in the period; a task that was split is counted through its parts |
+| Completion | completed / tasks x 100. No tasks: shown as a dash with "No task data available" (never 0%) |
+| On-time completion | completed on or before the deadline / completed with a deadline and a completion time x 100. None: a dash with "No completed tasks to evaluate" |
+| Overdue | not completed and the deadline is before today (office date, Asia/Kolkata) |
+
+A person, team or department with nothing to divide shows a dash, never 0%. The month is the whole calendar month (1st to last day); the week is Monday to Sunday;
+the default month and "today" use the office date (India), the same day the database uses.
+
+Zero people with one team is correct for a department whose Department Head has no active Team Leads or members yet: the team exists, nobody is in it.
 
 ## Who can see what (enforced by the database, not only by the screens)
 Team Member -> Team Lead -> Department Head.

@@ -1,4 +1,5 @@
 import type { PerformancePeriodKind } from '../../../shared/contracts';
+import { officeToday } from '../../lib/officeTime';
 
 /** Dates here are plain calendar dates (YYYY-MM-DD) and never go through a time zone: a week is Monday to Sunday, a month is the whole calendar month. */
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -22,7 +23,8 @@ export const monthRange = (ym: string): { start: string; end: string } => {
   const [y, m] = ym.split('-').map(Number);
   return { start: `${y}-${pad(m)}-01`, end: toIso(new Date(y, m, 0)) };
 };
-export const todayIso = () => toIso(new Date());
+/** Today in office time (India), the same day the database uses for "today" and "overdue". */
+export const todayIso = () => officeToday();
 
 export interface PeriodChoice {
   kind: PerformancePeriodKind;
