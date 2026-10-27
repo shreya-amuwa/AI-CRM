@@ -7,7 +7,7 @@ import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { ClientNotices } from '../notices/ClientNotices';
-import { StaffManagementPanel } from '../common/StaffManagementPanel';
+import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { SalesOverview } from './SalesOverview';
@@ -135,7 +135,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
       {page === 'notices' && <ClientNotices />}
-      {page === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
+      {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>

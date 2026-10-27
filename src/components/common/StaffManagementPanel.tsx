@@ -43,9 +43,12 @@ interface StaffManagementPanelProps {
    * 'access': "Access Control" - the form plus role / access management.
    * 'add': only the Add Member form (its own page).
    * 'manage': only the member list with role / access management (its own page).
+   * 'directory': the full-width member directory of Team Member Management (search, filters, every account action; no form).
    * 'members' and 'access' list every team of the sub-department's division.
    */
-  view?: 'all' | 'members' | 'access' | 'add' | 'manage';
+  view?: 'all' | 'members' | 'access' | 'add' | 'manage' | 'directory';
+  /** Called after an account was created (Team Member Management offers "View in Team Members"). */
+  onCreated?: (profile: Profile) => void;
   /** The Access Control tab: when given, "Edit Access" opens it for that person; otherwise a small editor opens here. */
   onEditAccess?: (member: Profile) => void;
   /** Changes when access was saved elsewhere: the lists reload. */
@@ -73,7 +76,7 @@ function generatePassword(): string {
   return Array.from(bytes, b => chars[b % chars.length]).join('');
 }
 
-export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0 }) => {
+export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated }) => {
   const { profile } = useAuth();
   const { departments, allDepartments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
@@ -85,7 +88,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
   const [teams, setTeams] = useState<Team[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
-  const [scope, setScope] = useState<'subdept' | 'department'>(view === 'manage' ? 'department' : 'subdept');
+  const [scope, setScope] = useState<'subdept' | 'department'>(view === 'manage' || view === 'directory' ? 'department' : 'subdept');
+  // the full-width directory: like the combined page's list, with the filters for everybody and a few more columns
+  const directory = view === 'directory';
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
@@ -105,7 +110,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [salesSubRole, setSalesSubRole] = useState<SalesSubRole | ''>('');
   const [formOpen, setFormOpen] = useState(false);
   const manage = view !== 'members';
-  const showForm = view === 'manage' ? false : view !== 'members' || formOpen;
+  const showForm = view === 'manage' || view === 'directory' ? false : view !== 'members' || formOpen;
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   // The Create button sits at the bottom of a long form: show the reason next to it and bring it into view.
@@ -178,7 +183,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setLoading(true);
     setListError(null);
     try {
-      const bySubDept = view !== 'all' && !isTeamLead && scope === 'subdept' && !!division;
+      const bySubDept = view !== 'all' && view !== 'directory' && !isTeamLead && scope === 'subdept' && !!division;
       const listTeamId = isTeamLead ? profile?.teamId || undefined : bySubDept ? undefined : scope === 'subdept' ? defaultTeam?.id : undefined;
       const result = await usersApi.list({
         departmentId, teamId: listTeamId, division: bySubDept ? division : undefined, page, pageSize: MEMBERS_PAGE_SIZE,
@@ -361,6 +366,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
         dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision)
       });
       resetForm();
+      onCreated?.(newProfile);
       await loadMembers();
     } catch (err) {
       setFormError(errorMessage(err));
@@ -471,10 +477,14 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <Users className="w-6 h-6" />
           </div>
           <div>
-            <h2 className="text-xl font-bold font-heading text-slate-900">{view === 'members' ? 'Team Members' : view === 'access' || view === 'manage' ? 'Access Control' : view === 'add' ? 'Add Member' : 'Team Members & Access'}</h2>
+            <h2 className="text-xl font-bold font-heading text-slate-900">{view === 'members' || directory ? 'Team Members' : view === 'access' || view === 'manage' ? 'Access Control' : view === 'add' ? 'Add Member' : 'Team Members & Access'}</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {view === 'manage' ? (
                 <>{department?.name || departmentSlug} &bull; change roles, suspend, restore or remove members</>
+              ) : directory ? (
+                <>
+                  {isTeamLead ? subDeptLabel : department?.name || departmentSlug} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - search, filter and manage the accounts you are responsible for
+                </>
               ) : (
                 <>
                   {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - you can create:{' '}
@@ -506,7 +516,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
         {/* Create member form */}
-        {showForm && <form onSubmit={handleCreate} className={`${view === 'add' ? 'lg:col-span-5 max-w-2xl' : 'lg:col-span-2'} bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3.5`}>
+        {showForm && <form onSubmit={handleCreate} className={`${view === 'add' ? 'lg:col-span-5 w-full max-w-3xl' : 'lg:col-span-2'} bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3.5`}>
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <UserPlus className="w-4 h-4 text-blue-600" />
             <h3 className="text-sm font-bold text-slate-900">Add Team Member</h3>
@@ -725,7 +735,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <h3 className="text-sm font-bold text-slate-900">
               Members {loading ? '' : `(${total})`}
             </h3>
-            {!isTeamLead && view === 'all' && (
+            {!isTeamLead && (view === 'all' || directory) && (
               <div className="flex gap-1 text-xs">
                 {(['subdept', 'department'] as const).map(s => (
                   <button
@@ -741,7 +751,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             )}
           </div>
 
-          {manage && !isTeamLead && view === 'all' && (
+          {manage && ((!isTeamLead && view === 'all') || directory) && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="search" aria-label="Filter members">
               <input
                 type="search"
@@ -773,14 +783,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           {listError && <div className="p-2.5 rounded-xl text-xs border bg-rose-50 border-rose-200 text-rose-700">{listError}</div>}
 
           {!loading && rows.length === 0 && !listError ? (
-            <p className="text-xs text-slate-500 py-8 text-center">{view === 'manage' ? 'No members yet. Use Add Member to create the first account.' : manage ? 'No members yet. Create the first account using the form.' : 'No members yet. Use Add Team Member to create the first account.'}</p>
+            <p className="text-xs text-slate-500 py-8 text-center">{directory ? (searchApplied || roleFilter || statusFilter ? 'Nobody matches these filters.' : 'No members yet. Use the Add Team Member tab to create the first account.') : view === 'manage' ? 'No members yet. Use Add Member to create the first account.' : manage ? 'No members yet. Create the first account using the form.' : 'No members yet. Use Add Team Member to create the first account.'}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className={`w-full text-xs ${directory ? 'min-w-[960px]' : ''}`}>
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-100">
                     <th className="py-2 pr-3 font-semibold">Name / Email</th>
                     <th className="py-2 pr-3 font-semibold">Role</th>
+                    {directory && <th className="py-2 pr-3 font-semibold">Department / Team</th>}
+                    {directory && <th className="py-2 pr-3 font-semibold">Position</th>}
+                    {directory && <th className="py-2 pr-3 font-semibold">Added</th>}
                     {manage && <th className="py-2 pr-3 font-semibold">Default dashboard</th>}
                     <th className="py-2 pr-3 font-semibold">Status</th>
                     {manage && <th className="py-2 font-semibold text-right">Access</th>}
@@ -873,6 +886,18 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           </button>
                         )}
                       </td>
+                      {directory && (
+                        <td className="py-2.5 pr-3 text-slate-600">
+                          <div>{m.department?.name || '-'}</div>
+                          {m.team && <div className="text-slate-400">{m.team.name}</div>}
+                        </td>
+                      )}
+                      {directory && <td className="py-2.5 pr-3 text-slate-600">{m.position || '-'}</td>}
+                      {directory && (
+                        <td className="py-2.5 pr-3 text-slate-600 whitespace-nowrap">
+                          {new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                      )}
                       {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision)}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>

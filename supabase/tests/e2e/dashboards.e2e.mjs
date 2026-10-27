@@ -163,12 +163,45 @@ await sa.keyboard.press('Escape');
 await sa.fill('input[placeholder="Person, event or request id"]', 'Rahul');
 await sa.waitForFunction(() => [...document.querySelectorAll('tbody tr')].length > 0 && [...document.querySelectorAll('tbody tr')].every(r => /Rahul/.test(r.innerText)), null, { timeout: 15000 }).catch(() => fail('searching by a person did not filter the log'));
 ok('search by person narrows the log');
+
+// Team Member Management: a full-screen page with Add Team Member, Team Members and Access Control
+await menu(sa, 'Team Members');
+await sa.locator('[data-testid="team-member-management"]').waitFor({ timeout: 15000 });
+const saTabs = (await sa.locator('[role="tablist"][aria-label="Team Member Management"] [role="tab"]').allInnerTexts()).map(t => t.trim());
+await expect(JSON.stringify(saTabs) === JSON.stringify(['Add Team Member', 'Team Members', 'Access Control']), 'Team Members: the Super Admin has Add Team Member, Team Members and Access Control, in that order', saTabs);
+await expect((await sa.locator('[role="dialog"]').count()) === 0, 'Team Members is a page, not a pop-up');
+const fill = await sa.evaluate(() => {
+  const page = document.querySelector('[data-testid="team-member-management"]').getBoundingClientRect().width;
+  const main = document.querySelector('main').getBoundingClientRect().width;
+  return page / main;
+});
+await expect(fill > 0.9, `Team Members uses the full width of the page (${Math.round(fill * 100)}%)`);
+await sa.locator('#add-staff-department').selectOption({ label: 'Wabastore' });
+await sa.locator('#staff-panel-members tbody tr', { hasText: 'Rahul Mehta' }).first().waitFor({ timeout: 15000 }).catch(() => fail('the directory does not list the department\'s people'));
+const saDir = await sa.locator('#staff-panel-members').innerText();
+await expect(/Position/.test(saDir) && /Department \/ Team/.test(saDir) && /Added/.test(saDir), 'the directory shows department / team, position and the date the account was added');
+await sa.locator('[data-testid="member-search"]').fill('Neha');
+await sa.waitForFunction(() => { const rows = [...document.querySelectorAll('#staff-panel-members tbody tr')]; return rows.length > 0 && rows.every(r => /Neha/.test(r.innerText)); }, null, { timeout: 15000 }).catch(() => fail('the directory search does not narrow the list'));
+ok('the directory search narrows the list');
+await sa.screenshot({ path: `${OUT}/team-members-superadmin.png`, fullPage: true });
+await sa.locator('[data-testid="tab-access"]').click();
+await sa.locator('[data-testid="access-employee"]').waitFor({ timeout: 15000 }).catch(() => fail('Access Control did not open'));
+ok('Access Control opens for the Super Admin');
+await sa.getByRole('button', { name: 'Add Team Member' }).first().click();
+await sa.locator('#staff-role').waitFor({ state: 'visible', timeout: 15000 }).catch(() => fail('the header button does not open the Add Team Member tab'));
+await expect((await sa.locator('[data-testid="tab-add"]').getAttribute('aria-selected')) === 'true', 'the header button "Add Team Member" opens the Add Team Member tab');
 await sa.context().close();
 
 // ------------------------------------------------------------------ 2. Super Admin on a phone
 const phone = await login('root@amuwa.com', { width: 390, height: 844 }, 'section[aria-label="Company summary"]');
 const overflow = await phone.evaluate(() => document.scrollingElement.scrollWidth - window.innerWidth);
 await expect(overflow <= 1, `no sideways scrolling on a phone (${overflow}px)`);
+await menu(phone, 'Team Members');
+await phone.locator('[data-testid="team-member-management"]').waitFor({ timeout: 15000 });
+await phone.waitForTimeout(800);
+const tmOverflow = await phone.evaluate(() => document.scrollingElement.scrollWidth - window.innerWidth);
+await expect(tmOverflow <= 1, `Team Members: no sideways page scrolling on a phone (${tmOverflow}px)`);
+await phone.screenshot({ path: `${OUT}/team-members-phone.png`, fullPage: true });
 await phone.screenshot({ path: `${OUT}/superadmin-phone.png`, fullPage: true });
 await phone.context().close();
 
@@ -184,6 +217,15 @@ await dh.goto(BASE + '/department-hub');
 await dh.waitForTimeout(1500);
 await expect(!(await dh.locator('section[aria-label="Company summary"]').count()), 'and /department-hub does not open the company dashboard for them');
 await dh.screenshot({ path: `${OUT}/department-head.png`, fullPage: true });
+await menu(dh, 'Team Members & Access');
+await dh.locator('[data-testid="team-member-management"]').waitFor({ timeout: 15000 });
+const dhTabs = (await dh.locator('[role="tablist"][aria-label="Team Member Management"] [role="tab"]').allInnerTexts()).map(t => t.trim());
+await expect(JSON.stringify(dhTabs) === JSON.stringify(['Add Team Member', 'Team Members']), 'Team Members: a Department Head has Add Team Member and Team Members, no Access Control', dhTabs);
+await expect((await dh.locator('[data-testid="tab-access"], [data-testid="access-employee"]').count()) === 0, 'and the Access Control page is not on the page at all');
+await dh.locator('#staff-panel-members tbody tr', { hasText: 'Rahul Mehta' }).first().waitFor({ timeout: 15000 }).catch(() => fail('the Department Head directory is empty'));
+const dhDir = await dh.locator('#staff-panel-members').innerText();
+await expect(!/acc\.member@amuwa\.com|acc\.head@amuwa\.com/.test(dhDir), 'the Department Head directory lists their own department only (no Accounts people)');
+await dh.screenshot({ path: `${OUT}/team-members-department-head.png`, fullPage: true });
 await dh.context().close();
 
 // ------------------------------------------------------------------ 4. Team Lead: own team, real data
@@ -204,6 +246,16 @@ await tl.getByRole('tab', { name: 'With Accounts' }).click();
 await tl.waitForFunction(() => /Joshi Sweets/.test(document.querySelector('main').innerText), null, { timeout: 10000 }).catch(() => fail('the With Accounts tab does not list the customers waiting for Accounts'));
 await expect(/Patil Traders/.test(await text(tl)), 'the With Accounts tab lists the customers sent to Accounts');
 await tl.screenshot({ path: `${OUT}/team-lead.png`, fullPage: true });
+await menu(tl, 'Team Members & Access');
+await tl.locator('[data-testid="team-member-management"]').waitFor({ timeout: 15000 });
+const tlTabs = (await tl.locator('[role="tablist"][aria-label="Team Member Management"] [role="tab"]').allInnerTexts()).map(t => t.trim());
+await expect(JSON.stringify(tlTabs) === JSON.stringify(['Add Team Member', 'Team Members']), 'Team Members: a Team Lead has Add Team Member and Team Members, no Access Control', tlTabs);
+await tl.locator('#staff-panel-members tbody tr', { hasText: 'Rahul Mehta' }).first().waitFor({ timeout: 15000 }).catch(() => fail('the Team Lead directory is empty'));
+const tlDir = await tl.locator('#staff-panel-members').innerText();
+await expect(/Neha Shah/.test(tlDir) && !/Mohan Member|Dina Delivery|acc\.member@amuwa\.com/.test(tlDir), 'the Team Lead directory lists their own team only', tlDir.slice(0, 400));
+const tlRoles = await tl.locator('#staff-panel-add #staff-role option').allInnerTexts();
+await expect(tlRoles.length > 0 && tlRoles.every(o => !/Department Head|Team Lead/.test(o)), 'a Team Lead can only create Team Members', tlRoles);
+await tl.screenshot({ path: `${OUT}/team-members-team-lead.png`, fullPage: true });
 await tl.context().close();
 
 // ------------------------------------------------------------------ 5. a Team Member cannot reach any of it
