@@ -1,19 +1,21 @@
 ---
 title: Amuwa AI CRM Glossary of Business and Technical Terms
-summary: Comprehensive definitions of business terms, system concepts, financial metrics, and architectural components used across Amuwa AI CRM.
+description: Comprehensive definitions of business terms, system concepts, financial metrics, and architectural components used across Amuwa AI CRM.
+order: 1
+group: Reference
 audience: internal
 roles:
   - Super Admin
   - Department Head
   - Team Lead
   - Team Member
+status: verified
+updated: 2026-10-27
 related:
   - /reference/status-dictionary
   - /reference/roles-and-permissions-matrix
   - /faq/general-crm-faq
 ---
-
-# Amuwa AI CRM Glossary of Business and Technical Terms
 
 This glossary provides authoritative definitions for core business concepts, financial indicators, and system terms used throughout Amuwa AI CRM.
 
@@ -52,7 +54,7 @@ A fulfillment workflow designed for creative and design solutions (such as Amuwa
 Prospects generated through digital marketing campaigns, website inquiry forms, or external webhooks that have not yet been claimed by or assigned to an individual salesperson.
 
 ### Outstanding Balance
-The remaining gross amount due on a customer's order ($ \text{Total Payable} - \text{Verified Payments} $).
+The remaining gross amount due on a customer's order: Total Payable minus Verified Payments.
 
 ### SAC Code (Service Accounting Code)
 A standardized 6-digit classification code (e.g., `998314` for IT & Software Services) mandated by Indian GST authorities for service taxation.

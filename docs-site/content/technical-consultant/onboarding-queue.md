@@ -2,15 +2,18 @@
 title: Navigating the Technical Consultant Dashboard and Onboarding Queue
 description: How Technical Consultants review incoming customers, filter review states, and manage consultation tasks.
 order: 10
+group: Technical Consultant
 roles: [Technical Consultant, Support Team Lead, Department Head]
 audience: internal
 status: verified
 sources: [docs/TECHNICAL_CONSULTANT.md, shared/contracts.ts, src/components/support/TechnicalSupportDashboard.tsx]
 related: [technical-consultant/verifying-checklist-items, technical-consultant/department-handover-tc]
-updated: 2026-10-19
+updated: 2026-10-27
 ---
 
 The Technical Consultant Dashboard is the central workspace for auditing onboarding files, authenticating business identities, configuring technical integrations (WABA, Meta, Webhooks), and provisioning customer credentials.
+
+![Technical Consultant Onboarding Workspace](shot:tc-onboarding-workspace.png "Technical Consultant Onboarding intake queue showing customer cards, checklist progress, and authorization actions")
 
 ## Before you start
 

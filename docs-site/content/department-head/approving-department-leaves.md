@@ -1,82 +1,74 @@
 ---
-title: How to Review and Approve Departmental Leave Requests
-summary: Step-by-step instructions for Department Heads to review, approve, or reject first-stage leave applications submitted by departmental team members and team leads.
+title: Reviewing Leave Requests and Departmental Service Add-Ons
+description: Approve or reject first-stage staff leave applications in the Leave Request tab and review customer service subscriptions and add-on requests in Client Services.
+order: 3
+group: Team Management
+roles: [Department Head, HR Manager, Team Lead, Team Member]
 audience: internal
-roles:
-  - Department Head
-  - HR Manager
-  - Team Lead
-  - Team Member
-related:
-  - /department-head/department-head-overview
-  - /shared/requesting-leave
-  - /hr/leave-approval-hr
+status: verified
+sources: [src/components/Workspaces/DepartmentHeadDashboard.tsx, src/components/leave/LeaveWorkspace.tsx, src/components/Workspaces/ClientServicesPanel.tsx]
+related: [department-head/department-head-overview, shared/requesting-leave, hr/leave-approval-hr]
+updated: 2026-10-27
 ---
 
-# How to Review and Approve Departmental Leave Requests
+Department Heads govern both internal squad availability and active customer service portfolios. From the sidebar of `DepartmentHeadDashboard.tsx`, you use **Leave Request** to perform first-stage operational reviews on employee time-off applications and **Client Services** to supervise active service deliveries and customer add-on requests.
 
-Amuwa AI CRM enforces a structured, two-tier approval workflow for employee leave requests. Before any leave is finalized by Human Resources, the applicant's **Department Head** must conduct a first-stage operational review to ensure adequate coverage and project continuity.
+## Before you start
 
----
+:::prereq
+- You must be signed in as an authorized **Department Head**.
+- Staff leave applications must be submitted by a Team Lead or Team Member in your department and carry the status `PENDING_DEPARTMENT_HEAD`.
+:::
 
-## Two-Tier Leave Approval Architecture
+## Two-tier leave approval workflow
 
-```mermaid
-graph LR
-    Employee["Employee Submits Leave Request"] --> DHReview["Stage 1: Department Head Review"]
-    DHReview -->|Rejected| DHReject["REJECTED_BY_DEPARTMENT_HEAD"]
-    DHReview -->|Approved| HRReview["Stage 2: HR Final Signoff"]
-    HRReview -->|Rejected| HRReject["REJECTED_BY_HR"]
-    HRReview -->|Approved| HRApproved["APPROVED: Calendar and Attendance Updated"]
+```flow
+Employee Submits Leave Request | Team Member / Team Lead | Leave Request tab -> PENDING_DEPARTMENT_HEAD
+Stage 1 Operational Review | Department Head | Checks squad coverage and delivery deadlines
+-> Operational conflict | Reject with mandatory reason -> REJECTED_BY_DEPARTMENT_HEAD
+Stage 2 Final HR Signoff | HR Manager | Advances to PENDING_HR -> APPROVED (attendance synced)
 ```
 
----
+## Steps: Approving or rejecting departmental leave requests
 
-## Prerequisites
+1. In the **Department Head Dashboard** sidebar, click **Leave Request**.
+2. Locate the **Department Leave Requests** queue showing applications submitted by your Team Leads and Team Members. Requests awaiting your decision display the **Pending Department Head Approval** (`PENDING_DEPARTMENT_HEAD`) badge.
+3. Click an application row to review:
+   - **Employee Name & Role**: The staff member requesting leave and their squad assignment.
+   - **Leave Type**: `CASUAL`, `SICK`, `EARNED`, `UNPAID`, or `EMERGENCY`.
+   - **Start Date & End Date**: Requested dates and total day count.
+   - **Reason**: The employee's submitted explanation.
+4. Verify team coverage in **Teams & People** and upcoming deadlines in **Work Tasks** and **Handovers**.
+5. To approve the request:
+   - Click **Approve**, add an optional operational note (for example, who is covering active accounts), and confirm.
+   - The status updates to `PENDING_HR` and routes automatically to the HR Department for final approval.
+6. To reject the request:
+   - Click **Reject**, enter a mandatory explanation describing the scheduling conflict, and confirm.
+   - The status transitions to `REJECTED_BY_DEPARTMENT_HEAD` and notifies the employee immediately.
 
-- You must be logged in as an authorized **Department Head**.
-- The leave request must have been submitted by a team member or team lead within your assigned department.
-- The request must currently be in status **Pending Department Head Approval** (`PENDING_DEPARTMENT_HEAD`).
+## Reviewing active subscriptions and add-ons in Client Services
 
----
+The **Client Services** tab in `DepartmentHeadDashboard.tsx` gives Department Heads a consolidated view of every service line and add-on sold to customers in their division:
 
-## Step-by-Step Approval Procedure
+1. Click **Client Services** in the left sidebar.
+2. Filter or search by customer name, service code, or fulfillment status (`ACTIVE`, `PENDING_ONBOARDING`, `RENEWAL_DUE`, `ADDON_REQUESTED`).
+3. Inspect add-on service requests submitted by Technical Consultants, Support, or the Client Portal:
+   - Verify whether Accounts has confirmed the add-on payment (`VERIFIED`).
+   - Confirm that the assigned Team Lead and Team Member have picked up the add-on deliverable in their queue.
 
-### 1. Open the Leave Approval Center
+## What you should see
 
-1. In your dashboard, open the **Leave Management** tab.
-2. The queue displays all active leave applications submitted by members of your department.
-3. Requests requiring your immediate decision are highlighted with an amber badge: **Pending Department Head Approval**.
+:::result
+Approved leave requests move immediately from `PENDING_DEPARTMENT_HEAD` to `PENDING_HR`, while rejected applications record your note and notify the applicant in real time.
+:::
 
----
+## Good to know
 
-### 2. Inspect the Leave Application Details
+:::tip Personal Leave Submissions
+Department Heads can also submit their own leave applications from the **Leave Request** tab using the **Apply for Leave** form, which routes directly to HR and Super Admin oversight.
+:::
 
-1. Click on the leave request card to inspect the application details:
-   - **Applicant Name & Designation:** E.g., *"Ananya Verma - WhatsApp Integration Specialist"*.
-   - **Leave Type:** Casual Leave (CL), Sick Leave (SL), Earned Leave (EL), or Unpaid Leave.
-   - **Duration & Schedule:** Full day or Half day (Morning / Afternoon) and specific date range.
-   - **Applicant Reason:** Detailed explanation submitted by the employee.
-   - **Current Leave Balance:** Remaining annual quotas for the employee.
-   - **Current Team Coverage:** Number of team members actively on duty during the requested window.
+## If something goes wrong
 
----
-
-### 3. Approving the Request (Advancing to HR)
-
-1. If departmental staffing and ongoing project deliverables are safeguarded:
-2. Click the green **Approve Request** button.
-3. Enter an optional operational note (e.g., *"Coverage arranged with Suresh; project milestones not impacted"*).
-4. Click **Confirm Approval**.
-5. The request status updates to **Pending HR Approval** (`PENDING_HR`), transferring the application to the HR Department queue for final signoff.
-
----
-
-### 4. Rejecting the Request
-
-1. If the requested leave coincides with critical client deployment deadlines or creates severe staffing shortages:
-2. Click the red **Reject Request** button.
-3. Enter a mandatory rejection reason explaining the operational constraint (e.g., *"Cannot approve due to 2 concurrent launches scheduled for Wabastore retail client"*).
-4. Click **Confirm Rejection**.
-5. The request transitions immediately to **Rejected by Department Head** (`REJECTED_BY_DEPARTMENT_HEAD`).
-6. A notification containing your rejection reason is dispatched to the applicant.
+- **Leave request is not visible**: Confirm that the employee is assigned to your active department in **Teams & People** and that your **ScopeBar** is set to that department.
+- **Add-on service is locked**: Check whether payment verification is still pending in Accounts (see [Add-On Verification in Accounts](/accounts/addon-verification-accounts)).

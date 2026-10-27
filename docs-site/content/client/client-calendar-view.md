@@ -1,62 +1,55 @@
 ---
-title: How to Track Project Milestones on the Client Calendar
-summary: Client guide to viewing scheduled campaign launches, reviewing completed deliverables, and tracking meetings using the interactive portal calendar.
+title: Viewing Your Activity and Milestone Calendar
+description: Browse your monthly activity calendar, filter by category chips, and inspect work logged for you, service renewals, and invoice due dates.
+order: 9
+group: Support & Communication
+roles: [Client]
 audience: client
+status: verified
+sources: [src/client/Calendar.tsx]
 related:
   - /client/welcome-client-portal
   - /client/viewing-services-usage
+  - /client/invoices-and-receipts
   - /client/raising-support-tickets
+updated: 2026-10-27
 ---
 
-# How to Track Project Milestones on the Client Calendar
+The **Calendar** page gives you a clear, read-only monthly timeline of everything happening on your account — including work logged by your Amuwa team, service start and renewal dates, invoice due dates, support tickets, and document milestones.
 
-To keep your team informed of ongoing project progress without back-and-forth emails, the **Calendar** tab provides a real-time visual timeline of your active deliverables, campaign broadcasts, and scheduled strategy reviews.
+## Before you start
 
----
+:::prereq
+- You are signed in to your Client Dashboard at `/client/login`.
+:::
 
-## Navigating the Portal Calendar
+## Navigating months and filtering by category
 
-1. Sign in to your dashboard and click **Calendar** (CalendarDays icon) in the navigation sidebar.
-2. The calendar displays all scheduled activities across the current month.
-3. Use the top toolbar to switch between **Month View**, **Week View**, or **List Agenda**.
+1. Click **Calendar** in the left navigation menu.
+2. Use the previous and next month controls at the top to move between months, or jump back to the current month.
+3. Use the category filter chips to focus on specific types of timeline entries:
+   - **Everything**: Shows all activity and milestone items for the selected month.
+   - **Our work for you**: Updates, calls, campaigns, and deliverables recorded for your account by your Amuwa team.
+   - **Services**: Service activation dates and upcoming renewal dates.
+   - **Invoices**: Issued invoice dates and payment due dates.
+   - **Tickets**: Support ticket activity and resolutions.
+   - **Documents**: Document upload and verification milestones.
 
----
+## Inspecting a date on the calendar
 
-## Activity Classifications and Color Indicators
+1. Click any date cell on the calendar grid that shows one or more activity indicators.
+2. The day detail panel displays every event recorded on that date, including:
+   - The category badge (**Our work for you**, **Services**, **Invoices**, **Tickets**, or **Documents**).
+   - The title and summary of what was completed or what is coming up due.
+   - Direct context so you can check the related service in [My Services](/client/viewing-services-usage) or invoice in [Invoices & Payments](/client/invoices-and-receipts).
 
-```mermaid
-graph LR
-    Activities["Calendar Activities"] --> Deliverable["Blue: Completed Deliverables and Drafts"]
-    Activities --> Launch["Emerald: Campaign and Broadcast Launches"]
-    Activities --> Meeting["Purple: Strategy Reviews and Support Calls"]
-    Activities --> Milestone["Amber: Critical Deadlines and Verification Steps"]
-```
+:::note Need to request a call or schedule a change?
+The **Calendar** is an automatic timeline of your account activity and upcoming renewal or billing dates. If you would like to arrange a call or discuss an upcoming milestone with your team, send a quick message in [Chat with Team](/client/chatting-with-your-team) or open a request in [Support Tickets](/client/raising-support-tickets).
+:::
 
-| Activity Type | Badge Tone | Description |
-| :--- | :--- | :--- |
-| **Deliverable Completed** | Blue | Creative assets, approved templates, or chatbot scripts uploaded for your review. |
-| **Campaign Launch** | Emerald | Scheduled WhatsApp promotional broadcasts or marketing campaign live dates. |
-| **Scheduled Meeting** | Purple | Strategy consultation calls, onboarding kickoffs, or quarterly business reviews. |
-| **Project Milestone** | Amber | Critical technical milestones such as Meta Verification submission or DNS setup. |
+## What you should see
 
----
-
-## Inspecting Activity Details and Deliverables
-
-1. Click on any event badge on the calendar grid.
-2. The **Event Detail Modal** opens, providing:
-   - **Event Title & Time:** Exact date and scheduled execution time.
-   - **Full Description:** Detailed notes logged by your assigned delivery engineer or Relationship Manager.
-   - **Proof of Work / Attachments:** Direct links to preview delivered visual creatives, download documentation, or access meeting room video links.
-   - **Assigned Specialist:** The Amuwa team member responsible for this deliverable.
-
----
-
-## Requesting a Consultation Meeting
-
-Need to schedule a review session with your Relationship Manager?
-
-1. Click the **Schedule Review Call** button at the top-right of the calendar.
-2. Select your preferred date, time slot, and discussion topics.
-3. Click **Confirm Meeting Request**.
-4. The event will appear immediately on your calendar once confirmed by your manager.
+:::result
+- Selecting any category chip (**Everything**, **Our work for you**, **Services**, **Invoices**, **Tickets**, or **Documents**) immediately filters the monthly grid and agenda list to matching items.
+- Clicking any date highlights all scheduled renewals, invoice dates, and completed team updates for that day.
+:::

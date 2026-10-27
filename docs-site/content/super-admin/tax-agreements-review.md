@@ -1,63 +1,78 @@
 ---
-title: Tax Basis of an Agreement and Reconciling Older Agreements
-summary: How the agreed amount, GST, total payable and order balance fit together, how Accounts corrects whether an agreement includes GST, and how older agreements are reconciled.
+title: Tax & Agreements Review and Reconciling Customer Balances
+description: Audit EXCLUSIVE, INCLUSIVE, and NA customer agreements in the Tax & Agreements tab, verify confirmed payments and order balances, and correct agreement tax basis.
+order: 4
+group: Commercial Configuration
+roles: [Super Admin, Accounts Department]
 audience: internal
-roles:
-  - Super Admin
-  - Accounts Department
-related:
-  - /accounts/dynamic-invoices-overview
-  - /accounts/issuing-an-invoice
-  - /super-admin/company-business-oversight
+status: verified
+sources: [src/components/Workspaces/SuperAdminDashboard.tsx, src/components/accounts/InvoiceBuilder.tsx, server/accountsRoutes.ts]
+related: [accounts/dynamic-invoices-overview, accounts/issuing-an-invoice, super-admin/company-business-oversight]
+updated: 2026-10-27
 ---
 
-# Tax Basis of an Agreement and Reconciling Older Agreements
+When Sales moves a lead to **Send to Accounts**, they record the agreed commercial deal amount and its tax basis. Super Admins and Accounts staff use the **Tax & Agreements** tab in `SuperAdminDashboard.tsx` and the **Invoice Builder** to audit every customer agreement across `EXCLUSIVE`, `INCLUSIVE`, and `NA` (non-GST / not applicable) tax modes, reconcile verified payments, and inspect remaining order balances.
 
-Sales agrees one amount with the customer for all the services. That amount either **includes GST** or is **before GST** (GST is added on top). The CRM records which, so the invoice checks, the payments and the balances all use the same figures.
+## Before you start
+
+:::prereq
+- Sign in as a **Super Admin** at `/super-admin/dashboard` and select the **Tax & Agreements** tab in the left sidebar (or sign in as **Accounts** staff and open the customer in the **Invoice Builder**).
+:::
+
+## Key figures in the Tax & Agreements ledger
+
+Every customer agreement row in **Tax & Agreements** tracks five core financial figures:
 
 | Figure | Meaning |
 | --- | --- |
-| **Agreed amount** | What Sales agreed, as agreed. |
-| **Tax basis** | `INCLUSIVE` (the agreed amount already has GST in it) or `EXCLUSIVE` (GST is added on top). |
-| **Total payable** | What the customer pays in total, GST included. This is the figure every payment, balance and status uses. |
-| **Total confirmed payments** | Verified payments only. Pending and rejected payments are never counted. |
-| **Order balance** | Total payable minus total confirmed payments. |
+| **Agreed Amount** | The commercial deal amount recorded when Sales submitted the order to Accounts. |
+| **Tax Basis** | `EXCLUSIVE` (GST is added on top of the agreed amount), `INCLUSIVE` (the agreed amount already includes GST), or `NA` (non-taxable / GST not applicable). |
+| **Total Payable** | The total amount payable by the customer (including applicable GST). Every payment check, invoice cap, and balance calculation uses this figure. |
+| **Verified Payments** | Sum of payments confirmed (`status = 'VERIFIED'`) by Accounts. Pending or rejected payment entries are never counted toward verified collections. |
+| **Order Balance** | `Total Payable − Verified Payments`. Tracks the exact remaining receivable on the customer's agreement. |
 
-For example, an agreement of ₹1,20,000 before GST at 18% has a total payable of ₹1,41,600. Two invoices of ₹60,000 plus ₹10,800 GST (₹70,800 each) are both allowed. After a confirmed payment of ₹60,000 the order balance is ₹81,600. The first invoice has ₹10,800 left on it and the second ₹70,800; these invoice figures are kept apart from the order balance.
+For example, an agreement of ₹1,20,000 with tax basis `EXCLUSIVE` at 18% GST has a **Total Payable** of ₹1,41,600. Two split invoices of ₹60,000 base + ₹10,800 GST (₹70,800 each) are permitted. After a verified payment of ₹60,000, the **Order Balance** is ₹81,600.
 
-## How the tax basis is set
+## Agreement tax basis modes (`EXCLUSIVE`, `INCLUSIVE`, `NA`)
 
-- In **Send to Accounts**, Sales answers *Does this amount include GST?*. The dialog starts on **No, GST is added on top (amount excluding GST)**. Sales can change it to *Yes, GST is already included*.
-- Agreements made before this question existed have no recorded basis. They are **not** changed automatically: they stay `INCLUSIVE`, exactly as they always behaved.
+```flow
+Sales Submits Deal to Accounts | Sales Team Member | Selects EXCLUSIVE, INCLUSIVE, or NA tax basis
+Audit in Tax & Agreements Tab | Super Admin / Accounts | Inspects Agreed Amount, Total Payable, Verified Payments & Balance
+Issue Compliant Invoices | Accounts Department | Enforces ceiling so invoiced total never exceeds agreement
+-> Tax basis needs correction | Super Admin / Accounts | Update basis in Invoice Builder with mandatory audit reason
+```
 
-## What each basis means for invoices
+- **`EXCLUSIVE` (GST added on top)**: The pre-tax base amounts across all invoices for the agreed services cannot exceed the **Agreed Amount**. Applicable GST is calculated and added on top to form the **Total Payable**.
+- **`INCLUSIVE` (GST included in agreed amount)**: The grand totals (base + GST) across all invoices for the agreed services cannot exceed the **Agreed Amount**.
+- **`NA` (No GST / Not Applicable)**: Used for exempt or non-GST agreements where **Total Payable** equals the **Agreed Amount** with `0%` tax applied.
 
-- **Excluding GST:** the invoices of the agreed services together may not be more than the agreed amount **before GST**. The GST is added on top. The total payable is the GST of the invoices already issued, plus the agreed amount not yet invoiced with GST added (at the rate of the invoices already issued, or 18% before the first one). Until every part is invoiced, the GST on the part not yet invoiced is an estimate.
-- **Including GST:** the invoice totals (with GST) together may not be more than the agreed amount.
+## Steps: Auditing and correcting an agreement's tax basis
 
-In both cases real overbilling is still refused.
-
-## Correcting the basis of one agreement
-
-Accounts staff and Super Admins can correct an agreement from the **Invoice Builder**:
-
-1. In **Invoices**, start a new invoice for the customer. Above the service lines the builder shows what was agreed, whether it includes GST, what is already invoiced, the total payable and the order balance.
-2. Click **The agreed amount is before GST** (or **The agreed amount already includes GST** if it is currently before GST).
-3. Write the reason (at least 5 characters). It is recorded in the audit log.
-4. Click **Treat it as before GST** (or **Treat it as including GST**).
-5. The total payable and the balances update at once, and the amounts filled in on the lines are worked out again.
-
-The correction is refused when it would not be consistent with what already exists. For example, you cannot treat an agreement as before GST if the invoices already issued total more than the agreed amount before GST, and you cannot treat it as including GST if the amount is below what was already invoiced or received. Issued invoice PDFs are never changed or regenerated.
+1. In the **Super Admin Dashboard**, click **Tax & Agreements** in the left sidebar to review all customer agreements, filter by tax basis (`EXCLUSIVE`, `INCLUSIVE`, `NA`), and compare **Verified Payments** against **Order Balance**.
+2. To correct the tax basis on an individual customer agreement, open the customer in **Invoices > Invoice Builder**:
+   - Above the service line items, inspect the agreement summary bar showing **Agreed Amount**, current **Tax Basis**, **Already Invoiced**, **Total Payable**, and **Order Balance**.
+3. Click the tax basis switch action (**Treat as before GST (`EXCLUSIVE`)** or **Treat as including GST (`INCLUSIVE`)**).
+4. Enter a mandatory audit **Reason** (minimum 5 characters) explaining why the basis is being updated (for example, *"Per signed quotation #QT-204, ₹1,20,000 was quoted exclusive of 18% GST"*).
+5. Confirm the change. The CRM recalculates **Total Payable** and **Order Balance** immediately and writes an immutable entry to **Security & Audit Logs**.
 
 ## Reconciling older agreements
 
-The CRM can list the older agreements (no recorded basis) that already have invoices, so Accounts can decide each one. The list shows, for each customer, the total payable on record, the invoiced amount before GST and with GST, the number of invoices, the confirmed payments and a note. This list is currently available through the CRM's API (`GET /accounts/agreement-review`); there is no separate screen for it yet. Ask your administrator to run it.
+Older agreements created before explicit tax-basis selection was enforced can be reviewed in **Tax & Agreements** (or queried via `GET /accounts/agreement-review`):
 
-For each customer on the list:
+1. Check the customer's original quotation or payment confirmation record with Sales and Accounts.
+2. If the deal was quoted before GST, switch the agreement to `EXCLUSIVE` with an audit reason so remaining split invoices can add GST cleanly.
+3. If the deal was quoted all-inclusive, keep it as `INCLUSIVE`.
 
-1. Check the original quotation or agreement with Sales.
-2. If the amount was quoted before GST, open the customer in the Invoice Builder and correct the basis as above.
-3. If it was an all-inclusive price, leave it as it is.
+:::warning No Bulk Overrides
+Every tax-basis correction is validated against existing issued invoices and confirmed payments one customer at a time, requires a written justification reason, and is permanently recorded in the audit log. Already-issued invoice PDFs are never altered retroactively.
+:::
 
-> [!WARNING]
-> **No bulk changes.** Every correction is made one customer at a time, with a reason, and stays in the audit history.
+## What you should see
+
+:::result
+The **Tax & Agreements** table and the **Invoice Builder** header immediately reflect the updated **Total Payable** and **Order Balance**, preventing both under-billing and accidental over-invoicing.
+:::
+
+## If something goes wrong
+
+- **Tax basis correction is refused**: The CRM blocks a basis change if already-issued invoices would exceed the new ceiling. See [Invoice Generation Troubleshooting](/troubleshooting/invoice-generation-troubleshooting).

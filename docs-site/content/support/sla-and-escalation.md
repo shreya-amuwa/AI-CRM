@@ -1,75 +1,75 @@
 ---
-title: Ticket SLA Deadlines and Hierarchical Escalation
-description: Understanding response time limits, automatic overdue escalation, and manual handoffs to Team Leads.
-order: 30
+title: Ticket SLA Deadlines and 3-Tier Escalation
+description: Understanding response time limits, automatic overdue escalation, and manual ticket handoffs across Relationship Managers, Support Team Leads, and Department Heads.
+order: 3
+group: Support Operations
 roles: [Support Team Member, Support Team Lead, Department Head]
 audience: internal
 status: verified
-sources: [docs/TICKET_HIERARCHY.md, shared/contracts.ts]
+sources: [docs/TICKET_HIERARCHY.md, src/components/support-member/TicketsPage.tsx, shared/contracts.ts]
 related: [support/ticket-inbox-and-chat, department-head/configuring-ticket-slas]
-updated: 2026-10-19
+updated: 2026-10-27
 ---
 
-To ensure high service quality, Amuwa AI CRM enforces strict Service Level Agreements (SLA) with a 3-tier escalation hierarchy: Relationship Manager -> Team Lead -> Department Head.
+To guarantee responsive client care, Amuwa AI CRM enforces Service Level Agreement (SLA) response windows across a 3-tier escalation hierarchy inside **Client tickets**: **Level 1 (Relationship Manager) -> Level 2 (Support Team Lead) -> Level 3 (Department Head)**.
 
 ## Before you start
 
 :::prereq
-- Understand the role tiers and who handles escalations in your department.
+- Sign in to the Support Dashboard and open **Client tickets** (`Tickets`) from the sidebar (`Overview`, `My Leads`, `Team Leads`, `Import Customers`, `Client tickets`, `Client calendar`, `Client documents`, `My Tasks` / `Assigned Tasks`, `Leave Request`, `Chat`, `My Profile`).
 :::
 
 ## The 3-tier escalation hierarchy
 
 ```flow
-Level 1: Relationship Manager | Support Member | Assigned customer representative
--> Exceeds SLA Window | Automatic Escalation | Overdue timer fires
-Level 2: Team Lead | Team Lead | Pod leader takes over handling
--> Exceeds Second SLA | Automatic Escalation | Overdue timer fires
+Level 1: Relationship Manager | Support Team Member | Assigned automatically when client raises a ticket
+-> Exceeds Level 1 SLA Window | Automatic Escalation | Ticket escalates to Level 2
+Level 2: Support Team Lead | Support Team Lead | Pod leader alerted in Client tickets > Escalated tab
+-> Exceeds Level 2 SLA Window | Automatic Escalation | Ticket escalates to Level 3
 Level 3: Department Head | Department Head | Executive oversight & final resolution
 ```
 
-| Escalation Level | Responsible Person | How It Is Triggered |
+| Escalation Level | Responsible Role | How It Is Triggered |
 | --- | --- | --- |
-| **Level 1 (RM)** | Relationship Manager (Assigned Support Member) | Assigned automatically when the client opens a ticket. |
-| **Level 2 (TL)** | Support Team Lead | RM fails to reply within the SLA window, or manual escalation. |
-| **Level 3 (DH)** | Department Head | Team Lead fails to reply within the TL SLA window, or manual escalation. |
+| **Level 1 (RM)** | Relationship Manager (`Support Team Member`) | Assigned automatically when the client submits a new ticket. |
+| **Level 2 (TL)** | `Support Team Lead` | RM does not reply before the Level 1 SLA deadline expires, or RM clicks **Escalate**. |
+| **Level 3 (DH)** | `Department Head` | Team Lead does not reply before the Level 2 SLA deadline expires, or manual escalation. |
 
-## How the SLA clock works
+## How the SLA clock operates
 
-- **When the clock runs**: The SLA countdown runs exclusively while the customer is waiting for a company response (when a ticket is first raised, or when the client sends a new message).
-- **When the clock pauses**: The clock stops as soon as:
-  - Staff sends a reply to the customer.
-  - Ticket status is set to `WAITING_CUSTOMER`.
-  - The ticket is marked `RESOLVED`.
-- **Default SLA duration**: 24 hours per level (customizable by Department Heads).
+- **When the SLA clock runs**: The countdown timer runs whenever the customer is waiting for an official company response (when a new ticket is opened or after a client sends a follow-up message).
+- **When the SLA clock pauses**: The countdown stops immediately when:
+  - A staff member sends a public **Reply to Client** (internal notes do *not* stop the client SLA timer).
+  - The ticket status is changed to `WAITING_CUSTOMER`.
+  - The ticket status is marked `RESOLVED` or `CLOSED`.
+- **Configurable SLA windows**: Default response windows (typically 24 hours per tier) can be customized per department by the Department Head.
 
 ## Automatic vs manual escalation
 
-### 1. Automatic escalation (`escalate_overdue_tickets`)
-- The CRM runs an automated database job every 5 minutes.
-- When an open ticket exceeds the response deadline, it is automatically escalated to Level 2 (Team Lead).
-- If the Team Lead does not respond within their window, it escalates to Level 3 (Department Head).
-- The ticket card displays a red **Overdue** pill and the time elapsed.
+### 1. Automatic overdue escalation (`escalate_overdue_tickets`)
+- A scheduled background job evaluates open tickets every 5 minutes.
+- When an unanswered ticket passes its current tier's deadline, it automatically escalates to the next tier (`Level 2` Support Team Lead, then `Level 3` Department Head) and displays a red **Overdue** badge in **Client tickets**.
 
-### 2. Manual escalation
-If a technical issue requires senior assistance or management intervention:
-1. In the ticket details header, click **Escalate**.
-2. Select the target level (Team Lead or Department Head).
-3. Enter a mandatory **Escalation Reason** (e.g. *Requires Meta Partner Support escalation for business verification reject*).
-4. Click **Confirm Escalation**.
+### 2. Manual escalation by staff
+When a ticket requires senior technical intervention, billing authorization, or management escalation:
+1. Open the ticket in **Client tickets**.
+2. Click **Escalate** in the top-right ticket header.
+3. Choose the target tier (**Support Team Lead** or **Department Head**).
+4. Enter a clear **Escalation Reason** (for example, *Requires Meta Partner Portal escalation for WABA display name appeal*).
+5. Click **Confirm Escalation**.
 
 ## What you should see
 
 :::result
-An amber escalation banner appears across the top of the ticket. The Relationship Manager remains attached to the ticket, while the `escalated_to` field points to the Team Lead or Department Head.
+Escalated tickets display an amber escalation banner at the top of the conversation thread and appear under the **Escalated** tab in **Client tickets**. Both the new escalation owner and the original Relationship Manager receive real-time notifications.
 :::
 
 ## Good to know
 
-:::note Audit Trail Preservation
-Every manual or automated escalation is written to `support_ticket_escalations` and the system audit log, tracking exact timestamps and reasons.
+:::note Complete Escalation Audit Trail
+Every automatic and manual escalation is permanently logged in `support_ticket_escalations` and `audit_logs` with the timestamp, previous level, new level, and escalation reason.
 :::
 
 ## If something goes wrong
 
-If an escalated ticket needs to be reassigned, the Team Lead can click **Reassign** to distribute it to another active support member.
+- **Need to transfer an escalated ticket to another RM**: A **Support Team Lead** or **Department Head** can click **Reassign** in the ticket header to assign the ticket to an available Support Team Member.

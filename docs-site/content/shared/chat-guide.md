@@ -1,8 +1,9 @@
 ---
-title: Chat: Messages, Groups and Client Conversations
-summary: How employees use the Chat page: direct messages, groups, the chat with the customers you look after, files, unread counts and what is private.
+title: "Chat: Messages, Groups and Client Conversations"
+description: How employees use the Chat workspace for direct messages, department groups, customer threads, file attachments, and real-time client communications.
+order: 1
+group: Shared Features
 audience: internal
-order: 40
 roles:
   - Team Member
   - Team Lead
@@ -10,15 +11,17 @@ roles:
   - Accounts Department
   - Technical Consultant
   - Super Admin
+status: verified
+updated: 2026-10-27
 related:
   - /shared/notification-center-guide
   - /department-head/reviewing-client-conversations
   - /client/chatting-with-your-team
 ---
 
-# Chat: Messages, Groups and Client Conversations
+Chat is a full workspace in your dashboard navigation. It hosts your direct messages with colleagues, department channels, and customer communication threads.
 
-Chat is a page in your dashboard menu, not a pop-up. It has your messages with colleagues and, if you look after customers, the conversation each customer has with their team.
+![Shared Chat Workspace](shot:shared-chat-workspace.png "Team and Client Chat Workspace showing direct messages and customer threads")
 
 ## Before you start
 

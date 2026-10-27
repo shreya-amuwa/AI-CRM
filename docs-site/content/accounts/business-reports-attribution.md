@@ -1,85 +1,92 @@
 ---
-title: Sales and Support Business Reports and Attribution
-description: How corporate revenue is attributed between Sales and Support, salesperson reporting, and renewal tagging.
+title: Department Income by Division, Business Reports, and Revenue Attribution
+description: Understanding All Departments vs Income by Division, the immutable revenue_attributions model (ACQUISITION, SALES, CLIENT_DASHBOARD), and Wabatalk/D Talk mapping.
 order: 90
+group: Finance & Reports
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [docs/BUSINESS_REPORTING.md, shared/contracts.ts]
-related: [accounts/finance-and-expenses, accounts/payment-confirmation-queue]
-updated: 2026-10-19
+sources: [docs/BUSINESS_REPORTING.md, docs/DEPARTMENT_INCOME.md, shared/contracts.ts, src/components/reports/DepartmentIncome.tsx, src/components/reports/BusinessReports.tsx, supabase/migrations/20261114000100_revenue_attribution.sql]
+related: [accounts/finance-and-expenses, accounts/payment-confirmation-queue, super-admin/company-business-oversight]
+updated: 2026-10-27
 ---
 
-The Business Reports engine provides clear attribution of company revenue between the **Sales Division** and the **Support Division**, tracking individual employee contributions and contract renewals.
+Amuwa AI CRM tracks corporate revenue using an immutable, order-level **Revenue Attribution** engine (`revenue_attributions`). Every verified rupee is attributed both to a business **Department** and to the earning **Division** (**Sales** vs **Support**), surfaced across **Department Income**, **Income by Division**, and **Business Reports**.
 
 ## Before you start
 
 :::prereq
-- You must be signed in with an Accounts Department account or as Super Admin.
-- In the sidebar, navigate to **Accounts > Business Reports**.
+- Sign in with an **Accounts Staff**, **Department Head**, or **Super Admin** account.
+- Use **Accounts > Department Income** for business-unit cards, **Accounts > Income by Division** (`DepartmentIncome.tsx`) for division/source attribution, and **Accounts > Business Reports** (`BusinessReports.tsx`) for employee-level leaderboards.
 :::
 
-## Revenue attribution rules
+## Department Income vs Income by Division
 
-Every verified transaction in the CRM is classified by its commercial origin:
+The Accounts sidebar provides two complementary department revenue views:
 
-| Transaction Type | Source Record | Division Credited | Attributed Employee |
+1. **Department Income (`All Departments` view - `AccountsDepartmentIncome.tsx`)**:
+   - Displays visual summary cards for all revenue-generating departments (**Wabastore**, **Whatsbox**, **D Talk**, **Digitree**, **Mpillar**, **Design Studio**), comparing total verified collections against department expenses.
+2. **Income by Division (`DepartmentIncome.tsx`)**:
+   - Breaks down every department's revenue by **who earned it** (**Sales** vs **Support**), **taxable value vs GST**, and **why it was attributed** (`By source`), with filters for **All departments** or a single department and date presets (**This month**, **Last 30 days**, **All time**).
+
+## The `revenue_attributions` model
+
+Defined in `supabase/migrations/20261114000100_revenue_attribution.sql`, the CRM records attribution **once per order** (`SALE:<customer>`, `ADDON:<request>`, `INV:<invoice>`, `PLAN:<plan>`) when the order is created. Later changes to a customer's assigned owner, team, or department never rewrite historical revenue attribution.
+
+| Attribution Source | Order Type | Division & Department Credited | Rule & Special Handling |
 | --- | --- | --- | --- |
-| **Initial Customer Sale** | `customer_payments` / Service Invoices | **Sales** | The sales representative who submitted the deal for confirmation (`payment_requests.requested_by`). |
-| **Add-on Purchase** | `addon_payments` / Add-on Invoices | **Support** | The support member or consultant who submitted the add-on request. |
-| **Service Renewal** | Additional Invoices tagged as *Renewal* | **Support** | The support representative who requested or facilitated the renewal. |
-| **Monthly Subscription** | Paid `customer_plans` | **Support** | Credited to Support as subscription revenue. |
-| **Unclassified Invoice** | Additional Invoices without a tag | **Neither** | Highlighted under *Needs review* until Accounts classifies it. |
+| **`ACQUISITION`** | Initial customer sale (`SALE:<customer>`) | **100% to the acquiring division (`SALES` or `SUPPORT`)** and acquiring department (`customers.acquisition_department_id`) | Recorded when the lead/customer is created based on the creator's team division. For **D Talk**, leads and sales originated by its Support division are attributed to **Wabatalk**'s Support division where configured. |
+| **`DEFAULT_SALES` / `SALES`** | Pure Sales-led initial deal | **100% to the Sales division (`SALES`)** | Credits the Sales division and the salesperson who submitted the deal for confirmation (`payment_requests.requested_by`). |
+| **`SUPPORT_ADDON`** | Add-on request (`ADDON:<request>`) | **100% to the Support division (`SUPPORT`)** | Credits the Technical Consultant or Support member who submitted the add-on proposal. |
+| **`SUPPORT_INVOICE`** | Additional invoice tagged as Renewal or Add-on (`INV:<invoice>`) | **100% to the Support division (`SUPPORT`)** | Credited when Accounts tags an additional invoice as a **Renewal** or **Add-on** and links the responsible Support member. |
+| **`CLIENT_DASHBOARD` (`CLIENT_PORTAL`)** | Self-serve Client Portal purchase (`ADDON` or `PLAN`) | Governed by the Super Admin **Client Dashboard purchase attribution rule** | Attributed according to the active rule in `revenue_attribution_settings` (`SUPPORT` by default, `ACQUISITION` / `ORIGIN`, `SALES`, or split/custom policies configured by Super Admin). Changing the rule affects new orders only. |
+| **`MANUAL`** | Reconciled or corrected order | Chosen **Division** and **Department** | Corrected by Accounts or Super Admin with a mandatory audit reason (`reason`). |
 
 ```flow
-Verified Transaction | Payment Ledger | Real funds confirmed
-Evaluate Source | System | Checks deal origin & submission author
--> Initial Sale | Sales Division | Credited to submitting Salesperson
--> Add-on / Renewal | Support Division | Credited to submitting Support Member
--> Additional Invoice | Needs Classification | Accounts tags as Renewal or Add-on
-Update Reports | Business Engine | Updates salesperson and division KPIs
+Order Created | CRM Database |SALE, ADDON, INV, or PLAN order key generated
+Check Commercial Origin | attribution_rule() | Reads customer acquisition_division and order kind
+-> Acquired by Support / Referral | ACQUISITION (SUPPORT) | 100% credit to acquiring Support team (D Talk Support -> Wabatalk)
+-> Pure Sales Deal | ACQUISITION / DEFAULT_SALES (SALES) | 100% credit to Sales division & salesperson
+-> Add-on or Renewal | SUPPORT_ADDON / SUPPORT_INVOICE | 100% credit to Support division & consultant
+-> Self-Serve Portal Purchase | CLIENT_DASHBOARD | Follows Super Admin Client Dashboard attribution rule
+Lock Attribution Row | revenue_attributions | Immutable across future owner or department transfers
 ```
 
-## Report tabs and metrics
+## Reviewing Income by Division and reconciling orders
 
-Navigate to **Accounts > Business Reports**:
+1. Navigate to **Accounts > Income by Division**.
+2. Review the top KPI tiles:
+   - **Collected**: Total confirmed payments (GST included).
+   - **Taxable value collected**: Net revenue collected alongside the **GST** total.
+   - **Pending**: Recorded payments awaiting verification.
+   - **Outstanding**: Remaining receivable on billed orders.
+3. Inspect the division highlight cards:
+   - **Sales**: First sales of customers acquired by Sales.
+   - **Support**: Add-ons, renewals, monthly plans, and first sales of Support-acquired customers.
+   - **Add-ons attributed to Support**, **Support referrals**, **Bought in the Client Dashboard**, and **All sales of Support-acquired customers**.
+4. Scroll to the **Orders** and **Reconciliation (`needs_review`)** tables:
+   - If a legacy order or unclassified invoice is flagged as needing review, click **Correct attribution**, choose the rightful **Division** (`Sales` or `Support`) and **Department**, enter a mandatory audit **Reason**, and click **Save**.
 
-### 1. Overview Tab
-- **Company Totals**: Overall Collected revenue, Pending funds, Outstanding balances, and Refunded amounts.
-- **Department Breakdown**: Visual summary of collected revenue for each business unit, split between Sales and Support contributions.
+## Reviewing employee leaderboards in Business Reports
 
-### 2. Sales Tab
-- **Sales KPI Summary**: Total Sales revenue collected, billed amounts, and pending confirmations.
-- **Salesperson Performance Table**: Itemizes revenue generated by each sales team member, customer counts, and conversion values.
-- **Sales Transaction Ledger**: Chronological history of every sales transaction with the attributed salesperson identified.
+Navigate to **Accounts > Business Reports** for three executive tabs:
 
-### 3. Support Tab
-- **Support KPI Summary**: Breakdown of Add-on Revenue, Renewal Revenue, and Subscription Revenue.
-- **Support Member Performance Table**: Itemizes revenue generated by each support team member through renewals and upsells.
-- **Support Transaction Ledger**: Detailed history of all support-driven customer payments.
-
-## Classifying additional invoices
-
-When an existing customer is billed for a renewal or extra package via an additional invoice:
-1. Open the invoice in **Accounts > Invoices**.
-2. Locate the prompt: **What is this additional invoice?**
-3. Select **Renewal** or **Add-on**.
-4. Link the open invoice request submitted by the responsible Support member.
-5. Click **Save Tag**.
-6. The transaction is instantly credited to that support member in the Support report.
+- **Overview Tab**: Company-wide collected, pending, outstanding, and refunded totals broken down by department.
+- **Sales Tab**: Salesperson performance leaderboard (orders, billed value, verified collections) and chronological Sales transaction ledger.
+- **Support Tab**: Support member and Technical Consultant leaderboard tracking Add-on revenue, Renewal revenue, and Monthly Plan subscription revenue.
 
 ## What you should see
 
 :::result
-Every rupee collected is attributed accurately to the employee who drove the deal. Reports update in real time as payments are verified.
+Every verified payment is attributed to the exact division, department, and employee that earned it, with taxable value separated from GST and full audit history preserved.
 :::
 
 ## Good to know
 
-:::important Attribution Invariance
-Attribution is locked to the original deal author. If a customer is later transferred to another representative, earlier sales revenue remains permanently credited to the original author.
+:::important Attribution Immutability on Handover
+When a customer moves from Sales to Technical Consulting or is reassigned to a delivery department, `customers.acquisition_division`, `acquisition_department_id`, and `revenue_attributions` remain locked to the original acquiring team so historical revenue never shifts between departments.
 :::
 
 ## If something goes wrong
 
-If a transaction appears under the "Not recorded" employee row, it represents a legacy payment from before the attribution system was introduced.
+- If an additional invoice appears as unclassified in **Business Reports**, open **Accounts > Invoices**, locate the prompt **What is this additional invoice?**, tag it as **Renewal** or **Add-on**, and select the responsible Support team member.

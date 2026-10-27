@@ -1,61 +1,60 @@
 ---
-title: How to Explore and Request New Services
-summary: Client guide to browsing the Amuwa service catalog, exploring add-on features, and requesting new digital solutions directly from the portal.
+title: Exploring and Requesting Additional Services
+description: Browse the Amuwa service catalog, view service details, submit an Add service request, and manage or withdraw pending requests.
+order: 4
+group: Services & Plans
+roles: [Client]
 audience: client
+status: verified
+sources: [src/client/ExploreServices.tsx]
 related:
   - /client/viewing-services-usage
   - /client/managing-monthly-plans
-  - /client/raising-support-tickets
+  - /client/chatting-with-your-team
+  - /client/invoices-and-receipts
+updated: 2026-10-27
 ---
 
-# How to Explore and Request New Services
+As your business grows, you can browse additional services and digital solutions offered by Amuwa directly from the **Explore Services** page and send a request to your account team in a few clicks.
 
-As your enterprise expands, you may require additional capabilities-such as automated WhatsApp drip campaigns, custom interactive voice response (IVR) phone systems, e-commerce catalog integrations, or refreshed corporate branding.
+## Before you start
 
-The **Explore Services** section allows you to browse the complete suite of Amuwa Corporation solutions, inspect deliverable specifications, and submit requests directly to your account team.
+:::prereq
+- You are signed in to your Client Dashboard at `/client/login`.
+:::
 
----
+## Browsing the catalog and viewing details
 
-## Browsing the Solution Catalog
+1. Click **Explore Services** in the left navigation menu.
+2. Browse the available service cards or filter by category and search keywords.
+3. On any service card, click **View details** to open the service detail drawer, where you can read:
+   - What the service includes and how it helps your business.
+   - Standard deliverables and setup requirements.
+   - Indicative pricing and billing structure.
 
-1. Sign in to your portal and click **Explore Services** in the sidebar.
-2. Use the category pills at the top to filter available offerings:
-   - **All Solutions:** Comprehensive catalog view.
-   - **WhatsApp & Meta Solutions:** Official API, Green Tick Verification, Chatbot Builders, Broadcast Automation.
-   - **Branding & Design:** Logo Design, Social Media Kits, Brand Guidelines, Marketing Collateral.
-   - **AI & Cloud Engineering:** Custom API Webhooks, Voice Agents, CRM Automation.
-   - **Enterprise Telecom:** Virtual Calling Numbers, IVR Menus, SIP Trunking.
+## Requesting a new service
 
----
+1. On the service card or inside the **View details** drawer, click **Add service**.
+2. Enter any optional notes describing your goals, preferred timeline, or questions for your team.
+3. Confirm to submit the request.
 
-## Inspecting Solution Details
-
-Click on any solution card to open the **Service Specification Modal**:
-
-- **Core Capabilities:** Detailed breakdown of all included features and technical integrations.
-- **Estimated Turnaround Time:** Standard delivery window (e.g., 5–7 business days).
-- **Prerequisites:** What your team needs to provide (e.g., Meta Business Manager verification or vector logo files).
-- **Pricing & Billing Cadence:** One-time deployment fees or monthly retainer options.
-
----
-
-## Submitting a Service Request
-
-```mermaid
-graph TD
-    Browse["Explore Catalog and Select Solution"] --> ClickRequest["Click 'Request This Service'"]
-    ClickRequest --> FillForm["Specify Custom Requirements and Target Timeline"]
-    FillForm --> Submit["Submit Request to Relationship Manager"]
-    Submit --> Proposal["Receive Official Quotation and Invoice in Portal"]
-    Proposal --> Activation["Accounts Confirms and Delivery Commences"]
+```flow
+Open Explore Services | Client | Browse available Amuwa services
+Click View details | Client | Inspect service description, deliverables, and pricing
+Click Add service | Client | Add optional notes and submit request
+Track in Your recent requests | Client | Withdraw anytime while still pending, or wait for team follow-up
 ```
 
-### Step-by-Step Request Procedure
+## Managing Your recent requests
 
-1. In the solution modal, click the blue **Request This Service** button.
-2. In the request prompt:
-   - **Notes / Specific Requirements:** Describe your specific project objectives or target audiences.
-   - **Target Launch Date:** Specify your preferred completion deadline.
-   - **Preferred Contact Method:** Select WhatsApp, Phone Call, or Email.
-3. Click **Submit Request**.
-4. Your dedicated Relationship Manager will receive the request instantly, review your account specifications, and provide an itemized proposal along with an official quotation in your [Invoices](/client/invoices-and-receipts) section.
+Submitted service requests are listed in the **Your recent requests** section on the **Explore Services** page:
+
+- You can see the date requested, your notes, and the current status of each request.
+- If a request is still pending review and you no longer need it, click **Withdraw** next to the request to cancel it immediately.
+
+## What you should see
+
+:::result
+- After clicking **Add service**, your request is listed under **Your recent requests** and your account team is notified.
+- Your team will follow up via [Chat with Team](/client/chatting-with-your-team) or share an invoice in [Invoices & Payments](/client/invoices-and-receipts) once the scope is confirmed.
+:::

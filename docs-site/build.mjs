@@ -7,9 +7,10 @@
  *   node docs-site/build.mjs --out=dist/documentation   full site into another folder (the web build serves it at /documentation/)
  *   node docs-site/build.mjs --check            validate only (no output)
  *
- * Content lives in docs-site/content/<section>/<article>.md (see docs-site/README.md for the format).
+ * Content lives in docs-site/content/<section>/<article>.md (see docs-site/CONTENT_GUIDE.md for the format).
  * The build fails (exit 1) on broken links or anchors, missing images or alt text, missing titles, unknown
- * sections and anything that looks like a secret, so a bad edit cannot be published by accident.
+ * sections, unparsed GitHub alerts or raw LaTeX tokens, client-to-internal link leaks, and anything that looks
+ * like a secret, so a bad edit cannot be published by accident.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,11 +43,11 @@ function frontMatter(raw, file) {
     if (!kv) { if (line.trim()) err(file, `unreadable front matter line "${line}"`); continue; }
     key = kv[1];
     let v = kv[2].trim();
-    if (v.startsWith('[') && v.endsWith(']')) meta[key] = v.slice(1, -1).split(',').map(x => x.trim()).filter(Boolean);
+    if (v.startsWith('[') && v.endsWith(']')) meta[key] = v.slice(1, -1).split(',').map(x => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
     else if (v === '') meta[key] = [];
     else meta[key] = v.replace(/^["']|["']$/g, '');
   }
-  return { meta, body: raw.slice(m[0].length) };
+  return { meta, body: cleanRaw.slice(m[0].length) };
 }
 
 // ------------------------------------------------------------------ markdown
@@ -72,7 +73,7 @@ function createRenderer(ctx) {
   function inline(src) {
     const stash = [];
     let s = esc(src).replace(/`([^`]+)`/g, (_m, c) => { stash.push(`<code>${c}</code>`); return `\u0000${stash.length - 1}\u0000`; });
-    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_m, alt, url) => `<img src="${imgUrl(url, alt)}" alt="${alt}" loading="lazy">`);
+    s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s*(?:&quot;|")([^"&]*)(?:&quot;|"))?\)/g, (_m, alt, url, title) => `<img src="${imgUrl(url, alt)}" alt="${alt}"${title ? ` title="${title}"` : ''} loading="lazy">`);
     s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, text, url) => {
       if (/^https?:\/\//.test(url)) return `<a href="${url.replace(/&amp;/g, '&')}" target="_blank" rel="noopener noreferrer">${text}</a>`;
       links.push(url);
@@ -101,7 +102,7 @@ function createRenderer(ctx) {
       const line = lines[i];
       if (isBlank(line)) { i++; continue; }
       let m;
-      if ((m = /^```(\w*)\s*$/.exec(line))) {
+      if ((m = /^```([A-Za-z0-9_-]*)\s*$/.exec(line))) {
         const body = [];
         i++;
         while (i < lines.length && !/^```\s*$/.test(lines[i])) body.push(lines[i++]);
@@ -193,9 +194,10 @@ function createRenderer(ctx) {
       }
       const para = [];
       while (i < lines.length && !isBlank(lines[i]) && !/^(```|:::|#{1,4}\s|>\s?|\s*\|.*\|\s*$)/.test(lines[i]) && !(para.length && listStart(lines[i]))) para.push(lines[i++]);
+      if (!para.length) para.push(lines[i++]);
       const text = para.join(' ').trim();
-      const img = /^!\[([^\]]*)\]\(([^)\s]+)\)$/.exec(text);
-      if (img) out.push(`<figure>${inline(text)}<figcaption>${esc(img[1])}</figcaption></figure>`);
+      const img = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)$/.exec(text);
+      if (img) out.push(`<figure>${inline(text)}<figcaption>${esc(img[3] || img[1])}</figcaption></figure>`);
       else if (text) out.push(`<p>${inline(text)}</p>`);
     }
     return out.join('\n');
@@ -214,7 +216,7 @@ function createRenderer(ctx) {
     return `<ol class="flow">${steps.map((s, n) => `<li><span class="flow-n">${n + 1}</span><div class="flow-card"><div class="flow-title">${inline(s.cells[0])}</div>${s.cells[1] ? `<div class="flow-who">${inline(s.cells[1])}</div>` : ''}${s.cells[2] ? `<div class="flow-note">${inline(s.cells[2])}</div>` : ''}${s.branches.map(b => `<div class="flow-branch"><span>If not</span> ${inline(b[0])}${b[1] ? ` <em>${inline(b[1])}</em>` : ''}</div>`).join('')}</div></li>`).join('')}</ol>`;
   }
 
-  return { render: md => blocks(md.split('\n')), headings, links, images };
+  return { render: md => blocks(md.replace(/\r\n/g, '\n').split('\n')), headings, links, images };
 }
 
 // ------------------------------------------------------------------ load content
@@ -232,11 +234,14 @@ for (const file of walk(contentDir).filter(f => f.endsWith('.md'))) {
   if (!meta.title) err(rel, 'missing "title"');
   meta.description ||= meta.summary;
   if (!meta.description) err(rel, 'missing "description"');
+  if (!body || !body.trim()) err(rel, 'article body is empty');
   const sectionDef = SITE.sections.find(s => s.id === section);
   const audience = meta.audience || (sectionDef?.audience ?? 'internal');
+  if (!['internal', 'client', 'both'].includes(audience)) err(rel, `invalid audience "${audience}" (expected internal, client, or both)`);
   pages.push({ rel, meta, body, section, slug, isHome, audience, url: isHome ? '' : `${section}/${slug}`, order: Number(meta.order ?? 100) });
 }
 const inAudience = p => (AUDIENCE === 'client' ? p.audience === 'client' || p.audience === 'both' : true);
+const isClientAccessible = p => p.audience === 'client' || p.audience === 'both';
 const homePage = AUDIENCE === 'client' ? pages.find(p => p.meta.home === 'client') : pages.find(p => p.isHome);
 if (!homePage) err('content', AUDIENCE === 'client' ? 'no article with "home: client" for the client site' : 'content/index.md is missing');
 const siteSections = SITE.sections.filter(s => (AUDIENCE === 'client' ? s.audience === 'client' || s.audience === 'both' || pages.some(p => p.section === s.id && inAudience(p)) : true));
@@ -245,16 +250,25 @@ const articles = pages
   .sort((a, b) => SITE.sections.findIndex(s => s.id === a.section) - SITE.sections.findIndex(s => s.id === b.section) || a.order - b.order || String(a.meta.title).localeCompare(String(b.meta.title)));
 const urlSet = new Map([[ '', homePage ], ...articles.map(a => [a.url, a])]);
 if (homePage && !homePage.isHome) urlSet.set(homePage.url, homePage);
+const clientUrlSet = new Map(pages.filter(isClientAccessible).map(p => [p.url, p]));
 
 // ------------------------------------------------------------------ render pages
 const SECRET_PATTERNS = [/eyJ[A-Za-z0-9_-]{20,}/, /\bsk_(live|test)_/i, /service_role/i, /\bBearer\s+[A-Za-z0-9._-]{16,}/, /password\s*[:=]\s*["'`]?[^\s"'`<>*(),.]{6,}/i, /\bSUPABASE_[A-Z_]*KEY\b/, /AKIA[0-9A-Z]{16}/];
+const UNPARSED_CALLOUT_RE = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/im;
+const UNPARSED_LATEX_RE = /\$\$|\\text\{|\\Delta\b|\\sum\b|\\to\b|\\le\b|\\ge\b/;
 const rendered = [];
 const allPages = [homePage, ...articles].filter(Boolean);
+const seenTitles = new Map();
 for (const p of allPages) {
   const depth = p.url ? p.url.split('/').length : 0;
   const base = '../'.repeat(depth);
   const r = createRenderer({ file: p.rel, base });
   for (const re of SECRET_PATTERNS) if (re.test(p.body)) err(p.rel, `looks like a secret or credential (${re}); documentation must never contain real credentials`);
+  if (UNPARSED_CALLOUT_RE.test(p.body)) err(p.rel, 'contains unparsed GitHub alert blockquote (> [!NOTE] / [!WARNING]); use :::note, :::tip, :::important, or :::warning instead');
+  if (UNPARSED_LATEX_RE.test(p.body)) err(p.rel, 'contains unparsed LaTeX math ($$ or \\text{}); use plain text or Unicode symbols instead');
+  const titleKey = `${p.audience}:${slugify(p.meta.title)}`;
+  if (seenTitles.has(titleKey)) warnings.push(`${p.rel}: duplicate title "${p.meta.title}" (also in ${seenTitles.get(titleKey)})`);
+  else seenTitles.set(titleKey, p.rel);
   const html = r.render(p.body);
   const h1 = /^#\s+(.*)$/m.exec(p.body);
   if (h1 && slugify(h1[1]) !== slugify(p.meta.title)) warnings.push(`${p.rel}: first "# heading" differs from the title (the title from the front matter is used)`);
@@ -272,9 +286,14 @@ for (const x of rendered) {
     if (!target) { if (anchor && !anchorsOf.get(x.p.url)?.has(anchor)) err(x.p.rel, `link #${anchor} does not match a heading`); continue; }
     const key = target.replace(/\/$/, '');
     if (!urlSet.has(key)) { err(x.p.rel, `broken link "${l}"${AUDIENCE === 'client' ? ' (not part of the client documentation)' : ''}`); continue; }
+    if (x.p.audience === 'client' && !clientUrlSet.has(key)) err(x.p.rel, `client article links to internal-only page "${l}"`);
     if (anchor && !anchorsOf.get(key)?.has(anchor)) err(x.p.rel, `link "${l}": the page has no heading "#${anchor}"`);
   }
-  for (const rel of [].concat(x.p.meta.related || [])) if (!urlSet.has(rel.replace(/^\//, ''))) err(x.p.rel, `related article "${rel}" does not exist${AUDIENCE === 'client' ? ' in the client documentation' : ''}`);
+  for (const rel of [].concat(x.p.meta.related || [])) {
+    const key = rel.replace(/^\//, '').replace(/\/$/, '');
+    if (!urlSet.has(key)) err(x.p.rel, `related article "${rel}" does not exist${AUDIENCE === 'client' ? ' in the client documentation' : ''}`);
+    else if (x.p.audience === 'client' && !clientUrlSet.has(key)) err(x.p.rel, `client article references internal-only related article "${rel}"`);
+  }
 }
 if (errors.length) {
   console.error(`\nDocumentation build FAILED (${errors.length} problem${errors.length === 1 ? '' : 's'}):\n` + errors.map(e => ` - ${e}`).join('\n'));
@@ -286,7 +305,7 @@ if (CHECK_ONLY) { console.log(`Checked ${rendered.length} pages: OK${warnings.le
 const flatNav = articles.map(a => a.url);
 const sectionTitle = id => SITE.sections.find(s => s.id === id)?.title ?? id;
 function sidebar(current, base) {
-  const home = `<a class="nav-home${current === homePage.url ? ' active' : ''}" href="${base || './'}"${current === homePage.url ? ' aria-current="page"' : ''}>${esc(AUDIENCE === 'client' ? 'Welcome' : 'Welcome to Amuwa AI CRM')}</a>`;
+  const home = `<a class="nav-home${current === homePage.url ? ' active' : ''}" href="${base || './'}"${current === homePage.url ? ' aria-current="page"' : ''}>${esc(AUDIENCE === 'client' ? 'Welcome to Client Portal' : 'Welcome to Amuwa AI CRM')}</a>`;
   const groups = siteSections.map(s => {
     const list = articles.filter(a => a.section === s.id);
     if (!list.length) return '';
@@ -305,14 +324,16 @@ function page({ p, html, headings, base }) {
   const current = p.url;
   const isHome = p === homePage;
   const idx = flatNav.indexOf(current);
-  const prev = idx > 0 ? urlSet.get(flatNav[idx - 1]) : null;
-  const next = idx >= 0 && idx < flatNav.length - 1 ? urlSet.get(flatNav[idx + 1]) : null;
-  const crumbs = isHome ? '' : `<nav class="crumbs" aria-label="Breadcrumb"><a href="${base || './'}">Docs</a><span>/</span><span>${esc(sectionTitle(p.section))}</span><span>/</span><span aria-current="page">${esc(p.meta.title)}</span></nav>`;
+  const prev = idx > 0 ? urlSet.get(flatNav[idx - 1]) : isHome && flatNav.length ? null : idx === 0 && homePage ? homePage : null;
+  const next = isHome && flatNav.length ? urlSet.get(flatNav[0]) : idx >= 0 && idx < flatNav.length - 1 ? urlSet.get(flatNav[idx + 1]) : null;
+  const crumbs = isHome ? '' : `<nav class="crumbs" aria-label="Breadcrumb"><a href="${base || './'}">${AUDIENCE === 'client' ? 'Client Guide' : 'Docs'}</a><span>/</span><span>${esc(sectionTitle(p.section))}</span><span>/</span><span aria-current="page">${esc(p.meta.title)}</span></nav>`;
   const roles = [].concat(p.meta.roles || []);
-  const related = [].concat(p.meta.related || []).map(r => urlSet.get(r.replace(/^\//, ''))).filter(Boolean);
+  const related = [].concat(p.meta.related || []).map(r => urlSet.get(r.replace(/^\//, '').replace(/\/$/, ''))).filter(Boolean);
   const toc = headings.length > 1 ? `<nav class="toc" aria-label="On this page"><div class="toc-title">On this page</div><ul>${headings.map(h => `<li class="l${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ul></nav>` : '';
-  const mobileToc = headings.length > 1 ? `<details class="toc-mobile"><summary>On this page</summary><ul>${headings.map(h => `<li class="l${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ul></details>` : '';
-  const pager = isHome ? '' : `<nav class="pager" aria-label="Previous and next article">${prev ? `<a class="prev" href="${base}${prev.url}/"><small>Previous</small><span>${esc(prev.meta.title)}</span></a>` : '<span></span>'}${next ? `<a class="next" href="${base}${next.url}/"><small>Next</small><span>${esc(next.meta.title)}</span></a>` : '<span></span>'}</nav>`;
+  const mobileToc = headings.length > 1 ? `<details class="toc-mobile"><summary>On this page (${headings.length} sections)</summary><ul>${headings.map(h => `<li class="l${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ul></details>` : '';
+  const prevHref = prev ? (prev === homePage ? `${base || './'}` : `${base}${prev.url}/`) : '';
+  const nextHref = next ? (next === homePage ? `${base || './'}` : `${base}${next.url}/`) : '';
+  const pager = (prev || next) ? `<nav class="pager" aria-label="Previous and next article">${prev ? `<a class="prev" href="${prevHref}"><small>Previous</small><span>${esc(prev.meta.title)}</span></a>` : '<span></span>'}${next ? `<a class="next" href="${nextHref}"><small>Next</small><span>${esc(next.meta.title)}</span></a>` : '<span></span>'}</nav>` : '';
   const status = p.meta.status === 'needs-confirmation' ? `<aside class="callout gap"><div class="callout-title">${svg('gap')}<span>Being confirmed</span></div><div class="callout-body"><p>Some steps in this article have not been confirmed against the working application yet. Check with your administrator before relying on them.</p></div></aside>` : '';
   const title = isHome ? `${p.meta.title} - Amuwa AI CRM Documentation` : `${p.meta.title} - ${sectionTitle(p.section)} - Amuwa AI CRM Documentation`;
   return `<!doctype html>
@@ -329,13 +350,13 @@ function page({ p, html, headings, base }) {
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="${base}assets/docs.css">
 </head>
-<body data-base="${base}">
+<body data-base="${base}" data-audience="${AUDIENCE}">
 <div class="nav-progress" id="nav-progress" aria-hidden="true"></div>
 <a class="skip" href="#main">Skip to the article</a>
 <header class="top">
   <button class="icon-btn menu-btn" type="button" aria-label="Toggle navigation menu" aria-controls="sidebar" aria-expanded="false" title="Toggle navigation menu"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-  <a class="brand" href="${base || './'}"><img src="${base}assets/logo.png" alt="" width="28" height="28"><span>Amuwa AI CRM<small>${AUDIENCE === 'client' ? 'Client guide' : 'Documentation'}</small></span></a>
-  <button class="search-btn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search the documentation</span><kbd>/</kbd></button>
+  <a class="brand" href="${base || './'}"><img src="${base}assets/logo.png" alt="" width="28" height="28"><span>Amuwa AI CRM<small>${AUDIENCE === 'client' ? 'Client Help Center' : 'User Manual'}</small></span></a>
+  <button class="search-btn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span>Search ${AUDIENCE === 'client' ? 'client guides' : 'the documentation'}</span><kbd>/</kbd></button>
 </header>
 <div class="shell">
   <div class="scrim" hidden></div>
@@ -350,7 +371,7 @@ function page({ p, html, headings, base }) {
     <article class="article">
       ${crumbs}
       <header class="article-head">
-        ${isHome ? '' : `<p class="eyebrow">${esc(sectionTitle(p.section))}</p>`}
+        ${isHome ? `<p class="eyebrow">${AUDIENCE === 'client' ? 'Client Help Center' : 'Official User Manual'}</p>` : `<p class="eyebrow">${esc(sectionTitle(p.section))}${p.meta.group ? ` · ${esc(p.meta.group)}` : ''}</p>`}
         <h1>${esc(p.meta.title)}</h1>
         <p class="lead">${esc(p.meta.description || '')}</p>
         ${roles.length ? `<p class="roles"><span>For</span>${roles.map(r => `<b>${esc(r)}</b>`).join('')}</p>` : ''}
@@ -358,7 +379,7 @@ function page({ p, html, headings, base }) {
       ${mobileToc}
       ${status}
       <div class="prose">${html}</div>
-      ${related.length ? `<section class="related" aria-labelledby="related-h"><h2 id="related-h">Related articles</h2><ul>${related.map(r => `<li><a href="${base}${r.url}/"><b>${esc(r.meta.title)}</b><span>${esc(r.meta.description || '')}</span></a></li>`).join('')}</ul></section>` : ''}
+      ${related.length ? `<section class="related" aria-labelledby="related-h"><h2 id="related-h">Related guides</h2><ul>${related.map(r => `<li><a href="${r === homePage ? (base || './') : `${base}${r.url}/`}"><b>${esc(r.meta.title)}</b><span>${esc(r.meta.description || '')}</span></a></li>`).join('')}</ul></section>` : ''}
       ${pager}
       <footer class="foot">${p.meta.updated ? `Last reviewed ${esc(p.meta.updated)}. ` : ''}Spotted something that no longer matches the application? Tell your administrator so this page can be updated.</footer>
     </article>
@@ -367,9 +388,9 @@ function page({ p, html, headings, base }) {
 </div>
 <div class="search-modal" role="dialog" aria-modal="true" aria-label="Search the documentation" hidden>
   <div class="search-box">
-    <div class="search-input"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="Search, for example: record a payment" aria-label="Search the documentation" autocomplete="off"><button type="button" class="search-close" aria-label="Close search">Esc</button></div>
+    <div class="search-input"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" placeholder="${AUDIENCE === 'client' ? 'Search invoices, documents, tickets, plans...' : 'Search by task, role, status, or error message...'}" aria-label="Search the documentation" autocomplete="off"><button type="button" class="search-close" aria-label="Close search">Esc</button></div>
     <ul class="search-results" role="listbox"></ul>
-    <p class="search-hint">Type at least two letters. Use the arrow keys and Enter to open a result.</p>
+    <p class="search-hint">Type at least two letters. Use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Enter</kbd> to open a guide, or <kbd>Esc</kbd> to close.</p>
   </div>
 </div>
 <script src="${base}assets/search-index.js" defer></script>
@@ -395,16 +416,24 @@ for (const x of rendered) {
   const out = path.join(OUT, x.p.url, 'index.html');
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, page(x));
-  const url = x.p.url ? `${x.p.url}/` : '';
+  // If client homePage lives at a nested path (e.g. client/welcome-client-portal), also write root index.html
+  if (x.p === homePage && x.p.url) {
+    const rootRenderer = createRenderer({ file: x.p.rel, base: '' });
+    const rootHtml = rootRenderer.render(x.p.body);
+    fs.writeFileSync(path.join(OUT, 'index.html'), page({ ...x, html: rootHtml, base: '' }));
+  }
+  const url = x.p === homePage && !x.p.isHome ? `${x.p.url}/` : x.p.url ? `${x.p.url}/` : '';
+  const rolesText = [].concat(x.p.meta.roles || []).join(' ');
+  const groupText = x.p.meta.group || '';
   const parts = x.html.split(/(?=<h[23] id=")/);
-  index.push({ t: x.p.meta.title, s: x.p.section ? sectionTitle(x.p.section) : 'Home', u: url, h: '', a: '', x: `${x.p.meta.description || ''} ${textOf(parts[0] || '')}`.slice(0, 700) });
+  index.push({ t: x.p.meta.title, s: x.p.section ? sectionTitle(x.p.section) : 'Home', g: groupText, r: rolesText, u: url, h: '', a: '', x: `${x.p.meta.description || ''} ${rolesText} ${textOf(parts[0] || '')}`.slice(0, 750) });
   for (const part of parts.slice(1)) {
     const m = /^<h[23] id="([^"]+)">([\s\S]*?)<a class="anchor"/.exec(part);
-    if (m) index.push({ t: x.p.meta.title, s: x.p.section ? sectionTitle(x.p.section) : 'Home', u: url, h: textOf(m[2]), a: m[1], x: textOf(part).slice(0, 700) });
+    if (m) index.push({ t: x.p.meta.title, s: x.p.section ? sectionTitle(x.p.section) : 'Home', g: groupText, r: rolesText, u: url, h: textOf(m[2]), a: m[1], x: textOf(part).slice(0, 750) });
   }
 }
 fs.writeFileSync(path.join(OUT, 'assets', 'search-index.js'), `window.__DOCS_INDEX=${JSON.stringify(index)};`);
-fs.writeFileSync(path.join(OUT, '404.html'), page({ p: { url: '404', section: null, meta: { title: 'Page not found', description: 'This page does not exist. Use the search or the navigation to find what you need.' } }, html: `<p><a href="${'./'}">Go to the documentation home</a>.</p>`, headings: [], base: '/' }).replace(/href="\//g, 'href="/').replace(/(href|src)="\/assets/g, '$1="/assets'));
+fs.writeFileSync(path.join(OUT, '404.html'), page({ p: { url: '404', section: null, meta: { title: 'Page not found', description: 'This page does not exist. Use the search bar or the sidebar menu to find the guide you need.' } }, html: `<p>The page you requested could not be found. <a href="./">Return to the documentation home page</a> or press <kbd>/</kbd> to search all articles.</p>`, headings: [], base: './' }));
 
 // maintainers' inventory (internal build only)
 if (AUDIENCE === 'internal' && !args.has('out')) {

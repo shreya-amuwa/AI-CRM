@@ -1,19 +1,21 @@
 ---
 title: Amuwa AI CRM Release Notes and Changelog
-summary: Historical record of major architectural updates, feature deployments, database migrations, and workflow enhancements in Amuwa AI CRM.
+description: Historical record of major architectural updates, feature deployments, database migrations, and workflow enhancements in Amuwa AI CRM.
+order: 1
+group: Changelog
 audience: internal
 roles:
   - Super Admin
   - Department Head
   - Team Lead
   - Team Member
+status: verified
+updated: 2026-10-27
 related:
   - /maintaining/documentation-maintenance
-  - /getting-started/platform-overview
+  - /getting-started/welcome-to-amuwa-crm
   - /reference/status-dictionary
 ---
-
-# Amuwa AI CRM Release Notes and Changelog
 
 This changelog documents verified product releases, architectural updates, and workflow enhancements across the Amuwa AI CRM platform.
 
@@ -54,7 +56,7 @@ This changelog documents verified product releases, architectural updates, and w
   - Stage 3: *Meta Business Verification (2–3 weeks turnaround)*
   - Stage 4: *Meta Verification Completed & Portal Credentials*
 - **Add-on Services Engine:** Independent scoping and quoting of supplemental client requests without blocking primary onboarding delivery.
-- **Send to Department Head Handover:** Multi-tier departmental progression (`CONSULTANT` $\to$ `DEPARTMENT_HEAD` $\to$ `TEAM_LEAD` $\to$ `TEAM_MEMBER`).
+- **Send to Department Head Handover:** Multi-tier departmental progression (`CONSULTANT` -> `DEPARTMENT_HEAD` -> `TEAM_LEAD` -> `TEAM_MEMBER`).
 
 ---
 

@@ -1,90 +1,84 @@
 ---
-title: Staff and Role Administration Manual
-summary: Comprehensive guide for Super Admins to provision employee accounts, govern the role hierarchy, assign departmental teams, and manage credentials.
+title: Managing Team Members, Role Scopes, and Access Control Matrix
+description: Approve pending staff accounts, assign roles, divisions, sales sub-roles, Technical Consultant flags, and multi-department scopes in Team Members, and govern permissions in Access Control.
+order: 2
+group: Identity & Access
+roles: [Super Admin, HR Manager]
 audience: internal
-roles:
-  - Super Admin
-  - HR Manager
-related:
-  - /super-admin/department-hub-management
-  - /getting-started/roles-and-permissions
-  - /hr/hr-account-provisioning
+status: verified
+sources: [src/components/Workspaces/SuperAdminDashboard.tsx, src/components/Workspaces/AccessControlMatrix.tsx, src/types/crm.ts]
+related: [super-admin/company-business-oversight, department-head/shared-and-combined-scopes, hr/hr-account-provisioning]
+updated: 2026-10-27
 ---
 
-# Staff and Role Administration Manual
+Super Admins manage the entire corporate identity lifecycle through two dedicated tabs in `SuperAdminDashboard.tsx`: **Team Members** (for user provisioning, pending account approvals, division/sub-role assignments, and shared department scopes) and **Access Control** (`src/components/Workspaces/AccessControlMatrix.tsx`, for interactive role-permission governance).
 
-Super Admins hold centralized authority over the corporate workforce directory in Amuwa AI CRM. This includes creating authenticated employee accounts, mapping users to departments and operational squads, assigning hierarchical roles, and provisioning specialized privileges such as Technical Consultant designations.
+## Before you start
 
----
+:::prereq
+- You must be signed in as a **Super Admin** at `/super-admin/dashboard`.
+- Verify which department, division (`BOTH`, `SALES`, or `SUPPORT`), and operational squad the employee belongs to before activating their account.
+:::
 
-## Role Hierarchy and Privilege Boundaries
+## Staff provisioning and approval workflow
 
-The CRM implements a strict role inheritance hierarchy:
-
-```mermaid
-graph TD
-    SA["Super Admin: Global System Oversight"] --> DH["Department Head: Division Oversight"]
-    DH --> TL["Team Lead: Squad Leadership"]
-    TL --> TM["Team Member: Task Execution"]
-    DH -.-> TC["Technical Consultant: Verification and Setup"]
-    SA --> Accts["Accounts Staff: Invoicing and Ledgers"]
-    SA --> HR["HR Manager: Attendance and Roster"]
+```flow
+Create User or Review Pending Signup | Super Admin | Team Members tab > Pending Approval or Add Member
+Assign Primary Department & Role | Super Admin | SUPER_ADMIN, DEPARTMENT_HEAD, TEAM_HEAD, TEAM_MEMBER, etc.
+Configure Division & Sub-Role Flags | Super Admin | headDivision, salesSubRole, isTechnicalConsultant, additionalScopes
+Approve & Activate Profile | Super Admin | Grants workspace access and syncs permissions
+Govern Fine-Grained Capabilities | Super Admin | Access Control tab (AccessControlMatrix.tsx)
 ```
 
-| System Role | Scope | Creatable By | Permitted Assignments |
-| :--- | :--- | :--- | :--- |
-| **Super Admin** (`SUPER_ADMIN`) | Global enterprise access across all departments. | System deployment script / Database | All roles |
-| **Department Head** (`DEPARTMENT_HEAD`) | Complete oversight of assigned department division. | Super Admin | Team Leads, Team Members within dept |
-| **Team Lead** (`TEAM_HEAD`) | Squad management, lead distributions, and delivery assignments. | Super Admin, Department Head | Team Members within squad |
-| **Team Member** (`TEAM_MEMBER`) | Operational execution (Sales, Support, or Delivery). | Super Admin, Department Head, Team Lead | Task execution only |
-| **Technical Consultant** | Specialized Support Team Member with document authorization powers. | Super Admin, Department Head | Technical verification, client login provisioning |
-| **Accounts Staff** (`accounts-staff`) | Invoicing, payments ledger, agreements, financial reporting. | Super Admin | Accounting functions only |
-| **HR Staff** (`hr`) | Staff directory, biometric attendance, final leave approvals. | Super Admin | Human resources operations |
+## Managing users in the Team Members tab
 
----
+Open **Super Admin Dashboard > Team Members** to view all active employees, review accounts awaiting approval, or create new staff profiles:
 
-## Step-by-Step Procedure: Provisioning a New Employee
+### 1. Approving pending staff accounts
 
-### 1. Open the Staff Management Panel
+When a new employee registers or is staged by HR, their account appears under the **Pending Approval** filter in **Team Members**:
+1. Inspect the employee's name, work email, and requested department.
+2. Verify or adjust their **Role**, **Department**, **Division**, and **Sub-Role** attributes (detailed below).
+3. Click **Approve** to activate their CRM login, or **Reject** to deny access.
 
-1. In the Super Admin navigation, select **Staff Directory** (or open the **Staff Management** tab in any Department panel).
-2. Click the blue **Add Team Member** button.
+### 2. Configuring Role, Division, Sub-Role, and Scopes
 
----
+When creating or editing a user in **Team Members**, configure the following fields carefully:
 
-### 2. Enter Identity and Account Credentials
+| Field / Attribute | Allowed Values | Operational Effect |
+| --- | --- | --- |
+| **Role** (`role`) | `SUPER_ADMIN`, `DEPARTMENT_HEAD`, `TEAM_HEAD`, `TEAM_MEMBER`, `ACCOUNTS`, `HR` | Determines the primary workspace route and baseline authority level. |
+| **Primary Department** (`departmentId`) | `wabastore`, `whatsbox`, `dtalk`, `digitree`, `mpillar`, `designstudio`, `accounts`, `hr` | Sets the employee's home business unit. |
+| **Head Division** (`headDivision`) | `BOTH`, `SALES`, `SUPPORT` | For `DEPARTMENT_HEAD`: `SALES` routes to `SalesHeadDashboard.tsx` (`/sales-head/dashboard/:userId`); `SUPPORT` or `BOTH` routes to `DepartmentHeadDashboard.tsx`. |
+| **Sales Sub-Role** (`salesSubRole`) | `TELECALLER`, `BUSINESS_ASSOCIATE` | For Sales staff: `TELECALLER` routes to the Telecaller calling-sheet workspace; `BUSINESS_ASSOCIATE` routes to the full CRM lead/potential/onboarding pipeline. |
+| **Technical Consultant** (`isTechnicalConsultant`) | `true` / `false` (checkbox toggle) | Grants a Support member access to the Technical Consultant onboarding queue to verify documents, configure automations, and create client portal logins. |
+| **Additional Scopes** (`additionalScopes`) | Multi-select department pills (`user_department_scopes`) | Grants a shared **Department Head** access to 2+ departments (plus the `Combined (N)` roll-up view and top **ScopeBar**). |
 
-1. Fill in the mandatory identity fields:
-   - **Full Name:** Official employee name (e.g., *"Priya Nair"*).
-   - **Work Email:** Unique corporate email address used for sign-in (e.g., `priya.nair@amuwa.com`).
-   - **Initial Password:** Secure temporary password (minimum 8 characters).
-   - **Job Position / Designation:** Corporate title (e.g., *"Senior WhatsApp Solutions Engineer"*).
+## Using the interactive Access Control matrix (`AccessControlMatrix.tsx`)
 
----
+Click **Access Control** in the left sidebar of the **Super Admin Dashboard** to open the interactive permission matrix (`src/components/Workspaces/AccessControlMatrix.tsx`):
 
-### 3. Assign Department, Team, and Role
+1. **Role Columns vs. Capability Rows**:
+   - The matrix displays every CRM role across the columns (`SUPER_ADMIN`, `DEPARTMENT_HEAD`, `Sales Head`, `TEAM_HEAD`, `BUSINESS_ASSOCIATE`, `TELECALLER`, `Technical Consultant`, `Support Member`, `Accounts`, `HR`) against module capabilities (Lead Management, Calling Sheets, Invoicing & Payments, Technical Onboarding, Handover Routing, Ticket Escalations, Staff & Leave Governance).
+2. **Inspecting & Toggling Permissions**:
+   - Review which roles hold **Full Write**, **Scoped Read/Write**, **Read-Only Audit**, or **No Access** for each module.
+   - Toggle configurable capability switches to tighten or expand operational access for specific roles.
+3. **Audit Logging**:
+   - Every permission change saved in **Access Control** or **Team Members** is recorded in **Security & Audit Logs** with the administrator's identity and timestamp.
 
-1. **Select Role:** Choose from `DEPARTMENT_HEAD`, `TEAM_HEAD`, `TEAM_MEMBER`, `accounts-staff`, or `hr`.
-2. **Assign Department:** Select the target business entity (e.g., *Wabastore*).
-3. **Assign Team / Squad:** If assigning a Team Lead or Team Member, select the specific squad (e.g., *Enterprise Sales Squad 1*).
-4. **Technical Consultant Toggle:** If the member belongs to a Support team and will verify onboarding customer documents and WABA IDs, toggle the **Technical Consultant** checkbox (`technicalConsultant: true`).
+## What you should see
 
----
+:::result
+Updating a staff member's `role`, `headDivision`, `salesSubRole`, `isTechnicalConsultant` flag, or `additionalScopes` immediately updates their workspace routing and top **ScopeBar** pills on their next page load or session refresh.
+:::
 
-### 4. Save and Dispatch
+## Good to know
 
-1. Click **Create Employee Account**.
-2. The CRM executes atomic provisioning:
-   - Registers user in Supabase Authentication (`auth.users`).
-   - Creates corresponding employee record in `profiles`.
-   - Links departmental permissions and audit metadata.
-3. The member appears immediately in the active roster.
+:::tip Shared Department Heads Across Divisions
+To set up a single Sales Head overseeing all 5 revenue units (**Wabastore**, **Whatsbox**, **Dtalk**, **Digitree**, **Mpillar**), set their `role = 'DEPARTMENT_HEAD'`, `headDivision = 'SALES'`, choose one primary department, and select the remaining four departments under **Additional Scopes** (`user_department_scopes`).
+:::
 
----
+## If something goes wrong
 
-## Modifying Existing Staff Members
-
-- **Promote / Demote:** Super Admins can select an active staff member and adjust their role (e.g., promoting a senior Team Member to Team Lead).
-- **Toggle Technical Consultant:** Click **Set Technical Consultant** on a support member card to grant or revoke onboarding verification authority.
-- **Deactivate Account:** If an employee departs the company, click **Deactivate Account**. Deactivation instantly invalidates active authentication tokens and terminates concurrent sessions without deleting historical audit logs.
-- **Password Reset:** Super Admins can issue a temporary password override if an employee is locked out of their account.
+- **A Sales staff member sees the wrong dashboard**: Check their profile in **Team Members** and verify that `salesSubRole` is explicitly set to `TELECALLER` or `BUSINESS_ASSOCIATE` (or `headDivision = 'SALES'` for a Sales Department Head).
+- **A Department Head cannot see their second department**: Verify that the department is checked under **Additional Scopes** in **Team Members**.
