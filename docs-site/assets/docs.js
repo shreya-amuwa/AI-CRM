@@ -49,12 +49,15 @@
     if (closeBtn) closeBtn.addEventListener('click', function () { setDrawer(false); });
   }
 
-  // Normalize sidebar links so relative paths remain valid across SPA navigations
+  // Sidebar and header links are written relative to the page they were first loaded on ("getting-started/x/" on the home page, "../../x/" two levels down).
+  // The sidebar is kept across the instant page changes, so once the address has changed those links would resolve against the NEW address (a second click
+  // went to ".../platform-overview/getting-started/signing-in/", a page that does not exist, and on the live site that falls through to the app's
+  // dashboard). Make them absolute once, while the address is still the one they were written for.
   function normalizeSidebarLinks() {
-    $$('#sidebar a').forEach(function (a) {
-      if (!a.hasAttribute('data-target-url')) {
-        a.setAttribute('data-target-url', a.href);
-      }
+    $$('#sidebar a, header.top a').forEach(function (a) {
+      if (a.hasAttribute('data-target-url') || !a.getAttribute('href') || a.getAttribute('href').charAt(0) === '#') return;
+      a.setAttribute('data-target-url', a.href);
+      a.setAttribute('href', a.href);
     });
   }
   normalizeSidebarLinks();
