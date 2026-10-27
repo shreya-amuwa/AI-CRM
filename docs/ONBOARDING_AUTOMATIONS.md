@@ -45,6 +45,38 @@ The WhatsApp router (Automation Builder) needs a branch for `status = "Website R
 **The client login is the last step.** For these customers it can be created only after step 2, so the emails always
 arrive in order.
 
+## WhatsApp router: the exact status-to-template mapping (check this when a customer gets the wrong WhatsApp)
+
+The CRM never chooses the WhatsApp *template*: it posts one request per stage to the webhook and the **Automation Builder router** (Custom Webhook -> Basic Router -> one
+"Send Template Message" per route) chooses the template from the request. Each stage queues its e-mail and its WhatsApp job **together** (`advance_client_status`), so
+both always describe the same event. What the CRM sends for each stage (checked by `supabase/tests/onboarding_status_map.test.ts` and the API tests):
+
+| CRM stage (`stage_code`) | e-mail subject | WhatsApp `status` (router must match this exactly) | Template the route must send |
+|---|---|---|---|
+| `WEBSITE_PENDING` | Mini Website for Your Business | `Website Pending` | the "mini website" template |
+| `UNDER_REVIEW` | Documents Received – Under Review | `Under Review` | the "documents received / under review" template |
+| `WEBSITE_READY` | Your Mini Website is Ready | `Website Ready` | the "website ready" template (**no route exists for this one in the current builder: add it**) |
+| `META_VERIFICATION` | Meta Verification **In Progress** | `Meta Verification` | the **in progress / pending** template (about 2-3 weeks), **not** the completed one |
+| `COMPLETED` | Meta Verification **Completed** – Panel Access Details | `Status Completed` | the "completed" template, only when the client login is created |
+
+The CRM payload also carries `stage_code` (the fixed code in the first column) next to the unchanged keys (`name, email, phone, department, website, whatsapp_number, status, source,
+automation, event_key`). Existing routes keep working on `status`; new or repaired routes can match `stage_code` instead of the display text.
+
+**Why a customer can get "Meta Verification Completed" on WhatsApp while the e-mail says "In Progress".** The CRM side is verified correct: for the pending stage it posts
+`status = "Meta Verification"`, `stage_code = "META_VERIFICATION"` and never a completed status (tests above, including "a pending-verification event can never dispatch the completed
+wording"). A different template can therefore only come from the router configuration, which lives in the external builder and cannot be edited from this CRM. In the
+builder, open the route filters and check, one by one:
+1. The route labelled "Meta Verifcation" (spelling in the builder): its **condition** must be `status` **equals** `Meta Verification` (exact, same spelling), and its **Send Template Message** action must use the
+   in-progress template. A mistyped condition never matches; if a *neighbouring* route has a looser rule (for example "contains Verification" or "contains Meta"), it will also
+   catch this status and send the completed template. Make every condition **equals**, never **contains**.
+2. The route labelled "Status Completed": condition `status` equals `Status Completed` only.
+3. In the "Send Template Message" boxes (numbered 2, 5, 4 and 6 in the diagram), confirm the template chosen in each is the one in the last column above; a copied box that still points at the previous
+   template is the other usual cause.
+4. Add the missing `Website Ready` route.
+5. Test with **your own number**: post the sample below to the webhook (same URL as `WHATSAPP_WEBHOOK_URL`) once per status and confirm each arrives with the matching text.
+   `{"name":"Test","email":"me@example.com","phone":"91XXXXXXXXXX","department":"Wabastore","website":"","whatsapp_number":"91XXXXXXXXXX","status":"Meta Verification","stage_code":"META_VERIFICATION","source":"AI CRM","automation":"Client Onboarding","event_key":"test|1"}`
+Use a new `event_key` for each test, because the builder ignores a repeated one.
+
 ## How it works
 
 1. **The database decides when.** Triggers on `customer_onboarding`, `customer_onboarding_entries` (website) and

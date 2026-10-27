@@ -14,7 +14,7 @@ import { renderAccountsEmail, renderEmail } from './templates.js';
  * Runs right after a Technical Consultant / Accounts action (so messages go out
  * within seconds) and from POST /internal/automations/dispatch (retries, safety net).
  */
-interface ClaimedJob {
+export interface ClaimedJob {
   id: string;
   channel: 'EMAIL' | 'WHATSAPP';
   stage: ClientStage;
@@ -74,7 +74,7 @@ async function processAccountsMail(s: AutomationSettings, job: ClaimedJob): Prom
 }
 
 /** Decide and (in live mode) send one job. Never throws. */
-async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+export async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
   if (job.stage === 'ACCOUNTS_PAYMENT') return processAccountsMail(s, job);
   const c = job.customer;
   const name = c.name?.trim() || 'Customer';
@@ -132,7 +132,8 @@ async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outco
     status,
     source: s.whatsapp.source,
     automation: 'Client Onboarding',
-    event_key: ['crm', c.id, status.toLowerCase(), full].join('|')
+    event_key: ['crm', c.id, status.toLowerCase(), full].join('|'),
+    stage_code: job.stage
   });
   return fromResult(r, full, `${status} WhatsApp request accepted by webhook (${r.detail})`);
 }

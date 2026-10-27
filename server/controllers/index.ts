@@ -390,7 +390,11 @@ export const generatedInvoiceController = {
   agreementReview: (async ctx => ok(await svc(ctx).generatedInvoices.agreementReview())) as Handler,
   confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
-  file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler
+  file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
+  sendWhatsApp: (async ctx => ok(await svc(ctx).generatedInvoices.sendWhatsApp(ctx.params.id, ctx.req.body))) as Handler,
+  whatsAppHistory: (async ctx => ok(await svc(ctx).generatedInvoices.whatsAppHistory(ctx.params.id))) as Handler,
+  whatsAppSettings: (async ctx => ok(await svc(ctx).generatedInvoices.whatsAppSettings())) as Handler,
+  setWhatsAppSettings: (async ctx => ok(await svc(ctx).generatedInvoices.setWhatsAppSettings(ctx.req.body))) as Handler
 };
 
 export const departmentIncomeController = {

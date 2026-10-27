@@ -1,10 +1,11 @@
-import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, InvoiceStage, InvoiceStep, OrderSummary } from '../../shared/contracts.js';
+import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
 import { invoiceDate, rs, toPaise } from '../../shared/invoiceCalc.js';
-import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, uuidSchema } from '../../shared/validation.js';
+import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, invoiceWhatsAppRequestSchema, invoiceWhatsAppSettingsSchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { sendInvoiceEmail } from '../invoices/mailer.js';
 import { renderInvoicePdf, type InvoicePdfInput } from '../invoices/pdf.js';
+import { invoiceWhatsAppMode, runInvoiceWhatsApp, type InvoiceWhatsAppRunSummary } from '../invoices/whatsapp.js';
 import type { ClaimedStage, GeneratedInvoiceRepository } from '../repositories/GeneratedInvoiceRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
 
@@ -15,6 +16,8 @@ const FILE_URL_TTL_SECONDS = 120;
 export interface InvoiceWork {
   render: typeof renderInvoicePdf;
   mail: typeof sendInvoiceEmail;
+  /** Sends the WhatsApp dispatch that was just requested (or, without an id, whatever is due). Defaults to the real worker. */
+  whatsapp?: (dispatchId?: string) => Promise<InvoiceWhatsAppRunSummary>;
 }
 
 /** The stored location of a stage's PDF: one fixed object per invoice and stage (the database accepts no other). */
@@ -132,6 +135,63 @@ export class GeneratedInvoiceService {
     return { url, expiresInSeconds: FILE_URL_TTL_SECONDS, fileName: f.original_file_name };
   }
 
+  /**
+   * Send the paid invoice by WhatsApp (Accounts). The request is idempotent (one dispatch per invoice and number), the message is sent now when
+   * this server is allowed to, and the dispatch's state is reported as it stands: ACCEPTED is "the provider took it", not "delivered".
+   * A failed message never touches the invoice.
+   */
+  async sendWhatsApp(id: unknown, body: unknown): Promise<InvoiceWhatsAppResult> {
+    const invoiceId = parse(uuidSchema, id);
+    const input = parse(invoiceWhatsAppRequestSchema, body ?? {});
+    const req = await this.repo.whatsappRequest(invoiceId, 'MANUAL', input.resend);
+    return this.processWhatsApp(invoiceId, req);
+  }
+
+  whatsAppHistory(id: unknown): Promise<InvoiceWhatsAppDispatch[]> {
+    return this.repo.whatsappHistory(parse(uuidSchema, id));
+  }
+
+  whatsAppSettings(): Promise<InvoiceWhatsAppSettings> {
+    return this.repo.whatsappSettings();
+  }
+
+  async setWhatsAppSettings(body: unknown): Promise<InvoiceWhatsAppSettings> {
+    const b = parse(invoiceWhatsAppSettingsSchema, body);
+    return this.repo.setWhatsappSettings({ enabled: b.enabled, autoSend: b.autoSend, templateName: b.templateName?.trim() || null, templateLanguage: b.templateLanguage?.trim() || 'en', templateApproved: b.templateApproved });
+  }
+
+  private async processWhatsApp(invoiceId: string, req: { requested: boolean; replayed?: boolean; reason?: string; dispatch?: InvoiceWhatsAppDispatch }): Promise<InvoiceWhatsAppResult> {
+    const mode = invoiceWhatsAppMode();
+    if (!req.requested || !req.dispatch) {
+      return { requested: false, replayed: false, reason: req.reason ?? null, dispatch: null, mode, note: null };
+    }
+    let note: string | null = null;
+    // only a dispatch that is waiting is worked on; an accepted / delivered one (a repeated request) is just reported
+    if (req.dispatch.status === 'PENDING' || req.dispatch.status === 'RETRY') {
+      const run = await (this.work.whatsapp ?? ((dispatchId?: string) => runInvoiceWhatsApp(this.storage, { dispatchId })))(req.dispatch.id);
+      note = run.note ?? run.error ?? null;
+    }
+    const latest = (await this.repo.whatsappHistory(invoiceId)).find(d => d.id === req.dispatch!.id) ?? req.dispatch;
+    return { requested: true, replayed: Boolean(req.replayed), reason: null, dispatch: latest, mode, note };
+  }
+
+  /** After the paid invoice is ready: when "send automatically" is on, request and send it. Never fails the invoice run. */
+  private async autoWhatsApp(invoiceId: string): Promise<InvoiceStep[]> {
+    try {
+      const settings = await this.repo.whatsappSettings();
+      if (!settings.enabled || !settings.autoSend) return [];
+      const req = await this.repo.whatsappRequest(invoiceId, 'AUTO');
+      if (!req.requested) return [{ step: 'WHATSAPP', stage: 'PAID', status: 'NOT_SENT', message: req.reason ?? 'The WhatsApp message was not requested.' }];
+      const r = await this.processWhatsApp(invoiceId, req);
+      const status = r.dispatch?.status;
+      const done = status === 'ACCEPTED' || status === 'DELIVERED' || status === 'READ';
+      return [{ step: 'WHATSAPP', stage: 'PAID', status: done ? 'DONE' : status === 'FAILED' ? 'FAILED' : 'NOT_SENT', message: done ? null : r.dispatch?.detail ?? r.note ?? 'The WhatsApp message has not been sent yet.' }];
+    } catch (e) {
+      console.error('[invoice] automatic WhatsApp step failed', { invoice: invoiceId, message: (e as Error)?.message });
+      return [];
+    }
+  }
+
   /** One stage's remaining work. Never throws for a failed PDF or e-mail: those are reported as steps (and recorded) so the invoice stays. */
   async runStage(invoiceId: string, stage: InvoiceStage): Promise<InvoiceRunResult> {
     const claim = await this.repo.claim(invoiceId, stage);
@@ -206,6 +266,7 @@ export class GeneratedInvoiceService {
       } else {
         steps.push({ step: 'EMAIL', stage, status: 'DONE', message: 'The e-mail was already sent.' });
       }
+      if (stage === 'PAID') steps.push(...(await this.autoWhatsApp(invoiceId)));
       return { invoice: await this.repo.detail(invoiceId), steps };
     } finally {
       // a run that ended without recording its last step must not keep the stage locked for its full lease

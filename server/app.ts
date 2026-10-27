@@ -25,6 +25,8 @@ import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { bolifySender } from './automations/bolify.js';
 import { runAllSubscriptionMessages } from './automations/subscriptionMessages.js';
+import { applyDeliveryReport, normalizeProviderStatus, runInvoiceWhatsApp } from './invoices/whatsapp.js';
+import { StorageRepository } from './repositories/StorageRepository.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
@@ -102,6 +104,24 @@ app.use('/hr/email-automation/*', async (c, next) => {
   if (c.req.method === 'POST' && c.res.status < 300 && !relativePath(c).endsWith('/run')) await runHrAutomation().catch(() => undefined);
 });
 
+// The WhatsApp provider's delivery reports for the invoices sent through it: POST { reference, status: delivered | read | failed, detail? } with
+// "Authorization: Bearer <WABASTORE_STATUS_SECRET>" (16+ characters). A report only moves a message forward (accepted -> delivered -> read).
+app.post('/internal/whatsapp/status', async c => {
+  const secret = (process.env.WABASTORE_STATUS_SECRET || '').trim();
+  if (secret.length < 16) throw new AppError('SERVICE_UNAVAILABLE', 'Delivery reports are not configured.');
+  const given = Buffer.from((c.req.header('authorization') || '').replace(/^Bearer\s+/i, '') || c.req.header('x-webhook-secret') || '');
+  const want = Buffer.from(secret);
+  if (want.length !== given.length || !timingSafeEqual(want, given)) throw new AppError('UNAUTHENTICATED');
+  if (Number(c.req.header('content-length') || 0) > 20_000) throw new AppError('VALIDATION_ERROR', 'The report is too large.');
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const ref = String(body?.reference ?? body?.message_id ?? body?.id ?? '').trim();
+  const status = normalizeProviderStatus(body?.status);
+  if (!body || !ref || ref.length > 200) throw new AppError('VALIDATION_ERROR', 'Send the message reference and its status.');
+  if (!status) return c.json(ok({ matched: false, ignored: true }));
+  const detail = typeof body.detail === 'string' ? body.detail.slice(0, 300) : null;
+  return c.json(ok(await applyDeliveryReport(ref, status, detail)));
+});
+
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
 // (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
 app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
@@ -127,11 +147,13 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const subscriptionReminders = await runSubscriptionReminders({ sender: bolifySender() });
   // The same reminders by e-mail and WhatsApp (Wabastore): dry run by default; live only with an approved wording and a connected provider.
   const subscriptionMessages = await runAllSubscriptionMessages();
+  // Paid invoices by WhatsApp: the retries (and anything left waiting). A click sends its own message at once; this is the safety net.
+  const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, subscriptionMessages, performance, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

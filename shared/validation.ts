@@ -940,6 +940,16 @@ export const invoiceConfirmPaymentSchema = z
   })
   .strict();
 export const invoiceDeliverSchema = z.object({ stage: z.enum(INVOICE_STAGES) }).strict();
+export const invoiceWhatsAppRequestSchema = z.object({ resend: z.boolean().default(false) }).strict();
+export const invoiceWhatsAppSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    autoSend: z.boolean(),
+    templateName: z.string().trim().max(255).nullable().optional(),
+    templateLanguage: z.string().trim().max(10).optional(),
+    templateApproved: z.boolean()
+  })
+  .strict();
 export const invoiceFileQuerySchema = z.object({ stage: z.enum(INVOICE_STAGES), action: z.enum(['view', 'download']).default('view') });
 
 const pageQuery = {

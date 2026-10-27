@@ -160,6 +160,8 @@ export interface WhatsAppPayload {
   source: string;
   automation: 'Client Onboarding';
   event_key: string;
+  /** The stage's code (WEBSITE_PENDING, UNDER_REVIEW, META_VERIFICATION, COMPLETED, WEBSITE_READY): a fixed key the WhatsApp router can match exactly, instead of the display text in `status`. */
+  stage_code: string;
 }
 
 export async function postWhatsApp(s: AutomationSettings, payload: WhatsAppPayload): Promise<SendResult> {

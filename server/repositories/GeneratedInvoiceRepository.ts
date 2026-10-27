@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AgreementReviewItem, Invoice, InvoicePrefill, InvoiceStage, OrderSummary } from '../../shared/contracts.js';
+import type { AgreementReviewItem, Invoice, InvoicePrefill, InvoiceStage, InvoiceWhatsAppDispatch, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
 import type { GeneratedInvoiceIssueInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
@@ -85,5 +85,25 @@ export class GeneratedInvoiceRepository {
       storage_provider: 'SUPABASE' | 'R2'; storage_bucket: string; storage_path: string; original_file_name: string; mime_type: string;
     }[];
     return rows[0];
+  }
+
+  /** Ask for the paid invoice to be sent by WhatsApp (idempotent: the same invoice and number is one dispatch, however often this is called). */
+  async whatsappRequest(invoiceId: string, trigger: 'MANUAL' | 'AUTO', resend = false) {
+    return unwrap(await this.db.rpc('accounts_invoice_whatsapp_request', { p_invoice: invoiceId, p_stage: 'PAID', p_trigger: trigger, p_resend: resend })) as {
+      requested: boolean; replayed?: boolean; reason?: string; dispatch?: InvoiceWhatsAppDispatch;
+    };
+  }
+  async whatsappHistory(invoiceId: string): Promise<InvoiceWhatsAppDispatch[]> {
+    return unwrap(await this.db.rpc('accounts_invoice_whatsapp_history', { p_invoice: invoiceId })) as InvoiceWhatsAppDispatch[];
+  }
+  async whatsappSettings(): Promise<InvoiceWhatsAppSettings> {
+    return unwrap(await this.db.rpc('invoice_whatsapp_settings_get')) as InvoiceWhatsAppSettings;
+  }
+  async setWhatsappSettings(p: { enabled: boolean; autoSend: boolean; templateName: string | null; templateLanguage: string; templateApproved: boolean }): Promise<InvoiceWhatsAppSettings> {
+    return unwrap(
+      await this.db.rpc('set_invoice_whatsapp_settings', {
+        p_enabled: p.enabled, p_auto_send: p.autoSend, p_template_name: p.templateName, p_template_language: p.templateLanguage, p_template_approved: p.templateApproved
+      })
+    ) as InvoiceWhatsAppSettings;
   }
 }
