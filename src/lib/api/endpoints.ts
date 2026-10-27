@@ -91,6 +91,9 @@ import type {
   InvoiceRunResult,
   InvoiceStage,
   ClientDocumentUrl,
+  InvoiceWhatsAppDispatch,
+  InvoiceWhatsAppResult,
+  InvoiceWhatsAppSettings,
   AccountsPaymentCounts,
   ChecklistItem,
   ConsultantNote,
@@ -411,7 +414,13 @@ export const generatedInvoicesApi = {
   /** Retry what is left of a stage (a missing PDF or e-mail). */
   deliver: (id: string, stage: InvoiceStage) => api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/deliver`, { stage }),
   /** A short-lived link to a stored PDF (anyone who may read the invoice). */
-  fileUrl: (id: string, stage: InvoiceStage, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/invoices/${id}/pdf`, { stage, action })
+  fileUrl: (id: string, stage: InvoiceStage, action: 'view' | 'download') => api.get<ClientDocumentUrl>(`/invoices/${id}/pdf`, { stage, action }),
+  /** Send the paid invoice by WhatsApp (one dispatch per invoice and number; `resend` sends a failed one again). */
+  sendWhatsApp: (id: string, resend = false) => api.post<InvoiceWhatsAppResult>(`/accounts/generated-invoices/${id}/whatsapp`, { resend }),
+  whatsAppHistory: (id: string) => api.get<InvoiceWhatsAppDispatch[]>(`/accounts/generated-invoices/${id}/whatsapp`),
+  whatsAppSettings: () => api.get<InvoiceWhatsAppSettings>('/accounts/invoice-whatsapp/settings'),
+  setWhatsAppSettings: (body: { enabled: boolean; autoSend: boolean; templateName: string | null; templateLanguage: string; templateApproved: boolean }) =>
+    api.post<InvoiceWhatsAppSettings>('/accounts/invoice-whatsapp/settings', body)
 };
 
 export const financeApi = {

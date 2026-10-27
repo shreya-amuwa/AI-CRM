@@ -1536,6 +1536,12 @@ check(metaWa && metaWa.body.whatsapp_number === '919819900011' && metaWa.body.so
   'the WhatsApp webhook gets the same payload as from the Google Sheet', metaWa?.body);
 check((await jobsOf(autoB)).some(j => j.stage === 'META_VERIFICATION' && j.channel === 'EMAIL' && j.status === 'SKIPPED' && /not a test recipient/.test(j.detail)),
   'the skipped email says why');
+// the same event: the pending-verification stage queues its e-mail and WhatsApp together, and never the completed one
+check(metaWa.body.stage_code === 'META_VERIFICATION', 'the WhatsApp payload carries the fixed stage code of the pending-verification stage', metaWa?.body);
+const pendingJobs = (await jobsOf(autoB)).filter(j => j.stage === 'META_VERIFICATION');
+check(pendingJobs.length === 2 && pendingJobs.some(j => j.channel === 'EMAIL') && pendingJobs.some(j => j.channel === 'WHATSAPP'), 'the e-mail and the WhatsApp message are queued together for the same stage', pendingJobs);
+check(!(await jobsOf(autoB)).some(j => j.stage === 'COMPLETED') && !outbox.some(o => o.path === '/wa' && o.body.name === 'Dry Run' && /complet/i.test(o.body.status)),
+  'a pending-verification event queues and sends no "completed" message (e-mail or WhatsApp)');
 
 // Customer A: no website at arrival -> Website Pending; the website saved later, then the TC authorizes everything
 const autoA = await autoCustomer({ name: 'Auto <Client>', company: 'Auto Traders', email: 'auto.client@example.com', whatsapp: '+91 98199 00011', phone: '9819900022' }, null);
@@ -3560,6 +3566,146 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, {});
   check(r.status === 200 && smtpMail.length === mail0 + 1, 'paid-only: confirming again changes nothing and sends nothing', r.json);
 
+  // ---- the paid invoice by WhatsApp (Wabastore): switched off by default, idempotent, short-lived link, honest status ----
+  const waHits: { body: any; auth: string | undefined }[] = [];
+  let waStatus = 200;
+  let waSeq = 0;
+  const waMock = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', d => (raw += d));
+    req.on('end', () => {
+      waHits.push({ body: JSON.parse(raw), auth: req.headers.authorization });
+      res.writeHead(waStatus, { 'content-type': 'application/json' });
+      res.end(waStatus === 200 ? `{"id":"wamid.API${++waSeq}"}` : '{"error":"busy"}');
+    });
+  });
+  await new Promise<void>(rs => waMock.listen(0, '127.0.0.1', rs));
+  const waUrl = `http://127.0.0.1:${(waMock.address() as net.AddressInfo).port}/send`;
+  const waSend = (who: string, id: string, resend = false) => api(who, 'POST', `/accounts/generated-invoices/${id}/whatsapp`, { resend });
+  const waCount = async () => (await db.query(`select count(*)::int n from invoice_whatsapp_dispatches where invoice_id = $1`, [a.id])).rows[0].n as number;
+  delete process.env.AUTOMATION_MODE_INVOICE_WHATSAPP;
+  process.env.AUTOMATION_DISPATCH_SECRET = 'dispatch-secret-0123456789';
+  const invoicesBeforeWa = (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n;
+
+  r = await waSend('accm', a.id);
+  check(r.status === 409 && /switched off/.test(r.json.error.message), 'invoice WhatsApp: switched off by default, a request says so', r);
+  r = await waSend('a', a.id);
+  check(r.status === 403, 'invoice WhatsApp: a salesperson cannot send an invoice by WhatsApp', r);
+  r = await api('a', 'GET', `/accounts/generated-invoices/${a.id}/whatsapp`);
+  check(r.status === 403, 'invoice WhatsApp: nor read the history', r);
+  r = await api('cl2', 'POST', `/accounts/generated-invoices/${a.id}/whatsapp`, {});
+  check(r.status === 401 || r.status === 403, 'invoice WhatsApp: a client login cannot', r);
+  r = await api(null, 'POST', `/accounts/generated-invoices/${a.id}/whatsapp`, {});
+  check(r.status === 401, 'invoice WhatsApp: nor a visitor', r);
+  r = await api('accm', 'GET', '/accounts/invoice-whatsapp/settings');
+  check(r.status === 200 && r.json.data.enabled === false && r.json.data.canEdit === false && r.json.data.templateApproved === false, 'invoice WhatsApp: Accounts can read the settings (off, no template), but not edit', r.json);
+  r = await api('accm', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: false, templateName: 'invoice_paid', templateLanguage: 'en', templateApproved: true });
+  check(r.status === 403, 'invoice WhatsApp: an Accounts member cannot change the settings', r);
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: false, templateName: 'Bad Name', templateLanguage: 'en', templateApproved: false });
+  check(r.status === 422, 'invoice WhatsApp: a template name that is not a registered-style name is refused', r);
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: false, templateName: 'invoice_paid', templateLanguage: 'en', templateApproved: false, extra: 1 });
+  check(r.status === 422, 'invoice WhatsApp: unknown fields are refused', r);
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: false, templateName: 'invoice_paid', templateLanguage: 'en', templateApproved: false });
+  check(r.status === 200 && r.json.data.enabled === true && r.json.data.templateApproved === false && r.json.data.canEdit === true, 'invoice WhatsApp: the Super Admin switches it on with a template that is not approved yet', r.json);
+
+  // an unknown or malformed invoice (an unpaid one is refused by the database, see the SQL suite)
+  r = await waSend('accm', crypto.randomUUID());
+  check(r.status === 404, 'invoice WhatsApp: an unknown invoice is a 404', r);
+  r = await waSend('accm', 'not-a-uuid');
+  check(r.status === 422, 'invoice WhatsApp: a malformed id is refused', r);
+
+  // default (dry run): decided and recorded, nothing leaves
+  Object.assign(process.env, { WABASTORE_WEBHOOK_URL: waUrl, WABASTORE_API_KEY: 'wb-api-key-1' });
+  r = await waSend('accm', a.id);
+  check(r.status === 200 && r.json.data.mode === 'dry_run' && r.json.data.dispatch.status === 'DRY_RUN' && waHits.length === 0, 'invoice WhatsApp: in the default test mode the dispatch is recorded as DRY_RUN and nothing is sent', r.json);
+  check(!/9820000808/.test(JSON.stringify(r.json)) && /^\+91XXXXXX0808$/.test(r.json.data.dispatch.recipient), 'invoice WhatsApp: the answer shows the number masked only');
+
+  // live, template not approved: never sent
+  process.env.AUTOMATION_MODE_INVOICE_WHATSAPP = 'live';
+  r = await waSend('accm', a.id, true);
+  check(r.status === 200 && r.json.data.dispatch.status === 'PENDING' && waHits.length === 0, 'invoice WhatsApp: live, but with a template that is not approved, nothing is sent (it waits)', r.json);
+
+  // live with the approved template: sent once, to the right number, with the right invoice
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: false, templateName: 'invoice_paid', templateLanguage: 'en', templateApproved: true });
+  check(r.status === 200 && r.json.data.templateApproved === true, 'invoice WhatsApp: the template is marked approved');
+  r = await waSend('accm', a.id);
+  check(r.status === 200 && r.json.data.dispatch.status === 'ACCEPTED' && waHits.length === 1, 'invoice WhatsApp: live with the approved template: sent, and ACCEPTED (not "delivered")', r.json);
+  const wa1 = waHits[0];
+  check(wa1.auth === 'Bearer wb-api-key-1' && wa1.body.to === '+919820000808' && wa1.body.template === 'invoice_paid' && wa1.body.language === 'en' && wa1.body.reference.startsWith('invoice-whatsapp:'),
+    'invoice WhatsApp: the request has the key, the customer\'s number, the approved template and a reference', wa1.body);
+  const aInv = (await api('accm', 'GET', `/invoices/${a.id}`)).json.data;
+  check(wa1.body.variables.invoiceNumber === aInv.number && wa1.body.variables.customerName === 'Paid Only Co' && /70,800\.00/.test(wa1.body.variables.amount), 'invoice WhatsApp: the number and amount are the invoice\'s own (70,800.00)', wa1.body.variables);
+  const docRes = await fetch(wa1.body.document.url);
+  const docBytes = Buffer.from(await docRes.arrayBuffer());
+  check(docRes.status === 200 && docBytes.equals(fake.objects.get(key(a.id, 'paid'))!.body) && docBytes.subarray(0, 5).toString() === '%PDF-', 'invoice WhatsApp: the link serves exactly the stored PAID invoice PDF');
+  check(/X-Amz-Expires=900/i.test(wa1.body.document.url) && wa1.body.document.filename === `${aInv.number.replace(/[^A-Za-z0-9._-]+/g, '-')}-paid-invoice.pdf`, 'invoice WhatsApp: the link is short-lived (15 minutes) and the file is named after the invoice');
+  check(!JSON.stringify(r.json).includes('X-Amz') && !JSON.stringify(r.json).includes('http'), 'invoice WhatsApp: the answer to Accounts carries no link');
+  const stored = JSON.stringify((await db.query(`select id, invoice_id, status, recipient_masked, provider_ref, detail from invoice_whatsapp_dispatches`)).rows) + JSON.stringify((await db.query(`select * from invoice_whatsapp_events`)).rows);
+  check(!/X-Amz|amazonaws|http/.test(stored) && !stored.includes('9820000808'), 'invoice WhatsApp: no link and no full number is kept in the dispatch record or its history (only the internal duplicate key holds the number)');
+
+  // duplicates: a second click, a retried request, simultaneous requests, an automation event
+  r = await waSend('accm', a.id);
+  check(r.status === 200 && r.json.data.replayed === true && waHits.length === 1, 'invoice WhatsApp: a second click returns the same dispatch and sends nothing', r.json);
+  const burst = await Promise.all(Array.from({ length: 6 }, () => waSend('accm', a.id)));
+  check(burst.every(x => x.status === 200) && waHits.length === 1 && (await waCount()) === 1, 'invoice WhatsApp: six simultaneous clicks: still one message and one dispatch', burst.map(x => x.status));
+  r = await waSend('accm', a.id, true);
+  check(r.status === 409 && /accepted a moment ago/.test(r.json.error.message) && waHits.length === 1, 'invoice WhatsApp: "send again" right after acceptance is refused', r);
+  const dispatchCron = await dispatch('dispatch-secret-0123456789');
+  check(waHits.length === 1 && dispatchCron.json.data.invoiceWhatsApp.claimed === 0, 'invoice WhatsApp: the scheduler never sends an accepted one again', dispatchCron.json.data?.invoiceWhatsApp);
+
+  // delivery reports from the provider
+  const sendReport = (body: unknown, secret?: string) => fetch(`${base}/internal/whatsapp/status`, { method: 'POST', headers: { 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify(body) }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  r = await sendReport({ reference: 'wamid.API1', status: 'delivered' }, 'wb-status-secret-0123456789');
+  check(r.status === 503, 'invoice WhatsApp: delivery reports are refused until a secret is configured', r);
+  process.env.WABASTORE_STATUS_SECRET = 'wb-status-secret-0123456789';
+  r = await sendReport({ reference: 'wamid.API1', status: 'delivered' });
+  check(r.status === 401, 'invoice WhatsApp: a delivery report without the secret is refused', r);
+  r = await sendReport({ reference: 'wamid.API1', status: 'delivered' }, 'wrong-secret-0123456789xx');
+  check(r.status === 401, 'invoice WhatsApp: nor with a wrong one', r);
+  r = await sendReport({ reference: 'wamid.API1', status: 'sent' }, 'wb-status-secret-0123456789');
+  check(r.status === 200 && r.json.data.ignored === true, 'invoice WhatsApp: a "sent" report is not news');
+  r = await sendReport({ status: 'delivered' }, 'wb-status-secret-0123456789');
+  check(r.status === 422, 'invoice WhatsApp: a report without a reference is refused', r);
+  r = await sendReport({ reference: 'wamid.UNKNOWN', status: 'delivered' }, 'wb-status-secret-0123456789');
+  check(r.status === 200 && r.json.data.matched === false, 'invoice WhatsApp: a report for an unknown message changes nothing');
+  r = await api('accm', 'GET', `/accounts/generated-invoices/${a.id}/whatsapp`);
+  check(r.json.data[0].status === 'ACCEPTED' && r.json.data[0].deliveredAt === null, 'invoice WhatsApp: still only ACCEPTED: the provider has not reported delivery', r.json.data[0]);
+  r = await sendReport({ reference: 'wamid.API1', status: 'delivered' }, 'wb-status-secret-0123456789');
+  check(r.status === 200 && r.json.data.matched === true, 'invoice WhatsApp: the provider\'s delivery report is applied');
+  r = await sendReport({ reference: 'wamid.API1', status: 'read' }, 'wb-status-secret-0123456789');
+  r = await sendReport({ reference: 'wamid.API1', status: 'delivered' }, 'wb-status-secret-0123456789');
+  r = await api('accm', 'GET', `/accounts/generated-invoices/${a.id}/whatsapp`);
+  check(r.json.data.length === 1 && r.json.data[0].status === 'READ' && r.json.data[0].deliveredAt && r.json.data[0].events.some((e: any) => e.kind === 'ACCEPTED') && r.json.data[0].events.some((e: any) => e.kind === 'DELIVERED'),
+    'invoice WhatsApp: the history shows accepted, then delivered, then read; a late "delivered" did not downgrade it', r.json.data[0]);
+  r = await waSend('accm', a.id, true);
+  check(r.status === 409 && /already delivered/.test(r.json.error.message), 'invoice WhatsApp: a delivered invoice is not sent again to the same number', r);
+
+  // a provider that fails: the message is retried, the invoice is untouched, no invoice is created
+  await db.query(`update public.customers set phone = '9820000809' where id = $1`, [po]);
+  waStatus = 503;
+  r = await waSend('accm', a.id);
+  check(r.status === 200 && r.json.data.dispatch.status === 'RETRY' && r.json.data.dispatch.attempts === 1 && !/"error":"busy"/.test(JSON.stringify(r.json)), 'invoice WhatsApp: an unavailable provider (503) leaves a retry scheduled; its reply is not stored', r.json);
+  check((await waCount()) === 2, 'invoice WhatsApp: the corrected number is a separate dispatch (the first stays as it was)');
+  const aAfter = (await db.query(`select paid_pdf_status, lifecycle from generated_invoices where invoice_id = $1`, [a.id])).rows[0];
+  check(aAfter.paid_pdf_status === 'STORED' && aAfter.lifecycle === 'PAID' && (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n === invoicesBeforeWa, 'invoice WhatsApp: the failure changed nothing about the invoice and made no new one');
+  waStatus = 200;
+  await db.query(`update public.invoice_whatsapp_dispatches set next_attempt_at = now() - interval '1 minute' where status = 'RETRY'`);
+  const hitsBeforeRetry = waHits.length;
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.invoiceWhatsApp.accepted === 1 && waHits.length === hitsBeforeRetry + 1 && waHits.at(-1)!.body.to === '+919820000809', 'invoice WhatsApp: the scheduler retries it, and it is accepted once the provider is back', r.json.data.invoiceWhatsApp);
+  r = await dispatch('dispatch-secret-0123456789');
+  check(waHits.length === hitsBeforeRetry + 1, 'invoice WhatsApp: ... and only once');
+
+  // switching it off again stops everything
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: false, autoSend: true, templateName: 'invoice_paid', templateLanguage: 'en', templateApproved: true });
+  check(r.status === 200 && r.json.data.enabled === false && r.json.data.autoSend === false, 'invoice WhatsApp: switched off, automatic sending is off with it');
+  await db.query(`update public.customers set phone = '9820000808' where id = $1`, [po]);
+
+  // automatic sending, tested on the next paid invoice (below): on, live and approved
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: true, templateName: 'invoice_paid', templateLanguage: 'en', templateApproved: true });
+  check(r.status === 200 && r.json.data.autoSend === true, 'invoice WhatsApp: automatic sending is switched on');
+  const hitsBeforeAuto = waHits.length;
+
   // the second invoice needs new money
   r = await api('accm', 'POST', '/accounts/generated-invoices', inv(12, 60000));
   const b = r.json.data?.invoice;
@@ -3569,8 +3715,16 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', `/pipeline/customers/${po}/accounts/payments`, { type: 'PART', amount: 10000, method: 'UPI', reference: 'PO-API-2', verify: true });
   r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
   check(r.status === 200 && smtpMail.length === mail0 + 2 && fake.objects.has(key(b.id, 'paid')), 'paid-only: after the new payment the second paid invoice is sent', r.json);
+  check(r.json.data.steps.some((s: any) => s.step === 'WHATSAPP' && s.status === 'DONE') && waHits.length === hitsBeforeAuto + 1 && waHits.at(-1)!.body.variables.invoiceNumber === r.json.data.invoice.number && /67,200\.00/.test(waHits.at(-1)!.body.variables.amount),
+    'invoice WhatsApp: with automatic sending on, the second paid invoice is also sent by WhatsApp right after its e-mail (67,200.00)', r.json.data.steps);
+  r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
+  check(waHits.length === hitsBeforeAuto + 1 && (await db.query(`select count(*)::int n from invoice_whatsapp_dispatches where invoice_id = $1`, [b.id])).rows[0].n === 1, 'invoice WhatsApp: confirming again sends no second WhatsApp message (an automation event delivered twice)');
+  r = await api('accm', 'GET', `/invoices/${b.id}`);
   r = await api('accm', 'GET', `/invoices/${b.id}`);
   check(r.json.data.generated.paymentSummary.order.totalPayable === 138000 && r.json.data.generated.paymentSummary.order.confirmed === 70000 && r.json.data.generated.paymentSummary.order.balance === 68000, 'paid-only: the order shows 1,38,000 payable, 70,000 confirmed and 68,000 outstanding', r.json.data.generated.paymentSummary);
+  waMock.close();
+  await db.query(`update public.invoice_whatsapp_settings set enabled = false, auto_send = false, template_name = null, template_approved = false`);
+  for (const k of ['AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_MODE_INVOICE_WHATSAPP', 'WABASTORE_WEBHOOK_URL', 'WABASTORE_API_KEY', 'WABASTORE_STATUS_SECRET']) delete process.env[k];
   smtp.close();
   fake.server.close();
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_FROM', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
@@ -5335,6 +5489,37 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const gpId = await mk('shared.support@amuwa.com', 'Shared Support Head', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id, headDivision: 'SUPPORT' });
   tokens.set('gs', tokenFor(gsId));
   tokens.set('gp', tokenFor(gpId));
+  // Telecaller Sheets and Service Prices are Sales-only: the Support side is refused by the API (and by the database underneath)
+  const apiH = (who: string, method: string, path: string, body: unknown, hdr: Record<string, string>) => api(who, method, path, body, undefined, hdr);
+  const salesOnly = async (who: string, expectOk: boolean, label: string) => {
+    const hdr = scope('dtalk', who === 'gp' ? 'SUPPORT' : 'SALES');
+    const calls = [
+      await apiH(who, 'GET', '/ba/prices', undefined, hdr),
+      await apiH(who, 'GET', '/telecaller/lists', undefined, hdr),
+      await apiH(who, 'GET', '/telecaller/assignable', undefined, hdr)
+    ];
+    check(calls.every(c => (expectOk ? c.status === 200 : c.status === 403)), `sales-only: ${label}: price list, contact sheets and Telecallers ${expectOk ? 'open' : 'are refused (403)'}`, calls.map(c => c.status));
+  };
+  await salesOnly('gs', true, 'the Sales Department Head');
+  await salesOnly('gp', false, 'the Support Department Head');
+  r = await apiH('gp', 'POST', '/ba/prices/AI_CALLING', { unitLabel: 'one time', unitPrice: 1, gstRate: 18, maxDiscountPct: 0, isActive: true }, scope('dtalk', 'SUPPORT'));
+  check(r.status === 403, 'sales-only: a Support Department Head cannot change a price', r);
+  r = await apiH('gp', 'POST', '/telecaller/lists', { assigneeId: crypto.randomUUID(), fileName: 'x.xlsx', hash: 'a'.repeat(64), rows: [{ row: 2, name: 'A', phone: '9800000001' }], commit: false }, scope('dtalk', 'SUPPORT'));
+  check(r.status === 403, 'sales-only: nor check or assign a contact sheet', r);
+  for (const who of ['tl2', 'tm2', 'sm']) {
+    const c = [await api(who, 'GET', '/ba/prices'), await api(who, 'GET', '/telecaller/lists')];
+    check(c.every(x => x.status === 403), `sales-only: a Support ${who === 'tl2' ? 'Team Lead' : 'team member'} is refused both (403)`, c.map(x => x.status));
+  }
+  const direct = async (who: string, table: string) => {
+    const res = await fetch(`${process.env.GATEWAY_URL}/rest/v1/${table}?select=*&limit=5`, { headers: { apikey: process.env.SUPABASE_ANON_KEY!, authorization: `Bearer ${tokens.get(who)}` } });
+    return { status: res.status, rows: ((await res.json()) as unknown[]).length };
+  };
+  for (const who of ['gp', 'sm', 'tl2']) {
+    const x = [await direct(who, 'service_prices'), await direct(who, 'telecaller_contact_lists'), await direct(who, 'telecaller_contacts')];
+    check(x.every(v => v.rows === 0), `sales-only: ${who}: the tables themselves return nothing (direct database access)`, x);
+  }
+  check((await direct('ba1', 'service_prices')).rows > 0, 'sales-only: a Business Associate can still read the price table');
+  check((await db.query(`select count(*)::int n from telecaller_contact_lists`)).rows[0].n > 0 && (await db.query(`select count(*)::int n from service_prices`)).rows[0].n >= 0, 'sales-only: the stored sheets and prices are untouched');
   const owners: Record<string, string> = {};
   for (const slug of ['dtalk', 'mpillar', 'whatsbox']) {
     for (const side of ['Sales', 'Support']) {

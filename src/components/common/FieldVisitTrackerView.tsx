@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Navigation,
   MapPin,
@@ -105,8 +105,12 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Every change is saved to the database; failures are shown, not swallowed.
+  // Every change is saved to the database; failures are shown, not swallowed. One save at a time: a second click (a double tap on a phone) while one is
+  // running does nothing, so a visit is never started twice.
+  const savingNow = useRef(false);
   const run = async (action: () => Promise<unknown>) => {
+    if (savingNow.current) return false;
+    savingNow.current = true;
     setIsSaving(true);
     try {
       await action();
@@ -115,6 +119,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
       showToast(`Could not save: ${err instanceof Error ? err.message : 'unknown error'}`);
       return false;
     } finally {
+      savingNow.current = false;
       setIsSaving(false);
     }
   };
@@ -794,9 +799,10 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer shadow-xs"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Start Field Visit (GPS ON)
+                  {isSaving ? 'Starting…' : 'Start Field Visit (GPS ON)'}
                 </button>
               </div>
             </form>

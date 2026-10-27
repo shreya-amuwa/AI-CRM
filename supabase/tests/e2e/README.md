@@ -57,3 +57,13 @@ Performance cards and workspace, Reports (Team Lead / Team Member, CSV), Income,
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-sales-head.sh ./sales-head-screenshots
 ```
+
+## "Need help?" and the Sales-only pages
+
+`run-sales-only-need-help.sh` (own ports) signs in as twelve internal roles at desktop and phone width and checks "Need help?" is nowhere on the page (phone menu open),
+that the Client Dashboard keeps its help box ("Need a hand?" with **Raise a ticket**), that the Sales Department Head has and opens Telecaller Sheets and Service Prices,
+that a Support Department Head has neither in the menu, is not let in by a typed address, and is refused (403) by the API.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-sales-only-need-help.sh ./screenshots
+```

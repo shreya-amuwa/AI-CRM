@@ -7,7 +7,6 @@ import {
   Calendar as CalendarIcon,
   FileText,
   Settings,
-  HelpCircle,
   Bell,
   Briefcase,
   ChevronDown,
@@ -119,17 +118,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     <div className="min-h-screen bg-slate-50 text-slate-900 flex font-sans antialiased">
       <SidebarFrame
         ariaLabel="Team Member navigation"
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => alert('Support team contacted: support@amuwa.com')}
-              className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm text-slate-700 hover:bg-slate-50 text-left"
-            >
-              <HelpCircle className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.9} aria-hidden="true" /> Need help?
-            </button>
-          </>
-        }
       >
         <SidebarBrand title="Amuwa" subtitle="Corporation" />
         <nav className="flex flex-col gap-0.5" aria-label="Main">

@@ -164,25 +164,27 @@ export function wabastorePayload(msg: ReminderMessage): Record<string, unknown> 
 
 export type WabastoreFetch = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ status: number; text(): Promise<string> }>;
 
-export class WabastoreSender implements ReminderMessageSender {
+/** The HTTP call to Wabastore, shared by every WhatsApp message the CRM sends through it (reminders, invoices). The reply is never stored: it can echo the message. */
+export class WabastoreClient {
   constructor(
     private readonly cfg: WabastoreConfig,
     private readonly doFetch: WabastoreFetch = (url, init) => fetch(url, init)
   ) {}
 
-  async send(msg: ReminderMessage): Promise<MessageOutcome> {
+  /** `to` is +91 and the ten digit number; the staging allow-list is applied here so no caller can forget it. */
+  async post(to: string, body: Record<string, unknown>): Promise<MessageOutcome> {
     const url = this.cfg.webhookUrl;
     if (!url) return { outcome: 'FAILED', detail: 'WABASTORE_WEBHOOK_URL is not set (or is not an https address).' };
-    if (!/^\+91[6-9]\d{9}$/.test(msg.to)) return { outcome: 'FAILED', detail: 'The customer has no valid Indian mobile number, so nothing was sent.' };
+    if (!/^\+91[6-9]\d{9}$/.test(to)) return { outcome: 'FAILED', detail: 'The customer has no valid Indian mobile number, so nothing was sent.' };
     const tests = automationSettings().testRecipients;
-    if (tests && !tests.phones.has(ten(msg.to))) return { outcome: 'SKIPPED', detail: 'Not sent: this number is not in AUTOMATION_TEST_RECIPIENTS.' };
+    if (tests && !tests.phones.has(ten(to))) return { outcome: 'SKIPPED', detail: 'Not sent: this number is not in AUTOMATION_TEST_RECIPIENTS.' };
 
     const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
     if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs);
     try {
-      const res = await this.doFetch(url, { method: 'POST', headers, body: JSON.stringify(wabastorePayload(msg)), signal: ctl.signal });
+      const res = await this.doFetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctl.signal });
       const text = (await res.text().catch(() => '')).slice(0, 2000);
       if (res.status >= 200 && res.status < 300) {
         let ref: string | null = null;
@@ -206,6 +208,17 @@ export class WabastoreSender implements ReminderMessageSender {
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+export class WabastoreSender implements ReminderMessageSender {
+  private readonly client: WabastoreClient;
+  constructor(cfg: WabastoreConfig, doFetch: WabastoreFetch = (url, init) => fetch(url, init)) {
+    this.client = new WabastoreClient(cfg, doFetch);
+  }
+
+  send(msg: ReminderMessage): Promise<MessageOutcome> {
+    return this.client.post(msg.to, wabastorePayload(msg));
   }
 }
 

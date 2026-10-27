@@ -57,7 +57,6 @@ export const ConsultantLayout: React.FC<{
       user={{ name: userName, role: 'Technical Consultant' }}
       onSignOut={onSignOut}
       topActions={<LeaveCenter />}
-      showHelp
       wide
       flush={page === 'chat'}
     >

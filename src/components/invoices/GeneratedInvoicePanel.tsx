@@ -7,6 +7,7 @@ import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, notifyPipelineChan
 import { rupees } from './invoiceShared';
 import { toPaise } from '../../../shared/invoiceCalc';
 import { InvoiceBusinessCard } from './InvoiceBusinessCard';
+import { InvoiceWhatsAppCard } from './InvoiceWhatsAppCard';
 
 const METHOD_LABEL: Record<PaymentMethod, string> = { UPI: 'UPI', BANK_TRANSFER: 'Bank transfer', CASH: 'Cash', CARD: 'Card', CHEQUE: 'Cheque', OTHER: 'Other' };
 const stamp = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '-');
@@ -38,7 +39,8 @@ export const StepList: React.FC<{ steps: InvoiceStep[] }> = ({ steps }) => {
       ISSUE: 'Invoice saved',
       PAYMENT: 'Payment confirmed',
       PDF: s.stage === 'PAID' ? 'Paid invoice PDF created and stored' : 'Invoice PDF created and stored',
-      EMAIL: s.stage === 'PAID' ? 'Paid invoice e-mailed to the customer' : 'Invoice e-mailed to the customer'
+      EMAIL: s.stage === 'PAID' ? 'Paid invoice e-mailed to the customer' : 'Invoice e-mailed to the customer',
+      WHATSAPP: 'Paid invoice sent by WhatsApp'
     })[s.step];
   const tone = (s: InvoiceStep): string =>
     s.status === 'DONE' ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : s.status === 'FAILED' ? 'text-rose-800 bg-rose-50 border-rose-200' : 'text-amber-900 bg-amber-50 border-amber-200';
@@ -427,6 +429,7 @@ export const GeneratedInvoicePanel: React.FC<{ invoice: Invoice; canManage?: boo
       <div className={`grid gap-4 ${showUnpaid ? 'sm:grid-cols-2' : ''}`}>
         {showUnpaid && <StageCard invoice={invoice} stage="UNPAID" state={g.unpaid} canManage={canManage} onRun={run} />}
         <StageCard invoice={invoice} stage="PAID" state={g.paid} canManage={canManage && g.lifecycle === 'PAID'} onRun={run} />
+        {canManage && g.lifecycle === 'PAID' && g.paid.pdfStatus === 'STORED' && <InvoiceWhatsAppCard invoiceId={invoice.id} invoiceNumber={invoice.number} />}
       </div>
       {canManage && g.lifecycle === 'ISSUED' && (
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-emerald-50 border border-emerald-200">

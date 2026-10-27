@@ -1412,7 +1412,7 @@ export interface AgreementReviewItem {
   note: string;
 }
 
-export type InvoiceStepName = 'ISSUE' | 'PAYMENT' | 'PDF' | 'EMAIL';
+export type InvoiceStepName = 'ISSUE' | 'PAYMENT' | 'PDF' | 'EMAIL' | 'WHATSAPP';
 export interface InvoiceStep {
   step: InvoiceStepName;
   stage: InvoiceStage | null;
@@ -1424,6 +1424,53 @@ export interface InvoiceStep {
 export interface InvoiceRunResult {
   invoice: Invoice;
   steps: InvoiceStep[];
+}
+/** The paid invoice by WhatsApp. ACCEPTED means the provider took the request; only DELIVERED / READ (a report from the provider) mean it arrived. */
+export type InvoiceWhatsAppStatus = 'PENDING' | 'PROCESSING' | 'DRY_RUN' | 'ACCEPTED' | 'DELIVERED' | 'READ' | 'RETRY' | 'FAILED' | 'SKIPPED';
+export interface InvoiceWhatsAppEvent {
+  kind: string;
+  attempt: number | null;
+  code: number | null;
+  detail: string | null;
+  at: string;
+}
+export interface InvoiceWhatsAppDispatch {
+  id: string;
+  invoiceId: string;
+  stage: 'PAID';
+  /** The number, masked (+91XXXXXX1234). */
+  recipient: string;
+  status: InvoiceWhatsAppStatus;
+  attempts: number;
+  nextAttemptAt: string | null;
+  detail: string | null;
+  trigger: 'MANUAL' | 'AUTO';
+  requestedBy: string | null;
+  acceptedAt: string | null;
+  deliveredAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+  events: InvoiceWhatsAppEvent[];
+}
+export interface InvoiceWhatsAppSettings {
+  enabled: boolean;
+  autoSend: boolean;
+  templateName: string | null;
+  templateLanguage: string;
+  templateApproved: boolean;
+  updatedAt: string;
+  /** Only the Super Admin and the Accounts Department Head change these. */
+  canEdit: boolean;
+}
+export interface InvoiceWhatsAppResult {
+  /** false: nothing was requested (automatic request that cannot be made); `reason` says why. */
+  requested: boolean;
+  replayed: boolean;
+  reason: string | null;
+  dispatch: InvoiceWhatsAppDispatch | null;
+  /** What this server does with it now: off, dry_run (nothing is sent) or live. */
+  mode: 'off' | 'dry_run' | 'live';
+  note: string | null;
 }
 export interface InvoicePage extends Paginated<Invoice> {
   sum?: number;
