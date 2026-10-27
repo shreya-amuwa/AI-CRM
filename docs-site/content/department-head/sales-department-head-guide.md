@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 A Department Head configured with `role = 'DEPARTMENT_HEAD'` and `headDivision = 'SALES'` is routed to the dedicated **Sales Department Head Workspace** at `/sales-head/dashboard/:userId` (`src/components/Workspaces/SalesHeadDashboard.tsx`). This workspace combines multi-department executive visibility with specialized tools for uploading Telecaller calling sheets, monitoring Business Associate (BA) pipelines, and supervising customer onboarding.
 
-![Sales Department Head Dashboard with Multi-Department ScopeBar and Pipeline KPIs](shot:sales-head-lead-assign.png)
-
 ## Before you start
 
 :::prereq

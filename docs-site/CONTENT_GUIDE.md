@@ -9,7 +9,6 @@ Read this before adding or changing an article. The build (`node docs-site/build
 docs-site/
   content/index.md                  Welcome page (employees)
   content/<section>/<article>.md    one article per task or topic
-  assets/shots/<name>.png           screenshots (real, from the running CRM, test data only)
   sections.json                     the sections and their order in the sidebar
 ```
 
@@ -97,11 +96,7 @@ Only draw transitions that exist in the code.
 
 ## 6. Screenshots
 
-- Taken from the real application with the seeded test data (`docs-site/scripts/capture.mjs`), never drawn or edited to
-  show things that do not exist.
-- Only where a picture makes a step clearer (forms, queues, dialogs). Simple pages do not need one.
-- File names: lowercase-with-hyphens, describing the screen: `accounts-payment-confirmations.png`.
-- The caption (the alt text) says what the reader should notice.
+The manual has no screenshots of the application: describe the screen in words (page name, button names, what each field means). Do not add images (`shot:` images are no longer part of the content).
 
 ## 7. Client documentation
 

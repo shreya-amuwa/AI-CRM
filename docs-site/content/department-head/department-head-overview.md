@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 In Amuwa AI CRM, the **Department Head** (`role = 'DEPARTMENT_HEAD'`) leads operational execution across an assigned business unit or division (such as Wabastore, Support, Design Studio, Digitree, Dtalk, or Wabatalk). Depending on their assigned `headDivision` (`BOTH`, `SUPPORT`, or `SALES`), Department Heads oversee incoming handovers, team assignments, pipeline conversion, support SLAs, and staff leave requests.
 
-![Department Head Dashboard and Handover Board](shot:department-head-handovers.png)
-
 ## Before you start
 
 :::prereq

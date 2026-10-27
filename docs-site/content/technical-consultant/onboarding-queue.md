@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 The Technical Consultant Dashboard is the central workspace for auditing onboarding files, authenticating business identities, configuring technical integrations (WABA, Meta, Webhooks), and provisioning customer credentials.
 
-![Technical Consultant Onboarding Workspace](shot:tc-onboarding-workspace.png "Technical Consultant Onboarding intake queue showing customer cards, checklist progress, and authorization actions")
-
 ## Before you start
 
 :::prereq

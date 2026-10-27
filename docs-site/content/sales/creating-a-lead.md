@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 When speaking with a prospect via phone, field visit, walk-in, or direct outreach—or when selling additional services to an existing client—register the lead in **My Leads > 1 Leads** to secure ownership and track follow-ups.
 
-![Add Lead Form with Shop Photo and Visiting Card OCR Scanner](shot:sales-add-lead-ocr.png)
-
 ## Before you start
 
 :::prereq

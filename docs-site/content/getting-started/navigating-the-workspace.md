@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 Every workspace in Amuwa AI CRM is built on a consistent `DashboardShell` layout (`src/components/layout/shell.tsx`) featuring a collapsible left navigation sidebar, a contextual top header, a multi-department `ScopeBar` (for shared Department Heads), and fast inline table filtering.
 
-![Sales Pipeline Workspace and Navigation Shell](shot:sales-leads-pipeline.png)
-
 ## Before you start
 
 :::prereq

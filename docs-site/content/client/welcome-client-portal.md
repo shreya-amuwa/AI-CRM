@@ -31,8 +31,6 @@ Welcome to the **Amuwa Client Dashboard** — your central workspace for checkin
 2. Enter your registered **Email** and **Password**.
 3. Click **Sign in** to open your Client Dashboard home screen.
 
-![Client Portal Login Screen](shot:client-portal-login.png "Client Dashboard Sign-In Screen")
-
 ### First-time password setup or forgotten password
 
 If you are signing in for the first time from an invitation link or need to reset your password:
@@ -51,8 +49,6 @@ After signing in, you land on the **Overview** screen, which summarizes everythi
 - **Open tickets**: Number of active support conversations and whether any ticket is waiting on your reply.
 - **Documents to upload**: Count of required onboarding or verification items that still need a file or text entry.
 - **Notices from your account team**: Important announcements, maintenance updates, or reminders posted for your business.
-
-![Client Dashboard Overview](shot:client-portal-overview.png "Client Dashboard Home Overview")
 
 ## Navigating the Client Dashboard
 

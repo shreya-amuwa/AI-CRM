@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 As the enterprise control center for Amuwa Corporation, the **Super Admin Dashboard** (`src/components/Workspaces/SuperAdminDashboard.tsx`) provides global visibility and administrative authority across every business unit, financial ledger, workflow attribution rule, and security boundary.
 
-![Super Admin Executive Overview Dashboard](shot:super-admin-overview.png)
-
 ## Before you start
 
 :::prereq
@@ -39,13 +37,9 @@ The **Super Admin Dashboard** is organized into 10 primary navigation tabs in th
 | **Security & Audit Logs** | Audit Trail | Immutable chronological log of logins, role changes, tax basis adjustments, client chat inspections, and customer deletions. |
 | **Chat** | `ChatWorkspace.tsx` | Global internal messaging (`Direct` and `Channels`) plus read-only audit access to all departmental `Clients` conversations. |
 
-![Super Admin Departments Hub](shot:super-admin-departments.png)
-
 ## Client Dashboard purchase attribution rule
 
 When an existing customer purchases an additional service or plan renewal directly from the self-service **Client Dashboard** (`/client/dashboard`), the CRM determines how revenue credit is split between the **Support / Relationship team** and the **Originating Sales team** based on the **Client Dashboard Purchase Attribution Rule** configured in **Company Workflow**:
-
-![Super Admin Company Workflow and Attribution Rules](shot:super-admin-workflow.png)
 
 | Attribution Mode | Code | Revenue Split Behavior |
 | --- | --- | --- |

@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 The Sales Panel is the dedicated workspace for sales professionals to qualify prospects, manage conversations, submit confirmed deals to Accounts, and transition paying customers into onboarding and active service delivery.
 
-![Sales Leads Pipeline and Stage Navigation](shot:sales-leads-pipeline.png)
-
 ## Before you start
 
 :::prereq

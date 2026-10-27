@@ -18,8 +18,6 @@ related:
 
 The Human Resources module in Amuwa AI CRM provides an end-to-end talent acquisition and onboarding engine. It bridges initial candidate sourcing, interview evaluations, administrative credential issuance, and the mandatory **3-Day Training & Evaluation Period** before candidates are confirmed into permanent roles.
 
-![HR Staff Directory](shot:hr-attendance-directory.png "HR Staff Directory showing employee cohorts, training statuses, and attendance tracking")
-
 ---
 
 ## The Talent Lifecycle in Amuwa CRM

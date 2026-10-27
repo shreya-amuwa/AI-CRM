@@ -31,8 +31,6 @@ The **Invoices & Payments** page gives you a transparent view of your account bi
    - **Paid**: Total payments that have been confirmed by our accounts team.
    - **Balance due**: The remaining amount payable on your account.
 
-![Invoices and Payments View](shot:client-portal-invoices.png "Client Dashboard Invoices and Payment History")
-
 ## Viewing and printing invoices
 
 Under the **Invoices** tab, you will find each invoice issued to your business along with its invoice number, issue date, itemized amount, GST breakdown, and status badge:

@@ -35,8 +35,6 @@ Whenever you have an issue that needs to be tracked to completion — such as a 
    - **Attach files** *(optional)*: Click **Attach files** to include screenshots or documents (up to **5 files**, **10 MB** each).
 4. Click **Submit ticket**.
 
-![Support Tickets in Client Dashboard](shot:client-portal-tickets.png "Raising and Tracking Support Tickets")
-
 ## Filtering and tracking your tickets
 
 Use the status filter chips at the top of **Support Tickets** to view your requests:

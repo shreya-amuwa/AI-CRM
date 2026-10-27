@@ -50,8 +50,6 @@ Displays visual financial performance cards for each revenue-generating business
 - Administrative, non-revenue departments (such as Accounts, HR, and Education & Training) are automatically excluded from revenue cards.
 - Clicking a department card drills down into that unit's verified collections versus department-specific expenses.
 
-![Accounts Department Income view showing revenue cards and financial metrics per business unit](shot:accounts-department-income.png)
-
 ### 4. Expenses Management (`Accounts > Expenses`)
 
 Tracks both company-wide overheads (such as cloud hosting, rent, and utilities) and department-specific expenses (such as ad spend or software licenses).

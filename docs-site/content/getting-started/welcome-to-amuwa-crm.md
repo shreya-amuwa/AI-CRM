@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 Amuwa AI CRM is the unified operational platform connecting lead acquisition, commercial qualification, GST payment verification, technical onboarding, service delivery, customer support, and HR operations across all Amuwa Corporation business units.
 
-![Super Admin Overview Dashboard](shot:super-admin-overview.png)
-
 ## Before you start
 
 :::prereq

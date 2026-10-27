@@ -21,8 +21,6 @@ Amuwa AI CRM features an integrated attendance auditing engine. To ensure transp
 1. **Relationship Manager (RM) / CRM System Login (`rmLoginAt`):** The timestamp captured automatically when an employee signs in to the web CRM application.
 2. **Biometric Punch (`biometricLoginAt`):** The timestamp recorded when an employee scans their fingerprint or facial profile at the office biometric attendance scanner (or authorized manual HR punch).
 
-![HR Attendance Directory](shot:hr-attendance-directory.png "HR Daily Attendance Register and Directory showing synchronized logins and gap indicators")
-
 ---
 
 ## The 15-Minute Discrepancy Rule
