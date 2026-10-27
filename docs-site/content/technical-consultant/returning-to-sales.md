@@ -1,18 +1,20 @@
 ---
 title: How to Return a Customer to Sales for Re-verification
-summary: Step-by-step instructions for Technical Consultants to reject invalid or incomplete customer documents and return the onboarding card to the sales representative.
+description: Step-by-step instructions for Technical Consultants to reject invalid or incomplete customer documents and return the onboarding card to the sales representative.
+order: 7
+group: Technical Consultant
 audience: internal
 roles:
   - Technical Consultant
   - Sales Team Lead
   - Sales Team Member
+status: verified
+updated: 2026-10-27
 related:
   - /technical-consultant/verifying-checklist-items
   - /technical-consultant/onboarding-queue
   - /sales/managing-returned-leads
 ---
-
-# How to Return a Customer to Sales for Re-verification
 
 When a customer's submitted documents are illegible, expired, mismatched with business registrations, or incomplete, the Technical Consultant must mark the defective items as **Not authorized** and return the customer record to Sales.
 
@@ -88,8 +90,10 @@ Returning a customer prevents defective documents from progressing to delivery d
 
 ## Important Rules
 
-> [!WARNING]
-> **Do not return without specific notes:** A vague rejection like *"Wrong doc"* causes friction and delays client delivery. Always state the precise defect and the exact document required.
+:::warning
+**Do not return without specific notes:** A vague rejection like *"Wrong doc"* causes friction and delays client delivery. Always state the precise defect and the exact document required.
+:::
 
-> [!NOTE]
-> **Add-on requests are not affected:** If an add-on request is concurrently pending verification with Accounts, returning the core onboarding record to Sales does not cancel the add-on invoice.
+:::note
+**Add-on requests are not affected:** If an add-on request is concurrently pending verification with Accounts, returning the core onboarding record to Sales does not cancel the add-on invoice.
+:::

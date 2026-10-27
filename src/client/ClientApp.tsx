@@ -22,6 +22,7 @@ import { Documents } from './Documents';
 import { Tickets } from './Tickets';
 import { Chat } from './Chat';
 import { Notifications } from './Notifications';
+import { Docs } from './Docs';
 import { LoadingBlock, initials } from './ui';
 import { ShellCtx, dashboardPath, type SectionSlug } from './shell';
 
@@ -37,7 +38,8 @@ export const SECTIONS = [
   { slug: 'invoices', label: 'Invoices', Icon: FileText },
   { slug: 'tickets', label: 'Tickets', Icon: LifeBuoy },
   { slug: 'chat', label: 'Chat', Icon: MessageCircle },
-  { slug: 'notifications', label: 'Notification Center', Icon: Bell }
+  { slug: 'notifications', label: 'Notification Center', Icon: Bell },
+  { slug: 'docs', label: 'Client Manual', Icon: BookOpen }
 ] as const;
 
 /** The sidebar groups from the Amuwa Connect design; every section appears exactly once. */
@@ -45,7 +47,7 @@ const NAV_GROUPS: { label?: string; slugs: SectionSlug[] }[] = [
   { slugs: ['overview'] },
   { label: 'Your account', slugs: ['services', 'plans', 'invoices', 'documents'] },
   { label: 'Activity', slugs: ['campaigns', 'calendar', 'tickets', 'chat', 'notifications'] },
-  { label: 'Discover', slugs: ['explore'] }
+  { label: 'Discover & Help', slugs: ['explore', 'docs'] }
 ];
 /** Phone bottom tab bar: the five places clients use most. */
 const TABS: SectionSlug[] = ['overview', 'services', 'tickets', 'campaigns', 'chat'];
@@ -67,12 +69,13 @@ const Inner: React.FC = () => {
     clientApi.notifications(1, 0).then(n => setUnread(n.unread), () => { /* the bell is a convenience; pages show their own errors */ });
   }, []);
 
-  // /client and /client/login both lead to the right place.
+  // /client, /client/login, and /client/docs lead to the right place.
   useEffect(() => {
     if (status === 'loading' || path === '/client/set-password') return;
     const onLogin = path === '/client/login' || path === '/client';
+    const isDocs = path === '/client/docs' || path.startsWith('/client/docs/');
     if (status === 'signedOut' && path !== '/client/login') go('/client/login', true);
-    else if (status === 'ready' && (onLogin || !path.startsWith('/client/dashboard'))) go(dashboardPath('overview'), true);
+    else if (status === 'ready' && (onLogin || (!path.startsWith('/client/dashboard') && !isDocs))) go(dashboardPath('overview'), true);
   }, [status, path, go]);
 
   useEffect(() => {
@@ -98,9 +101,10 @@ const Inner: React.FC = () => {
   if (status === 'signedOut') return <div className="cd"><Login onDone={() => go(dashboardPath('overview'), true)} /></div>;
   if (!me) return null;
 
-  const parts = path.replace('/client/dashboard/', '').split('/');
-  const slug = (SECTIONS.find(s => s.slug === parts[0])?.slug ?? 'overview') as SectionSlug;
-  const sub = parts.slice(1).join('/');
+  const isDirectDocs = path === '/client/docs' || path.startsWith('/client/docs/');
+  const parts = isDirectDocs ? ['docs'] : path.replace('/client/dashboard/', '').split('/');
+  const slug = (isDirectDocs ? 'docs' : (SECTIONS.find(s => s.slug === parts[0])?.slug ?? 'overview')) as SectionSlug;
+  const sub = isDirectDocs ? path.replace('/client/docs', '').replace(/^\//, '') : parts.slice(1).join('/');
   const to = (p: string) => { closeNav(); go(p); };
 
   const sectionOf = (s: string) => SECTIONS.find(x => x.slug === s)!;
@@ -119,6 +123,7 @@ const Inner: React.FC = () => {
       case 'tickets': return <Tickets />;
       case 'chat': return <Chat />;
       case 'notifications': return <Notifications />;
+      case 'docs': return <Docs />;
       default: return <Overview />;
     }
   })();
@@ -154,7 +159,9 @@ const Inner: React.FC = () => {
               <button className="cd-btn gold sm" onClick={() => to(dashboardPath('tickets'))}>Raise a ticket</button>
             </div>
             <div className="cd-side-foot">
-              <a href={DOCUMENTATION_ROUTE} target="_blank" rel="noopener noreferrer" className="cd-nav-item cd-doc-link"><BookOpen size={19} aria-hidden /> <span>User Documentation</span></a>
+              <button type="button" className="cd-nav-item cd-doc-link" onClick={() => to('/client/docs')} style={{ border: 'none', background: 'transparent', textAlign: 'left', width: '100%', cursor: 'pointer' }} aria-label="Open Client Manual">
+                <BookOpen size={19} aria-hidden /> <span>Client Manual</span>
+              </button>
             </div>
           </aside>
 

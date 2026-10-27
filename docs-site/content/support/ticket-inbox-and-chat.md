@@ -1,81 +1,85 @@
 ---
-title: Managing the Ticket Inbox and Chatting with Clients
-description: Handling support tickets, using real-time chat, sending internal notes, and updating ticket statuses.
-order: 20
+title: Managing the Client Tickets Inbox and Real-Time Chat
+description: Handling client tickets in the Support Dashboard, sending public replies and private internal notes, attaching files, and updating ticket statuses.
+order: 2
+group: Support Operations
 roles: [Support Team Member, Support Team Lead, Department Head]
 audience: internal
 status: verified
-sources: [docs/TICKET_HIERARCHY.md, shared/contracts.ts]
-related: [support/sla-and-escalation, client/raising-support-tickets]
-updated: 2026-10-19
+sources: [src/components/support-member/TicketsPage.tsx, src/components/support-member/SupportMemberDashboard.tsx, docs/TICKET_HIERARCHY.md]
+related: [support/sla-and-escalation, support/support-leads-management, client/raising-support-tickets]
+updated: 2026-10-27
 ---
 
-Amuwa AI CRM features a unified, real-time ticket inbox designed to facilitate fast communication between customers and their assigned Relationship Managers.
+Amuwa AI CRM features a unified, real-time **Client tickets** workspace designed for fast, transparent communication between external clients and their assigned Relationship Managers.
+
+![Support Client Tickets Inbox and Conversation Thread](shot:support-tickets-inbox.png)
 
 ## Before you start
 
 :::prereq
-- You must be signed in with a Support Team Member, Team Lead, or Department Head account.
+- Sign in with a **Support Team Member**, **Support Team Lead**, or **Department Head** account.
+- Open **Client tickets** (`Tickets`) from the Support Dashboard sidebar (`Overview`, `My Leads`, `Team Leads`, `Import Customers`, `Client tickets`, `Client calendar`, `Client documents`, `My Tasks` / `Assigned Tasks`, `Leave Request`, `Chat`, `My Profile`).
 :::
 
 ## Interface layout
 
-The Tickets workspace uses a two-panel split:
-- **Left Panel (Ticket Inbox)**: Lists all tickets with live unread indicators, SLA status badges, customer names, subject lines, and preview snippets.
-- **Right Panel (Conversation & Details)**: The active chat thread with message history, internal notes, resolution actions, and customer metadata.
+The **Client tickets** workspace uses a two-panel split view:
+- **Left Panel (Ticket Inbox)**: Lists tickets with unread badges, SLA countdown pills, customer names, ticket numbers (`#AMW-0042`), subject lines, and latest message snippets.
+- **Right Panel (Conversation & Details)**: Displays the live message thread, internal staff notes, status/priority controls, escalation actions, and customer metadata.
 
-### Inbox tabs
-- **All open**: All unresolved tickets across your permitted scope.
-- **My tickets**: Tickets currently assigned to you as the Relationship Manager or escalated to you.
-- **Unread**: Tickets with unread customer replies.
-- **In progress**: Tickets actively being investigated.
-- **Escalated**: Tickets that exceeded initial response thresholds or were manually escalated.
-- **Resolved / Closed**: Historical completed tickets.
+### Inbox filter tabs
+- **All open**: All unresolved tickets within your permitted team or department scope.
+- **My tickets**: Tickets assigned directly to you as the Relationship Manager or escalated to you.
+- **Unread**: Tickets with unread client replies.
+- **In progress**: Tickets actively under technical or operational investigation.
+- **Escalated**: Tickets that breached an SLA window or were manually escalated to a Team Lead or Department Head.
+- **Resolved / Closed**: Completed historical tickets.
 
-## How to reply to a ticket
+## How to reply to a client ticket
 
-1. Click a ticket from the inbox list. Ticket numbers follow the format `#AMW-0042`.
-2. Review the customer's message and timeline events.
-3. In the message box at the bottom, choose your message type:
-   - **Reply to Client**: Sent directly to the customer's dashboard and mobile notifications.
-   - **Internal Note**: Yellow background; visible only to company staff and hidden from the customer.
-4. Type your message and press **Send** (or press `kbd:Enter`).
-5. To send a file, click the paperclip next to the message box. You can attach up to 5 files per message, 5 MB each (images, PDF, text, CSV, Word or Excel). Files sent with an **Internal Note** are never shown to the customer. Click a file in the thread to open it; every file you attach or open is recorded in the audit log.
+1. In the sidebar, click **Client tickets** (`Tickets`) and select a ticket from the inbox list.
+2. Review the customer's inquiry, attached screenshots, and timeline events.
+3. In the composer at the bottom of the thread, select your message mode:
+   - **Reply to Client**: Visible immediately on the client's portal dashboard and triggers a client notification.
+   - **Internal Note**: Highlighted in amber; visible strictly to internal staff (`Support`, `Team Lead`, `Department Head`) and never exposed to the client.
+4. Type your response and click **Send** (or press `kbd:Enter`).
+5. To attach files, click the paperclip icon next to the composer (up to 5 files per message, max **5 MB** each; supports images, PDF, CSV, TXT, Word, and Excel). Files attached to an **Internal Note** remain private to staff.
 
 ```flow
-Customer Sends Message | Client Portal | Displays on left in chat thread
-Relationship Manager Notified | Realtime | Bell alert & unread marker triggered
-Staff Types Reply | Support Member | Choose "Reply to Client" or "Internal Note"
-Message Delivered | System | Realtime sync to client; Sent/Seen ticks update
+Client Opens or Replies to Ticket | Client Portal | Appears in Support > Client tickets with SLA timer running
+Relationship Manager Notified | Realtime | Bell alert & unread indicator displayed
+Staff Sends Reply or Internal Note | Support Member | Public reply pauses SLA clock; Internal Note stays staff-only
+Issue Fixed & Marked Resolved | Support Member | Status updated to RESOLVED with resolution summary
 ```
 
-## Changing ticket status and priority
+## Updating ticket priority and status
 
-In the right header above the chat thread:
-- **Priority dropdown**: Change between `Low`, `Medium`, `High`, or `Urgent`. Each change is logged as an internal event.
-- **Status dropdown**:
-  - `OPEN`: Initial received state.
-  - `IN_PROGRESS`: Actively under technical investigation.
-  - `WAITING_CUSTOMER`: Staff has replied; SLA timer pauses while waiting on the client.
-  - `RESOLVED`: Issue fixed. A resolution note is recorded.
+In the ticket header above the conversation thread:
+- **Priority selector**: Switch between `Low`, `Medium`, `High`, and `Urgent`.
+- **Status selector**:
+  - `OPEN`: Newly created ticket awaiting first response.
+  - `IN_PROGRESS`: Actively being investigated by Support or Delivery.
+  - `WAITING_CUSTOMER`: Staff has replied and is waiting on client input (pauses the SLA timer).
+  - `RESOLVED`: Issue is resolved and a resolution summary is recorded.
   - `CLOSED`: Final administrative closure.
 
 ## What you should see
 
 :::result
-Sent replies appear immediately on the right with a blue bubble and author stamp. When the client opens your reply on their dashboard, the tick mark updates to **Seen**.
+Public replies render immediately on the right side of the thread and sync in real time to the client's portal with **Sent / Seen** read indicators. Answering the client automatically stops the active SLA countdown timer.
 :::
 
 ## Good to know
 
-:::important Internal Notes are Strictly Private
-Internal staff notes are permanently isolated from the customer API. Clients cannot view internal notes even via browser inspection or network traces.
+:::important Strict Isolation of Internal Notes
+Internal notes and their file attachments are filtered out at the API level—clients can never view internal staff discussions even via browser network inspection.
 :::
 
-:::tip Customer Re-opening
-If a client replies to a ticket in `RESOLVED` status, the ticket is automatically reopened, reset to `IN_PROGRESS`, and triggers an immediate high-priority alert to the Relationship Manager.
+:::tip Automatic Re-Opening on Client Reply
+If a client replies to a ticket currently marked `RESOLVED`, the system automatically reopens the ticket to `IN_PROGRESS`, restarts the SLA clock, and alerts the assigned Relationship Manager.
 :::
 
 ## If something goes wrong
 
-If a message fails to send, check your network connection and click the **Retry** icon next to the failed bubble.
+- **Attachment upload rejected**: Verify each file is **5 MB or smaller** and uses a supported format (PNG, JPG, PDF, TXT, CSV, DOCX, XLSX).

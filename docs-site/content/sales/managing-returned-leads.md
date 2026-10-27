@@ -1,76 +1,74 @@
 ---
-title: How to Handle Leads Returned from Accounts or Technical Consultant
-description: Investigating return reasons, correcting rejected documents, and resubmitting leads to the appropriate department.
-order: 70
-roles: [Sales Team Member, Sales Team Lead]
+title: Managing Returned Leads and Assigning / Reassigning Leads
+description: Resolving leads returned from Accounts or Technical Consultants, and performing single, bulk, or round-robin lead assignments in Team Leads.
+order: 8
+group: Sales Pipeline
+roles: [Sales Team Member, Sales Team Lead, Department Head]
 audience: internal
 status: verified
-sources: [src/components/team-member/pipeline/LeadsView.tsx, src/components/team-member/pipeline/OnboardingViews.tsx, docs/TECHNICAL_CONSULTANT.md]
-related: [sales/my-leads-overview, sales/customer-onboarding-sales]
-updated: 2026-10-19
+sources: [src/components/team-member/pipeline/LeadsView.tsx, src/components/team-member/pipeline/OnboardingViews.tsx, src/components/team-lead/TeamCustomers.tsx]
+related: [sales/my-leads-overview, sales/customer-onboarding-sales, sales/team-lead-pipeline-and-tasks]
+updated: 2026-10-27
 ---
 
-When a deal cannot be confirmed by Accounts or compliance items fail technical inspection, the CRM returns the customer to Sales with explicit feedback notes so you can resolve the issue with the client.
+During the sales lifecycle, deals may be returned by Accounts or a Technical Consultant for correction, or a Sales Team Lead may need to assign, bulk-distribute, or transfer lead ownership across team members.
 
 ## Before you start
 
 :::prereq
-- You will receive a notification bell alert when a lead is returned.
-- Check whether the return originated from **Accounts** or from the **Technical Consultant**.
+- To resolve a returned lead, sign in as the assigned Sales Team Member, Business Associate, or Team Lead.
+- To assign, bulk-assign, or transfer lead ownership across a team, sign in as a **Sales Team Lead** or **Department Head**.
 :::
 
-## Scenario 1: Returned from Accounts
+## Scenario 1: Resolving leads returned from Accounts
 
-### Symptoms
-The customer appears in **My Leads > 1 Leads** under the **Returned from Accounts** tab with a red warning badge.
+When Accounts cannot verify a payment reference or finds a tax mismatch, the record returns to **My Leads > 1 Leads** under the **Returned from Accounts** tab:
+1. Click the customer row to open the record and read the **Resolution Note from Accounts** banner at the top.
+2. Contact the customer to collect the corrected UTR/transaction reference or align on the commercial amount and GST basis.
+3. Update the deal details and click **Send to Accounts** (`Confirm Payment`) to resubmit.
+4. If the customer cancels the purchase, click **Customer backed out** or set status to `LOST` and log the reason in **Conversations**.
 
-### Resolution Steps
-1. Click on the customer card to open the record.
-2. Review the **Resolution Note from Accounts** at the top of the details panel. Common reasons include:
-   - *Payment reference could not be verified on the bank statement.*
-   - *Customer claims price difference; please align on quotation.*
-   - *Invalid GSTIN supplied for corporate invoice.*
-3. Contact the customer to clarify the payment reference or adjust terms.
-4. If the deal is salvaged, update the deal amount or notes and click **Send to Accounts** again.
-5. If the customer declines to proceed, change the status to `LOST` and document the outcome in **Conversations**.
+## Scenario 2: Resolving onboarding items returned by the Technical Consultant
 
-## Scenario 2: Returned by Technical Consultant
-
-### Symptoms
-The customer appears in **My Leads > 3 Customer onboarding** under the **Returned by consultant** filter.
-
-### Resolution Steps
-1. Open the customer in the onboarding view.
-2. Read the **Re-verification Note** banner written by the consultant.
-3. Review the checklist items below. Any rejected item displays a red **Not authorized** badge and the consultant's specific reason (for example: *Electricity bill is older than 3 months; please provide current utility bill for Meta verification*).
-4. For each rejected item:
-   - Obtain the corrected document or detail from the client.
-   - Click **Replace File** or **Edit Details**.
-   - Upload the compliant file. The item status changes to `SAVED`.
-5. Once all rejected items are resolved, the button changes to:
-   **Send again to Technical Consultant**.
-6. Click **Send again to Technical Consultant**.
+When a document fails technical compliance review, the customer appears in **My Leads > 3 Customer onboarding** under the **Returned by consultant** filter:
+1. Open the customer in **3 Customer onboarding** and read the **Re-verification Note** banner from the Technical Consultant.
+2. Locate any checklist item marked with a red **Not authorized** badge (for example, `2. All Important Documents` or `3. Requirement Document`).
+3. Click **Replace File** or **Edit Details**, upload the corrected PDF (under **2 MB**), and save.
+4. Once all rejected items return to `SAVED`, click **Send again to Technical Consultant**.
 
 ```flow
-Item Rejected | Technical Consultant | Marks item "Not authorized" with reason
-Sent Back to Sales | Technical Consultant | Customer moves to "Returned by consultant"
-Sales Resolves Issue | Salesperson | Collects compliant document & re-uploads
-All Items Fixed | System | Item status returns to SAVED
-Send Again to TC | Salesperson | Unlocked; forwards record back to TC queue
+Record Returned or Unassigned | Accounts / TC / Team Lead | Appears in Returned tab or Team Customers list
+Inspect Reason or Workload | Salesperson / Team Lead | Check resolution note or member capacity
+Upload Fix or Select Assignee | Salesperson / Team Lead | Replace file or pick single / bulk / round-robin assignee
+Confirm Action | System | Updates status or ownerId and writes audit log entry
 ```
+
+## Scenario 3: Assigning and reassigning leads in `Team Leads` / `Team Customers`
+
+Sales Team Leads and Department Heads manage lead distribution and ownership transfers from **Team Customers** (or **Team Leads**):
+
+1. **Single Lead Assignment / Ownership Transfer**:
+   - Open **Team Customers** (`src/components/team-lead/TeamCustomers.tsx`) and filter by stage (`1 Leads`, `2 Potential`, `3 Customer onboarding`, `4 Client`) or current owner.
+   - Click the **Assign / Reassign** selector on the customer row, choose the target Sales Team Member or Business Associate, and confirm.
+2. **Bulk Lead Assignment**:
+   - Select multiple leads using the row checkboxes (or upload a batch via **Import Leads (CSV / Excel)**).
+   - Choose a target salesperson to assign the selected batch in a single operation.
+3. **Round-Robin Distribution**:
+   - When importing a sheet of leads or distributing unassigned enquiries, choose **Round-Robin** to split leads evenly across all active members of your sales pod.
 
 ## What you should see
 
 :::result
-The customer moves out of the returned queue and re-enters the Technical Consultant's active review list. The consultant is notified that corrections have been submitted.
+- For returned leads: Resubmitting moves the customer out of the **Returned** filter and back into the active Accounts or Technical Consultant queue.
+- For reassigned leads: Ownership (`ownerId`) transfers immediately to the selected team member while preserving all historical conversations, uploaded documents, and payment records.
 :::
 
 ## Good to know
 
-:::note Consultant Visibility While With Sales
-While you are fixing returned items, the customer remains visible in the Technical Consultant's dashboard in a read-only state labeled **Waiting for sales team**. As soon as you upload a fix, the consultant sees the item update to *Pending review*.
+:::note Full History Preserved on Reassignment
+Transferring a lead or onboarding customer to another salesperson when someone is on leave never resets the customer's stage, conversation notes, or verified payments. Every ownership transfer is recorded in `audit_logs`.
 :::
 
 ## If something goes wrong
 
-If you cannot fulfill a required item, contact your Technical Consultant directly or leave a note in Conversations before resubmitting.
+- **Cannot reassign a record**: Only Team Leads, Department Heads, and Super Admins can transfer ownership across staff members. Sales Team Members can view and edit only their own assigned records.

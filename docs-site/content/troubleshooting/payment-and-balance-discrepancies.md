@@ -1,68 +1,85 @@
 ---
 title: Troubleshooting Payment Confirmations and Balance Discrepancies
-summary: Diagnostic guide to reconciling customer ledger balances, understanding pending vs verified payments, and resolving tax basis calculation variances.
+description: Reconcile customer balances, verify pending payments, resolve GST tax basis mismatches, and handle blocked returns when payments are already verified.
+order: 3
+group: Billing & Invoices
+roles: [Accounts, Super Admin, Department Head, Sales Team Lead, Sales Team Member]
 audience: internal
-roles:
-  - Accounts Department
-  - Sales Team Member
-  - Team Lead
+status: verified
+sources: [src/components/AccountsPanel.tsx, src/components/InvoiceBuilderModal.tsx, shared/contracts.ts]
 related:
   - /accounts/recording-payments
   - /accounts/managing-part-payments-accounts
   - /super-admin/tax-agreements-review
+  - /troubleshooting/invoice-generation-troubleshooting
+updated: 2026-10-27
 ---
 
-# Troubleshooting Payment Confirmations and Balance Discrepancies
+When a customer's outstanding balance does not match expectations or an invoice is blocked by the order ceiling, the cause is almost always an unverified (`PENDING`) payment or a mismatch in the order's GST tax basis (`INCLUSIVE` vs `EXCLUSIVE`).
 
-Financial accuracy is paramount. When a customer balance appears inconsistent or a payment has not updated an order balance, use the following verified diagnostic procedures.
+## Before you start
 
----
+:::prereq
+- Open the customer's record in the **Accounts** dashboard or inspect their payment history and tax basis in the **Invoice Builder**.
+:::
 
 ## 1. Symptom: "The customer paid, but their balance has not decreased"
 
-### Likely Cause: Payment Status is PENDING
-In Amuwa AI CRM, recording a payment draft in Sales or entering an unverified gateway reference creates a transaction in status `PENDING`. 
+### Likely causes
 
-> [!IMPORTANT]
-> **The Strict Ledger Rule:**
-> Only payments in status **`VERIFIED`** reduce the customer's outstanding balance and count toward corporate income. Draft or pending transactions do not alter ledger balances.
+- Recording a payment in Sales or logging a new tranche creates a transaction with status **`PENDING`** (shown to the client as **Being verified**).
 
-### Resolution Steps
-1. Open your **Accounts** dashboard.
-2. Open **Confirmation** (the payment confirmation queue).
-3. Locate the customer's payment row.
-4. Verify the bank transaction reference number against corporate bank statements.
-5. Click **Confirm & Verify Payment**.
-6. The status transitions to `VERIFIED`, and the customer's outstanding balance recalculates immediately.
+:::important The Strict Ledger Rule
+Only payments in status **`VERIFIED`** reduce the customer's outstanding order balance and count toward confirmed department income. Payments in **`PENDING`** or **`REJECTED`** status never alter ledger balances.
+:::
 
----
+### Step-by-step resolution
 
-## 2. Symptom: "An invoice is refused as above the agreed amount" or "the balance is higher than the agreed amount"
+1. Sign in to the **Accounts** dashboard and open the **Confirmation** queue (or **Part Payment** queue for follow-up tranches).
+2. Locate the customer's pending payment entry.
+3. Check the bank/UTR transaction reference and whether GST applies to that payment.
+4. Click **Confirm & Verify Payment**.
+5. Once marked **`VERIFIED`**, the customer's outstanding balance and invoice status update immediately.
 
-### Likely Cause: The agreement is before GST but is recorded as including GST
-Each agreement records whether the agreed amount includes GST:
+## 2. Symptom: "Balance is higher than the agreed deal amount" or "Invoice exceeds agreed ceiling"
 
-- **Excluding GST:** the agreed amount is before GST and GST is added on top. (For example, ₹1,00,000 plus ₹18,000 GST is a total payable of ₹1,18,000.) The invoices are checked on the amount before GST.
-- **Including GST:** the agreed amount is the total payable. The invoices (with GST) are checked against it.
+### Likely causes
 
-Agreements made before this was recorded stay on **Including GST** until Accounts corrects them. A customer quoted ₹1,20,000 plus GST can therefore see an invoice refused with a message such as "would total ... but only ... was agreed with Sales, including GST".
+- Each order stores an explicit tax basis (`orderTaxBasis`):
+  - **Excluding GST (`EXCLUSIVE`)**: The agreed deal amount is before GST, and GST (18% standard) is added on top to compute the **Total Payable**.
+  - **Including GST (`INCLUSIVE`)**: The agreed deal amount already includes GST, so **Total Payable** equals the agreed deal amount.
+- Also note that individual payments can be recorded **with GST** or **without GST** (per-payment GST toggle), which affects the GST component tracked on that payment.
 
-### Resolution Steps
-1. Confirm with Sales whether the quotation included or excluded GST.
-2. If it was before GST, open the customer in the **Invoice Builder**, click *The agreed amount is before GST*, write the reason and apply. (Accounts staff and Super Admins can do this.) The total payable and the balances update at once.
-3. If it was an all-inclusive price, nothing needs changing: lower the invoice to fit.
-4. Do not edit issued invoices. Their PDFs are not changed.
+### Step-by-step resolution
 
-The payment screen shows the agreed amount, the total payable and the order balance. See [Tax Basis of an Agreement](/super-admin/tax-agreements-review).
+1. Confirm with the **Sales** representative whether the commercial quote agreed with the client was **before GST (`EXCLUSIVE`)** or **all-inclusive (`INCLUSIVE`)**.
+2. Open the customer in the **Invoice Builder** (Accounts or Super Admin).
+3. If the agreement was quoted before GST but recorded as `INCLUSIVE`, use the tax basis reconciliation control in the **Invoice Builder**, enter the mandatory audit reason, and apply the change.
+4. If the agreement was genuinely all-inclusive (`INCLUSIVE`), adjust the invoice line items so the gross invoice total (including GST) stays within the agreed ceiling.
 
----
+## 3. Symptom: "Cannot return customer to Sales — payment is already verified"
 
-## 3. Symptom: "Cannot return customer to Sales: Payment Verified"
+### Likely causes
 
-### Likely Cause: Return Blocked by Verified Funds
-The CRM database enforces a strict audit constraint: **Accounts cannot return a customer to Sales if any payment is already in status `VERIFIED`**.
+- To protect financial audit integrity, the database prevents returning a customer card to Sales when any payment on the account is already in **`VERIFIED`** status.
 
-### Resolution Steps
-1. If the customer backed off or requested a refund:
-2. A managerial role (`SUPER_ADMIN` or `DEPARTMENT_HEAD`) must execute an official payment reversal in the payment ledger with a documented justification.
-3. Once all payments are reversed (`REVERSED`), the customer card can be safely returned through the standard cancellation workflow.
+### Step-by-step resolution
+
+1. Verify whether the customer genuinely cancelled or requires a refund/reversal.
+2. Ask a **Super Admin** or **Department Head** to record an audited payment reversal (`REVERSED`) with a written reason in the payment ledger.
+3. Once no active `VERIFIED` payments remain on the order, Accounts can return the record to Sales.
+
+## Expected result
+
+:::result
+- Confirming a **`PENDING`** payment immediately transitions it to **`VERIFIED`**, deducts the amount from the customer's **Order Balance**, and updates the Client Dashboard **Payment history** badge from **Being verified** to **Confirmed**.
+- Aligning the order tax basis (`EXCLUSIVE` vs `INCLUSIVE`) immediately recalculates **Total Payable** and **Order Balance** across Accounts, Sales, and the Client Portal.
+:::
+
+## When to escalate
+
+Escalate to the **Accounts Department Head** or **Super Admin** if a verified payment amount was entered incorrectly or requires a formal reversal. Include:
+
+- The **Customer Name**, **Order / Deal Amount**, and **Tax Basis** (`INCLUSIVE` or `EXCLUSIVE`).
+- The **Payment ID / UTR reference**, recorded amount, and whether GST was toggled on the payment.
+- The written business justification for the adjustment or reversal.

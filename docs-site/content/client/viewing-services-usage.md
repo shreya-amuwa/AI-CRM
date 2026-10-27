@@ -1,69 +1,90 @@
 ---
-title: How to View Active Services and Track Quota Usage
-summary: Client guide to monitoring active service subscriptions, checking remaining WhatsApp conversation allowances, and inspecting delivery specifications.
+title: Viewing Your Services, Usage, and Campaigns
+description: Monitor your active and setting-up services, check usage balances and low-balance alerts, inspect campaign metrics, and request renewals.
+order: 2
+group: Services & Plans
+roles: [Client]
 audience: client
+status: verified
+sources: [src/client/MyServices.tsx, src/client/Campaigns.tsx]
 related:
   - /client/welcome-client-portal
-  - /client/exploring-services
   - /client/managing-monthly-plans
+  - /client/exploring-services
+  - /client/raising-support-tickets
+updated: 2026-10-27
 ---
 
-# How to View Active Services and Track Quota Usage
+The **My Services** page gives you a clear view of every service your business has with Amuwa, including setup progress, remaining usage balances, campaign performance, and renewal dates.
 
-The **My Services** section of your client portal provides complete visibility into every digital solution, automation tier, and creative package purchased from Amuwa Corporation.
+## Before you start
 
----
+:::prereq
+- You are signed in to your Client Dashboard at `/client/login`.
+- You have at least one active or onboarding service on your account.
+:::
 
-## Accessing Your Services
+## Reviewing your My Services summary and cards
 
-1. Sign in to your portal at `/client/login`.
-2. In the left navigation menu, click **My Services** (Package icon).
-3. The page displays your active subscriptions grouped by category:
-   - **WhatsApp Marketing & Automation** (e.g., Meta Official API, Blue Tick Verification).
-   - **Creative & Design Solutions** (e.g., Brand Identity Kits, Social Media Retainers).
-   - **Software & Cloud Solutions** (e.g., Conversational AI Chatbots, Custom Webhooks).
+1. Click **My Services** in the left navigation menu.
+2. At the top of the page, review the three summary counters:
+   - **Active**: Services that are live and running for your business.
+   - **Setting up**: Services currently being configured by your account team.
+   - **Renewal soon**: Active services approaching their renewal date.
+3. Below the summary, each service card displays its current status badge:
+   - **Active**: Live and operational.
+   - **Setting up**: Currently in onboarding or technical configuration.
+   - **Renewal due**: Approaching or past the scheduled renewal date.
+   - **Paused**: Temporarily paused.
+4. From any service card, you can use the quick actions:
+   - **Open service workspace**: Opens the detailed view for that service.
+   - **Ask a question**: Opens a support ticket pre-linked to that service.
+   - **Request renewal**: Sends a renewal request for that service to your account team.
 
----
+![My Services Workspace](shot:client-portal-services.png "Active Services and Usage Metrics in the Client Dashboard")
 
-## Understanding Service Cards and Details
+## Inside a service workspace
 
-Each service card displays key operational metrics:
+Click **Open service workspace** on any service card to inspect its three tabs:
 
-```mermaid
-graph TD
-    ServiceCard["Active Service Card"] --> Name["Service Title and Tier"]
-    ServiceCard --> Status["Status Badge: Active / In Setup / Under Review"]
-    ServiceCard --> Dates["Activation Date and Next Renewal"]
-    ServiceCard --> Quota["Usage Bar: Consumed vs Remaining Allowance"]
-    ServiceCard --> Addons["Active Add-on Modules"]
-```
+### 1. Usage & stats
 
-- **Service Status Badge:**
-  - **Active (Green):** Fully provisioned, operational, and handling live traffic.
-  - **In Setup / Under Review (Amber):** Verification documents are undergoing review or technical configurations are being deployed.
-  - **Renewing Soon (Orange):** Subscription expiring within 14 days.
-- **Service Specs:** Technical parameters such as provisioned WhatsApp Business Account (WABA) IDs, connected phone numbers, and webhook destinations.
-- **Account Manager:** Name and contact details of your assigned Relationship Manager.
+- Displays your total allowance, amount used, and remaining balance for credit- or quota-based services (such as WhatsApp messaging or voice call packages).
+- Shows recent activity and usage trends recorded for the service.
 
----
+:::warning Low-balance alert banner
+When your remaining balance drops to **15% or less** of your limit, an amber low-balance alert banner appears at the top of the workspace. Click **Ask to top up** in the banner to notify your account team that you need additional credits.
+:::
 
-## Monitoring Usage Bars and Allowances
+### 2. Campaigns
 
-For communication and broadcast services with volume-based pricing:
+If your service includes broadcast or outreach campaigns, the **Campaigns** tab lists every campaign linked to that service along with its status badge:
 
-1. Locate the **Usage & Quotas** section on the service card.
-2. The visual progress bar indicates:
-   - **Total Package Quota:** Total messages or service credits included in your billing cycle.
-   - **Consumed Volume:** Messages delivered during the active month.
-   - **Remaining Balance:** Available quota remaining before top-up.
-3. If your consumption approaches 80% of allowed bandwidth, the usage bar transitions to amber to ensure you have sufficient time to request a top-up.
+- **Draft**: Campaign is being prepared and has not been scheduled yet.
+- **Scheduled**: Queued to run at the scheduled start time.
+- **Running**: Currently sending messages or calls.
+- **Completed**: Finished execution.
+- **Paused**: Temporarily halted.
 
----
+Each campaign card reports seven performance metrics:
 
-## Requesting Quota Top-Ups
+| Metric | Meaning |
+| :--- | :--- |
+| **Targeted** | Total audience contacts targeted in the campaign. |
+| **Sent** | Messages or calls dispatched. |
+| **Delivered** | Successfully delivered to recipients. |
+| **Read / answered** | Messages read or voice calls answered by recipients. |
+| **Replies / leads** | Customer replies or interested leads generated. |
+| **Failed** | Undelivered attempts (for example, invalid or unreachable numbers). |
+| **Cost** | Usage credits or cost consumed by the campaign. |
 
-When your usage nears package limits:
+### 3. Service info
 
-1. Click the **Request Additional Credits** or **Explore Add-ons** button directly on the service card.
-2. Select your desired credit tier (e.g., 25,000 additional WhatsApp conversations).
-3. Confirm the request. Your Relationship Manager will immediately contact you with pricing confirmation and activate the supplemental credits.
+- Displays your service start date, renewal or expiry date, billing cycle, and configuration notes shared by your team.
+
+## What you should see
+
+:::result
+- Every service appears with a clear status badge (**Active**, **Setting up**, **Renewal due**, or **Paused**) and up-to-date usage and campaign numbers.
+- Clicking **Ask to top up**, **Ask a question**, or **Request renewal** immediately sends your request to your account team.
+:::

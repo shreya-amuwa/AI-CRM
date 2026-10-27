@@ -1,20 +1,22 @@
 ---
 title: Final Leave Approvals and Quota Management
-summary: Step-by-step instructions for HR professionals to conduct final signoffs on leave applications, manage employee leave balances, and publish corporate absence schedules.
+description: Step-by-step instructions for HR professionals to conduct final signoffs on leave applications, manage employee leave balances, and publish corporate absence schedules.
+order: 3
+group: Human Resources
 audience: internal
 roles:
   - HR Manager
   - Department Head
   - Super Admin
+status: verified
+updated: 2026-10-27
 related:
   - /hr/attendance-monitoring
   - /department-head/approving-department-leaves
   - /shared/requesting-leave
 ---
 
-# Final Leave Approvals and Quota Management
-
-In the Amuwa corporate governance framework, all employee leave requests must complete a **two-tier authorization cycle**. Once the applicant's Department Head approves the operational feasibility (Stage 1: `PENDING_DEPARTMENT_HEAD` $\to$ `PENDING_HR`), the request moves to Human Resources for final statutory review and quota balance deduction.
+In the Amuwa corporate governance framework, all employee leave requests must complete a **two-tier authorization cycle**. Once the applicant's Department Head approves the operational feasibility (Stage 1: `PENDING_DEPARTMENT_HEAD` -> `PENDING_HR`), the request moves to Human Resources for final statutory review and quota balance deduction.
 
 ---
 

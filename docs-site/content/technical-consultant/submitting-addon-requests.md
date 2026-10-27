@@ -12,9 +12,7 @@ related:
   - /customer-journeys/addon-services-journey
 ---
 
-# How to Manage and Submit Add-on Service Requests
-
-During technical onboarding, clients frequently request supplemental capabilities-such as custom chatbot automations, additional WhatsApp Business numbers, catalog design templates, or custom CRM integrations.
+During technical onboarding, clients frequently request supplemental capabilities—such as custom chatbot automations, additional WhatsApp Business numbers, catalog design templates, or custom CRM integrations.
 
 The **Add-ons Services** module enables Technical Consultants to draft priced add-on proposals, submit them to Accounts for verification and billing, and collect supplemental onboarding items **without ever blocking core onboarding progress**.
 
@@ -103,6 +101,7 @@ graph TD
 
 ## Add-on Documents Isolation Rule
 
-> [!IMPORTANT]
-> **Core Onboarding Remains Unblocked:**
-> Add-on items and documents are strictly isolated in `customer_onboarding.addon_items`. If an add-on proposal is awaiting payment or undergoing document review, the primary onboarding card **can still be authorized and handed over to Department Head**. Never delay primary service delivery for optional add-ons!
+:::important
+**Core Onboarding Remains Unblocked:**
+Add-on items and documents are strictly isolated in `customer_onboarding.addon_items`. If an add-on proposal is awaiting payment or undergoing document review, the primary onboarding card **can still be authorized and handed over to Department Head**. Never delay primary service delivery for optional add-ons!
+:::

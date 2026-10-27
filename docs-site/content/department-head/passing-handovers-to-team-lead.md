@@ -1,93 +1,74 @@
 ---
-title: How to Pass a Verified Customer to a Team Lead
-summary: Operational procedure for Department Heads to review incoming customer handovers from Technical Consultants and route accounts to operational Team Leads.
+title: Managing Teams, Onboarding, and Passing Handovers to Team Leads
+description: Review verified customer handovers, manage Teams & People assignments, monitor Onboarding checklists, and route accounts to operational Team Leads.
+order: 2
+group: Client Delivery & Handovers
+roles: [Department Head, Team Lead, Technical Consultant]
 audience: internal
-roles:
-  - Department Head
-  - Team Lead
-  - Technical Consultant
-related:
-  - /department-head/department-head-overview
-  - /technical-consultant/department-handover-tc
-  - /delivery/managing-delivery-queue
+status: verified
+sources: [src/components/Workspaces/DepartmentHeadDashboard.tsx, src/components/Workspaces/HandoverBoard.tsx, src/components/Workspaces/TeamsAndPeoplePanel.tsx]
+related: [department-head/department-head-overview, technical-consultant/department-handover-tc, delivery/managing-delivery-queue]
+updated: 2026-10-27
 ---
 
-# How to Pass a Verified Customer to a Team Lead
+When a Technical Consultant completes document verification and provisions the client portal login (or when Accounts verifies payment on a direct-delivery service), the customer is transferred to the target delivery department (`handoverStage = 'DEPARTMENT_HEAD'`). As Department Head, you use the **Onboarding**, **Handovers**, and **Teams & People** tabs in `DepartmentHeadDashboard.tsx` to inspect incoming accounts, organize squads, and assign each customer to a **Team Lead**.
 
-When a Technical Consultant finishes document verification and provisions the client portal login, they transfer the customer to the Department Head. The customer appears in the Department Head's **Handover Board** under the **To assign** queue.
+![Department Head Handover Board and Team Lead Assignment](shot:department-head-handovers.png)
 
-This guide explains how to inspect the verified dossier and route the customer to the appropriate delivery **Team Lead**.
+## Before you start
 
----
+:::prereq
+- You must be signed in as an authorized **Department Head** with a single target department selected in the top **ScopeBar**.
+- The customer record must be at `handoverStage = 'DEPARTMENT_HEAD'` for initial assignment, or `TEAM_LEAD` / `TEAM_MEMBER` for reassignment.
+- At least one active **Team Lead** (`role = 'TEAM_HEAD'`) must belong to your department in **Teams & People**.
+:::
 
-## Prerequisites
+## Handover and team allocation flow
 
-- You must be logged in as an authorized **Department Head**.
-- The customer must have been transferred by the Technical Consultant (`handoverStage === 'DEPARTMENT_HEAD'`).
-- At least one active **Team Lead** must exist within your department roster.
+```flow
+Customer reaches Department Queue | Technical Consultant / Accounts | handoverStage = DEPARTMENT_HEAD
+Inspect Onboarding & Dossier | Department Head | Onboarding & Handovers tabs
+Select Pass to Team Lead | Department Head | Choose Team Lead + add operational note
+-> No Team Lead available in squad | Configure squad in Teams & People first
+Team Lead Assigns Team Member | Team Lead | handoverStage = TEAM_LEAD -> TEAM_MEMBER
+```
 
----
+## Steps: Reviewing onboarding and passing a handover to a Team Lead
 
-## Step-by-Step Assignment Procedure
+1. In the left sidebar of the **Department Head Dashboard**, click **Onboarding** to inspect customers currently completing document verification or technical setup, or click **Handovers** to open the **Handover Board**.
+2. On the **Handovers** tab, filter customer cards using the stage views:
+   - **To assign (`DEPARTMENT_HEAD`)**: Verified customers waiting for you to assign a Team Lead.
+   - **In progress (`TEAM_LEAD` or `TEAM_MEMBER`)**: Accounts already routed to a Team Lead or delivery specialist.
+   - **All**: Complete historical list of departmental customer handovers.
+3. Click a customer card in **To assign** to open the customer dossier and verify:
+   - **Purchased Services & Add-Ons**: Catalog codes, quantities, and delivery scope.
+   - **Consultation & Onboarding Notes**: Remarks recorded by Sales and the Technical Consultant.
+   - **Client Portal Login**: Confirmation that the customer's `/client/login` credentials are active.
+4. Click **Pass to Team Lead** on the customer card.
+5. In the **Assign Team Lead** dialog, choose the target **Team Lead** from your department roster and enter an optional **Assignment Note** (such as target launch dates, priority instructions, or special client requirements).
+6. Click **Confirm Assignment**.
 
-### 1. Open the Handover Board
+## Managing squads in Teams & People
 
-1. In your dashboard navigation, click **Clients & Handovers** (or open the **Handover Board** tab).
-2. The board organizes customer cards into status tabs:
-   - **To assign (`DEPARTMENT_HEAD`):** Newly arrived verified customers awaiting team lead allocation.
-   - **In progress (`TEAM_LEAD` or `TEAM_MEMBER`):** Customers actively assigned to team leads or specialists.
-   - **All:** Historical list of all departmental accounts.
-3. Select the **To assign** tab. Newly transferred cards display an orange badge labeled **Waiting for a team lead**.
+To keep workloads balanced across your division, open the **Teams & People** sidebar tab:
 
----
+1. Review all operational teams inside your department along with each squad's assigned **Team Lead** and **Team Members**.
+2. Check active customer counts and open task loads per staff member before routing new handovers.
+3. To rebalance a customer already in delivery, open **Handovers > In progress**, select the customer card, and click **Change Team Lead** to transfer ownership to another Team Lead with an audit note.
 
-### 2. Inspect Customer Dossier and Technical Notes
+## What you should see
 
-1. Click on the customer card to open the **Customer Dossier Modal**.
-2. Review critical onboarding data:
-   - **Purchased Services:** Catalog codes and package quantities.
-   - **Consultation Notes:** Historical observations recorded by the Technical Consultant and Sales.
-   - **Client Portal Status:** Confirm that `clientAccount` is provisioned.
-   - **Handover Timestamp:** Displays when the Technical Consultant dispatched the account.
+:::result
+Confirming the handover assignment sets `handoverStage = 'TEAM_LEAD'`, records the `passed_to_team_lead_at` timestamp, moves the card from **To assign** to **In progress**, and sends an instant notification to the selected Team Lead.
+:::
 
----
+## Good to know
 
-### 3. Open the Team Lead Allocation Dialog
+:::note Cross-Department Add-On Routing
+When an existing customer purchases an add-on service delivered by your department, it follows the same handover path once Accounts verifies the payment and the Technical Consultant (if required) completes onboarding checks.
+:::
 
-1. In the customer card action toolbar, click the blue **Pass to Team Lead** button (with the `UserCheck` icon).
-2. The **Assign Team Lead** dialog appears:
-   - **Customer Name:** Pre-filled with business name.
-   - **Select Team Lead:** Dropdown listing all active Team Leads belonging to your department.
+## If something goes wrong
 
----
-
-### 4. Select Team Lead and Add Operational Guidance
-
-1. Select the designated Team Lead based on current squad workload and specialization.
-2. In the **Assignment Note for Team Lead** field, enter any specific instructions:
-   - Target launch date or milestone deadlines.
-   - Special client requirements or communication channels.
-   - Priority level.
-
----
-
-### 5. Confirm Allocation
-
-1. Click **Confirm Assignment**.
-2. The CRM executes the state transition:
-   - Sets `handoverStage = 'TEAM_LEAD'`.
-   - Records `passed_to_team_lead_at` timestamp and stores your assignment note.
-   - Dispatches a real-time notification to the selected Team Lead.
-   - Transitions the customer card from the **To assign** column to the **In progress** column.
-
----
-
-## Reassigning a Team Lead
-
-If a Team Lead is on scheduled leave or workload rebalancing is required:
-
-1. Open the **In progress** tab on the Handover Board.
-2. Click on the customer card.
-3. Click the **Change Team Lead** button.
-4. Select a new Team Lead from the dropdown and record the reason for reassignment.
-5. The system immediately updates ownership and transfers the customer to the new Team Lead's active queue.
+- **No Team Leads appear in the dropdown**: Open **Teams & People** to verify that at least one active staff member in your current department holds the `TEAM_HEAD` role.
+- **Customer is stuck in Onboarding**: See [Handover and Progression Blockers](/troubleshooting/handover-and-progression-blockers).

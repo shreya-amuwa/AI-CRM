@@ -1,73 +1,79 @@
 ---
-title: Department Hub and Business Division Management
-summary: Administrative guide for Super Admins to configure corporate departments, toggle lock/active states, manage session ceilings, and govern division metadata.
+title: Client Notices Broadcasts and Department Hub Governance
+description: Send targeted or broadcast Client Notices with severity and deep-link actions in ClientNoticePanel, track Read vs Unread status, and govern departments in the Super Admin Dashboard.
+order: 5
+group: Executive Governance
+roles: [Super Admin, Department Head, Accounts Department]
 audience: internal
-roles:
-  - Super Admin
-related:
-  - /super-admin/staff-and-role-administration
-  - /super-admin/service-catalog-management
-  - /getting-started/roles-and-permissions
+status: verified
+sources: [src/components/Workspaces/SuperAdminDashboard.tsx, src/components/Workspaces/ClientNoticePanel.tsx]
+related: [super-admin/company-business-oversight, shared/notification-center-guide, client/welcome-client-portal]
+updated: 2026-10-27
 ---
 
-# Department Hub and Business Division Management
+Super Admins manage external customer communications and divisional governance using two dedicated modules in `SuperAdminDashboard.tsx`: the **Client Notices** panel (`src/components/Workspaces/ClientNoticePanel.tsx`) for dispatching actionable alerts to the self-service Client Portal, and the **Departments** hub for governing business units and concurrent session boundaries.
 
-The **Department Hub** serves as the organizational backbone of Amuwa AI CRM. It partitions operations into autonomous business units-such as Amuwa Corporation Holding, Wabastore, Amuwa Design Studio, Digitree Infotech, D Talk, and HR.
+## Before you start
 
-Super Admins hold exclusive authority to provision new departments, edit organizational metadata, enforce concurrent session ceilings, and lock or unlock departmental portals.
+:::prereq
+- Sign in as a **Super Admin** at `/super-admin/dashboard`.
+- To receive a notice in the Client Portal, the target customer must have an active Client Portal account (`/client/login`).
+:::
 
----
+## Dispatching and tracking Client Notices (`ClientNoticePanel.tsx`)
 
-## Department Structure and Capabilities
+The **Client Notices** tab in the **Super Admin Dashboard** enables administrators to send structured notices directly to one customer or broadcast to multiple customers, complete with severity styling, deep-link action buttons, and read-receipt tracking:
 
-Each corporate department configured in the CRM includes:
+```flow
+Open Client Notices Tab | Super Admin | SuperAdminDashboard > Client Notices (ClientNoticePanel.tsx)
+Select Recipients & Notice Type | Super Admin | Choose PAYMENT_REMINDER, RENEWAL_DUE, DOCUMENT_REQUEST, SERVICE_UPDATE, or GENERAL
+Set Severity & Optional Action CTA | Super Admin | Severity: INFO, WARNING, URGENT + optional Action Label & Action Tab
+Dispatch Notice to Client Portal | Realtime Engine | Appears on customer's Client Dashboard banner & notice feed
+Track Read vs Unread Status | Super Admin | Live delivery table shows Read timestamp vs Unread badge
+```
 
-- **Department Identifier (`id`):** Unique slug used in routing and API payloads (e.g., `amuwa`, `wabastore`, `designstudio`, `accounts`).
-- **Brand Identity:** Official department display name, marketing description, theme accent color, and high-resolution logo asset (`/logos/[id].png`).
-- **Operational Metrics:** Real-time counters tracking total leads, active staff members, and live concurrent sessions.
-- **Access State:** Locked (`locked: true`) or Open (`locked: false`).
-- **Session Ceilings (`maxSessions`):** Strict boundary capping simultaneous administrative sessions to protect system integrity.
+### 1. Notice types and severities
 
----
+When composing a notice in **Client Notices**, select the appropriate classification and urgency level:
 
-## Step-by-Step Administrative Procedures
+| Field | Options | Typical Use Case |
+| --- | --- | --- |
+| **Notice Type** (`type`) | `PAYMENT_REMINDER`, `RENEWAL_DUE`, `DOCUMENT_REQUEST`, `SERVICE_UPDATE`, `GENERAL` | Categorizes the notice icon and filter tag in the Client Portal. |
+| **Severity** (`severity`) | `INFO` (Blue), `WARNING` (Amber), `URGENT` (Red) | Controls visual prominence and banner styling on the customer's dashboard. |
+| **Action Label** (optional) | Custom button text (e.g., *"View Pending Invoice"* or *"Upload KYC Document"*) | Renders a one-click call-to-action button inside the notice card. |
+| **Action Tab** (optional) | Target Client Portal tab (`overview`, `invoices`, `documents`, `services`, `tickets`, `plans`) | Deep-links the customer directly to the relevant Client Portal tab when they click the action button. |
 
-### 1. Navigating to Department Administration
+### 2. Steps to send a Client Notice and track read receipts
 
-1. Sign in with authorized **Super Admin** credentials.
-2. From the main administrative navigation, select **Department Hub**.
-3. The dashboard displays the global department grid showing all corporate divisions, active staff counts, and session monitors.
+1. In the **Super Admin Dashboard** sidebar, click **Client Notices**.
+2. Choose the target recipient(s): select a specific customer from the search selector or target a customer cohort.
+3. Select the **Notice Type** (`PAYMENT_REMINDER`, `RENEWAL_DUE`, `DOCUMENT_REQUEST`, `SERVICE_UPDATE`, or `GENERAL`) and **Severity** (`INFO`, `WARNING`, or `URGENT`).
+4. Enter a clear **Title** and **Message Body**.
+5. *(Optional)* Fill in **Action Label** and select an **Action Tab** so the customer can jump straight to **Invoices**, **Documents**, **Services**, or **Tickets** with one click.
+6. Click **Send Notice**.
+7. Monitor the **Sent Notices History** table below the composer:
+   - Each dispatched notice displays a live **`Read`** badge (with timestamp when the client viewed or acknowledged it) or **`Unread`** badge.
 
----
+## Governing divisions in the Departments tab
 
-### 2. Provisioning or Updating a Department
+Click **Departments** in the **Super Admin Dashboard** sidebar to oversee all corporate divisions (**Wabastore**, **Whatsbox**, **Dtalk**, **Digitree**, **Mpillar**, **Design Studio**, **Accounts**, and **HR**):
 
-1. To update an existing department, click the **Settings / Edit** button on the department card.
-2. In the configuration dialog:
-   - **Department Name:** Corporate entity title (e.g., *"Amuwa Design Studio"*).
-   - **Operational Tagline / Description:** Brief scope summary (e.g., *"Creative Solutions & Strategic Design Innovation"*).
-   - **Accent Color:** Hex color code used for badges, buttons, and border highlights in departmental panels.
-   - **Max Concurrent Sessions:** Integer specifying permitted simultaneous active staff logins (default: 2 per department).
-3. Click **Save Department Configuration**.
+1. **Department Drill-Down**: Click any department card to inspect its active staff roster, lead pipeline, onboarding queue, and revenue KPIs.
+2. **Lock / Unlock Department**: Toggle a department's lock state during maintenance or restructuring. Locking a department blocks non-admin logins to that division and records an entry in **Security & Audit Logs**.
+3. **Concurrent Session Ceilings**: Monitor `activeSessions / maxSessions` per department and terminate stale sessions if an employee left a workstation open.
 
----
+## What you should see
 
-### 3. Locking or Unlocking a Department
+:::result
+Sent **Client Notices** appear immediately in the customer's Client Portal with the selected severity color and deep-link CTA button, and flip from **Unread** to **Read** in the Super Admin table as soon as the client opens them.
+:::
 
-If a department undergoes scheduled maintenance, organizational restructuring, or security review:
+## Good to know
 
-1. Locate the department card in the Department Hub.
-2. Toggle the **Lock Department** switch:
-   - **When Locked:** Non-admin staff attempting to access the department receive an alert: *"This department is currently locked for administrative maintenance."* Existing non-admin sessions are gracefully evicted.
-   - **When Unlocked:** Department staff resume normal operational access immediately.
-3. Every lock/unlock action is permanently recorded in the system audit trail.
+:::tip Actionable Payment & Document Reminders
+When sending a `PAYMENT_REMINDER`, set **Severity** to `WARNING` or `URGENT`, set **Action Label** to `View Invoices`, and set **Action Tab** to `invoices` so the client lands directly on their payable invoice screen.
+:::
 
----
+## If something goes wrong
 
-### 4. Concurrent Session Monitoring
-
-Amuwa AI CRM enforces strict concurrent session policies to prevent credential sharing and unauthorized multi-location access:
-
-- The top header of each department panel tracks `activeSessions / maxSessions`.
-- If the maximum session quota is reached, any additional login attempt is blocked with an alert: *"Maximum concurrent department sessions reached. Please have an active user sign out."*
-- Super Admins can click **Terminate Stale Sessions** on the department card to evict orphaned or inactive sessions.
+- **Customer reports they did not see the notice**: Check in **Sent Notices History** whether the notice is still marked **Unread**, and verify that the customer has an active login provisioned for `/client/login`.

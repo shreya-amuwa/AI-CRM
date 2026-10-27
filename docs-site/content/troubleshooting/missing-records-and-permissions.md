@@ -1,62 +1,96 @@
 ---
 title: Troubleshooting Missing Records and Permission Boundaries
-summary: Diagnostic guide to locating missing leads or customer dossiers, understanding pipeline stage shifts, and resolving permission-based visibility limits.
+description: Locate missing leads, customers, or invoices by checking pipeline stage tabs, the Multi-Department ScopeBar, My Leads vs Team Leads toggles, and active filters.
+order: 2
+group: Access & Visibility
+roles: [Super Admin, Department Head, Team Lead, Team Member, Telecaller, Business Associate, Accounts]
 audience: internal
-roles:
-  - Sales Team Member
-  - Support Team Member
-  - Team Lead
-  - Department Head
+status: verified
+sources: [src/components/DepartmentScopeBar.tsx, src/components/SalesPanel.tsx, src/components/DepartmentHeadPanel.tsx]
 related:
   - /shared/searching-and-filtering
   - /sales/my-leads-overview
   - /troubleshooting/login-and-access-issues
+updated: 2026-10-27
 ---
 
-# Troubleshooting Missing Records and Permission Boundaries
+When a lead, customer dossier, or invoice appears to be missing, the record has almost always moved to another lifecycle tab, is hidden behind an active filter or ownership toggle, or belongs to a different department scope in the **`ScopeBar`**.
 
-When an employee cannot find an expected lead, customer card, or invoice, the issue is almost always related to **pipeline stage movement**, **ownership assignment**, or **departmental isolation rules**.
+## Before you start
 
----
+:::prereq
+- Note the customer's **business name**, **phone number**, or **email address** so you can search for the record once the right tab and scope are selected.
+:::
 
-## 1. Symptom: "The lead disappeared after I updated it"
+## 1. Symptom: A customer or lead is missing in a Multi-Department workspace
 
-### Likely Cause: Pipeline Stage Movement
-When you set a deal amount and advance a lead to **Potential**, or when Accounts confirms a deposit and moves a customer to **Customer Onboarding**, the card leaves its previous tab:
+### Likely causes
 
-```mermaid
-graph LR
-    Tab1["Tab 1: My Leads"] -->|"Move to Potential"| Tab2["Tab 2: Potential Customers"]
-    Tab2 -->|"Accounts Confirms"| Tab3["Tab 3: Customer Onboarding"]
-    Tab3 -->|"Handover Complete"| Delivered["Active Service Delivery"]
+- Staff members who manage multiple departments (such as a shared **Department Head** or **Super Admin** with multiple department scopes in `user_department_scopes`) have the Multi-Department **`ScopeBar`** set to a single department instead of **Combined** (or set to the wrong department).
+
+### Step-by-step resolution
+
+1. Look at the Multi-Department **`ScopeBar`** at the top of your dashboard.
+2. Check which department pill is currently selected:
+   - Click **Combined** (where available on roll-up views) to view records aggregated across all of your assigned departments, or
+   - Click the specific department pill (for example, **Wabastore**, **Wabatalk**, **Digitree Infotech**, or **Amuwa Design Studio**) where the customer was created.
+3. Re-run your search in the active view's search box.
+
+## 2. Symptom: "The lead disappeared after I updated it or recorded a deal"
+
+### Likely causes
+
+- Updating a lead's commercial stage moves the card to the next pipeline tab:
+  - Setting a deal amount (`> ₹0`) and moving to potential shifts the record from **1 My Leads** to **2 Potential Customers**.
+  - Once **Accounts** verifies a payment, the customer moves from **2 Potential Customers** to **3 Customer Onboarding**.
+  - After onboarding and handover complete, the customer appears in the delivery and support queues.
+
+```flow
+1 My Leads | Sales / Telecaller / BA | Initial inquiry before deal value is finalized
+2 Potential Customers | Sales | Deal amount > ₹0 agreed or sent to Accounts for payment verification
+3 Customer Onboarding | Sales & TC | Accounts confirmed payment; checklist and onboarding in progress
+Active Service Delivery | Delivery & Support | Handed over to Department Head, Team Lead, and Team Member
 ```
 
-### Resolution Steps
-1. In the Sales panel, click **2 Potential Customers** to see leads with agreed deal amounts.
-2. If the customer already paid, click **3 Customer Onboarding**.
-3. Use the global search shortcut (`Ctrl + K`) and type the customer's phone number or business name to locate their record regardless of active stage.
+### Step-by-step resolution
 
----
+1. In the **Sales** workspace, switch across the pipeline tabs (**1 My Leads**, **2 Potential Customers**, and **3 Customer Onboarding**).
+2. Clear any status or date filter pills set on the tab (reset status filter to **All**).
+3. Type the customer's phone number or business name into the page search input.
 
-## 2. Symptom: "I cannot find a customer assigned to my squad"
+## 3. Symptom: "I can't see a teammate's or squad member's leads"
 
-### Likely Causes
-- **Individual vs Squad Filter:** You may be viewing your personal queue rather than the squad queue.
-- **Ownership Assignment:** The lead was assigned to a different team member or remains in the unassigned Inbound pool.
+### Likely causes
 
-### Resolution Steps
-1. If you are a Team Lead or Manager, toggle the view filter from **Mine** to **All Squad Members**.
-2. Check the **Inbound Leads** tab to see if the record has not yet been claimed.
-3. If an account was reassigned by a Department Head, check your notifications for ownership transfer alerts.
+- The ownership view toggle is set to **My Leads** (personal records only) rather than **Team Leads** (all records across your squad or department).
+- The lead is still in the unassigned **Inbound Leads** pool or in the **Lead Assign** queue awaiting distribution by the Sales Department Head.
 
----
+### Step-by-step resolution
 
-## 3. Symptom: "Access Denied / Department Restricted"
+1. If you are a **Team Lead** or **Department Head**, switch the view toggle from **My Leads** to **Team Leads** (or **All**).
+2. Check the **Inbound Leads** tab or **Lead Assign** tab to see if the record has not yet been assigned to an individual representative.
+3. If a **Telecaller** handed the lead to a **Business Associate (BA)**, check the **BA Assigned Leads** queue.
 
-### Likely Causes
-Amuwa AI CRM enforces strict divisional data boundaries. A staff member assigned to Wabastore cannot view customer dossiers or invoices belonging to Digitree Infotech or Amuwa Design Studio.
+## 4. Symptom: "Access Denied" or records from another division are not visible
 
-### Resolution Steps
-1. Verify the entity with which the customer contracted.
-2. If cross-departmental collaboration is required (e.g., adding a Design Studio add-on to a Wabastore client), route the request through the **Add-ons Services** module rather than attempting direct cross-department navigation.
-3. Super Admins can reassign employee departmental mappings if a specialist transferred permanently to a new division.
+### Likely causes
+
+- Amuwa AI CRM enforces strict department data boundaries. A **Team Member** or **Team Lead** assigned only to **Wabastore** cannot view customer records belonging to **Wabatalk** or **Amuwa Design Studio**.
+
+### Step-by-step resolution
+
+1. Confirm which department owns the customer record.
+2. If an employee permanently covers more than one department, a **Super Admin** can grant additional department access via `user_department_scopes` in the Staff Management panel.
+
+## Expected result
+
+:::result
+- After selecting the right department in the **`ScopeBar`**, switching to the matching pipeline tab (**My Leads**, **Potential Customers**, or **Customer Onboarding**), and toggling **My Leads** vs **Team Leads**, the customer record appears in the list.
+:::
+
+## When to escalate
+
+Escalate to your **Department Head** or **Super Admin** if the record does not appear in any stage tab after checking all scopes and filters. Include:
+
+- The customer's **phone number**, **business name**, and **department**.
+- Which employee last updated the record and what action they took (for example, *Moved to Potential*, *Sent to Accounts*, or *Assigned to BA*).

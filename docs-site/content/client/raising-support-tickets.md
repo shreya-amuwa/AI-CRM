@@ -1,75 +1,73 @@
 ---
-title: How to Raise Support Tickets and Chat with Support
-summary: Client guide to opening support requests, chatting in real time with relationship managers, and tracking ticket resolution statuses.
+title: Raising and Tracking Support Tickets
+description: Open a new support ticket, attach files, filter tickets by status, reply in ticket threads, or reopen a resolved ticket.
+order: 7
+group: Support & Communication
+roles: [Client]
 audience: client
+status: verified
+sources: [src/client/Tickets.tsx]
 related:
   - /client/welcome-client-portal
-  - /client/uploading-client-documents
+  - /client/chatting-with-your-team
+  - /client/viewing-services-usage
   - /client/account-profile-security
+updated: 2026-10-27
 ---
 
-# How to Raise Support Tickets and Chat with Support
+Whenever you have an issue that needs to be tracked to completion — such as a technical problem, a billing question, or a service change — open a ticket in **Support Tickets**. For quick everyday questions, you can also use [Chat with Team](/client/chatting-with-your-team).
 
-When you encounter technical hurdles, need configuration assistance, or have billing inquiries, the **Tickets** module connects you directly to our dedicated customer success engineers and your assigned Relationship Manager.
+## Before you start
 
----
+:::prereq
+- You are signed in to your Client Dashboard at `/client/login`.
+:::
 
-## Opening a New Support Ticket
+## Opening a new support ticket
 
-```mermaid
-graph TD
-    Client["Client in Portal"] --> ClickNew["Click 'Create New Ticket'"]
-    ClickNew --> Form["Select Category, Priority and Describe Issue"]
-    Form --> Submit["Submit Ticket -> Generates Ticket ID"]
-    Submit --> Chat["Interactive 2-Way Chat with Support Specialist"]
-    Chat --> Resolution["Issue Resolved and Ticket Closed"]
-```
+1. Click **Support Tickets** in the left navigation menu (or click **Ask for help** in the top header).
+2. Click **New ticket**.
+3. Fill in the **New ticket** form:
+   - **Subject** *(required)*: A short summary of what you need help with.
+   - **Category**: Choose the best match — **Billing**, **Technical**, **Service**, **Onboarding**, or **General**.
+   - **Related service** *(optional)*: Pick one of your services if the question is about a specific service.
+   - **Describe the problem** *(required)*: Explain what happened, what you expected, and any helpful details.
+   - **Attach files** *(optional)*: Click **Attach files** to include screenshots or documents (up to **5 files**, **10 MB** each).
+4. Click **Submit ticket**.
 
-### Step-by-Step Procedure
+![Support Tickets in Client Dashboard](shot:client-portal-tickets.png "Raising and Tracking Support Tickets")
 
-1. Sign in to your portal and click **Tickets** (LifeBuoy icon) in the navigation sidebar.
-2. Click the blue **Create New Ticket** button at the top-right.
-3. Complete the ticket creation form:
-   - **Ticket Subject:** A brief summary of your request (e.g., *"Assistance updating WhatsApp webhook endpoint"*).
-   - **Category:** Select `TECHNICAL`, `BILLING`, `ONBOARDING`, `SERVICE_REQUEST`, or `GENERAL`.
-   - **Priority Level:** Choose `LOW`, `NORMAL`, `HIGH`, or `URGENT` (reserve Urgent for complete service outages).
-   - **Detailed Description:** Provide specific context, including error messages, steps to reproduce, or transaction IDs.
-   - **Attachments:** Click **Attach files** to add screenshots, PDFs or documents. You can add up to 5 files at a time, 5 MB each. Allowed types: images (PNG, JPG, WebP), PDF, text, CSV, Word and Excel.
-4. Click **Submit Ticket**.
-5. The system generates a unique tracking number (e.g., `#AMW-0042`) and routes the ticket directly to your support team.
+## Filtering and tracking your tickets
 
----
+Use the status filter chips at the top of **Support Tickets** to view your requests:
 
-## Two-Way Interactive Ticket Chat
+| Status Chip / Badge | What It Means |
+| :--- | :--- |
+| **All** | Shows all of your support tickets. |
+| **Open** | Your ticket has been received and is queued for your team. |
+| **In progress** | Your team is actively working on your request. |
+| **Waiting on you** | Your team has replied and needs information or confirmation from you. |
+| **Resolved** | Your team has provided a solution and marked the issue resolved. |
+| **Closed** | The ticket is complete and closed. |
 
-Once a ticket is created, clicking on it opens the interactive **Ticket Chat Workspace**:
+## Replying to a ticket and attaching files
 
-- **Real-Time Messaging:** Send messages and receive replies without refreshing your browser.
-- **Delivery & Read Receipts:** Sent and seen double-check indicators confirm when a support specialist has read your message.
-- **File Sharing:** Click the paperclip next to the message box to send screenshots or documents (up to 5 files at a time, 5 MB each; images, PDF, text, CSV, Word or Excel). Click a file in the chat to open it. Only you and the support team handling your ticket can open your files.
-- **Dedicated Specialist:** The header displays the name and photo of the support engineer or Relationship Manager actively handling your ticket.
+1. Click any ticket in your list to open the conversation thread.
+2. Type your reply in the message box at the bottom of the thread.
+3. If needed, click **Attach files** to include up to **5 files** (**10 MB** each) with your reply.
+4. Send your message. Your reply appears immediately in the thread and alerts your team.
 
----
+## Reopening a resolved ticket
 
-## Understanding Ticket Statuses
+If a ticket is marked **Resolved** or **Closed** and the same problem comes back:
 
-Your ticket list tracks the live progression of each inquiry:
+1. Open the ticket from your list.
+2. Click **Reopen Ticket** (or send a follow-up reply in the thread explaining what is still happening).
+3. The ticket status returns to active so your team can continue helping you.
 
-| Status Badge | Style | Description |
-| :--- | :--- | :--- |
-| **Open** | Blue | Newly created ticket; assigned to queue. |
-| **In Progress** | Indigo | A specialist is actively investigating or implementing a solution. |
-| **Waiting on Client** | Amber | Support has replied and requested additional details or confirmation from you. |
-| **Resolved** | Green | The issue has been addressed and confirmed operational. |
-| **Closed** | Slate | Ticket inquiry concluded and archived. |
+## What you should see
 
----
-
-## Reopening a Resolved Ticket
-
-If an issue recurs after being marked **Resolved**:
-
-1. Open the resolved ticket from your ticket history.
-2. Type a message in the chat input explaining that the problem persists.
-3. Click **Send Message**.
-4. The ticket automatically reopens to **In Progress** and alerts your assigned support engineer.
+:::result
+- Every new ticket gets a reference number (such as `#AMW-0042`) and appears immediately under **Support Tickets**.
+- When your team replies or updates the status to **Waiting on you** or **Resolved**, you receive an alert in your **Notification Center**.
+:::

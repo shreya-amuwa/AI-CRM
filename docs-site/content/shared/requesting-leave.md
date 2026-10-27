@@ -1,19 +1,21 @@
 ---
 title: How to Request Employee Leave
-summary: User manual for employees across all departments to submit leave applications, track two-tier approval statuses, and manage remaining leave quotas.
+description: User manual for employees across all departments to submit leave applications, track two-tier approval statuses, and manage remaining leave quotas.
+order: 4
+group: Shared Features
 audience: internal
 roles:
   - Team Member
   - Team Lead
   - Technical Consultant
   - Accounts Department
+status: verified
+updated: 2026-10-27
 related:
   - /department-head/approving-department-leaves
   - /hr/leave-approval-hr
   - /hr/attendance-monitoring
 ---
-
-# How to Request Employee Leave
 
 All corporate employees in Amuwa AI CRM submit time-off and leave applications through the integrated **Leave Center**. Applications flow through a transparent, two-tier authorization process to ensure operational coverage and accurate payroll attendance records.
 
@@ -40,7 +42,7 @@ graph LR
 | Leave Type | Code | Purpose | Documentation Required |
 | :--- | :--- | :--- | :--- |
 | **Casual Leave** | `CASUAL` | Urgent personal business, family events. | None |
-| **Sick Leave** | `SICK` | Personal illness or medical appointments. | Medical certificate required if $>3$ consecutive days |
+| **Sick Leave** | `SICK` | Personal illness or medical appointments. | Medical certificate required if more than 3 consecutive days |
 | **Earned Leave** | `EARNED` | Planned vacations and extended breaks. | Apply at least 7 days in advance |
 | **Leave Without Pay** | `UNPAID` | Unpaid time off when quotas are exhausted. | Prior administrative approval |
 

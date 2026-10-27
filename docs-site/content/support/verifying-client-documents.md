@@ -1,57 +1,57 @@
 ---
-title: Reviewing and Verifying Client-Uploaded Documents
-description: Processing files and compliance details uploaded by clients via their self-service portal.
-order: 50
+title: Reviewing and Verifying Client Documents in Support
+description: Inspecting, verifying, or returning compliance and KYC files uploaded by clients through their self-service portal.
+order: 5
+group: Support Operations
 roles: [Support Team Member, Support Team Lead, Technical Consultant]
 audience: internal
 status: verified
-sources: [docs/CLIENT_DASHBOARD.md, shared/contracts.ts]
-related: [support/logging-client-activity, client/uploading-client-documents]
-updated: 2026-10-19
+sources: [src/components/client-portal/ClientDocumentsReview.tsx, src/components/support-member/SupportMemberDashboard.tsx, shared/contracts.ts]
+related: [support/logging-client-activity, client/uploading-client-documents, troubleshooting/document-upload-troubleshooting]
+updated: 2026-10-27
 ---
 
-Clients can upload missing documents, updated compliance certificates, or replacement files directly through their portal dashboard. Support staff review and authenticate these uploads.
+Active clients can upload updated KYC certificates, brand assets, or compliance documents at any time through their self-service Client Portal. Support staff inspect and verify these submissions from the **Client documents** queue in the Support Dashboard.
 
 ## Before you start
 
 :::prereq
-- You must have support permissions to review client documents (`private.can_serve_client`).
+- Sign in to the Support Dashboard and open **Client documents** from the sidebar (`Overview`, `My Leads`, `Team Leads`, `Import Customers`, `Client tickets`, `Client calendar`, `Client documents`, `My Tasks` / `Assigned Tasks`, `Leave Request`, `Chat`, `My Profile`).
 :::
 
-## Steps
+## Steps to review and verify a client document
 
-1. In the sidebar, navigate to **Client Documents**.
-2. The queue displays all items uploaded or updated by clients, separated into two tabs:
-   - **To verify**: Submissions awaiting staff inspection.
-   - **Reviewed**: Historical authorized or rejected documents.
-3. Click on a document row to open the review drawer.
-4. Click **View Document** to inspect the file via a secure 120-second signed URL.
-5. Inspect the file for clarity, authenticity, and compliance requirements.
-6. Take action:
-   - **To approve**: Click **Verify**. The item status updates to `VERIFIED` and locks against further client modifications.
-   - **To reject**: Click **Send back**. Enter an explicit feedback note (e.g. *Signature is cropped; please upload complete full-page scan*) and confirm.
+1. In the Support Dashboard sidebar, click **Client documents** (`ClientDocumentsReview.tsx`).
+2. Browse the two queue tabs:
+   - **To verify**: New or replacement files uploaded by clients awaiting staff inspection.
+   - **Reviewed**: Previously verified (`VERIFIED`) or returned (`REJECTED`) submissions.
+3. Click a submission row in **To verify** to open the review drawer.
+4. Click **View Document** to open the file in a secure, short-lived signed viewer link.
+5. Check that the document is legible, complete, and matches the customer's business details.
+6. Choose your review decision:
+   - **Verify (Approve)**: Click **Verify**. The document status changes to `VERIFIED`, locks against accidental edits, and displays a green **Verified** badge on the client's portal.
+   - **Send back (Reject)**: Click **Send back**, enter a clear reason explaining what the client needs to fix (for example, *GST certificate scan is cropped at the bottom; please upload the full PDF page*), and confirm.
 
 ```flow
-Client Uploads File | Client Dashboard | Customer uploads KYC or certificate
-Queue Item Generated | System | Appears in Support "To verify" queue
-Staff Reviews Document | Support Staff | Opens temporary signed view link
--> Rejected | Support Staff | Enters reason; status becomes REJECTED
--> Approved | Support Staff | Status becomes VERIFIED; item locks
-Client Notified | Realtime | Bell notification sent with review result
+Client Uploads Document | Client Portal | File submitted from Client Portal > Documents
+Appears in To Verify Tab | System | Listed under Support Dashboard > Client documents
+Staff Inspects Signed Link | Support Staff | Reviews clarity and compliance accuracy
+-> Approved (Verify) | Support Staff | Status set to VERIFIED and item locked
+-> Returned (Send back) | Support Staff | Status set to REJECTED with feedback note sent to client
 ```
 
 ## What you should see
 
 :::result
-When verified, the document moves to the **Reviewed** tab. The client's dashboard updates to display a green **Verified** badge. If rejected, the client receives an alert with your rejection note and a prompt to re-upload.
+Once verified or returned, the submission moves from **To verify** to **Reviewed**, and the client receives an immediate portal notification with the outcome.
 :::
 
 ## Good to know
 
-:::important Post-Handover Verification
-Unlike initial sales onboarding reviews that lock upon department handover, the **Client Documents** queue remains open throughout the customer's entire lifetime. When existing clients buy additional services or renew certificates, their documents are audited here.
+:::important Ongoing Post-Handover Document Audits
+While initial onboarding documents (`2. All Important Documents` and `3. Requirement Document`) are collected during Sales onboarding, the **Client documents** queue remains active throughout the customer's lifetime for renewals, additional service activations, and updated KYC filings.
 :::
 
 ## If something goes wrong
 
-If a document link fails to open, see [Document Upload Troubleshooting](/troubleshooting/document-upload-troubleshooting).
+- **Signed document link expires or fails to open**: Close and reopen the document row to generate a fresh 120-second signed viewing URL, or see [Document Upload Troubleshooting](/troubleshooting/document-upload-troubleshooting).

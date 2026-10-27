@@ -1,60 +1,76 @@
 ---
-title: How to Manage Monthly Retainer Plans and Upgrades
-summary: Client guide to reviewing current monthly retainer tiers, comparing subscription benefits, and requesting plan switches or upgrades.
+title: Managing Your Monthly Plans
+description: View your active monthly subscriptions, browse published plans from Amuwa, request to choose or switch plans, or cancel a pending request.
+order: 3
+group: Services & Plans
+roles: [Client]
 audience: client
+status: verified
+sources: [src/client/MonthlyPlans.tsx]
 related:
   - /client/viewing-services-usage
+  - /client/exploring-services
   - /client/invoices-and-receipts
-  - /client/raising-support-tickets
+  - /client/chatting-with-your-team
+updated: 2026-10-27
 ---
 
-# How to Manage Monthly Retainer Plans and Upgrades
+The **Monthly Plans** page lets you review your active recurring subscriptions, explore available monthly plans published by Amuwa, and request a new plan or plan switch without waiting on back-and-forth emails.
 
-Ongoing digital marketing campaigns, server maintenance, and multi-agent customer support operate under predictable monthly subscription plans. The **Monthly Plans** tab provides full transparency into your active retainer tier, renewal schedules, and available tier upgrades.
+## Before you start
 
----
+:::prereq
+- You are signed in to your Client Dashboard at `/client/login`.
+:::
 
-## Viewing Your Active Plan
+## Viewing your active subscriptions
 
-1. In the portal navigation sidebar, click **Monthly Plans** (Sparkles icon).
-2. The top banner highlights your **Active Subscription**:
-   - **Current Plan Tier:** E.g., *Wabastore Growth Tier* or *Design Studio Retainer*.
-   - **Monthly Billing Amount:** Net monthly investment including applicable GST.
-   - **Next Renewal Date:** Automatic billing or invoice generation date.
-   - **Included Monthly Quotas:** Monthly conversation credits, design revisions, or scheduled strategy sessions.
+1. Click **Monthly Plans** in the left navigation menu.
+2. If your business has an active recurring subscription, the top section displays your current plan card with:
+   - **Current plan**: The name and summary of your active monthly plan.
+   - **Monthly price**: Your recurring monthly rate (and whether GST is included or added).
+   - **Started**: The date your subscription became active.
+   - **Next renewal**: The next scheduled billing or renewal date.
+   - Included features and deliverables covered under the plan.
 
----
+## Browsing available plans and requesting a plan
 
-## Comparing Plan Tiers
+Below your current subscription, you can browse the catalog of monthly plans published by Amuwa:
 
-Below your active subscription, the portal provides an interactive side-by-side **Plan Comparison Grid**:
+1. Review the plan cards to compare the monthly price, billing cycle, and included features.
+2. Click **Choose this plan** (if you do not currently have an active plan in that category) or **Switch to this plan** (if you are moving from an existing plan).
+3. In the request dialog, add any optional notes or timing preferences for your account team.
+4. Submit your request.
 
-| Feature / Quota | Starter Tier | Growth Tier (Most Popular) | Enterprise Tier |
-| :--- | :--- | :--- | :--- |
-| **WhatsApp Monthly Credits** | 10,000 Conversations | 50,000 Conversations | Unlimited / Custom Scale |
-| **Support SLA** | 24-Hour Email Support | 4-Hour Priority WhatsApp | 1-Hour Dedicated Hotline |
-| **Design Revisions** | 2 per Month | 8 per Month | Unlimited On-Demand |
-| **Dedicated Manager** | Shared Support Desk | Assigned Relationship Mgr | Senior Technical Lead |
-| **Monthly Analytics Review** | Self-Service Dashboard | Bi-Weekly Strategy Call | Weekly Executive Review |
-
----
-
-## Requesting a Plan Upgrade or Switch
-
-```mermaid
-graph LR
-    SelectPlan["Select Desired Plan Tier"] --> ClickUpgrade["Click 'Upgrade to This Plan'"]
-    ClickUpgrade --> ReviewProration["Review Prorated Billing Adjustments"]
-    ReviewProration --> ConfirmRequest["Confirm Upgrade Request"]
-    ConfirmRequest --> ManagerSync["Manager Activates New Tiers and Quotas"]
+```flow
+Browse Monthly Plans | Client | Review published plan features and monthly price
+Click Choose this plan / Switch to this plan | Client | Add optional notes and submit request
+Account Team Reviews Request | Account Team | Status moves from Waiting for confirmation to Confirmed - payment pending
+Plan Activated | Account Team | Status becomes Active and appears under your current subscriptions
 ```
 
-### Step-by-Step Procedure
+## Tracking and cancelling plan requests
 
-1. In the comparison grid, locate your desired new tier.
-2. Click **Upgrade to This Plan** (or **Switch to This Plan**).
-3. In the confirmation dialog:
-   - Review the effective start date (immediately with prorated billing or starting next billing cycle).
-   - Enter any optional comments for your account manager.
-4. Click **Confirm Plan Request**.
-5. Your Relationship Manager will adjust your account quotas and deliver an updated subscription confirmation invoice to your [Invoices](/client/invoices-and-receipts) ledger.
+All submitted requests appear in the **Your Plan Requests** section with one of four status badges:
+
+| Status Badge | What It Means |
+| :--- | :--- |
+| **Waiting for confirmation** | Your request has been sent to your account team and is awaiting review. |
+| **Confirmed — payment pending** | Your account team has confirmed the plan; it will activate once payment is completed. |
+| **Active** | The plan is now live on your account. |
+| **Declined** | The request was not applied (check the note on the request or message your team in [Chat with Team](/client/chatting-with-your-team)). |
+
+### Cancelling a pending request
+
+If you change your mind while a request is still marked **Waiting for confirmation**:
+
+1. Locate the request under **Your Plan Requests**.
+2. Click **Cancel request** and confirm.
+3. The pending request is withdrawn immediately.
+
+## What you should see
+
+:::result
+- Your request appears immediately under **Your Plan Requests** with the status **Waiting for confirmation**.
+- Once your account team confirms the plan and payment is recorded, your subscription card updates to **Active** and any issued invoice appears in [Invoices & Payments](/client/invoices-and-receipts).
+:::

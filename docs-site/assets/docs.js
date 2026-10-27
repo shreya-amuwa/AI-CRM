@@ -5,6 +5,7 @@
 
   var brandLink = $('.brand');
   var rootUrl = new URL(brandLink ? brandLink.getAttribute('href') || './' : './', window.location.href).href.replace(/\/+$/, '') + '/';
+  var isClientAudience = document.body && document.body.getAttribute('data-audience') === 'client';
 
   // ---- navigation drawer and collapse toggle
   var sidebar = $('#sidebar'), scrim = $('.scrim'), menuBtn = $('.menu-btn'), shell = $('.shell');
@@ -125,11 +126,13 @@
     if (!ws.length) return [];
     var out = [];
     idx.forEach(function (e) {
-      var t = e.t.toLowerCase(), h = (e.h || '').toLowerCase(), x = (e.x || '').toLowerCase(), score = 0, all = true;
+      var t = e.t.toLowerCase(), h = (e.h || '').toLowerCase(), sSec = (e.s || '').toLowerCase(), g = (e.g || '').toLowerCase(), r = (e.r || '').toLowerCase(), x = (e.x || '').toLowerCase(), score = 0, all = true;
       ws.forEach(function (w) {
         var s = 0;
         if (t.indexOf(w) >= 0) s += 10 + (t.split(/\W+/).indexOf(w) >= 0 ? 4 : 0);
         if (h.indexOf(w) >= 0) s += 7;
+        if (r.indexOf(w) >= 0) s += 6;
+        if (sSec.indexOf(w) >= 0 || g.indexOf(w) >= 0) s += 4;
         if (x.indexOf(w) >= 0) s += 2;
         if (!s) all = false;
         score += s;
@@ -137,7 +140,7 @@
       if (!all) return;
       if (!e.h) score += 3;
       var phrase = ws.join(' ');
-      if (t.indexOf(phrase) >= 0) score += 12; else if (h.indexOf(phrase) >= 0) score += 8; else if (x.indexOf(phrase) >= 0) score += 4;
+      if (t.indexOf(phrase) >= 0) score += 12; else if (h.indexOf(phrase) >= 0) score += 8; else if (r.indexOf(phrase) >= 0) score += 6; else if (x.indexOf(phrase) >= 0) score += 4;
       out.push({ e: e, score: score });
     });
     out.sort(function (a, b) { return b.score - a.score; });
@@ -145,15 +148,37 @@
     out.forEach(function (o) { var k = o.e.u + '#' + o.e.a; if (!seen[k] && res.length < 12) { seen[k] = 1; res.push(o.e); } });
     return res;
   }
+  function emptySuggestionsHtml(q) {
+    var links = isClientAudience
+      ? [
+          { label: 'Welcome to Client Portal', path: 'client/welcome-client-portal/' },
+          { label: 'Upload Documents', path: 'client/uploading-client-documents/' },
+          { label: 'Invoices & Receipts', path: 'client/invoices-and-receipts/' },
+          { label: 'Support Tickets', path: 'client/raising-support-tickets/' },
+          { label: 'Chat with Your Team', path: 'client/chatting-with-your-team/' }
+        ]
+      : [
+          { label: 'Getting Started', path: 'getting-started/platform-overview/' },
+          { label: 'Sales Guide', path: 'sales/my-leads-overview/' },
+          { label: 'Accounts & Invoices', path: 'accounts/payment-confirmation-queue/' },
+          { label: 'Technical Consultant', path: 'technical-consultant/onboarding-queue/' },
+          { label: 'Troubleshooting', path: 'troubleshooting/login-and-access-issues/' },
+          { label: 'Glossary & Statuses', path: 'reference/status-dictionary/' }
+        ];
+    return '<li class="search-empty"><p>No guide matches "<strong>' + esc(q) + '</strong>". Try searching for a button name, status, or role, or browse a popular section:</p><div class="search-suggestions">' +
+      links.map(function (l) { return '<a href="' + esc(rootUrl + l.path) + '">' + esc(l.label) + '</a>'; }).join('') +
+      '</div></li>';
+  }
   function render(q) {
     var ws = words(q);
     results = search(q);
     sel = results.length ? 0 : -1;
     if (q.trim().length < 2) { list.innerHTML = ''; hint.hidden = false; return; }
     hint.hidden = true;
-    if (!results.length) { list.innerHTML = '<li class="search-empty">No article matches "' + esc(q) + '". Try other words, for example "payment", "invoice" or "document".</li>'; return; }
+    if (!results.length) { list.innerHTML = emptySuggestionsHtml(q); return; }
     list.innerHTML = results.map(function (r, i) {
-      return '<li role="option"><a href="' + esc(href(r)) + '" aria-selected="' + (i === 0) + '"><div class="r-title">' + mark(r.h || r.t, ws) + '</div><div class="r-path">' + esc(r.s) + ' / ' + esc(r.t) + '</div><div class="r-snippet">' + snippet(r.x, ws) + '</div></a></li>';
+      var pathLabel = r.s + (r.g ? ' · ' + r.g : '') + ' / ' + r.t;
+      return '<li role="option"><a href="' + esc(href(r)) + '" aria-selected="' + (i === 0) + '"><div class="r-title">' + mark(r.h || r.t, ws) + '</div><div class="r-path">' + esc(pathLabel) + '</div><div class="r-snippet">' + snippet(r.x, ws) + '</div></a></li>';
     }).join('');
   }
 
@@ -184,7 +209,9 @@
 
   // ---- dynamic mermaid diagram renderer
   function renderMermaid() {
-    if (window.mermaid) {
+    if (window.__renderDocsMermaid) {
+      window.__renderDocsMermaid($('#main') || document);
+    } else if (window.mermaid) {
       try {
         mermaid.run({ querySelector: '#main .mermaid' }).catch(function (err) {
           console.warn('Mermaid rendering notice:', err);
@@ -215,10 +242,14 @@
   }
 
   var pageCache = new Map();
-  // Cache the initial loaded page in memory
   var initialCleanUrl = location.href.split('#')[0];
   var currentMain = $('#main');
   if (currentMain) {
+    $$('.mermaid', currentMain).forEach(function (el) {
+      if (!el.getAttribute('data-mermaid-src')) {
+        el.setAttribute('data-mermaid-src', el.textContent || '');
+      }
+    });
     pageCache.set(initialCleanUrl, {
       title: document.title,
       html: currentMain.innerHTML,
@@ -260,7 +291,7 @@
       var main = $('#main');
       if (main) {
         main.style.animation = 'none';
-        main.offsetHeight; // trigger reflow for smooth fadeIn transition
+        main.offsetHeight;
         main.style.animation = '';
         main.innerHTML = data.html;
       }

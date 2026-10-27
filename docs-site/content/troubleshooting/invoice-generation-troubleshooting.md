@@ -1,73 +1,88 @@
 ---
 title: Troubleshooting Invoice Generation and PDF Downloads
-summary: Diagnostic guide to resolving invoice ceiling errors, SAC code mismatches, GST tax split discrepancies, and browser PDF download failures.
+description: Resolve invoice ceiling blocks, missing SAC codes, intra-state vs inter-state GST tax splits, and PDF download or upload issues.
+order: 5
+group: Billing & Invoices
+roles: [Accounts, Super Admin, Sales Team Lead]
 audience: internal
-roles:
-  - Accounts Department
-  - Super Admin
-  - Sales Team Lead
+status: verified
+sources: [src/components/InvoiceBuilderModal.tsx, src/components/AccountsPanel.tsx, shared/contracts.ts]
 related:
   - /accounts/dynamic-invoices-overview
   - /accounts/issuing-an-invoice
   - /accounts/confirming-payment-invoice
+  - /troubleshooting/payment-and-balance-discrepancies
+updated: 2026-10-27
 ---
 
-# Troubleshooting Invoice Generation and PDF Downloads
+The Amuwa AI CRM invoice engine enforces order ceiling rules, Indian GST place-of-supply tax splits, and multi-service line item validation. Use the steps below to resolve issues when creating, uploading, or downloading invoices.
 
-The Amuwa AI CRM dynamic invoice engine strictly enforces financial rules and Indian GST statutory standards. When encountering issues generating or downloading invoices, use the following guide.
+## Before you start
 
----
+:::prereq
+- You must be signed in as **Accounts** staff or **Super Admin** to issue invoices or adjust tax basis settings in the **Invoice Builder**.
+:::
 
 ## 1. Symptom: "Invoice total exceeds order ceiling"
 
-### Likely Cause: Sum of Invoices Exceeds Total Payable
-In Amuwa AI CRM, the total face value of all invoices issued for a customer order cannot exceed the order's gross payable ceiling:
+### Likely causes
 
-$$\sum \text{Invoice Totals} \le \text{Order Gross Ceiling}$$
+- In Amuwa AI CRM, the sum of all active invoices issued for an order cannot exceed the order's gross payable ceiling:
+  - `Sum of Invoice Totals <= Order Gross Ceiling`
+- Either prior invoices already cover the agreed order amount, or the agreement's tax basis (`INCLUSIVE` vs `EXCLUSIVE`) was set to `INCLUSIVE` when the commercial quote was actually before GST (`EXCLUSIVE`).
 
-If previous invoices already account for the total payable figure, the Invoice Builder blocks the issuance of additional regular invoices.
+### Step-by-step resolution
 
-### Resolution Steps
-1. Review the customer's **Existing Invoices** list in the Invoice Builder.
-2. Check the **Remaining Uninvoiced Balance** metric displayed at the top of the modal.
-3. If the client agreed to an add-on or scope expansion, create the request through **Add-ons Services** (Add-ons Services) rather than issuing a standard invoice. Add-on invoices carry their own independent ceilings.
+1. Open the customer in the **Invoice Builder** and review the **Existing Invoices** list and the remaining uninvoiced balance.
+2. Verify whether the commercial deal was agreed **before GST (`EXCLUSIVE`)** or **including GST (`INCLUSIVE`)** (see [Payment and Balance Discrepancies](/troubleshooting/payment-and-balance-discrepancies)).
+3. If the customer purchased an additional service after onboarding started, bill it through **Add-on Services** so it carries its own independent add-on ceiling rather than consuming the primary order ceiling.
 
----
+## 2. Symptom: "Missing or Invalid SAC Code" on Multi-Service Line Items
 
-## 2. Symptom: "Invalid or Missing SAC Code"
+### Likely causes
 
-### Likely Cause: Catalog Offering Lacks Tax Classification
-Every billable service line item on an official GST tax invoice must reference a valid 6-digit Service Accounting Code (SAC).
+- Every billable service line item on a GST tax invoice requires a valid 6-digit Service Accounting Code (SAC) and line-item rate.
 
-### Resolution Steps
-1. In the Invoice Builder, inspect line items where the SAC code field is highlighted red or blank.
-2. For digital software, automation, and IT solutions, the standard compliant code is **`998314`** (Information technology services).
-3. Contact **Super Admin** to update the permanent SAC code in the Service Catalog management panel so future invoices pre-fill automatically.
+### Step-by-step resolution
 
----
+1. Inspect each service line item in the **Invoice Builder** for blank or invalid SAC fields.
+2. Enter the applicable 6-digit SAC code (for example, `998314` for IT design, automation, and software services).
+3. Ask a **Super Admin** to update the default SAC code on the service in the **Service Catalog** so future multi-service invoices pre-fill automatically.
 
-## 3. Symptom: "Unexpected GST Split (IGST vs CGST/SGST)"
+## 3. Symptom: Unexpected GST Split (`IGST` vs `CGST + SGST`)
 
-### Likely Cause: State Location Alignment
-GST rules govern tax splits based on place of supply:
-- **Intra-State (Same State - Maharashtra):** The CRM charges **9% CGST + 9% SGST**.
-- **Inter-State (Other States):** The CRM charges **18% IGST**.
+### Likely causes
 
-### Resolution Steps
-1. Verify the customer's state in their business address profile.
-2. If the client is registered in Maharashtra, the invoice will automatically split into CGST and SGST. If registered outside Maharashtra, IGST applies.
-3. If the customer's state was incorrectly recorded during intake, update the state in the customer profile before finalizing the invoice draft.
+- The invoice engine determines the GST split from the customer's registered state:
+  - **Intra-State (Maharashtra)**: Splits GST equally into **9% CGST + 9% SGST**.
+  - **Inter-State (Outside Maharashtra)**: Applies **18% IGST**.
 
----
+### Step-by-step resolution
 
-## 4. Symptom: "Clicking 'Download PDF' does nothing"
+1. Check the customer's state and GSTIN in their billing details before issuing the invoice.
+2. Update the state field if it was left blank or set to the wrong state during lead creation, then regenerate the invoice preview.
 
-### Likely Causes
-- Browser popup blocker is blocking the newly opened tab or automated download prompt.
-- Corporate browser security policies restrict downloading client-side generated files.
+## 4. Symptom: Uploaded Invoice PDF rejected or "View / Print PDF" blocked
 
-### Resolution Steps
-1. Look at the right side of your browser address bar for a **Popup Blocked** icon (in Chrome, Edge, or Firefox).
-2. Click the icon and select **Always allow pop-ups and redirects from [CRM URL]**.
-3. Re-click the **Download PDF** button.
-4. Alternatively, use the **Print Invoice** button to trigger the browser's native print-to-PDF utility.
+### Likely causes
+
+- When uploading an external invoice PDF file, the file exceeds the strict **500 KB** (`INVOICE_PDF_MAX_BYTES`) limit or is not a `.pdf` file.
+- When clicking **Download PDF** or **View / Print PDF**, the browser's pop-up blocker prevented the print/PDF tab from opening.
+
+### Step-by-step resolution
+
+1. **For Uploaded Invoice PDFs**: Ensure the file is a `.pdf` under **500 KB**.
+2. **For Viewing / Printing PDFs**: Allow pop-ups for the CRM domain in your browser address bar and click **View / Print PDF** again.
+
+## Expected result
+
+:::result
+- The invoice passes ceiling and SAC validation, calculates the proper `CGST + SGST` or `IGST` breakdown across all service line items, and publishes the PDF immediately to both the **Accounts** ledger and the Client Dashboard **Invoices & Payments** page.
+:::
+
+## When to escalate
+
+Escalate to a **Super Admin** if a catalog item is missing its default SAC configuration or if an issued invoice requires administrative cancellation. Include:
+
+- The **Customer Name**, **Invoice Number**, and **Order Gross Ceiling**.
+- A screenshot of the **Invoice Builder** line items and validation message.

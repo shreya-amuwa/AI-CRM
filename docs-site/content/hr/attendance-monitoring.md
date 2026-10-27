@@ -1,34 +1,39 @@
 ---
 title: Attendance Monitoring and Biometric Discrepancy Tracking
-summary: Comprehensive guide for Human Resources to monitor employee attendance, reconcile CRM system logins against physical biometric punches, and resolve timing discrepancies.
+description: Comprehensive guide for Human Resources to monitor employee attendance, reconcile CRM system logins against physical biometric punches, and resolve timing discrepancies.
+order: 2
+group: Human Resources
 audience: internal
 roles:
   - HR Manager
   - Department Head
   - Super Admin
+status: verified
+updated: 2026-10-27
 related:
   - /hr/hr-operations-directory
   - /hr/leave-approval-hr
   - /shared/requesting-leave
 ---
 
-# Attendance Monitoring and Biometric Discrepancy Tracking
-
 Amuwa AI CRM features an integrated attendance auditing engine. To ensure transparency and workplace discipline, the system correlates **two independent clock-in streams**:
 
 1. **Relationship Manager (RM) / CRM System Login (`rmLoginAt`):** The timestamp captured automatically when an employee signs in to the web CRM application.
 2. **Biometric Punch (`biometricLoginAt`):** The timestamp recorded when an employee scans their fingerprint or facial profile at the office biometric attendance scanner (or authorized manual HR punch).
 
+![HR Attendance Directory](shot:hr-attendance-directory.png "HR Daily Attendance Register and Directory showing synchronized logins and gap indicators")
+
 ---
 
 ## The 15-Minute Discrepancy Rule
 
-The system computes the absolute difference in minutes between the CRM login and the biometric scan:
+The system computes the difference in minutes between the CRM login and the biometric scan:
 
-$$\Delta t = |\text{Time}_{\text{CRM}} - \text{Time}_{\text{Biometric}}|$$
+`Time Gap (minutes) = |CRM Login Time - Biometric Login Time|`
 
-- **Normal Synchronized Punch ($\Delta t \le 15\text{ min}$):** Displayed with a green indicator (`Present - Both recorded`).
-- **Flagged Discrepancy ($\Delta t > 15\text{ min}$):** Triggers a prominent amber warning badge (`LoginGapBadge.tsx`). This indicates an employee punched into the office scanner but delayed opening the CRM to commence work (or conversely logged in remotely without being physically present).
+- **Normal Synchronized Punch (gap <= 15 minutes):** Displayed with a blue badge (`Present - Both recorded`).
+- **Flagged Discrepancy (gap > 15 minutes):** Triggers a prominent red badge (`LoginGapBadge.tsx`). This indicates an employee punched into the office scanner but delayed opening the CRM to commence work (or conversely logged in remotely without being physically present).
+- **Single Punch Only:** Displays a grey badge indicating missing counterpart data.
 
 ---
 
