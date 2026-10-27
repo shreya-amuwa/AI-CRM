@@ -90,7 +90,10 @@ export const WabastoreWebhookLiveBar: React.FC<WabastoreWebhookLiveBarProps> = (
     };
 
     checkConnection();
-    const interval = setInterval(checkConnection, 30000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return; // nobody is looking: skip this round
+      void checkConnection();
+    }, 30000);
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -148,6 +151,7 @@ export const WabastoreWebhookLiveBar: React.FC<WabastoreWebhookLiveBarProps> = (
   useEffect(() => {
     if (autoSync) {
       autoSyncRef.current = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return; // nobody is looking: skip this round
         handleCheckInboundStream(true);
       }, 5000);
     } else {

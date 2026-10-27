@@ -577,6 +577,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
     // Auto-poll and sync from Wabastore webhook every 30 seconds
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return; // nobody is looking: skip this round
       handleConnectWabastoreWebhook();
     }, 30000);
 

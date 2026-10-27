@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSupabase } from '../services/supabaseClient';
+import { listenToTables } from './realtimeShared';
 
 /**
  * Work tasks (migration 20261008000600_work_tasks.sql):
@@ -181,21 +182,16 @@ export function useWorkTasks(): WorkTaskData {
 
   useEffect(() => {
     void reload();
-    const supabase = getSupabase();
-    if (!supabase) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       clearTimeout(timer);
       timer = setTimeout(() => void reload(), 250);
     };
-    const channel = supabase
-      .channel(`work-tasks-${Math.random().toString(36).slice(2)}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_tasks' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_task_updates' }, refresh)
-      .subscribe();
+    // one channel per tab for the task tables, shared with every other task list on the page
+    const stop = listenToTables(['work_tasks', 'work_task_updates'], refresh);
     return () => {
       clearTimeout(timer);
-      void supabase.removeChannel(channel);
+      stop();
     };
   }, [reload]);
 
