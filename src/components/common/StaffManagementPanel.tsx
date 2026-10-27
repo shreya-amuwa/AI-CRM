@@ -179,7 +179,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   }, [consultant, supportTeams, teamId]);
 
   const loadMembers = useCallback(async () => {
-    if (!departmentId) return;
+    // the Add Member page shows no list, so it does not ask the database for one
+    if (!departmentId || view === 'add') return;
     setLoading(true);
     setListError(null);
     try {
@@ -274,7 +275,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const sharedIds = new Set(headAccess.filter(h => !memberIds.has(h.profile.id) && h.profile.id !== profile.id).map(h => h.profile.id));
   // Department Heads belong to no team, so (as the heads placed here) they show under "Whole department".
   const showShared = !isTeamLead && scope === 'department';
-  const rows = [...members, ...(showShared ? headAccess.filter(h => sharedIds.has(h.profile.id)).map(h => h.profile) : [])];
+  // Shared heads follow the same search and filters as the members of the list.
+  const matchesFilters = (m: Profile) => {
+    const q = searchApplied.toLowerCase();
+    return (!q || m.fullName.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)) && (!roleFilter || m.role === roleFilter) && (!statusFilter || m.status === statusFilter);
+  };
+  const rows = [...members, ...(showShared ? headAccess.filter(h => sharedIds.has(h.profile.id)).map(h => h.profile).filter(matchesFilters) : [])];
 
   const resetForm = () => {
     setFullName('');

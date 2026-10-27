@@ -120,7 +120,7 @@ const sh = await login('sales.head@amuwa.com', { width: 1440, height: 900 }, 'as
 await sh.waitForURL(/\/sales-head\/dashboard\//, { timeout: 15000 }).catch(() => fail('the Sales head did not land on /sales-head/dashboard/…: ' + sh.url()));
 ok('the Sales Department Head opens the Sales Department Head dashboard');
 let labels = await menuLabels(sh);
-const expectedTop = ['Overview', 'Leads', 'Daily Tasks', 'Performance Management', 'Department Income', 'Reports', 'Client Notices', 'Team Members & Access', 'Chat', 'Notification Center'];
+const expectedTop = ['Overview', 'Leads', 'Daily Tasks', 'Performance Management', 'Department Income', 'Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Chat', 'Notification Center'];
 await expect(JSON.stringify(labels.filter(l => expectedTop.includes(l))) === JSON.stringify(expectedTop) && labels.length === expectedTop.length, 'the menu is in the agreed order', labels);
 await sh.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).first().click();
 labels = await menuLabels(sh);
@@ -285,7 +285,7 @@ await page(sh, 'Client Notices');
 await sh.getByText(/notice/i).first().waitFor({ timeout: 15000 });
 ok('Client Notices opens');
 await page(sh, 'Team Members & Access');
-await sh.getByText('Rahul Mehta').first().waitFor({ timeout: 15000 });
+await sh.locator('#staff-panel-members').getByText('Rahul Mehta').first().waitFor({ timeout: 15000 });
 const shTabs = (await sh.locator('[role="tablist"][aria-label="Team Member Management"] [role="tab"]').allInnerTexts()).map(t => t.trim());
 await expect(JSON.stringify(shTabs) === JSON.stringify(['Add Team Member', 'Team Members']), 'Team Members & Access: the tabs are Add Team Member and Team Members (no Access Control for a Department Head)', shTabs);
 await expect(!/Mohan Member|Rina Rao|Dina Delivery|Tara Consultant|Dev Head/.test(await text(sh)), 'Team Members & Access: Sales people only (not the Support team or the Support head)');
