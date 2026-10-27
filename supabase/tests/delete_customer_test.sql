@@ -5,6 +5,8 @@
 \set ON_ERROR_STOP 1
 \set QUIET 1
 -- earlier suites re-apply older migrations (20261102, 20261103); this one redefines a helper they define, so it goes last
+-- ... and the newest money model (GST belongs to the order) goes back on top
+\i supabase/migrations/20261201000100_order_level_gst.sql
 \i supabase/migrations/20261113000200_manual_invoice_pricing.sql
 \echo '--- 57. Delete a customer: the Super Admin and the Department Head only; invoices and verified money stay'
 
@@ -21,6 +23,9 @@ insert into dc select 'D', create_lead('{"name":"Other Dept D","company":"Delete
 select send_lead_to_accounts((select id from dc where name = 'B'), 5000, null);
 select send_lead_to_accounts((select id from dc where name = 'C'), 7000, null);
 select test.login('acc_m');
+-- Accounts chooses the GST of each order first (0% keeps the rupee figures of these checks as written)
+select accounts_set_order_gst((select id from dc where name = 'B'), 0);
+select accounts_set_order_gst((select id from dc where name = 'C'), 0);
 -- B: money that was recorded but never verified; C: money that Accounts verified
 select accounts_record_payment((select id from dc where name = 'B'), 'PART', 1000, 'CASH', null, null, null, false);
 select accounts_record_payment((select id from dc where name = 'C'), 'PART', 2000, 'CASH', null, null, null, true);
@@ -84,6 +89,8 @@ insert into dc select 'P1', create_lead('{"name":"One Service","company":"One Co
 select send_lead_to_accounts((select id from dc where name = 'P2'), 12, null);
 select send_lead_to_accounts((select id from dc where name = 'P1'), 12, null);
 select test.login('acc_m');
+select accounts_set_order_gst((select id from dc where name = 'P2'), 0);
+select accounts_set_order_gst((select id from dc where name = 'P1'), 0);
 create temp table pf2 as select accounts_invoice_prefill((select id from dc where name = 'P2')) as j;
 create temp table pf1 as select accounts_invoice_prefill((select id from dc where name = 'P1')) as j;
 grant all on pf2, pf1 to authenticated;

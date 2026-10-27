@@ -26,9 +26,9 @@ Every customer order carries an explicit tax basis (`agreed_tax_basis`) that gov
 
 | Tax Mode | Meaning | How Invoices & Payments Work |
 | --- | --- | --- |
-| **GST Exclusive (`EXCLUSIVE`)** | Sales agreed a net contract amount **before GST**. | Accounts enters line-item base amounts up to the agreed net budget, and selects the GST rate (`0%`, `5%`, `12%`, `18%`, or `28%`) to add on top. In the payment ledger, Accounts enters **Amount before GST (₹)** plus the GST rate. |
-| **GST Inclusive (`INCLUSIVE`)** | Sales agreed a gross contract ceiling that **already includes GST**. | Total invoiced amounts (base + GST combined) cannot exceed the agreed gross ceiling. In the payment ledger, Accounts enters a single gross **Amount (₹)**. |
-| **No GST / Exempt (`0%` / `NA`)** | Zero-rated, export, or non-GST supply. | Accounts selects `No GST (0%)` on the payment or sets a `0%` tax rate on the invoice line item with an override reason where applicable. |
+| **GST Exclusive (`EXCLUSIVE`)** | Sales agreed a net contract amount **before GST**. | Accounts chooses the GST rate (`0%`, `5%`, `12%`, `18%`, or `28%`) **once for the order**, on the payment page; every invoice line then uses it and the invoice amounts, before GST, are entered up to the agreed net budget. A payment is only the money received (GST included): it carries no GST of its own. |
+| **GST Inclusive (`INCLUSIVE`)** | Sales agreed a gross contract ceiling that **already includes GST**. | Total invoiced amounts (base + GST combined) cannot exceed the agreed gross ceiling. A payment is the gross amount received. |
+| **No GST / Exempt (`0%` / `NA`)** | Zero-rated, export, or non-GST supply. | Accounts chooses `No GST (0%)` for the order (the invoice lines then carry 0%). |
 
 ## CGST + SGST vs IGST determination
 

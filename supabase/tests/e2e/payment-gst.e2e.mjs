@@ -1,4 +1,4 @@
-// Record payment with GST, in real browsers against the local stack (Postgres + PostgREST + gateway + the web app).
+// GST of the order and Record payment, in real browsers against the local stack (Postgres + PostgREST + gateway + the web app).
 // See supabase/tests/e2e/README.md. Passwords come from E2E_PASSWORDS (made up by the runner); nothing is stored.
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -71,66 +71,104 @@ const menu = async (p, label) => {
 const text = p => p.locator('main').innerText();
 const num = s => Number(String(s).replace(/[^0-9.-]/g, ''));
 
-// ------------------------------------------------------------------ fixture: a lead sent to Accounts with an agreed amount BEFORE GST
-const rahul = await idOf('rahul@amuwa.com'), arun = await idOf('acc.member@amuwa.com');
+// ------------------------------------------------------------------ fixtures: two leads sent to Accounts with an agreed amount BEFORE GST
+const rahul = await idOf('rahul@amuwa.com');
 const lead = (await api(rahul, 'POST', '/pipeline/leads', { name: 'Meera Joshi', company: 'Joshi Sweets', phone: '+91 98200 11111', leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Wants to buy.' })).id;
-await api(rahul, 'POST', `/pipeline/customers/${lead}/send-to-accounts`, { amount: 100000 });
-const bd = p => p.locator('[role=dialog]').last();
+await api(rahul, 'POST', `/pipeline/customers/${lead}/send-to-accounts`, { amount: 120000 });
+const small = (await api(rahul, 'POST', '/pipeline/leads', { name: 'Tiny Order', company: 'Tiny Traders', phone: '+91 98200 22222', leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Wants to buy.' })).id;
+await api(rahul, 'POST', `/pipeline/customers/${small}/send-to-accounts`, { amount: 14 });
 
 const acc = await login('acc.member@amuwa.com', { width: 1440, height: 900 }, 'nav button');
 await menu(acc, 'Confirmation');
 await acc.getByText('Joshi Sweets').first().click();
+const card = acc.getByTestId('order-gst');
+await card.waitFor({ timeout: 10000 });
+await acc.screenshot({ path: `${OUT}/gst-1-before-choice.png`, fullPage: true });
+const c0 = await card.innerText();
+await expect(/Sales agreed ₹1,20,000 before GST/.test(c0), 'the GST card says Sales agreed 1,20,000 before GST');
+await expect(/Final payable amount not calculated yet/.test(c0), 'and that the final payable is not calculated until a rate is chosen');
+await expect(await acc.getByRole('button', { name: 'Record payment' }).first().isDisabled(), 'Record payment is not available before the rate is chosen');
+await expect((await acc.getByTestId('order-gst-rate').inputValue()) === '', 'no rate is pre-selected (never a silent 18%)');
+const options = await acc.getByTestId('order-gst-rate').locator('option').allInnerTexts();
+await expect(options.some(o => /18% GST/.test(o)) && options.some(o => /5% GST/.test(o)), 'the rates come from the configured list: ' + options.join(' | '));
+
+// Accounts chooses 18%
+await acc.getByTestId('order-gst-rate').selectOption('18');
+await acc.getByTestId('order-gst-payable').waitFor({ timeout: 10000 });
+const c1 = await card.innerText();
+await expect(/GST \(18%\)\s*₹21,600/.test(c1) && /Total payable \(including GST\)\s*₹1,41,600/.test(c1), 'GST 21,600 and total payable 1,41,600 are shown');
+const o1 = (await q('select order_gst_rate, deal_amount, agreed_amount from customers where id = $1', [lead]))[0];
+await expect(Number(o1.order_gst_rate) === 18 && Number(o1.deal_amount) === 141600 && Number(o1.agreed_amount) === 120000, 'saved in the database: rate 18, payable 1,41,600, the agreed 1,20,000 untouched');
+await acc.screenshot({ path: `${OUT}/gst-2-chosen.png`, fullPage: true });
+
+// a part payment: plain money received, no GST field in the form
 await acc.getByRole('button', { name: 'Record payment' }).first().click();
 const d = acc.getByRole('dialog', { name: 'Record payment' });
 await d.waitFor({ timeout: 10000 });
-await acc.screenshot({ path: `${OUT}/gst-1-form.png`, fullPage: true });
 const t0 = await d.innerText();
-await expect(/Amount before GST/.test(t0) && /GST/.test(t0), 'the form asks for the amount before GST and has a GST option');
-await expect(/Agreed ₹1,00,000 before GST/.test(t0), 'it says the agreed amount is before GST');
-await expect(!/Final amount received/.test(t0), 'no final amount is shown until there is an amount and a rate');
-
-// choose nothing: the rate must be chosen
+await expect(!(await d.locator('#pay-gst').count()), 'the payment form has no GST field any more');
+await expect(/Agreed amount \(before GST\)\s*₹1,20,000/.test(t0) && /GST \(18%\)\s*₹21,600/.test(t0) && /Total payable \(including GST\)\s*₹1,41,600/.test(t0) && /Still to receive\s*₹1,41,600/.test(t0), 'the form shows the agreed amount, the GST, the payable including GST and what is still to receive');
 await d.locator('#pay-amount').fill('60000');
 await d.locator('#pay-ref').fill('GST-E2E-1');
-await d.getByRole('button', { name: 'Record payment' }).click();
-await expect(/Choose the GST rate/.test(await d.innerText()), 'saving without choosing the GST rate (or No GST) is refused');
-
-await d.locator('#pay-gst').selectOption('18');
-const t1 = await d.innerText();
-await expect(/Amount before GST\s*₹60,000/.test(t1) && /GST \(18%\)\s*₹10,800/.test(t1) && /Final amount received\s*₹70,800/.test(t1), 'the final amount is shown: 60,000 + GST 10,800 = 70,800');
-await d.locator('#pay-gst').selectOption('5');
-await expect(/Final amount received\s*₹63,000/.test(await d.innerText()), 'changing the rate updates it at once (5%: 63,000)');
-await d.locator('#pay-gst').selectOption('18');
-await acc.screenshot({ path: `${OUT}/gst-2-final.png`, fullPage: true });
+await d.screenshot({ path: `${OUT}/gst-3-part-form.png` });
 await d.getByRole('button', { name: 'Record payment' }).click();
 await d.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the dialog did not close after recording'));
 const pay = (await q('select amount, taxable_amount, gst_rate, gst_amount, status from customer_payments where customer_id = $1', [lead]))[0];
-await expect(Number(pay.amount) === 70800 && Number(pay.taxable_amount) === 60000 && Number(pay.gst_rate) === 18 && Number(pay.gst_amount) === 10800 && pay.status === 'PENDING', 'recorded: 70,800 received = 60,000 + 10,800 GST, pending');
+await expect(Number(pay.amount) === 60000 && pay.taxable_amount === null && pay.gst_amount === null && pay.status === 'PENDING', 'recorded: exactly 60,000 received (no GST on the payment), pending');
+const o2 = (await q('select deal_amount from customers where id = $1', [lead]))[0];
+await expect(Number(o2.deal_amount) === 141600, 'the payment did not change the payable');
 await acc.waitForTimeout(800);
-await expect(/₹60,000 \+ GST ₹10,800 \(18%\)/.test(await text(acc)), 'the payment history shows the split');
-await acc.screenshot({ path: `${OUT}/gst-3-history.png`, fullPage: true });
+await expect(await acc.getByTestId('order-gst-rate').isDisabled(), 'the rate is locked once a payment exists');
 
-// a full payment for the rest: 40,000 + 18% = 47,200
+// a full payment: the whole outstanding amount including GST, filled in and read-only
 await acc.getByRole('button', { name: 'Record payment' }).first().click();
 const d2 = acc.getByRole('dialog', { name: 'Record payment' });
 await d2.getByLabel('Full payment').check();
-await expect((await d2.locator('#pay-amount').inputValue()) === '40000', 'a full payment fills what is left before GST (40,000)');
+await expect((await d2.locator('#pay-amount').inputValue()) === '81600', 'a full payment fills what is outstanding including GST (81,600)');
+await expect(await d2.locator('#pay-amount').evaluate(e => e.readOnly), 'and the amount cannot be typed over');
 await d2.locator('#pay-ref').fill('GST-E2E-2');
-await d2.locator('#pay-gst').selectOption('18');
-await expect(/Final amount received\s*₹47,200/.test(await d2.innerText()), 'and shows the final amount (47,200)');
 await d2.getByLabel(/I have received this money and verified it/).check();
+await d2.screenshot({ path: `${OUT}/gst-4-full-form.png` });
 await d2.getByRole('button', { name: 'Record & verify' }).click();
 await d2.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the second dialog did not close'));
 const c = (await q('select deal_amount, amount_received, amount_verified from customers where id = $1', [lead]))[0];
-await expect(Number(c.deal_amount) === 118000 && Number(c.amount_received) === 118000 && Number(c.amount_verified) === 47200, 'the order is settled: 1,18,000 payable (1,00,000 + 18,000 GST), only the verified 47,200 counts as verified');
+await expect(Number(c.deal_amount) === 141600 && Number(c.amount_received) === 141600 && Number(c.amount_verified) === 81600, 'the order is fully recorded: 1,41,600 payable, only the verified 81,600 counts as verified');
+
+// the small example: 14 + 18% = 16.52 -> payable 17 in whole rupees
+await acc.goto(BASE + '/');
+await menu(acc, 'Confirmation');
+await acc.getByText('Tiny Traders').first().click();
+await acc.getByTestId('order-gst').waitFor({ timeout: 10000 });
+await acc.getByTestId('order-gst-rate').selectOption('18');
+await acc.getByTestId('order-gst-payable').waitFor({ timeout: 10000 });
+const t14 = await acc.getByTestId('order-gst').innerText();
+await expect(/Agreed amount \(before GST\)\s*₹14/.test(t14) && /GST \(18%\)\s*₹2\.52/.test(t14) && /Rounded to whole rupees\s*₹0\.48/.test(t14) && /Total payable \(including GST\)\s*₹17/.test(t14), '14 + 18%: GST 2.52, rounded to whole rupees, payable 17');
+await acc.screenshot({ path: `${OUT}/gst-5-fourteen.png`, fullPage: true });
+await acc.getByRole('button', { name: 'Record payment' }).first().click();
+const d3 = acc.getByRole('dialog', { name: 'Record payment' });
+const t3 = await d3.innerText();
+await expect(/Total payable \(including GST\)\s*₹17/.test(t3) && /Still to receive\s*₹17/.test(t3), 'the form shows payable 17 and still to receive 17 (no contradictory figures)');
+await d3.locator('#pay-amount').fill('16.52');
+await d3.locator('#pay-ref').fill('GST-E2E-3');
+await d3.getByRole('button', { name: 'Record payment' }).click();
+await expect(/whole rupees/i.test(await d3.innerText()), '16.52 is refused: whole rupees only');
+await expect((await q('select count(*)::int n from customer_payments where customer_id = $1', [small]))[0].n === 0, 'nothing was recorded');
+await d3.getByLabel('Full payment').check();
+await expect((await d3.locator('#pay-amount').inputValue()) === '17', 'Full payment uses 17');
+await d3.getByLabel(/I have received this money and verified it/).check();
+await d3.getByRole('button', { name: 'Record & verify' }).click();
+await d3.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the dialog for the 14 order did not close'));
+const c14 = (await q('select deal_amount, amount_verified, payment_status from customers where id = $1', [small]))[0];
+await expect(Number(c14.deal_amount) === 17 && Number(c14.amount_verified) === 17 && c14.payment_status === 'FULLY_PAID', 'the order of 14 is fully paid with 17');
 
 // phone-sized
 const ph = await login('acc.member@amuwa.com', { width: 390, height: 800 }, 'main');
 await menu(ph, 'Confirmation');
 await ph.getByText('Joshi Sweets').first().click();
+await ph.getByTestId('order-gst').waitFor({ timeout: 10000 });
 const overflow = await ph.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 await expect(overflow <= 1, `nothing overflows sideways on a phone (${overflow}px)`);
-await ph.screenshot({ path: `${OUT}/gst-4-phone.png`, fullPage: true });
+await ph.screenshot({ path: `${OUT}/gst-6-phone.png`, fullPage: true });
 
 await expect(errors.length === 0, 'no console or page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
 console.log(`=== ALL PAYMENT GST BROWSER TESTS PASSED (${step}) ===`);

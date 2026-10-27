@@ -7,6 +7,8 @@
 reset role;
 -- The suites above re-apply older migrations (which bring back the older invoice functions): apply this one again on top of them.
 \i supabase/migrations/20261112000200_paid_only_invoices.sql
+-- ... and the newest money model (GST belongs to the order) goes back on top
+\i supabase/migrations/20261201000100_order_level_gst.sql
 create temp table pc (name text primary key, id uuid);
 create temp table pr (name text primary key, data jsonb);
 create temp table pq (name text primary key, id uuid default gen_random_uuid());
@@ -39,16 +41,18 @@ select test.must_fail($$select accounts_issue_invoice((select id from pq where n
   'an invoice line without a GST rate is refused', 'GST rate|tax rate');
 
 \echo '--- 39. Paid-only invoices: saving sends nothing, only the paid invoice is made'
--- two invoices for the two halves, with the GST Accounts chose (18% on the first, 12% on the second)
+-- Accounts chooses the GST of the ORDER once; both invoices (the two halves) then use it
+select accounts_set_order_gst((select id from pc where name = 'C'), 18);
 insert into pr select 'A', accounts_issue_invoice((select id from pq where name = 'A'), test.inv_payload((select id from pc where name = 'C'), 60000));
-insert into pr select 'B', accounts_issue_invoice((select id from pq where name = 'B'), jsonb_set(test.inv_payload((select id from pc where name = 'C'), 60000), '{lines,0,taxRate}', '12'));
-select test.check((select (data ->> 'total')::numeric = 70800 from pr where name = 'A') and (select (data ->> 'total')::numeric = 67200 from pr where name = 'B'),
-  'Accounts decides the GST per invoice: 60,000 at 18% = 70,800, 60,000 at 12% = 67,200');
+select test.must_fail($$select accounts_issue_invoice((select id from pq where name = 'B'), jsonb_set(test.inv_payload((select id from pc where name = 'C'), 60000), '{lines,0,taxRate}', '12'))$$, 'an invoice cannot use another rate than the order''s', 'GST of this order was chosen');
+insert into pr select 'B', accounts_issue_invoice((select id from pq where name = 'B'), test.inv_payload((select id from pc where name = 'C'), 60000));
+select test.check((select (data ->> 'total')::numeric = 70800 from pr where name = 'A') and (select (data ->> 'total')::numeric = 70800 from pr where name = 'B'),
+  'both invoices use the order''s GST: 60,000 at 18% = 70,800 each');
 select test.check((select (data -> 'generated' ->> 'paidOnly')::boolean and data -> 'generated' -> 'unpaid' ->> 'pdfStatus' = 'PENDING' and data -> 'generated' -> 'unpaid' ->> 'emailStatus' = 'PENDING'
                           and data -> 'generated' -> 'paid' ->> 'pdfStatus' = 'NOT_DUE' from pr where name = 'A'),
   'a saved invoice is paid-only: nothing is stored or sent');
 reset role;
-select test.check((select deal_amount = 70800 + 67200 from customers where id = (select id from pc where name = 'C')), 'the total payable follows the invoices Accounts made (1,38,000), with no estimate');
+select test.check((select deal_amount = 70800 + 70800 from customers where id = (select id from pc where name = 'C')), 'the total payable follows the invoices Accounts made (1,41,600), with no estimate');
 set role authenticated;
 select test.login('acc_m');
 select test.must_fail($$select accounts_invoice_claim((select (data ->> 'id')::uuid from pr where name = 'A'), 'UNPAID')$$, 'an unpaid invoice cannot be made', 'Unpaid invoices are not sent');
@@ -63,9 +67,9 @@ select accounts_record_payment((select id from pc where name = 'C'), 'PART', 600
 select test.check((select (accounts_confirm_invoice_payment((select (data ->> 'id')::uuid from pr where name = 'A')) ->> 'settled')::boolean), 'after a verified 60,000 part payment the first invoice can be confirmed and sent as PAID (it is 70,800)');
 select test.check((select data -> 'generated' ->> 'lifecycle' = 'PAID' and data ->> 'status' = 'Paid' and data -> 'generated' -> 'paid' ->> 'pdfStatus' = 'PENDING'
                      from (select invoice_detail((select (data ->> 'id')::uuid from pr where name = 'A')) data) x), 'the invoice is paid and the paid stage is open (PDF and e-mail follow)');
-select test.check((select (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'confirmed')::numeric = 60000 and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'balance')::numeric = 78000
+select test.check((select (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'confirmed')::numeric = 60000 and (data -> 'generated' -> 'paymentSummary' -> 'order' ->> 'balance')::numeric = 81600
                      from (select invoice_detail((select (data ->> 'id')::uuid from pr where name = 'A')) data) x),
-  'the order shows what is confirmed (60,000) and what is outstanding (1,38,000 - 60,000 = 78,000)');
+  'the order shows what is confirmed (60,000) and what is outstanding (1,41,600 - 60,000 = 81,600)');
 reset role;
 select test.check((select paid_order_confirmed = 60000 from generated_invoices where invoice_id = (select (data ->> 'id')::uuid from pr where name = 'A')), 'the confirmed amount at that moment is recorded');
 set role authenticated;
@@ -88,10 +92,10 @@ select test.check((select not (accounts_confirm_invoice_payment((select (data ->
 
 \echo '--- 41. Orders made before the change are recalculated, without touching their invoices'
 reset role;
-update customers set deal_amount = 141600 where id = (select id from pc where name = 'C');
+update customers set deal_amount = 150000 where id = (select id from pc where name = 'C');
 create temp table before_inv as select count(*) as n, sum(total_amount) as total from generated_invoices where customer_id = (select id from pc where name = 'C');
 select private.sync_order_payable((select id from pc where name = 'C'));
-select test.check((select deal_amount = 70800 + 67200 from customers where id = (select id from pc where name = 'C')), 'the total payable is the invoices again (no estimate)');
+select test.check((select deal_amount = 70800 + 70800 from customers where id = (select id from pc where name = 'C')), 'the total payable is the invoices again (no estimate)');
 select test.check((select b.n = (select count(*) from generated_invoices where customer_id = (select id from pc where name = 'C')) and b.total = (select sum(total_amount) from generated_invoices where customer_id = (select id from pc where name = 'C')) from before_inv b),
   'the invoices themselves are untouched');
 

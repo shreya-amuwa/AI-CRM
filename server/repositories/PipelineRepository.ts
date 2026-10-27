@@ -702,12 +702,13 @@ export class PipelineRepository {
     return (unwrap(await this.db.rpc('accounts_team_members')) as { id: string; fullName: string; role: string }[] | null) ?? [];
   }
 
+  /** A payment is the money received (whole rupees): it never carries GST. The GST is the order's (setOrderGst). */
   async recordAccountsPayment(
     customerId: string,
-    p: { type: string; amount: number; gstRate?: number | null; method: string; reference?: string | null; paidAt?: string | null; note?: string | null; verify: boolean }
+    p: { type: string; amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null; verify: boolean }
   ): Promise<string> {
     return unwrap(
-      await this.db.rpc('accounts_record_taxed_payment', {
+      await this.db.rpc('accounts_record_payment', {
         p_customer: customerId,
         p_type: p.type,
         p_amount: p.amount,
@@ -715,28 +716,35 @@ export class PipelineRepository {
         p_reference: p.reference ?? null,
         p_paid_at: p.paidAt ?? null,
         p_note: p.note ?? null,
-        p_verify: p.verify,
-        p_gst_rate: p.gstRate ?? null
+        p_verify: p.verify
       })
     ) as string;
   }
 
   async updateAccountsPayment(
     paymentId: string,
-    p: { type: string; amount: number; gstRate?: number | null; method: string; reference?: string | null; paidAt?: string | null; note?: string | null }
+    p: { type: string; amount: number; method: string; reference?: string | null; paidAt?: string | null; note?: string | null }
   ): Promise<void> {
     unwrap(
-      await this.db.rpc('accounts_update_taxed_payment', {
+      await this.db.rpc('accounts_update_payment', {
         p_payment: paymentId,
         p_type: p.type,
         p_amount: p.amount,
         p_method: p.method,
         p_reference: p.reference ?? null,
         p_paid_at: p.paidAt ?? null,
-        p_note: p.note ?? null,
-        p_gst_rate: p.gstRate ?? null
+        p_note: p.note ?? null
       })
     );
+  }
+
+  /** Accounts chooses the GST rate of the order (once; the total payable follows). */
+  async setOrderGst(customerId: string, rate: number): Promise<void> {
+    unwrap(await this.db.rpc('accounts_set_order_gst', { p_customer: customerId, p_rate: rate }));
+  }
+
+  async gstReconciliation(): Promise<{ customerId: string; customer: string; agreed: number; payable: number; received: number; reasons: string[] }[]> {
+    return (unwrap(await this.db.rpc('accounts_gst_reconciliation')) as never) ?? [];
   }
 
   async verifyAccountsPayment(paymentId: string, note: string | null): Promise<void> {

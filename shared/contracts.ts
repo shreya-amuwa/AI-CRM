@@ -881,9 +881,9 @@ export type FollowUpStatus = 'FOLLOW_UP_REQUIRED' | 'CONTACTED' | 'AWAITING_PAYM
 export interface LedgerPayment {
   id: string;
   type: PaymentType;
-  /** What was received (the final amount: the amount before GST plus the GST). */
+  /** The money received, GST included (a payment never carries GST of its own). */
   amount: number;
-  /** The GST split Accounts recorded; null when no GST was recorded (older payments, or an agreed amount that includes GST). */
+  /** Older payments only: the GST split that was recorded on the payment before GST became the order's. */
   taxableAmount?: number | null;
   gstRate?: number | null;
   gstAmount?: number | null;
@@ -930,8 +930,8 @@ export interface PaymentOverview {
   dealAmount: number | null;
   agreedAmount?: number | null;
   taxBasis?: AgreementTaxBasis;
-  /** Whether Accounts may add GST to a payment (the agreed amount excludes GST), the GST recorded so far, and what is left before GST. */
-  gst?: { allowed: boolean; onPayments: number; taxableBalance: number | null };
+  /** The GST of the order, chosen once by Accounts (never per payment). `applies` is false when the agreed amount already includes GST. */
+  orderGst?: OrderGst;
   order?: OrderSummary | null;
   recorded: number;
   verified: number;
@@ -1306,8 +1306,41 @@ export type AgreementTaxBasis = 'INCLUSIVE' | 'EXCLUSIVE';
  * The whole agreed order in one place, worked out by the database: what was agreed, the GST, what is payable, what is confirmed and
  * what is left. Every screen, the PDF and the e-mail read these same figures; none of them works the balance out itself.
  */
+export interface OrderGst {
+  applies: boolean;
+  rate?: number | null;
+  selected?: boolean;
+  /** An older order (GST recorded on payments or invoices, or none): never recalculated by itself. */
+  legacy?: boolean;
+  agreedAmount?: number | null;
+  locked?: boolean;
+  lockReason?: string | null;
+  setAt?: string | null;
+  setBy?: string | null;
+  rates?: { rate: number; label: string }[];
+}
+export interface OrderInvoiceAllocation {
+  id: string;
+  number: string;
+  taxable: number;
+  gst: number;
+  total: number;
+  /** Confirmed money applied to this invoice. */
+  allocated: number;
+  balance: number;
+  state: InvoicePaymentState;
+}
 export interface OrderSummary {
   basis: AgreementTaxBasis;
+  /** The GST rate of the order (null until Accounts chooses it, or when the agreement includes GST). */
+  gstRate?: number | null;
+  gstSelected?: boolean;
+  /** True while the amount payable is not known because Accounts has not chosen the GST rate yet. */
+  gstRequired?: boolean;
+  /** Whole-rupee rounding of the payable (payable minus the exact amount with GST). */
+  roundOff?: number | null;
+  /** Each invoice of the order with the confirmed money applied to it (first issued, first paid). */
+  invoices?: OrderInvoiceAllocation[];
   /** What Sales agreed, as agreed (before GST when the basis is EXCLUSIVE). */
   agreedAmount: number | null;
   /** The agreed amount before GST (null when the agreement is GST inclusive and no split is known). */
@@ -1393,6 +1426,8 @@ export interface InvoicePrefill {
   agreedAmount?: number | null;
   agreedTaxBasis?: AgreementTaxBasis;
   order?: OrderSummary | null;
+  /** The GST rate Accounts chose for the order; the invoice lines use it (null until chosen, or for an older / GST-inclusive order). */
+  orderGstRate?: number | null;
   addonTotal: number | null;
   existingInvoices: { id: string; number: string; kind: InvoiceKind; status: string; total: number | null }[];
   catalog: { code: string; name: string; category: string }[];

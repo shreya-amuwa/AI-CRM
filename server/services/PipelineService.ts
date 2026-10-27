@@ -34,6 +34,7 @@ import {
   accountsQuerySchema,
   accountsRecordPaymentSchema,
   accountsUpdatePaymentSchema,
+  orderGstSchema,
   assignPaymentOwnerSchema,
   conversationSchema,
   partPaymentsQuerySchema,
@@ -616,6 +617,17 @@ export class PipelineService {
     const input = parse(accountsRecordPaymentSchema, body);
     await this.repo.recordAccountsPayment(customerId, input);
     return this.repo.paymentOverview(customerId);
+  }
+
+  /** Accounts chooses the GST rate of the order; the overview (with the new total payable) comes back. */
+  async setOrderGst(id: string, body: unknown): Promise<PaymentOverview> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.setOrderGst(customerId, parse(orderGstSchema, body).rate);
+    return this.repo.paymentOverview(customerId);
+  }
+
+  gstReconciliation() {
+    return this.repo.gstReconciliation();
   }
 
   async updateAccountsPayment(paymentId: string, customerId: string, body: unknown): Promise<PaymentOverview> {

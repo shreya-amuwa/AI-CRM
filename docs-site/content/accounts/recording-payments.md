@@ -1,17 +1,17 @@
 ---
 title: How to Record and Verify Payments in the Ledger
-description: Recording full and part payments, applying per-payment GST on GST-exclusive agreements, verifying funds, and reversing erroneous entries.
+description: Choosing the GST rate of an order, recording full and part payments, verifying funds, and reversing erroneous entries.
 order: 20
 group: Payments
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/AccountsPaymentPanel.tsx, supabase/migrations/20261114000200_payment_gst.sql]
+sources: [docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/AccountsPaymentPanel.tsx, supabase/migrations/20261201000100_order_level_gst.sql, docs/PAYMENT_GST.md]
 related: [accounts/payment-confirmation-queue, accounts/managing-part-payments-accounts, accounts/dynamic-invoices-overview]
 updated: 2026-10-27
 ---
 
-In Amuwa AI CRM, `customer_payments` is the single source of truth for all incoming customer funds. Accounting staff record deposits, specify per-payment GST when the customer's agreement is GST-exclusive, attach bank references, and verify ledger rows.
+In Amuwa AI CRM, `customer_payments` is the single source of truth for all incoming customer funds. Accounting staff choose the GST rate of the order, record deposits, attach bank references, and verify ledger rows.
 
 ## Before you start
 
@@ -20,41 +20,48 @@ In Amuwa AI CRM, `customer_payments` is the single source of truth for all incom
 - Only Accounts staff, Department Heads, and Super Admins can record, verify, edit, or reverse ledger entries.
 :::
 
-## How GST on individual payments works
+## How GST works on an order
 
-The **Record payment** modal (`AccountsPaymentPanel.tsx` backed by `supabase/migrations/20261114000200_payment_gst.sql`) adapts automatically to the customer agreement's tax basis:
+GST belongs to the **order**, not to each payment. Sales agrees an amount **before GST** and nothing is added when the order reaches Accounts. In the customer's **Payments** panel, the **GST for this order** card asks you to choose the rate (`No GST (0%)`, `5%`, `12%`, `18%`, `28%`). No rate is pre-selected.
 
-| Agreement Tax Basis | Fields Shown in Record Payment Modal | Ledger Calculation & Sync Behavior |
-| --- | --- | --- |
-| **GST Exclusive (`EXCLUSIVE`)** | **Amount before GST (₹)** (`taxable_amount`) + **GST** rate selector (`No GST (0%)`, `5% GST`, `12% GST`, `18% GST`, `28% GST`) | Live-calculates **Amount before GST**, **GST (%)** (`gst_amount`), and **Final amount received** (`amount = taxable_amount + gst_amount`). Synchronizes the order's total payable (`sync_order_payable`) with the recorded GST. |
-| **GST Inclusive (`INCLUSIVE`)** or **Not Applicable (`NA`)** | Single **Amount (₹)** field | The amount entered is the final amount received (`gst_rate = null` / `0`, `gst_amount = 0`). No extra tax is added on top of the agreed deal ceiling. |
+| Step | What you see |
+| --- | --- |
+| Before you choose | *"Final payable amount not calculated yet"*. **Record payment** is switched off and no invoice can be made. |
+| After you choose (for example 18% on ₹1,20,000) | Agreed amount (before GST) ₹1,20,000 · GST (18%) ₹21,600 · **Total payable (including GST) ₹1,41,600**. The rate is saved in the database. |
+| Whole rupees | The total payable is rounded to whole rupees and the round-off is shown (for example ₹14 + 18% = ₹16.52, payable **₹17**). |
+| After a payment or invoice exists | The rate is locked. To change it, reject or reverse the payments first. |
 
-:::tip Live GST Preview Card
-When recording a payment on a GST-exclusive (`EXCLUSIVE`) agreement, selecting a rate (such as **18% GST**) displays a blue summary box showing **Amount before GST**, **GST (18%)**, and **Final amount received** before you save.
+:::tip A payment is only money received
+The **Record payment** form has no GST field. You enter the amount that actually arrived (whole rupees, GST included). It is checked against what is still payable including GST. Recording a payment never changes the GST.
 :::
 
 ## Steps to record a payment
 
 1. Open the customer in **Accounts > Confirmation**, **Part Payment**, or **Invoices**.
-2. Click the **Record payment** button.
-3. In the **Record payment** modal, complete the transaction fields:
-   - **Payment type**: Choose **Part payment** (`PART`) or **Full payment** (`FULL`). Selecting **Full payment** automatically prefills the remaining open balance (or remaining taxable balance before GST when `EXCLUSIVE`).
-   - **Amount before GST (₹)** *(for `EXCLUSIVE` agreements)* or **Amount (₹)** *(for `INCLUSIVE` agreements)*: Enter the rupee amount.
-   - **GST** *(for `EXCLUSIVE` agreements only)*: Select the applicable GST slab from the dropdown: `No GST (0%)`, `5% GST`, `12% GST`, `18% GST` (standard default for software and digital services), or `28% GST`.
-   - **Payment method**: Select `UPI`, `Bank transfer`, `Card`, `Cash`, `Cheque`, or `Other`.
-   - **Transaction / reference no.**: Enter the bank UTR, UPI transaction ID, card auth code, or cheque number (mandatory for `UPI`, `BANK_TRANSFER`, `CARD`, and `CHEQUE`; optional for `CASH` and `OTHER`).
-   - **Payment date & time**: Confirm when the funds settled (cannot be set in the future).
-   - **Note (optional)**: Add banking remarks (for example, *"Seen in the HDFC account"*).
-4. Optional: Tick **I have received this money and verified it** to record and verify the payment in a single step, or leave it unticked to save the row as `PENDING`.
-5. Click **Record & verify** (or **Record payment**).
+2. If the **GST for this order** card asks for a rate, choose it first.
+3. Click the **Record payment** button. The top of the form shows the agreed amount, the GST, the **Total payable (including GST)** and **Still to receive**.
+4. Complete the form:
+   - **Payment type**: **Part payment** or **Full payment**. **Full payment** fills the whole outstanding amount including GST and cannot be typed over.
+   - **Amount received (₹)**: whole rupees, GST included, and not more than *Still to receive*. A part payment must be less than the outstanding amount.
+   - **Payment method**: `UPI`, `Bank transfer`, `Card`, `Cash`, `Cheque`, or `Other`.
+   - **Transaction / reference no.**: the bank UTR, UPI transaction ID, card auth code or cheque number (required for `UPI`, `Bank transfer`, `Card` and `Cheque`; optional for `Cash` and `Other`).
+   - **Payment date & time**: when the funds settled (not in the future).
+   - **Note (optional)**.
+5. Optional: tick **I have received this money and verified it** to record and verify in one step; otherwise the payment is saved as `PENDING`.
+6. Click **Record & verify** (or **Record payment**).
 
 ```flow
-Open Record Payment Modal | Accounts Staff | Checks whether agreement is EXCLUSIVE or INCLUSIVE
-Enter Amount & GST Rate | Accounts Staff | Base amount + GST slab (0%, 5%, 12%, 18%, 28%) or inclusive amount
-Save Entry | Database RPC | Validates ceiling and unique reference; saves as PENDING or VERIFIED
-Verify Payment | Accounts Staff | Updates amount_verified, syncs total payable, and unlocks payment confirmation
+Choose GST Rate | Accounts Staff | Once per order; saved in the database; locks after the first payment or invoice
+Open Record Payment | Accounts Staff | Shows agreed amount, GST, total payable and still to receive
+Enter Amount Received | Accounts Staff | Whole rupees including GST; Full payment fills the whole outstanding amount
+Save Entry | Database RPC | Checks the amount against what is still payable; saves as PENDING or VERIFIED
+Verify Payment | Accounts Staff | Only verified money reduces the outstanding balance
 -> Reversal (if error) | Accounts Lead / Super Admin | Marks row REVERSED with reason and restores balance
 ```
+
+## Invoices and balances
+
+Every invoice line uses the order's GST rate (it is shown read-only in the invoice builder). You can issue one invoice for the whole order or several partial invoices; each is taxed on its own part, and together they cannot pass the agreed amount. Two balances are shown apart, on screen and on the PDF: the **invoice balance** (this invoice's total less the confirmed money applied to it) and the **order balance** (the order's total payable less all confirmed payments).
 
 ## Verifying a pending payment
 
@@ -71,7 +78,7 @@ If a payment was recorded without ticking immediate verification:
 
 ## Editing or reversing an entry
 
-- **Editing a pending payment**: While a payment row is still `PENDING`, click **Edit** to adjust the amount, GST rate, payment method, or reference number.
+- **Editing a pending payment**: While a payment row is still `PENDING`, click **Edit** to adjust the amount, payment method, or reference number.
 - **Reversing a verified payment**: Verified payments are immutable and cannot be edited directly. If a verified entry was recorded in error or a bank chargeback occurs:
   1. Sign in as an Accounts Team Lead, Department Head, or Super Admin.
   2. Click **Reverse** on the verified payment row.

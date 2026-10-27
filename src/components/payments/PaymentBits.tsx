@@ -83,18 +83,26 @@ export const FollowUpBadge: React.FC<{ status: FollowUpStatus }> = ({ status }) 
 
 /** Money summary: agreed · verified · pending · balance. */
 /** `deal` is the total payable (GST included). When the agreement excludes GST, `agreed` shows the amount before GST next to it. */
-export const MoneyTiles: React.FC<{ deal: number | null; verified: number; pending: number; balance: number; agreed?: number | null; basis?: 'INCLUSIVE' | 'EXCLUSIVE' }> = ({ deal, verified, pending, balance, agreed, basis }) => {
+export const MoneyTiles: React.FC<{ deal: number | null; verified: number; pending: number; balance: number; agreed?: number | null; basis?: 'INCLUSIVE' | 'EXCLUSIVE'; pendingGst?: boolean }> = ({ deal, verified, pending, balance, agreed, basis, pendingGst }) => {
   // The total payable differs from the agreed amount only once Accounts has added GST on an invoice: then both are shown.
   const excl = basis === 'EXCLUSIVE' && agreed != null && deal != null && Math.round(deal * 100) !== Math.round(agreed * 100);
-  const tiles: (readonly [string, string])[] = [
-    ...(excl ? ([['Agreed amount', rupees(agreed)]] as const) : []),
-    [excl ? 'Total payable' : 'Agreed amount', rupees(deal)],
-    ['Verified received', rupees(verified)],
-    ['Pending verification', rupees(pending)],
-    ['Outstanding balance', rupees(balance)]
-  ];
+  // While the GST rate is not chosen, the payable is not known: the agreed amount (before GST) is shown and the rest says so, never a balance made up from it.
+  const tiles: (readonly [string, string])[] = pendingGst
+    ? [
+        ['Agreed amount (before GST)', rupees(agreed ?? deal)],
+        ['Total payable', 'Choose GST'],
+        ['Verified received', rupees(verified)],
+        ['Pending verification', rupees(pending)]
+      ]
+    : [
+        ...(excl ? ([['Agreed amount (before GST)', rupees(agreed)]] as const) : []),
+        [excl ? 'Total payable (incl. GST)' : 'Agreed amount', rupees(deal)],
+        ['Verified received', rupees(verified)],
+        ['Pending verification', rupees(pending)],
+        ['Outstanding balance', rupees(balance)]
+      ];
   return (
-  <dl className={`grid grid-cols-2 ${excl ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
+  <dl className={`grid grid-cols-2 ${excl && !pendingGst ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-3`}>
     {tiles.map(([k, v]) => (
       <div key={k} className="rounded-xl bg-slate-50 p-3">
         <dt className="text-[11px] text-slate-500">{k}</dt>

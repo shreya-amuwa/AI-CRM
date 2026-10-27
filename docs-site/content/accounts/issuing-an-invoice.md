@@ -47,7 +47,7 @@ When opening the **Invoice Builder** for a customer's purchased services (`supab
    - **HSN/SAC**: Statutory service code (defaults to `998313`).
    - **Quantity**: Unit descriptor (such as `1 Nos`, `1 Year`, or `1 Setup`).
    - **Base Amount (₹)**: Enter the rate before tax for each service. Remember that when an order contains **2 or more services**, every line starts blank and you must enter each service's price manually.
-   - **GST Rate (%)**: Select the applicable tax rate for the line item.
+   - **GST Rate (%)**: For the agreed services of an order whose amount is before GST, this is the rate Accounts chose for the order on the payment page: it is filled in on every line and cannot be changed here (if it has not been chosen yet the invoice cannot be saved). For other invoices, select the applicable tax rate for the line item.
    - Use **+ Add line** or the trash icon to add or remove milestone lines.
 6. Check the live **Calculated Totals** preview (Taxable Subtotal, CGST + SGST or IGST, and Grand Total in rupees and words).
 7. Click **Save Invoice** (or **Generate & Send Invoice**).

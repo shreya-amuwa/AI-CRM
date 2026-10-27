@@ -74,28 +74,44 @@ const STATE_LABEL: Record<InvoicePaymentState, string> = { UNPAID: 'Unpaid', PAR
 const STATE_TONE: Record<InvoicePaymentState, Tone> = { UNPAID: 'orange', PARTIALLY_PAID: 'indigo', FULLY_PAID: 'green' };
 
 /**
- * What was received and what is still outstanding. For the agreed services only the invoice total and the order's two figures are shown
- * (no per-invoice balance, no status, no order value); an add-on or an additional invoice keeps its own simple summary.
+ * What was received and what is still outstanding. For the agreed services the invoice's own figures (total, paid against it, its balance) and the
+ * order's (payable including GST, confirmed payments, outstanding) are shown apart; an add-on or an additional invoice keeps its own simple summary.
  * All of it comes from the database's payment records.
  */
 export const PaymentSummaryCard: React.FC<{ summary: InvoicePaymentSummary }> = ({ summary: s }) => (
   <section aria-label="Payment summary" className="rounded-xl border border-slate-200 p-4 space-y-4">
     <h4 className="text-xs font-bold text-slate-800">Payment</h4>
     {s.order ? (
-      <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-        <div>
-          <dt className="text-[11px] text-slate-500">Invoice total</dt>
-          <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.total)}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] text-slate-500">Total confirmed payments</dt>
-          <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.order.confirmed)}</dd>
-        </div>
-        <div>
-          <dt className="text-[11px] text-slate-500">Total order balance outstanding</dt>
-          <dd className={`mt-0.5 font-bold ${s.order.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.order.balance)}</dd>
-        </div>
-      </dl>
+      <div className="space-y-3">
+        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs" aria-label="This invoice">
+          <div>
+            <dt className="text-[11px] text-slate-500">Invoice total (incl. GST)</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.total)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-slate-500">Paid against this invoice</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.confirmed)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-slate-500">Invoice balance</dt>
+            <dd className={`mt-0.5 font-bold ${s.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.balance)}</dd>
+          </div>
+        </dl>
+        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs border-t border-slate-100 pt-3" aria-label="The whole order">
+          <div>
+            <dt className="text-[11px] text-slate-500">Order total payable (incl. GST)</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.order.totalPayable)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-slate-500">Total confirmed payments</dt>
+            <dd className="mt-0.5 font-semibold text-slate-900">{rupees(s.order.confirmed)}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-slate-500">Total order balance outstanding</dt>
+            <dd className={`mt-0.5 font-bold ${s.order.balance > 0 ? 'text-orange-700' : 'text-emerald-700'}`}>{rupees(s.order.balance)}</dd>
+          </div>
+        </dl>
+      </div>
     ) : (
       <>
         <div className="flex flex-wrap items-center gap-2">

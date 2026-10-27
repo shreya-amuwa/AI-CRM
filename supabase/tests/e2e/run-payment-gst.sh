@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Browser test of Record payment with GST (the accountant types the amount before GST, picks the rate and sees the final amount)
+# Browser test of the order's GST (Accounts chooses the rate once) and Record payment (plain money received, Full payment = the whole amount including GST)
 # against a throw-away local stack (see run-dashboards.sh).
 # Postgres database + PostgREST + the local gateway (auth, storage and a Realtime stand-in) + the web app.
 # No Docker, no Supabase project, no production data. Passwords are made up on every run.
