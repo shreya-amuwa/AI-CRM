@@ -21,8 +21,6 @@ The **Accounts > Invoices** workspace allows Accounts staff to either build a dy
 - Know the individual service price breakdown if the customer purchased 2 or more services in the same order.
 :::
 
-![Accounts Dynamic GST Invoice Builder showing customer prefill, tax treatment, budget meter, and multi-service line items](shot:accounts-invoice-builder.png)
-
 ## Multi-service invoice line-item pricing rule
 
 When opening the **Invoice Builder** for a customer's purchased services (`supabase/migrations/20261113000200_manual_invoice_pricing.sql` and `src/components/invoices/InvoiceBuilder.tsx`), the system follows a strict manual-pricing rule for multi-service deals:

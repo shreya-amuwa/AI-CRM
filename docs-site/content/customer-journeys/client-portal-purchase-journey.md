@@ -20,8 +20,6 @@ related:
 
 The **Client Portal Purchase Journey** provides self-service expansion for verified Amuwa clients. Rather than relying on manual telephone callbacks or ad-hoc messaging, clients can browse the active catalog of communication and marketing solutions directly within their authenticated portal, submit formal purchase inquiries, track invoice issuance, and monitor service activation.
 
-![Client Portal Services Catalog](shot:client-portal-services.png "Client Portal Services Catalog showing active solutions, feature lists, and Add service actions")
-
 ---
 
 ## The End-to-End Self-Service Lifecycle
@@ -75,7 +73,6 @@ graph TD
 ### Stage 4: Payment and Document Fulfillment
 
 1. The client navigates to **Invoices** (`/client/invoices`) in their portal.
-   ![Client Portal Invoices](shot:client-portal-invoices.png "Client Portal Invoices screen showing issued invoices, balances, and PDF downloads")
 2. The client downloads the official PDF statement, reviews payment terms, and executes payment via bank transfer or gateway.
 3. Once Accounts verifies the incoming funds, the invoice status changes to **Paid**, and the service moves to active delivery.
 4. If technical setup items or brand assets are needed, the client uploads them in **Documents** (`/client/documents`).

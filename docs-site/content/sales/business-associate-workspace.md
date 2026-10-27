@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 The **Business Associate (BA) Workspace** (`salesSubRole = 'BUSINESS_ASSOCIATE'`, accessed at `/business-associate/dashboard/:userId`) is designed for closing specialists who receive warm prospects handed over by Telecallers, conduct product demonstrations, prepare commercial quotations and project scopes, and guide paying customers through the 4-stage pipeline.
 
-![Business Associate Pipeline and Handover Workspace](shot:business-associate-workspace.png)
-
 ## Before you start
 
 :::prereq

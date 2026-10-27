@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 Once the Accounts Department confirms a customer's payment, the record moves to **My Leads > 3 Customer onboarding**. In this stage, the salesperson completes the standardized 6-item onboarding checklist and uploads the required documents so the order can proceed to technical verification or direct department handover.
 
-![Sales Customer Onboarding Checklist Workspace](shot:sales-onboarding-checklist.png)
-
 ## Before you start
 
 :::prereq

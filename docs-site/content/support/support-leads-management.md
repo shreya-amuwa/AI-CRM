@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 The **Support Dashboard** is the central workspace for Support Team Members (Relationship Managers) and Support Team Leads to manage active client accounts, resolve tickets, log deliverables, import legacy customers, and close cross-sell or referral deals.
 
-![Support Dashboard and Client Tickets Inbox](shot:support-tickets-inbox.png)
-
 ## Before you start
 
 :::prereq

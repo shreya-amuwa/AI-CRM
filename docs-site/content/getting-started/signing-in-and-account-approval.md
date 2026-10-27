@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 Amuwa AI CRM uses role-based authentication backed by Supabase Auth. Depending on whether your manager created your profile directly or you submitted an account request, your account must be in `ACTIVE` status before your dashboard opens.
 
-![Staff Sign In Form](shot:staff-login-form.png)
-
 ## Before you start
 
 :::prereq
@@ -72,8 +70,6 @@ If an administrator or HR marks your profile as **Left / Inactive**, **Suspended
 ## External Client Portal sign-in (`/client/login`)
 
 External customers use a dedicated login screen at `/client/login` after their Client Portal login is provisioned during onboarding.
-
-![Client Portal Login Screen](shot:client-portal-login.png)
 
 - Clients enter their registered **Email** and **Password** and click **Sign in**.
 - If a client forgets their password or is signing in for the first time without a temporary password, they click **Forgot password?**, enter their email, and click **Send me the link** to set a new password at `/client/set-password`.

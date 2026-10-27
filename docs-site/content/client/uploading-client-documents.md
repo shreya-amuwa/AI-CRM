@@ -33,8 +33,6 @@ To set up services such as WhatsApp Business API verification, telecom numbers, 
    - **In review**: Items you have already submitted that our team is currently checking.
    - **Verified**: Items that have been checked and approved.
 
-![Documents Checklist in Client Dashboard](shot:client-portal-documents.png "Uploading and Tracking Verification of Required Documents")
-
 ## Understanding document status badges
 
 Each item on your checklist shows one of four status badges:

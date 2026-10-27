@@ -39,8 +39,6 @@ The left sidebar in `AccountsDashboard.tsx` organizes daily accounting workflows
 | **Finance** | **Business Reports** | Executive reporting across Overview, Sales performance, and Support renewal/upsell ledgers. |
 | **Team & Top Bar** | **Chat**, **Notification Center**, **Leave Request** | Internal team messaging, real-time system alerts, and leave application management in the top header bar. |
 
-![Accounts Payment Confirmation queue showing pending sales submissions, agreed tax basis, and verification controls](shot:accounts-payment-confirmations.png)
-
 ## Submission card overview in the Confirmation queue
 
 When you open **Accounts > Confirmation**, each pending submission card displays:

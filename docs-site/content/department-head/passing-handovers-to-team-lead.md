@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 When a Technical Consultant completes document verification and provisions the client portal login (or when Accounts verifies payment on a direct-delivery service), the customer is transferred to the target delivery department (`handoverStage = 'DEPARTMENT_HEAD'`). As Department Head, you use the **Onboarding**, **Handovers**, and **Teams & People** tabs in `DepartmentHeadDashboard.tsx` to inspect incoming accounts, organize squads, and assign each customer to a **Team Lead**.
 
-![Department Head Handover Board and Team Lead Assignment](shot:department-head-handovers.png)
-
 ## Before you start
 
 :::prereq

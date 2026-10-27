@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 Amuwa AI CRM features a unified, real-time **Client tickets** workspace designed for fast, transparent communication between external clients and their assigned Relationship Managers.
 
-![Support Client Tickets Inbox and Conversation Thread](shot:support-tickets-inbox.png)
-
 ## Before you start
 
 :::prereq

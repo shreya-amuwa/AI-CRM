@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 The **Telecaller Workspace** (`salesSubRole = 'TELECALLER'`, accessed at `/telecaller/dashboard/:userId`) is purpose-built for high-volume outbound prospecting. Telecallers work through calling sheets assigned by the Sales Department Head, record call outcomes inline, manage personal leads, and hand over qualified prospects (`Interested` or `Ready to buy`) directly to a **Business Associate (BA)** to close the deal.
 
-![Telecaller Workspace showing assigned calling sheet tasks and Send to BA action](shot:telecaller-dashboard.png)
-
 ## Before you start
 
 :::prereq

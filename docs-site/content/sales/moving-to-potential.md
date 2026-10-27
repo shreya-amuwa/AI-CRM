@@ -13,8 +13,6 @@ updated: 2026-10-27
 
 When a prospect confirms buying intent and agrees on commercial pricing, the record moves from **1 Leads** into **2 Potential**. In **2 Potential**, you finalize the service package and deal value, submit payment confirmation requests to Accounts, advance confirmed deals to onboarding, or return the record to **1 Leads** if the customer backs out.
 
-![Sales Potential View and Deal Commercials](shot:sales-potential-view.png)
-
 ## Before you start
 
 :::prereq

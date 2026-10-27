@@ -41,8 +41,6 @@ The **My Services** page gives you a clear view of every service your business h
    - **Ask a question**: Opens a support ticket pre-linked to that service.
    - **Request renewal**: Sends a renewal request for that service to your account team.
 
-![My Services Workspace](shot:client-portal-services.png "Active Services and Usage Metrics in the Client Dashboard")
-
 ## Inside a service workspace
 
 Click **Open service workspace** on any service card to inspect its three tabs:

@@ -21,8 +21,6 @@ related:
 
 Chat is a full workspace in your dashboard navigation. It hosts your direct messages with colleagues, department channels, and customer communication threads.
 
-![Shared Chat Workspace](shot:shared-chat-workspace.png "Team and Client Chat Workspace showing direct messages and customer threads")
-
 ## Before you start
 
 :::prereq
