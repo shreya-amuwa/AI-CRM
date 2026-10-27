@@ -554,6 +554,14 @@ await expect(steps.length === 4 && /^1 Leads/.test(steps[0]) && /^2 Potential/.t
 await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Pipeline Pal' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Pipeline: the new lead is not in My Leads'));
 await expect((await q(`select count(*)::int n from customers where name = 'Pipeline Pal'`))[0].n === 1, 'Pipeline: exactly one record exists for the lead');
 await expect((await q(`select count(*)::int n from ba_contacts c join customers l on l.id = c.lead_id where l.name = 'Pipeline Pal'`))[0].n === 0, 'Pipeline: the lead is not turned into a Business Associate contact by itself');
+// the five lead filters are on the Sales member's Leads list too
+const smScope = (await sm.locator('[data-testid="lead-scope-tabs"] [role="tab"]').allInnerTexts()).map(t => t.replace(/\s*\d+\s*$/, '').trim());
+await expect(JSON.stringify(smScope) === JSON.stringify(['All Leads', 'My Leads', 'Department Leads', 'To Accounts', 'Returned by Accounts']), 'Sales member: Leads has All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts', smScope);
+await sm.locator('[data-testid="lead-scope-DEPARTMENT"]').click();
+await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Meera Kapoor' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Sales member: Department Leads does not list a colleague\'s lead'));
+await expect((await sm.locator('tbody tr', { hasText: 'Meera Kapoor' }).first().getByRole('button', { name: /View lead Meera Kapoor/ }).count()) === 1, 'Sales member: a colleague\'s lead can only be viewed');
+await sm.locator('[data-testid="lead-scope-MINE"]').click();
+await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Pipeline Pal' }).first().waitFor({ timeout: 15000 });
 await sm.screenshot({ path: `${OUT}/ba-8b-sales-member-my-leads.png`, fullPage: true });
 for (const [label, heading] of [['Quotation', 'Quotation'], ['Demo Schedule', 'Demo Schedule'], ['Scope of Project', 'Scope of Project']]) {
   await sm.locator('#business-associate-subtree button', { hasText: label }).click();

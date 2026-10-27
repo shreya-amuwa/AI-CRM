@@ -383,6 +383,8 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
             counts={pipelineCounts}
             startWithAdd={openAddLead}
             resetKey={navNonce}
+            // a Sales member's Leads list has the five filters (All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts)
+            leadFilters={user?.subDepartment === 'sales'}
             onNavigate={nav => setActiveNav(nav)}
           />
         )}

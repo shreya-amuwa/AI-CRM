@@ -5874,7 +5874,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.items.some((x: any) => x.name === 'Hot Customer' && x.owner.fullName === 'Tele Alpha'), "lead filters API: a Business Associate sees the Telecaller's lead (read-only)", r);
   r = await api('ba1', 'GET', '/lead-scope?scope=ALL&status=NEW&sort=followUp&page=1&pageSize=5');
   check(r.status === 200, 'lead filters API: status, sort and paging are accepted', r);
-  for (const who of ['a', 'th', 'dh', 'sm', 'influ']) {
+  r = await api('a', 'GET', '/lead-scope/counts');
+  check(r.status === 200, 'lead filters API: a Sales member without a Sales role (works as a Business Associate) can use them', r);
+  for (const who of ['th', 'dh', 'sm', 'influ']) {
     r = await api(who, 'GET', '/lead-scope/counts');
     check(r.status === 403, `lead filters API: ${who} cannot read the counts`, r);
     r = await api(who, 'GET', '/lead-scope?scope=ALL');

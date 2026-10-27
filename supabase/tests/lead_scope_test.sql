@@ -28,9 +28,19 @@ select test.login('ba_x');
 select ba_lead_save(null, jsonb_build_object('name','LS Elsewhere','company','LS Else Co','phone','9811300004','leadSource','Walk-in'), test.svcs(1), 'HOT', 'INTERESTED');
 
 \echo '   who may use the filters'
-select test.login('tm_a');
-select test.must_fail($$select lead_scope_counts()$$, 'a Sales member without a Sales role is refused', 'FORBIDDEN');
+reset role;
+select test.create_auth_user('ls_visit', 'ls.visit@amuwa.com', '{"full_name":"LS Visit"}',
+  jsonb_build_object('provisioned_by', test.id('th_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales')));
+set role authenticated;
+select test.login('dh_wab');
+select set_sales_sub_role(test.id('ls_visit'), 'VISIT_SALES');
+select test.login('ls_visit');
+select test.must_fail($$select lead_scope_counts()$$, 'a Sales member with another Sales role (Visit Sales) is refused', 'FORBIDDEN');
 select test.must_fail($$select lead_scope_list('ALL')$$, 'and the list', 'FORBIDDEN');
+select test.login('tm_a');
+select test.check((lead_scope_counts() ->> 'mine')::int = test.ls_count('MINE', 'tm_a') and (lead_scope_counts() ->> 'department')::int = test.ls_count('DEPARTMENT', 'tm_a'), 'a Sales member without a Sales role (works as a Business Associate) gets the filters over their own department');
+select test.check((select count(*) = 1 from jsonb_array_elements(lead_scope_list('DEPARTMENT', 'LS Alpha') -> 'items') x where not (x ->> 'isMine')::boolean and not (x ? 'notes' and x ->> 'notes' is not null)), 'and sees a colleague''s lead read-only, without notes');
+select test.check((select count(*) = 0 from jsonb_array_elements(lead_scope_list('ALL', 'LS Elsewhere') -> 'items') x), 'but never another department''s');
 select test.login('sup_plain');
 select test.must_fail($$select lead_scope_counts()$$, 'a Support member is refused', 'FORBIDDEN');
 select test.login('dh_wab');
@@ -109,6 +119,7 @@ select test.check((select count(*) = 2 from payment_requests where customer_id =
 select test.check((select count(*) >= 1 from customer_activities where customer_id = test.ls_id('LS Alpha') and type = 'RETURNED_FROM_ACCOUNTS'), 'the return is in the lead''s history');
 set role authenticated;
 select test.login('acc_m');
+select accounts_set_order_gst(test.ls_id('LS Alpha'), 0);
 select accounts_record_payment(test.ls_id('LS Alpha'), 'FULL', 5500, 'UPI', 'UTR-LS-1', null, null, false);
 select accounts_verify_payment((select (p ->> 'id')::uuid from jsonb_array_elements(customer_payment_overview(test.ls_id('LS Alpha')) -> 'payments') p where p ->> 'status' = 'PENDING' limit 1), null);
 select accounts_confirm_and_return(test.ls_id('LS Alpha'), 'Received');
