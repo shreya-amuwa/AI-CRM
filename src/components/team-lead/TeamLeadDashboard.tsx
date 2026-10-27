@@ -66,7 +66,6 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       onSelect={id => setNav(id as TeamLeadNav)}
       user={{ name: userName || 'Team Lead', role: 'Team Lead' }}
       onSignOut={() => void logout()}
-      showHelp
       flush={nav === 'chat'}
       topActions={
         <>

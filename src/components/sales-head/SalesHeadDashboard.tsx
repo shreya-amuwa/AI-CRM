@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, CalendarCheck, ClipboardList, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, UserPlus } from 'lucide-react';
+import { Bell, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -17,9 +17,11 @@ import { SalesDailyTasks } from './SalesDailyTasks';
 import { SalesPerformance } from './SalesPerformance';
 import { SalesIncomePage } from './SalesIncomePage';
 import { SalesReports } from './SalesReports';
+import { ContactSheets } from '../telecaller/ContactSheets';
+import { ServicePrices } from '../business-associate/ServicePrices';
 
 export type SalesHeadPage =
-  | 'overview' | 'leads-list' | 'leads-assign' | 'tasks' | 'performance' | 'income' | 'reports' | 'notices' | 'team' | 'chat' | 'notifications';
+  | 'overview' | 'leads-list' | 'leads-assign' | 'tasks' | 'performance' | 'income' | 'reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'notifications';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -34,6 +36,8 @@ const PATHS: Record<SalesHeadPage, string> = {
   performance: 'performance',
   income: 'income',
   reports: 'reports',
+  'telecaller-sheets': 'telecaller-sheets',
+  'service-prices': 'service-prices',
   notices: 'notices',
   team: 'team',
   chat: 'chat',
@@ -82,6 +86,8 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'income', label: 'Department Income', icon: TrendingUp },
           { id: 'reports', label: 'Reports', icon: ReceiptIndianRupee },
+          { id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet },
+          { id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee },
           { id: 'notices', label: 'Client Notices', icon: Megaphone },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
           { ...CHAT_NAV, badge: chatUnread },
@@ -105,7 +111,6 @@ export const SalesHeadDashboard: React.FC = () => {
       onSelect={id => go(id as SalesHeadPage)}
       user={{ name: displayName, role: 'Sales Department Head' }}
       onSignOut={() => void logout()}
-      showHelp
       flush={page === 'chat'}
       topLeft={
         <div className="hidden lg:flex items-center gap-2 text-sm text-slate-500" title={profile?.email}>
@@ -127,6 +132,8 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'performance' && <SalesPerformance />}
       {page === 'income' && <SalesIncomePage />}
       {page === 'reports' && <SalesReports />}
+      {page === 'telecaller-sheets' && <ContactSheets />}
+      {page === 'service-prices' && <ServicePrices />}
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}

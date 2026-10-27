@@ -5489,6 +5489,37 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const gpId = await mk('shared.support@amuwa.com', 'Shared Support Head', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id, headDivision: 'SUPPORT' });
   tokens.set('gs', tokenFor(gsId));
   tokens.set('gp', tokenFor(gpId));
+  // Telecaller Sheets and Service Prices are Sales-only: the Support side is refused by the API (and by the database underneath)
+  const apiH = (who: string, method: string, path: string, body: unknown, hdr: Record<string, string>) => api(who, method, path, body, undefined, hdr);
+  const salesOnly = async (who: string, expectOk: boolean, label: string) => {
+    const hdr = scope('dtalk', who === 'gp' ? 'SUPPORT' : 'SALES');
+    const calls = [
+      await apiH(who, 'GET', '/ba/prices', undefined, hdr),
+      await apiH(who, 'GET', '/telecaller/lists', undefined, hdr),
+      await apiH(who, 'GET', '/telecaller/assignable', undefined, hdr)
+    ];
+    check(calls.every(c => (expectOk ? c.status === 200 : c.status === 403)), `sales-only: ${label}: price list, contact sheets and Telecallers ${expectOk ? 'open' : 'are refused (403)'}`, calls.map(c => c.status));
+  };
+  await salesOnly('gs', true, 'the Sales Department Head');
+  await salesOnly('gp', false, 'the Support Department Head');
+  r = await apiH('gp', 'POST', '/ba/prices/AI_CALLING', { unitLabel: 'one time', unitPrice: 1, gstRate: 18, maxDiscountPct: 0, isActive: true }, scope('dtalk', 'SUPPORT'));
+  check(r.status === 403, 'sales-only: a Support Department Head cannot change a price', r);
+  r = await apiH('gp', 'POST', '/telecaller/lists', { assigneeId: crypto.randomUUID(), fileName: 'x.xlsx', hash: 'a'.repeat(64), rows: [{ row: 2, name: 'A', phone: '9800000001' }], commit: false }, scope('dtalk', 'SUPPORT'));
+  check(r.status === 403, 'sales-only: nor check or assign a contact sheet', r);
+  for (const who of ['tl2', 'tm2', 'sm']) {
+    const c = [await api(who, 'GET', '/ba/prices'), await api(who, 'GET', '/telecaller/lists')];
+    check(c.every(x => x.status === 403), `sales-only: a Support ${who === 'tl2' ? 'Team Lead' : 'team member'} is refused both (403)`, c.map(x => x.status));
+  }
+  const direct = async (who: string, table: string) => {
+    const res = await fetch(`${process.env.GATEWAY_URL}/rest/v1/${table}?select=*&limit=5`, { headers: { apikey: process.env.SUPABASE_ANON_KEY!, authorization: `Bearer ${tokens.get(who)}` } });
+    return { status: res.status, rows: ((await res.json()) as unknown[]).length };
+  };
+  for (const who of ['gp', 'sm', 'tl2']) {
+    const x = [await direct(who, 'service_prices'), await direct(who, 'telecaller_contact_lists'), await direct(who, 'telecaller_contacts')];
+    check(x.every(v => v.rows === 0), `sales-only: ${who}: the tables themselves return nothing (direct database access)`, x);
+  }
+  check((await direct('ba1', 'service_prices')).rows > 0, 'sales-only: a Business Associate can still read the price table');
+  check((await db.query(`select count(*)::int n from telecaller_contact_lists`)).rows[0].n > 0 && (await db.query(`select count(*)::int n from service_prices`)).rows[0].n >= 0, 'sales-only: the stored sheets and prices are untouched');
   const owners: Record<string, string> = {};
   for (const slug of ['dtalk', 'mpillar', 'whatsbox']) {
     for (const side of ['Sales', 'Support']) {

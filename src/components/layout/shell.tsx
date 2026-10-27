@@ -1,6 +1,6 @@
 import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, HelpCircle, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, ChevronDown, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
@@ -231,12 +231,6 @@ export const SignOutButton: React.FC<{ onClick: () => void }> = ({ onClick }) =>
   </button>
 );
 
-export const HelpLink: React.FC = () => (
-  <a href="mailto:support@amuwa.com" className="flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm text-slate-700 hover:bg-slate-50">
-    <HelpCircle className="w-[18px] h-[18px] text-slate-500" strokeWidth={1.9} aria-hidden="true" /> Need help?
-  </a>
-);
-
 /** The signed-in person: initials, name and role. */
 export const UserChip: React.FC<{ name: string; role: string }> = ({ name, role }) => (
   <div className="flex items-center gap-2.5 pl-2.5 ml-1">
@@ -317,7 +311,6 @@ interface DashboardShellProps {
   topActions?: React.ReactNode;
   /** Extra sidebar footer rows. */
   footerExtra?: React.ReactNode;
-  showHelp?: boolean;
   /** Let the page use the full width (wide tables); default keeps the calm 1240px column. */
   wide?: boolean;
   /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
@@ -337,7 +330,6 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   topLeft,
   topActions,
   footerExtra,
-  showHelp = false,
   wide = false,
   flush = false,
   children
@@ -349,7 +341,6 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         footer={
           <>
             {footerExtra}
-            {showHelp && <HelpLink />}
           </>
         }
       >

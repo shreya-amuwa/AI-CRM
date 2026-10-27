@@ -58,6 +58,7 @@ let lastHeadPage: HeadPage | null = null;
 export const DepartmentHeadDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const isAccounts = profile?.department?.slug === 'accounts';
+  const supportSide = profile?.headDivision === 'SUPPORT';
   const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : 'overview'));
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
@@ -81,10 +82,12 @@ export const DepartmentHeadDashboard: React.FC = () => {
     } else {
       // The income of their own department (the database refuses any other department)
       work.push({ id: 'income', label: 'Department Income', icon: TrendingUp });
-      // Excel contact sheets for the department's Telecallers (the page explains what to do when there are none)
-      work.push({ id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet });
-      // The approved prices Business Associates quote from
-      work.push({ id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee });
+      // Telecaller Sheets and Service Prices are Sales pages: a Support Department Head does not get them (the Sales Department Head dashboard has them, and
+      // the database refuses a Support head either way). A head of a whole department with no side set keeps them, as before.
+      if (!supportSide) {
+        work.push({ id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet });
+        work.push({ id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee });
+      }
     }
     return [
       { items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }] },
@@ -108,7 +111,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         ]
       }
     ];
-  }, [isAccounts, waiting, chatUnread]);
+  }, [isAccounts, supportSide, waiting, chatUnread]);
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
@@ -130,7 +133,6 @@ export const DepartmentHeadDashboard: React.FC = () => {
       onSelect={id => go(id as HeadPage)}
       user={{ name: user?.name || 'Department Head', role: 'Department Head' }}
       onSignOut={() => void logout()}
-      showHelp
       flush={nav === 'chat'}
       topLeft={
         <HeadSearch
@@ -173,8 +175,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'payments' && <AccountsConfirmations />}
       {nav === 'plans' && <AccountsPlans />}
       {nav === 'income' && <DepartmentIncome own />}
-      {nav === 'telecaller-sheets' && <ContactSheets />}
-      {nav === 'service-prices' && <ServicePrices />}
+      {nav === 'telecaller-sheets' && !supportSide && <ContactSheets />}
+      {nav === 'service-prices' && !supportSide && <ServicePrices />}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'notifications' && <NotificationsPage />}
       {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}

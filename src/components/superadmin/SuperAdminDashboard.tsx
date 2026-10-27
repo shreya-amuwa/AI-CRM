@@ -69,7 +69,6 @@ export const SuperAdminDashboard: React.FC = () => {
       onSelect={id => setPage(id as Page)}
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
-      showHelp
       wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'workflow' || page === 'income'}
       flush={page === 'chat'}
       topActions={
