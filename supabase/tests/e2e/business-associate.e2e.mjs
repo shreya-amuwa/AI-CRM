@@ -163,6 +163,7 @@ ok('fixture: a Telecaller, two Business Associates and an approved price list we
 const dh = await login('dh@amuwa.com', { width: 1440, height: 900 }, 'nav button');
 const refDesign = await styleOf(dh); // the Department Head's dashboard is the reference for the design
 await menu(dh, 'Team Members & Access');
+await dh.locator('[data-testid="tab-add"]').click();
 await dh.locator('#staff-role').waitFor({ timeout: 15000 });
 await dh.locator('#staff-role').selectOption('TEAM_MEMBER');
 const teamSelect = dh.locator('select').filter({ has: dh.locator('option', { hasText: 'Select team…' }) }).first();

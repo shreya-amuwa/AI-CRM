@@ -25,7 +25,7 @@ import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
 import { AccountsPlans } from '../accounts/AccountsPlans';
 import { DepartmentIncome } from '../reports/DepartmentIncome';
-import { StaffManagementPanel } from '../common/StaffManagementPanel';
+import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import { TeamActivityPage } from '../support-member/TeamActivityPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
@@ -134,6 +134,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       user={{ name: user?.name || 'Department Head', role: 'Department Head' }}
       onSignOut={() => void logout()}
       flush={nav === 'chat'}
+      wide={nav === 'team'}
       topLeft={
         <HeadSearch
           data={data}
@@ -179,7 +180,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'service-prices' && !supportSide && <ServicePrices />}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'notifications' && <NotificationsPage />}
-      {nav === 'team' && <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} />}
+      {nav === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} />}
     </DashboardShell>
   );
 };

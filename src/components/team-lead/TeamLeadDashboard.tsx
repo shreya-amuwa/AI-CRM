@@ -3,7 +3,7 @@ import { Bell, ClipboardList, LayoutDashboard, LineChart, Navigation, UserPlus, 
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { ScopeOverviewPanel } from '../common/ScopeOverviewPanel';
-import { StaffManagementPanel } from '../common/StaffManagementPanel';
+import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { DashboardShell, PageTitle, type ShellNavGroup } from '../layout/shell';
@@ -67,6 +67,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       user={{ name: userName || 'Team Lead', role: 'Team Lead' }}
       onSignOut={() => void logout()}
       flush={nav === 'chat'}
+      wide={nav === 'team-members'}
       topActions={
         <>
           <LeaveCenter />
@@ -85,7 +86,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       {nav === 'performance' && <PerformanceManagement mode="TEAM_LEAD" />}
       {nav === 'field-visits' && <FieldVisitTrackerView viewerRole="team-lead" userName={userName} />}
       {nav === 'team-members' && (
-        <StaffManagementPanel departmentSlug={profile?.department?.slug || ''} subDept={profile?.team?.division === 'SALES' ? 'sales' : null} />
+        <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept={profile?.team?.division === 'SALES' ? 'sales' : profile?.team?.division === 'SUPPORT' ? 'support' : null} />
       )}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'notifications' && <NotificationsPage />}

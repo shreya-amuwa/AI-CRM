@@ -5774,6 +5774,22 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await names('gs', scope('mpillar'))).join() === 'SCOPE dtalk Sales', 'scopes: and the department is no longer reachable');
 }
 
+// --- Team Member Management: Access Control belongs to the Super Admin alone (the page hides it; the API refuses it) ----------------
+{
+  const head = (await db.query(`select id from profiles where role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  const anyDept = (await db.query(`select id from departments order by created_at limit 1`)).rows[0].id as string;
+  for (const who of ['dh', 'th', 'a']) {
+    r = await api(who, 'GET', `/users/${head}/department-access`);
+    check(r.status === 403, `access control API: ${who} cannot read a Department Head's access`, r);
+    r = await api(who, 'POST', `/users/${head}/department-access/apply`, { pairs: [{ departmentId: anyDept, division: 'SALES' }] });
+    check(r.status === 403, `access control API: ${who} cannot change it`, r);
+    r = await api(who, 'POST', `/users/${head}/department-access`, { departmentId: anyDept, division: 'SALES', granted: true });
+    check(r.status === 403, `access control API: ${who} cannot grant a department either`, r);
+  }
+  r = await api('sa', 'GET', `/users/${head}/department-access`);
+  check(r.status === 200, 'access control API: the Super Admin can', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
