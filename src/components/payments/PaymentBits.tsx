@@ -133,6 +133,7 @@ export const PaymentHistory: React.FC<{
               <Badge tone={p.type === 'PART' ? 'blue' : 'green'}>{TYPE_LABEL[p.type]}</Badge>
               <LedgerStatusBadge status={p.status} />
               {p.source !== 'ACCOUNTS' && <Badge tone="slate">{p.source === 'SALES' ? 'Recorded by Sales' : 'Earlier record'}</Badge>}
+              {p.invoice && <Badge tone="green">{p.invoice.paid ? `Paid invoice ${p.invoice.number}` : `Invoice ${p.invoice.number}`}</Badge>}
             </div>
             <p className="text-[11px] text-slate-500">
               {fmtDateTime(p.paidAt)}

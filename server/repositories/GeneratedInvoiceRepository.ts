@@ -40,6 +40,11 @@ export class GeneratedInvoiceRepository {
     return unwrap(await this.db.rpc('accounts_issue_invoice', { p_request: requestId, p_payload: payload })) as Invoice & { replayed: boolean };
   }
 
+  /** The paid invoice of one verified payment (made and marked paid in one step; asking again returns the same invoice). */
+  async issueForPayment(paymentId: string): Promise<Invoice & { replayed: boolean }> {
+    return unwrap(await this.db.rpc('accounts_issue_payment_invoice', { p_payment: paymentId })) as Invoice & { replayed: boolean };
+  }
+
   async claim(invoiceId: string, stage: InvoiceStage): Promise<ClaimedStage> {
     return unwrap(await this.db.rpc('accounts_invoice_claim', { p_invoice: invoiceId, p_stage: stage })) as ClaimedStage;
   }

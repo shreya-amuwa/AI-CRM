@@ -193,6 +193,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/accounts/generated-invoices', handler: generatedInvoices.issue, options: S },
   { method: 'POST', path: '/accounts/generated-invoices/:id/confirm-payment', handler: generatedInvoices.confirmPayment, options: S },
   { method: 'POST', path: '/accounts/generated-invoices/:id/deliver', handler: generatedInvoices.deliver, options: S },
+  { method: 'POST', path: '/accounts/payments/:paymentId/invoice', handler: generatedInvoices.invoiceForPayment, options: S },
   { method: 'POST', path: '/accounts/generated-invoices/:id/whatsapp', handler: generatedInvoices.sendWhatsApp, options: S },
   { method: 'GET', path: '/accounts/generated-invoices/:id/whatsapp', handler: generatedInvoices.whatsAppHistory },
   { method: 'GET', path: '/accounts/invoice-whatsapp/settings', handler: generatedInvoices.whatsAppSettings },

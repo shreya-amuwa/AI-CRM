@@ -1,12 +1,13 @@
 import { AccountsCustomerInvoices } from '../invoices/AccountsCustomerInvoices';
+import { StepList } from '../invoices/GeneratedInvoicePanel';
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Plus } from 'lucide-react';
-import type { FollowUpOutcome, LedgerPayment, PaymentOverview, PaymentType } from '../../../shared/contracts';
+import { CheckCircle2, FilePlus2, Plus } from 'lucide-react';
+import type { FollowUpOutcome, LedgerPayment, PaymentInvoiceOutcome, PaymentOverview, PaymentType } from '../../../shared/contracts';
 import { FOLLOWUP_OUTCOMES, PAYMENT_METHODS } from '../../../shared/contracts';
 import { accountsRecordPaymentSchema, accountsUpdatePaymentSchema, paymentFollowUpSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
-import { pipelineApi, type AccountsPaymentInput } from '../../lib/api/endpoints';
+import { generatedInvoicesApi, pipelineApi, type AccountsPaymentInput } from '../../lib/api/endpoints';
 import { ErrorBanner, FormField, inputClass, Loading, Modal } from '../support-member/SupportParts';
 import { Badge, fmtDateTime, METHOD_LABEL, MoneyTiles, PaymentHistory, PaymentStatusBadge, rupees, rupeesExact, TYPE_LABEL } from '../payments/PaymentBits';
 
@@ -54,6 +55,7 @@ const PaymentFormDialog: React.FC<{
   const [paidAt, setPaidAt] = useState(editing ? toLocalInput(editing.paidAt) : nowLocal());
   const [note, setNote] = useState(editing?.note ?? '');
   const [verify, setVerify] = useState(false);
+  const [invoice, setInvoice] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -70,7 +72,7 @@ const PaymentFormDialog: React.FC<{
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const body: AccountsPaymentInput = { type, amount: Number(shownAmount), method: method as AccountsPaymentInput['method'], reference: reference.trim() || null, paidAt: fromLocalInput(paidAt), note: note.trim() || null };
-    const parsed = editing ? accountsUpdatePaymentSchema.safeParse(body) : accountsRecordPaymentSchema.safeParse({ ...body, verify });
+    const parsed = editing ? accountsUpdatePaymentSchema.safeParse(body) : accountsRecordPaymentSchema.safeParse({ ...body, verify, invoice });
     if (!parsed.success) {
       const next: Record<string, string> = {};
       for (const i of parsed.error.issues) next[String(i.path[0] ?? '')] ||= i.message;
@@ -83,7 +85,7 @@ const PaymentFormDialog: React.FC<{
     try {
       const next = editing
         ? await pipelineApi.updateAccountsPayment(customerId, editing.id, body)
-        : await pipelineApi.recordAccountsPayment(customerId, { ...body, verify });
+        : await pipelineApi.recordAccountsPayment(customerId, { ...body, verify, invoice });
       onSaved(next);
     } catch (err) {
       setError(errorMessage(err));
@@ -165,6 +167,15 @@ const PaymentFormDialog: React.FC<{
             <span>
               <strong className="text-slate-900">I have received this money and verified it.</strong>
               <span className="block text-[11px] text-slate-500">Leave unticked to record it as pending; only a verified payment counts as received.</span>
+            </span>
+          </label>
+        )}
+        {!editing && verify && (
+          <label className="flex items-start gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-slate-700">
+            <input type="checkbox" className="mt-0.5 accent-emerald-600" checked={invoice} onChange={e => setInvoice(e.target.checked)} />
+            <span>
+              <strong className="text-slate-900">Make the paid invoice for this payment.</strong>
+              <span className="block text-[11px] text-slate-500">One invoice for exactly this payment, with the order&apos;s GST. It is stored as a PDF and sent to the customer by e-mail and WhatsApp.</span>
             </span>
           </label>
         )}
@@ -328,6 +339,8 @@ export const AccountsPaymentPanel: React.FC<{
   const [overview, setOverview] = useState<PaymentOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [invoiceOutcome, setInvoiceOutcome] = useState<PaymentInvoiceOutcome | null>(null);
+  const [invoicesKey, setInvoicesKey] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [form, setForm] = useState<{ editing: LedgerPayment | null } | null>(null);
   const [reject, setReject] = useState<LedgerPayment | null>(null);
@@ -356,13 +369,41 @@ export const AccountsPaymentPanel: React.FC<{
     if (followUps) pipelineApi.accountsTeam().then(setTeam, () => setTeam([]));
   }, [followUps]);
 
+  /** The answer to "record" / "verify" carries what happened to the payment's paid invoice: say it, and refresh the invoice list. */
+  const showInvoice = (o: PaymentOverview) => {
+    setInvoiceOutcome(o.paymentInvoice ?? null);
+    if (o.paymentInvoice) setInvoicesKey(n => n + 1);
+  };
+
   const run = async (key: string, fn: () => Promise<PaymentOverview>, done: string) => {
     setBusyId(key);
     setError(null);
     setNotice(null);
+    setInvoiceOutcome(null);
     try {
-      apply(await fn());
+      const next = await fn();
+      apply(next);
+      showInvoice(next);
       setNotice(done);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** "Generate invoice" on a verified payment: also the retry when the automatic one could not be made. */
+  const generateInvoice = async (paymentId: string) => {
+    setBusyId(paymentId);
+    setError(null);
+    setNotice(null);
+    setInvoiceOutcome(null);
+    try {
+      const outcome = await generatedInvoicesApi.invoiceForPayment(paymentId);
+      setInvoiceOutcome(outcome);
+      setInvoicesKey(n => n + 1);
+      apply(await pipelineApi.paymentOverview(customerId));
+      setNotice(outcome.status === 'EXISTS' ? `The paid invoice ${outcome.number} was already made for this payment.` : `Paid invoice ${outcome.number} made.`);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -394,6 +435,12 @@ export const AccountsPaymentPanel: React.FC<{
           {notice}
         </p>
       )}
+      {invoiceOutcome?.status === 'FAILED' && (
+        <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+          The payment is saved, but its paid invoice could not be made: {invoiceOutcome.message} Fix this, then use &quot;Generate invoice&quot; on the payment.
+        </p>
+      )}
+      {invoiceOutcome && invoiceOutcome.status !== 'FAILED' && invoiceOutcome.steps && invoiceOutcome.steps.length > 0 && <StepList steps={invoiceOutcome.steps} />}
       {error && <ErrorBanner message={error} />}
       <PaymentHistory
         payments={o.payments}
@@ -412,6 +459,11 @@ export const AccountsPaymentPanel: React.FC<{
                 </button>
               </>
             )}
+            {p.status === 'VERIFIED' && !p.invoice && (
+              <button type="button" className={ghostBtn} disabled={busyId !== null} onClick={() => void generateInvoice(p.id)}>
+                <FilePlus2 className="w-3 h-3" aria-hidden="true" /> {busyId === p.id ? 'Making invoice…' : 'Generate invoice'}
+              </button>
+            )}
             {p.status === 'VERIFIED' && isManager && (
               <button type="button" className={dangerBtn} disabled={busyId !== null} onClick={() => setReverse(p)}>
                 Reverse
@@ -421,7 +473,7 @@ export const AccountsPaymentPanel: React.FC<{
         )}
       />
 
-      <AccountsCustomerInvoices customerId={customerId} customerLabel={customerLabel} canUpload={!readOnly} />
+      <AccountsCustomerInvoices key={invoicesKey} customerId={customerId} customerLabel={customerLabel} canUpload={!readOnly} />
 
       {followUps && !readOnly && (
         <>
@@ -438,6 +490,7 @@ export const AccountsPaymentPanel: React.FC<{
           onClose={() => setForm(null)}
           onSaved={next => {
             apply(next);
+            showInvoice(next);
             setNotice(form.editing ? 'Payment updated.' : 'Payment recorded.');
             setForm(null);
           }}

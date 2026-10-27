@@ -1,10 +1,28 @@
 /**
  * Controllers: translate HTTP ⇄ service calls. No business rules here.
  */
+import type { PaymentInvoiceOutcome, PaymentOverview } from '../../shared/contracts.js';
+import { AppError } from '../http/errors.js';
 import type { Handler } from '../http/types.js';
 import { createServices } from '../services/index.js';
 
 const svc = (ctx: Parameters<Handler>[0]) => createServices(ctx.db);
+
+/**
+ * After a payment is verified: its paid invoice is made and sent. The payment stands whatever happens to the invoice; when the invoice
+ * cannot be made (no address on record, GST not chosen ...) the answer says why, so Accounts can fix it and use "Generate invoice".
+ */
+async function withPaymentInvoice(ctx: Parameters<Handler>[0], customerId: string, paymentId: string): Promise<PaymentOverview> {
+  const s = svc(ctx);
+  let outcome: PaymentInvoiceOutcome;
+  try {
+    outcome = await s.generatedInvoices.invoiceForPayment(paymentId);
+  } catch (e) {
+    if (!(e instanceof AppError)) console.error('[invoice] the paid invoice of a payment could not be made', { payment: paymentId, message: (e as Error)?.message });
+    outcome = { status: 'FAILED', message: e instanceof AppError ? e.message : 'The paid invoice could not be made. Use "Generate invoice" on the payment to try again.' };
+  }
+  return { ...(await s.pipeline.paymentOverviewOf(customerId)), paymentInvoice: outcome };
+}
 const ok = <T>(data: T, status = 200) => ({ status, data });
 
 export const meController = {
@@ -250,11 +268,17 @@ export const pipelineController = {
   paymentRequests: (async ctx => ok(await svc(ctx).pipeline.paymentRequests(ctx.req.query))) as Handler,
   accountsCounts: (async ctx => ok(await svc(ctx).pipeline.accountsCounts())) as Handler,
   accountsTeam: (async ctx => ok(await svc(ctx).pipeline.accountsTeam())) as Handler,
-  recordAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.recordAccountsPayment(ctx.params.id, ctx.req.body), 201)) as Handler,
+  recordAccountsPayment: (async ctx => {
+    const r = await svc(ctx).pipeline.recordAccountsPaymentTracked(ctx.params.id, ctx.req.body);
+    return ok(r.makeInvoice ? await withPaymentInvoice(ctx, ctx.params.id, r.paymentId) : r.overview, 201);
+  }) as Handler,
   setOrderGst: (async ctx => ok(await svc(ctx).pipeline.setOrderGst(ctx.params.id, ctx.req.body))) as Handler,
   gstReconciliation: (async ctx => ok(await svc(ctx).pipeline.gstReconciliation())) as Handler,
   updateAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.updateAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
-  verifyAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.verifyAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
+  verifyAccountsPayment: (async ctx => {
+    const r = await svc(ctx).pipeline.verifyAccountsPaymentTracked(ctx.params.paymentId, ctx.params.id, ctx.req.body);
+    return ok(r.makeInvoice ? await withPaymentInvoice(ctx, ctx.params.id, ctx.params.paymentId) : r.overview);
+  }) as Handler,
   rejectAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.rejectAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
   reverseAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.reverseAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
   confirmAndReturn: (async ctx => {
@@ -392,6 +416,8 @@ export const generatedInvoiceController = {
   agreementReview: (async ctx => ok(await svc(ctx).generatedInvoices.agreementReview())) as Handler,
   confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
+  /** "Generate invoice" on a verified payment (also the retry when the automatic one could not be made). Failures are answered as errors. */
+  invoiceForPayment: (async ctx => ok(await svc(ctx).generatedInvoices.invoiceForPayment(ctx.params.paymentId))) as Handler,
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
   sendWhatsApp: (async ctx => ok(await svc(ctx).generatedInvoices.sendWhatsApp(ctx.params.id, ctx.req.body))) as Handler,
   whatsAppHistory: (async ctx => ok(await svc(ctx).generatedInvoices.whatsAppHistory(ctx.params.id))) as Handler,

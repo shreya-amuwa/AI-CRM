@@ -3017,7 +3017,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.status === 409, 'the paid invoice cannot be started before the payment is confirmed', r);
   const m1 = mailsBefore();
   r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'UPI', reference: 'UPI-TXN-77', note: 'Received in the bank' });
-  check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE', 'stage 2: payment confirmed, paid PDF stored, paid e-mail sent', r);
+  check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE,WHATSAPP:NOT_SENT', 'stage 2: payment confirmed, paid PDF stored, paid e-mail sent', r);
   const g2 = await row(inv1.id);
   const paidKey = objectKey(inv1.id, 'paid');
   const stored2 = fake.objects.get(paidKey);
@@ -3101,7 +3101,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     smtpMode = 'reject';
     const m = mailsBefore();
     r = await api('accm', 'POST', `/accounts/generated-invoices/${inv.id}/confirm-payment`, { method: 'BANK_TRANSFER', reference: 'NEFT 1' });
-    check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:FAILED', 'paid e-mail rejected: the payment stays confirmed, the paid PDF is stored, the e-mail failed', r.json.data.steps);
+    check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:FAILED,WHATSAPP:NOT_SENT', 'paid e-mail rejected: the payment stays confirmed, the paid PDF is stored, the e-mail failed', r.json.data.steps);
     let g = await row(inv.id);
     check(g.lifecycle === 'PAID' && g.paid_pdf_status === 'STORED' && g.paid_email_status === 'FAILED' && g.unpaid_email_status === 'SENT', 'the stages are recorded separately');
     r = await api('cl2', 'GET', `/client/invoices/${inv.id}/url`);
@@ -3228,7 +3228,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 
     r = await confirm({ method: 'CASH', note: 'rest in cash' });
     check(r.status === 200 && r.json.data.invoice.status === 'Paid' && r.json.data.invoice.generated.paymentSummary.balance === 0 && r.json.data.invoice.generated.paymentSummary.state === 'FULLY_PAID'
-      && r.json.data.steps.map((x: any) => `${x.step}:${x.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE', 'balance: the last payment (the whole balance by default) settles it: paid invoice stored and e-mailed', r);
+      && r.json.data.steps.map((x: any) => `${x.step}:${x.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE,WHATSAPP:NOT_SENT', 'balance: the last payment (the whole balance by default) settles it: paid invoice stored and e-mailed', r);
     const paidBytes = fake.objects.get(objectKey(bi.id, 'paid'))!.body;
     const paidText = pdfText(paidBytes);
     if (paidText) check(/Balance Outstanding: .*Rs\.0\.00/.test(paidText) && /Payment Status: Fully Paid/.test(paidText) && /This Payment: .*Rs\.6,800\.00/.test(paidText) && /Payments Received: .*Rs\.11,800\.00/.test(paidText),
@@ -3590,7 +3590,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('a', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, {});
   check(r.status === 403, 'paid-only: a salesperson cannot confirm', r);
   r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, { note: 'Part payment received' });
-  check(r.status === 200 && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE', 'paid-only: with a verified part payment (60,000 of 70,800) the PAID invoice is created, stored and e-mailed', r.json);
+  check(r.status === 200 && r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PAYMENT:DONE,PDF:DONE,EMAIL:DONE,WHATSAPP:NOT_SENT', 'paid-only: with a verified part payment (60,000 of 70,800) the PAID invoice is created, stored and e-mailed', r.json);
   const sm = smtpMail.at(-1);
   check(smtpMail.length === mail0 + 1 && sm && /paid\.pdf|paid/i.test(sm.data) , 'paid-only: exactly one e-mail left, the paid invoice');
   const paidObj = fake.objects.get(key(a.id, 'paid'));
@@ -3622,7 +3622,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const waUrl = `http://127.0.0.1:${(waMock.address() as net.AddressInfo).port}/send`;
   const waSend = (who: string, id: string, resend = false) => api(who, 'POST', `/accounts/generated-invoices/${id}/whatsapp`, { resend });
   const waCount = async () => (await db.query(`select count(*)::int n from invoice_whatsapp_dispatches where invoice_id = $1`, [a.id])).rows[0].n as number;
-  delete process.env.AUTOMATION_MODE_INVOICE_WHATSAPP;
+  process.env.AUTOMATION_MODE_INVOICE_WHATSAPP = 'dry_run';
   process.env.AUTOMATION_DISPATCH_SECRET = 'dispatch-secret-0123456789';
   const invoicesBeforeWa = (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n;
 
@@ -3763,6 +3763,90 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'GET', `/invoices/${b.id}`);
   r = await api('accm', 'GET', `/invoices/${b.id}`);
   check(r.json.data.generated.paymentSummary.order.totalPayable === 141600 && r.json.data.generated.paymentSummary.order.confirmed === 70000 && r.json.data.generated.paymentSummary.order.balance === 71600, 'paid-only: the order shows 1,41,600 payable, 70,000 confirmed and 71,600 outstanding', r.json.data.generated.paymentSummary);
+  // ---- a paid invoice for each payment: recording a verified payment makes, stores, e-mails and WhatsApps its own invoice
+  {
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Each Payment', company: 'Each Payment Co', email: 'each.payment@example.com', phone: '9820000909', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const ep = r.json.data.id;
+    r = await api('a', 'POST', `/pipeline/customers/${ep}/send-to-accounts`, { amount: 14000 });
+    check(r.status === 200 || r.status === 201, 'each payment: Sales sends 14,000 (before GST) to Accounts', r);
+    await chooseGst(ep, 18);
+    const mailN = smtpMail.length, hitsN = waHits.length, filesN = fake.objects.size;
+    r = await api('accm', 'POST', `/pipeline/customers/${ep}/accounts/payments`, { type: 'PART', amount: 10000, method: 'UPI', reference: 'EP-API-1', verify: true });
+    const o1 = r.json.data?.paymentInvoice;
+    check(r.status === 201 && o1?.status === 'CREATED' && o1.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'PDF:DONE,EMAIL:DONE,WHATSAPP:DONE',
+      'each payment: a verified part payment gets its own paid invoice, stored, e-mailed and sent by WhatsApp', r.json.data?.paymentInvoice);
+    check(smtpMail.length === mailN + 1 && waHits.length === hitsN + 1 && fake.objects.size === filesN + 1, 'each payment: one e-mail, one WhatsApp message and one PDF for the first payment');
+    check(r.json.data.payments.length === 1 && r.json.data.payments[0].invoice?.number === o1.number && r.json.data.payments[0].invoice.paid === true, 'each payment: the payment list names the invoice of the payment', r.json.data.payments);
+    r = await api('accm', 'POST', `/pipeline/customers/${ep}/accounts/payments`, { type: 'FULL', amount: 6520, method: 'UPI', reference: 'EP-API-2', verify: true });
+    const o2 = r.json.data?.paymentInvoice;
+    check(r.status === 201 && o2?.status === 'CREATED' && o2.invoiceId !== o1.invoiceId && o2.steps.every((s: any) => s.status === 'DONE'), 'each payment: the second payment gets a second paid invoice (the one that used to be refused)', r.json.data?.paymentInvoice);
+    check(smtpMail.length === mailN + 2 && waHits.length === hitsN + 2 && fake.objects.size === filesN + 2, 'each payment: two e-mails, two WhatsApp messages and two PDFs in all');
+    const payIds = (await db.query(`select id from customer_payments where customer_id = $1 order by recorded_at`, [ep])).rows.map((x: any) => x.id as string);
+    r = await api('accm', 'POST', `/accounts/payments/${payIds[0]}/invoice`, {});
+    check(r.status === 200 && r.json.data.status === 'EXISTS' && r.json.data.invoiceId === o1.invoiceId, 'each payment: asking again returns the same invoice', r);
+    check(smtpMail.length === mailN + 2 && waHits.length === hitsN + 2, 'each payment: and sends nothing twice');
+    r = await api('a', 'POST', `/accounts/payments/${payIds[0]}/invoice`, {});
+    check(r.status === 403, 'each payment: Sales cannot make it', r);
+    r = await api('accm', 'POST', `/accounts/payments/${payIds[0]}/invoice`, {});
+    r = await api('accm', 'GET', `/invoices?customerId=${ep}`);
+    // no invoice for a payment that nobody verified
+    r = await api('accm', 'POST', `/pipeline/customers/${ep}/accounts/payments`, { type: 'PART', amount: 1000, method: 'CASH', verify: false });
+    check(r.status === 409 || r.status === 422, 'each payment: nothing more can be received than the order is worth', r);
+    // a payment recorded without the invoice, then asked for by hand
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Later Invoice', company: 'Later Invoice Co', email: 'later.invoice@example.com', phone: '9820000910', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const lp = r.json.data.id;
+    await api('a', 'POST', `/pipeline/customers/${lp}/send-to-accounts`, { amount: 14000 });
+    await chooseGst(lp, 18);
+    r = await api('accm', 'POST', `/pipeline/customers/${lp}/accounts/payments`, { type: 'PART', amount: 5000, method: 'UPI', reference: 'LP-1', verify: true, invoice: false });
+    check(r.status === 201 && !r.json.data.paymentInvoice && r.json.data.payments[0].invoice === null, 'each payment: with the box unticked the payment is verified and no invoice is made', r.json.data);
+    const lpPay = (await db.query(`select id from customer_payments where customer_id = $1`, [lp])).rows[0].id;
+    r = await api('accm', 'POST', `/accounts/payments/${lpPay}/invoice`, {});
+    check(r.status === 200 && r.json.data.status === 'CREATED' && r.json.data.steps.every((s: any) => s.status === 'DONE'), 'each payment: "Generate invoice" makes it later', r);
+    // a customer with no address: the payment stands, the answer says what is missing
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'No Address', company: 'No Address Co', email: 'no.address@example.com', phone: '9820000911', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const na = r.json.data.id;
+    await api('a', 'POST', `/pipeline/customers/${na}/send-to-accounts`, { amount: 14000 });
+    await chooseGst(na, 18);
+    r = await api('accm', 'POST', `/pipeline/customers/${na}/accounts/payments`, { type: 'PART', amount: 5000, method: 'UPI', reference: 'NA-1', verify: true });
+    check(r.status === 201 && r.json.data.paymentInvoice?.status === 'FAILED' && /address/i.test(r.json.data.paymentInvoice.message) && r.json.data.verified === 5000,
+      'each payment: with no address on record the payment is saved as verified and the answer says why there is no invoice', r.json.data);
+
+    // the same through the WhatsApp Automation Builder webhook (the onboarding one): no Wabastore, and no approved template needed
+    const hookHits: any[] = [];
+    const hook = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', d => (raw += d));
+      req.on('end', () => { hookHits.push(JSON.parse(raw)); res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}'); });
+    });
+    await new Promise<void>(rs => hook.listen(0, '127.0.0.1', rs));
+    const savedWa = (await db.query(`select enabled, auto_send, template_name, template_language, template_approved from invoice_whatsapp_settings`)).rows[0];
+    const savedEnv = { w: process.env.WABASTORE_WEBHOOK_URL, m: process.env.AUTOMATION_MODE_INVOICE_WHATSAPP };
+    delete process.env.WABASTORE_WEBHOOK_URL;
+    delete process.env.AUTOMATION_MODE_INVOICE_WHATSAPP; // AUTOMATION_MODE=live decides
+    process.env.WHATSAPP_WEBHOOK_URL = `http://127.0.0.1:${(hook.address() as net.AddressInfo).port}/builder`;
+    await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: true, autoSend: true, templateName: null, templateLanguage: 'en', templateApproved: false });
+    r = await api('accm', 'GET', '/accounts/invoice-whatsapp/settings');
+    check(r.status === 200 && r.json.data.delivery.mode === 'live' && r.json.data.delivery.provider === 'BUILDER' && r.json.data.delivery.ready === true, 'builder: the settings say messages go through the webhook, live because AUTOMATION_MODE is live', r.json.data);
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Builder Hook', company: 'Builder Hook Co', email: 'builder.hook@example.com', phone: '9820000912', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const bh = r.json.data.id;
+    await api('a', 'POST', `/pipeline/customers/${bh}/send-to-accounts`, { amount: 14000 });
+    await chooseGst(bh, 18);
+    const wabBefore = waHits.length;
+    r = await api('accm', 'POST', `/pipeline/customers/${bh}/accounts/payments`, { type: 'PART', amount: 8000, method: 'UPI', reference: 'BH-1', verify: true });
+    check(r.status === 201 && r.json.data.paymentInvoice?.status === 'CREATED' && r.json.data.paymentInvoice.steps.map((x: any) => `${x.step}:${x.status}`).join() === 'PDF:DONE,EMAIL:DONE,WHATSAPP:DONE',
+      'builder: the paid invoice of the payment is sent by WhatsApp through the webhook, with no approved template', r.json.data?.paymentInvoice);
+    const hh = hookHits[0];
+    check(hookHits.length === 1 && waHits.length === wabBefore && hh.stage_code === 'INVOICE_PAID' && hh.whatsapp_number === '919820000912' && hh.invoice_number === r.json.data.paymentInvoice.number && /8,000\.00/.test(hh.invoice_amount) && /^http/.test(hh.invoice_pdf_url),
+      'builder: the event names the customer, the invoice, the amount and a link; Wabastore was not used', hh);
+    const pdfRes = await fetch(hh.invoice_pdf_url);
+    check(pdfRes.status === 200 && Buffer.from(await pdfRes.arrayBuffer()).subarray(0, 5).toString() === '%PDF-', 'builder: the link serves the stored paid PDF');
+    check(!JSON.stringify((await db.query(`select detail from invoice_whatsapp_dispatches`)).rows).includes('X-Amz'), 'builder: the link is not recorded anywhere');
+    hook.close();
+    delete process.env.WHATSAPP_WEBHOOK_URL;
+    if (savedEnv.w) process.env.WABASTORE_WEBHOOK_URL = savedEnv.w;
+    if (savedEnv.m) process.env.AUTOMATION_MODE_INVOICE_WHATSAPP = savedEnv.m;
+    await db.query(`update invoice_whatsapp_settings set enabled = $1, auto_send = $2, template_name = $3, template_language = $4, template_approved = $5`, [savedWa.enabled, savedWa.auto_send, savedWa.template_name, savedWa.template_language, savedWa.template_approved]);
+  }
   waMock.close();
   await db.query(`update public.invoice_whatsapp_settings set enabled = false, auto_send = false, template_name = null, template_approved = false`);
   for (const k of ['AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_MODE_INVOICE_WHATSAPP', 'WABASTORE_WEBHOOK_URL', 'WABASTORE_API_KEY', 'WABASTORE_STATUS_SECRET']) delete process.env[k];

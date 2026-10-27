@@ -39,19 +39,39 @@ Only the **paid** invoice is sent (customers never receive an unpaid invoice). N
 ## Environment
 | Variable | Meaning |
 |---|---|
-| `AUTOMATION_MODE_INVOICE_WHATSAPP` | `off`, `dry_run` (default: decided and logged, nothing sent, no link made) or `live`. |
-| `WABASTORE_WEBHOOK_URL`, `WABASTORE_API_KEY` | Wabastore's send endpoint (https) and key (shared with the expiry reminders). Live without it behaves like off and says why. |
+| `AUTOMATION_MODE_INVOICE_WHATSAPP` | `off`, `dry_run` (default: decided and logged, nothing sent, no link made) or `live`. **When it is not set, `AUTOMATION_MODE` decides** (the same switch the onboarding messages use), so `AUTOMATION_MODE=live` is enough. |
+| `WHATSAPP_WEBHOOK_URL` | The WhatsApp Automation Builder webhook the onboarding messages already use. The paid invoice is posted to it as an event (see below). Used when Wabastore is not set up. |
+| `WABASTORE_WEBHOOK_URL`, `WABASTORE_API_KEY` | Wabastore's send endpoint (https) and key (shared with the expiry reminders). When set it is used instead of the builder. Live with neither behaves like off and says why. |
 | `WABASTORE_STATUS_SECRET` | 16+ characters; the provider sends delivery reports to `/api/v1/internal/whatsapp/status` with it. |
 | `INVOICE_WHATSAPP_LINK_TTL_SECONDS` | Link lifetime (default 900). |
 | `AUTOMATION_TEST_RECIPIENTS` | Staging safety net: only these numbers are ever sent to. |
 
 **The request to Wabastore is provisional** (`invoiceWhatsAppPayload`): `reference`, `to`, `template`, `language`, `variables {customerName, invoiceNumber, amount, invoiceDate}`, `document {url, filename, mimeType}`. It follows Wabastore's send API once that is settled (one function). If Wabastore wants the file uploaded instead of fetched from a link, the sender changes; nothing else does.
 
+## Through the WhatsApp Automation Builder (the onboarding webhook)
+
+With `WHATSAPP_WEBHOOK_URL` set and no `WABASTORE_WEBHOOK_URL`, the paid invoice goes to the same webhook as the onboarding messages. The template lives in the builder, so the "template approved" rule of the settings does not apply to it. The event has the same keys as the onboarding events plus the invoice:
+
+```json
+{"name":"<customer>","email":"","phone":"91XXXXXXXXXX","department":"","website":"","whatsapp_number":"91XXXXXXXXXX",
+ "status":"Paid Invoice","stage_code":"INVOICE_PAID","source":"<WHATSAPP_SOURCE>","automation":"Paid Invoice","event_key":"invoice|<dispatch id>|<attempt>",
+ "invoice_number":"INV-2026-00052","invoice_amount":"Rs.10,000.00","invoice_date":"27 Oct 2026","invoice_pdf_url":"<short-lived link>","invoice_filename":"INV-2026-00052-paid-invoice.pdf"}
+```
+
+**In the builder (this cannot be done from the CRM):** add a route whose condition is `stage_code` **equals** `INVOICE_PAID`, and let it send the invoice template with the PDF from `invoice_pdf_url` as the document (and `invoice_number`, `invoice_amount`, `invoice_date` as the text). "Accepted" in the CRM means the webhook took the event; whether the route sent it is shown in the builder. `event_key` is new for every attempt because the builder ignores a repeated one.
+
+### If "nothing is sent", check in this order
+1. **The server mode.** The invoice screen and the settings show a yellow note when the server is in test mode ("messages are prepared and logged but NOT sent"), switched off, or has no WhatsApp service. Fix: `AUTOMATION_MODE=live` (or `AUTOMATION_MODE_INVOICE_WHATSAPP=live`) and `WHATSAPP_WEBHOOK_URL` (or the Wabastore variables), then redeploy.
+2. **The switch in the invoice screen.** Settings -> "Allow sending paid invoices by WhatsApp" (Super Admin or Accounts Department Head). It starts switched off. Without it a paid invoice reports the step "Invoice WhatsApp is switched off" instead of staying silent.
+3. **Automatic sending.** Settings -> "Send automatically as soon as the paid invoice is ready". Without it, use **Send invoice via WhatsApp** on the invoice.
+4. **The customer's number.** A valid Indian WhatsApp or mobile number must be on the customer record.
+5. **The builder route** (above).
+
 ## Going live (nothing is sent today)
 1. Run `supabase/run_this_invoice_whatsapp.sql` in the Supabase SQL editor.
 2. Register and get the invoice template approved with Wabastore / WhatsApp. Typical body: "Hello {{customerName}}, we have received your payment. Your paid invoice {{invoiceNumber}} for {{amount}} dated {{invoiceDate}} is attached." with a document header. **Give me the registered template name and variables** (they must match the four variables above, in that order, or the mapping is adjusted).
 3. Set the environment variables (test numbers first: `AUTOMATION_TEST_RECIPIENTS`), switch `AUTOMATION_MODE_INVOICE_WHATSAPP=live`.
-4. In the invoice screen: Settings -> allow, template name, language, tick "approved". Send one invoice to your own number. Then, if you want, tick "send automatically".
+4. In the invoice screen: Settings -> allow, template name, language, tick "approved" (Wabastore only; the builder needs none of the three). Send one invoice to your own number. Then, if you want, tick "send automatically".
 
 Retries run from the scheduler (`/internal/automations/dispatch`, which Vercel calls twice a day) or when Accounts presses **Send again**.
 

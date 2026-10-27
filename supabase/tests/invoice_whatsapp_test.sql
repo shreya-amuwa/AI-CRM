@@ -114,6 +114,12 @@ reset role;
 select test.check((select count(*) = 1 from invoice_whatsapp_dispatches), '... still one dispatch');
 select test.check((select jsonb_array_length(invoice_whatsapp_claim(5, 'live', 300, timestamptz '2027-01-10 11:10+05:30')) = 0), 'live: an unapproved template is never sent');
 select test.check((select status = 'PENDING' and attempts = 0 from invoice_whatsapp_dispatches), '... the dispatch just waits');
+-- the WhatsApp Automation Builder keeps its templates on its own side: live_hook is live without the template rule
+select test.must_fail($$select invoice_whatsapp_claim(5, 'live_hooks')$$, 'an unknown mode is refused', 'Unknown mode');
+create temp table lh as select invoice_whatsapp_claim(5, 'live_hook', 300, timestamptz '2027-01-10 11:12+05:30') as j;
+select test.check((select jsonb_array_length(j) = 1 from lh), 'live_hook: the dispatch is handed over although no template is approved');
+select test.check((select status = 'PROCESSING' and attempts = 1 from invoice_whatsapp_dispatches), '... and it is claimed like any live dispatch');
+update invoice_whatsapp_dispatches set status = 'PENDING', attempts = 0, locked_until = null;
 set role authenticated;
 select test.login('sa');
 select set_invoice_whatsapp_settings(true, true, 'invoice_paid', 'en', true);

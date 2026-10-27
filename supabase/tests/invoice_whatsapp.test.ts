@@ -4,7 +4,7 @@
  * and a provider's delivery words are normalised. A stub database and a stub storage stand in: nothing real is sent.
  */
 import {
-  WabastoreInvoiceSender, invoiceLinkTtlSeconds, invoicePdfName, invoiceWhatsAppMode, invoiceWhatsAppPayload, normalizeProviderStatus, runInvoiceWhatsApp,
+  BuilderInvoiceSender, WabastoreInvoiceSender, builderInvoicePayload, invoiceLinkTtlSeconds, invoicePdfName, invoiceWhatsAppDelivery, invoiceWhatsAppMode, invoiceWhatsAppPayload, invoiceWhatsAppProvider, invoiceWhatsAppSender, normalizeProviderStatus, runInvoiceWhatsApp,
   type InvoiceWhatsAppJob, type InvoiceWhatsAppSender
 } from '../../server/invoices/whatsapp.js';
 
@@ -26,6 +26,9 @@ const job = (over: Partial<InvoiceWhatsAppJob> = {}): InvoiceWhatsAppJob => ({
 
 // modes and the link's lifetime
 check(invoiceWhatsAppMode({} as any) === 'dry_run' && invoiceWhatsAppMode({ AUTOMATION_MODE_INVOICE_WHATSAPP: 'live' } as any) === 'live' && invoiceWhatsAppMode({ AUTOMATION_MODE_INVOICE_WHATSAPP: 'x' } as any) === 'dry_run', 'the default mode is dry run; an unknown value is never live');
+// without its own variable the invoice WhatsApp follows AUTOMATION_MODE, the one switch the onboarding messages use; its own variable wins
+check(invoiceWhatsAppMode({ AUTOMATION_MODE: 'live' } as any) === 'live' && invoiceWhatsAppMode({ AUTOMATION_MODE: 'off' } as any) === 'off' && invoiceWhatsAppMode({ AUTOMATION_MODE: 'live', AUTOMATION_MODE_INVOICE_WHATSAPP: 'dry_run' } as any) === 'dry_run',
+  'AUTOMATION_MODE decides unless the invoice WhatsApp has its own mode');
 check(invoiceLinkTtlSeconds({} as any) === 900 && invoiceLinkTtlSeconds({ INVOICE_WHATSAPP_LINK_TTL_SECONDS: '5' } as any) === 900 && invoiceLinkTtlSeconds({ INVOICE_WHATSAPP_LINK_TTL_SECONDS: '99999' } as any) === 3600
   && invoiceLinkTtlSeconds({ INVOICE_WHATSAPP_LINK_TTL_SECONDS: '300' } as any) === 300, 'the link lives 15 minutes by default, 2 minutes to 1 hour at most');
 check(invoicePdfName('INV/2026/0042') === 'INV-2026-0042-paid-invoice.pdf', 'the file name is safe');
@@ -47,6 +50,39 @@ check((await new WabastoreInvoiceSender((async () => ({ status: 503, text: async
 const refused = await new WabastoreInvoiceSender((async () => ({ status: 400, text: async () => '{"echo":"https://l.example.test/x INV/2026/0042"}' })) as any, { WABASTORE_WEBHOOK_URL: 'https://a.example/s' } as any).send(job(), 'https://l.example.test/x');
 check(refused.outcome === 'FAILED' && !refused.detail.includes('l.example.test') && !refused.detail.includes('INV/2026'), 'a refusal is not retried, and its reply (which may echo the link) is not kept', refused);
 check((await new WabastoreInvoiceSender(okFetch as any, { WABASTORE_WEBHOOK_URL: 'https://a.example/s' } as any).send(job({ to: '+9112345' }), 'x')).outcome === 'FAILED', 'a bad number never reaches the provider');
+
+// the WhatsApp Automation Builder webhook (the one the onboarding messages use)
+{
+  const saved = { ...process.env };
+  for (const k of ['WABASTORE_WEBHOOK_URL', 'WHATSAPP_WEBHOOK_URL', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
+  check(invoiceWhatsAppProvider(process.env) === null && invoiceWhatsAppSender(process.env) === null, 'no service connected: no provider');
+  check(/No WhatsApp service/.test(invoiceWhatsAppDelivery({ AUTOMATION_MODE: 'live' } as any).note) && !invoiceWhatsAppDelivery({ AUTOMATION_MODE: 'live' } as any).ready, 'live without a service says what to set, and is not ready');
+  check(/test mode/.test(invoiceWhatsAppDelivery({} as any).note) && /switched off/.test(invoiceWhatsAppDelivery({ AUTOMATION_MODE: 'off' } as any).note), 'dry run and off are explained');
+  process.env.WHATSAPP_WEBHOOK_URL = 'https://builder.example.test/webhook/abc';
+  check(invoiceWhatsAppProvider(process.env) === 'BUILDER' && invoiceWhatsAppSender(process.env)?.provider === 'BUILDER', 'the onboarding webhook is used when Wabastore is not set up');
+  check(invoiceWhatsAppDelivery({ AUTOMATION_MODE: 'live' } as any).ready === true, 'live with the webhook is ready');
+  process.env.WABASTORE_WEBHOOK_URL = 'https://api.wabastore.example/send';
+  check(invoiceWhatsAppProvider(process.env) === 'WABASTORE', 'Wabastore wins when both are set');
+  delete process.env.WABASTORE_WEBHOOK_URL;
+
+  const bp = builderInvoicePayload(job(), 'https://l.example.test/x') as any;
+  check(bp.stage_code === 'INVOICE_PAID' && bp.status === 'Paid Invoice' && bp.automation === 'Paid Invoice' && bp.whatsapp_number === '919820000123' && bp.phone === '919820000123' && bp.name === 'Joshi Sweets', 'the event carries the onboarding keys with its own stage code', bp);
+  check(bp.invoice_number === 'INV/2026/0042' && /^Rs\.\s?11,800\.50$/.test(bp.invoice_amount) && bp.invoice_pdf_url === 'https://l.example.test/x' && bp.invoice_filename === 'INV-2026-0042-paid-invoice.pdf' && bp.event_key === 'invoice|d-1|1', 'and the invoice: number, amount, short-lived link, file name, a fresh event key per attempt');
+  check(!JSON.stringify(bp).includes('customer-documents'), 'the permanent storage path is never in the event');
+
+  let posted: any = null;
+  const okHook = async (u: string, init: any) => ((posted = { u, body: JSON.parse(init.body) }), { status: 200, text: async () => '{"echo":"https://l.example.test/x"}' });
+  const accepted = await new BuilderInvoiceSender(okHook as any).send(job(), 'https://l.example.test/x');
+  check(accepted.outcome === 'ACCEPTED' && posted.u === 'https://builder.example.test/webhook/abc' && posted.body.stage_code === 'INVOICE_PAID' && !accepted.detail.includes('l.example.test'), 'a 2xx is accepted and the reply (which may echo the link) is not kept', accepted);
+  check((await new BuilderInvoiceSender((async () => ({ status: 502, text: async () => '' })) as any).send(job(), 'x')).outcome === 'RETRY', 'a busy webhook is retried');
+  check((await new BuilderInvoiceSender((async () => ({ status: 404, text: async () => '' })) as any).send(job(), 'x')).outcome === 'FAILED', 'a refused webhook is a failure');
+  check((await new BuilderInvoiceSender(okHook as any).send(job({ to: '+9112345' }), 'x')).outcome === 'FAILED', 'a bad number never reaches the webhook');
+  process.env.AUTOMATION_TEST_RECIPIENTS = '9810000000';
+  check((await new BuilderInvoiceSender(okHook as any).send(job(), 'x')).outcome === 'SKIPPED', 'the test-recipients list applies');
+  delete process.env.AUTOMATION_TEST_RECIPIENTS;
+
+  Object.assign(process.env, saved);
+}
 
 // the driver
 function stubDb(batches: InvoiceWhatsAppJob[][]) {
@@ -106,6 +142,19 @@ const storage = { signedDownloadUrl: async (...a: any[]) => (links.push(a), 'htt
   check(off.claimed === 0 && s.claims.length === 0, 'off: nothing happens');
   const e = await runInvoiceWhatsApp(storage, { db: { rpc: async () => ({ data: null, error: { message: 'db down' } }) } as any, mode: 'dry_run' });
   check(e.error?.includes('db down'), 'a database error is reported, not thrown');
+}
+
+// the builder through the driver: it keeps the template itself, so an unapproved template does not stop it, and the claim says so
+{
+  process.env.WHATSAPP_WEBHOOK_URL = 'https://builder.example.test/webhook/abc';
+  const okHook = async (_u: string, init: any) => ((void init), { status: 200, text: async () => '{}' });
+  const s = stubDb([[job({ template: { name: null, language: 'en', approved: false } })]]);
+  const r = await runInvoiceWhatsApp(storage, { db: s.db, mode: 'live', sender: new BuilderInvoiceSender(okHook as any) });
+  check(r.accepted === 1 && s.claims[0].p_mode === 'live_hook', 'builder: sent without the template rule, claimed in its own live mode', { r, claims: s.claims });
+  const w = stubDb([[job()]]);
+  await runInvoiceWhatsApp(storage, { db: w.db, mode: 'live', sender: { send: async () => ({ outcome: 'ACCEPTED', detail: '' }), provider: 'WABASTORE' } });
+  check(w.claims[0].p_mode === 'live', 'Wabastore keeps the approved-template rule');
+  delete process.env.WHATSAPP_WEBHOOK_URL;
 }
 
 // the provider's delivery words

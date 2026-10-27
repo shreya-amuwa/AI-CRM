@@ -97,6 +97,7 @@ import type {
   InvoiceWhatsAppDispatch,
   InvoiceWhatsAppResult,
   InvoiceWhatsAppSettings,
+  PaymentInvoiceOutcome,
   AccountsPaymentCounts,
   ChecklistItem,
   ConsultantNote,
@@ -295,12 +296,12 @@ export const pipelineApi = {
     api.get<Paginated<PaymentRequestItem>>('/pipeline/accounts/payment-requests', { ...q }),
   accountsCounts: () => api.get<AccountsPaymentCounts>('/pipeline/accounts/counts'),
   accountsTeam: () => api.get<{ id: string; fullName: string; role: string }[]>('/pipeline/accounts/team'),
-  recordAccountsPayment: (id: string, body: AccountsPaymentInput & { verify: boolean }) =>
+  recordAccountsPayment: (id: string, body: AccountsPaymentInput & { verify: boolean; invoice?: boolean }) =>
     api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments`, body),
   setOrderGst: (id: string, rate: number) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/order-gst`, { rate }),
   updateAccountsPayment: (id: string, paymentId: string, body: AccountsPaymentInput) =>
     api.patch<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}`, body),
-  verifyAccountsPayment: (id: string, paymentId: string) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/verify`, {}),
+  verifyAccountsPayment: (id: string, paymentId: string, invoice = true) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/verify`, { invoice }),
   rejectAccountsPayment: (id: string, paymentId: string, reason: string) =>
     api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/reject`, { reason }),
   reverseAccountsPayment: (id: string, paymentId: string, reason: string) =>
@@ -414,6 +415,8 @@ export const generatedInvoicesApi = {
   issue: (body: Record<string, unknown>) => api.post<InvoiceRunResult>('/accounts/generated-invoices', body),
   confirmPayment: (id: string, body: { method?: PaymentMethod | null; reference?: string | null; note?: string | null; paidOn?: string | null; amount?: string | null; requestId?: string }) =>
     api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/confirm-payment`, body),
+  /** The paid invoice of one verified payment (also the retry when the automatic one could not be made). Idempotent. */
+  invoiceForPayment: (paymentId: string) => api.post<PaymentInvoiceOutcome>(`/accounts/payments/${paymentId}/invoice`, {}),
   /** Retry what is left of a stage (a missing PDF or e-mail). */
   deliver: (id: string, stage: InvoiceStage) => api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/deliver`, { stage }),
   /** A short-lived link to a stored PDF (anyone who may read the invoice). */

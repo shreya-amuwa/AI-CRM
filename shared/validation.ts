@@ -628,13 +628,14 @@ const paymentFields = {
   note: optionalText(1000)
 };
 export const accountsRecordPaymentSchema = z
-  .object({ ...paymentFields, verify: z.boolean().default(false) })
+  .object({ ...paymentFields, verify: z.boolean().default(false), invoice: z.boolean().default(true) })
   .strict()
   .refine(v => ['CASH', 'OTHER'].includes(v.method) || !!v.reference, { message: 'Enter the transaction / reference number.', path: ['reference'] });
 export const accountsUpdatePaymentSchema = z.object(paymentFields).strict();
 /** The GST rate of the order (one of the configured rates; the database checks the list). */
 export const orderGstSchema = z.object({ rate: z.coerce.number({ invalid_type_error: 'Choose the GST rate.' }).min(0, 'Choose the GST rate.').max(28, 'Choose the GST rate.') }).strict();
-export const paymentDecisionSchema = z.object({ note: optionalText(500) }).strict();
+/** `invoice`: also make and send the paid invoice of the payment (the default). */
+export const paymentDecisionSchema = z.object({ note: optionalText(500), invoice: z.boolean().default(true) }).strict();
 export const paymentReasonSchema = z.object({ reason: trimmed(500).min(1, 'Give the reason.') }).strict();
 export const accountsConfirmReturnSchema = z.object({ note: optionalText(1000) }).strict();
 export const accountsBackOffSchema = z.object({ reason: optionalText(1000) }).strict();
