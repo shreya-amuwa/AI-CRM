@@ -102,3 +102,6 @@ future sheet sync can load rows repeatedly without duplicates. The sync itself s
 once the sheet is shared.
 
 Apply `supabase/migrations/20261012000100_accounts_finance.sql` (safe to re-run).
+
+## GST (order level)
+GST is chosen once per order by Accounts and a payment is only the money received (whole rupees, GST included). See `docs/PAYMENT_GST.md`.

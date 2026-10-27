@@ -12,6 +12,8 @@ reset role;
 \i supabase/migrations/20261030000100_part_payment_invoices.sql
 \i supabase/migrations/20261102000100_invoice_prefill_agreed_amount.sql
 \i supabase/migrations/20261103000100_order_tax_basis.sql
+-- the newest money model (GST belongs to the order) goes back on top of the older definitions re-applied above
+\i supabase/migrations/20261201000100_order_level_gst.sql
 create temp table jc (name text primary key, id uuid);
 create temp table jr (name text primary key, data jsonb);
 create temp table jq (name text primary key, id uuid default gen_random_uuid());
@@ -535,9 +537,10 @@ insert into jc select 'GX', create_lead('{"name":"Gita Xavier","company":"Xavier
 select test.must_fail($$select send_lead_to_accounts((select id from jc where name = 'GX'), 120000, null, 'NET')$$, 'the basis must be known', 'includes or excludes GST');
 select test.must_fail($$select send_lead_to_accounts((select id from jc where name = 'GX'), 120000.5, null, 'EXCLUSIVE')$$, 'the agreed amount is in whole rupees', 'whole rupees');
 select send_lead_to_accounts((select id from jc where name = 'GX'), 120000, null, 'EXCLUSIVE');
-select test.admin_check($q$select deal_amount = 141600 and agreed_amount = 120000 and agreed_tax_basis = 'EXCLUSIVE' and payment_status = 'NO_PAYMENT' from customers where id = (select id from jc where name = 'GX')$q$,
-  'A: 1,20,000 agreed excluding GST: GST 18% = 21,600, total payable 1,41,600');
+select test.admin_check($q$select deal_amount = 120000 and agreed_amount = 120000 and agreed_tax_basis = 'EXCLUSIVE' and order_gst_rate is null and payment_status = 'NO_PAYMENT' from customers where id = (select id from jc where name = 'GX')$q$,
+  'A: 1,20,000 agreed excluding GST: nothing is added until Accounts chooses the GST rate');
 select test.login('acc_m');
+select test.check((accounts_set_order_gst((select id from jc where name = 'GX'), 18) -> 'order' ->> 'totalPayable')::numeric = 141600, 'A: Accounts chooses 18% for the order: GST 21,600, total payable 1,41,600');
 select test.check((customer_payment_overview((select id from jc where name = 'GX')) -> 'order') @> '{"basis":"EXCLUSIVE","agreedAmount":120000,"taxableTotal":120000,"gstTotal":21600,"totalPayable":141600,"confirmed":0,"balance":141600,"state":"UNPAID"}'::jsonb,
   'the payment screen reads the same order figures before any invoice or payment');
 select test.check((accounts_invoice_prefill((select id from jc where name = 'GX')) ->> 'servicesInvoicedTaxable')::numeric = 0
@@ -617,7 +620,8 @@ select test.must_fail($$select accounts_issue_invoice((select id from jq where n
 select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'EXCLUSIVE', 'no')$$, 'a reason is required', 'at least 5 characters');
 select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'INCLUSIVE', 'Same basis again')$$, 'the same basis is refused', 'already has this basis');
 select test.must_fail($$select accounts_set_agreement_basis((select id from jc where name = 'LG'), 'MAYBE', 'Unknown basis')$$, 'an unknown basis is refused', 'includes or excludes');
-select test.check((accounts_set_agreement_basis((select id from jc where name = 'LG'), 'EXCLUSIVE', 'The deal was agreed before GST') ->> 'totalPayable')::numeric = 118000, 'Accounts corrects the basis: payable becomes 1,18,000');
+select test.check((accounts_set_agreement_basis((select id from jc where name = 'LG'), 'EXCLUSIVE', 'The deal was agreed before GST') ->> 'totalPayable')::numeric = 100000, 'Accounts corrects the basis: no GST is added by itself');
+select test.check((accounts_set_order_gst((select id from jc where name = 'LG'), 18) -> 'order' ->> 'totalPayable')::numeric = 118000, 'and chooses the GST: payable becomes 1,18,000');
 select test.admin_check($q$select count(*) = 1 from audit_logs where action = 'AGREEMENT_BASIS_CHANGED' and entity_id = (select id from jc where name = 'LG')$q$, 'the correction is audited');
 insert into jr select 'LG1', accounts_issue_invoice((select id from jq where name = 'LG1'), test.inv_payload((select id from jc where name = 'LG'), 100000));
 select test.check((select (data ->> 'total')::numeric = 118000 from jr where name = 'LG1'), 'the invoice for the whole 1,00,000 + GST is now allowed');

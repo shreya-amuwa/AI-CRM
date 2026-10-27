@@ -236,7 +236,11 @@ export const InvoiceBuilder: React.FC<{
   const treatment: TaxTreatment | null = (form?.treatment || defaultTreatment) as TaxTreatment | null;
   const overridden = !!treatment && !!defaultTreatment && treatment !== defaultTreatment;
   const review = useMemo(() => (form ? reviewCustomerTax({ stateCode: form.stateCode, gstin: form.gstin, address: form.address }) : null), [form]);
-  const calc = useMemo(() => (form && treatment ? calculateInvoice(form.lines, treatment) : null), [form, treatment]);
+  // The GST rate of the agreed services belongs to the ORDER (Accounts chooses it once on the payment page): every line uses it and it cannot be typed over here.
+  const lockedRate = purpose === 'SERVICES' && prefill?.agreedTaxBasis === 'EXCLUSIVE' && prefill.orderGstRate != null ? String(prefill.orderGstRate) : null;
+  const rateMissing = purpose === 'SERVICES' && prefill?.agreedTaxBasis === 'EXCLUSIVE' && prefill.orderGstRate == null && !!prefill.order?.gstRequired;
+  const effLines = useMemo(() => (form ? form.lines.map(l => (lockedRate !== null ? { ...l, taxRate: lockedRate } : l)) : []), [form, lockedRate]);
+  const calc = useMemo(() => (form && treatment ? calculateInvoice(effLines, treatment) : null), [form, treatment, effLines]);
 
   const onAddressBlur = () => {
     if (!form || form.stateCode) return;
@@ -252,7 +256,8 @@ export const InvoiceBuilder: React.FC<{
     if (form.gstin.trim() && !isValidGstinFormat(form.gstin)) problems.push('The GSTIN is not valid.');
     if (overridden && form.overrideReason.trim().length < 5) problems.push('Say why the tax treatment differs from the customer state.');
     if (review?.stateMismatch && !form.acknowledge) problems.push('The GSTIN belongs to another state. Verify it, or confirm it below.');
-    form.lines.forEach((l, i) => {
+    if (rateMissing) problems.push('Choose the GST rate of this order on the payment page first. The invoice uses it.');
+    effLines.forEach((l, i) => {
       if (l.particulars.trim().length < 2) problems.push(`Line ${i + 1}: enter the particulars.`);
       if (!l.quantity.trim()) problems.push(`Line ${i + 1}: enter the quantity.`);
       if (!/^[0-9]{4,8}$/.test(l.hsnSac.trim())) problems.push(`Line ${i + 1}: the HSN/SAC code is 4 to 8 digits.`);
@@ -308,7 +313,7 @@ export const InvoiceBuilder: React.FC<{
         taxOverrideReason: overridden ? form.overrideReason.trim() : null,
         acknowledgeStateMismatch: form.acknowledge,
         terms: form.terms.trim(),
-        lines: form.lines.map(l => ({
+        lines: effLines.map(l => ({
           serviceCode: l.serviceCode || null,
           particulars: l.particulars.trim(),
           hsnSac: l.hsnSac.trim(),
@@ -541,16 +546,23 @@ export const InvoiceBuilder: React.FC<{
                   </div>
                   <div className="col-span-2 sm:col-span-12">
                     <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-t-${l.key}`}>GST rate % *</label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input id={`ln-t-${l.key}`} className={`${inputCls} !w-28`} inputMode="decimal" placeholder="Choose" value={l.taxRate} onChange={e => setLine(l.key, { taxRate: e.target.value })} />
-                      {['0', '5', '12', '18', '28'].map(r => (
-                        <button key={r} type="button" aria-pressed={l.taxRate.trim() === r} onClick={() => setLine(l.key, { taxRate: r })}
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${l.taxRate.trim() === r ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
-                          {r}%
-                        </button>
-                      ))}
-                      <span className="text-[11px] text-slate-500">You decide the GST; none is added automatically.</span>
-                    </div>
+                    {lockedRate !== null ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input id={`ln-t-${l.key}`} className={`${inputCls} !w-28 bg-slate-100`} value={lockedRate} readOnly aria-readonly="true" />
+                        <span className="text-[11px] text-slate-500">Set for the whole order on the payment page.</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input id={`ln-t-${l.key}`} className={`${inputCls} !w-28`} inputMode="decimal" placeholder="Choose" value={l.taxRate} onChange={e => setLine(l.key, { taxRate: e.target.value })} />
+                        {['0', '5', '12', '18', '28'].map(r => (
+                          <button key={r} type="button" aria-pressed={l.taxRate.trim() === r} onClick={() => setLine(l.key, { taxRate: r })}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${l.taxRate.trim() === r ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                            {r}%
+                          </button>
+                        ))}
+                        <span className="text-[11px] text-slate-500">You decide the GST; none is added automatically.</span>
+                      </div>
+                    )}
                   </div>
                   <div className="col-span-2 sm:col-span-5">
                     <label className="block text-[11px] font-medium text-slate-600 mb-1" htmlFor={`ln-a-${l.key}`}>Invoice amount (Rs., before tax)</label>
@@ -562,7 +574,7 @@ export const InvoiceBuilder: React.FC<{
                         </button>
                       )}
                     </div>
-                    {calc && calc.ok && calc.lines[i] && toPaise(l.baseAmount) !== null && toRateBp(l.taxRate) !== null && (
+                    {calc && calc.ok && calc.lines[i] && toPaise(l.baseAmount) !== null && toRateBp(effLines[i]?.taxRate ?? l.taxRate) !== null && (
                       <span className="text-[11px] text-slate-500">
                         GST Rs.{inr(calc.lines[i].gstPaise)} · total Rs.{inr(calc.lines[i].totalPaise)}
                       </span>

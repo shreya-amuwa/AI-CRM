@@ -26,10 +26,6 @@ const toLocalInput = (iso: string) => {
 };
 const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : null);
 
-/** GST rates Accounts can add on top of the amount (the database accepts 0 to 28). */
-const GST_RATES = [0, 5, 12, 18, 28];
-const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-
 const OUTCOME_LABEL: Record<FollowUpOutcome, string> = {
   CONTACTED: 'Contacted the customer',
   AWAITING_PAYMENT: 'Awaiting payment',
@@ -47,14 +43,12 @@ const PaymentFormDialog: React.FC<{
   onClose: () => void;
   onSaved: (o: PaymentOverview) => void;
 }> = ({ customerId, overview, editing, onClose, onSaved }) => {
-  // Balance still unaccounted for (verified + pending are both counted), excluding the payment being edited.
-  const open = Math.max((overview.dealAmount ?? 0) - (overview.recorded - (editing && editing.status === 'PENDING' ? editing.amount : 0)), 0);
-  // GST is added on top of an agreed amount that excludes it: Accounts types the amount BEFORE GST and chooses the rate.
-  const gstOn = !!overview.gst?.allowed;
-  const taxableLeft = Math.max((overview.gst?.taxableBalance ?? 0) + (editing ? editing.taxableAmount ?? editing.amount : 0), 0);
+  // What is still to be received: the total payable (GST included) minus the money already on record (verified + pending), excluding the payment being edited.
+  const payable = overview.dealAmount ?? 0;
+  const open = Math.max(payable - (overview.recorded - (editing && editing.status === 'PENDING' ? editing.amount : 0)), 0);
+  const gst = overview.order && overview.order.gstSelected && overview.order.gstRate != null ? overview.order : null;
   const [type, setType] = useState<PaymentType>(editing?.type ?? 'PART');
-  const [amount, setAmount] = useState(editing ? String(gstOn ? editing.taxableAmount ?? editing.amount : editing.amount) : '');
-  const [gstRate, setGstRate] = useState<string>(editing && editing.gstRate != null ? String(editing.gstRate) : '');
+  const [amount, setAmount] = useState(editing ? String(editing.amount) : '');
   const [method, setMethod] = useState<string>(editing?.method ?? 'UPI');
   const [reference, setReference] = useState(editing?.reference ?? '');
   const [paidAt, setPaidAt] = useState(editing ? toLocalInput(editing.paidAt) : nowLocal());
@@ -64,22 +58,18 @@ const PaymentFormDialog: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // A full payment is always the whole outstanding amount, GST included: it is filled in and cannot be typed over.
+  const full = type === 'FULL';
+  const shownAmount = full ? String(open) : amount;
   const pickType = (t: PaymentType) => {
     setType(t);
-    if (t === 'FULL') setAmount(String(gstOn ? taxableLeft : open)); // a full payment settles the whole open balance
+    setFieldErrors(f => ({ ...f, amount: '' }));
+    setError(null);
   };
-  const taxable = Number(amount) || 0;
-  const rate = gstRate === '' ? null : Number(gstRate);
-  const gstAmount = gstOn && rate !== null ? round2((taxable * rate) / 100) : 0;
-  const finalAmount = round2(taxable + gstAmount);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (gstOn && rate === null) {
-      setFieldErrors({ gstRate: 'Choose the GST rate (or No GST).' });
-      return setError('Please fix the highlighted fields.');
-    }
-    const body: AccountsPaymentInput = { type, amount: Number(amount), ...(gstOn ? { gstRate: rate } : {}), method: method as AccountsPaymentInput['method'], reference: reference.trim() || null, paidAt: fromLocalInput(paidAt), note: note.trim() || null };
+    const body: AccountsPaymentInput = { type, amount: Number(shownAmount), method: method as AccountsPaymentInput['method'], reference: reference.trim() || null, paidAt: fromLocalInput(paidAt), note: note.trim() || null };
     const parsed = editing ? accountsUpdatePaymentSchema.safeParse(body) : accountsRecordPaymentSchema.safeParse({ ...body, verify });
     if (!parsed.success) {
       const next: Record<string, string> = {};
@@ -104,11 +94,26 @@ const PaymentFormDialog: React.FC<{
   return (
     <Modal title={editing ? 'Edit payment' : 'Record payment'} onClose={() => !busy && onClose()}>
       <form onSubmit={submit} className="space-y-4" noValidate>
-        <p className="text-xs text-slate-500">
-          {gstOn
-            ? <>Agreed {rupees(overview.agreedAmount ?? overview.dealAmount)} before GST · still to receive before GST <strong className="text-slate-800">{rupees(taxableLeft)}</strong></>
-            : <>{overview.taxBasis === 'EXCLUSIVE' && overview.agreedAmount != null && overview.dealAmount !== overview.agreedAmount ? `Agreed ${rupees(overview.agreedAmount)} · total payable ${rupees(overview.dealAmount)}` : `Agreed ${rupees(overview.dealAmount)}`} · balance to account for <strong className="text-slate-800">{rupees(open)}</strong></>}
-        </p>
+        <dl className="rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-700 grid grid-cols-2 gap-y-1" aria-label="Amounts">
+          {gst && (
+            <>
+              <dt>Agreed amount (before GST)</dt>
+              <dd className="text-right" data-testid="pay-agreed">{rupees(overview.agreedAmount)}</dd>
+              <dt>GST ({gst.gstRate}%)</dt>
+              <dd className="text-right">{rupeesExact(gst.gstTotal)}</dd>
+              {!!gst.roundOff && (
+                <>
+                  <dt>Rounded to whole rupees</dt>
+                  <dd className="text-right">{rupeesExact(gst.roundOff)}</dd>
+                </>
+              )}
+            </>
+          )}
+          <dt>Total payable{gst ? ' (including GST)' : ''}</dt>
+          <dd className="text-right font-semibold" data-testid="pay-payable">{rupees(payable)}</dd>
+          <dt className="font-bold text-slate-900">Still to receive</dt>
+          <dd className="text-right font-bold text-slate-900" data-testid="pay-open">{rupees(open)}</dd>
+        </dl>
         <fieldset>
           <legend className="block text-xs font-semibold text-slate-700 mb-1">Payment type</legend>
           <div className="grid grid-cols-2 gap-2">
@@ -122,21 +127,19 @@ const PaymentFormDialog: React.FC<{
           {fieldErrors.type && <p className="text-[11px] text-rose-600 mt-1">{fieldErrors.type}</p>}
         </fieldset>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormField label={gstOn ? 'Amount before GST (₹)' : 'Amount (₹)'} htmlFor="pay-amount" required error={fieldErrors.amount} hint={type === 'FULL' ? 'A full payment settles the whole balance.' : 'Whole rupees. Less than the balance.'}>
-            <input id="pay-amount" type="number" min={1} step={1} inputMode="numeric" className={inputClass} value={amount} onChange={e => setAmount(e.target.value)} />
+          <FormField label="Amount received (₹)" htmlFor="pay-amount" required error={fieldErrors.amount} hint={full ? 'A full payment is the whole outstanding amount, GST included.' : `Whole rupees, GST included. At most ${rupees(open)}; less than that for a part payment.`}>
+            <input
+              id="pay-amount"
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              className={`${inputClass} ${full ? '!bg-slate-100 text-slate-700' : ''}`}
+              value={shownAmount}
+              readOnly={full}
+              onChange={e => setAmount(e.target.value)}
+            />
           </FormField>
-          {gstOn && (
-            <FormField label="GST" htmlFor="pay-gst" required error={fieldErrors.gstRate} hint="Added on top of the amount.">
-              <select id="pay-gst" className={inputClass} value={gstRate} onChange={e => { setGstRate(e.target.value); setFieldErrors(f => ({ ...f, gstRate: '' })); setError(null); }}>
-                <option value="">Choose the GST rate</option>
-                {GST_RATES.map(r => (
-                  <option key={r} value={String(r)}>
-                    {r === 0 ? 'No GST (0%)' : `${r}% GST`}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-          )}
           <FormField label="Payment method" htmlFor="pay-method" required error={fieldErrors.method}>
             <select id="pay-method" className={inputClass} value={method} onChange={e => setMethod(e.target.value)}>
               {PAYMENT_METHODS.map(m => (
@@ -153,16 +156,6 @@ const PaymentFormDialog: React.FC<{
             <input id="pay-date" type="datetime-local" className={inputClass} value={paidAt} max={nowLocal()} onChange={e => setPaidAt(e.target.value)} />
           </FormField>
         </div>
-        {gstOn && taxable > 0 && rate !== null && (
-          <dl className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-slate-700 grid grid-cols-2 gap-y-1" aria-live="polite">
-            <dt>Amount before GST</dt>
-            <dd className="text-right">{rupeesExact(taxable)}</dd>
-            <dt>GST ({rate}%)</dt>
-            <dd className="text-right">{rupeesExact(gstAmount)}</dd>
-            <dt className="font-bold text-slate-900">Final amount received</dt>
-            <dd className="text-right font-bold text-slate-900 text-sm" data-testid="pay-final">{rupeesExact(finalAmount)}</dd>
-          </dl>
-        )}
         <FormField label="Note (optional)" htmlFor="pay-note" error={fieldErrors.note}>
           <textarea id="pay-note" rows={2} maxLength={1000} className={inputClass} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Seen in the HDFC account" />
         </FormField>
@@ -186,6 +179,79 @@ const PaymentFormDialog: React.FC<{
         </div>
       </form>
     </Modal>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// The GST of the order: chosen once by Accounts, saved in the database
+// ---------------------------------------------------------------------------
+const OrderGstCard: React.FC<{ customerId: string; overview: PaymentOverview; readOnly: boolean; onSaved: (o: PaymentOverview) => void }> = ({ customerId, overview, readOnly, onSaved }) => {
+  const g = overview.orderGst;
+  const order = overview.order;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!g?.applies || !order) return null;
+  const choose = async (value: string) => {
+    if (value === '') return;
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await pipelineApi.setOrderGst(customerId, Number(value)));
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const disabled = readOnly || busy || !!g.locked;
+  const value = g.rate != null ? String(g.rate) : '';
+  return (
+    <section aria-labelledby="order-gst-heading" className="rounded-xl border border-slate-200 p-4 space-y-3" data-testid="order-gst">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 id="order-gst-heading" className="text-xs font-bold text-slate-800">
+            GST for this order
+          </h3>
+          <p className="text-[11px] text-slate-500 mt-0.5">Sales agreed {rupees(g.agreedAmount)} before GST. Choose the GST rate that applies; the total payable is worked out from it.</p>
+        </div>
+        <label className="text-xs">
+          <span className="block text-[11px] font-semibold text-slate-700 mb-1">GST rate</span>
+          <select aria-label="GST rate" data-testid="order-gst-rate" className={`${inputClass} !py-1.5 !text-xs min-w-[11rem]`} value={value} disabled={disabled} onChange={e => void choose(e.target.value)}>
+            {g.rate == null && <option value="">Choose the GST rate</option>}
+            {(g.rates ?? []).map(r => (
+              <option key={r.rate} value={String(r.rate)}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {order.gstSelected && order.gstRate != null ? (
+        <dl className="grid grid-cols-2 gap-y-1 text-xs text-slate-700" aria-live="polite">
+          <dt>Agreed amount (before GST)</dt>
+          <dd className="text-right">{rupees(order.taxableTotal ?? g.agreedAmount)}</dd>
+          <dt>GST ({order.gstRate}%)</dt>
+          <dd className="text-right">{rupeesExact(order.gstTotal)}</dd>
+          {!!order.roundOff && (
+            <>
+              <dt>Rounded to whole rupees</dt>
+              <dd className="text-right">{rupeesExact(order.roundOff)}</dd>
+            </>
+          )}
+          <dt className="font-bold text-slate-900">Total payable (including GST)</dt>
+          <dd className="text-right font-bold text-slate-900" data-testid="order-gst-payable">{rupees(order.totalPayable)}</dd>
+        </dl>
+      ) : g.legacy ? (
+        <p className="text-xs text-slate-600">GST on this older order is already recorded on its payments or invoices and is left as it is. Total payable {rupees(order.totalPayable)}.</p>
+      ) : (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="order-gst-pending">
+          Final payable amount not calculated yet. Choose the GST rate before recording a payment or making an invoice.
+        </p>
+      )}
+      {g.locked && g.lockReason && <p className="text-[11px] text-slate-500">{g.lockReason}</p>}
+      {g.setAt && g.rate != null && <p className="text-[11px] text-slate-500">Chosen {fmtDateTime(g.setAt)}{g.setBy ? ` by ${g.setBy}` : ''}.</p>}
+      {error && <ErrorBanner message={error} />}
+    </section>
   );
 };
 
@@ -316,12 +382,13 @@ export const AccountsPaymentPanel: React.FC<{
           <PaymentStatusBadge status={o.paymentStatus} />
         </div>
         {!readOnly && (
-          <button type="button" className={primaryBtn} onClick={() => setForm({ editing: null })} disabled={(o.dealAmount ?? 0) <= 0}>
+          <button type="button" className={primaryBtn} onClick={() => setForm({ editing: null })} disabled={(o.dealAmount ?? 0) <= 0 || !!o.order?.gstRequired} title={o.order?.gstRequired ? 'Choose the GST rate of the order first.' : undefined}>
             <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Record payment
           </button>
         )}
       </div>
-      <MoneyTiles deal={o.dealAmount} agreed={o.agreedAmount} basis={o.taxBasis} verified={o.verified} pending={o.pending} balance={o.balance} />
+      <OrderGstCard customerId={customerId} overview={o} readOnly={readOnly} onSaved={next => { apply(next); setNotice('GST saved for the order.'); }} />
+      <MoneyTiles pendingGst={!!o.order?.gstRequired} deal={o.dealAmount} agreed={o.agreedAmount} basis={o.taxBasis} verified={o.verified} pending={o.pending} balance={o.balance} />
       {notice && (
         <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
           {notice}

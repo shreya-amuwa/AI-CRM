@@ -28,10 +28,9 @@ For every multi-tranche customer, the CRM computes balance tiles in real time us
 Remaining Balance = Total Payable - Total Verified Payments
 ```
 
-- **Total Payable (`deal_amount`)**: For `INCLUSIVE` agreements, this equals the gross agreed deal amount. For `EXCLUSIVE` agreements (where GST is added on top of the agreed net amount), `Total Payable` equals the agreed net amount plus the larger of the GST on issued invoices and the GST recorded on payments.
+- **Total Payable (`deal_amount`)**: For `INCLUSIVE` agreements, this equals the gross agreed deal amount. For `EXCLUSIVE` agreements (where GST is added on top of the agreed net amount), `Total Payable` is worked out from the GST rate Accounts chose for the order (rounded to whole rupees, with the round-off shown); until the rate is chosen it is not calculated and no payment can be recorded.
 - **Total Verified (`amount_verified`)**: Cumulative sum of all `VERIFIED` installments in `customer_payments` (`PENDING` and `REVERSED` rows are excluded from verified totals).
 - **Remaining Balance**: The unpaid amount still owed (`Remaining Balance > ₹0` keeps the customer in the **Active** tab; `Remaining Balance = ₹0` moves the customer to **Fully Paid**).
-- **Taxable Balance Left (for `EXCLUSIVE` deals)**: Tracks how much of the net agreed amount before GST remains unpaid (`Agreed Before GST - Verified Taxable Amounts`).
 
 The **Accounts > Part Payment** workspace provides three primary controls:
 
@@ -39,13 +38,14 @@ The **Accounts > Part Payment** workspace provides three primary controls:
 - **Fully Paid Tab**: Historical archive of customers whose installments have brought their remaining balance to `₹0`.
 - **Accountant Assignment (`accounts_owner_id`)**: Assigns a specific accountant as the collections owner and enables the **My Accounts** filter for daily call lists.
 
-## How GST applies per installment on GST-exclusive deals
+## How GST applies on GST-exclusive deals
 
-When a customer's agreement is **GST Exclusive (`EXCLUSIVE`)**, GST is calculated per installment as each tranche arrives:
+GST is chosen **once for the order** (the **GST for this order** card on the payment panel), not per installment:
 
-1. In the **Record payment** modal, enter the **Amount before GST (₹)** for the current installment and select the **GST** rate (`0%`, `5%`, `12%`, `18%`, or `28%`).
-2. The modal calculates the installment's GST (`gst_amount`) and the **Final amount received** (`taxable_amount + gst_amount`).
-3. When verified, the installment's taxable portion reduces the customer's remaining taxable balance before GST, while the full amount received (`taxable_amount + gst_amount`) is credited to verified collections.
+1. Choose the GST rate. The total payable (agreed amount + GST, in whole rupees) is saved, and the order balance is that total less the verified payments.
+2. In the **Record payment** modal enter the **Amount received (₹)** for the installment: whole rupees, GST included. **Full payment** fills the whole outstanding amount and cannot be typed over.
+3. An installment never changes the GST or the total payable. Only verified installments reduce the outstanding balance; pending and rejected ones do not.
+4. With several partial invoices, each invoice shows its own balance and the **order** balance is shown separately (for example, two invoices of ₹70,800 on a ₹1,41,600 order with ₹60,000 paid: invoice 1 balance ₹10,800, invoice 2 ₹70,800, order outstanding ₹81,600).
 
 ## Steps to follow up on an outstanding balance
 

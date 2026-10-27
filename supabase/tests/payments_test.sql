@@ -118,6 +118,8 @@ select test.check((select (accounts_payment_requests('PENDING') ->> 'total')::in
 select test.check((select (accounts_payment_requests('PENDING', 'desai') ->> 'total')::int = 1 and (accounts_payment_requests('PENDING', 'nomatch') ->> 'total')::int = 0), 'the queue is searchable');
 select test.check((select (accounts_payment_counts() ->> 'requestsPending')::int = 1), 'Accounts counter shows one waiting');
 select test.must_fail($$select accounts_confirm_and_return((select id from pt where name = 'L2'), null)$$, 'cannot confirm before a payment is verified', 'verify the payment');
+-- GST is the order's, chosen by Accounts before any money or invoice: these older checks use 0% so their rupee figures stay as written
+select accounts_set_order_gst((select id from pt where name = 'L2'), 0);
 select test.must_fail($$select accounts_record_payment((select id from pt where name = 'L2'), 'PART', 20000, 'UPI', null, null, null, false)$$, 'UPI needs a transaction reference', 'reference');
 select test.must_fail($$select accounts_record_payment((select id from pt where name = 'L2'), 'PART', 20000.5, 'UPI', 'U1', null, null, false)$$, 'whole rupees', 'whole rupees');
 select test.must_fail($$select accounts_record_payment((select id from pt where name = 'L2'), 'FULL', 20000, 'UPI', 'U1', null, null, false)$$, 'a full payment must settle the agreed amount', 'must settle');
@@ -275,6 +277,8 @@ select send_lead_to_accounts((select id from pt where name = 'L3'), 30000, null)
 select test.login('acc_m');
 select test.must_fail($$select accounts_record_payment((select id from pt where name = 'L1'), 'PART', 1000, 'CASH', null, null, null, true)$$, 'Accounts cannot record a payment for a lead that was never sent', 'NOT_FOUND');
 select test.must_fail($$select customer_payment_overview((select id from pt where name = 'L1'))$$, 'Accounts cannot read an unrelated customer', 'NOT_FOUND');
+-- GST is the order's, chosen by Accounts before any money or invoice: these older checks use 0% so their rupee figures stay as written
+select accounts_set_order_gst((select id from pt where name = 'L3'), 0);
 select accounts_record_payment((select id from pt where name = 'L3'), 'PART', 10000, 'CASH', null, null, null, false);
 select test.must_fail($$select accounts_return_to_leads((select id from pt where name = 'L3'), 'Changed mind')$$, 'cannot return with a payment still pending', 'pending payments');
 select accounts_verify_payment((select (p ->> 'id')::uuid from jsonb_array_elements(customer_payment_overview((select id from pt where name = 'L3')) -> 'payments') p limit 1), null);

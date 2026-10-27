@@ -46,9 +46,9 @@ Only payments in status **`VERIFIED`** reduce the customer's outstanding order b
 ### Likely causes
 
 - Each order stores an explicit tax basis (`orderTaxBasis`):
-  - **Excluding GST (`EXCLUSIVE`)**: The agreed deal amount is before GST, and GST (18% standard) is added on top to compute the **Total Payable**.
+  - **Excluding GST (`EXCLUSIVE`)**: The agreed deal amount is before GST, and GST is added on top, at the rate Accounts chose for the order, to compute the **Total Payable** (no GST is assumed before it is chosen).
   - **Including GST (`INCLUSIVE`)**: The agreed deal amount already includes GST, so **Total Payable** equals the agreed deal amount.
-- Also note that individual payments can be recorded **with GST** or **without GST** (per-payment GST toggle), which affects the GST component tracked on that payment.
+- A payment is only the money received (GST included). The GST belongs to the order and is chosen once; recording a payment never changes it. Older orders whose GST was recorded on payments are left as they are and listed for review (`GET /pipeline/accounts/gst-reconciliation`).
 
 ### Step-by-step resolution
 

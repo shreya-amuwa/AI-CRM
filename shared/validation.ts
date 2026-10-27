@@ -619,10 +619,8 @@ export const agreementBasisSchema = z
 
 const paymentFields = {
   type: z.enum(PAYMENT_TYPES, { errorMap: () => ({ message: 'Choose part payment or full payment.' }) }),
-  /** The amount received; with GST, the amount BEFORE GST (the final amount is this plus the GST at gstRate). */
+  /** The money actually received, in whole rupees. It is checked against the total payable including GST; GST is chosen for the order, never on a payment. */
   amount: wholeRupees('Enter the amount received.'),
-  /** GST rate in percent, added on top of the amount (only for an agreed amount that excludes GST). Leave out for no GST record. */
-  gstRate: z.preprocess(v => (v === '' ? null : v), z.coerce.number().min(0, 'Choose a GST rate between 0 and 28.').max(28, 'Choose a GST rate between 0 and 28.').multipleOf(0.01).nullable().optional()),
   method: z.enum(PAYMENT_METHODS, { errorMap: () => ({ message: 'Select the payment method.' }) }),
   reference: optionalText(120),
   paidAt: z.preprocess(v => (v === '' ? null : v), datetime.nullable().optional()),
@@ -633,6 +631,8 @@ export const accountsRecordPaymentSchema = z
   .strict()
   .refine(v => ['CASH', 'OTHER'].includes(v.method) || !!v.reference, { message: 'Enter the transaction / reference number.', path: ['reference'] });
 export const accountsUpdatePaymentSchema = z.object(paymentFields).strict();
+/** The GST rate of the order (one of the configured rates; the database checks the list). */
+export const orderGstSchema = z.object({ rate: z.coerce.number({ invalid_type_error: 'Choose the GST rate.' }).min(0, 'Choose the GST rate.').max(28, 'Choose the GST rate.') }).strict();
 export const paymentDecisionSchema = z.object({ note: optionalText(500) }).strict();
 export const paymentReasonSchema = z.object({ reason: trimmed(500).min(1, 'Give the reason.') }).strict();
 export const accountsConfirmReturnSchema = z.object({ note: optionalText(1000) }).strict();

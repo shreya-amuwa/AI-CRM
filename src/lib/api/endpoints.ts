@@ -173,9 +173,8 @@ export interface CustomerQuery {
 
 export interface AccountsPaymentInput {
   type: PaymentType;
-  /** With GST: the amount before GST. */
+  /** The money received, in whole rupees, GST included. */
   amount: number;
-  gstRate?: number | null;
   method: PaymentMethod;
   reference?: string | null;
   paidAt?: string | null;
@@ -295,6 +294,7 @@ export const pipelineApi = {
   accountsTeam: () => api.get<{ id: string; fullName: string; role: string }[]>('/pipeline/accounts/team'),
   recordAccountsPayment: (id: string, body: AccountsPaymentInput & { verify: boolean }) =>
     api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments`, body),
+  setOrderGst: (id: string, rate: number) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/order-gst`, { rate }),
   updateAccountsPayment: (id: string, paymentId: string, body: AccountsPaymentInput) =>
     api.patch<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}`, body),
   verifyAccountsPayment: (id: string, paymentId: string) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/verify`, {}),

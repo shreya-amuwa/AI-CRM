@@ -249,6 +249,9 @@ console.log('--- 5. The whole order next to the invoice (an agreement of 1,20,00
       'and never "Balance Due on this Invoice", "Invoice Status" or "Total Order Value"');
     const tb = flat(text(b.bytes, 'ord-2'));
     check(/Current Invoice Total: Rs\.70,800\.00/.test(tb) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(tb), 'invoice 2: its total, and the same 81,600 on the order');
+    check(/Payments Applied to This Invoice: Rs\.60,000\.00/.test(ta) && /Invoice Balance: Rs\.10,800\.00/.test(ta) && /Order Total Payable \(incl\. GST\): Rs\.1,41,600\.00/.test(ta),
+      'invoice 1: the invoice balance (70,800 - 60,000 = 10,800) is shown apart from the order total payable (1,41,600) and the order balance');
+    check(/Payments Applied to This Invoice: Rs\.0\.00/.test(tb) && /Invoice Balance: Rs\.70,800\.00/.test(tb), 'invoice 2: nothing applied yet, its own balance is the full 70,800');
     const tc = flat(text(c.bytes, 'ord-3'));
     check(/Total Order Balance Outstanding: Rs\.0\.00/.test(tc) && /Payment Status: Fully Paid/.test(tc) && /\bPAID\b/.test(tc), 'settled: order balance 0, Fully Paid, stamp');
     const td = flat(text(d.bytes, 'ord-4'));

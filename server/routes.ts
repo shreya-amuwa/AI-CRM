@@ -139,6 +139,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/pipeline/accounts/counts', handler: pipeline.accountsCounts },
   { method: 'GET', path: '/pipeline/accounts/team', handler: pipeline.accountsTeam },
   { method: 'POST', path: '/pipeline/customers/:id/accounts/payments', handler: pipeline.recordAccountsPayment, options: S },
+  { method: 'POST', path: '/pipeline/customers/:id/accounts/order-gst', handler: pipeline.setOrderGst, options: S },
+  { method: 'GET', path: '/pipeline/accounts/gst-reconciliation', handler: pipeline.gstReconciliation },
   { method: 'PATCH', path: '/pipeline/customers/:id/accounts/payments/:paymentId', handler: pipeline.updateAccountsPayment, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/accounts/payments/:paymentId/verify', handler: pipeline.verifyAccountsPayment, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/accounts/payments/:paymentId/reject', handler: pipeline.rejectAccountsPayment, options: S },

@@ -54,6 +54,9 @@ async function api(who: string | null, method: string, path: string, body?: unkn
   return { status: res.status, json: (await res.json()) as any, requestId: res.headers.get('x-request-id') };
 }
 
+/** Accounts chooses the GST rate of an order (0% keeps the rupee figures of the older checks as written; the order-level GST checks use real rates). */
+const chooseGst = (customerId: string, rate = 0) => api('accm', 'POST', `/pipeline/customers/${customerId}/accounts/order-gst`, { rate });
+
 // ---------------------------------------------------------------------------
 const { rows: [sa] } = await db.query(
   `insert into auth.users (email, raw_user_meta_data, raw_app_meta_data)
@@ -1284,6 +1287,14 @@ r = await api('accm', 'GET', '/pipeline/accounts/counts');
 check(r.status === 200 && r.json.data.requestsPending === 1, 'Accounts counters', r);
 r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payment-confirmed`, {});
 check(r.status === 422, 'cannot confirm before a payment is verified', r);
+r = await api('a', 'POST', `/pipeline/customers/${payLead}/accounts/order-gst`, { rate: 0 });
+check(r.status === 403, 'Sales cannot choose the GST of an order', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 15000, method: 'UPI', reference: 'UTR-API-0', verify: false });
+check(r.status === 422 && /GST rate/.test(r.json.error.message), 'no payment before Accounts has chosen the GST rate of the order', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/order-gst`, { rate: 7 });
+check(r.status === 422, 'a rate that is not on the list is refused', r);
+r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/order-gst`, { rate: 0 });
+check(r.status === 200 && r.json.data.orderGst.selected === true && r.json.data.dealAmount === 40000, 'Accounts chooses 0% for this order (the figures below stay as written)', r);
 r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 15000, method: 'UPI', verify: false });
 check(r.status === 422, 'a UPI payment needs a reference (validation)', r);
 r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments`, { type: 'PART', amount: 15000, method: 'UPI', reference: 'UTR-API-1', verify: false });
@@ -3282,6 +3293,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.status === 200 && q && q.sentFrom === 'SUPPORT' && q.journey === 'DIRECT' && q.clientLogin === 'NOT_STARTED' && q.sentBy === 'Support Member' && q.services.join() === 'Meta Ads', 'Accounts: the queue shows it, sent by Support, direct journey, no login yet', q);
 
   // ---- Accounts: payment, then the client login, then Return to Sales
+  await chooseGst(lead, 18);
   r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payments`, { type: 'PART', amount: 4000, method: 'UPI', reference: 'JRN-1', verify: false });
   check(r.status === 201 || r.status === 200, 'Accounts: records the payment (unverified)', r);
   const payId = (await db.query(`select id from customer_payments where customer_id = $1`, [lead])).rows[0].id;
@@ -3329,7 +3341,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
   check(r.status === 200 || r.status === 204, 'Accounts: Return to Sales', r);
   r = await api('sm', 'GET', `/pipeline/customers/${lead}`);
-  check(r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.paymentWorkflow === 'PAYMENT_CONFIRMED' && r.json.data.amountVerified === 4000 && r.json.data.dealAmount === 10000, 'the same customer is back with its owner: onboarding, payment kept', r.json.data);
+  check(r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.paymentWorkflow === 'PAYMENT_CONFIRMED' && r.json.data.amountVerified === 4000 && r.json.data.dealAmount === 11800, 'the same customer is back with its owner: onboarding, payment kept (10,000 agreed + 18% GST = 11,800 payable)', r.json.data);
   r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
   check(r.status === 409, 'Accounts: a second return is refused', r);
   r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
@@ -3360,7 +3372,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, {});
   check(r.status === 409, 'delivery: a second send is refused', r);
   r = await api('dsm', 'GET', '/pipeline/delivery-queue');
-  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === lead && r.json.data.items[0].referredFrom === 'SUPPORT' && r.json.data.items[0].services[0].code === 'DS_META_ADS' && r.json.data.items[0].balance === 6000,
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === lead && r.json.data.items[0].referredFrom === 'SUPPORT' && r.json.data.items[0].services[0].code === 'DS_META_ADS' && r.json.data.items[0].balance === 7800,
     'delivery: the Design Studio sees it with the referrer, the service and the balance', r);
   r = await api('dsm', 'GET', `/pipeline/customers/${lead}`);
   check(r.status === 200, 'delivery: the Design Studio can open the customer', r);
@@ -3401,21 +3413,41 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     r = await api('a', 'POST', `/pipeline/customers/${gx}/send-to-accounts`, { amount: 120000, taxBasis: 'EXCLUSIVE' });
     check(r.status === 200 || r.status === 201, 'gst: Sales sends 1,20,000 excluding GST to Accounts', r);
     r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
-    check(r.json.data.dealAmount === 120000 && r.json.data.agreedAmount === 120000 && r.json.data.taxBasis === 'EXCLUSIVE' && r.json.data.order.gstTotal === 0 && r.json.data.order.balance === 120000,
-      'gst: the payable is the agreed 1,20,000 - the system adds no GST - and the whole of it is outstanding', r.json.data);
+    check(r.json.data.dealAmount === 120000 && r.json.data.agreedAmount === 120000 && r.json.data.taxBasis === 'EXCLUSIVE' && r.json.data.order.gstRequired === true && r.json.data.orderGst.selected === false && r.json.data.orderGst.rate === null,
+      'gst: Sales agreed 1,20,000 before GST: the system adds no GST and the final payable is not calculated until Accounts chooses the rate', r.json.data);
+    check(Array.isArray(r.json.data.orderGst.rates) && r.json.data.orderGst.rates.some((x: any) => x.rate === 18), 'gst: the screen is given the configured rates to choose from', r.json.data.orderGst);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'GX-API-0', verify: true });
+    check(r.status === 422 && /GST rate/.test(r.json.error.message), 'gst: no payment is accepted before the rate is chosen', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 18, method: 'UPI', reference: 'GX-API-0', verify: true });
+    check(r.status === 422, 'gst: a payment cannot carry a GST rate of its own any more', r);
+    r = await api('a', 'POST', `/pipeline/customers/${gx}/accounts/order-gst`, { rate: 18 });
+    check(r.status === 403, 'gst: Sales cannot choose the rate', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/order-gst`, { rate: 'abc' });
+    check(r.status === 422, 'gst: a rate that is not a number is refused', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/order-gst`, { rate: 17 });
+    check(r.status === 422, 'gst: a rate that is not on the configured list is refused', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/order-gst`, { rate: 18 });
+    check(r.status === 200 && r.json.data.dealAmount === 141600 && r.json.data.orderGst.rate === 18 && r.json.data.order.gstTotal === 21600 && r.json.data.order.totalPayable === 141600 && r.json.data.order.balance === 141600 && r.json.data.order.gstRequired === false,
+      'gst: Accounts chooses 18%: GST 21,600, total payable 1,41,600, all outstanding', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
+    check(r.json.data.orderGst.rate === 18 && r.json.data.dealAmount === 141600, 'gst: the rate and the amounts are read back from the database', r.json.data.orderGst);
     r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'GX-API-1', verify: true });
-    check(r.status === 201, 'gst: 60,000 received and verified', r);
+    check(r.status === 201 && r.json.data.order.confirmed === 60000 && r.json.data.order.balance === 81600 && r.json.data.dealAmount === 141600, 'gst: 60,000 received: the order balance is 81,600 and the payment did not change the GST', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/order-gst`, { rate: 12 });
+    check(r.status === 409, 'gst: the rate is fixed once a payment exists', r);
     const inv = () => ({
       requestId: crypto.randomUUID(), customerId: gx, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
       customer: { name: 'Gita Xavier', businessName: 'Xavier Exports', address: 'Shop 2, FC Road, Pune 411004, Maharashtra', contactPerson: 'Gita Xavier', contactNumber: '9820000207', gstin: null, stateCode: '27' },
       taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
       lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: 60000 }]
     });
+    r = await api('accm', 'POST', '/accounts/generated-invoices', { ...inv(), lines: [{ ...inv().lines[0], taxRate: 12, baseAmount: 60000 }] });
+    check(r.status === 422 && /18/.test(r.json.error.message), 'gst: an invoice line with another rate than the order\'s is refused', r);
     const body1 = inv();
     r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
     const g1 = r.json.data?.invoice;
-    check(r.status === 201 && g1.total === 70800 && g1.generated.paymentSummary.balance === 10800 && g1.generated.paymentSummary.order.balance === 70800 && g1.generated.paymentSummary.order.totalPayable === 130800,
-      'gst: invoice 1 is 60,000 + 10,800 GST (Accounts chose 18%) = 70,800; the payable is that plus the 60,000 not invoiced yet (no GST assumed), so 70,800 is outstanding', r);
+    check(r.status === 201 && g1.total === 70800 && g1.generated.paymentSummary.confirmed === 60000 && g1.generated.paymentSummary.balance === 10800 && g1.generated.paymentSummary.order.balance === 81600 && g1.generated.paymentSummary.order.totalPayable === 141600,
+      'gst: invoice 1 is 60,000 + 10,800 GST = 70,800 with 60,000 paid, so 10,800 left on the invoice; the ORDER still has 81,600 to receive', r);
     r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
     check(r.status === 200 && r.json.data.invoice.id === g1.id && /already (issued|saved)/.test(r.json.data.steps[0].message), 'gst: the same request again returns the same invoice', r);
     r = await api('accm', 'POST', '/accounts/generated-invoices', inv());
@@ -3428,7 +3460,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     r = await api('accm', 'GET', `/accounts/customers/${gx}/invoice-prefill?purpose=SERVICES`);
     check(r.json.data.agreedTaxBasis === 'EXCLUSIVE' && r.json.data.servicesInvoicedTaxable === 120000 && r.json.data.agreedAmount === 120000, 'gst: the builder reads the agreement from the server', r.json.data);
     // the PDF is drawn from this same stored snapshot (its text is checked in the PDF unit tests and the invoice tests above)
-    check(g1.generated.unpaid.pdfStatus === 'STORED' && g1.generated.unpaid.sizeBytes > 0 && g1.generated.paymentSummary.order.totalPayable === 130800, 'gst: the unpaid PDF was drawn from the snapshot that carries the order figures', g1.generated.unpaid);
+    check(g1.generated.unpaid.pdfStatus === 'STORED' && g1.generated.unpaid.sizeBytes > 0 && g1.generated.paymentSummary.order.totalPayable === 141600, 'gst: the unpaid PDF was drawn from the snapshot that carries the order figures', g1.generated.unpaid);
     r = await api('accm', 'POST', `/pipeline/customers/${gx}/accounts/payments`, { type: 'PART', amount: 5000, method: 'CASH', verify: false });
     r = await api('accm', 'GET', `/pipeline/customers/${gx}/payment-overview`);
     check(r.json.data.order.confirmed === 60000 && r.json.data.order.pending === 5000 && r.json.data.order.balance === 81600, 'gst: a pending payment is not counted', r.json.data.order);
@@ -3522,9 +3554,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('a', 'POST', `/pipeline/customers/${po}/send-to-accounts`, { amount: 120000 });
   check(r.status === 200 || r.status === 201, 'paid-only: Sales sends 1,20,000 to Accounts without any GST choice', r);
   r = await api('accm', 'GET', `/pipeline/customers/${po}/payment-overview`);
-  check(r.json.data.dealAmount === 120000 && r.json.data.agreedAmount === 120000 && r.json.data.order.gstTotal === 0 && r.json.data.order.balance === 120000, 'paid-only: the order is exactly the agreed amount - no GST added', r.json.data);
+  check(r.json.data.dealAmount === 120000 && r.json.data.agreedAmount === 120000 && r.json.data.order.gstRequired === true && r.json.data.order.gstRate === null, 'paid-only: the order is exactly the agreed amount - no GST added, and the final payable is not calculated yet', r.json.data);
   r = await api('accm', 'GET', `/accounts/customers/${po}/invoice-prefill?purpose=SERVICES`);
-  check(r.status === 200 && r.json.data.lines[0].taxRate === null && r.json.data.lines[0].baseAmount === 120000, 'paid-only: the invoice form starts without a GST rate and with the agreed amount', r.json.data.lines);
+  check(r.status === 200 && r.json.data.lines[0].taxRate === null && r.json.data.lines[0].baseAmount === 120000 && r.json.data.orderGstRate === null && r.json.data.warnings.some((w: string) => /GST has not been chosen/.test(w)), 'paid-only: the invoice form starts without a GST rate and with the agreed amount, and says the order\'s rate comes first', r.json.data);
   const inv = (rate: number | string, base: number) => ({
     requestId: crypto.randomUUID(), customerId: po, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: today, orderNumber: 'Verbal',
     customer: { name: 'Paid Only', businessName: 'Paid Only Co', address: 'Shop 5, FC Road, Pune 411004, Maharashtra', contactPerson: 'Paid Only', contactNumber: '9820000808', gstin: null, stateCode: '27' },
@@ -3533,6 +3565,12 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   });
   r = await api('accm', 'POST', '/accounts/generated-invoices', inv('', 60000));
   check(r.status === 422 && /GST rate/.test(r.json.error.message), 'paid-only: a line without a GST rate is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', inv(18, 60000));
+  check(r.status === 422 && /Choose the GST rate for this order/.test(r.json.error.message), 'paid-only: no invoice before Accounts has chosen the GST rate of the order', r);
+  r = await chooseGst(po, 18);
+  check(r.status === 200 && r.json.data.dealAmount === 141600, 'paid-only: Accounts chooses 18% once for the order: payable 1,41,600', r);
+  r = await api('accm', 'GET', `/accounts/customers/${po}/invoice-prefill?purpose=SERVICES`);
+  check(r.json.data.orderGstRate === 18 && r.json.data.lines[0].taxRate === 18, 'paid-only: the invoice form now carries the order\'s rate', r.json.data.lines);
   r = await api('accm', 'POST', `/pipeline/customers/${po}/accounts/payments`, { type: 'PART', amount: 60000, method: 'UPI', reference: 'PO-API-1', verify: true });
   check(r.status === 201, 'paid-only: 60,000 received and verified', r);
 
@@ -3546,7 +3584,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/deliver`, { stage: 'UNPAID' });
   check(r.status === 409 && /Unpaid invoices are not sent/.test(r.json.error.message), 'paid-only: an unpaid invoice cannot be made or sent', r);
   r = await api('accm', 'GET', `/pipeline/customers/${po}/payment-overview`);
-  check(r.json.data.dealAmount === 130800, 'paid-only: the order is now the invoice (70,800) plus the 60,000 not invoiced yet, with no GST assumed on it', r.json.data);
+  check(r.json.data.dealAmount === 141600, 'paid-only: the order payable is still 1,41,600: the invoice (70,800) plus the 60,000 not invoiced yet with the same 18% on it', r.json.data);
 
   // a part payment is enough for the paid invoice
   r = await api('a', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, {});
@@ -3559,8 +3597,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(!!paidObj && paidObj.body.subarray(0, 5).toString() === '%PDF-' && !fake.objects.has(key(a.id, 'unpaid')), 'paid-only: the paid PDF is stored and there is no unpaid file');
   const txt = paidObj ? pdfText(paidObj.body) : null;
   if (txt) {
-    check(/Current Invoice Total: Rs\.70,800\.00/.test(txt) && /Total Confirmed Payments: Rs\.60,000\.00/.test(txt) && /Total Order Balance Outstanding: Rs\.70,800\.00/.test(txt) && /\bPAID\b/.test(txt),
-      'paid-only: the PDF shows the invoice total, the confirmed 60,000, the order balance and the PAID stamp');
+    check(/Current Invoice Total: Rs\.70,800\.00/.test(txt) && /Payments Applied to This Invoice: Rs\.60,000\.00/.test(txt) && /Invoice Balance: Rs\.10,800\.00/.test(txt)
+        && /Order Total Payable \(incl\. GST\): Rs\.1,41,600\.00/.test(txt) && /Total Confirmed Payments: Rs\.60,000\.00/.test(txt) && /Total Order Balance Outstanding: Rs\.81,600\.00/.test(txt) && /\bPAID\b/.test(txt),
+      'paid-only: the PDF shows the invoice total, what is applied to it, its own balance, the order payable, the confirmed 60,000, the order balance (81,600) and the PAID stamp');
     check(!/Balance Due on this Invoice|Invoice Status|Total Order Value/.test(txt), 'paid-only: and none of the removed rows');
   }
   r = await api('accm', 'POST', `/accounts/generated-invoices/${a.id}/confirm-payment`, {});
@@ -3708,20 +3747,22 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 
   // the second invoice needs new money
   r = await api('accm', 'POST', '/accounts/generated-invoices', inv(12, 60000));
+  check(r.status === 422 && /18 percent/.test(r.json.error.message), 'paid-only: a second invoice cannot use a different rate than the order\'s', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', inv(18, 60000));
   const b = r.json.data?.invoice;
-  check(r.status === 201 && b.total === 67200, 'paid-only: a second invoice with 12% GST chosen by Accounts (67,200)', r);
+  check(r.status === 201 && b.total === 70800, 'paid-only: a second invoice at the order\'s 18% (70,800)', r);
   r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
   check(r.status === 409 && /already covered/.test(r.json.error.message), 'paid-only: the second paid invoice needs a new verified payment', r);
   r = await api('accm', 'POST', `/pipeline/customers/${po}/accounts/payments`, { type: 'PART', amount: 10000, method: 'UPI', reference: 'PO-API-2', verify: true });
   r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
   check(r.status === 200 && smtpMail.length === mail0 + 2 && fake.objects.has(key(b.id, 'paid')), 'paid-only: after the new payment the second paid invoice is sent', r.json);
-  check(r.json.data.steps.some((s: any) => s.step === 'WHATSAPP' && s.status === 'DONE') && waHits.length === hitsBeforeAuto + 1 && waHits.at(-1)!.body.variables.invoiceNumber === r.json.data.invoice.number && /67,200\.00/.test(waHits.at(-1)!.body.variables.amount),
-    'invoice WhatsApp: with automatic sending on, the second paid invoice is also sent by WhatsApp right after its e-mail (67,200.00)', r.json.data.steps);
+  check(r.json.data.steps.some((s: any) => s.step === 'WHATSAPP' && s.status === 'DONE') && waHits.length === hitsBeforeAuto + 1 && waHits.at(-1)!.body.variables.invoiceNumber === r.json.data.invoice.number && /70,800\.00/.test(waHits.at(-1)!.body.variables.amount),
+    'invoice WhatsApp: with automatic sending on, the second paid invoice is also sent by WhatsApp right after its e-mail (70,800.00)', r.json.data.steps);
   r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
   check(waHits.length === hitsBeforeAuto + 1 && (await db.query(`select count(*)::int n from invoice_whatsapp_dispatches where invoice_id = $1`, [b.id])).rows[0].n === 1, 'invoice WhatsApp: confirming again sends no second WhatsApp message (an automation event delivered twice)');
   r = await api('accm', 'GET', `/invoices/${b.id}`);
   r = await api('accm', 'GET', `/invoices/${b.id}`);
-  check(r.json.data.generated.paymentSummary.order.totalPayable === 138000 && r.json.data.generated.paymentSummary.order.confirmed === 70000 && r.json.data.generated.paymentSummary.order.balance === 68000, 'paid-only: the order shows 1,38,000 payable, 70,000 confirmed and 68,000 outstanding', r.json.data.generated.paymentSummary);
+  check(r.json.data.generated.paymentSummary.order.totalPayable === 141600 && r.json.data.generated.paymentSummary.order.confirmed === 70000 && r.json.data.generated.paymentSummary.order.balance === 71600, 'paid-only: the order shows 1,41,600 payable, 70,000 confirmed and 71,600 outstanding', r.json.data.generated.paymentSummary);
   waMock.close();
   await db.query(`update public.invoice_whatsapp_settings set enabled = false, auto_send = false, template_name = null, template_approved = false`);
   for (const k of ['AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_MODE_INVOICE_WHATSAPP', 'WABASTORE_WEBHOOK_URL', 'WABASTORE_API_KEY', 'WABASTORE_STATUS_SECRET']) delete process.env[k];
@@ -4479,30 +4520,56 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 }
 
 // ---------------------------------------------------------------------------
-// GST when Accounts records a payment: the amount before GST, the rate, the final amount
+// GST of the ORDER: Accounts chooses the rate once; a payment is only the money received (GST included)
 // ---------------------------------------------------------------------------
 {
   let r = await api('a', 'POST', '/pipeline/leads', { name: 'Gst Api Customer', company: 'Gst Api Co', phone: '9850000001', leadSource: 'Walk-in', services: ['AI_CALLING'] });
   const gl = r.json.data.id as string;
   r = await api('a', 'POST', `/pipeline/customers/${gl}/send-to-accounts`, { amount: 100000 });
-  check(r.status === 200 || r.status === 201, 'payment GST: Sales sends 1,00,000 to Accounts (before GST)', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 30, method: 'CASH', verify: false });
-  check(r.status === 422, 'payment GST: a rate above 28 is refused', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000.5, gstRate: 18, method: 'CASH', verify: false });
-  check(r.status === 422, 'payment GST: the amount before GST is in whole rupees', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, gstRate: 18, method: 'CASH', verify: false });
+  check(r.status === 200 || r.status === 201, 'order GST: Sales sends 1,00,000 to Accounts (before GST)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/order-gst`, { rate: 30 });
+  check(r.status === 422, 'order GST: a rate that is not on the list (30) is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/order-gst`, { rate: 18 });
+  check(r.status === 200 && r.json.data.dealAmount === 118000 && r.json.data.order.gstTotal === 18000 && r.json.data.order.roundOff === 0, 'order GST: 18% on 1,00,000 = 18,000, payable 1,18,000', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000.5, method: 'CASH', verify: false });
+  check(r.status === 422 && /whole rupees/i.test(r.json.error.message), 'order GST: the amount received is in whole rupees (paise refused)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 60000, method: 'CASH', verify: true });
   const p0 = r.json.data;
-  check(r.status === 201 || r.status === 200, 'payment GST: Accounts records 60,000 + 18%', r);
+  check(r.status === 201 || r.status === 200, 'order GST: Accounts records 60,000 received and verified', r);
   const pay = p0.payments[0];
-  check(pay.amount === 70800 && pay.taxableAmount === 60000 && pay.gstRate === 18 && pay.gstAmount === 10800, 'payment GST: the final amount 70,800 is what is recorded, with its split', pay);
-  check(p0.dealAmount === 110800 && p0.recorded === 70800 && p0.gst.allowed === true && p0.gst.onPayments === 10800 && p0.gst.taxableBalance === 40000,
-    'payment GST: the total payable grows by the GST, and 40,000 before GST is left', p0);
-  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 50000, gstRate: 18, method: 'CASH', verify: false });
-  check(r.status === 422, 'payment GST: more than is left of the agreed amount is refused', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'FULL', amount: 40000, gstRate: 18, method: 'CASH', verify: true });
-  check((r.status === 201 || r.status === 200) && r.json.data.dealAmount === 118000 && r.json.data.recorded === 118000, 'payment GST: a full payment settles it (1,18,000 = 1,00,000 + 18,000 GST)', r);
-  r = await api('a', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 100, gstRate: 18, method: 'CASH', verify: false });
-  check(r.status === 403, 'payment GST: a Sales member cannot record a payment', r);
+  check(pay.amount === 60000 && (pay.gstAmount ?? null) === null && (pay.taxableAmount ?? null) === null, 'order GST: the payment is the money received - it carries no GST of its own', pay);
+  check(p0.dealAmount === 118000 && p0.recorded === 60000 && p0.balance === 58000, 'order GST: recording a payment did not change the payable (1,18,000); 58,000 is left', p0);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 58001, method: 'CASH', verify: false });
+  check(r.status === 422, 'order GST: more than the outstanding amount including GST is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'FULL', amount: 57999, method: 'CASH', verify: true });
+  check(r.status === 422, 'order GST: a full payment must be the whole outstanding amount (58,000)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'FULL', amount: 58000, method: 'CASH', verify: true });
+  check((r.status === 201 || r.status === 200) && r.json.data.dealAmount === 118000 && r.json.data.recorded === 118000, 'order GST: a full payment settles the whole 1,18,000 (1,00,000 + 18,000 GST)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${gl}/accounts/payments`, { type: 'PART', amount: 100, method: 'CASH', verify: false });
+  check(r.status === 403, 'order GST: a Sales member cannot record a payment', r);
+
+  // the small example: 14 agreed + 18% = 16.52, payable in whole rupees = 17
+  r = await api('a', 'POST', '/pipeline/leads', { name: 'Gst Small Customer', company: 'Gst Small Co', phone: '9850000002', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+  const gs = r.json.data.id as string;
+  r = await api('a', 'POST', `/pipeline/customers/${gs}/send-to-accounts`, { amount: 14 });
+  check(r.status === 200 || r.status === 201, 'order GST: Sales sends 14 to Accounts', r);
+  r = await api('accm', 'GET', `/pipeline/customers/${gs}/payment-overview`);
+  check(r.json.data.order.gstRequired === true && r.json.data.dealAmount === 14, 'order GST: before the rate is chosen the payable is not calculated (nothing is added)', r.json.data.order);
+  r = await api('accm', 'POST', `/pipeline/customers/${gs}/accounts/order-gst`, { rate: 18 });
+  check(r.status === 200 && r.json.data.dealAmount === 17 && r.json.data.order.totalPayable === 17 && r.json.data.order.gstTotal === 2.52 && r.json.data.order.roundOff === 0.48 && r.json.data.order.balance === 17,
+    'order GST: 14 + 18% = 16.52, payable in whole rupees is 17 (GST 2.52, round-off 0.48), the balance is 17', r.json.data.order);
+  r = await api('accm', 'POST', `/pipeline/customers/${gs}/accounts/payments`, { type: 'FULL', amount: 16.52, method: 'CASH', verify: true });
+  check(r.status === 422, 'order GST: 16.52 is refused (whole rupees)', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gs}/accounts/payments`, { type: 'FULL', amount: 14, method: 'CASH', verify: true });
+  check(r.status === 422, 'order GST: 14 is not a full payment of 17', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${gs}/accounts/payments`, { type: 'FULL', amount: 17, method: 'CASH', verify: true });
+  check((r.status === 201 || r.status === 200) && r.json.data.order.balance === 0 && r.json.data.paymentStatus === 'FULLY_PAID', 'order GST: the full payment of 17 settles the order', r);
+
+  // the reconciliation list is for Accounts
+  r = await api('a', 'GET', '/pipeline/accounts/gst-reconciliation');
+  check(r.status === 403, 'order GST: the reconciliation list is not for Sales', r);
+  r = await api('accm', 'GET', '/pipeline/accounts/gst-reconciliation');
+  check(r.status === 200 && Array.isArray(r.json.data) && !r.json.data.some((x: any) => x.customerId === gl || x.customerId === gs), 'order GST: Accounts can read it; orders made the new way are not on it', r);
 }
 
 // ---------------------------------------------------------------------------
