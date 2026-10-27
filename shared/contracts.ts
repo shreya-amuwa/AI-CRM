@@ -2993,6 +2993,54 @@ export interface TelecallerLead {
   /** Set once a Telecaller has converted the lead into a contact for a Business Associate. */
   converted?: { contactId: string; convertedAt: string; businessAssociate: string | null } | null;
 }
+/** The five filters of the Lead section of a Telecaller and a Business Associate. */
+export const LEAD_SCOPES = ['ALL', 'MINE', 'DEPARTMENT', 'TO_ACCOUNTS', 'RETURNED'] as const;
+export type LeadScope = (typeof LEAD_SCOPES)[number];
+export const LEAD_SCOPE_LABELS: Record<LeadScope, string> = {
+  ALL: 'All Leads',
+  MINE: 'My Leads',
+  DEPARTMENT: 'Department Leads',
+  TO_ACCOUNTS: 'To Accounts',
+  RETURNED: 'Returned by Accounts'
+};
+export interface LeadScopeCounts {
+  all: number;
+  mine: number;
+  department: number;
+  toAccounts: number;
+  returned: number;
+}
+/** What the Accounts workflow recorded for a lead that is with Accounts or was returned by them. */
+export interface LeadAccountsInfo {
+  /** PENDING: with Accounts. RETURNED: Accounts returned it. */
+  status: 'PENDING' | 'CONFIRMED' | 'RETURNED';
+  amount: number | null;
+  submittedBy: string | null;
+  submittedAt: string | null;
+  salesNote: string | null;
+  returnedBy: string | null;
+  returnedAt: string | null;
+  reason: string | null;
+}
+export interface LeadScopeRow extends TelecallerLead {
+  leadStatus: LeadStatus;
+  nextFollowUpAt: string | null;
+  paymentWorkflow: PaymentWorkflow;
+  /** The lead is mine: only then can it be edited or sent to Accounts. The others are read-only. */
+  isMine: boolean;
+  owner: { id: string; fullName: string } | null;
+  accounts: LeadAccountsInfo | null;
+}
+export interface LeadScopeList {
+  scope: LeadScope;
+  total: number;
+  page: number;
+  pageSize: number;
+  sources: string[];
+  /** Leads of this filter per lead status (not narrowed by search or status). */
+  statusCounts: Partial<Record<LeadStatus, number>>;
+  items: LeadScopeRow[];
+}
 export interface TelecallerLeadList {
   total: number;
   page: number;

@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Eye, Inbox, Pencil, Plus, Search } from 'lucide-react';
-import type { InboundLead, LeadAccountsFilter, LeadStatus, Paginated, PipelineCounts, PipelineCustomer, TeamDivision } from '../../../../shared/contracts';
+import type { InboundLead, LeadAccountsFilter, LeadScope, LeadScopeRow, LeadStatus, Paginated, PipelineCounts, PipelineCustomer, TeamDivision } from '../../../../shared/contracts';
 import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { WorkflowBadge } from '../../payments/PaymentBits';
 import { errorMessage } from '../../../lib/api/client';
 import { rowOpen } from '../../../lib/rowClick';
-import { pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
+import { leadScopeApi, pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
+import { AccountsDetails, LEAD_SCOPE_EMPTY, LeadOwner, LeadScopeTabs, ReadOnlyLeadDialog, useLeadScopeCounts } from '../../leads/LeadScope';
 import {
   Avatar,
   btn,
@@ -42,6 +43,16 @@ function followUpRange(f: FollowUpFilter): Pick<PipelineQuery, 'followUpFrom' | 
 
 type Tab = '' | LeadStatus | LeadAccountsFilter;
 const TABS: Tab[] = ['', 'NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY', 'RETURNED', 'WITH_ACCOUNTS'];
+// with the five lead filters, Returned and With Accounts are filters of their own (Returned by Accounts, To Accounts)
+const STATUS_TABS: Tab[] = ['', 'NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY'];
+
+/** A row of the filtered list: the lead as the database returns it for the filter, shaped like a pipeline lead for the table. */
+type LeadRow = PipelineCustomer & { scopeRow?: LeadScopeRow };
+const fromScopeRow = (r: LeadScopeRow): LeadRow =>
+  ({
+    id: r.id, name: r.name, company: r.company, phone: r.phone, email: r.email, services: r.services, leadSource: r.leadSource, nextFollowUpAt: r.nextFollowUpAt,
+    leadStatus: r.leadStatus, paymentWorkflow: r.paymentWorkflow, owner: r.owner, createdBy: r.owner, scopeRow: r
+  }) as unknown as LeadRow;
 const TAB_LABEL = (t: Tab) => (t === 'WITH_ACCOUNTS' ? 'With Accounts' : t === 'RETURNED' ? 'Returned from Accounts' : t ? LEAD_STATUS_LABEL[t] : 'All');
 
 /**
@@ -68,7 +79,13 @@ export const LeadsView: React.FC<{
   onAdd: () => void;
   onEdit: (id: string) => void;
   scope?: LeadsViewScope;
-}> = ({ counts, showInbound = true, onAdd, onEdit, scope }) => {
+  /** Business Associate: the five filters (All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts) above the list. */
+  leadFilters?: boolean;
+}> = ({ counts, showInbound = true, onAdd, onEdit, scope, leadFilters = false }) => {
+  const [lscope, setLscope] = useState<LeadScope>('ALL');
+  const { counts: scopeCounts, error: scopeCountsError, refresh: refreshScopeCounts } = useLeadScopeCounts();
+  const [statusCounts, setStatusCounts] = useState<Partial<Record<LeadStatus, number>>>({});
+  const [viewRow, setViewRow] = useState<LeadScopeRow | null>(null);
   const [owner, setOwner] = useState(scope?.initialOwnerId || '');
   const { items: services, byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
@@ -77,7 +94,7 @@ export const LeadsView: React.FC<{
   const [followUp, setFollowUp] = useState<FollowUpFilter>('');
   const [status, setStatus] = useState<Tab>('');
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<Paginated<PipelineCustomer> | null>(null);
+  const [data, setData] = useState<Paginated<LeadRow> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounced = useDebounced(search.trim());
@@ -88,6 +105,32 @@ export const LeadsView: React.FC<{
     const seq = ++requestSeq.current;
     setLoading(true);
     setError(null);
+    if (leadFilters && !scope) {
+      // the five filters: the database decides which leads each one holds and counts them the same way
+      leadScopeApi
+        .list({
+          scope: lscope,
+          page,
+          pageSize: 10,
+          search: debounced || undefined,
+          service: service || undefined,
+          source: source || undefined,
+          status: (LEAD_STATUSES as readonly string[]).includes(status) ? status : undefined,
+          sort: followUp ? 'followUp' : 'newest',
+          ...followUpRange(followUp)
+        })
+        .then(
+          res => {
+            if (seq !== requestSeq.current) return;
+            setData({ items: res.items.map(fromScopeRow), page: res.page, pageSize: res.pageSize, total: res.total });
+            setStatusCounts(res.statusCounts);
+            refreshScopeCounts();
+          },
+          err => seq === requestSeq.current && setError(errorMessage(err))
+        )
+        .finally(() => seq === requestSeq.current && setLoading(false));
+      return;
+    }
     pipelineApi
       .list({
         stage: 'LEAD',
@@ -107,10 +150,14 @@ export const LeadsView: React.FC<{
         err => seq === requestSeq.current && setError(errorMessage(err))
       )
       .finally(() => seq === requestSeq.current && setLoading(false));
-  }, [page, debounced, service, source, status, followUp, scope?.departmentId, scope?.division, owner]);
+  }, [page, debounced, service, source, status, followUp, scope?.departmentId, scope?.division, owner, lscope, leadFilters]);
 
   useEffect(load, [load]);
-  useEffect(() => setPage(1), [debounced, service, source, status, followUp, owner]);
+  useEffect(() => setPage(1), [debounced, service, source, status, followUp, owner, lscope]);
+  // a lead that is not mine is for reading only; mine opens as before
+  const openRow = (l: LeadRow) => (l.scopeRow && !l.scopeRow.isMine ? setViewRow(l.scopeRow) : onEdit(l.id));
+  const rowWithAccounts = (l: LeadRow) => leadFilters && !!l.scopeRow?.accounts && (lscope === 'TO_ACCOUNTS' || lscope === 'RETURNED');
+  const tabs = leadFilters && !scope ? STATUS_TABS : TABS;
   usePipelineRealtime(load);
 
   // Ctrl/Cmd+K focuses search, as shown in the design.
@@ -131,7 +178,7 @@ export const LeadsView: React.FC<{
         <div>
           <p className="text-xs text-slate-500">Pipeline / Leads</p>
           <h1 className="text-2xl font-bold text-slate-900 mt-1">{scope?.title || 'Leads'}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{scope?.subtitle || 'Customers interested in our services. You see only the leads assigned to you.'}</p>
+          <p className="text-sm text-slate-500 mt-0.5">{scope?.subtitle || (leadFilters ? 'Customers interested in our services: your own leads, and your department\'s leads to view.' : 'Customers interested in our services. You see only the leads assigned to you.')}</p>
         </div>
         {!scope && (
           <button type="button" className={`${btn.primary} py-2.5`} onClick={onAdd}>
@@ -144,6 +191,8 @@ export const LeadsView: React.FC<{
 
       <Card className="overflow-hidden">
         <div className="p-4 space-y-3">
+          {leadFilters && !scope && <LeadScopeTabs scope={lscope} onChange={setLscope} counts={scopeCounts} />}
+          {leadFilters && !scope && scopeCountsError && <ErrorBanner message={scopeCountsError} onRetry={refreshScopeCounts} />}
           <div className="flex flex-col lg:flex-row gap-2">
             <label className="relative flex-1">
               <span className="sr-only">Search leads</span>
@@ -191,9 +240,12 @@ export const LeadsView: React.FC<{
             </select>
           </div>
           <div role="tablist" aria-label="Lead status" className="flex flex-wrap gap-1.5">
-            {TABS.map(t => {
+            {tabs.map(t => {
               const active = status === t;
-              const n = counts ? (t ? counts.leads[t] : counts.leads.all) : null;
+              const filtered = leadFilters && !scope;
+              const n = filtered
+                ? t ? statusCounts[t as LeadStatus] ?? 0 : scopeCounts ? scopeCounts[({ ALL: 'all', MINE: 'mine', DEPARTMENT: 'department', TO_ACCOUNTS: 'toAccounts', RETURNED: 'returned' } as const)[lscope]] : null
+                : counts ? (t ? counts.leads[t] : counts.leads.all) : null;
               return (
                 <button
                   key={t || 'ALL'}
@@ -242,20 +294,22 @@ export const LeadsView: React.FC<{
               ) : data && data.items.length === 0 ? (
                 <tr>
                   <td colSpan={scope ? 8 : 7} className="py-12 text-center text-sm text-slate-500">
-                    {debounced || service || source || status || followUp || owner ? 'No leads match these filters.' : scope ? 'No leads have been added by this team yet.' : 'No leads yet. Add your first lead to get started.'}
+                    {debounced || service || source || status || followUp || owner ? 'No leads match these filters.' : leadFilters && !scope ? `${LEAD_SCOPE_EMPTY[lscope].title}. ${LEAD_SCOPE_EMPTY[lscope].text}` : scope ? 'No leads have been added by this team yet.' : 'No leads yet. Add your first lead to get started.'}
                   </td>
                 </tr>
               ) : (
                 data?.items.map(l => {
                   const f = formatFollowUp(l.nextFollowUpAt);
                   return (
-                    <tr key={l.id} {...rowOpen(() => onEdit(l.id))} className={`hover:bg-slate-50/60 focus-visible:bg-indigo-50/50 focus-visible:outline-none ${loading ? 'opacity-60' : ''}`}>
+                    <React.Fragment key={l.id}>
+                    <tr {...rowOpen(() => openRow(l))} className={`hover:bg-slate-50/60 focus-visible:bg-indigo-50/50 focus-visible:outline-none ${loading ? 'opacity-60' : ''}`}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <Avatar name={l.name} />
                           <div className="min-w-0">
                             <div className="font-semibold text-slate-900 text-[13px] truncate">{l.name}</div>
                             <div className="text-xs text-slate-500 truncate">{l.company}</div>
+                            {l.scopeRow && lscope !== 'MINE' && <LeadOwner row={l.scopeRow} />}
                           </div>
                         </div>
                       </td>
@@ -278,12 +332,20 @@ export const LeadsView: React.FC<{
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <button type="button" className={btn.secondary} onClick={() => onEdit(l.id)} aria-label={`${scope ? 'View' : l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'} lead ${l.name}`}>
-                          {scope ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}{' '}
-                          {scope ? scope.actionLabel || 'View' : l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'}
+                        <button type="button" className={btn.secondary} onClick={() => openRow(l)} aria-label={`${scope || (l.scopeRow && !l.scopeRow.isMine) ? 'View' : l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'} lead ${l.name}`}>
+                          {scope || (l.scopeRow && !l.scopeRow.isMine) ? <Eye className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}{' '}
+                          {scope ? scope.actionLabel || 'View' : l.scopeRow && !l.scopeRow.isMine ? 'View' : l.paymentWorkflow === 'PENDING_PAYMENT_CONFIRMATION' ? 'Open' : 'Edit'}
                         </button>
                       </td>
                     </tr>
+                    {rowWithAccounts(l) && (
+                      <tr>
+                        <td colSpan={scope ? 8 : 7} className="px-4 pb-3 pt-0">
+                          <AccountsDetails row={l.scopeRow!} scope={lscope} />
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -292,6 +354,7 @@ export const LeadsView: React.FC<{
         </div>
         {data && <Pager page={page} pageSize={10} total={data.total} noun="leads" onPage={setPage} />}
       </Card>
+      {viewRow && <ReadOnlyLeadDialog row={viewRow} scope={lscope} onClose={() => setViewRow(null)} serviceNames={viewRow.serviceNames} />}
     </div>
   );
 };

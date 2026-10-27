@@ -82,7 +82,7 @@ export const TelecallerDashboard: React.FC = () => {
       <div className="mx-auto w-full max-w-[1400px]">
         {page === 'home' && <HomePage go={go} />}
         {page === 'tasks' && <TasksPage key={`tasks-${intent.n}`} initialStatus={intent.status} />}
-        {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
+        {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} scopeFilters openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
         {page === 'notifications' && <NotificationsPage />}
       </div>
     </DashboardShell>

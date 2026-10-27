@@ -27,8 +27,10 @@ export const PipelineWorkspace: React.FC<{
   resetKey?: number;
   /** Support staff: only their own records, no inbound enquiries strip. */
   ownOnly?: boolean;
+  /** Business Associate: the Leads list has the five filters (All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts). */
+  leadFilters?: boolean;
   onNavigate: (section: PipelineSection) => void;
-}> = ({ section, counts, startWithAdd, resetKey, ownOnly, onNavigate }) => {
+}> = ({ section, counts, startWithAdd, resetKey, ownOnly, leadFilters, onNavigate }) => {
   const [page, setPage] = useState<Page>(startWithAdd ? { kind: 'add-lead' } : { kind: 'list' });
   const [pendingOpen, setPendingOpen] = useState<string | null>(null);
 
@@ -52,7 +54,7 @@ export const PipelineWorkspace: React.FC<{
       return <AddLeadView onCancel={() => setPage({ kind: 'list' })} onSaved={id => setPage({ kind: 'edit-lead', id })} />;
     if (page.kind === 'edit-lead')
       return <EditLeadView id={page.id} onBack={() => setPage({ kind: 'list' })} onMovedToPotential={() => onNavigate('potential')} />;
-    return <LeadsView counts={counts} showInbound={!ownOnly} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;
+    return <LeadsView counts={counts} showInbound={!ownOnly} leadFilters={leadFilters} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;
   }
   if (section === 'potential') {
     return (

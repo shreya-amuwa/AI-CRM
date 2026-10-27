@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import type {
-  TelecallerAssignee, TelecallerContactList, TelecallerHome, TelecallerLead, TelecallerLeadList, TelecallerSheet, TelecallerSheetCheck
+  LeadScopeCounts, LeadScopeList, TelecallerAssignee, TelecallerContactList, TelecallerHome, TelecallerLead, TelecallerLeadList, TelecallerSheet, TelecallerSheetCheck
 } from '../../shared/contracts.js';
 import {
-  TELECALLER_SHEET_MAX_BYTES, telecallerAssignableQuerySchema, telecallerContactsQuerySchema, telecallerContactUpdateSchema, telecallerLeadSchema,
+  TELECALLER_SHEET_MAX_BYTES, leadScopeQuerySchema, telecallerAssignableQuerySchema, telecallerContactsQuerySchema, telecallerContactUpdateSchema, telecallerLeadSchema,
   telecallerLeadUpdateSchema, telecallerLeadsQuerySchema, telecallerSheetSchema, telecallerSheetSourceSchema, uuidSchema
 } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
@@ -56,6 +56,8 @@ export class TelecallerService {
     return this.repo.updateContact(parse(uuidSchema, id), parse(telecallerContactUpdateSchema, body));
   }
 
+  leadScope(query: unknown): Promise<LeadScopeList> { return this.repo.leadScopeList(parse(leadScopeQuerySchema, query)); }
+  leadScopeCounts(): Promise<LeadScopeCounts> { return this.repo.leadScopeCounts(); }
   leads(query: unknown): Promise<TelecallerLeadList> { return this.repo.leads(parse(telecallerLeadsQuerySchema, query)); }
   lead(id: string): Promise<TelecallerLead> { return this.repo.lead(parse(uuidSchema, id)); }
   createLead(body: unknown): Promise<TelecallerLead> {

@@ -310,6 +310,9 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/telecaller/contacts', handler: telecaller.contacts },
   { method: 'PATCH', path: '/telecaller/contacts/:id', handler: telecaller.updateContact },
   { method: 'GET', path: '/telecaller/leads', handler: telecaller.leads },
+  // the five filters of the Lead section (Telecaller and Business Associate); the database refuses everybody else
+  { method: 'GET', path: '/lead-scope', handler: telecaller.leadScope },
+  { method: 'GET', path: '/lead-scope/counts', handler: telecaller.leadScopeCounts },
   { method: 'POST', path: '/telecaller/leads', handler: telecaller.createLead },
   { method: 'GET', path: '/telecaller/leads/:id', handler: telecaller.lead },
   { method: 'PATCH', path: '/telecaller/leads/:id', handler: telecaller.updateLead },

@@ -5841,6 +5841,55 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await names('gs', scope('mpillar'))).join() === 'SCOPE dtalk Sales', 'scopes: and the department is no longer reachable');
 }
 
+// --- Lead filters of the Telecaller and Business Associate Lead sections: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts ----
+{
+  const mineOf = async (token: string) => {
+    const who = await api(token, 'GET', '/me');
+    return who.json.data.id as string;
+  };
+  const ba1Id = await mineOf('ba1');
+  const tcaId2 = await mineOf('tca');
+  const dbMine = async (id: string) => Number((await db.query(`select count(*) from customers where lifecycle_stage = 'LEAD' and owner_id = $1`, [id])).rows[0].count);
+  const dbDept = async (id: string) => Number((await db.query(
+    `select count(*) from customers c where c.lifecycle_stage = 'LEAD' and c.owner_id <> $1
+       and c.department_id = (select department_id from profiles where id = $1)
+       and exists (select 1 from teams t where t.id = c.team_id and t.department_id = c.department_id and t.division = 'SALES')`, [id])).rows[0].count);
+
+  for (const who of ['ba1', 'tca']) {
+    const id = who === 'ba1' ? ba1Id : tcaId2;
+    r = await api(who, 'GET', '/lead-scope/counts');
+    check(r.status === 200 && r.json.data.mine === (await dbMine(id)) && r.json.data.department === (await dbDept(id)) && r.json.data.all === r.json.data.mine + r.json.data.department,
+      `lead filters API: ${who}'s counts are the database's (mine, department, and all = both)`, r);
+    for (const scope of ['ALL', 'MINE', 'DEPARTMENT', 'TO_ACCOUNTS', 'RETURNED']) {
+      const list = await api(who, 'GET', `/lead-scope?scope=${scope}&pageSize=100`);
+      const key = ({ ALL: 'all', MINE: 'mine', DEPARTMENT: 'department', TO_ACCOUNTS: 'toAccounts', RETURNED: 'returned' } as Record<string, string>)[scope];
+      check(list.status === 200 && list.json.data.total === r.json.data[key] && list.json.data.items.length === r.json.data[key], `lead filters API: ${who} ${scope}: the list has as many rows as the count`, list.json.data?.total);
+    }
+    r = await api(who, 'GET', '/lead-scope?scope=MINE&pageSize=100');
+    check(r.json.data.items.every((x: any) => x.isMine && x.owner.id === id), `lead filters API: ${who} My Leads holds only their own`);
+    r = await api(who, 'GET', '/lead-scope?scope=DEPARTMENT&pageSize=100');
+    check(r.json.data.items.every((x: any) => !x.isMine && x.notes == null && x.owner.id !== id), `lead filters API: ${who} Department Leads holds only colleagues' leads, without their notes`);
+  }
+  r = await api('ba1', 'GET', '/lead-scope?scope=DEPARTMENT&search=Hot');
+  check(r.status === 200 && r.json.data.items.some((x: any) => x.name === 'Hot Customer' && x.owner.fullName === 'Tele Alpha'), "lead filters API: a Business Associate sees the Telecaller's lead (read-only)", r);
+  r = await api('ba1', 'GET', '/lead-scope?scope=ALL&status=NEW&sort=followUp&page=1&pageSize=5');
+  check(r.status === 200, 'lead filters API: status, sort and paging are accepted', r);
+  for (const who of ['a', 'th', 'dh', 'sm', 'influ']) {
+    r = await api(who, 'GET', '/lead-scope/counts');
+    check(r.status === 403, `lead filters API: ${who} cannot read the counts`, r);
+    r = await api(who, 'GET', '/lead-scope?scope=ALL');
+    check(r.status === 403, `lead filters API: ${who} cannot read the list`, r);
+  }
+  r = await api('ba1', 'GET', '/lead-scope?scope=EVERYTHING');
+  check(r.status === 422, 'lead filters API: an unknown filter is refused', r);
+  r = await api('ba1', 'GET', '/lead-scope?scope=ALL&companyWide=true');
+  check(r.status === 422, 'lead filters API: an unknown parameter is refused (no company-wide switch)', r);
+  r = await api('ba1', 'GET', '/lead-scope?scope=ALL&status=WITH_ACCOUNTS');
+  check(r.status === 422, 'lead filters API: the Accounts states are not lead statuses', r);
+  r = await api(null, 'GET', '/lead-scope/counts');
+  check(r.status === 401, 'lead filters API: signing in is required', r);
+}
+
 // --- Team Member Management: Access Control belongs to the Super Admin alone (the page hides it; the API refuses it) ----------------
 {
   const head = (await db.query(`select id from profiles where role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;

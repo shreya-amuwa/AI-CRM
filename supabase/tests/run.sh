@@ -64,6 +64,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/training_test.sql 2>&1 | sed -E "s
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/payment_gst_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/telecaller_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/business_associate_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/lead_scope_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_only_sections_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/whatsapp_services_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
