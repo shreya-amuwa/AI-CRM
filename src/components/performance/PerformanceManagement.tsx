@@ -5,9 +5,10 @@ import { performanceApi, type PerformanceReportKey } from '../../lib/api/endpoin
 import { fmtDay } from '../../lib/support';
 import type { PerformanceListEntry, PerformancePeople } from '../../../shared/contracts';
 import { PageTitle } from '../layout/shell';
-import { Avatar, Card, CardHead, fieldCls, LoadingLine, StatCard, Tabs } from '../tasks/head/headParts';
+import { Avatar, Card, CardHead, fieldCls, LoadingLine, Tabs } from '../tasks/head/headParts';
+import { KpiCard } from './KpiCard';
 import { defaultPeriod, periodLabel, resolvePeriod, type PeriodChoice } from './periods';
-import { INSUFFICIENT, ReportView } from './ReportView';
+import { ReportView } from './ReportView';
 
 /**
  * Performance Management (Team Lead and Department Head dashboards).
@@ -18,7 +19,8 @@ import { INSUFFICIENT, ReportView } from './ReportView';
  */
 type View = 'people' | 'teams' | 'department';
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong.');
-const pctText = (v: number | null) => (v === null ? INSUFFICIENT : `${v}%`);
+// no percentage when there is nothing to divide (never 0%)
+const pctText = (v: number | null) => (v === null ? '—' : `${v}%`);
 
 const ReportBadge: React.FC<{ stub: PerformanceListEntry['report'] }> = ({ stub }) =>
   stub ? (
@@ -65,13 +67,24 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
     return (data?.people ?? []).filter(p => (!q || p.name.toLowerCase().includes(q)) && (!teamFilter || p.teamId === teamFilter) && (roleFilter === 'ALL' || p.role === roleFilter));
   }, [data, query, teamFilter, roleFilter]);
 
-  const totals = useMemo(() => {
-    const sum = people.reduce((a, p) => {
-      const s = p.summary;
-      return { total: a.total + s.tasks.total, completed: a.completed + s.tasks.completed, overdue: a.overdue + s.tasks.overdue, onTime: a.onTime + s.timing.onTime, late: a.late + s.timing.late };
-    }, { total: 0, completed: 0, overdue: 0, onTime: 0, late: 0 });
-    return { ...sum, completionPct: sum.total ? Math.round((1000 * sum.completed) / sum.total) / 10 : null, onTimePct: sum.onTime + sum.late ? Math.round((1000 * sum.onTime) / (sum.onTime + sum.late)) / 10 : null };
-  }, [people]);
+  // The cards describe the whole scope (the department, the chosen team, or the Team Lead's team) from ITS OWN figures, which count every task
+  // once. They are not the sum of the people rows: a task a Team Lead split between members is on the lead's row and on each member's row, so
+  // adding the rows up would count it twice. The filters (search, role) narrow the table and the People card, not these figures.
+  const scopeEntry = useMemo(() => {
+    if (!data) return null;
+    if (mode === 'TEAM_LEAD') return data.teams[0] ?? null;
+    if (teamFilter) return data.teams.find(t => t.id === teamFilter) ?? null;
+    return data.department;
+  }, [data, mode, teamFilter]);
+  const scopeName = mode === 'TEAM_LEAD' ? 'your team' : teamFilter ? 'this team' : 'the department';
+  const k = scopeEntry?.summary ?? null;
+  const done = k?.tasks.completed ?? 0;
+  const all = k?.tasks.total ?? 0;
+  const onTime = k?.timing.onTime ?? 0;
+  const late = k?.timing.late ?? 0;
+  // a percentage only when its denominator is above zero; otherwise nothing (not 0%)
+  const completionPct = all > 0 ? k?.completionPct ?? null : null;
+  const onTimePct = onTime + late > 0 ? k?.timing.onTimePct ?? null : null;
 
   const openReport = (e: PerformanceListEntry) => {
     if (!kind) return;
@@ -96,8 +109,8 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
     <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
       <td className="px-5 py-3"><div className="flex items-center gap-2.5 min-w-0"><Avatar name={e.name} /><div className="min-w-0"><div className="font-bold text-slate-900 truncate">{e.name}</div>{extra}</div></div></td>
       <td className="px-3 py-3 text-slate-700">{e.summary.tasks.total}</td>
-      <td className="px-3 py-3 text-slate-700">{e.summary.tasks.completed} <span className="text-xs text-slate-500">({pctText(e.summary.completionPct)})</span></td>
-      <td className="px-3 py-3 text-slate-700">{pctText(e.summary.timing.onTimePct)}</td>
+      <td className="px-3 py-3 text-slate-700">{e.summary.tasks.completed} <span className="text-xs text-slate-500" title={e.summary.completionPct === null ? 'No tasks in this period' : undefined}>({pctText(e.summary.completionPct)})</span></td>
+      <td className="px-3 py-3 text-slate-700" title={e.summary.timing.onTimePct === null ? 'No completed tasks with a deadline to evaluate' : undefined}>{pctText(e.summary.timing.onTimePct)}</td>
       <td className={`px-3 py-3 font-bold ${e.summary.tasks.overdue ? 'text-rose-700' : 'text-slate-700'}`}>{e.summary.tasks.overdue}</td>
       <td className="px-3 py-3"><ReportBadge stub={e.report} /></td>
       <td className="px-5 py-3 text-right"><button type="button" onClick={() => openReport(e)} className="text-sm font-bold text-blue-700 hover:underline" aria-label={`Open the report of ${e.name}`}>Open report</button></td>
@@ -149,12 +162,17 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
 
       {error && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center justify-between gap-3"><span>{error}</span><button type="button" onClick={() => void load()} className="font-bold underline">Retry</button></div>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3" aria-label="Summary">
-        <StatCard label={mode === 'TEAM_LEAD' ? 'Team members' : 'People'} value={people.length} foot={roleFilter === 'ALL' && !teamFilter && !query ? 'in your scope' : 'matching the filters'} />
-        <StatCard label="Tasks" value={totals.total} foot="due or assigned in the period" />
-        <StatCard label="Completion" value={pctText(totals.completionPct)} tone={totals.completionPct === null ? 'neutral' : 'blue'} foot={`${totals.completed} completed`} />
-        <StatCard label="On-time completion" value={pctText(totals.onTimePct)} tone={totals.onTimePct === null ? 'neutral' : totals.onTimePct >= 80 ? 'green' : 'amber'} foot={`${totals.onTime} on time · ${totals.late} late`} />
-        <StatCard label="Overdue" value={totals.overdue} tone={totals.overdue ? 'red' : 'neutral'} foot="not completed, past deadline" />
+      <div className="grid grid-cols-1 min-[440px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 items-stretch" role="group" aria-label="Summary">
+        <KpiCard label={mode === 'TEAM_LEAD' ? 'Team members' : 'People'} value={people.length} testId="kpi-people"
+          description={roleFilter === 'ALL' && !teamFilter && !query ? 'in your scope' : 'matching the filters'} />
+        <KpiCard label="Tasks" value={loading && !data ? null : all} testId="kpi-tasks" description={`in ${scopeName}, due or assigned in the period`} />
+        <KpiCard label="Completion" value={completionPct === null ? null : `${completionPct}%`} tone="blue" testId="kpi-completion"
+          description={completionPct === null ? 'No task data available' : `${done} of ${all} tasks completed`} />
+        <KpiCard label="On-time completion" value={onTimePct === null ? null : `${onTimePct}%`} tone={onTimePct !== null && onTimePct >= 80 ? 'green' : 'amber'} testId="kpi-ontime"
+          description={onTimePct === null
+            ? done > 0 ? 'Completed tasks have no deadline to compare' : 'No completed tasks to evaluate'
+            : `${onTime} on time · ${late} late`} />
+        <KpiCard label="Overdue" value={k ? k.tasks.overdue : null} tone={k && k.tasks.overdue ? 'red' : 'neutral'} testId="kpi-overdue" description="not completed, past deadline" />
       </div>
 
       <Tabs label="Performance views" value={view} onChange={setView} options={tabs} />
@@ -187,7 +205,7 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
           {people.length === 0 ? (
             <p className="px-5 pb-8 text-sm text-slate-500">{data.people.length === 0 ? (mode === 'TEAM_LEAD' ? 'No team members are assigned to your team yet.' : 'No Team Leads or members in your department yet.') : 'Nobody matches these filters.'}</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full text-sm min-w-[44rem]">
                 {head('Name')}
                 <tbody className={loading ? 'opacity-60' : ''}>
@@ -203,7 +221,7 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
         <Card>
           <CardHead title={mode === 'TEAM_LEAD' ? 'Your team' : 'Teams'} hint="Every task counted once: a task a Team Lead split between members is counted through the members" />
           {teams.length === 0 ? <p className="px-5 pb-8 text-sm text-slate-500">No team found.</p> : (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full text-sm min-w-[44rem]">
                 {head('Team')}
                 <tbody>{teams.map(t => entryRow(t, <div className="text-xs text-slate-500 truncate">{t.lead ? `Lead: ${t.lead} · ` : ''}{t.members} member{t.members === 1 ? '' : 's'}</div>))}</tbody>
@@ -217,7 +235,7 @@ export const PerformanceManagement: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_H
         <Card>
           <CardHead title="Department" hint="Overall task performance of the whole department" />
           {data.department ? (
-            <div className="overflow-x-auto"><table className="w-full text-sm min-w-[44rem]">{head('Department')}<tbody>{entryRow(data.department, null)}</tbody></table></div>
+            <div className="relative overflow-x-auto"><table className="w-full text-sm min-w-[44rem]">{head('Department')}<tbody>{entryRow(data.department, null)}</tbody></table></div>
           ) : <p className="px-5 pb-8 text-sm text-slate-500">No department found.</p>}
         </Card>
       )}
