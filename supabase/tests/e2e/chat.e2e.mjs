@@ -1,5 +1,6 @@
 // Chat, real browsers against the local stack (Postgres + PostgREST + gateway with the Realtime shim + the web app).
-// Client chat (client, Team Member, Team Lead, Department Head review) and internal chat (DMs, groups, attachments).
+// Client chat (client, Team Member, Team Lead, Department Head review) and internal chat (DMs and groups: end-to-end encrypted in the browser,
+// emoji, delete for me / for everyone, attachments, a new device, a reset key).
 // See supabase/tests/e2e/README.md for how to run it. No credentials live in this file: staff passwords come from
 // E2E_PASSWORDS (a JSON object e-mail -> password, for the accounts your fixture created) and the two client logins use
 // passwords made up at run time; phone numbers are generated.
@@ -50,7 +51,7 @@ const staffLogin = async (email, viewport) => {
   await p.getByPlaceholder('name@amuwa.com').fill(email);
   await p.locator('input[type="password"]').first().fill(password);
   await p.locator('form button[type="submit"]').click();
-  await p.waitForSelector('nav button:has-text("Chat")', { timeout: 20000 }).catch(async () => { current = p; await fail(`${email} did not reach a dashboard with Chat in the menu`); });
+  await p.waitForSelector('nav button:has-text("Chat")', { timeout: 20000, state: 'attached' }).catch(async () => { current = p; await fail(`${email} did not reach a dashboard with Chat in the menu`); });
   return p;
 };
 const wait = async (p, sel, m, t = 12000) => { current = p; await p.waitForSelector(sel, { timeout: t }).catch(() => fail(m)); };
@@ -62,10 +63,34 @@ const openChat = async p => {
   await menuItem(p, 'Chat').click();
   await wait(p, '.ch-page', 'the Chat page did not open');
 };
-const closeChat = async p => { await menuItem(p, 'Overview').click(); await gone(p, '.ch-page', 'the Chat page did not close'); };
+const closeChat = async p => {
+  if ((p.viewportSize()?.width ?? 1440) < 1024) { await p.getByRole('button', { name: 'Toggle menu' }).click(); await new Promise(r => setTimeout(r, 400)); }
+  await p.locator('nav button').filter({ hasNot: p.locator('span', { hasText: /^Chat$/ }) }).first().click(); await gone(p, '.ch-page', 'the Chat page did not close'); };
 const chatBadge = (p, n) => p.waitForFunction(k => [...document.querySelectorAll('nav button')].some(b => new RegExp(`^Chat\\s*${k}$`).test(b.innerText.replace(/\s+/g, ' ').trim())), n, { timeout: 12000 });
 const send = async (p, text) => { const box = p.getByLabel('Message', { exact: true }); await box.fill(text); await box.press('Enter'); };
 const bubble = (p, text) => p.locator('.ch-bubble', { hasText: text });
+// secure messaging: recovery passphrases (made up here; the server never sees them) and a record of everything the browsers send
+const PASS = { M: 'mohan correct horse battery', R: 'rina correct horse battery', L: 'dina correct horse battery' };
+const sent = [];
+const track = p => p.on('request', r => { const d = r.postData(); if (d) sent.push({ url: r.url(), body: d }); });
+const messagesTab = async p => { await openChat(p); await p.getByRole('tab', { name: /Messages/ }).click().catch(() => {}); };
+const turnOn = async (p, pass) => {
+  await messagesTab(p);
+  await wait(p, '[data-testid="secure-list-action"]', 'the Turn on button of secure messaging did not show');
+  await p.getByTestId('secure-list-action').click();
+  await p.getByTestId('secure-pass').fill(pass);
+  await p.getByTestId('secure-pass-again').fill(pass);
+  await p.getByLabel('Turn on secure messaging').getByRole('button', { name: 'Turn on' }).click();
+  await gone(p, '.ch-modal', 'the setup dialog did not close');
+  await gone(p, '[data-testid="secure-list-bar"]', 'secure messaging did not turn on');
+};
+const unlock = async (p, pass) => {
+  await messagesTab(p);
+  await wait(p, '[data-testid="secure-list-action"]', 'the Unlock button did not show');
+  await p.getByTestId('secure-list-action').click();
+  await p.getByTestId('secure-pass').fill(pass);
+  await p.getByLabel(/Unlock/).getByRole('button', { name: 'Unlock' }).click();
+};
 const sendBtnEnabled = p => p.getByRole('button', { name: 'Send message' }).isEnabled();
 
 // ------------------------------------------------------------------ fixture: two clients with their teams
@@ -74,6 +99,7 @@ const tm = await idOf('tm.delivery@amuwa.com'), tm2 = await idOf('tm2.delivery@a
 const mk = async (name, company, phone, services, amount) => {
   const l = await api(rahul, 'POST', '/pipeline/leads', { name, company, phone, leadSource: 'Walk-in', services, notes: 'Wants to buy.' });
   await api(rahul, 'POST', `/pipeline/customers/${l.id}/send-to-accounts`, { amount });
+  await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/order-gst`, { rate: 0 });
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/payments`, { type: 'PART', amount: amount / 2, method: 'CASH', verify: true });
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/payment-confirmed`, { note: 'ok' });
   await q(`update customer_onboarding set forwarded_to_support_at = now(), stage = 'SETUP', sent_to_accounts_at = now(), accounts_confirmed_at = now() where customer_id = $1`, [l.id]);
@@ -100,6 +126,7 @@ const L = await staffLogin('tl.delivery@amuwa.com');
 const D = await staffLogin('dh@amuwa.com');
 const R = await staffLogin('tm2.delivery@amuwa.com');
 ok('a client, a Team Member, a Team Lead, a Department Head and a second Team Member are signed in in separate browsers');
+[M, L, R].forEach(track);
 
 // ------------------------------------------------------------------ client: the Chat tab
 current = C;
@@ -279,7 +306,14 @@ const ids = await C.locator('.ch-row[data-seq]').evaluateAll(els => els.map(e =>
 await expect(new Set(ids).size === ids.length, 'no message is shown twice');
 await C.screenshot({ path: `${OUT}/chat-client-history.png` });
 
-// ------------------------------------------------------------------ internal chat: direct messages
+// ------------------------------------------------------------------ internal chat: secure messaging is turned on, then direct messages
+// nobody can chat with a colleague who has not turned it on: the chats are end-to-end encrypted, so every member needs a key
+await turnOn(R, PASS.R); await closeChat(R);
+await turnOn(L, PASS.L); await closeChat(L);
+await turnOn(M, PASS.M);
+const keyRows = await q(`select p.email, k.key_version, length(k.public_key) as n from chat_user_keys k join profiles p on p.id = k.profile_id order by p.email`);
+await expect(keyRows.length === 3 && keyRows.every(k => k.key_version === 1 && k.n === 88), 'three people turned on secure messaging: each published one public key (version 1)', keyRows);
+ok('secure messaging is turned on in the browsers of Mohan, Dina and Rina');
 current = M;
 await M.getByRole('tab', { name: /Messages/ }).click();
 await wait(M, '.ch-list-empty:has-text("No chats yet")', 'Mohan should have no internal chats yet');
@@ -330,14 +364,17 @@ await send(M, 'Here is the screenshot');
 await wait(R, '.ch-file:has-text("chat-test.png")', 'attachment not shown to Rina');
 const [tab] = await Promise.all([R.context().waitForEvent('page'), R.locator('.ch-file', { hasText: 'chat-test.png' }).click()]);
 await tab.waitForLoadState().catch(() => {});
-await new Promise(r => setTimeout(r, 800));
+await new Promise(r => setTimeout(r, 1200));
 const fileUrl = tab.url();
-await expect(/\/storage\/v1\/object\/sign\/chat-attachments\//.test(fileUrl) && /token=/.test(fileUrl), `the file opens through a short-lived signed link (${fileUrl.split('?')[0].replace(GW, '')})`);
+await expect(/^blob:/.test(fileUrl), `the file is decrypted in the browser and opened from there (${fileUrl.slice(0, 30)}...)`);
 await tab.close();
-const attRow = (await q(`select id, status, storage_path from chat_attachments order by created_at desc limit 1`))[0];
-await expect(attRow.status === 'READY' && !/public/.test(attRow.storage_path), 'the file is stored privately, marked ready');
+const attRow = (await q(`select id, status, storage_path, mime_type, file_name from chat_attachments order by created_at desc limit 1`))[0];
+await expect(attRow.status === 'READY' && !/public/.test(attRow.storage_path) && attRow.mime_type === 'application/x-amuwa-e2ee' && attRow.file_name === 'encrypted-file', 'the file is stored privately as an encrypted envelope, with no real name or type on the server');
 const stranger = await call(as(rahul), 'GET', `/chat/attachments/${attRow.id}/url?action=view`);
 await expect(denied(stranger.status), 'someone outside the conversation cannot get a link to the file');
+const signed = await call(as(tm2), 'GET', `/chat/attachments/${attRow.id}/url?action=download`);
+const stored = Buffer.from(await (await fetch(signed.data.url)).arrayBuffer());
+await expect(stored.subarray(0, 4).toString('latin1') === 'AME2' && !stored.includes(png.subarray(0, 8)) && stored.length > png.length, 'what the storage holds is the encrypted envelope, not the picture');
 const pub = await fetch(`${GW}/storage/v1/object/public/chat-attachments/${attRow.storage_path}`);
 await expect(pub.status >= 400, 'there is no public URL for the file');
 
@@ -395,19 +432,245 @@ await gone(L, '.ch-item:has-text("Delivery crew")', 'the group should disappear 
 await wait(M, '.ch-system:has-text("Dina Delivery left the group")', 'the others should see that she left');
 ok('leaving a group asks first, removes it from your list, and tells the others');
 
+// ------------------------------------------------------------------ emoji, what the server stores, and what leaves the browser
+current = M;
+await M.reload();
+await messagesTab(M);
+await M.locator('.ch-item', { hasText: 'Rina Rao' }).click();
+await wait(M, '.ch-composer', 'the direct chat did not reopen for Mohan');
+await wait(M, '[data-testid="secure-bar"][data-state="ready"]', 'the chat does not say it is end-to-end encrypted');
+await expect(/End-to-end encrypted/.test(await M.getByTestId('secure-bar').innerText()), 'the chat header strip says the chat is end-to-end encrypted');
+await M.reload(); await messagesTab(M);   // the keys are on this device: a reload needs no passphrase
+await M.locator('.ch-item', { hasText: 'Rina Rao' }).click();
+await wait(M, '[data-testid="secure-bar"][data-state="ready"]', 'after a reload the keys on the device should still be ready');
+await wait(M, '.ch-bubble:has-text("cover my queue")', 'the earlier messages are readable after a reload');
+ok('after a reload the messages are readable again without a passphrase (the key stays on the device)');
+
+const emojiBox = M.getByLabel('Message', { exact: true });
+await emojiBox.fill('Emoji check ');
+await M.getByTestId('emoji-button').click();
+await wait(M, '[data-testid="emoji-picker"]', 'the emoji picker did not open');
+await M.getByTestId('emoji-picker').getByRole('button', { name: 'Insert grinning', exact: true }).click();
+await M.getByTestId('emoji-picker').getByRole('tab', { name: 'People' }).click();
+await M.getByTestId('emoji-picker').getByRole('button', { name: 'Insert thumbs up yes ok', exact: true }).click();
+await expect(/Emoji check 😀👍$/.test(await emojiBox.inputValue()), 'emojis are inserted at the end of the text, several in a row, and the picker stays open');
+await M.getByTestId('emoji-picker').getByLabel('Search emoji').fill('party');
+await wait(M, '[data-testid="emoji-picker"] button[aria-label="Insert party popper celebrate"]', 'the emoji search finds nothing');
+await M.getByTestId('emoji-picker').getByRole('button', { name: 'Insert party popper celebrate', exact: true }).click();
+await M.keyboard.press('Escape');
+await gone(M, '[data-testid="emoji-picker"]', 'Escape should close the emoji picker');
+await emojiBox.press('End');
+await emojiBox.type(' done');
+await M.screenshot({ path: `${OUT}/chat-emoji-composer.png` });
+await emojiBox.press('Enter');
+await wait(R, '.ch-item:has-text("Mohan Member")', 'the list on the second screen');
+await messagesTab(R);
+await R.locator('.ch-item', { hasText: 'Mohan Member' }).click();
+await wait(R, '.ch-bubble:has-text("Emoji check 😀👍🎉 done")', 'text with emojis did not arrive intact');
+ok('a message with text and several emojis is sent and arrives intact');
+await M.getByTestId('emoji-button').click();
+await M.getByTestId('emoji-picker').getByRole('button', { name: 'Insert 🎉', exact: true }).click(); // from the recently used row
+await M.keyboard.press('Escape');
+await M.getByRole('button', { name: 'Send message' }).click();
+await R.waitForFunction(() => [...document.querySelectorAll('.ch-bubble .ch-text')].some(e => e.innerText.trim() === '🎉'), null, { timeout: 12000 }).catch(() => fail('an emoji-only message did not arrive'));
+const onlyEmoji = (await R.locator('.ch-bubble', { hasText: '🎉' }).last().locator('.ch-text').innerText()).trim();
+await expect(onlyEmoji === '🎉', `an emoji-only message is sent and shown (got ${JSON.stringify(onlyEmoji)})`);
+const recents = await M.evaluate(() => localStorage.getItem('amuwa-chat-recent-emoji'));
+await expect(recents && recents.includes('🎉'), 'recently used emojis are remembered in this browser');
+
+// what the server holds
+const internal = await q(`select m.body, m.encrypted, m.e2ee::text as e from chat_messages m join chat_conversations c on c.id = m.conversation_id where c.kind in ('DIRECT', 'GROUP') and m.kind = 'TEXT'`);
+const PLAIN = ['cover my queue', 'no problem', 'Emoji check', 'Stand-up at 10', 'Rina is out', 'Here is the screenshot', '😀', '👍', '🎉'];
+await expect(internal.length >= 6 && internal.every(m => m.body === '' && m.encrypted === true), `every internal message the server stores is an encrypted envelope with an empty body (${internal.length} messages)`);
+await expect(internal.every(m => PLAIN.every(w => !m.e.includes(w))), 'and none of the envelopes contains any of the words that were typed');
+await expect((await q(`select count(*)::int n from chat_conversations where last_message_preview ilike any(array['%cover my queue%', '%Emoji check%', '%Stand-up%'])`))[0].n === 0, 'nor does a search of the conversation previews');
+const secureSends = sent.filter(x => /\/secure-messages$/.test(x.url));
+await expect(secureSends.length >= 6 && secureSends.every(x => PLAIN.every(w => !x.body.includes(w)) && !('body' in JSON.parse(x.body))), `what the browsers sent for ${secureSends.length} messages holds no readable text (the request itself is the envelope)`);
+await expect(sent.every(x => Object.values(PASS).every(pw => !x.body.includes(pw))), `none of the ${sent.length} requests the browsers made contains a recovery passphrase`);
+const keyReqs = sent.filter(x => /\/chat\/keys(\/reset)?$/.test(x.url));
+await expect(keyReqs.length === 3 && keyReqs.every(x => { const b = JSON.parse(x.body); return Object.keys(b).sort().join() === 'backup,publicKey' && !/pkcs8|privateKey|"d":/.test(x.body) && b.backup.kdf === 'PBKDF2-SHA256' && b.backup.iter >= 600000; }), 'the only key material sent is the public key and the passphrase-encrypted backup (PBKDF2, 600,000 rounds)');
+const idb = await M.evaluate(async () => {
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('amuwa-chat-e2ee'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const rows = await new Promise(res => { const r = db.transaction('keys').objectStore('keys').getAll(); r.onsuccess = () => res(r.result); });
+  const out = [];
+  for (const k of rows) { let exported = true; try { await crypto.subtle.exportKey('pkcs8', k.privateKey); } catch { exported = false; } out.push({ extractable: k.privateKey.extractable, exported }); }
+  return out;
+});
+await expect(idb.length === 1 && idb[0].extractable === false && idb[0].exported === false, 'the private key on the device is a non-extractable CryptoKey: the page can use it but cannot read it out', idb);
+ok('the server holds ciphertext, public keys and an encrypted backup: no readable message, no private key, no passphrase');
+
+// ------------------------------------------------------------------ deleting messages
+await send(M, 'Delete me test');
+await wait(R, '.ch-bubble:has-text("Delete me test")', 'the message did not arrive');
+const theirs = R.locator('[data-testid="chat-message"]', { hasText: 'Delete me test' });
+await theirs.hover();
+await theirs.getByTestId('message-menu-button').click();
+await expect(await R.getByTestId('delete-for-me').count() === 1 && await R.getByTestId('delete-for-everyone').count() === 0, "on somebody else's message the menu offers Delete for me only");
+await R.getByTestId('delete-for-me').click();
+await wait(R, '[data-testid="confirm-delete"]', 'deleting should ask for confirmation');
+await expect(/removed from your chat only/.test(await R.locator('.ch-modal').innerText()), 'the confirmation explains that others keep the message');
+await R.getByTestId('confirm-delete').click();
+await gone(R, '.ch-bubble:has-text("Delete me test")', 'the message should disappear for Rina');
+await expect(await bubble(M, 'Delete me test').count() === 1, 'Delete for me: Mohan still has the message');
+await R.reload(); await messagesTab(R);
+await R.locator('.ch-item', { hasText: 'Mohan Member' }).click();
+await wait(R, '.ch-bubble:has-text("Emoji check")', 'the chat did not reopen after a reload');
+await expect(await bubble(R, 'Delete me test').count() === 0, 'Delete for me: after a reload it stays hidden');
+const hidden = await q(`select h.profile_id, m.deleted_at, m.e2ee is not null as intact from chat_message_hidden h join chat_messages m on m.id = h.message_id`);
+await expect(hidden.length === 1 && hidden[0].profile_id === tm2 && hidden[0].deleted_at === null && hidden[0].intact, 'Delete for me is stored per person; the shared message is untouched');
+const R2 = await staffLogin('tm2.delivery@amuwa.com'); track(R2);
+await unlock(R2, PASS.R);
+await R2.locator('.ch-item', { hasText: 'Mohan Member' }).click();
+await wait(R2, '.ch-bubble:has-text("Emoji check")', 'on another device the chat should open after unlocking');
+await expect(await bubble(R2, 'Delete me test').count() === 0, 'Delete for me: it is hidden on another device as well');
+ok('Delete for me hides the message for that person only, across reloads and devices');
+
+await send(M, 'Delete all test');
+await wait(R, '.ch-bubble:has-text("Delete all test")', 'the message did not arrive');
+await wait(R2, '.ch-bubble:has-text("Delete all test")', 'the message did not arrive on the other device');
+const mine = M.locator('[data-testid="chat-message"]', { hasText: 'Delete all test' });
+await mine.hover();
+await mine.getByTestId('message-menu-button').click();
+await expect(await M.getByTestId('delete-for-me').count() === 1 && await M.getByTestId('delete-for-everyone').count() === 1, 'on my own message the menu offers both Delete for me and Delete for everyone');
+await M.getByTestId('delete-for-everyone').click();
+await wait(M, '[data-testid="confirm-delete"]', 'deleting for everyone should ask for confirmation');
+await expect(/screenshot/.test(await M.locator('.ch-modal').innerText()), 'the confirmation says deleting cannot take back screenshots or copies');
+await M.screenshot({ path: `${OUT}/chat-delete-confirm.png` });
+await M.getByTestId('confirm-delete').click();
+await wait(M, '[data-testid="message-deleted"]', 'the sender should see "This message was deleted"');
+await wait(R, '[data-testid="message-deleted"]', "Rina's open screen did not turn the message into a tombstone live");
+await wait(R2, '[data-testid="message-deleted"]', "Rina's other device did not turn the message into a tombstone live");
+await expect(await bubble(R, 'Delete all test').count() === 0 && await bubble(M, 'Delete all test').count() === 0, 'the text is gone from every screen');
+const gone1 = (await q(`select body, e2ee, attachments::text as a, deleted_at is not null as d from chat_messages where deleted_at is not null`));
+await expect(gone1.length === 1 && gone1[0].body === '' && gone1[0].e2ee === null && gone1[0].a === '[]', 'the server wiped the stored ciphertext and key wraps (not just hid them)');
+await R.reload(); await messagesTab(R); await R.locator('.ch-item', { hasText: 'Mohan Member' }).click();
+await wait(R, '[data-testid="message-deleted"]', 'after a reload the deleted message should still be a tombstone');
+await expect(await R.locator('.ch-bubble', { hasText: 'Delete all test' }).count() === 0, 'and the text does not come back');
+const viaApi = await call(as(tm2), 'GET', `/chat/conversations/${(await q(`select id from chat_conversations where kind = 'DIRECT'`))[0].id}/messages?limit=100`);
+await expect(!JSON.stringify(viaApi.data).includes('Delete all test') && viaApi.data.messages.some(m => m.deleted === true && m.body === '' && m.e2ee === null), 'the normal message API returns only a tombstone for it');
+ok('Delete for everyone removes the message for all participants, live, and the server keeps nothing readable');
+
+// a file, deleted for everyone: the stored object goes too
+await M.locator('input[type="file"]').setInputFiles('/tmp/chat-test.png');
+await wait(M, '.ch-staged li:not(.busy):has-text("chat-test.png")', 'the second upload did not finish');
+await send(M, 'File to delete');
+await wait(R, '.ch-bubble:has-text("File to delete")', 'file did not arrive');
+const fileRow = (await q(`select id from chat_attachments where status = 'READY' order by created_at desc limit 1`))[0];
+const linkBefore = await call(as(tm2), 'GET', `/chat/attachments/${fileRow.id}/url?action=download`);
+if (!linkBefore.data) throw new Error('no download link for the second file: ' + JSON.stringify(linkBefore));
+await expect((await fetch(linkBefore.data.url)).status === 200, 'before deleting, the stored file can be fetched');
+const fileMsg = M.locator('[data-testid="chat-message"]', { hasText: 'File to delete' });
+await fileMsg.hover(); await fileMsg.getByTestId('message-menu-button').click();
+await M.getByTestId('delete-for-everyone').click();
+await M.getByTestId('confirm-delete').click();
+await wait(R, '[data-testid="message-deleted"] >> nth=1', 'the message with a file did not become a tombstone for Rina').catch(() => {});
+await new Promise(r => setTimeout(r, 1500));
+const fileAfter = (await q(`select status, storage_removed_at is not null as removed from chat_attachments where id = $1`, [fileRow.id]))[0];
+await expect(fileAfter.status === 'DELETED' && fileAfter.removed, 'the file is marked deleted and its stored object was removed');
+await expect((await fetch(linkBefore.data.url)).status >= 400, 'the stored file can no longer be fetched');
+await expect(denied((await call(as(tm2), 'GET', `/chat/attachments/${fileRow.id}/url?action=download`)).status), 'and no new download link can be made');
+ok('deleting a message with a file for everyone removes the stored encrypted file as well');
+
+// ------------------------------------------------------------------ a new device, a wrong passphrase, failed decryption
+await R2.close();
+const R3 = await staffLogin('tm2.delivery@amuwa.com'); track(R3);
+await messagesTab(R3);
+await wait(R3, '[data-testid="secure-list-bar"][data-state="locked"]', 'a fresh browser should show secure messaging as locked');
+await R3.getByTestId('secure-list-action').click();
+await R3.getByTestId('secure-pass').fill('this is not the passphrase');
+await R3.getByLabel(/Unlock/).getByRole('button', { name: 'Unlock' }).click();
+await wait(R3, '.ch-modal [role="alert"]', 'a wrong passphrase should be refused');
+ok('a wrong recovery passphrase is refused and nothing is unlocked');
+await R3.keyboard.press('Escape');
+await gone(R3, '.ch-modal', 'the unlock dialog should close');
+await R3.locator('.ch-item', { hasText: 'Mohan Member' }).click();
+await wait(R3, '[data-testid="message-undecryptable"][data-reason="locked"]', 'locked messages should be shown as locked, with no text');
+await expect(await R3.locator('.ch-bubble', { hasText: 'Emoji check' }).count() === 0 && await R3.getByTestId('composer-locked').count() === 1, 'on a locked device no text is shown and the message box is replaced by a note');
+await R3.screenshot({ path: `${OUT}/chat-locked-device.png` });
+ok('a device without the keys shows encrypted messages as locked and cannot send');
+
+// ------------------------------------------------------------------ a colleague's key changes
+await R.getByTestId('open-security').click();
+await wait(R, '[data-testid="secure-settings"]', 'the security dialog has no settings');
+const myFp = (await q(`select fingerprint from chat_user_keys where retired_at is null and profile_id = $1`, [tm2]))[0].fingerprint;
+await expect((await R.locator('[data-testid="my-fingerprint"]').innerText()).replace(/\s+/g, '') === myFp.slice(0, 32).toUpperCase(), 'the security dialog shows my fingerprint (it matches the one the database computed from my public key)');
+await R.getByTestId('secure-reset').click();
+await R.getByTestId('secure-pass').fill('rina brand new passphrase 2');
+await R.getByTestId('secure-pass-again').fill('rina brand new passphrase 2');
+await R.getByRole('button', { name: 'Reset and turn on' }).click();
+await expect(/tick the box/i.test(await R.getByLabel('Reset secure messaging').innerText()), 'a reset has to be confirmed');
+await R.getByTestId('secure-reset-confirm').check();
+await R.getByRole('button', { name: 'Reset and turn on' }).click();
+await gone(R, '[data-testid="secure-pass-again"]', 'the reset dialog did not close');
+const keysNow = await q(`select key_version, retired_at is not null as retired from chat_user_keys where profile_id = $1 order by key_version`, [tm2]);
+await expect(keysNow.length === 2 && keysNow[0].retired && !keysNow[1].retired, 'the reset retired the old key and published a new one');
+await R.keyboard.press('Escape');
+// Mohan does not know yet: his next message is stopped on his own screen, not sent to the old key
+await send(M, 'After the reset');
+await wait(M, '.ch-row.pending[data-state="failed"]', "Mohan's message should be stopped when Rina's key changed");
+await wait(M, '[data-testid="key-changed-bar"]', "Mohan's screen should warn that Rina's key changed");
+await expect(/security key of Rina Rao changed/.test(await M.locator('.ch-row.pending').innerText()) && await M.getByTestId('composer-locked').count() === 1, 'the message says why it was not sent, and the box asks him to review the key first');
+await M.getByTestId('key-changed-bar').getByRole('button', { name: 'Review' }).click();
+await wait(M, `[data-testid^="accept-"]`, 'the security dialog should offer to accept the new key');
+const newFp = (await q(`select fingerprint from chat_user_keys where retired_at is null and profile_id = $1`, [tm2]))[0].fingerprint;
+await expect((await M.locator('.ch-modal').innerText()).replace(/\s+/g, '').includes(newFp.slice(0, 32).toUpperCase()), "the dialog shows Rina's new fingerprint (to compare with her)");
+await M.locator('[data-testid^="accept-"]').click();
+await gone(M, '[data-testid="key-changed-bar"]', 'accepting the key should clear the warning');
+await M.getByRole('button', { name: 'Done' }).click();
+await M.locator('.ch-row.pending').getByRole('button', { name: 'Retry' }).click();
+await wait(R, '.ch-bubble:has-text("After the reset")', 'the retried message should reach Rina on the new key');
+ok("when a colleague's key changes the message is not sent to the old key; after the key is accepted it goes through and Rina reads it");
+// a fresh device unlocking with the OLD passphrase fails, with the new one the old messages are unreadable and new ones are not
+await R3.reload(); await messagesTab(R3);
+await R3.getByTestId('secure-list-action').click();
+await R3.getByTestId('secure-pass').fill(PASS.R);
+await R3.getByLabel(/Unlock/).getByRole('button', { name: 'Unlock' }).click();
+await wait(R3, '.ch-modal [role="alert"]:has-text("right recovery passphrase")', 'after a reset the old passphrase must not open the new backup');
+await R3.getByTestId('secure-pass').fill('rina brand new passphrase 2');
+await R3.getByLabel(/Unlock/).getByRole('button', { name: 'Unlock' }).click();
+await gone(R3, '.ch-modal', 'unlocking with the new passphrase did not finish');
+await R3.locator('.ch-item', { hasText: 'Mohan Member' }).click();
+await wait(R3, '.ch-bubble:has-text("After the reset")', 'a message sealed for the new key is readable on the new device');
+await wait(R3, '[data-testid="message-undecryptable"][data-reason="old-key"]', 'messages sealed for the old key should be marked as unreadable on a device that only has the new key');
+await expect(await R3.locator('.ch-bubble', { hasText: 'Emoji check' }).count() === 0, 'and show no text');
+await R3.screenshot({ path: `${OUT}/chat-old-key-messages.png` });
+ok('after a reset a new device reads only what was sealed for the new key; older messages are marked unreadable, with no text');
+
 // ------------------------------------------------------------------ mobile
 const phone = await staffLogin('tm.delivery@amuwa.com', { width: 390, height: 780 });
 await openChat(phone);
+await unlock(phone, PASS.M);
+await gone(phone, '.ch-modal', 'unlocking on the phone did not finish');
 await phone.screenshot({ path: `${OUT}/chat-mobile-list.png` });
 await expect(await phone.locator('.ch-detail:visible').count() === 0, 'on a phone the list is shown alone');
 await phone.locator('.ch-item', { hasText: 'Rina Rao' }).click();
 await wait(phone, '.ch-thread', 'thread');
+await wait(phone, '.ch-composer', 'the message box on the phone');
 await expect(await phone.locator('.ch-list-panel:visible').count() === 0, 'opening a chat replaces the list');
 await phone.screenshot({ path: `${OUT}/chat-mobile-thread.png` });
 const phoneGeo = await phone.evaluate(() => ({ composerBottom: document.querySelector('.ch-composer').getBoundingClientRect().bottom, vh: window.innerHeight, over: document.documentElement.scrollWidth > window.innerWidth + 1 }));
 await expect(phoneGeo.composerBottom <= phoneGeo.vh + 1 && !phoneGeo.over, `on a phone the message box stays on screen and nothing scrolls sideways (box bottom ${Math.round(phoneGeo.composerBottom)} of ${phoneGeo.vh})`);
+await phone.getByTestId('emoji-button').click();
+await wait(phone, '[data-testid="emoji-picker"]', 'the emoji picker on the phone');
+const pk = await phone.evaluate(() => { const r = document.querySelector('[data-testid="emoji-picker"]').getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, vw: window.innerWidth }; });
+await expect(pk.left >= 0 && pk.right <= pk.vw && pk.top >= 0, `on a phone the emoji picker fits the screen (${Math.round(pk.left)}..${Math.round(pk.right)} of ${pk.vw})`);
+await phone.screenshot({ path: `${OUT}/chat-mobile-emoji.png` });
+await phone.keyboard.press('Escape');
 await phone.getByRole('button', { name: 'Back to chats' }).click();
 await wait(phone, '.ch-list-panel', 'back to the list');
+// a tablet: the list and the thread side by side, the emoji picker and the secure strip fit
+const tablet = await staffLogin('tm.delivery@amuwa.com', { width: 820, height: 1100 });
+await openChat(tablet);
+await unlock(tablet, PASS.M);
+await gone(tablet, '.ch-modal', 'unlocking on the tablet did not finish');
+await tablet.locator('.ch-item', { hasText: 'Rina Rao' }).click();
+await wait(tablet, '.ch-composer', 'the message box on the tablet');
+await tablet.getByTestId('emoji-button').click();
+await wait(tablet, '[data-testid="emoji-picker"]', 'the emoji picker on the tablet');
+const tgeo = await tablet.evaluate(() => { const r = document.querySelector('[data-testid="emoji-picker"]').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, vw: window.innerWidth, over: document.documentElement.scrollWidth > window.innerWidth + 1 }; });
+await expect(tgeo.l >= 0 && tgeo.r <= tgeo.vw && tgeo.t >= 0 && !tgeo.over, `on a tablet the emoji picker fits and nothing scrolls sideways (${Math.round(tgeo.l)}..${Math.round(tgeo.r)} of ${tgeo.vw})`);
+await tablet.screenshot({ path: `${OUT}/chat-tablet-emoji.png` });
+await tablet.context().close();
 const pc = await open({ width: 390, height: 780 });
 await pc.goto(BASE + '/client/login');
 await pc.getByLabel('E-mail').fill('anil@acharya.example.com');

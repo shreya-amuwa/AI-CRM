@@ -3,7 +3,10 @@
 `run-chat.sh` drives real Chromium windows (a client, two Team Members, a Team Lead and a Department Head, plus a phone-sized
 window) against a throw-away local stack and checks the chat end to end: live delivery without a refresh, "seen" ticks,
 unread badges, notifications, the read-only review, failed sends and retry without duplicates, offline catch-up, long
-history, direct messages, groups, attachments, and that every unauthorized attempt is refused.
+history, direct messages, groups, attachments, and that every unauthorized attempt is refused. The internal chats are end-to-end
+encrypted, so it also checks that the database and the requests hold only ciphertext, the emoji picker, Delete for me / for everyone
+(live, after a reload, on another device, stored file removed), a wrong passphrase, a new device, and a key reset with the
+key-changed warning (124 checks).
 
 * The stack is a scratch database, PostgREST, `supabase/tests/local-gateway.mjs` (auth, storage and a Realtime stand-in in
   `local-realtime.mjs` that delivers a change only to someone whose own row-level-security lets them read the row) and the web app.

@@ -18,7 +18,7 @@ import { AutomatedLetterGeneratorWorkspace } from './AutomatedLetterGeneratorWor
 import { ActiveTab } from '../../layout/Sidebar';
 import { departmentMemberStore } from '../../../services/departmentMemberStore';
 import { getSupabase } from '../../../services/supabaseClient';
-import { fetchHrDirectory, saveHrRecord, HrDepartment, ROLE_LABEL } from '../../../lib/hrDirectory';
+import { fetchHrDirectory, saveHrRecord, saveMemberContacts, HrDepartment, ROLE_LABEL } from '../../../lib/hrDirectory';
 import { attendanceStore, AttendanceRecord } from '../../../services/attendanceStore';
 import type { AttendanceDay } from '../../../../shared/contracts';
 import { hrApi, recruitmentApi } from '../../../lib/api/endpoints';
@@ -1872,6 +1872,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
           onUpdateEmployee={handleUpdateEmployee}
           onConvert={() => { handleConvertTraineeToEmployee(selectedProfileEmp.id); setSelectedProfileEmp(null); }}
           onMarkLeft={() => { handleMarkLeft(selectedProfileEmp.id); setSelectedProfileEmp(null); }}
+          onSaveContacts={selectedProfileEmp.profileId ? (contact, emergency) => saveMemberContacts(selectedProfileEmp.profileId!, contact, emergency) : undefined}
         />
       )}
 

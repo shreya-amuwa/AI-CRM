@@ -133,8 +133,8 @@ export const UserAccessManagementModal: React.FC<UserAccessManagementModalProps>
       ]);
       setTeams(teamList);
       setPendingRows(pending.items.map(r => fromRequest(r, teamList)));
-      setActiveRows(active.items.filter(p => p.id !== profile?.id).map(fromProfile));
-      setRevokedRows([...revoked.items, ...suspended.items, ...rejected.items].map(fromProfile));
+      setActiveRows(active.items.filter(p => p.id !== profile?.id && p.role !== 'SUPER_ADMIN').map(fromProfile));
+      setRevokedRows([...revoked.items, ...suspended.items, ...rejected.items].filter(p => p.role !== 'SUPER_ADMIN').map(fromProfile));
     } catch (err) {
       notify(errorMessage(err), 'danger');
     }

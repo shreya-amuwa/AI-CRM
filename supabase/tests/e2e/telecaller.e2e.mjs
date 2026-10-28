@@ -156,6 +156,7 @@ await dh.getByPlaceholder('min. 10 characters').fill(onePw);
 await dh.locator('input[type="date"]').first().fill('2025-01-10');
 await dh.locator('input[type="date"]').nth(1).fill('1995-05-05');
 await dh.locator('select').filter({ has: dh.locator('option', { hasText: 'A+' }) }).first().selectOption('A+');
+await dh.getByTestId('member-contact-number').fill('+91 98111 22222');
 await dh.getByPlaceholder('+91 98765 43210').fill('+91 98765 43210');
 await expect(/Telecaller Dashboard/.test(await dh.locator('main').innerText()), 'creation form: "Will open: Telecaller Dashboard"');
 await dh.screenshot({ path: `${OUT}/tc-1-create-form.png`, fullPage: true });

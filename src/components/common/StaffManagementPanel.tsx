@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
-  RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, ChevronLeft, ChevronRight
+  RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type DepartmentHeadAccess, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
 import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
@@ -56,6 +56,19 @@ interface StaffManagementPanelProps {
 }
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
+
+/**
+ * Whether the signed-in person may change this account (suspend, revoke, restore, remove, give a role). It mirrors the database rule
+ * (private.actor_can_manage_profile) so the buttons are not offered where the answer is no; the API and the database refuse anyway.
+ * Nobody changes a Super Admin from the application, and nobody changes themselves.
+ */
+export function canActOn(actor: { id: string; role: Role; teamId?: string | null }, target: { id: string; role: Role; teamId?: string | null }): boolean {
+  if (actor.id === target.id || target.role === 'SUPER_ADMIN') return false;
+  if (actor.role === 'SUPER_ADMIN') return true;
+  if (actor.role === 'DEPARTMENT_HEAD') return target.role === 'TEAM_HEAD' || target.role === 'TEAM_MEMBER';
+  if (actor.role === 'TEAM_HEAD') return target.role === 'TEAM_MEMBER' && !!actor.teamId && target.teamId === actor.teamId;
+  return false;
+}
 /** Technical Consultant is a team member of a support team with its own dashboard. */
 type StaffChoice = StaffRole | 'TECHNICAL_CONSULTANT';
 
@@ -104,6 +117,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [bloodGroup, setBloodGroup] = useState('');
   const [emergencyContact, setEmergencyContact] = useState('');
+  const [contactNumber, setContactNumber] = useState('');
   const [designation, setDesignation] = useState<string>('Team Member');
   const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
   const [teamId, setTeamId] = useState('');
@@ -291,6 +305,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setDateOfBirth('');
     setBloodGroup('');
     setEmergencyContact('');
+    setContactNumber('');
     setSalesSubRole('');
     setHeadFn('');
     setHeadDepts(departmentId ? [departmentId] : []);
@@ -354,7 +369,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
       headDivision: headPlan?.headDivision,
       additionalAccess: headPlan && headPlan.additionalAccess.length ? headPlan.additionalAccess : undefined,
-      details: { designation, joiningDate, dateOfBirth, bloodGroup, emergencyContact }
+      details: { designation, joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
     });
     if (!parsed.success) {
       setFormError(parsed.error.issues[0]?.message || 'Please check the form.');
@@ -696,6 +711,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               </select>
             </label>
             <label className="block text-xs font-semibold text-slate-700">
+              Team member contact number *
+              <input type="tel" inputMode="tel" className={`${inputClass} mt-1`} value={contactNumber} onChange={e => setContactNumber(e.target.value)} placeholder="+91 90000 12345" autoComplete="off" required aria-describedby="contact-number-hint" data-testid="member-contact-number" />
+              <span id="contact-number-hint" className="mt-1 block text-[11px] font-normal text-slate-500">The member's own number. Add the country code (+91 for India); a 10-digit Indian number is taken as +91.</span>
+            </label>
+            <label className="block text-xs font-semibold text-slate-700">
               Emergency contact number *
               <input type="tel" inputMode="tel" className={`${inputClass} mt-1`} value={emergencyContact} onChange={e => setEmergencyContact(e.target.value)} placeholder="+91 98765 43210" autoComplete="off" required />
             </label>
@@ -806,7 +826,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(m => (
+                  {rows.map(m => { const act = manage && canActOn(profile, m); return (
                     <tr key={m.id} className="border-b border-slate-50 align-top">
                       <td className="py-2.5 pr-3">
                         <div className="font-semibold text-slate-900">{m.fullName}</div>
@@ -821,7 +841,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           </div>
                         )}
                         {m.role === 'DEPARTMENT_HEAD' && sharedIds.has(m.id) && <div className="text-[11px] text-slate-400">Shared head · home department {m.department?.name || '-'}</div>}
-                        {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
+                        {act && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
                           <label className="mt-1 block text-[11px] font-semibold text-blue-600">
                             <span className="sr-only">Side of {m.fullName}</span>
                             <select
@@ -835,7 +855,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             </select>
                           </label>
                         )}
-                        {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
+                        {act && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => (onEditAccess ? onEditAccess(m) : setAccessFor(m))}
@@ -847,7 +867,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           </button>
                         )}
                         {m.team && <div className="text-slate-400">{m.team.name}{m.salesSubRole ? ` · ${SALES_SUB_ROLE_LABELS[m.salesSubRole]}` : ''}</div>}
-                        {manage && canSetSalesRole && m.role === 'TEAM_MEMBER' && m.team?.division === 'SALES' && m.status === 'ACTIVE' && (
+                        {act && canSetSalesRole && m.role === 'TEAM_MEMBER' && m.team?.division === 'SALES' && m.status === 'ACTIVE' && (
                           <label className="mt-1 block text-[11px] font-semibold text-blue-600">
                             <span className="sr-only">Sales role of {m.fullName}</span>
                             <select
@@ -861,7 +881,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             </select>
                           </label>
                         )}
-                        {manage && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
+                        {act && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => void toggleConsultant(m)}
@@ -871,7 +891,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             {isTechnicalConsultant(m) ? 'Make team member' : 'Make Technical Consultant'}
                           </button>
                         )}
-                        {manage && m.role === 'TEAM_MEMBER' && m.teamId && allowedRoles.includes('TEAM_HEAD') && m.status === 'ACTIVE' && (
+                        {act && m.role === 'TEAM_MEMBER' && m.teamId && allowedRoles.includes('TEAM_HEAD') && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => promote(m, 'TEAM_HEAD')}
@@ -881,7 +901,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             <ArrowUpCircle className="w-3 h-3" aria-hidden="true" /> Make Team Lead
                           </button>
                         )}
-                        {manage && m.role === 'TEAM_HEAD' && profile.role === 'SUPER_ADMIN' && m.departmentId && m.status === 'ACTIVE' && (
+                        {act && m.role === 'TEAM_HEAD' && profile.role === 'SUPER_ADMIN' && m.departmentId && m.status === 'ACTIVE' && (
                           <button
                             type="button"
                             onClick={() => promote(m, 'DEPARTMENT_HEAD')}
@@ -909,7 +929,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>
                       {manage && <td className="py-2.5 text-right whitespace-nowrap">
-                        {m.status === 'ACTIVE' ? (
+                        {!act ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400" title={m.role === 'SUPER_ADMIN' ? 'The Super Admin account is protected and cannot be changed here.' : 'You cannot change this account.'} data-testid={`protected-${m.id}`}>
+                            <Lock className="w-3.5 h-3.5" aria-hidden="true" /> {m.role === 'SUPER_ADMIN' ? 'Protected account' : 'No access'}
+                          </span>
+                        ) : m.status === 'ACTIVE' ? (
                           <>
                             <button type="button" onClick={() => changeStatus(m, 'SUSPENDED')} title="Suspend" aria-label={`Suspend ${m.fullName}`} className="p-1.5 rounded-lg text-orange-600 hover:bg-orange-50">
                               <PauseCircle className="w-4 h-4" />
@@ -923,7 +947,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             <PlayCircle className="w-4 h-4" />
                           </button>
                         ) : null}
-                        <button
+                        {act && <button
                           type="button"
                           onClick={() => removeMember(m)}
                           title="Remove employee"
@@ -931,10 +955,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50"
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </button>}
                       </td>}
                     </tr>
-                  ))}
+                  ); })}
                 </tbody>
               </table>
             </div>

@@ -40,8 +40,9 @@ export class ProfileRepository {
     return mapProfile(row);
   }
 
-  async list(q: UserListQuery): Promise<Paginated<Profile>> {
+  async list(q: UserListQuery, hideSuperAdmin = false): Promise<Paginated<Profile>> {
     let query = this.db.from('profiles').select(COLUMNS, { count: 'exact' });
+    if (hideSuperAdmin) query = query.neq('role', 'SUPER_ADMIN');
     if (q.status) query = query.eq('status', q.status);
     if (q.role) query = query.eq('role', q.role);
     if (q.departmentId) {

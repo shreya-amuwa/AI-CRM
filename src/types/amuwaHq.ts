@@ -65,6 +65,8 @@ export interface Employee {
   dateOfBirth?: string;
   bloodGroup?: string;
   emergencyContact?: string;
+  /** The member's own contact number (HR and the employee only). */
+  contactNumber?: string;
   designationType?: string;
 }
 

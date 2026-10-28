@@ -1,5 +1,6 @@
 import { getSupabase } from '../services/supabaseClient';
 import type { Employee, EmployeeStatus } from '../types/amuwaHq';
+import { normalizePhone } from '../../shared/validation';
 
 /**
  * Data access for the HR dashboard (migration 20261013000100_hr_employee_directory.sql).
@@ -121,6 +122,7 @@ export async function fetchHrDirectory(): Promise<HrDirectory> {
     e.dateOfBirth = d.dateOfBirth ?? undefined;
     e.bloodGroup = d.bloodGroup ?? undefined;
     e.emergencyContact = d.emergencyContact ?? undefined;
+    e.contactNumber = d.contactNumber ?? undefined;
     e.designationType = d.designation ?? undefined;
   }
   return {
@@ -153,4 +155,20 @@ export async function saveHrRecord(emp: Employee): Promise<void> {
     updated_at: new Date().toISOString()
   });
   if (error) throw new Error(error.message);
+}
+
+/**
+ * HR staff / the Super Admin correct a member's own contact number and emergency contact number (each kept separate). Numbers are
+ * validated here for early feedback and again by the database function. Returns the saved numbers.
+ */
+export async function saveMemberContacts(profileId: string, contact: string | null, emergency: string | null): Promise<{ contactNumber: string | null; emergencyContact: string | null }> {
+  let normalised: string | null = null;
+  if (contact !== null) {
+    normalised = normalizePhone(contact);
+    if (!normalised) throw new Error('Enter a valid contact number with its country code (for example +91 98765 43210).');
+  }
+  const { data, error } = await db().rpc('hr_update_member_contacts', { p_profile: profileId, p_contact: normalised, p_emergency: emergency });
+  if (error) throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
+  const r = data as { contactNumber: string | null; emergencyContact: string | null };
+  return { contactNumber: r.contactNumber, emergencyContact: r.emergencyContact };
 }

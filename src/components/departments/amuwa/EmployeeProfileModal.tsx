@@ -15,6 +15,8 @@ interface EmployeeProfileModalProps {
   /** Offered in the profile (not in the list): make a trainee / intern a permanent employee, or mark as left. */
   onConvert?: () => void;
   onMarkLeft?: () => void;
+  /** HR staff / the Super Admin: correct the member's own contact number and emergency contact number (kept separate). */
+  onSaveContacts?: (contact: string | null, emergency: string | null) => Promise<{ contactNumber: string | null; emergencyContact: string | null }>;
 }
 
 export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
@@ -22,9 +24,28 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   onClose,
   onUpdateEmployee,
   onConvert,
-  onMarkLeft
+  onMarkLeft,
+  onSaveContacts
 }) => {
   const [emp, setEmp] = useState<Employee>(employee);
+  const [editContacts, setEditContacts] = useState(false);
+  const [contactDraft, setContactDraft] = useState({ contact: '', emergency: '' });
+  const [contactBusy, setContactBusy] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+  const saveContacts = async () => {
+    if (!onSaveContacts || contactBusy) return;
+    setContactBusy(true);
+    setContactError(null);
+    try {
+      const saved = await onSaveContacts(contactDraft.contact.trim() || null, contactDraft.emergency.trim() || null);
+      setEmp(e => ({ ...e, contactNumber: saved.contactNumber ?? undefined, emergencyContact: saved.emergencyContact ?? undefined }));
+      setEditContacts(false);
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : 'Could not save the numbers.');
+    } finally {
+      setContactBusy(false);
+    }
+  };
   const isTrainee = emp.status === 'Training / Probation' || emp.status === 'Intern';
   const hasLeft = emp.status === 'Left';
   const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<UploadedDocument | null>(null);
@@ -281,19 +302,44 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
             </div>
           </div>
 
-          {(emp.dateOfBirth || emp.bloodGroup || emp.emergencyContact || emp.designationType) && (
+          {(emp.dateOfBirth || emp.bloodGroup || emp.emergencyContact || emp.contactNumber || emp.designationType || onSaveContacts) && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200" aria-label="Personal details">
               {[
                 ['DESIGNATION', emp.designationType],
                 ['DATE OF BIRTH', emp.dateOfBirth ? formatDay(emp.dateOfBirth) : undefined],
                 ['BLOOD GROUP', emp.bloodGroup],
+                ['CONTACT NUMBER', emp.contactNumber],
                 ['EMERGENCY CONTACT', emp.emergencyContact]
               ].map(([label, value]) => (
                 <div key={label as string}>
                   <span className="text-[10px] font-mono text-slate-400 uppercase block">{label}</span>
-                  <span className="text-xs font-bold font-mono text-slate-900 mt-0.5 block">{value || '-'}</span>
+                  <span className="text-xs font-bold font-mono text-slate-900 mt-0.5 block" data-testid={`personal-${String(label).toLowerCase().replace(/\s+/g, '-')}`}>{value || '-'}</span>
                 </div>
               ))}
+              {onSaveContacts && !editContacts && (
+                <div className="col-span-2 sm:col-span-4">
+                  <button type="button" className="text-xs font-bold text-blue-600 hover:underline" data-testid="edit-contacts" onClick={() => { setContactDraft({ contact: emp.contactNumber || '', emergency: emp.emergencyContact || '' }); setContactError(null); setEditContacts(true); }}>
+                    Edit contact numbers
+                  </button>
+                </div>
+              )}
+              {onSaveContacts && editContacts && (
+                <div className="col-span-2 sm:col-span-4 grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="contacts-form">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Team member contact number
+                    <input type="tel" className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm" value={contactDraft.contact} onChange={e => setContactDraft(d => ({ ...d, contact: e.target.value }))} placeholder="+91 98765 43210" autoComplete="off" />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Emergency contact number
+                    <input type="tel" className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm" value={contactDraft.emergency} onChange={e => setContactDraft(d => ({ ...d, emergency: e.target.value }))} placeholder="+91 98765 43210" autoComplete="off" />
+                  </label>
+                  {contactError && <p role="alert" className="sm:col-span-2 text-xs text-rose-600">{contactError}</p>}
+                  <div className="sm:col-span-2 flex gap-2">
+                    <button type="button" disabled={contactBusy} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50" onClick={() => void saveContacts()}>{contactBusy ? 'Saving…' : 'Save numbers'}</button>
+                    <button type="button" disabled={contactBusy} className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold" onClick={() => setEditContacts(false)}>Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
