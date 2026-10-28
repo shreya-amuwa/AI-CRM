@@ -285,3 +285,14 @@ reset role;
 select test.check((select count(*) >= 1 from notifications where type = 'TC_FOLLOWUP_DUE' and entity_id = (select id from mc where name = 'ai1') and recipient_id = test.id('dh_wab')),
   'the Department Head is told that a consultation is due and nobody can take it');
 update profiles set status = 'ACTIVE' where is_technical_consultant and department_id = (select department_id from customers where id = (select id from mc where name = 'wa1'));
+
+\echo '   running the migration once more, with data in place, changes nothing'
+create temp table mv_before as
+  select (select jsonb_agg(jsonb_build_array(customer_id, verification_route) order by customer_id) from customer_onboarding where verification_route is not null) as routes,
+         (select count(*) from tc_followups) as followups, (select count(*) from verification_notes) as notes,
+         (select tc_followup_delay_days from workflow_settings where id) as delay;
+\i supabase/migrations/20261204000200_meta_verifier_workflow.sql
+select test.check((select routes = (select jsonb_agg(jsonb_build_array(customer_id, verification_route) order by customer_id) from customer_onboarding where verification_route is not null) from mv_before),
+  'every customer keeps the route it was pinned to (a re-run never moves work in flight)');
+select test.check((select followups = (select count(*) from tc_followups) and notes = (select count(*) from verification_notes) and delay is not distinct from (select tc_followup_delay_days from workflow_settings where id) from mv_before),
+  'and no follow-up, note or setting was added, lost or changed');

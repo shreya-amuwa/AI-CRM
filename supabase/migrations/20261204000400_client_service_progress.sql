@@ -254,9 +254,7 @@ end $$;
 revoke all on function private.tg_client_progress_onboarding() from public, anon, authenticated;
 drop trigger if exists customer_onboarding_client_progress on public.customer_onboarding;
 create trigger customer_onboarding_client_progress after update on public.customer_onboarding
-  for each row when (old.forwarded_to_support_at is distinct from new.forwarded_to_support_at or old.handover_stage is distinct from new.handover_stage
-                     or old.client_status is distinct from new.client_status or old.meta_completed_at is distinct from new.meta_completed_at)
-  execute function private.tg_client_progress_onboarding();
+  for each row execute function private.tg_client_progress_onboarding();
 
 create or replace function private.tg_client_progress_service()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -280,8 +278,6 @@ end $$;
 revoke all on function private.tg_client_progress_service() from public, anon, authenticated;
 drop trigger if exists customer_services_client_progress on public.customer_services;
 create trigger customer_services_client_progress after update on public.customer_services
-  for each row when (old.sent_to_delivery_at is distinct from new.sent_to_delivery_at or old.activated_at is distinct from new.activated_at
-                     or old.service_status is distinct from new.service_status)
-  execute function private.tg_client_progress_service();
+  for each row execute function private.tg_client_progress_service();
 
 notify pgrst, 'reload schema';
