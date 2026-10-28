@@ -14,6 +14,9 @@ reset role;
 \i supabase/migrations/20261103000100_order_tax_basis.sql
 -- the newest money model (GST belongs to the order) goes back on top of the older definitions re-applied above
 \i supabase/migrations/20261201000100_order_level_gst.sql
+-- and the role / provisioning changes on top of those (Meta Verifier, Accounts-owned client logins)
+\i supabase/migrations/20261205000200_meta_verifier_workflow.sql
+\i supabase/migrations/20261205000300_accounts_client_provisioning.sql
 create temp table jc (name text primary key, id uuid);
 create temp table jr (name text primary key, data jsonb);
 create temp table jq (name text primary key, id uuid default gen_random_uuid());
@@ -138,7 +141,7 @@ select test.check((customer_journey_info((select id from jc where name = 'S1')) 
                and (customer_journey_info((select id from jc where name = 'S1')) ->> 'step') = 'PENDING_PAYMENT'
                and (customer_journey_info((select id from jc where name = 'S1')) -> 'can' ->> 'createLogin') = 'false',
   'the Meta Ads customer follows the direct journey; with no verified payment the login cannot be made yet');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com')$$, 'no login before a payment is verified', 'Verify a payment first');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'no login before a payment is verified', 'Verify a payment first');
 -- a pending (unverified) payment does not count
 select accounts_record_payment((select id from jc where name = 'S1'), 'PART', 3000, 'CASH', null, null, 'cash at the desk', false);
 reset role;
@@ -147,7 +150,7 @@ set role authenticated;
 select test.login('acc_m');
 select test.admin_check($q$select amount_verified = 0 and amount_received = 3000 and payment_status = 'PENDING_VERIFICATION' from customers where id = (select id from jc where name = 'S1')$q$, 'an unverified payment is recorded but not counted as received');
 select test.must_fail($$select accounts_confirm_and_return((select id from jc where name = 'S1'))$$, 'an unverified payment cannot confirm the customer', 'verify the payment');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com')$$, 'and gives no login either', 'Verify a payment first');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'and gives no login either', 'Verify a payment first');
 select accounts_verify_payment((select id from jpay where name = 'S1p'), 'seen in the till');
 select test.admin_check($q$select amount_verified = 3000 and payment_status = 'PARTIALLY_PAID' from customers where id = (select id from jc where name = 'S1')$q$, 'verified: part paid');
 select test.check((customer_journey_info((select id from jc where name = 'S1')) ->> 'step') = 'LOGIN_PENDING'
@@ -158,22 +161,35 @@ select test.must_fail($$select accounts_confirm_and_return((select id from jc wh
 
 -- who may create the login
 select test.login('tm_a');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com')$$, 'a Sales member cannot create the login', 'Only the Accounts department');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'a Sales member cannot create the login', 'Only the Accounts department');
 select test.login('sup_plain');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com')$$, 'nor the Support member who owns the customer', 'Only the Accounts department');
-select test.must_fail($$select record_client_account((select id from jc where name = 'S1'), gen_random_uuid(), 'x@example.com', null)$$, 'nor record a login', 'not found');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'nor the Support member who owns the customer', 'Only the Accounts department');
+select test.must_fail($$select record_client_account((select id from jc where name = 'S1'), gen_random_uuid(), 'x@example.com')$$, 'nor record a login', 'not found');
 select test.login('tc_dash');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com')$$, 'nor a Technical Consultant', 'Only the Accounts department');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'nor a Technical Consultant', 'Only the Accounts department');
 select test.must_fail($$select accounts_client_login_failed((select id from jc where name = 'S1'), 'x')$$, 'nor mark it failed', 'Only the Accounts department');
 
+select test.must_fail($$select accounts_set_customer_email((select id from jc where name = 'S1'), 'x@example.com', 'typo')$$, 'nor correct the e-mail', 'Only the Accounts department');
 select test.login('acc_m');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'not-an-email')$$, 'a bad e-mail is refused', 'valid e-mail');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'a@amuwa.com')$$, 'an e-mail that already has a login is refused', 'already has a login');
+-- the login is made with the e-mail ON THE RECORD; Accounts can correct a wrong one first (reason required, audited)
+select test.must_fail($$select accounts_set_customer_email((select id from jc where name = 'S1'), 'not-an-email', 'typo')$$, 'a bad e-mail is refused', 'valid e-mail');
+select test.must_fail($$select accounts_set_customer_email((select id from jc where name = 'S1'), 'a@amuwa.com', 'typo')$$, 'an e-mail that already has a login is refused', 'already has a login');
+select test.must_fail($$select accounts_set_customer_email((select id from jc where name = 'S1'), 'sushma.client@example.com', '')$$, 'a reason is required', 'Give the reason');
 select test.admin_check($q$select count(*) = 0 from customer_client_accounts where customer_id = (select id from jc where name = 'S1')$q$, 'nothing was created by the refusals');
-select accounts_client_login_begin((select id from jc where name = 'S1'), 'Sushma.Client@Example.com');
+reset role;
+update customers set email = null where id = (select id from jc where name = 'S1');
+set role authenticated;
+select test.login('acc_m');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'no login without an e-mail on the record', 'no e-mail address');
+select test.check((accounts_provisioning_queue('ALL', 'Sushma', 1, 20) -> 'items' -> 0 ->> 'emailProblem') = 'MISSING'
+               and (accounts_provisioning_queue('ALL', 'Sushma', 1, 20) -> 'items' -> 0 -> 'can' ->> 'create') = 'false', 'the queue says why it cannot be created');
+select accounts_set_customer_email((select id from jc where name = 'S1'), 'Sushma.Client@Example.com', 'The customer gave this address on the call');
+select test.admin_check($q$select email = 'sushma.client@example.com' from customers where id = (select id from jc where name = 'S1')$q$, 'the corrected e-mail is stored in lower case');
+select test.admin_check($q$select count(*) = 1 and bool_and(metadata::text not like '%sushma.client@example.com%') from audit_logs where action = 'CLIENT_EMAIL_CORRECTED' and entity_id = (select id from jc where name = 'S1')$q$, 'the correction is audited without the full address');
+select test.check((accounts_client_login_begin((select id from jc where name = 'S1')) ->> 'email') = 'sushma.client@example.com', 'the login is started with the e-mail on the record');
 select test.check((customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'status') = 'PENDING'
                and (customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'email') = 'sushma.client@example.com', 'login being created: pending, e-mail stored in lower case');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com')$$, 'a second click while it is being created is refused', 'already being created');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'a second click while it is being created is refused', 'already being created');
 select accounts_client_login_failed((select id from jc where name = 'S1'), 'The sign-in service did not answer.');
 select test.check((customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'status') = 'FAILED'
                and (customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'lastError') = 'The sign-in service did not answer.'
@@ -181,7 +197,7 @@ select test.check((customer_journey_info((select id from jc where name = 'S1')) 
   'a failure is shown with its reason');
 select test.must_fail($$select accounts_confirm_and_return((select id from jc where name = 'S1'))$$, 'a failed login does not let the customer through', 'dashboard login');
 -- retry: allowed, counted
-select accounts_client_login_begin((select id from jc where name = 'S1'), 'sushma.client@example.com');
+select accounts_client_login_begin((select id from jc where name = 'S1'));
 select test.check((customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'attempts') = '2', 'the retry is counted');
 reset role;
 -- the server creates the Auth user (as GoTrue would), then records it
@@ -189,17 +205,47 @@ select test.create_auth_user('s1_client', 'sushma.client@example.com', '{}'::jso
   jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jc where name = 'S1')));
 set role authenticated;
 select test.login('acc_m');
-select test.must_fail($$select record_client_account((select id from jc where name = 'S1'), test.id('s1_client'), 'someone.else@example.com', null)$$, 'a login for another e-mail is not accepted', 'not created for this customer');
-select record_client_account((select id from jc where name = 'S1'), test.id('s1_client'), 'sushma.client@example.com', null);
+select test.must_fail($$select record_client_account((select id from jc where name = 'S1'), test.id('s1_client'), 'someone.else@example.com')$$, 'a login for another e-mail is not accepted', 'e-mail on the customer record');
+select record_client_account((select id from jc where name = 'S1'), test.id('s1_client'), 'sushma.client@example.com');
 select test.check((customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'status') = 'CREATED'
                and (customer_journey_info((select id from jc where name = 'S1')) -> 'clientLogin' ->> 'email') = 'sushma.client@example.com'
                and (customer_journey_info((select id from jc where name = 'S1')) ->> 'step') = 'LOGIN_CREATED'
                and (customer_journey_info((select id from jc where name = 'S1')) -> 'can' ->> 'returnToSales') = 'true'
                and (customer_journey_info((select id from jc where name = 'S1')) -> 'can' ->> 'createLogin') = 'false',
   'login created: shown as created, Return to Sales is now offered');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'), 'another@example.com')$$, 'a second login for the same customer is refused', 'already has a login');
-select test.must_fail($$select record_client_account((select id from jc where name = 'S1'), test.id('s1_client'), 'sushma.client@example.com', null)$$, 'recording it twice is refused', 'duplicate|already');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'S1'))$$, 'a second login for the same customer is refused', 'already has a login');
+select test.must_fail($$select record_client_account((select id from jc where name = 'S1'), test.id('s1_client'), 'sushma.client@example.com')$$, 'recording it twice is refused', 'Start creating|duplicate|already');
 select test.admin_check($q$select count(*) = 1 from customer_client_accounts where customer_id = (select id from jc where name = 'S1')$q$, 'exactly one login exists');
+select test.admin_check($q$select count(*) = 2 and bool_and(status = 'QUEUED') and bool_and(secret is null) from automation_jobs where customer_id = (select id from jc where name = 'S1') and stage = 'ACCOUNT_CREATED'$q$,
+  'one account-created e-mail and one WhatsApp were queued, only after the login was saved, with no password');
+select test.check((accounts_provisioning_queue('CREATED', null, 1, 20) -> 'items' -> 0 ->> 'customerId') = (select id::text from jc where name = 'S1')
+               and (accounts_provisioning_queue('ALL', null, 1, 20) -> 'counts' ->> 'CREATED')::int >= 1
+               and (accounts_provisioning_queue('CREATED', null, 1, 20) -> 'items' -> 0 -> 'notification' -> 'email' ->> 'status') = 'QUEUED'
+               and (accounts_provisioning_queue('CREATED', null, 1, 20) -> 'items' -> 0 -> 'can' ->> 'resend') = 'true',
+  'the Accounts queue shows the login, its time and the state of the e-mail');
+select test.must_fail($$select accounts_resend_account_email((select id from jc where name = 'S1'))$$, 'the e-mail is not sent again while it is on its way', 'already on its way');
+reset role;
+update automation_jobs set status = 'FAILED', detail = 'HTTP 503', attempts = 5 where customer_id = (select id from jc where name = 'S1') and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL';
+set role authenticated;
+select test.login('acc_m');
+select accounts_resend_account_email((select id from jc where name = 'S1'));
+select test.admin_check($q$select count(*) = 1 and bool_and(status = 'QUEUED' and attempts = 0) from automation_jobs where customer_id = (select id from jc where name = 'S1') and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'$q$,
+  'a failed e-mail is retried as the same job (no duplicate)');
+reset role;
+update automation_jobs set status = 'SENT', sent_at = now() where customer_id = (select id from jc where name = 'S1') and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL';
+set role authenticated;
+select test.login('acc_m');
+select test.must_fail($$select accounts_resend_account_email((select id from jc where name = 'S1'))$$, 'a delivered e-mail is not repeated at once', 'sent a moment ago');
+select test.login('tc_dash');
+select test.must_fail($$select accounts_resend_account_email((select id from jc where name = 'S1'))$$, 'the Technical Consultant cannot resend it', 'Only the Accounts department');
+select test.must_fail($$select accounts_provisioning_queue('ALL', null, 1, 20)$$, 'nor read the queue', 'Only the Accounts department');
+reset role;
+update automation_jobs set sent_at = now() - interval '20 minutes' where customer_id = (select id from jc where name = 'S1') and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL';
+set role authenticated;
+select test.login('acc_m');
+select accounts_resend_account_email((select id from jc where name = 'S1'));
+select test.admin_check($q$select count(*) = 2 and count(distinct dedupe_key) = 2 from automation_jobs where customer_id = (select id from jc where name = 'S1') and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'$q$,
+  'an older delivered e-mail can be sent again, as a new numbered job');
 reset role;
 select test.check((select status = 'CREATED' and attempts = 2 and last_error is null from customer_client_provisioning where customer_id = (select id from jc where name = 'S1')), 'the provisioning record settled as created after two attempts');
 select test.check((select raw_app_meta_data ->> 'client_customer_id' = (select id::text from jc where name = 'S1') from auth.users where id = test.id('s1_client')), 'the login is tied to this customer only');
@@ -322,10 +368,20 @@ insert into jc select 'T1', create_lead('{"name":"Tara Iyer","company":"Iyer Gar
 select send_lead_to_accounts((select id from jc where name = 'T1'), 6000, null);
 select test.login('acc_m');
 select accounts_record_payment((select id from jc where name = 'T1'), 'PART', 2000, 'UPI', 'T1-UPI', null, null, true);
-select test.check((customer_journey_info((select id from jc where name = 'T1')) ->> 'journey') = 'TECHNICAL' and (customer_journey_info((select id from jc where name = 'T1')) -> 'can' ->> 'createLogin') = 'false'
+select test.check((customer_journey_info((select id from jc where name = 'T1')) ->> 'journey') = 'TECHNICAL' and (customer_journey_info((select id from jc where name = 'T1')) -> 'can' ->> 'createLogin') = 'true'
                and (customer_journey_info((select id from jc where name = 'T1')) -> 'can' ->> 'returnToSales') = 'true',
-  'a WhatsApp API customer is TECHNICAL: no login at Accounts, and Return to Sales needs no login');
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'T1'), 'tara.client@example.com')$$, 'Accounts cannot create the login of a Technical Consultant customer', 'Technical Consultant');
+  'a WhatsApp API customer is TECHNICAL: Accounts creates the login too, and Return to Sales needs no login');
+select test.check((accounts_client_login_begin((select id from jc where name = 'T1')) ->> 'email') = 'tara@iyergarments.example', 'Accounts creates the login of a Technical Consultant customer from the e-mail on the record');
+reset role;
+select test.create_auth_user('t1_client', 'tara@iyergarments.example', '{}'::jsonb,
+  jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jc where name = 'T1')));
+set role authenticated;
+select test.login('acc_m');
+select record_client_account((select id from jc where name = 'T1'), test.id('t1_client'), 'tara@iyergarments.example');
+select test.admin_check($q$select count(*) = 2 from automation_jobs where customer_id = (select id from jc where name = 'T1') and stage = 'ACCOUNT_CREATED'$q$, 'and the account-created messages follow');
+select test.login('tc_dash');
+select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'T1'))$$, 'the Technical Consultant has no part in it', 'Only the Accounts department');
+select test.login('acc_m');
 select accounts_confirm_and_return((select id from jc where name = 'T1'));
 select test.admin_check($q$select lifecycle_stage = 'ONBOARDING' and payment_workflow = 'PAYMENT_CONFIRMED' from customers where id = (select id from jc where name = 'T1')$q$, 'the existing return to Sales still works');
 reset role;
@@ -355,7 +411,7 @@ select test.check((customer_journey_info((select id from jc where name = 'M1')) 
 select send_lead_to_accounts((select id from jc where name = 'M1'), 12000, null);
 select test.login('acc_m');
 select accounts_record_payment((select id from jc where name = 'M1'), 'FULL', 12000, 'BANK_TRANSFER', 'M1-NEFT', null, null, true);
-select test.must_fail($$select accounts_client_login_begin((select id from jc where name = 'M1'), 'meera.client@example.com')$$, 'Accounts does not create the login of a mixed order', 'Technical Consultant');
+select test.check((customer_journey_info((select id from jc where name = 'M1')) -> 'can' ->> 'createLogin') = 'true', 'Accounts may create the login of a mixed order too');
 select accounts_confirm_and_return((select id from jc where name = 'M1'));
 reset role;
 insert into customer_onboarding_entries (customer_id, item_code, value, status, saved_by, reviewed_by, reviewed_at)

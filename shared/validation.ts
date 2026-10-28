@@ -199,11 +199,15 @@ export const userCreateSchema = z
     position: optionalText(120),
     /** Team member of a support team who opens the Technical Consultant dashboard. */
     technicalConsultant: z.boolean().optional(),
+    /** Team member of a support team who does the first verification of WhatsApp customers (not also a Technical Consultant). */
+    metaVerifier: z.boolean().optional(),
     /** Sales role of a Sales team member (Telecaller, ...). Only a Team Member of a Sales team has one. */
     salesSubRole: z.enum(SALES_SUB_ROLES).optional(),
     /** Sales or Support side of a Department Head (a department has one head for each). */
     headDivision: z.enum(HEAD_DIVISIONS).optional(),
-    /** More (department, function) pairs the head works in, besides their own department and side (a shared head, or one person handling Sales and Support). Super Admin only. */
+    /** An Operations Head oversees several departments (the Super Admin makes one; a plain Department Head works in one department). */
+    operationsHead: z.boolean().optional(),
+    /** More (department, function) pairs the head works in, besides their own department and side. Another DEPARTMENT is for an Operations Head only. Super Admin only. */
     additionalAccess: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(40).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
@@ -220,6 +224,18 @@ export const userCreateSchema = z
   .refine(u => !u.additionalAccess?.length || u.role === 'DEPARTMENT_HEAD', {
     message: 'Only a Department Head can work in more than one department or function.',
     path: ['additionalAccess']
+  })
+  .refine(u => !u.metaVerifier || u.role === 'TEAM_MEMBER', {
+    message: 'A Meta Verifier is created as a team member of a support team.',
+    path: ['role']
+  })
+  .refine(u => !(u.metaVerifier && u.technicalConsultant), {
+    message: 'A person is either a Meta Verifier or a Technical Consultant.',
+    path: ['metaVerifier']
+  })
+  .refine(u => !u.operationsHead || u.role === 'DEPARTMENT_HEAD', {
+    message: 'Only a Department Head can be an Operations Head.',
+    path: ['operationsHead']
   })
   .refine(u => !u.headDivision || u.role === 'DEPARTMENT_HEAD', {
     message: 'Only a Department Head is a Sales or Support head.',
@@ -263,6 +279,8 @@ export const userAssignSchema = z
   .strict();
 
 export const technicalConsultantSchema = z.object({ value: z.boolean() }).strict();
+export const metaVerifierSchema = z.object({ value: z.boolean() }).strict();
+export const operationsHeadSchema = z.object({ value: z.boolean(), note: optionalText(500) }).strict();
 
 export const profileSelfUpdateSchema = z
   .object({
@@ -591,11 +609,20 @@ export const conversationSchema = z.object({ note: trimmed(5000).min(1, 'Write w
 
 const wholeRupees = (message: string) => z.coerce.number().positive(message).int('Enter the amount in whole rupees (no paise).').max(1e12);
 
-/** Accounts creates the dashboard login of a customer whose services need no Technical Consultant. */
-export const accountsClientLoginSchema = z
+/** Creating the login takes no input at all: the e-mail is the one on the customer record. */
+export const accountsClientLoginSchema = z.object({}).strict();
+/** Accounts' client-login queue. The login's e-mail is never part of a request: it is the one on the customer record. */
+export const provisioningQuerySchema = z.object({
+  status: z.enum(['ALL', 'NOT_STARTED', 'PENDING', 'FAILED', 'CREATED']).default('ALL'),
+  search: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+/** Accounts corrects a wrong or missing e-mail on the customer record before a login is made (audited). */
+export const customerEmailCorrectionSchema = z
   .object({
     email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254),
-    password: z.string().min(10, 'The password must be at least 10 characters.').max(72)
+    reason: z.string().trim().min(3, 'Give the reason for changing the e-mail.').max(300)
   })
   .strict();
 export const sendToDeliverySchema = z.object({ note: optionalText(1000) }).strict();
@@ -1680,3 +1707,22 @@ export const salesReportsQuerySchema = z
   })
   .strict();
 export const salesIncomeQuerySchema = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
+
+// ---- Meta Verifier workflow -----------------------------------------------------------------------------------------------------------
+export const verificationNoteSchema = z
+  .object({ body: trimmed(2000).min(1, 'Write the note.'), outcome: z.enum(['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED']).default('NOTE') })
+  .strict();
+export const rerouteVerificationSchema = z.object({ route: z.enum(['META', 'TECHNICAL']), reason: trimmed(500).min(1, 'Give the reason.') }).strict();
+export const serviceMetaVerificationSchema = z.object({ value: z.boolean() }).strict();
+export const followUpListQuerySchema = z.object({ scope: z.enum(['OPEN', 'DONE', 'ALL']).default('OPEN') }).strict();
+export const followUpContactSchema = z
+  .object({
+    channel: z.enum(['CALL', 'WHATSAPP', 'EMAIL', 'MEETING', 'OTHER'], { errorMap: () => ({ message: 'Choose how you contacted the customer.' }) }),
+    outcome: z.enum(['NO_ANSWER', 'CALL_BACK', 'CONTACTED', 'ADDON_INTERESTED', 'NOT_INTERESTED', 'COMPLETED'], { errorMap: () => ({ message: 'Choose the outcome.' }) }),
+    note: optionalText(2000),
+    nextFollowUpAt: z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true }).nullable().optional())
+  })
+  .strict()
+  .refine(b => !['NO_ANSWER', 'CALL_BACK'].includes(b.outcome) || !!b.nextFollowUpAt, { message: 'Give the date of the next follow-up.', path: ['nextFollowUpAt'] });
+export const followUpAssignSchema = z.object({ profileId: uuidSchema }).strict();
+export const tcFollowupDelaySchema = z.object({ days: z.number().int().min(1, 'Enter 1 to 365 days.').max(365, 'Enter 1 to 365 days.').nullable() }).strict();

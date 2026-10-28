@@ -104,7 +104,13 @@ const MainAppContent: React.FC = () => {
       return;
     }
 
-    if (user.role === 'technical-support') {
+    if (user.role === 'meta-verifier') {
+      const target = '/meta-verifier/dashboard';
+      if (window.location.pathname !== target) {
+        navigateTo(target);
+        setRoute(parseCurrentRoute());
+      }
+    } else if (user.role === 'technical-support') {
       const target = '/technical-support/dashboard';
       if (window.location.pathname !== target) {
         navigateTo(target);
@@ -183,7 +189,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'telecaller' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -230,6 +236,10 @@ const MainAppContent: React.FC = () => {
   // Step 1.4: Dedicated Technical Support Dashboard (Wabastore Support Sub-Department)
   if (user.role === 'technical-support') {
     return <TechnicalSupportDashboard currentUserId={user.id} userName={user.name} />;
+  }
+  // The Meta Verifier does the first WhatsApp verification (same working screens, without the consultant's add-ons and notes).
+  if (user.role === 'meta-verifier') {
+    return <TechnicalSupportDashboard mode="verifier" currentUserId={user.id} userName={user.name} />;
   }
 
   // Step 1.5: Dedicated Team Member Dashboard

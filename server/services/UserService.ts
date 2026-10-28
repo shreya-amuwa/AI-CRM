@@ -1,12 +1,14 @@
-import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, Paginated, Profile } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile } from '../../shared/contracts.js';
 import {
   departmentAccessApplySchema,
   departmentAccessSchema,
   profileSelfUpdateSchema,
   headDivisionSchema,
+  operationsHeadSchema,
   salesSubRoleSchema,
   userAssignSchema,
   technicalConsultantSchema,
+  metaVerifierSchema,
   userCreateSchema,
   userListQuerySchema,
   userStatusSchema,
@@ -57,12 +59,16 @@ export class UserService {
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }
+    if (input.metaVerifier && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
+      throw new AppError('VALIDATION_ERROR', 'A Meta Verifier must be in a support team.');
+    }
     if (input.salesSubRole) {
       // Only the Super Admin and the Department Head give a Sales role, and only to a member of a Sales team.
       if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin or the Department Head can set a Sales role.');
       if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
     }
-    const { details, salesSubRole, additionalAccess, ...account } = input;
+    const { details, salesSubRole, additionalAccess, operationsHead, ...account } = input;
+    if (operationsHead && actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can make an Operations Head.');
     // One account for a head who works in several departments / both functions: every extra pair is checked BEFORE the account exists
     // (a wrong pair never leaves a half-made user), and given right after it by the Super Admin's own database call.
     const extra = additionalAccess?.length ? [...new Map(additionalAccess.map(a => [`${a.departmentId}:${a.division}`, a])).values()] : [];
@@ -70,8 +76,23 @@ export class UserService {
       if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can give a Department Head more departments.');
       const problems = await this.profiles.checkDepartmentAccess(extra);
       if (problems.length) throw new AppError('VALIDATION_ERROR', problems[0].problem);
+      // another DEPARTMENT is for an Operations Head; the other function of the head's own department is not (the database enforces the same rule)
+      if (!operationsHead && account.departmentId) {
+        const base = await this.profiles.baseDepartments([account.departmentId, ...extra.map(a => a.departmentId)]);
+        if (extra.some(a => base.get(a.departmentId) !== base.get(account.departmentId!))) {
+          throw new AppError('VALIDATION_ERROR', 'A Department Head works in one department. To oversee several departments, make this person an Operations Head.');
+        }
+      }
     }
     const id = await this.authAdmin.createProvisionedUser({ ...account, provisionedBy: actor.id });
+    if (operationsHead) {
+      try {
+        await this.profiles.setOperationsHead(id, true, null);
+      } catch (err) {
+        await this.authAdmin.deleteUser(id).catch(() => undefined);
+        throw err;
+      }
+    }
     for (const a of extra) {
       try {
         await this.profiles.setDepartmentAccess(id, a.departmentId, a.division, true);
@@ -170,6 +191,35 @@ export class UserService {
     const userId = parse(uuidSchema, id);
     const { pairs } = parse(departmentAccessApplySchema, body);
     return this.profiles.applyDepartmentAccess(userId, pairs);
+  }
+
+  /** Make a Department Head an Operations Head (or take it back): Super Admin only, audited by the database. */
+  async setOperationsHead(actor: Actor, id: string, body: unknown): Promise<Profile> {
+    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can make or remove an Operations Head.');
+    const userId = parse(uuidSchema, id);
+    const { value, note } = parse(operationsHeadSchema, body);
+    await this.profiles.setOperationsHead(userId, value, note ?? null);
+    return this.profiles.findById(userId);
+  }
+
+  /** Super Admin: Department Heads that work in several departments, and which of them still need a decision. */
+  async operationsHeadReview(actor: Actor): Promise<OperationsHeadReviewItem[]> {
+    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can see this.');
+    return this.profiles.operationsHeadReview();
+  }
+
+  /** Operations Head (and the Super Admin): the departments side by side. */
+  operationsOverview(): Promise<OperationsOverviewRow[]> {
+    return this.profiles.operationsOverview();
+  }
+
+  /** Make a support team member a Meta Verifier (or take it back). The database checks who may and that the person is not a Technical Consultant. */
+  async setMetaVerifier(actor: Actor, id: string, body: unknown): Promise<Profile> {
+    assertManager(actor);
+    const userId = parse(uuidSchema, id);
+    const { value } = parse(metaVerifierSchema, body);
+    await this.profiles.setMetaVerifier(userId, value);
+    return this.profiles.findById(userId);
   }
 
   async setTechnicalConsultant(actor: Actor, id: string, body: unknown): Promise<Profile> {

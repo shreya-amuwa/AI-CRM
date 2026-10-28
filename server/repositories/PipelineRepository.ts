@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StorageProviderName } from './StorageRepository.js';
 import type {
+  ProvisioningQueue,
   CustomerJourneyInfo,
   DeliveryQueueItem,
   ServiceJourneySetting,
@@ -375,12 +376,8 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('record_customer_payment', { p_id: id, p_amount: amount, p_method: method ?? null }));
   }
 
-  async assertClientAccountAllowed(customerId: string, email: string): Promise<void> {
-    unwrap(await this.db.rpc('assert_client_account_allowed', { p_customer: customerId, p_email: email }));
-  }
-
-  async recordClientAccount(customerId: string, userId: string, email: string, secret: string | null): Promise<void> {
-    unwrap(await this.db.rpc('record_client_account', { p_customer: customerId, p_user_id: userId, p_email: email, p_secret: secret }));
+  async recordClientAccount(customerId: string, userId: string, email: string): Promise<void> {
+    unwrap(await this.db.rpc('record_client_account', { p_customer: customerId, p_user_id: userId, p_email: email }));
   }
 
   async resendClientMessages(customerId: string): Promise<{ stage: string; queued: number }> {
@@ -670,8 +667,25 @@ export class PipelineRepository {
     return unwrap(await this.db.rpc('customer_journey_info', { p_customer: customerId })) as CustomerJourneyInfo;
   }
 
-  async accountsClientLoginBegin(customerId: string, email: string): Promise<void> {
-    unwrap(await this.db.rpc('accounts_client_login_begin', { p_customer: customerId, p_email: email }));
+  /** Marks the attempt and returns the e-mail ON THE CUSTOMER RECORD (the request never carries one). */
+  async accountsClientLoginBegin(customerId: string): Promise<{ email: string; name: string; businessName: string }> {
+    return unwrap(await this.db.rpc('accounts_client_login_begin', { p_customer: customerId })) as { email: string; name: string; businessName: string };
+  }
+
+  async accountsSetCustomerEmail(customerId: string, email: string, reason: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_set_customer_email', { p_customer: customerId, p_email: email, p_reason: reason }));
+  }
+
+  async accountsResendAccountEmail(customerId: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_resend_account_email', { p_customer: customerId }));
+  }
+
+  async accountsProvisioningQueue(q: { status: string; search?: string; page: number; pageSize: number }): Promise<ProvisioningQueue> {
+    return unwrap(await this.db.rpc('accounts_provisioning_queue', { p_status: q.status, p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })) as ProvisioningQueue;
+  }
+
+  async markMetaVerificationCompleted(customerId: string): Promise<void> {
+    unwrap(await this.db.rpc('mark_meta_verification_completed', { p_customer: customerId }));
   }
 
   async accountsClientLoginFailed(customerId: string, message: string): Promise<void> {

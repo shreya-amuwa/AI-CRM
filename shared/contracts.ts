@@ -59,6 +59,7 @@ export type DefaultDashboard =
   | 'sales-member'
   | 'support-member'
   | 'technical-consultant'
+  | 'meta-verifier'
   | 'telecaller'
   | 'business-associate'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
@@ -117,6 +118,10 @@ export interface Profile {
   role: Role;
   /** Team member of a support team who opens the Technical Consultant dashboard. */
   isTechnicalConsultant: boolean;
+  /** Team member of a support team who does the first verification of WhatsApp customers (never also a Technical Consultant). */
+  isMetaVerifier?: boolean;
+  /** A Department Head who oversees the several departments the Super Admin assigned (a Department Head otherwise: one department). */
+  isOperationsHead?: boolean;
   /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
   salesSubRole?: SalesSubRole | null;
   /** Sales or Support side of a Department Head (null when not specified or not a Department Head). */
@@ -727,7 +732,7 @@ export interface AutomationStatus {
 /** Onboarding emails / WhatsApp sent from the CRM (Wabastore, WhatsApp API + Blue Tick). */
 export type ClientStage = 'WEBSITE_PENDING' | 'UNDER_REVIEW' | 'META_VERIFICATION' | 'COMPLETED';
 /** The steps above plus the one-off "your mini website is ready" message. */
-export type MessageStage = ClientStage | 'WEBSITE_READY';
+export type MessageStage = ClientStage | 'WEBSITE_READY' | 'ACCOUNT_CREATED';
 export interface ClientMessage {
   id: string;
   channel: 'EMAIL' | 'WHATSAPP';
@@ -1659,6 +1664,25 @@ export interface ClientService {
   monthly?: { month: string; metrics: Record<string, unknown> }[];
   campaignCount?: number;
 }
+/** One step of a purchased service's journey, in words written for the client (no staff, notes or internal records). */
+export interface ClientServiceStep {
+  key: string;
+  label: string;
+  state: 'DONE' | 'CURRENT' | 'UPCOMING';
+  /** When it was reached (done steps that have a date). */
+  at: string | null;
+  /** What is happening now / what the client may need to do (the current step only). */
+  hint: string | null;
+}
+export interface ClientServiceProgress {
+  code: string;
+  name: string;
+  status: ClientServiceStatus;
+  steps: ClientServiceStep[];
+  /** The key of the current step; null when the service is live. */
+  current: string | null;
+  headline: string | null;
+}
 export interface ClientServiceUsage {
   kind: 'WHATSAPP' | 'AI_CALLING' | 'RCS' | 'VOICE';
   metrics: Record<string, unknown>;
@@ -2085,6 +2109,8 @@ export interface ServiceJourneySetting {
   category: string;
   isActive: boolean;
   requiresTechnicalConsultant: boolean;
+  /** The first verification is done by a Meta Verifier (WhatsApp API, Blue Tick) instead of the Technical Consultant. */
+  requiresMetaVerification?: boolean;
   deliveryDepartmentId: string | null;
   deliveryDepartment: string | null;
 }
@@ -2111,6 +2137,42 @@ export interface CustomerJourneyInfo {
   delivery: { sent: number; total: number; unsentDirect: number; allSent: boolean };
   /** What the signed-in person may do now (the server decides; the screen only offers these). */
   can: { createLogin: boolean; returnToSales: boolean; verifyDocuments: boolean; sendToDelivery: boolean };
+}
+
+/** One message of the "account created" pair, as the Accounts queue shows it. */
+export interface AccountNotificationState {
+  status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
+  detail: string | null;
+  sentAt: string | null;
+  attempts: number;
+}
+export type ProvisioningFilter = 'ALL' | 'NOT_STARTED' | 'PENDING' | 'FAILED' | 'CREATED';
+export type ClientEmailProblem = 'MISSING' | 'INVALID' | 'IN_USE';
+
+/** A customer in the Accounts "Client logins" queue: the login Accounts creates for every service. */
+export interface ProvisioningRow {
+  customerId: string;
+  code: string | null;
+  name: string;
+  company: string | null;
+  /** The e-mail on the customer record - the only one the login is made with. */
+  email: string | null;
+  emailProblem: ClientEmailProblem | null;
+  order: { services: string[]; dealAmount: number | null; verified: number; balance: number; paymentStatus: PaymentStatus | null };
+  journey: JourneyKind;
+  status: ClientLoginStatus;
+  attempts: number;
+  lastError: string | null;
+  requestedAt: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+  createdBy: string | null;
+  loginEmail: string | null;
+  notification: { email: AccountNotificationState | null; whatsapp: AccountNotificationState | null } | null;
+  can: { create: boolean; fixEmail: boolean; resend: boolean };
+}
+export interface ProvisioningQueue extends Paginated<ProvisioningRow> {
+  counts: Record<ProvisioningFilter, number>;
 }
 
 export interface DeliveryQueueItem {
@@ -3610,4 +3672,88 @@ export interface SalesIncome {
   transactions: { date: string; customer: string; customerId: string; reference: string | null; type: string; service: string | null; amount: number; status: string; method: string | null; source: string }[];
   /** Expenses are recorded per department, not per Sales / Support side: there is no Sales-only figure, so this is null. */
   expenses: null;
+}
+
+/** The Super Admin's review of Department Heads who work in several departments (see docs/ROLES_AND_LIFECYCLE.md). */
+export interface OperationsHeadReviewItem {
+  profileId: string;
+  name: string;
+  email: string;
+  homeDepartment: string | null;
+  isOperationsHead: boolean;
+  /** Not an Operations Head, yet holds extra departments from before the role existed: kept as they were until the Super Admin decides. */
+  needsDecision: boolean;
+  extraDepartments: { departmentId: string; department: string; division: HeadDivision; transition: boolean }[];
+}
+
+/** One department in the Operations Head's overview. */
+export interface OperationsOverviewRow {
+  departmentId: string;
+  name: string;
+  slug: string;
+  people: number;
+  leads: number;
+  onboarding: number;
+  customers: number;
+  awaitingDepartmentHead: number;
+  withVerifier: number;
+}
+
+// ---- Meta Verifier, hand-over to the Department Head and the Technical Consultant's follow-up ---------------------------------------
+
+export type VerificationRoute = 'META' | 'TECHNICAL';
+export const VERIFICATION_OUTCOMES = ['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED'] as const;
+export type VerificationOutcome = (typeof VERIFICATION_OUTCOMES)[number];
+export interface VerificationNote {
+  id: string;
+  outcome: VerificationOutcome;
+  body: string;
+  createdAt: string;
+  author: string | null;
+}
+/** A customer already in verification whose services say another route than the one it has: for the Super Admin or the Department Head to decide. */
+export interface VerificationRouteReviewItem {
+  customerId: string;
+  name: string;
+  department: string;
+  route: VerificationRoute | null;
+  suggestedRoute: VerificationRoute;
+  reviewState: string | null;
+}
+
+export const FOLLOWUP_CHANNELS = ['CALL', 'WHATSAPP', 'EMAIL', 'MEETING', 'OTHER'] as const;
+export type FollowUpChannel = (typeof FOLLOWUP_CHANNELS)[number];
+export const TC_FOLLOWUP_OUTCOMES = ['NO_ANSWER', 'CALL_BACK', 'CONTACTED', 'ADDON_INTERESTED', 'NOT_INTERESTED', 'COMPLETED'] as const;
+export type TcFollowUpOutcome = (typeof TC_FOLLOWUP_OUTCOMES)[number];
+export type TcFollowUpStatus = 'AWAITING_CONFIGURATION' | 'SCHEDULED' | 'DUE' | 'DONE' | 'CANCELLED';
+export interface TcFollowUp {
+  id: string;
+  customerId: string;
+  customer: string;
+  contact: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  services: string[];
+  status: TcFollowUpStatus;
+  /** SCHEDULED whose date has passed shows as DUE even before the scheduled job has run. */
+  effectiveStatus: TcFollowUpStatus;
+  dueAt: string | null;
+  eligibleAt: string;
+  reason: string | null;
+  lastOutcome: TcFollowUpOutcome | null;
+  assignedTo: { id: string; name: string } | null;
+  handedOverBy: string | null;
+  handoverNote: string | null;
+  contacts: number;
+  lastContact: { at: string; outcome: TcFollowUpOutcome; channel: FollowUpChannel; note: string | null } | null;
+  cancelledReason: string | null;
+}
+export interface WorkflowSettings {
+  /** null until the Super Admin sets it: the business has not decided how many days the consultant waits. */
+  tcFollowupDelayDays: number | null;
+  updatedAt: string;
+  canEdit: boolean;
+  /** Follow-ups waiting for the delay to be set (in the caller's scope). */
+  awaiting: number;
 }

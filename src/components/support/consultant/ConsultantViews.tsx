@@ -45,6 +45,7 @@ import {
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
+import { VerificationNotes } from './VerificationNotes';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
 import { CustomerAddonDetails } from './CustomerAddonDetails';
@@ -263,7 +264,10 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
 // ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
-export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void }> = ({ id, onBack }) => {
+/** `verifier`: the Meta Verifier's first verification (no add-ons, no consultation notes); `consultant`: the Technical Consultant. */
+export type ConsultantMode = 'consultant' | 'verifier';
+
+export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void; mode?: ConsultantMode }> = ({ id, onBack, mode = 'consultant' }) => {
   const { byCode } = useServiceCatalog();
   const [c, setC] = useState<PipelineCustomerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -309,10 +313,9 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   /** Passed on to the Department Head (or further): the consultant's review is closed. */
   const handedOver = !!c.onboarding && c.onboarding.handoverStage !== 'CONSULTANT';
   const locked = waiting || handedOver;
-  const canSend = statusOf(c.onboarding) === 'AUTHORIZED' && !!c.handover?.clientAccount;
-  const sendReason = !c.handover?.clientAccount
-    ? "Create the client's login first"
-    : 'Authorize every document and detail first';
+  // The client login is Accounts' job; it is no condition for handing the customer over.
+  const canSend = statusOf(c.onboarding) === 'AUTHORIZED';
+  const sendReason = 'Authorize every document and detail first';
 
   const sendBack = async () => {
     setSendingBack(true);
@@ -529,7 +532,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           )}
         </section>
 
-        {c.onboarding?.addonRequestStatus && (
+        {mode === 'consultant' && c.onboarding?.addonRequestStatus && (
           <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" aria-labelledby="addons-heading">
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="addons-heading" className="font-bold text-slate-900">
@@ -557,16 +560,13 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           onChanged={changed}
         />
 
-        <ConsultationNotes customerId={c.id} canWrite services={c.services} />
+        {mode === 'verifier' ? (
+          <VerificationNotes customerId={c.id} canWrite={!handedOver} />
+        ) : (
+          <ConsultationNotes customerId={c.id} canWrite services={c.services} />
+        )}
 
-        <ClientLoginCard
-          customerId={c.id}
-          defaultEmail={c.email}
-          account={c.handover?.clientAccount}
-          locked={waiting || handedOver}
-          emailsLogin={!!messages?.automated}
-          onChanged={changed}
-        />
+        <ClientLoginCard account={c.handover?.clientAccount} />
       </div>
     </div>
   );

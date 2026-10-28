@@ -3,7 +3,8 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { automationSettings, liveChannels, PANEL_URLS, type AutomationSettings } from './config.js';
 import { postWhatsApp, sendEmail, type SendResult } from './providers.js';
 import { cleanPhone, EMAIL_RE, maskEmail, maskPhone, STAGE_LABEL, type ClientStage } from './rules.js';
-import { decryptSecret } from './secrets.js';
+import { renderClientPasswordEmail } from './templates.js';
+import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { renderAccountsEmail, renderEmail } from './templates.js';
 
 /**
@@ -73,6 +74,32 @@ async function processAccountsMail(s: AutomationSettings, job: ClaimedJob): Prom
   return fromResult(await sendEmail(s, { email: to, name: x.toName || to }, mail), to, `Payment request email sent to ${maskEmail(to)}`);
 }
 
+/**
+ * "Your login is ready": the client's one-time set-password link. The link is made now, at send time (it expires, so a retry makes a
+ * fresh one) and is never stored or logged. Goes to the login's own e-mail. No password exists to send.
+ */
+async function processAccountCreatedMail(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+  const c = job.customer;
+  const email = (c.loginEmail || c.email || '').trim().toLowerCase();
+  if (!c.loginEmail) return { outcome: 'SKIPPED', detail: 'NOT sent - the customer has no client login (anymore)' };
+  if (!EMAIL_RE.test(email)) return { outcome: 'FAILED', detail: 'The client login has no valid e-mail address - nothing sent' };
+  const name = c.name?.trim() || 'Customer';
+  const businessName = c.company?.trim() || name;
+  if (s.mode !== 'live') return { outcome: 'SKIPPED', detail: `Dry run - not sent: "Set your password" e-mail to ${maskEmail(email)}`, recipient: email };
+  if (s.testRecipients && !s.testRecipients.emails.has(email)) {
+    return { outcome: 'SKIPPED', detail: `Test mode - ${maskEmail(email)} is not a test recipient`, recipient: email };
+  }
+  if (!s.appUrl) return { outcome: 'FAILED', detail: 'Set APP_URL on the server so the set-password link can point to the CRM.', recipient: email };
+  let link: string;
+  try {
+    link = await new AuthAdminRepository().passwordLink(email, `${s.appUrl}/client/set-password`);
+  } catch {
+    return { outcome: 'RETRY', detail: 'Could not make the set-password link.', recipient: email };
+  }
+  const mail = renderClientPasswordEmail({ name, businessName, loginEmail: email, link, kind: 'WELCOME' });
+  return fromResult(await sendEmail(s, { email, name }, mail), email, `Set-password e-mail sent to ${maskEmail(email)}`);
+}
+
 /** Decide and (in live mode) send one job. Never throws. */
 export async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
   if (job.stage === 'ACCOUNTS_PAYMENT') return processAccountsMail(s, job);
@@ -82,6 +109,7 @@ export async function processJob(s: AutomationSettings, job: ClaimedJob): Promis
   const live = s.mode === 'live';
 
   if (job.channel === 'EMAIL') {
+    if (job.stage === 'ACCOUNT_CREATED') return processAccountCreatedMail(s, job);
     const email = (c.email || '').trim().toLowerCase();
     if (!EMAIL_RE.test(email)) return { outcome: 'SKIPPED', detail: 'Invalid client email – nothing sent' };
     if (s.requireValidWhatsapp && !phone10) return { outcome: 'SKIPPED', detail: 'NOT sent – WhatsApp Number is missing or invalid.' };
@@ -92,18 +120,17 @@ export async function processJob(s: AutomationSettings, job: ClaimedJob): Promis
     if (job.stage === 'COMPLETED' && !panelUrl) {
       return { outcome: 'SKIPPED', detail: `NOT sent – no panel URL for department "${c.department}"` };
     }
-    const password = job.stage === 'COMPLETED' ? decryptSecret(job.secret, s.secretKey) : null;
     const mail = renderEmail(job.stage, {
       name,
       email,
       department: c.department,
       panelUrl,
       userId: c.loginEmail || email,
-      password,
+      hasLogin: !!c.loginEmail,
       websiteCreated: job.context?.from === 'WEBSITE_PENDING',
       website: websiteOf(c.website)
     });
-    const note = job.stage === 'COMPLETED' && !password ? ' (without the password)' : '';
+    const note = '';
     if (!live) return { outcome: 'SKIPPED', detail: `Dry run – not sent: "${mail.subject}" to ${maskEmail(email)}${note}`, recipient: email };
     if (s.testRecipients && !s.testRecipients.emails.has(email)) {
       return { outcome: 'SKIPPED', detail: `Test mode – ${maskEmail(email)} is not a test recipient`, recipient: email };

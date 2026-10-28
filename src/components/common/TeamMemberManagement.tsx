@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { CheckCircle2, GitBranch, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import type { Profile } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { creatableRoles } from '../../lib/auth/roleMapping';
 import { AccessControlTab } from '../scope/AccessControlTab';
+import { WorkflowSettings } from '../workflow/WorkflowSettings';
 import { StaffManagementPanel } from './StaffManagementPanel';
 
 /**
@@ -20,7 +21,7 @@ import { StaffManagementPanel } from './StaffManagementPanel';
  * the member list: Row Level Security on profiles; Access Control: department_access_get / department_access_apply refuse anyone but the
  * Super Admin), so a hand-typed URL or a direct API call gets nothing more.
  */
-export type TeamMemberTab = 'add' | 'members' | 'access';
+export type TeamMemberTab = 'add' | 'members' | 'access' | 'workflow';
 
 interface Props {
   /** The department whose people are managed. The Super Admin chooses it on the page; everybody else works in their own. */
@@ -38,7 +39,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
   const { departments } = useDepartments();
   const isSuperAdmin = profile?.role === 'SUPER_ADMIN';
   const canAdd = creatableRoles(profile?.role).length > 0;
-  const tabs: TeamMemberTab[] = [...(canAdd ? (['add'] as const) : []), 'members', ...(isSuperAdmin ? (['access'] as const) : [])];
+  const tabs: TeamMemberTab[] = [...(canAdd ? (['add'] as const) : []), 'members', ...(isSuperAdmin ? (['access', 'workflow'] as const) : [])];
 
   const firstTab = (wanted?: TeamMemberTab): TeamMemberTab => (wanted && tabs.includes(wanted) ? wanted : 'members');
   const [tab, setTab] = useState<TeamMemberTab>(() => firstTab(initialTab));
@@ -94,7 +95,8 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
           ? 'The people of your team.'
           : 'The people of your department.'
     },
-    access: { label: 'Access Control', icon: ShieldCheck, hint: 'Choose a Department Head and tick the departments and functions they work in.' }
+    access: { label: 'Access Control', icon: ShieldCheck, hint: 'Choose a Department Head and tick the departments and functions they work in.' },
+    workflow: { label: 'Workflow', icon: GitBranch, hint: 'Which services the Meta Verifier verifies first, and how long the Technical Consultant waits before the follow-up.' }
   };
 
   return (
@@ -104,7 +106,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
           <h1 className="text-2xl font-bold font-heading text-slate-900">Team Member Management</h1>
           <p className="text-sm text-slate-500 mt-0.5">{meta[tab].hint}</p>
         </div>
-        {isSuperAdmin && tab !== 'access' && (
+        {isSuperAdmin && tab !== 'access' && tab !== 'workflow' && (
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-700" htmlFor="add-staff-department">
             <span className="shrink-0">Department</span>
             <select
@@ -194,6 +196,11 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
           />
         )}
       </div>
+      {isSuperAdmin && (
+        <div role="tabpanel" id="staff-panel-workflow" aria-labelledby="staff-tab-workflow" hidden={tab !== 'workflow'}>
+          {tab === 'workflow' && <WorkflowSettings />}
+        </div>
+      )}
       {isSuperAdmin && (
         <div role="tabpanel" id="staff-panel-access" aria-labelledby="staff-tab-access" hidden={tab !== 'access'}>
           {tab === 'access' && (

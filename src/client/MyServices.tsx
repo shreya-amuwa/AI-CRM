@@ -1,10 +1,29 @@
 import React, { useState } from 'react';
 import { LifeBuoy, Megaphone, Package } from 'lucide-react';
-import type { ClientService } from '../../shared/contracts';
+import type { ClientService, ClientServiceProgress } from '../../shared/contracts';
 import { clientApi } from './api';
-import { useLoad } from './hooks';
+import { useClientLive, useLoad } from './hooks';
 import { dashboardPath, useShell } from './shell';
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, UsageMeter, fmtDate, inr, serviceDetails, hueOf, serviceStatus, tagOf, usageBar } from './ui';
+
+/** Where one purchased service is on its journey (words written for the client; the server sends nothing internal). */
+const ProgressSteps: React.FC<{ p: ClientServiceProgress | undefined; detailed?: boolean }> = ({ p, detailed }) => {
+  if (!p || p.steps.length === 0) return null;
+  const hint = p.steps.find(s => s.state === 'CURRENT')?.hint;
+  return (
+    <div style={{ marginTop: detailed ? 0 : 14 }}>
+      <ol className="cd-steps" aria-label={`Progress of ${p.name}`} style={detailed ? { marginTop: 0 } : undefined}>
+        {p.steps.map(s => (
+          <li key={s.key} className={s.state === 'DONE' ? 'done' : s.state === 'CURRENT' ? 'now' : ''} aria-current={s.state === 'CURRENT' ? 'step' : undefined}
+            title={s.state === 'DONE' && s.at ? `Done ${fmtDate(s.at)}` : undefined}>
+            {s.state === 'DONE' ? '✓ ' : ''}{s.label}{detailed && s.state === 'DONE' && s.at ? ` · ${fmtDate(s.at)}` : ''}
+          </li>
+        ))}
+      </ol>
+      {hint ? <p className="cd-small cd-muted" style={{ marginTop: 8 }}>{hint}</p> : null}
+    </div>
+  );
+};
 
 const monthLabel = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 const n = (v: unknown) => (typeof v === 'number' ? v : null);
@@ -12,7 +31,11 @@ const n = (v: unknown) => (typeof v === 'number' ? v : null);
 export const MyServices: React.FC = () => {
   const { go } = useShell();
   const q = useLoad(() => clientApi.services());
+  const progress = useLoad(() => clientApi.serviceProgress());
+  const byCode = new Map((progress.data ?? []).map(p => [p.code, p]));
   const [open, setOpen] = useState<ClientService | null>(null);
+  // a step is reached in our system: the page follows without a refresh (a notification arrives, the lists reload)
+  useClientLive(() => { q.reload(); progress.reload(); });
   return (
     <>
       <PageHeader title="My Services" subtitle="The services Amuwa runs for you, your plan and how much of it you have used." />
@@ -40,6 +63,7 @@ export const MyServices: React.FC = () => {
                     </div>
                     <Badge tone={st.tone}>{st.label}</Badge>
                   </div>
+                  {s.status !== 'LIVE' ? <ProgressSteps p={byCode.get(s.code)} /> : null}
                   {bar ? <div style={{ marginTop: 14 }}><UsageMeter bar={bar} compact /></div>
                     : s.description ? <p className="cd-small cd-muted" style={{ marginTop: 14, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.description}</p> : null}
                   <p className="cd-small cd-muted" style={{ marginTop: 14 }}>
@@ -55,12 +79,12 @@ export const MyServices: React.FC = () => {
           </div>
         )}
       </Query>
-      {open && <ServiceDetails s={open} onClose={() => setOpen(null)} onHelp={() => { setOpen(null); go(dashboardPath('tickets')); }} />}
+      {open && <ServiceDetails s={open} progress={byCode.get(open.code)} onClose={() => setOpen(null)} onHelp={() => { setOpen(null); go(dashboardPath('tickets')); }} />}
     </>
   );
 };
 
-const ServiceDetails: React.FC<{ s: ClientService; onClose: () => void; onHelp: () => void }> = ({ s, onClose, onHelp }) => {
+const ServiceDetails: React.FC<{ s: ClientService; progress?: ClientServiceProgress; onClose: () => void; onHelp: () => void }> = ({ s, progress, onClose, onHelp }) => {
   const st = serviceStatus(s.status);
   const bar = usageBar(s);
   const m = s.usage?.metrics ?? {};
@@ -77,6 +101,7 @@ const ServiceDetails: React.FC<{ s: ClientService; onClose: () => void; onHelp: 
     <Modal title={s.name} onClose={onClose}>
       <div className="cd-stack" style={{ gap: 18 }}>
         <p className="cd-muted">{s.description || s.category}</p>
+        <ProgressSteps p={progress} detailed />
         {bar ? <UsageMeter bar={bar} /> : null}
         <dl className="cd-kv">
           <div><dt>Status</dt><dd>{s.status === 'LIVE' ? 'Live - running now' : s.status === 'SETTING_UP' ? 'Setting up - we will tell you when it goes live' : st.label}</dd></div>

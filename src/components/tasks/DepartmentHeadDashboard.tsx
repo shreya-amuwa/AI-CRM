@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   BarChart3,
+  Building2,
   Bell,
   Activity,
   CalendarCheck,
@@ -43,6 +44,7 @@ import { HeadSearch } from './head/HeadSearch';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
+import { OperationsOverview } from '../operations/OperationsOverview';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -59,6 +61,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const isAccounts = profile?.department?.slug === 'accounts';
   const supportSide = profile?.headDivision === 'SUPPORT';
+  const operationsHead = !!profile?.isOperationsHead;
   const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : 'overview'));
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
@@ -90,7 +93,13 @@ export const DepartmentHeadDashboard: React.FC = () => {
       }
     }
     return [
-      { items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }] },
+      {
+        items: [
+          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+          // an Operations Head also sees the departments they oversee side by side
+          ...(operationsHead ? [{ id: 'operations', label: 'Operations Overview', icon: Building2 }] : [])
+        ]
+      },
       { label: 'Work', items: work },
       {
         label: 'Customers',
@@ -111,7 +120,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         ]
       }
     ];
-  }, [isAccounts, supportSide, waiting, chatUnread]);
+  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread]);
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
@@ -131,7 +140,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       groups={groups}
       active={nav}
       onSelect={id => go(id as HeadPage)}
-      user={{ name: user?.name || 'Department Head', role: 'Department Head' }}
+      user={{ name: user?.name || (operationsHead ? 'Operations Head' : 'Department Head'), role: operationsHead ? 'Operations Head' : 'Department Head' }}
       onSignOut={() => void logout()}
       flush={nav === 'chat'}
       wide={nav === 'team'}
@@ -163,6 +172,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         </div>
       )}
       {nav === 'overview' && <HeadOverview data={data} go={go} />}
+      {nav === 'operations' && operationsHead && <OperationsOverview />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'reports' && <HeadReports data={data} />}
       {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}

@@ -10,7 +10,8 @@ import { WebsiteEditDialog } from './WebsiteEditDialog';
  * The customer's onboarding emails and WhatsApp messages (Wabastore, WhatsApp API + Blue Tick).
  * They are sent automatically from the Technical Consultant's work:
  *   Send for onboarding -> Under Review / Website Pending, website link + every item authorized -> Meta Verification,
- *   client login created -> Status Completed.
+ *   Meta completed the verification (recorded below) -> Status Completed.
+ * The client's login is created by Accounts; its own "account created" message is sent then, not as a status step.
  */
 const STAGES: { code: ClientStage; label: string }[] = [
   { code: 'UNDER_REVIEW', label: 'Under Review' },
@@ -22,7 +23,8 @@ const STAGE_LABEL: Record<MessageStage, string> = {
   UNDER_REVIEW: 'Under Review',
   META_VERIFICATION: 'Meta Verification',
   COMPLETED: 'Status Completed',
-  WEBSITE_READY: 'Website Ready'
+  WEBSITE_READY: 'Website Ready',
+  ACCOUNT_CREATED: 'Account created'
 };
 const RANK: Record<ClientStage, number> = { WEBSITE_PENDING: 0, UNDER_REVIEW: 0, META_VERIFICATION: 1, COMPLETED: 2 };
 
@@ -47,7 +49,7 @@ function nextStep(stage: ClientStage | null, hasSite: boolean): string {
     case 'UNDER_REVIEW':
       return 'Authorize every document: the Meta Verification email (about 2-3 weeks) goes out.';
     case 'META_VERIFICATION':
-      return 'When Meta verification is done, create the client login: the panel access email (with the login) goes out.';
+      return 'When Meta has completed the verification, record it below: the "Status Completed" message goes out. (Accounts creates the client login separately.)';
     case 'COMPLETED':
       return 'All onboarding messages are done.';
     default:
@@ -68,6 +70,7 @@ export const ClientMessagesPanel: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendNote, setResendNote] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
 
   if (!data?.automated) return null;
   const stage = data.stage;
@@ -89,6 +92,19 @@ export const ClientMessagesPanel: React.FC<{
     }
   };
   const waiting = data.messages.some(m => m.status === 'QUEUED' || m.status === 'SENDING');
+  // "Meta has completed the verification": its own event (a login existing does not mean it). The "Status Completed" message goes out once.
+  const recordMetaCompleted = async () => {
+    setRecording(true);
+    setError(null);
+    try {
+      await pipelineApi.markMetaVerificationCompleted(customerId);
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRecording(false);
+    }
+  };
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-4" aria-labelledby="client-messages-heading">
@@ -170,6 +186,16 @@ export const ClientMessagesPanel: React.FC<{
         </div>
       )}
 
+      {stage === 'META_VERIFICATION' && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50/50 px-3 py-2.5">
+          <button type="button" className={btn.primary} onClick={() => void recordMetaCompleted()} disabled={recording}>
+            <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> {recording ? 'Saving…' : 'Meta verification completed'}
+          </button>
+          <span className="text-[11px] text-slate-600">Record this only when Meta has approved the verification. The &quot;Status Completed&quot; email and WhatsApp go out once.</span>
+        </div>
+      )}
+      {error && stage === 'META_VERIFICATION' && !editing && <ErrorBanner message={error} />}
+
       {stage && !locked && (
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className={btn.secondary} onClick={resend} disabled={resending || waiting}>
@@ -179,7 +205,7 @@ export const ClientMessagesPanel: React.FC<{
             {waiting
               ? 'Messages for this step are waiting to be sent.'
               : stage === 'COMPLETED'
-                ? 'Sends the panel access email and WhatsApp again (without the password).'
+                ? 'Sends the "Status Completed" email and WhatsApp again.'
                 : 'Sends the email and WhatsApp of the step the customer is at.'}
           </span>
           {resendNote && <span role="status" className="text-xs font-semibold text-emerald-700">{resendNote}</span>}
