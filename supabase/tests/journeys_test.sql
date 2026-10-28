@@ -15,8 +15,8 @@ reset role;
 -- the newest money model (GST belongs to the order) goes back on top of the older definitions re-applied above
 \i supabase/migrations/20261201000100_order_level_gst.sql
 -- and the role / provisioning changes on top of those (Meta Verifier, Accounts-owned client logins)
-\i supabase/migrations/20261204000200_meta_verifier_workflow.sql
-\i supabase/migrations/20261204000300_accounts_client_provisioning.sql
+\i supabase/migrations/20261205000200_meta_verifier_workflow.sql
+\i supabase/migrations/20261205000300_accounts_client_provisioning.sql
 create temp table jc (name text primary key, id uuid);
 create temp table jr (name text primary key, data jsonb);
 create temp table jq (name text primary key, id uuid default gen_random_uuid());

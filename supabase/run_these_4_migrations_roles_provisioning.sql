@@ -10,7 +10,7 @@
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
--- 20261204000100_operations_head.sql
+-- 20261205000100_operations_head.sql
 -- -----------------------------------------------------------------------------
 -- =============================================================================
 -- Operations Head: the person who oversees several departments.
@@ -281,7 +281,7 @@ grant execute on function public.operations_overview() to authenticated;
 notify pgrst, 'reload schema';
 
 -- -----------------------------------------------------------------------------
--- 20261204000200_meta_verifier_workflow.sql
+-- 20261205000200_meta_verifier_workflow.sql
 -- -----------------------------------------------------------------------------
 -- =============================================================================
 -- Meta Verifier: the first verification of a WhatsApp customer is no longer the Technical Consultant's job.
@@ -301,7 +301,7 @@ notify pgrst, 'reload schema';
 -- verification_route_review lists the ones that may need it.
 --
 -- Not changed: the customer records, documents, notes, hand-over history and the Technical Consultant's route for every other service.
--- Safe to run again. Run after 20261204000100_operations_head.sql.
+-- Safe to run again. Run after 20261205000100_operations_head.sql.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -1409,7 +1409,7 @@ grant execute on function public.tc_followups_process_due() to service_role;
 notify pgrst, 'reload schema';
 
 -- -----------------------------------------------------------------------------
--- 20261204000300_accounts_client_provisioning.sql
+-- 20261205000300_accounts_client_provisioning.sql
 -- -----------------------------------------------------------------------------
 -- Client login and profile creation belongs to Accounts, for every service.
 --
@@ -1965,7 +1965,7 @@ begin
 end $function$;
 
 -- -----------------------------------------------------------------------------
--- 20261204000400_client_service_progress.sql
+-- 20261205000400_client_service_progress.sql
 -- -----------------------------------------------------------------------------
 -- Client dashboard: where each purchased service is, in steps that fit that service's journey.
 --

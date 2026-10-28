@@ -8,8 +8,8 @@
 \echo '--- 71. Meta Verifier, verification route, hand-over and Technical Consultant follow-up'
 reset role;
 -- running the migrations again must change nothing (they are safe to re-run)
-\i supabase/migrations/20261204000200_meta_verifier_workflow.sql
-\i supabase/migrations/20261204000300_accounts_client_provisioning.sql
+\i supabase/migrations/20261205000200_meta_verifier_workflow.sql
+\i supabase/migrations/20261205000300_accounts_client_provisioning.sql
 
 create temp table mv (name text primary key, id uuid);
 grant all on mv to authenticated, service_role;
@@ -291,7 +291,7 @@ create temp table mv_before as
   select (select jsonb_agg(jsonb_build_array(customer_id, verification_route) order by customer_id) from customer_onboarding where verification_route is not null) as routes,
          (select count(*) from tc_followups) as followups, (select count(*) from verification_notes) as notes,
          (select tc_followup_delay_days from workflow_settings where id) as delay;
-\i supabase/migrations/20261204000200_meta_verifier_workflow.sql
+\i supabase/migrations/20261205000200_meta_verifier_workflow.sql
 select test.check((select routes = (select jsonb_agg(jsonb_build_array(customer_id, verification_route) order by customer_id) from customer_onboarding where verification_route is not null) from mv_before),
   'every customer keeps the route it was pinned to (a re-run never moves work in flight)');
 select test.check((select followups = (select count(*) from tc_followups) and notes = (select count(*) from verification_notes) and delay is not distinct from (select tc_followup_delay_days from workflow_settings where id) from mv_before),

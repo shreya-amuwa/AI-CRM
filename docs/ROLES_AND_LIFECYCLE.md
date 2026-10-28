@@ -130,10 +130,10 @@ Changed: `POST .../accounts/client-login` takes no body. Removed: `POST /pipelin
 
 ## 9. Migrations (in this order, all re-runnable)
 
-1. `20261204000100_operations_head.sql`
-2. `20261204000200_meta_verifier_workflow.sql`
-3. `20261204000300_accounts_client_provisioning.sql`
-4. `20261204000400_client_service_progress.sql`
+1. `20261205000100_operations_head.sql`
+2. `20261205000200_meta_verifier_workflow.sql`
+3. `20261205000300_accounts_client_provisioning.sql`
+4. `20261205000400_client_service_progress.sql`
 
 `supabase/run_these_4_migrations_roles_provisioning.sql` is the four in one file for the SQL editor. `supabase/review_role_redesign.sql` is a
 read-only list of the records that need a decision (section 11).

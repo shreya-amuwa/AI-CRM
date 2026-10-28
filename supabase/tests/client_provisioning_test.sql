@@ -13,7 +13,7 @@ grant all on cp to authenticated, service_role;
 -- what exists before the migration is run again
 create temp table cp_before as select customer_id, auth_user_id, email, created_at from customer_client_accounts;
 create temp table cp_prov_before as select customer_id, status, email, attempts from customer_client_provisioning;
-\i supabase/migrations/20261204000300_accounts_client_provisioning.sql
+\i supabase/migrations/20261205000300_accounts_client_provisioning.sql
 select test.check((select count(*) = (select count(*) from cp_before) and bool_and(a.auth_user_id = b.auth_user_id and a.email = b.email and a.created_at = b.created_at)
                      from customer_client_accounts a join cp_before b using (customer_id)),
   'running the migration again leaves every existing client login exactly as it was (same user, e-mail and date)');

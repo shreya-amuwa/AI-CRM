@@ -16,7 +16,7 @@
 -- verification_route_review lists the ones that may need it.
 --
 -- Not changed: the customer records, documents, notes, hand-over history and the Technical Consultant's route for every other service.
--- Safe to run again. Run after 20261204000100_operations_head.sql.
+-- Safe to run again. Run after 20261205000100_operations_head.sql.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------

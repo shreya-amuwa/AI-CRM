@@ -6,7 +6,7 @@
 \set QUIET 1
 \echo '--- 70. Operations Head'
 reset role;
-\i supabase/migrations/20261204000100_operations_head.sql
+\i supabase/migrations/20261205000100_operations_head.sql
 
 select test.create_auth_user('oh_dh', 'oh.dh@amuwa.com', '{"full_name":"Plain Department Head"}',
   jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dept('edutraining')));
@@ -54,10 +54,10 @@ reset role;
 alter table department_access disable trigger department_access_operations_head;
 insert into department_access (profile_id, department_id, division) values (test.id('oh_dh'), test.dept('mpillar'), 'SALES');
 alter table department_access enable trigger department_access_operations_head;
-\i supabase/migrations/20261204000100_operations_head.sql
+\i supabase/migrations/20261205000100_operations_head.sql
 select test.check((select transition from department_access where profile_id = test.id('oh_dh') and department_id = test.dept('mpillar')), 'the migration marks it for review instead of removing it');
 select test.check((select count(*) = 1 from audit_logs where action = 'MULTI_DEPARTMENT_SCOPE_GRANDFATHERED' and entity_id = test.id('oh_dh')), 'and records that the access was kept');
-\i supabase/migrations/20261204000100_operations_head.sql
+\i supabase/migrations/20261205000100_operations_head.sql
 select test.check((select count(*) = 1 from audit_logs where action = 'MULTI_DEPARTMENT_SCOPE_GRANDFATHERED' and entity_id = test.id('oh_dh')), 'running it again records nothing twice');
 set role authenticated;
 select test.login('oh_dh');
