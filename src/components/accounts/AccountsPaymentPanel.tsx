@@ -1,8 +1,9 @@
 import { AccountsCustomerInvoices } from '../invoices/AccountsCustomerInvoices';
 import { StepList } from '../invoices/GeneratedInvoicePanel';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FilePlus2, Plus } from 'lucide-react';
-import type { FollowUpOutcome, LedgerPayment, PaymentInvoiceOutcome, PaymentOverview, PaymentType } from '../../../shared/contracts';
+import type { FollowUpOutcome, LedgerPayment, PaymentInvoiceBilling, PaymentInvoiceOutcome, PaymentOverview, PaymentType } from '../../../shared/contracts';
+import { GST_STATES, inferStateFromAddress, isValidGstinFormat, normalizeGstin } from '../../../shared/gst';
 import { FOLLOWUP_OUTCOMES, PAYMENT_METHODS } from '../../../shared/contracts';
 import { accountsRecordPaymentSchema, accountsUpdatePaymentSchema, paymentFollowUpSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
@@ -266,6 +267,87 @@ const OrderGstCard: React.FC<{ customerId: string; overview: PaymentOverview; re
   );
 };
 
+// ---------------------------------------------------------------------------
+// The billing details an invoice needs and the customer record lacks (asked once, with the click)
+// ---------------------------------------------------------------------------
+const BillingDetailsDialog: React.FC<{
+  billing: PaymentInvoiceBilling;
+  amount: number;
+  onClose: () => void;
+  onSubmit: (customer: Record<string, string | undefined>) => Promise<void>;
+}> = ({ billing, amount, onClose, onSubmit }) => {
+  const c = billing.customer;
+  const [businessName, setBusinessName] = useState(c.businessName || c.name || '');
+  const [address, setAddress] = useState(c.address || '');
+  const [stateCode, setStateCode] = useState(c.stateCode || '');
+  const [gstin, setGstin] = useState(c.gstin || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const onAddressBlur = () => {
+    if (stateCode) return;
+    const st = inferStateFromAddress(address);
+    if (st) setStateCode(st.code);
+  };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const next: Record<string, string> = {};
+    if (!address.trim()) next.address = 'Enter the business address.';
+    if (!stateCode) next.state = 'Choose the customer\'s state.';
+    if (gstin.trim() && !isValidGstinFormat(gstin)) next.gstin = 'The GSTIN is not valid. Check it against the customer\'s GST certificate.';
+    setFieldErrors(next);
+    if (Object.keys(next).length) return setError('Please fix the highlighted fields.');
+    setError(null);
+    setBusy(true);
+    try {
+      await onSubmit({ businessName: businessName.trim() || undefined, address: address.trim(), stateCode, gstin: gstin.trim() ? normalizeGstin(gstin) : undefined });
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title="Billing details for the invoice" onClose={() => !busy && onClose()}>
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <p className="text-xs text-slate-600">
+          The invoice for this {rupees(amount)} payment needs the customer&apos;s billing {billing.missing.join(' and ')}, which the customer record does not have yet. Enter it once: it goes on this invoice and the customer&apos;s next invoices use it. The customer record itself is not changed.
+        </p>
+        <FormField label="Business name" htmlFor="bill-name">
+          <input id="bill-name" className={inputClass} value={businessName} maxLength={200} onChange={e => setBusinessName(e.target.value)} />
+        </FormField>
+        <FormField label="Business address" htmlFor="bill-address" required error={fieldErrors.address}>
+          <textarea id="bill-address" rows={3} className={inputClass} value={address} maxLength={500} onChange={e => setAddress(e.target.value)} onBlur={onAddressBlur} placeholder="Shop, street, city, PIN code" />
+        </FormField>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormField label="State" htmlFor="bill-state" required error={fieldErrors.state} hint="Decides CGST + SGST or IGST.">
+            <select id="bill-state" className={inputClass} value={stateCode} onChange={e => setStateCode(e.target.value)}>
+              <option value="">Choose the state</option>
+              {GST_STATES.map(st => (
+                <option key={st.code} value={st.code}>
+                  {st.name} ({st.code})
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="GSTIN (if the customer has one)" htmlFor="bill-gstin" error={fieldErrors.gstin}>
+            <input id="bill-gstin" className={inputClass} value={gstin} maxLength={20} onChange={e => setGstin(e.target.value.toUpperCase())} />
+          </FormField>
+        </div>
+        {error && <ErrorBanner message={error} />}
+        <div className="flex justify-end gap-2">
+          <button type="button" className={ghostBtn} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className={primaryBtn} disabled={busy}>
+            {busy ? 'Making the invoice…' : 'Make the invoice'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
 export const ReasonDialog: React.FC<{
   title: string;
   label: string;
@@ -346,19 +428,24 @@ export const AccountsPaymentPanel: React.FC<{
   const [reject, setReject] = useState<LedgerPayment | null>(null);
   const [reverse, setReverse] = useState<LedgerPayment | null>(null);
   const [team, setTeam] = useState<{ id: string; fullName: string; role: string }[]>([]);
+  const [billing, setBilling] = useState<{ paymentId: string; data: PaymentInvoiceBilling } | null>(null);
 
-  const apply = useCallback(
-    (o: PaymentOverview, changed = true) => {
-      setOverview(o);
-      onLoaded?.(o);
-      if (changed) {
-        onChanged?.(o);
-        // verified / reversed payments change the finance totals
-        window.dispatchEvent(new CustomEvent('crm:pipeline-changed'));
-      }
-    },
-    [onChanged, onLoaded]
-  );
+  // The parent passes new callbacks on every render. If `apply` (and so `load`) changed with them, the panel would reload itself after every
+  // render of the parent in an endless loop, and every reload clears the message on screen (an error flashed and was gone). The latest
+  // callbacks are kept in refs, so `apply` and `load` stay the same function and the panel loads once per customer.
+  const onChangedRef = useRef(onChanged);
+  const onLoadedRef = useRef(onLoaded);
+  onChangedRef.current = onChanged;
+  onLoadedRef.current = onLoaded;
+  const apply = useCallback((o: PaymentOverview, changed = true) => {
+    setOverview(o);
+    onLoadedRef.current?.(o);
+    if (changed) {
+      onChangedRef.current?.(o);
+      // verified / reversed payments change the finance totals
+      window.dispatchEvent(new CustomEvent('crm:pipeline-changed'));
+    }
+  }, []);
 
   const load = useCallback(() => {
     setError(null);
@@ -392,18 +479,28 @@ export const AccountsPaymentPanel: React.FC<{
     }
   };
 
-  /** "Generate invoice" on a verified payment: also the retry when the automatic one could not be made. */
+  /** Makes the paid invoice of a verified payment (billing details typed by Accounts when the record lacks them) and shows the result. */
+  const makeInvoice = async (paymentId: string, customer?: Record<string, string | undefined>) => {
+    const outcome = await generatedInvoicesApi.invoiceForPayment(paymentId, customer ? { customer } : {});
+    setInvoiceOutcome(outcome);
+    setInvoicesKey(n => n + 1);
+    apply(await pipelineApi.paymentOverview(customerId));
+    setNotice(outcome.status === 'EXISTS' ? `The paid invoice ${outcome.number} was already made for this payment.` : `Paid invoice ${outcome.number} made for this payment.`);
+  };
+
+  /** "Generate invoice" on a verified payment: also the retry when the automatic one could not be made. Asks for the billing details only when the customer record lacks them. */
   const generateInvoice = async (paymentId: string) => {
     setBusyId(paymentId);
     setError(null);
     setNotice(null);
     setInvoiceOutcome(null);
     try {
-      const outcome = await generatedInvoicesApi.invoiceForPayment(paymentId);
-      setInvoiceOutcome(outcome);
-      setInvoicesKey(n => n + 1);
-      apply(await pipelineApi.paymentOverview(customerId));
-      setNotice(outcome.status === 'EXISTS' ? `The paid invoice ${outcome.number} was already made for this payment.` : `Paid invoice ${outcome.number} made.`);
+      const b = await generatedInvoicesApi.paymentInvoiceBilling(paymentId);
+      if (b.missing.length > 0) {
+        setBilling({ paymentId, data: b });
+        return;
+      }
+      await makeInvoice(paymentId);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -437,7 +534,12 @@ export const AccountsPaymentPanel: React.FC<{
       )}
       {invoiceOutcome?.status === 'FAILED' && (
         <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-          The payment is saved, but its paid invoice could not be made: {invoiceOutcome.message} Fix this, then use &quot;Generate invoice&quot; on the payment.
+          The payment is saved, but its paid invoice could not be made: {invoiceOutcome.message} Use &quot;Generate invoice&quot; on the payment to try again.
+          {invoiceOutcome.paymentId && (
+            <button type="button" className={`${ghostBtn} ml-2`} disabled={busyId !== null} onClick={() => void generateInvoice(invoiceOutcome.paymentId!)}>
+              <FilePlus2 className="w-3 h-3" aria-hidden="true" /> Generate invoice
+            </button>
+          )}
         </p>
       )}
       {invoiceOutcome && invoiceOutcome.status !== 'FAILED' && invoiceOutcome.steps && invoiceOutcome.steps.length > 0 && <StepList steps={invoiceOutcome.steps} />}
@@ -473,7 +575,7 @@ export const AccountsPaymentPanel: React.FC<{
         )}
       />
 
-      <AccountsCustomerInvoices key={invoicesKey} customerId={customerId} customerLabel={customerLabel} canUpload={!readOnly} />
+      <AccountsCustomerInvoices key={invoicesKey} customerId={customerId} customerLabel={customerLabel} canUpload={!readOnly} onChanged={load} />
 
       {followUps && !readOnly && (
         <>
@@ -493,6 +595,17 @@ export const AccountsPaymentPanel: React.FC<{
             showInvoice(next);
             setNotice(form.editing ? 'Payment updated.' : 'Payment recorded.');
             setForm(null);
+          }}
+        />
+      )}
+      {billing && (
+        <BillingDetailsDialog
+          billing={billing.data}
+          amount={o.payments.find(p => p.id === billing.paymentId)?.amount ?? 0}
+          onClose={() => setBilling(null)}
+          onSubmit={async customer => {
+            await makeInvoice(billing.paymentId, customer);
+            setBilling(null);
           }}
         />
       )}

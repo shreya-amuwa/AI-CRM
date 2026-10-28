@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import type { LeadStatus, PipelineCounts, ServiceCatalogItem } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
@@ -297,6 +297,8 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   children
 }) => {
   const ref = useRef<HTMLDivElement>(null);
+  // one title id per dialog: with another dialog open on top of this one (or under it) a shared id gave both the first one's name
+  const titleId = useId();
   // Callers often pass a new onClose on every render; keep the latest in a ref so
   // the focus effect runs once (on open) and typing never moves focus back.
   const closeRef = useRef(onClose);
@@ -318,9 +320,9 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   }, [persistent]);
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => !persistent && e.target === e.currentTarget && onClose()}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="pl-dialog-title" className={`w-full ${wide ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`w-full ${wide ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
         <div>
-          <h2 id="pl-dialog-title" className="text-base font-bold text-slate-900">
+          <h2 id={titleId} className="text-base font-bold text-slate-900">
             {title}
           </h2>
           {description && <p className="text-xs text-slate-500 mt-1">{description}</p>}

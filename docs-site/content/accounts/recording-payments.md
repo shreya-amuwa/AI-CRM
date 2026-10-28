@@ -63,6 +63,14 @@ Verify Payment | Accounts Staff | Only verified money reduces the outstanding ba
 
 Every invoice line uses the order's GST rate (it is shown read-only in the invoice builder). You can issue one invoice for the whole order or several partial invoices; each is taxed on its own part, and together they cannot pass the agreed amount. Two balances are shown apart, on screen and on the PDF: the **invoice balance** (this invoice's total less the confirmed money applied to it) and the **order balance** (the order's total payable less all confirmed payments).
 
+## A paid invoice for each payment
+
+Every verified payment, part or full, can have its own **paid invoice** for exactly that payment. When you **Record & verify** (the invoice box is ticked) the invoice is made, stored, e-mailed and sent by WhatsApp. For a payment without one, use **Generate invoice** on the payment row.
+
+- **The customer has no billing address or state?** Generate invoice opens **Billing details for the invoice**. Type the address (the state is picked up from it, or choose it) and, if the customer has one, the GSTIN, then **Make the invoice**. They go on this invoice and the customer's next invoices use them, so you are asked once. The state decides CGST + SGST or IGST.
+- **"The money of this payment is already covered by the invoices issued so far"** means an invoice for the whole amount (made with **Create Invoice** before the payments) already covers it, so a second one would bill the same money twice. If that invoice was made by mistake, an Accounts team lead or head opens it and chooses **Cancel invoice** (a reason is required). The invoice stays on record marked **Cancelled**, it no longer counts toward the order, and **Generate invoice** then works for each payment.
+- Each payment gets one invoice, worth the money received; together they never exceed what was verified.
+
 ## Verifying a pending payment
 
 If a payment was recorded without ticking immediate verification:

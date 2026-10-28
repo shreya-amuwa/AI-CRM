@@ -21,10 +21,10 @@ create or replace function pg_temp.g(p text) returns text language sql as $$ sel
 select test.check(pg_temp.g('paid') is not null and pg_temp.g('nopdf') is not null and pg_temp.g('unpaid') is not null, 'fixtures: a paid + stored invoice, a paid one without PDF, an unpaid one');
 
 -- ---------------------------------------------------------------- settings
-select test.check((select not enabled and not auto_send and not template_approved and template_name is null from invoice_whatsapp_settings), 'everything starts switched off, with no template');
+select test.check((select enabled and auto_send and not template_approved and template_name is null from invoice_whatsapp_settings), 'it starts switched ON with automatic sending (nobody has to switch it on), with no template approved');
 set role authenticated;
 select test.login('acc_m');
-select test.check((select (invoice_whatsapp_settings_get() ->> 'enabled')::boolean = false and (invoice_whatsapp_settings_get() ->> 'canEdit')::boolean = false), 'Accounts staff can read the settings, but a member cannot edit them');
+select test.check((select (invoice_whatsapp_settings_get() ->> 'enabled')::boolean = true and (invoice_whatsapp_settings_get() ->> 'canEdit')::boolean = false), 'Accounts staff can read the settings, but a member cannot edit them');
 select test.must_fail($$select set_invoice_whatsapp_settings(true, false, 'invoice_paid', 'en', true)$$, 'an Accounts member cannot change the settings', 'Only the Super Admin or the Accounts Department Head');
 select test.login('tm_a');
 select test.must_fail($$select invoice_whatsapp_settings_get()$$, 'a salesperson cannot read the settings', 'Only the Accounts department');
@@ -37,7 +37,8 @@ select test.must_fail($$select set_invoice_whatsapp_settings(true, false, 'Invoi
 select test.must_fail($$select set_invoice_whatsapp_settings(true, false, null, 'en', true)$$, 'approval needs a template name', 'Enter the template name');
 select test.must_fail($$select set_invoice_whatsapp_settings(true, false, 'invoice_paid', 'english', false)$$, 'the language is checked', 'language');
 
--- ---------------------------------------------------------------- requests while switched off
+-- ---------------------------------------------------------------- requests while switched off (the Super Admin switches it off for these checks)
+select test.check((select (set_invoice_whatsapp_settings(false, false, null, 'en', false) ->> 'enabled')::boolean = false), 'the Super Admin can still switch it off');
 select test.login('acc_m');
 select test.must_fail($$select accounts_invoice_whatsapp_request(pg_temp.g('paid')::uuid)$$, 'switched off: a manual request says so', 'switched off');
 select test.check((select (accounts_invoice_whatsapp_request(pg_temp.g('paid')::uuid, 'PAID', 'AUTO') ->> 'requested')::boolean = false), 'switched off: an automatic request quietly does nothing');
@@ -49,7 +50,7 @@ select test.check((select (set_invoice_whatsapp_settings(true, true, 'invoice_pa
 select test.check((select (set_invoice_whatsapp_settings(false, true, 'invoice_paid', 'en', false) ->> 'autoSend')::boolean = false), 'automatic sending cannot stay on when the feature is off');
 select set_invoice_whatsapp_settings(true, true, 'invoice_paid', 'en', false);
 reset role;
-select test.check((select count(*) = 3 from audit_logs where action = 'INVOICE_WHATSAPP_SETTINGS_CHANGED'), 'settings changes are audited');
+select test.check((select count(*) = 4 from audit_logs where action = 'INVOICE_WHATSAPP_SETTINGS_CHANGED'), 'settings changes are audited');
 
 -- ---------------------------------------------------------------- what may be requested
 set role authenticated;

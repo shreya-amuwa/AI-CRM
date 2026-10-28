@@ -207,7 +207,7 @@ export interface Invoice {
   amount: number;
   issueDate: string;
   dueDate: string;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Cancelled';
   departmentId?: string;
   departmentName?: string;
   division?: string;

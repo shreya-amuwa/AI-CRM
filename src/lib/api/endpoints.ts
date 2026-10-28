@@ -108,6 +108,7 @@ import type {
   InvoiceWhatsAppDispatch,
   InvoiceWhatsAppResult,
   InvoiceWhatsAppSettings,
+  PaymentInvoiceBilling,
   PaymentInvoiceOutcome,
   AccountsPaymentCounts,
   ChecklistItem,
@@ -435,7 +436,11 @@ export const generatedInvoicesApi = {
   confirmPayment: (id: string, body: { method?: PaymentMethod | null; reference?: string | null; note?: string | null; paidOn?: string | null; amount?: string | null; requestId?: string }) =>
     api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/confirm-payment`, body),
   /** The paid invoice of one verified payment (also the retry when the automatic one could not be made). Idempotent. */
-  invoiceForPayment: (paymentId: string) => api.post<PaymentInvoiceOutcome>(`/accounts/payments/${paymentId}/invoice`, {}),
+  invoiceForPayment: (paymentId: string, body: { customer?: Record<string, string | undefined> } = {}) => api.post<PaymentInvoiceOutcome>(`/accounts/payments/${paymentId}/invoice`, body),
+  /** Which billing details the payment's invoice has and which the customer record lacks (address, state). */
+  paymentInvoiceBilling: (paymentId: string) => api.get<PaymentInvoiceBilling>(`/accounts/payments/${paymentId}/invoice-billing`),
+  /** An Accounts team lead / head cancels a wrongly made invoice (reason required). */
+  cancel: (id: string, reason: string) => api.post<Invoice & { replayed: boolean }>(`/accounts/generated-invoices/${id}/cancel`, { reason }),
   /** Retry what is left of a stage (a missing PDF or e-mail). */
   deliver: (id: string, stage: InvoiceStage) => api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/deliver`, { stage }),
   /** A short-lived link to a stored PDF (anyone who may read the invoice). */

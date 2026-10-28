@@ -1,6 +1,6 @@
-import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, PaymentInvoiceOutcome, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
+import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, PaymentInvoiceBilling, PaymentInvoiceOutcome, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
 import { invoiceDate, rs, toPaise } from '../../shared/invoiceCalc.js';
-import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, invoiceWhatsAppRequestSchema, invoiceWhatsAppSettingsSchema, uuidSchema } from '../../shared/validation.js';
+import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceCancelSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, paymentInvoiceInputSchema, invoiceWhatsAppRequestSchema, invoiceWhatsAppSettingsSchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { sendInvoiceEmail } from '../invoices/mailer.js';
@@ -128,10 +128,22 @@ export class GeneratedInvoiceService {
    * message when the invoice cannot be made (no address on record, GST not chosen, the money already covered by another invoice ...);
    * the payment itself is never touched.
    */
-  async invoiceForPayment(paymentId: unknown): Promise<PaymentInvoiceOutcome> {
-    const issued = await this.repo.issueForPayment(parse(uuidSchema, paymentId));
+  async invoiceForPayment(paymentId: unknown, body?: unknown): Promise<PaymentInvoiceOutcome> {
+    const id = parse(uuidSchema, paymentId);
+    const input = parse(paymentInvoiceInputSchema, body ?? {});
+    const issued = await this.repo.issueForPayment(id, input.customer ?? null);
     const run = await this.runStage(issued.id, 'PAID');
-    return { status: issued.replayed ? 'EXISTS' : 'CREATED', invoiceId: issued.id, number: issued.number, steps: run.steps, message: null };
+    return { status: issued.replayed ? 'EXISTS' : 'CREATED', invoiceId: issued.id, number: issued.number, steps: run.steps, message: null, paymentId: id };
+  }
+
+  /** Before "Generate invoice": which billing details are there and which are missing, so the screen asks for them once. */
+  paymentInvoiceBilling(paymentId: unknown): Promise<PaymentInvoiceBilling> {
+    return this.repo.paymentInvoiceBilling(parse(uuidSchema, paymentId));
+  }
+
+  /** Cancel a wrongly made invoice (reason required, audited). The payment it was made for can be invoiced again. */
+  cancelInvoice(id: unknown, body: unknown): Promise<Invoice & { replayed: boolean }> {
+    return this.repo.cancelInvoice(parse(uuidSchema, id), parse(invoiceCancelSchema, body).reason);
   }
 
   /** Retry what is left of a stage (a missing PDF, a missing e-mail). Nothing already done is repeated. */

@@ -62,8 +62,8 @@ With `WHATSAPP_WEBHOOK_URL` set and no `WABASTORE_WEBHOOK_URL`, the paid invoice
 
 ### If "nothing is sent", check in this order
 1. **The server mode.** The invoice screen and the settings show a yellow note when the server is in test mode ("messages are prepared and logged but NOT sent"), switched off, or has no WhatsApp service. Fix: `AUTOMATION_MODE=live` (or `AUTOMATION_MODE_INVOICE_WHATSAPP=live`) and `WHATSAPP_WEBHOOK_URL` (or the Wabastore variables), then redeploy.
-2. **The switch in the invoice screen.** Settings -> "Allow sending paid invoices by WhatsApp" (Super Admin or Accounts Department Head). It starts switched off. Without it a paid invoice reports the step "Invoice WhatsApp is switched off" instead of staying silent.
-3. **Automatic sending.** Settings -> "Send automatically as soon as the paid invoice is ready". Without it, use **Send invoice via WhatsApp** on the invoice.
+2. **The switch in the invoice screen.** Settings -> "Allow sending paid invoices by WhatsApp" (Super Admin or Accounts Department Head). **It starts switched on, with automatic sending** (migration `20261207000100`: it also switches on a setting nobody ever changed, and never overrides a choice a person made). Switching it off is the Super Admin's / Department Head's own decision; while it is off a paid invoice reports the step "Invoice WhatsApp is switched off" instead of staying silent. Whether a message really leaves the server is decided by check 1, not by this switch.
+3. **Automatic sending.** Settings -> "Send automatically as soon as the paid invoice is ready" (on by default). Without it, use **Send invoice via WhatsApp** on the invoice.
 4. **The customer's number.** A valid Indian WhatsApp or mobile number must be on the customer record.
 5. **The builder route** (above).
 

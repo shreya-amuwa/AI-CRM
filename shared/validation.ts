@@ -1021,6 +1021,28 @@ export const invoiceConfirmPaymentSchema = z
   })
   .strict();
 export const invoiceDeliverSchema = z.object({ stage: z.enum(INVOICE_STAGES) }).strict();
+/** "Generate invoice" on a payment: the billing details the customer record lacks (address, state ...) typed by Accounts with the click. Nothing else rides along. */
+export const paymentInvoiceInputSchema = z
+  .object({
+    customer: z
+      .object({
+        name: z.string().trim().max(200).optional(),
+        businessName: z.string().trim().max(200).optional(),
+        address: z.string().trim().max(500, 'Keep the address under 500 characters.').optional(),
+        contactPerson: z.string().trim().max(200).optional(),
+        contactNumber: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), phoneSchema.optional()),
+        gstin: z.preprocess(
+          v => (typeof v === 'string' ? normalizeGstin(v) || undefined : v),
+          z.string().optional().refine(v => !v || isValidGstinFormat(v), 'The GSTIN is not valid. Check it against the customer\'s GST certificate.')
+        ),
+        stateCode: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().trim().regex(/^[0-9]{2}$/, 'Choose the customer\'s state.').optional())
+      })
+      .strict()
+      .optional()
+  })
+  .strict();
+/** Cancelling a wrongly made invoice of the agreed services: a reason is always given (the database checks it again). */
+export const invoiceCancelSchema = z.object({ reason: trimmed(500).min(5, 'Give the reason for cancelling this invoice (at least 5 characters).') }).strict();
 export const invoiceWhatsAppRequestSchema = z.object({ resend: z.boolean().default(false) }).strict();
 export const invoiceWhatsAppSettingsSchema = z
   .object({
