@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  OperationsHeadReviewItem, OperationsOverviewRow,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
@@ -489,6 +490,10 @@ export const usersApi = {
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
   setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
+  /** Super Admin: make a Department Head an Operations Head (several departments), or take it back. */
+  setOperationsHead: (id: string, value: boolean, note?: string | null) => api.post<Profile>(`/users/${id}/operations-head`, { value, note: note || null }),
+  operationsHeadReview: () => api.get<OperationsHeadReviewItem[]>('/users/operations-head-review'),
+  operationsOverview: () => api.get<OperationsOverviewRow[]>('/operations/overview'),
   setHeadDivision: (id: string, division: HeadDivision | null) => api.post<Profile>(`/users/${id}/head-division`, { division }),
   /** Department Heads who work in a department (own or authorised), with all their departments. */
   departmentHeads: (departmentId: string) => api.get<DepartmentHeadAccess[]>('/users/department-heads', { departmentId }),

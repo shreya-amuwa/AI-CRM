@@ -5778,6 +5778,27 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'scopes: an unknown function is refused', r);
   r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('accounts').id, division: 'SALES', granted: true });
   check(r.status === 422 && /no Sales team/.test(r.json.error.message), 'scopes: a department with no such team is refused', r);
+  // several departments belong to an Operations Head: the Super Admin makes one first (the database refuses the grant otherwise)
+  r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'SALES', granted: true });
+  check(r.status === 422 && /Operations Head/.test(r.json.error.message), 'operations head: a Department Head who is not an Operations Head cannot be given another department', r);
+  r = await api('gs', 'POST', `/users/${gsId}/operations-head`, { value: true });
+  check(r.status === 403, 'operations head: a Department Head cannot make themselves one', r);
+  r = await api('a', 'POST', `/users/${gsId}/operations-head`, { value: true });
+  check(r.status === 403, 'operations head: nor can a Team Member', r);
+  r = await api('gs', 'GET', '/users/operations-head-review');
+  check(r.status === 403, 'operations head: the Super Admin review is closed to a Department Head', r);
+  r = await api('gs', 'GET', '/operations/overview');
+  check(r.status === 403, 'operations head: a Department Head has no Operations overview', r);
+  for (const id of [gsId, gpId]) {
+    r = await api('sa', 'POST', `/users/${id}/operations-head`, { value: true, note: 'Oversees the shared departments' });
+    check(r.status === 200 && r.json.data.isOperationsHead === true && r.json.data.role === 'DEPARTMENT_HEAD', 'operations head: the Super Admin makes the shared head an Operations Head (still a Department Head for every other rule)', r);
+  }
+  r = await api('gs', 'POST', `/users/${gsId}/operations-head`, { value: false });
+  check(r.status === 403, 'operations head: an Operations Head cannot remove their own role', r);
+  r = await api('gs', 'POST', `/users/${gpId}/department-access`, { departmentId: dep('mpillar').id, division: 'SUPPORT', granted: true });
+  check(r.status === 403, 'operations head: nor give departments (that stays with the Super Admin)', r);
+  r = await api('sa', 'POST', `/users/${gsId}/operations-head`, { value: true, extra: 1 });
+  check(r.status === 422, 'operations head: an unknown field is refused', r);
   for (const [who, id, division] of [['gs', gsId, 'SALES'], ['gp', gpId, 'SUPPORT']] as const) {
     for (const slug of ['mpillar', 'whatsbox']) {
       r = await api('sa', 'POST', `/users/${id}/department-access`, { departmentId: dep(slug).id, division, granted: true });
@@ -5849,9 +5870,18 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // Add Team Member: ONE account created for several departments (shared Support head), or for both functions of a department
   const headCount = async (email: string) => (await db.query(`select count(*)::int n from public.profiles where lower(email) = lower($1)`, [email])).rows[0].n as number;
   r = await api('sa', 'POST', '/users', { email: 'multi.support@amuwa.com', fullName: 'Multi Support Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SUPPORT',
-    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SUPPORT' }, { departmentId: wtId, division: 'SUPPORT' }] });
-  check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SUPPORT', 'create: one Department Head account is created with three departments', r);
+    operationsHead: true, additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SUPPORT' }, { departmentId: wtId, division: 'SUPPORT' }] });
+  check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SUPPORT' && r.json.data.isOperationsHead === true, 'create: one Operations Head account is created with three departments', r);
   const multiId = r.json.data.id as string;
+  r = await api('sa', 'POST', '/users', { email: 'multi.plain@amuwa.com', fullName: 'Plain Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SALES',
+    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SALES' }] });
+  check(r.status === 422 && /Operations Head/.test(r.json.error.message) && (await headCount('multi.plain@amuwa.com')) === 0, 'create: a Department Head created with other departments but not as an Operations Head is refused and no account is made', r);
+  r = await api('dh', 'POST', '/users', { email: 'multi.dhop@amuwa.com', fullName: 'Not Allowed Op', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastore').id, operationsHead: true });
+  check(r.status === 403 && (await headCount('multi.dhop@amuwa.com')) === 0, 'create: only the Super Admin makes an Operations Head', r);
+  r = await api('sa', 'POST', '/users', { email: 'multi.tmop@amuwa.com', fullName: 'Member Op', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Sales'), operationsHead: true });
+  check(r.status === 422 && (await headCount('multi.tmop@amuwa.com')) === 0, 'create: a Team Member cannot be an Operations Head', r);
+  r = await api('sa', 'GET', '/users/operations-head-review');
+  check(r.status === 200 && r.json.data.some((x: any) => x.profileId === multiId && x.isOperationsHead === true && x.needsDecision === false), 'operations head: the Super Admin review lists the Operations Heads', r.json.data);
   check((await headCount('multi.support@amuwa.com')) === 1, 'create: one account, no duplicates');
   r = await api('sa', 'GET', `/users/${multiId}/department-access`);
   check(r.status === 200 && r.json.data.grants.length === 2, 'create: the extra departments are persisted as grants', r);
@@ -5910,6 +5940,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const supportHeadId = await mk('shared.support.acx@amuwa.com', 'Shared Support Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('whatsbox').id, headDivision: 'SUPPORT' });
   tokens.set('acs', tokenFor(salesHeadId));
   tokens.set('acp', tokenFor(supportHeadId));
+  for (const id of [salesHeadId, supportHeadId]) await api('sa', 'POST', `/users/${id}/operations-head`, { value: true });
   for (const slug of ['wabastar', 'wabastore', 'whatsbox', 'dtalk']) {
     for (const side of ['Sales', 'Support']) {
       const owner = await mk(`acx.${slug}.${side.toLowerCase()}@amuwa.com`, `ACX ${slug} ${side} Member`, { role: 'TEAM_MEMBER', teamId: await teamId(slug, side) });

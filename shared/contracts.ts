@@ -117,6 +117,8 @@ export interface Profile {
   role: Role;
   /** Team member of a support team who opens the Technical Consultant dashboard. */
   isTechnicalConsultant: boolean;
+  /** A Department Head who oversees the several departments the Super Admin assigned (a Department Head otherwise: one department). */
+  isOperationsHead?: boolean;
   /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
   salesSubRole?: SalesSubRole | null;
   /** Sales or Support side of a Department Head (null when not specified or not a Department Head). */
@@ -3610,4 +3612,29 @@ export interface SalesIncome {
   transactions: { date: string; customer: string; customerId: string; reference: string | null; type: string; service: string | null; amount: number; status: string; method: string | null; source: string }[];
   /** Expenses are recorded per department, not per Sales / Support side: there is no Sales-only figure, so this is null. */
   expenses: null;
+}
+
+/** The Super Admin's review of Department Heads who work in several departments (see docs/ROLES_AND_LIFECYCLE.md). */
+export interface OperationsHeadReviewItem {
+  profileId: string;
+  name: string;
+  email: string;
+  homeDepartment: string | null;
+  isOperationsHead: boolean;
+  /** Not an Operations Head, yet holds extra departments from before the role existed: kept as they were until the Super Admin decides. */
+  needsDecision: boolean;
+  extraDepartments: { departmentId: string; department: string; division: HeadDivision; transition: boolean }[];
+}
+
+/** One department in the Operations Head's overview. */
+export interface OperationsOverviewRow {
+  departmentId: string;
+  name: string;
+  slug: string;
+  people: number;
+  leads: number;
+  onboarding: number;
+  customers: number;
+  awaitingDepartmentHead: number;
+  withVerifier: number;
 }

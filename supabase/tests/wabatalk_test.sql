@@ -41,6 +41,7 @@ set role authenticated;
 select test.login('sa');
 select test.must_fail($$select department_access_set(test.id('wt_p'), test.dept('dtalk'), 'SUPPORT', true)$$, 'D Talk''s Support cannot be given under the name D Talk', 'Give Wabatalk instead');
 select test.must_fail($$select department_access_set(test.id('wt_p'), test.wtid(), 'SALES', true)$$, 'Wabatalk is Support only', 'only Support can be given');
+select set_operations_head(test.id('wt_p'), true);
 select department_access_set(test.id('wt_p'), test.dept('whatsbox'), 'SUPPORT', true);
 select department_access_set(test.id('wt_p'), test.wtid(), 'SUPPORT', true);
 select test.check((select (x ->> 'hasSupport')::boolean and not (x ->> 'hasSales')::boolean from jsonb_array_elements(department_access_get(test.id('wt_p')) -> 'departments') x where x ->> 'slug' = 'wabatalk'),
@@ -164,6 +165,8 @@ select test.check((select department_id = test.dept('dtalk') from revenue_attrib
 -- later migrations redefine some of the functions this one defines: put them back in order
 \i supabase/migrations/20261125000100_department_access_shared_heads.sql
 \i supabase/migrations/20261126000100_access_control_apply.sql
+-- ... and the newest scope rule (Operations Head) goes back on top
+\i supabase/migrations/20261204000100_operations_head.sql
 select test.check((select department_id = test.wtid() from revenue_attributions where order_key = 'ADDON:' || pg_temp.g('A')), 'running the migration again moves the old Support order to Wabatalk');
 select test.check((select department_id = test.dept('dtalk') from revenue_attributions where order_key = 'SALE:' || pg_temp.g('S')), '... and leaves Sales'' order with D Talk');
 select test.check((select count(*) = 1 from departments where slug = 'wabatalk' or lower(name) = 'wabatalk'), 'and does not create Wabatalk a second time');

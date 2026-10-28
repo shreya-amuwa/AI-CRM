@@ -13,7 +13,7 @@ import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
 import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, type HeadFunction } from '../../lib/scope/headAssignment';
 import {
-  ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isSalesHead, isTechnicalConsultant, staffRoleLabel
+  OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
 
 /**
@@ -57,7 +57,8 @@ interface StaffManagementPanelProps {
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
 /** Technical Consultant is a team member of a support team with its own dashboard. */
-type StaffChoice = StaffRole | 'TECHNICAL_CONSULTANT';
+/** An Operations Head is a Department Head who oversees several departments (only the Super Admin makes one). */
+type StaffChoice = StaffRole | 'TECHNICAL_CONSULTANT' | 'OPERATIONS_HEAD';
 
 const DIVISION_BY_SUBDEPT: Record<string, TeamDivision> = { sales: 'SALES', support: 'SUPPORT' };
 
@@ -158,16 +159,18 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const supportTeams = useMemo(() => teams.filter(t => t.division === 'SUPPORT'), [teams]);
   // Offered next to Team Lead / Team Member wherever a support team can be picked.
   const canCreateConsultant = allowedRoles.includes('TEAM_MEMBER') && supportTeams.length > 0 && (!division || division === 'SUPPORT');
+  const canCreateOperationsHead = profile?.role === 'SUPER_ADMIN' && allowedRoles.includes('DEPARTMENT_HEAD');
   const choices = useMemo<StaffChoice[]>(
-    () => (canCreateConsultant ? [...allowedRoles, 'TECHNICAL_CONSULTANT'] : allowedRoles),
-    [canCreateConsultant, allowedRoles]
+    () => [...allowedRoles, ...(canCreateConsultant ? (['TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])],
+    [canCreateConsultant, canCreateOperationsHead, allowedRoles]
   );
   const consultant = choice === 'TECHNICAL_CONSULTANT';
-  const role: StaffRole = consultant ? 'TEAM_MEMBER' : choice;
+  const operationsHead = choice === 'OPERATIONS_HEAD';
+  const role: StaffRole = consultant ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : choice;
   // The designation starts as the matching one for the role (they stay separate fields: the role decides access).
   useEffect(() => {
-    setDesignation(role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member');
-  }, [role]);
+    setDesignation(operationsHead ? OPERATIONS_HEAD_LABEL : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member');
+  }, [role, operationsHead]);
 
   useEffect(() => {
     if (!choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
@@ -260,6 +263,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   }
 
   const selectedTeam = teams.find(t => t.id === teamId);
+  // switching from Operations Head to Department Head: one department (a facet such as Wabatalk stays with its department)
+  useEffect(() => {
+    if (operationsHead || headDepts.length < 2) return;
+    const baseOf = (id: string) => assignable.find(d => d.id === id)?.facetOf ?? id;
+    setHeadDepts(headDepts.filter(id => baseOf(id) === baseOf(headDepts[0])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operationsHead]);
   const needsTeam = role !== 'DEPARTMENT_HEAD';
   const headOfSide = (side: HeadDivision) => existingHeads.find(h => h.headDivision === side) || null;
   const unlabelledHead = existingHeads.find(h => !h.headDivision) || null;
@@ -311,6 +321,29 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   };
 
   /** The Super Admin labels an existing Department Head Sales or Support. */
+  /** The Super Admin makes a Department Head an Operations Head, or takes it back (the database audits it and tells the person). */
+  const changeOperationsHead = (member: Profile, value: boolean) => {
+    ask({
+      title: value ? `Make ${member.fullName} an Operations Head?` : `Remove ${member.fullName} as Operations Head?`,
+      message: value
+        ? 'They will oversee the departments the Super Admin assigns in Access Control. They get no Super Admin permission.'
+        : 'The departments other than their own are withdrawn. Their own department stays.',
+      confirmLabel: value ? 'Make Operations Head' : 'Remove Operations Head',
+      danger: !value,
+      run: async () => {
+        setActionNotice(null);
+        try {
+          await usersApi.setOperationsHead(member.id, value);
+          setActionNotice({ text: value ? `${member.fullName} is now an Operations Head.` : `${member.fullName} is a Department Head again.`, ok: true });
+          await loadMembers();
+        } catch (err) {
+          setActionNotice({ text: errorMessage(err), ok: false });
+        }
+        setTimeout(() => setActionNotice(null), 6000);
+      }
+    });
+  };
+
   const changeHeadDivision = async (member: Profile, value: HeadDivision | '') => {
     setActionNotice(null);
     try {
@@ -353,6 +386,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       technicalConsultant: consultant || undefined,
       salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
       headDivision: headPlan?.headDivision,
+      operationsHead: operationsHead || undefined,
       additionalAccess: headPlan && headPlan.additionalAccess.length ? headPlan.additionalAccess : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, emergencyContact }
     });
@@ -494,7 +528,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               ) : (
                 <>
                   {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - you can create:{' '}
-                  {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[r])).join(', ')}
+                  {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r])).join(', ')}
                 </>
               )}
             </p>
@@ -616,7 +650,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               onChange={e => setChoice(e.target.value as StaffChoice)}
             >
               {choices.map(r => (
-                <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[r]}</option>
+                <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r]}</option>
               ))}
             </select>
           </label>
@@ -648,9 +682,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 departments={assignable}
                 teams={assignTeams}
                 inputClass={inputClass}
+                multi={operationsHead}
               />
               <p className="text-[11px] text-slate-500">
-                A department has one Sales head and one Support head (the department the head is placed in is checked for this); a head can also be given other departments they share.
+                A department has one Sales head and one Support head (the department the head is placed in is checked for this). {operationsHead ? 'An Operations Head oversees every department ticked above.' : 'A Department Head works in one department (and may handle both its Sales and Support); to oversee several departments choose Operations Head.'}
                 {unlabelledHead && ` ${unlabelledHead.fullName} has no side set yet — set it in the list below.`}
               </p>
             </>
@@ -834,6 +869,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                               {HEAD_DIVISIONS.map(d => <option key={d} value={d}>{HEAD_DIVISION_LABELS[d]} head</option>)}
                             </select>
                           </label>
+                        )}
+                        {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
+                          <button
+                            type="button"
+                            onClick={() => changeOperationsHead(m, !isOperationsHead(m))}
+                            className="mt-1 block text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                            aria-label={`${isOperationsHead(m) ? 'Remove Operations Head' : 'Make Operations Head'}: ${m.fullName}`}
+                            data-testid={`operations-head-${m.id}`}
+                          >
+                            {isOperationsHead(m) ? 'Remove Operations Head' : 'Make Operations Head'}
+                          </button>
                         )}
                         {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
                           <button

@@ -78,6 +78,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/department_scopes_test.sql 2>&1 | 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/wabatalk_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/department_heads_overview_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/access_control_apply_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/operations_head_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_department_head_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/field_visit_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

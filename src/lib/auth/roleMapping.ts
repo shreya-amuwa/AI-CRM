@@ -113,10 +113,18 @@ export function isTechnicalConsultant(p: Pick<Profile, 'role' | 'isTechnicalCons
   return p.role === 'TEAM_MEMBER' && !!p.isTechnicalConsultant && p.team?.division === 'SUPPORT';
 }
 
-/** Label for a profile's role, with Technical Consultant shown as its own role. */
-export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): string {
+/** A Department Head who oversees the several departments the Super Admin assigned. */
+export function isOperationsHead(p: Pick<Profile, 'role' | 'isOperationsHead'>): boolean {
+  return p.role === 'DEPARTMENT_HEAD' && !!p.isOperationsHead;
+}
+
+/** Label for a profile's role, with Technical Consultant and Operations Head shown as their own roles. */
+export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'isOperationsHead' | 'team'>): string {
+  if (isOperationsHead(p)) return OPERATIONS_HEAD_LABEL;
   return isTechnicalConsultant(p) ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[p.role];
 }
+
+export const OPERATIONS_HEAD_LABEL = 'Operations Head';
 
 export const TECHNICAL_CONSULTANT_LABEL = 'Technical Consultant';
 

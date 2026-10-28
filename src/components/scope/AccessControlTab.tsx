@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Home, Loader2, ShieldCheck } from 'lucide-react';
-import type { DepartmentAccessInfo, Profile } from '../../../shared/contracts';
+import type { DepartmentAccessInfo, OperationsHeadReviewItem, Profile } from '../../../shared/contracts';
 import { usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
-import { DIVISIONS, cellAvailable, cellKey, cellReason, isDirty, lockedCell, pairsToSave, savedSet, summary } from '../../lib/scope/accessMatrix';
+import { DIVISIONS, SEVERAL_DEPARTMENTS_REASON, cellAvailable, cellKey, cellReason, isDirty, isOtherDepartment, lockedCell, pairsToSave, savedSet, summary } from '../../lib/scope/accessMatrix';
 
 /**
  * Access Control (Super Admin): pick an existing employee, then tick the departments and functions (Sales / Support) they work in.
@@ -39,12 +39,16 @@ export const AccessControlTab: React.FC<{
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
-  useEffect(() => {
+  const [review, setReview] = useState<OperationsHeadReviewItem[]>([]);
+  const [roleBusy, setRoleBusy] = useState(false);
+  const loadHeads = useCallback(() => {
     usersApi.list({ role: 'DEPARTMENT_HEAD', status: 'ACTIVE', pageSize: 100 }).then(
       r => setHeads(r.items),
       err => setHeadsError(errorMessage(err))
     );
+    usersApi.operationsHeadReview().then(setReview, () => setReview([]));
   }, []);
+  useEffect(loadHeads, [loadHeads]);
 
   const load = useCallback(async (id: string) => {
     if (!id) {
@@ -89,6 +93,28 @@ export const AccessControlTab: React.FC<{
       return next;
     });
 
+  /** Make the selected Department Head an Operations Head (or take it back). Only the Super Admin; the database audits it and tells the person. */
+  const changeRole = async (value: boolean) => {
+    if (!selected) return;
+    const text = value
+      ? `Make ${selected.fullName} an Operations Head? They will be able to oversee the departments you tick below.`
+      : `Remove ${selected.fullName} as Operations Head? The departments other than their own are withdrawn (their own department stays).`;
+    if (!window.confirm(text)) return;
+    setRoleBusy(true);
+    setMessage(null);
+    try {
+      await usersApi.setOperationsHead(selected.id, value);
+      loadHeads();
+      await load(selected.id);
+      setMessage({ text: value ? `${selected.fullName} is now an Operations Head.` : `${selected.fullName} is a Department Head again.`, ok: true });
+      onSaved();
+    } catch (err) {
+      setMessage({ text: errorMessage(err), ok: false });
+    } finally {
+      setRoleBusy(false);
+    }
+  };
+
   const save = async () => {
     if (!info) return;
     setSaving(true);
@@ -126,18 +152,53 @@ export const AccessControlTab: React.FC<{
             {heads.map(h => (
               <option key={h.id} value={h.id}>
                 {h.fullName} · {h.email}
+                {h.isOperationsHead ? ' · Operations Head' : ''}
                 {h.department ? ` · home: ${h.department.name}` : ''}
               </option>
             ))}
             {profileId && !selected && <option value={profileId}>(selected employee)</option>}
           </select>
           <span className="block mt-1 font-normal text-slate-500">
-            Only Department Heads can work in several departments. Other roles keep the one department they were created in.
+            Only an Operations Head works in several departments. A Department Head works in one department (and may handle both Sales and Support of it); other roles keep the one department they were created in.
           </span>
         </label>
         {headsError && <p role="alert" className="text-xs text-rose-600">{headsError}</p>}
       </div>
 
+      {review.some(r => r.needsDecision) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 space-y-2" role="status" data-testid="operations-head-review">
+          <p className="font-bold">Decision needed: Department Heads who work in several departments</p>
+          <p>
+            These heads were given other departments before the Operations Head role existed. Nothing was taken away: they keep their access until you decide. Make each one an
+            Operations Head, or untick the extra departments.
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {review.filter(r => r.needsDecision).map(r => (
+              <li key={r.profileId}>
+                <button type="button" className="rounded-full border border-amber-300 bg-white px-3 py-1 font-semibold hover:bg-amber-100" onClick={() => choose(r.profileId)}>
+                  {r.name} ({r.homeDepartment ?? '-'} + {r.extraDepartments.map(x => x.department).join(', ')})
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {selected && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-xs" data-testid="operations-head-box">
+          <p className="text-slate-700">
+            <strong>{selected.fullName}</strong> is {selected.isOperationsHead ? 'an Operations Head: oversees the departments ticked below.' : 'a Department Head: works in one department.'}
+          </p>
+          <button
+            type="button"
+            disabled={roleBusy}
+            onClick={() => void changeRole(!selected.isOperationsHead)}
+            className="rounded-xl border border-slate-200 px-3 py-1.5 font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
+            data-testid="operations-head-toggle"
+          >
+            {selected.isOperationsHead ? 'Remove Operations Head' : 'Make Operations Head'}
+          </button>
+        </div>
+      )}
       {!profileId && <p className="text-sm text-slate-500 px-1">Choose an employee to see and change their departments and functions.</p>}
       {loading && (
         <p className="flex items-center gap-2 text-sm text-slate-600 px-1" role="status">
@@ -188,7 +249,8 @@ export const AccessControlTab: React.FC<{
                     </th>
                     {DIVISIONS.map(d => {
                       const key = cellKey(dep.id, d);
-                      const reason = cellReason(dep, d);
+                      // another department is for an Operations Head; one already given (kept from before) can still be taken back
+                      const reason = cellReason(dep, d) || (!selected?.isOperationsHead && isOtherDepartment(info, dep) && !saved.has(key) ? SEVERAL_DEPARTMENTS_REASON : null);
                       const isLocked = key === locked;
                       return (
                         <td key={d} className="py-2.5 px-3 text-center">

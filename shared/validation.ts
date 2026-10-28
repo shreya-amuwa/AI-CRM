@@ -203,7 +203,9 @@ export const userCreateSchema = z
     salesSubRole: z.enum(SALES_SUB_ROLES).optional(),
     /** Sales or Support side of a Department Head (a department has one head for each). */
     headDivision: z.enum(HEAD_DIVISIONS).optional(),
-    /** More (department, function) pairs the head works in, besides their own department and side (a shared head, or one person handling Sales and Support). Super Admin only. */
+    /** An Operations Head oversees several departments (the Super Admin makes one; a plain Department Head works in one department). */
+    operationsHead: z.boolean().optional(),
+    /** More (department, function) pairs the head works in, besides their own department and side. Another DEPARTMENT is for an Operations Head only. Super Admin only. */
     additionalAccess: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(40).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
@@ -220,6 +222,10 @@ export const userCreateSchema = z
   .refine(u => !u.additionalAccess?.length || u.role === 'DEPARTMENT_HEAD', {
     message: 'Only a Department Head can work in more than one department or function.',
     path: ['additionalAccess']
+  })
+  .refine(u => !u.operationsHead || u.role === 'DEPARTMENT_HEAD', {
+    message: 'Only a Department Head can be an Operations Head.',
+    path: ['operationsHead']
   })
   .refine(u => !u.headDivision || u.role === 'DEPARTMENT_HEAD', {
     message: 'Only a Department Head is a Sales or Support head.',
@@ -263,6 +269,7 @@ export const userAssignSchema = z
   .strict();
 
 export const technicalConsultantSchema = z.object({ value: z.boolean() }).strict();
+export const operationsHeadSchema = z.object({ value: z.boolean(), note: optionalText(500) }).strict();
 
 export const profileSelfUpdateSchema = z
   .object({
