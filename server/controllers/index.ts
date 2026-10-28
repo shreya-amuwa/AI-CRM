@@ -462,6 +462,21 @@ export const telecallerController = {
   updateLead: (async ctx => ok(await svc(ctx).telecaller.updateLead(ctx.params.id, ctx.req.body))) as Handler
 };
 
+export const fieldVisitController = {
+  overview: (async ctx => ok(await svc(ctx).fieldVisit.overview())) as Handler,
+  leads: (async ctx => ok(await svc(ctx).fieldVisit.leads(ctx.req.query))) as Handler,
+  assigned: (async ctx => ok(await svc(ctx).fieldVisit.assigned(ctx.req.query))) as Handler,
+  list: (async ctx => ok(await svc(ctx).fieldVisit.list(ctx.req.query))) as Handler,
+  schedule: (async ctx => ok(await svc(ctx).fieldVisit.schedule(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).fieldVisit.update(ctx.params.id, ctx.req.body))) as Handler,
+  start: (async ctx => ok(await svc(ctx).fieldVisit.start(ctx.params.id, ctx.req.body))) as Handler,
+  complete: (async ctx => ok(await svc(ctx).fieldVisit.complete(ctx.params.id, ctx.req.body))) as Handler,
+  cancel: (async ctx => ok(await svc(ctx).fieldVisit.cancel(ctx.params.id, ctx.req.body))) as Handler,
+  assignees: (async ctx => ok(await svc(ctx).fieldVisit.assignees())) as Handler,
+  assign: (async ctx => ok(await svc(ctx).fieldVisit.assign(ctx.req.body), 201)) as Handler,
+  cancelAssignment: (async ctx => ok(await svc(ctx).fieldVisit.cancelAssignment(ctx.params.leadId))) as Handler
+};
+
 export const salesHeadController = {
   overview: (async ctx => ok(await svc(ctx).salesHead.overview())) as Handler,
   assignees: (async ctx => ok(await svc(ctx).salesHead.assignees())) as Handler,
