@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type {
   OnboardingFilter,
+  OnboardingHandoffInfo,
   Paginated,
   PipelineCounts,
   PipelineCustomer,
@@ -317,6 +318,8 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const [confirmSend, setConfirmSend] = useState(false);
   const [editingHandover, setEditingHandover] = useState(false);
   const [paying, setPaying] = useState(false);
+  // where the next send goes (decided by the database from the services ordered) and whether anybody is there to receive it
+  const [handoff, setHandoff] = useState<OnboardingHandoffInfo | null>(null);
 
   const load = useCallback(() => {
     pipelineApi.get(id).then(
@@ -329,6 +332,10 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   }, [id]);
   useEffect(load, [load]);
   usePipelineRealtime(load);
+  useEffect(() => {
+    if (mode !== 'sales') return;
+    pipelineApi.handoffInfo(id).then(setHandoff, () => setHandoff(null));
+  }, [id, mode, c?.onboarding?.forwardedToSupportAt, c?.onboarding?.accountsConfirmedAt]);
   // Services that need no Technical Consultant: Sales verifies the documents and sends them to the delivery department.
   const { journey, reload: reloadJourney } = useJourney(mode === 'sales' ? id : null);
   const direct = mode === 'sales' && journey?.journey === 'DIRECT';
@@ -353,6 +360,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const withAccounts = !forwarded && !!c.onboarding?.sentToAccountsAt && !c.onboarding?.accountsConfirmedAt;
   // After Accounts confirmed, a re-send after a return goes straight to the consultant.
   const toAccounts = !c.onboarding?.accountsConfirmedAt;
+  // the person Sales' send goes to: the Meta Verifier for WhatsApp-related services, the Technical Consultant for the rest
+  const recipient = handoff?.recipient ?? 'Technical Consultant';
+  const noRecipient = !!handoff && !handoff.recipientAvailable;
   const phoneDigits = (c.whatsapp || c.phone || '').replace(/\D/g, '');
   const changed = () => {
     notifyPipelineChanged();
@@ -497,7 +507,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
               <div className="flex-1 min-w-0 w-full" aria-live="polite">
                 {forwarded ? (
                   <>
-                    <div className="text-sm font-bold text-emerald-700">Sent to the Technical Consultant</div>
+                    <div className="text-sm font-bold text-emerald-700">Sent to the {recipient}</div>
                     <p className="text-xs text-slate-500 mt-0.5">on {longDate(c.onboarding?.forwardedToSupportAt)}</p>
                   </>
                 ) : withAccounts ? (
@@ -540,7 +550,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                   disabled={missing.length > 0 || forwarded || withAccounts}
                   title={
                     forwarded
-                      ? 'The Technical Consultant verifies each item. Fix anything marked not authorized.'
+                      ? `The ${recipient} verifies each item. Fix anything marked not authorized.`
                       : withAccounts
                         ? 'Accounts is confirming the amount.'
                         : missing.length > 0
@@ -549,18 +559,23 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
                   }
                   onClick={() => setConfirmSend(true)}
                 >
-                  {forwarded ? 'Sent to Technical Consultant' : withAccounts ? 'Sent to Accounts' : toAccounts ? 'Send to Accounts' : returned ? 'Send again to Technical Consultant' : 'Send to Technical Consultant'}
+                  {forwarded ? `Sent to ${recipient}` : withAccounts ? 'Sent to Accounts' : toAccounts ? 'Send to Accounts' : returned ? `Send again to ${recipient}` : `Send to ${recipient}`}
                 </button>
               </div>
             </div>
+            {noRecipient && !toAccounts && !forwarded && !withAccounts && (
+              <p role="status" className="mt-3 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                This department has no active {recipient} yet, so the customer cannot be sent. Ask the Super Admin or your Department Head to assign one.
+              </p>
+            )}
             {confirmSend && !forwarded && !withAccounts && (
               <div role="alertdialog" aria-labelledby="send-confirm-title" className="mt-4 p-3 rounded-xl border border-emerald-200 bg-emerald-50 space-y-2 max-w-xl mx-auto">
                 <div id="send-confirm-title" className="text-xs font-bold text-emerald-900">
-                  Send {c.company || c.name} {returned && !toAccounts ? 'back ' : ''}to {toAccounts ? 'Accounts' : 'the Technical Consultant'}?
+                  Send {c.company || c.name} {returned && !toAccounts ? 'back ' : ''}to {toAccounts ? 'Accounts' : `the ${recipient}`}?
                 </div>
                 <p className="text-[11px] text-emerald-800">
                   {toAccounts
-                    ? 'Accounts checks the business details and confirms the amount. Then it goes to the Technical Consultant to verify the documents.'
+                    ? `Accounts checks the business details and confirms the amount. Then it goes to the ${recipient} to verify the documents.`
                     : 'They will verify every document. After sending, current files can be replaced but not deleted.'}
                 </p>
                 <div className="flex gap-2">

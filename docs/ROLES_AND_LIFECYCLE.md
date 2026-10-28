@@ -56,6 +56,12 @@ only decide what to show.
 
 1. Sales sends the customer for verification. `forward_to_consultant` pins the route. A Meta customer needs an active Meta Verifier in
    the department, otherwise the send is refused with a clear message (no customer is stranded).
+   **What Sales sees** (`onboarding_handoff_info`, read only): the button and the confirmation name the recipient the database will use - "Send to
+   Meta Verifier" for a WhatsApp-related customer (WhatsApp API, WhatsApp API + Blue Tick, Blue Tick), "Send to Technical Consultant" for the rest -
+   and a note appears *before* the click when the department has nobody in that role. While the amount is not yet confirmed the button still
+   reads "Send to Accounts" (Accounts confirms, and the same `forward_to_consultant` then moves the customer to the Meta Verifier's queue). A
+   second send is refused and names the right role; Sales cannot complete, hand over or review a Meta customer by calling the API directly.
+   Which services are on the Meta route is data (`crm_services.requires_meta_verification`, Super Admin in Workflow settings); Blue Tick was added.
 2. The Meta Verifier reviews, writes notes (`verification_notes`: NOTE / PENDING / NEEDS_CORRECTION / VERIFIED), authorises documents and
    enters the WABA ID, then `send_to_department_head`. The hand-over is validated (everything authorised, one department head exists,
    done once) and creates **one** follow-up (a unique index allows one open follow-up per customer).
@@ -68,6 +74,14 @@ only decide what to show.
    timer or polling is involved. Also a database trigger cancels at once when the customer leaves onboarding.
 5. The consultant records each contact (channel, outcome, note, next date). A missed call reschedules; a completed consultation closes it.
    All attempts are kept (`tc_followup_contacts`) and the note joins the customer's consultation notes.
+
+**Client login details (Meta Verifier).** The verifier's screen has a "Client login details" section: per WhatsApp service of the customer, the
+panel and the account / user ID on it (`panel_details_list` / `panel_details_set`; these are the existing `customer_services.platform` and
+`panel_account` columns, which the client already reads in My Services - no new field). Allowed for the Meta Verifier of the customer's route, the
+Department Head and the Super Admin; never Sales or the Technical Consultant of a Meta customer. The value is validated as an e-mail or ID, and
+anything that looks like a password (or a "user:password" pair) is refused. **No password is stored anywhere**: the audit and the history record who
+changed which service and which kind of field, never a value. Saving changes nothing else - no status, no message, no automation job. The
+Client Dashboard login stays Accounts' (shown read only in the same section).
 
 ## 5. Client login (Accounts, every service)
 
@@ -114,6 +128,13 @@ no longer implies "completed" (it did before).
   signed-in client's own customer.
 * Live updates without a refresh: each milestone writes a keyed client notification (once), which the open dashboard already listens to.
 * One definition of "live" (`private.client_service_state`) is used by both the services list and the steps, so they never disagree.
+* **Outstanding balance** (`GET /client/billing` -> `client_billing()`): one block per order (the agreed order and each invoiced add-on order) with
+  **total payable incl. GST - confirmed payments = balance**, the payments waiting for verification shown but never deducted, the part of the order no
+  invoice covers yet, Unpaid / Partially paid / Fully paid, and the order's invoices. Figures are those Accounts works from
+  (`private.order_summary`: `customers.deal_amount`, `amount_verified`, `amount_received`; add-ons: `addon_requests.total` against `addon_payments`),
+  so the client and Accounts cannot disagree; another order's or customer's payments are never deducted; an order whose GST rate Accounts has not chosen
+  is shown as "being confirmed" with no invented balance. Nothing is hard-coded and an invoice total is never read as money received. The dashboard
+  refreshes by itself: a payment recorded / verified / rejected / reversed and a change of the order total each write one keyed client notification.
 * Invoices: `client_invoices()` returns the client's own invoices for every service (WhatsApp included); files are opened through signed,
   short-lived links only; no public PDFs; nothing creates an invoice to make one visible.
 
@@ -124,7 +145,7 @@ New: `POST /users/:id/operations-head`, `GET /users/operations-head-review`, `GE
 `PATCH /pipeline/service-journeys/:code/meta-verification`, `GET /consultant/followups`, `POST /consultant/followups/:id/contact|assign`,
 `GET /workflow/settings`, `POST /workflow/tc-followup-delay`, `GET /pipeline/accounts/client-logins`,
 `POST /pipeline/customers/:id/accounts/client-login|customer-email|account-email/resend`, `POST /pipeline/customers/:id/meta-verification-completed`,
-`GET /client/service-progress`.
+`GET /client/service-progress`, `GET /client/billing`, `GET /pipeline/customers/:id/handoff`, `GET|PATCH /pipeline/customers/:id/verification/panel-details[/:code]`.
 Changed: `POST .../accounts/client-login` takes no body. Removed: `POST /pipeline/customers/:id/client-account`.
 `/internal/automations/dispatch` also runs the follow-up job and reports `tcFollowups`.
 
@@ -135,7 +156,11 @@ Changed: `POST .../accounts/client-login` takes no body. Removed: `POST /pipelin
 3. `20261205000300_accounts_client_provisioning.sql`
 4. `20261205000400_client_service_progress.sql`
 
-`supabase/run_these_4_migrations_roles_provisioning.sql` is the four in one file for the SQL editor. `supabase/review_role_redesign.sql` is a
+5. `20261206000100_client_billing.sql` (client outstanding balance)
+6. `20261206000200_sales_meta_verifier_handoff.sql` (Sales hand-off wording and availability; Blue Tick on the Meta route)
+7. `20261206000300_meta_verifier_panel_details.sql` (Client login details for the Meta Verifier)
+
+`supabase/run_these_3_migrations_billing_handoff_panel.sql` is 5-7 in one file. `supabase/run_these_4_migrations_roles_provisioning.sql` is the first four in one file for the SQL editor. `supabase/review_role_redesign.sql` is a
 read-only list of the records that need a decision (section 11).
 
 ## 10. Settings and environment
@@ -174,6 +199,8 @@ customers; jobs still holding a secret (must be 0).
 
 `supabase/tests`: `operations_head_test.sql`, `meta_verifier_test.sql` (route, rights, notes, hand-over, delay, due, cancel, re-route,
 re-run), `client_provisioning_test.sql` (orphan sign-ins, e-mail checks, queue access, failed message, re-run), `client_progress_test.sql`
-(steps, notifications once, isolation, invoices), the adapted `rls`, `automations`, `journeys` suites, `api_integration.test.ts` (routes,
+(steps, notifications once, isolation, invoices), `client_billing_test.sql` (balance per order, pending not deducted, other customers isolated, reversal,
+add-on, GST not chosen, notifications once), `sales_meta_handoff_test.sql` (route shown to Sales, no verifier, queue, duplicates, bypass), `panel_details_test.sql` (access,
+validation, no password, audit without values, nothing queued), the adapted `rls`, `automations`, `journeys` suites, `api_integration.test.ts` (routes,
 dispatch, set-password link, no secrets), unit tests (`journey_service`, `onboarding_status_map`), and browser tests
 (`ui_head_departments`, `ui_access_control`, `ui_client_logins`). Run `npm run test:db`, `test:api`, `test:unit`, `npm run typecheck`.

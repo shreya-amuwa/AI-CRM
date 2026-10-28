@@ -3,7 +3,7 @@ import { displayTicketNo } from '../lib/ticketFormat';
 import { AlertTriangle, Bell, Building2, CalendarClock, CreditCard, FileText, FolderUp, LifeBuoy, Package, Phone, RefreshCw, Sparkles } from 'lucide-react';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
-import { useLoad, type Loaded } from './hooks';
+import { useClientLive, useLoad, type Loaded } from './hooks';
 import { dashboardPath, notificationTarget, useShell } from './shell';
 import { Badge, Button, Card, EmptyState, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, fmtNum, inr, hueOf, serviceStatus, tagOf, usageBar } from './ui';
 
@@ -49,6 +49,9 @@ export const Overview: React.FC = () => {
   const tickets = useLoad(() => clientApi.tickets());
   const notes = useLoad(() => clientApi.notifications(3, 0));
   const docs = useLoad(() => clientApi.documents());
+  const billing = useLoad(() => clientApi.billing());
+  // a payment recorded, verified or rejected by Accounts, or a new invoice, updates the balance without a refresh
+  useClientLive(() => { billing.reload(); invoices.reload(); });
   if (!me) return null;
 
   const docSummary = docs.data?.summary;
@@ -105,8 +108,8 @@ export const Overview: React.FC = () => {
             hint={services.data && services.data.some(s => s.status === 'SETTING_UP') ? `${services.data.filter(s => s.status === 'SETTING_UP').length} being set up` : 'Running now'} onClick={() => go(dashboardPath('services'))} />
           <Stat icon={<CreditCard size={20} />} hue={4} label="Current plan" value={<span style={{ fontSize: 22 }}>{plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</span>}
             hint={current ? `${inr(current.price)} / month` : 'Choose one in Monthly Plans'} onClick={() => go(dashboardPath('plans'))} />
-          <Stat icon={<FileText size={20} />} hue={3} label="Invoices to pay" value={stat(invoices, pending)}
-            hint={invoices.data ? `${invoices.data.length} in total` : undefined} onClick={() => go(dashboardPath('invoices'))} />
+          <Stat icon={<FileText size={20} />} hue={3} label="Outstanding balance" value={<span style={{ fontSize: 22 }}>{stat(billing, billing.data ? inr(billing.data.totals.outstanding) : '')}</span>}
+            hint={billing.data ? (billing.data.totals.pending > 0 ? `${inr(billing.data.totals.pending)} awaiting verification` : billing.data.totals.outstanding > 0 ? `of ${inr(billing.data.totals.payable)} payable incl. GST` : billing.data.orders.length ? 'Nothing due' : undefined) : invoices.data ? `${pending} invoice${pending === 1 ? '' : 's'} pending` : undefined} onClick={() => go(dashboardPath('invoices'))} />
           <Stat icon={<LifeBuoy size={20} />} hue={2} label="Open tickets" value={stat(tickets, open)}
             hint={tickets.data ? `${tickets.data.length} in total` : undefined} onClick={() => go(dashboardPath('tickets'))} />
         </div>

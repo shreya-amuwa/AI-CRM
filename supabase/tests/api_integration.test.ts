@@ -1609,6 +1609,26 @@ check(r.status === 200 && r.json.data.automated === false && r.json.data.stage =
   r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE', extra: 1 });
   check(r.status === 422, 'workflow: unknown fields are refused', r);
 
+  // Sales is told where the customer goes; the Meta Verifier records the WhatsApp panel account (never a password)
+  r = await api('sa', 'GET', `/pipeline/customers/${wf}/handoff`);
+  check(r.status === 200 && r.json.data.route === 'META' && r.json.data.recipient === 'Meta Verifier' && r.json.data.recipientAvailable === true, 'workflow: the hand-off says Meta Verifier, and that one exists', r);
+  r = await api('sa', 'GET', `/pipeline/customers/not-a-uuid/handoff`);
+  check(r.status === 422, 'workflow: a bad customer id is refused', r);
+  r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+  check(r.status === 200 && r.json.data.canEdit === true && r.json.data.services.length >= 1 && r.json.data.dashboardLogin === null, 'workflow: the verifier reads the panel details and the (empty) dashboard login', r);
+  const waCode = r.json.data.services[0].code;
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { platform: 'Main Panel', account: 'flow.one@example.com' });
+  check(r.status === 200 && r.json.data.services.find((s: any) => s.code === waCode).panelAccount === 'flow.one@example.com', 'workflow: the verifier saves the account and gets the section back', r);
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { platform: 'Main Panel', account: 'flow.one@example.com:Secret99' });
+  check(r.status === 422 || r.status === 400, 'workflow: a "user:password" pair is refused', r);
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { account: 'flow.one@example.com', password: 'x' });
+  check(r.status === 422, 'workflow: there is no password field - unknown fields are refused', r);
+  r = await api('a', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+  check(r.status === 404, 'workflow: Sales cannot read the panel details', r);
+  r = await api('tc', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { account: 'tc@example.com' });
+  check(r.status === 404, 'workflow: the Technical Consultant cannot write the panel details of a Meta customer', r);
+  check((await db.query(`select count(*)::int as n from public.audit_logs where action = 'SERVICE_PANEL_DETAILS_SET' and metadata::text like '%flow.one%'`)).rows[0].n === 0, 'workflow: the audit never holds the values');
+
   // settings: the delay has no default and only the Super Admin sets it
   r = await api('sa', 'GET', '/workflow/settings');
   check(r.status === 200 && r.json.data.tcFollowupDelayDays === null && r.json.data.canEdit === true, 'workflow: the follow-up delay has no default', r);
@@ -2474,6 +2494,19 @@ provider.close();
   check(r.status === 403 || r.status === 401, 'client progress: a staff token is refused', r);
   r = await api(null, 'GET', '/client/service-progress');
   check(r.status === 401, 'client progress: no session is refused', r);
+
+  // billing: what the client owes per order, from the same figures Accounts works from
+  r = await api('cl1', 'GET', '/client/billing');
+  check(r.status === 200 && Array.isArray(r.json.data.orders) && ['payable', 'confirmed', 'pending', 'outstanding'].every(k => typeof r.json.data.totals[k] === 'number'), 'client billing: orders and totals are answered', r.json.data);
+  check(r.json.data.orders.every((o: any) => Math.abs(o.balance - Math.max(o.totalPayable - o.confirmed, 0)) < 0.005 && ['UNPAID', 'PARTIALLY_PAID', 'FULLY_PAID'].includes(o.state)),
+    'client billing: every balance is payable - confirmed, with a state', r.json.data);
+  check(!JSON.stringify(r.json).match(/recorded_by|verified_by|status_reason|note|AutoPass|ClientPass/), 'client billing: no internal notes, staff or secrets in the answer', r.json.data);
+  r = await api('cl2', 'GET', '/client/billing');
+  check(r.status === 200 && r.json.data.orders.every((o: any) => !o.invoices.some((i: any) => i.id === '00000000-0000-0000-0000-000000000000')), 'client billing: another client has an answer of their own', r.json.data);
+  r = await api('a', 'GET', '/client/billing');
+  check(r.status === 403 || r.status === 401, 'client billing: a staff token is refused', r);
+  r = await api(null, 'GET', '/client/billing');
+  check(r.status === 401, 'client billing: no session is refused', r);
 
   // chat: another client has their own conversation and sees nothing of the first client's
   {

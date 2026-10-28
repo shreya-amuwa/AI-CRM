@@ -3,6 +3,8 @@
  * Apps Script's CFG; everything secret or environment-specific is read from
  * server environment variables (never from the database, never sent to browsers).
  */
+import { STAGE_LABEL, type ClientStage } from './rules.js';
+
 export const COMPANY = {
   senderName: 'Amuwa Corporation',
   teamPhone: '1800 - 843 - 0177',
@@ -16,6 +18,19 @@ export const COMPANY = {
 export const PANEL_URLS: Record<string, string> = {
   wabastore: 'https://chat.wabastore.shop/login'
 };
+
+/**
+ * The WhatsApp `status` text the Automation Builder router matches on, per stage. The defaults are the sheet's dropdown values (STAGE_LABEL) and
+ * are what the router has always matched. WHATSAPP_STATUS_<STAGE> (e.g. WHATSAPP_STATUS_META_VERIFICATION) replaces one - change the router's
+ * condition to the same text at the same time. A pending stage can never be given a "completed" wording: such an override is ignored.
+ */
+export function whatsappStatus(stage: ClientStage, env: NodeJS.ProcessEnv = process.env): string {
+  const base = STAGE_LABEL[stage];
+  const v = env[`WHATSAPP_STATUS_${stage}`]?.trim();
+  if (!v || v.length > 60 || /[\u0000-\u001f]/.test(v)) return base;
+  if (stage !== 'COMPLETED' && /complet/i.test(v)) return base;
+  return v;
+}
 
 export type AutomationMode = 'off' | 'dry_run' | 'live';
 

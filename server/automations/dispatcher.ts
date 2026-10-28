@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
-import { automationSettings, liveChannels, PANEL_URLS, type AutomationSettings } from './config.js';
+import { automationSettings, liveChannels, PANEL_URLS, whatsappStatus, type AutomationSettings } from './config.js';
 import { postWhatsApp, sendEmail, type SendResult } from './providers.js';
 import { cleanPhone, EMAIL_RE, maskEmail, maskPhone, STAGE_LABEL, type ClientStage } from './rules.js';
 import { renderClientPasswordEmail } from './templates.js';
@@ -144,7 +144,7 @@ export async function processJob(s: AutomationSettings, job: ClaimedJob): Promis
     return { outcome: 'SKIPPED', detail: 'WhatsApp not sent – the customer has no website link yet' };
   }
   const full = '91' + phone10;
-  const status = STAGE_LABEL[job.stage];
+  const status = whatsappStatus(job.stage);
   if (!live) return { outcome: 'SKIPPED', detail: `Dry run – not sent: "${status}" WhatsApp to ${maskPhone(full)}`, recipient: full };
   if (s.testRecipients && !s.testRecipients.phones.has(phone10)) {
     return { outcome: 'SKIPPED', detail: `Test mode – ${maskPhone(full)} is not a test recipient`, recipient: full };

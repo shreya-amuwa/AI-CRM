@@ -1,8 +1,9 @@
-import type { TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import {
   followUpAssignSchema,
   followUpContactSchema,
   followUpListQuerySchema,
+  panelDetailsSchema,
   rerouteVerificationSchema,
   serviceMetaVerificationSchema,
   tcFollowupDelaySchema,
@@ -26,6 +27,15 @@ export class WorkflowService {
     const input = parse(verificationNoteSchema, body);
     await this.repo.addVerificationNote(id, input.body, input.outcome);
     return this.repo.verificationNotes(id);
+  }
+  panelDetails(customerId: string): Promise<PanelDetails> {
+    return this.repo.panelDetails(parse(uuidSchema, customerId));
+  }
+  async setPanelDetails(customerId: string, serviceCode: string, body: unknown): Promise<PanelDetails> {
+    const id = parse(uuidSchema, customerId);
+    const input = parse(panelDetailsSchema, body);
+    await this.repo.setPanelDetails(id, parse(codeSchema, serviceCode), input.platform ?? null, input.account ?? null);
+    return this.repo.panelDetails(id);
   }
   async reroute(customerId: string, body: unknown): Promise<void> {
     const input = parse(rerouteVerificationSchema, body);

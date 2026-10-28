@@ -321,6 +321,7 @@ export const pipelineController = {
   noteUpdate: (async ctx => ok(await svc(ctx).pipeline.noteUpdate(ctx.params.id, ctx.params.noteId, ctx.req.body))) as Handler,
   consultantUpdateCustomer: (async ctx => ok(await svc(ctx).pipeline.consultantUpdateCustomer(ctx.params.id, ctx.req.body))) as Handler,
   consultantStartOnboarding: (async ctx => ok(await svc(ctx).pipeline.consultantStartOnboarding(ctx.params.id))) as Handler,
+  handoffInfo: (async ctx => ok(await svc(ctx).pipeline.handoffInfo(ctx.params.id))) as Handler,
   forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,
   returnToSales: (async ctx => {
     await svc(ctx).pipeline.returnToSales(ctx.params.id, ctx.req.body);
@@ -552,6 +553,8 @@ export const businessAssociateController = {
 export const workflowController = {
   verificationNotes: (async ctx => ok(await svc(ctx).workflow.verificationNotes(ctx.params.id))) as Handler,
   addVerificationNote: (async ctx => ok(await svc(ctx).workflow.addVerificationNote(ctx.params.id, ctx.req.body), 201)) as Handler,
+  panelDetails: (async ctx => ok(await svc(ctx).workflow.panelDetails(ctx.params.id))) as Handler,
+  setPanelDetails: (async ctx => ok(await svc(ctx).workflow.setPanelDetails(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
   reroute: (async ctx => (await svc(ctx).workflow.reroute(ctx.params.id, ctx.req.body), ok(null))) as Handler,
   routeReview: (async ctx => ok(await svc(ctx).workflow.routeReview())) as Handler,
   setServiceMetaVerification: (async ctx => (await svc(ctx).workflow.setServiceMetaVerification(ctx.params.code, ctx.req.body), ok(await svc(ctx).pipeline.serviceJourneys()))) as Handler,

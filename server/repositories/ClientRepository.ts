@@ -14,6 +14,7 @@ import type {
   ClientOverview,
   ClientPlans,
   ClientProfile,
+  ClientBilling,
   ClientService,
   ClientServiceProgress,
   ClientServiceRequest,
@@ -38,6 +39,7 @@ export class ClientRepository {
   me() { return this.rpc<ClientProfile>('client_me'); }
   overview() { return this.rpc<ClientOverview>('client_overview'); }
   services() { return this.rpc<ClientService[]>('client_services'); }
+  billing() { return this.rpc<ClientBilling>('client_billing'); }
   serviceProgress() { return this.rpc<ClientServiceProgress[]>('client_service_progress'); }
   campaigns() { return this.rpc<ClientCampaign[]>('client_campaigns'); }
   catalog() { return this.rpc<ClientCatalogService[]>('client_service_catalog'); }
