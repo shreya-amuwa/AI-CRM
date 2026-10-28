@@ -2322,6 +2322,20 @@ provider.close();
   tokens.set('cl1', await signIn(clientEmail, 'ClientPass#2026'));
   tokens.set('cl2', await signIn('auto.client@example.com', 'AutoPass#2026x'));
 
+  // service progress: each client reads the steps of their own services only
+  r = await api('cl2', 'GET', '/client/service-progress');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].code === 'WHATSAPP_API_BLUE_TICK' && r.json.data[0].status === 'LIVE'
+    && r.json.data[0].steps.every((x: any) => x.state === 'DONE') && r.json.data[0].headline === 'Live', 'client progress: a WhatsApp customer whose Meta verification was recorded sees every step done', r.json.data);
+  check(!JSON.stringify(r.json).match(/Meta Verifier|Tech Consultant|verification_route|audit|AutoPass/), 'client progress: nothing internal in the answer', r.json.data);
+  r = await api('cl1', 'GET', '/client/service-progress');
+  check(r.status === 200 && r.json.data.length >= 2 && r.json.data.every((p: any) => p.steps.length >= 4 && p.steps.filter((x: any) => x.state === 'CURRENT').length <= 1), 'client progress: another client sees only their own services, each with its steps', r.json.data);
+  r = await api('cl1', 'GET', '/client/services');
+  check(r.status === 200 && r.json.data.every((x: any) => x.status === (r.json.data ? x.status : '')) && Array.isArray(r.json.data), 'client progress: the services list still answers', r);
+  r = await api('a', 'GET', '/client/service-progress');
+  check(r.status === 403 || r.status === 401, 'client progress: a staff token is refused', r);
+  r = await api(null, 'GET', '/client/service-progress');
+  check(r.status === 401, 'client progress: no session is refused', r);
+
   // chat: another client has their own conversation and sees nothing of the first client's
   {
     const importedConv = (await db.query(`select cv.id from public.chat_conversations cv join public.customers c on c.id = cv.customer_id where c.phone = '9000000201'`)).rows[0].id as string;

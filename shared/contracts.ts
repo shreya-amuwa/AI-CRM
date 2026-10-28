@@ -1664,6 +1664,25 @@ export interface ClientService {
   monthly?: { month: string; metrics: Record<string, unknown> }[];
   campaignCount?: number;
 }
+/** One step of a purchased service's journey, in words written for the client (no staff, notes or internal records). */
+export interface ClientServiceStep {
+  key: string;
+  label: string;
+  state: 'DONE' | 'CURRENT' | 'UPCOMING';
+  /** When it was reached (done steps that have a date). */
+  at: string | null;
+  /** What is happening now / what the client may need to do (the current step only). */
+  hint: string | null;
+}
+export interface ClientServiceProgress {
+  code: string;
+  name: string;
+  status: ClientServiceStatus;
+  steps: ClientServiceStep[];
+  /** The key of the current step; null when the service is live. */
+  current: string | null;
+  headline: string | null;
+}
 export interface ClientServiceUsage {
   kind: 'WHATSAPP' | 'AI_CALLING' | 'RCS' | 'VOICE';
   metrics: Record<string, unknown>;
