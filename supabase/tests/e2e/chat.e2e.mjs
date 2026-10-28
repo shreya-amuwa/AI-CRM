@@ -96,8 +96,8 @@ const sendBtnEnabled = p => p.getByRole('button', { name: 'Send message' }).isEn
 // ------------------------------------------------------------------ fixture: two clients with their teams
 const rahul = await idOf('rahul@amuwa.com'), arun = await idOf('acc.member@amuwa.com'), tara = await idOf('consultant@amuwa.com');
 const tm = await idOf('tm.delivery@amuwa.com'), tm2 = await idOf('tm2.delivery@amuwa.com'), tl = await idOf('tl.delivery@amuwa.com'), dh = await idOf('dh@amuwa.com');
-const mk = async (name, company, phone, services, amount) => {
-  const l = await api(rahul, 'POST', '/pipeline/leads', { name, company, phone, leadSource: 'Walk-in', services, notes: 'Wants to buy.' });
+const mk = async (name, company, phone, services, amount, email) => {
+  const l = await api(rahul, 'POST', '/pipeline/leads', { name, company, phone, email, leadSource: 'Walk-in', services, notes: 'Wants to buy.' });
   await api(rahul, 'POST', `/pipeline/customers/${l.id}/send-to-accounts`, { amount });
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/order-gst`, { rate: 0 });
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/payments`, { type: 'PART', amount: amount / 2, method: 'CASH', verify: true });
@@ -106,10 +106,20 @@ const mk = async (name, company, phone, services, amount) => {
   return l.id;
 };
 const CLIENT_A = { email: 'anil@acharya.example.com', password: secret() }, CLIENT_B = { email: 'bhavna@bose.example.com', password: secret() };
-const A = await mk('Anil Acharya', 'Acharya Traders', randomPhone(), ['AI_CALLING'], 40000);
-const B = await mk('Bhavna Bose', 'Bose Clinic', randomPhone(), ['META_ADS_MANAGEMENT'], 30000);
-await api(tara, 'POST', `/pipeline/customers/${A}/client-account`, CLIENT_A);
-await api(tara, 'POST', `/pipeline/customers/${B}/client-account`, CLIENT_B);
+const A = await mk('Anil Acharya', 'Acharya Traders', randomPhone(), ['AI_CALLING'], 40000, CLIENT_A.email);
+const B = await mk('Bhavna Bose', 'Bose Clinic', randomPhone(), ['META_ADS_MANAGEMENT'], 30000, CLIENT_B.email);
+// Accounts creates the client login from the e-mail on the record; the client then sets a password through the one-time link (here made by the local sign-in service)
+const makeClientLogin = async (leadId, { email, password }) => {
+  await api(arun, 'POST', `/pipeline/customers/${leadId}/accounts/client-login`, {});
+  const svc = sign({ role: 'service_role' });
+  const gl = await (await fetch(`${GW}/auth/v1/admin/generate_link`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${svc}`, apikey: svc }, body: JSON.stringify({ type: 'recovery', email, redirectTo: 'http://localhost/client/set-password' }) })).json();
+  const v = await fetch(gl.action_link, { redirect: 'manual' });
+  const token = /access_token=([^&]+)/.exec(v.headers.get('location') || '')?.[1];
+  const put = await fetch(`${GW}/auth/v1/user`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, apikey: ANON }, body: JSON.stringify({ password }) });
+  if (put.status !== 200) throw new Error('the client password could not be set for ' + email);
+};
+await makeClientLogin(A, CLIENT_A);
+await makeClientLogin(B, CLIENT_B);
 await q(`update customer_onboarding set team_member_id = $2, team_lead_id = $3 where customer_id = $1`, [A, tm, tl]);
 await q(`update customer_onboarding set team_member_id = $2, team_lead_id = $3 where customer_id = $1`, [B, tm2, tl]);
 ok('fixture: Acharya Traders is looked after by Mohan (Team Member) and Dina (Team Lead); Bose Clinic by Rina and Dina');
