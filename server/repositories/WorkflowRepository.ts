@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Meta Verifier workflow: verification notes, re-routing, the Technical Consultant's follow-ups and the delay setting. The database decides who may do what. */
@@ -8,6 +8,12 @@ export class WorkflowRepository {
 
   async verificationNotes(customerId: string): Promise<VerificationNote[]> {
     return unwrap(await this.db.rpc('verification_notes_list', { p_customer: customerId })) as VerificationNote[];
+  }
+  async panelDetails(customerId: string): Promise<PanelDetails> {
+    return unwrap(await this.db.rpc('panel_details_list', { p_customer: customerId })) as PanelDetails;
+  }
+  async setPanelDetails(customerId: string, service: string, platform: string | null, account: string | null): Promise<void> {
+    unwrap(await this.db.rpc('panel_details_set', { p_customer: customerId, p_service: service, p_platform: platform, p_account: account }));
   }
   async addVerificationNote(customerId: string, body: string, outcome: string): Promise<void> {
     unwrap(await this.db.rpc('verification_note_add', { p_customer: customerId, p_body: body, p_outcome: outcome }));

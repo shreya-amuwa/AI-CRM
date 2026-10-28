@@ -4,7 +4,7 @@
  */
 import type {
   OperationsHeadReviewItem, OperationsOverviewRow,
-  TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
+  PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
@@ -154,6 +154,7 @@ import type {
   AutomationStatus,
   ClientMessages,
   PipelineCustomer,
+  OnboardingHandoffInfo,
   PipelineCustomerDetail,
   PipelineStage,
   ServiceCatalogItem,
@@ -289,6 +290,7 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/start-onboarding`, body),
   updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
+  handoffInfo: (id: string) => api.get<OnboardingHandoffInfo>(`/pipeline/customers/${id}/handoff`),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
   consultantSetContract: (id: string, signed: boolean) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/contract`, { signed }),
   consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null; expectedUpdatedAt?: string | null }) =>
@@ -856,6 +858,9 @@ export const businessReportApi = {
 /** The Meta Verifier workflow: verification notes, re-routing, the consultant's follow-ups and the follow-up delay. */
 export const workflowApi = {
   verificationNotes: (customerId: string) => api.get<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`),
+  panelDetails: (customerId: string) => api.get<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details`),
+  setPanelDetails: (customerId: string, serviceCode: string, body: { platform: string | null; account: string | null }) =>
+    api.patch<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}`, body),
   addVerificationNote: (customerId: string, body: { body: string; outcome: string }) => api.post<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`, body),
   reroute: (customerId: string, route: 'META' | 'TECHNICAL', reason: string) => api.post<null>(`/pipeline/customers/${customerId}/verification/reroute`, { route, reason }),
   routeReview: () => api.get<VerificationRouteReviewItem[]>('/pipeline/verification-route-review'),

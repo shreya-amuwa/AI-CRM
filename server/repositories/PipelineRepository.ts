@@ -22,6 +22,7 @@ import type {
   HandoverInfo,
   InboundLead,
   Paginated,
+  OnboardingHandoffInfo,
   PipelineCounts,
   PipelineCustomer,
   ServiceCatalogItem,
@@ -486,6 +487,10 @@ export class PipelineRepository {
 
   async consultantStartOnboarding(id: string): Promise<void> {
     unwrap(await this.db.rpc('consultant_start_onboarding', { p_customer: id }));
+  }
+
+  async handoffInfo(id: string): Promise<OnboardingHandoffInfo> {
+    return unwrap(await this.db.rpc('onboarding_handoff_info', { p_id: id })) as OnboardingHandoffInfo;
   }
 
   async forwardToSupport(id: string): Promise<void> {

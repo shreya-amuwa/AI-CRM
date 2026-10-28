@@ -6,7 +6,7 @@
 import http from 'node:http';
 import type net from 'node:net';
 import { processJob, type ClaimedJob } from '../../server/automations/dispatcher.js';
-import { automationSettings } from '../../server/automations/config.js';
+import { automationSettings, whatsappStatus } from '../../server/automations/config.js';
 import { STAGE_LABEL, type ClientStage } from '../../server/automations/rules.js';
 import { renderEmail } from '../../server/automations/templates.js';
 
@@ -94,6 +94,22 @@ for (const stage of stages) {
   await processJob(s, job(stage, 'WHATSAPP'));
   check(hits[0].stage_code === stage, `${stage}: the WhatsApp request is for the same stage as its e-mail job`);
 }
+
+// the router's status text can be re-aligned with one environment variable per stage; the defaults are untouched and a pending stage can never
+// be given the completed wording
+for (const stage of [...stages, 'ACCOUNT_CREATED' as ClientStage]) check(whatsappStatus(stage, {}) === STAGE_LABEL[stage], `${stage}: with nothing set, the status is the default "${STAGE_LABEL[stage]}"`);
+check(whatsappStatus('META_VERIFICATION', { WHATSAPP_STATUS_META_VERIFICATION: ' Meta Verification In Progress ' }) === 'Meta Verification In Progress', 'an override replaces the pending status (trimmed)');
+check(whatsappStatus('META_VERIFICATION', { WHATSAPP_STATUS_META_VERIFICATION: 'Meta Verification Completed' }) === 'Meta Verification', 'a completed wording on the pending stage is ignored');
+check(whatsappStatus('UNDER_REVIEW', { WHATSAPP_STATUS_UNDER_REVIEW: 'Verification complete' }) === 'Under Review', 'and so for every stage that is not the completed one');
+check(whatsappStatus('COMPLETED', { WHATSAPP_STATUS_COMPLETED: 'Verification Completed' }) === 'Verification Completed', 'only the completed stage may carry it');
+check(whatsappStatus('META_VERIFICATION', { WHATSAPP_STATUS_META_VERIFICATION: 'x'.repeat(61) }) === 'Meta Verification' && whatsappStatus('META_VERIFICATION', { WHATSAPP_STATUS_META_VERIFICATION: '' }) === 'Meta Verification', 'an empty or over-long value is ignored');
+process.env.WHATSAPP_STATUS_META_VERIFICATION = 'Meta Verification In Progress';
+hits.length = 0;
+await processJob(automationSettings(), job('META_VERIFICATION', 'WHATSAPP'));
+check(hits.length === 1 && hits[0].status === 'Meta Verification In Progress' && hits[0].stage_code === 'META_VERIFICATION' && hits[0].event_key === 'crm|c-1|meta verification in progress|919819900011',
+  'the posted request follows the override, and the stage code and the e-mail do not change', hits[0]);
+check(/^Meta Verification In Progress/.test(renderEmail('META_VERIFICATION', baseMail).subject), 'the e-mail for that stage is unchanged');
+delete process.env.WHATSAPP_STATUS_META_VERIFICATION;
 
 srv.close();
 console.log(`\n${passed} checks passed`);
