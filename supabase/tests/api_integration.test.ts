@@ -5976,6 +5976,152 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 401, 'lead filters API: signing in is required', r);
 }
 
+// --- Field Visit: Department Head assignment, visit scheduling and recording, filters, permissions ------------------------------------
+{
+  const FILTERS = ['ALL', 'MINE', 'DEPARTMENT', 'DH_ASSIGNED', 'TO_ACCOUNTS', 'RETURNED', 'VISIT_PENDING', 'VISIT_SCHEDULED', 'VISIT_COMPLETED', 'FOLLOW_UP'];
+  const who = async (token: string) => (await api(token, 'GET', '/me')).json.data.id as string;
+  const tcId = await who('tca');
+  const baId = await who('ba1');
+  const day = (offset: number) => new Date(Date.now() + 5.5 * 3600e3 + offset * 86400e3).toISOString().slice(0, 10);
+  const mkLead = async (token: string, name: string) => {
+    const res = await api(token, 'POST', '/telecaller/leads', { name, company: `${name} Co`, phone: '9811234599', leadSource: 'Field visit', services: [(await db.query(`select code from crm_services order by code limit 1`)).rows[0].code], leadTemperature: 'WARM', callStatus: 'PENDING' });
+    return res;
+  };
+
+  // the Sales Department Head sees who can be given a visit; others cannot
+  r = await api('sh', 'GET', '/field-visits/assignees');
+  check(r.status === 200 && Array.isArray(r.json.data), 'field visit API: the Sales Department Head lists the people a visit can be assigned to', r);
+  const assignees = (r.json.data as any[]).map(x => x.id);
+  for (const t of ['tca', 'ba1', 'a', 'dh', 'th', 'sm']) {
+    r = await api(t, 'GET', '/field-visits/assignees');
+    check(r.status === 403, `field visit API: ${t} cannot list assignees`, r);
+  }
+  r = await api(null, 'GET', '/field-visits/overview');
+  check(r.status === 401, 'field visit API: signing in is required', r);
+
+  // the Telecaller's own lead
+  r = await mkLead('tca', 'FV Api Lead');
+  check(r.status === 201, 'field visit API: the Telecaller adds a lead (lead source Field visit)', r);
+  const fvLead = r.json.data.id as string;
+  r = await api('tca', 'GET', '/field-visits/overview');
+  check(r.status === 200 && r.json.data.myLeads >= 1 && FILTERS.every(f => typeof r.json.data.filters[f] === 'number'), 'field visit API: the overview has the six numbers and the ten filter counts', r);
+  const base = r.json.data;
+
+  // scheduling: own lead only, never a past date, retries do not duplicate
+  const rid = crypto.randomUUID();
+  const plan = { leadId: fvLead, visitDate: day(1), plannedTime: '10:30', address: '12 MG Road', purpose: 'Demo at the shop', notes: 'Carry brochure', clientRequestId: rid };
+  r = await api('tca', 'POST', '/field-visits', plan);
+  check(r.status === 201 && r.json.data.status === 'SCHEDULED' && r.json.data.gpsCaptured === false && r.json.data.leadName === 'FV Api Lead', 'field visit API: a visit is scheduled for an own lead', r);
+  const visitId = r.json.data.id as string;
+  r = await api('tca', 'POST', '/field-visits', plan);
+  check((r.status === 201 || r.status === 200) && r.json.data.id === visitId, 'field visit API: a retry with the same request id returns the same visit', r);
+  check(Number((await db.query(`select count(*) from lead_visits where lead_id = $1`, [fvLead])).rows[0].count) === 1, 'field visit API: no duplicate visit was made');
+  r = await api('tca', 'POST', '/field-visits', { ...plan, clientRequestId: crypto.randomUUID(), visitDate: day(-1) });
+  check(r.status === 422, 'field visit API: a past date is refused', r);
+  r = await api('tca', 'POST', '/field-visits', { ...plan, clientRequestId: crypto.randomUUID(), purpose: '' });
+  check(r.status === 422, 'field visit API: the purpose is required', r);
+  r = await api('tca', 'POST', '/field-visits', { ...plan, clientRequestId: crypto.randomUUID(), employeeId: baId });
+  check(r.status === 422, 'field visit API: the visit cannot be made for somebody else (unknown field refused)', r);
+  r = await api('ba1', 'POST', '/field-visits', { ...plan, clientRequestId: crypto.randomUUID() });
+  check(r.status === 404, "field visit API: a Business Associate cannot plan a visit for the Telecaller's lead", r);
+  r = await api('ba1', 'GET', `/field-visits?scope=ALL&leadId=${fvLead}`);
+  check(r.status === 200 && r.json.data.total === 0, "field visit API: and cannot read the Telecaller's visits", r);
+
+  // the filters
+  const filterIds = async (token: string, filter: string) => ((await api(token, 'GET', `/field-visits/leads?filter=${filter}&pageSize=100`)).json.data.items as any[]).map(x => x.leadId);
+  check((await filterIds('tca', 'MINE')).includes(fvLead) && (await filterIds('tca', 'VISIT_SCHEDULED')).includes(fvLead), 'field visit API: the lead is in My Leads and Visit Scheduled');
+  check(!(await filterIds('tca', 'VISIT_PENDING')).includes(fvLead) && !(await filterIds('tca', 'VISIT_COMPLETED')).includes(fvLead), 'field visit API: and not in Pending or Completed');
+  check(!(await filterIds('ba1', 'MINE')).includes(fvLead) && (await filterIds('ba1', 'DEPARTMENT')).includes(fvLead), 'field visit API: a colleague sees it only under Department Leads');
+  for (const f of FILTERS) {
+    r = await api('tca', 'GET', `/field-visits/leads?filter=${f}&pageSize=100`);
+    const ov = await api('tca', 'GET', '/field-visits/overview');
+    check(r.status === 200 && r.json.data.total === ov.json.data.filters[f] && r.json.data.items.length === Math.min(100, r.json.data.total), `field visit API: filter ${f} has as many rows as its count`, r.json.data?.total);
+  }
+  r = await api('tca', 'GET', '/field-visits/leads?filter=EVERYTHING');
+  check(r.status === 422, 'field visit API: an unknown filter is refused', r);
+  r = await api('tca', 'GET', '/field-visits/leads?filter=ALL&sort=name&search=fv%20api&page=1&pageSize=5');
+  check(r.status === 200 && r.json.data.items.some((x: any) => x.leadId === fvLead), 'field visit API: search, sort and paging work', r);
+
+  // starting and finishing: the location is recorded only when the device sent it
+  r = await api('tca', 'POST', `/field-visits/${visitId}/start`, { latitude: 12.97, longitude: 77.59, accuracyMeters: 25 });
+  check(r.status === 200 && r.json.data.status === 'IN_PROGRESS' && r.json.data.gpsCaptured === true && r.json.data.checkinAccuracyM === 25, 'field visit API: starting with a position records it as captured by the device', r);
+  const checkinAt = r.json.data.checkinAt;
+  r = await api('tca', 'POST', `/field-visits/${visitId}/start`, {});
+  check(r.status === 200 && r.json.data.status === 'IN_PROGRESS' && r.json.data.gpsCaptured === true && r.json.data.checkinAt === checkinAt && r.json.data.checkinLat === 12.97, 'field visit API: starting again (a double click) changes nothing and keeps the recorded position', r);
+  r = await api('tca', 'POST', `/field-visits/${visitId}/complete`, { status: 'FOLLOW_UP_REQUIRED', outcome: 'Owner wants a quote' });
+  check(r.status === 422, 'field visit API: a follow-up needs its date', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/complete`, { status: 'COMPLETED', outcome: 'x' });
+  check(r.status === 404, "field visit API: somebody else cannot finish the visit", r);
+  r = await api('tca', 'POST', `/field-visits/${visitId}/complete`, { status: 'FOLLOW_UP_REQUIRED', outcome: 'Owner wants a quote', notes: 'Met the owner', requirements: 'GBP + ads', nextSteps: 'Send quote', followUpDate: day(3) });
+  check(r.status === 200 && r.json.data.status === 'FOLLOW_UP_REQUIRED' && r.json.data.nextFollowUp === day(3) && r.json.data.completedAt, 'field visit API: the outcome is recorded', r);
+  check((await filterIds('tca', 'FOLLOW_UP')).includes(fvLead), 'field visit API: the lead is under Follow-up Required');
+  check(String((await db.query(`select (next_follow_up_at at time zone 'Asia/Kolkata')::date::text d from customers where id = $1`, [fvLead])).rows[0].d) === day(3), "field visit API: the owner's lead follow-up date was updated");
+  check((await db.query(`select payment_workflow, lifecycle_stage from customers where id = $1`, [fvLead])).rows[0].payment_workflow === 'NONE', 'field visit API: the Accounts workflow was not touched');
+
+  // a second visit: the first stays in the history untouched
+  r = await api('tca', 'POST', '/field-visits', { leadId: fvLead, visitDate: day(3), purpose: 'Second visit', clientRequestId: crypto.randomUUID() });
+  check(r.status === 201, 'field visit API: another visit can be planned for the same lead', r);
+  const second = r.json.data.id as string;
+  r = await api('tca', 'POST', `/field-visits/${second}/start`, {});
+  check(r.status === 200 && r.json.data.gpsCaptured === false && r.json.data.checkinLat === null, 'field visit API: starting without a position is not marked as GPS captured', r);
+  r = await api('tca', 'POST', `/field-visits/${second}/complete`, { status: 'COMPLETED', outcome: 'Order agreed' });
+  check(r.status === 200 && r.json.data.status === 'COMPLETED', 'field visit API: the second visit is completed', r);
+  r = await api('tca', 'GET', `/field-visits?scope=HISTORY&leadId=${fvLead}&pageSize=50`);
+  check(r.status === 200 && r.json.data.total === 2 && r.json.data.items.find((x: any) => x.id === visitId).outcome === 'Owner wants a quote', 'field visit API: the visit history keeps both visits unchanged', r);
+  r = await api('tca', 'GET', `/field-visits?scope=OPEN&leadId=${fvLead}`);
+  check(r.status === 200 && r.json.data.total === 0, 'field visit API: nothing is left open', r);
+
+  // cancelling keeps the visit in the history
+  r = await api('tca', 'POST', '/field-visits', { leadId: fvLead, visitDate: day(5), purpose: 'Cancel me', clientRequestId: crypto.randomUUID() });
+  const toCancel = r.json.data.id as string;
+  r = await api('tca', 'PATCH', `/field-visits/${toCancel}`, { visitDate: day(6), purpose: 'Cancel me later', plannedTime: '16:00' });
+  check(r.status === 200 && r.json.data.visitDate === day(6), 'field visit API: the plan of a visit that has not started can be changed', r);
+  r = await api('tca', 'POST', `/field-visits/${toCancel}/cancel`, { reason: 'Customer is away' });
+  check(r.status === 200 && r.json.data.status === 'CANCELLED' && r.json.data.cancelReason === 'Customer is away', 'field visit API: a visit is cancelled with a reason', r);
+  r = await api('tca', 'PATCH', `/field-visits/${toCancel}`, { visitDate: day(7), purpose: 'Too late' });
+  check(r.status === 404 || r.status === 409 || r.status === 422, 'field visit API: a cancelled visit cannot be changed', r);
+
+  // Department Head assignment
+  if (assignees.includes(tcId) && assignees.includes(baId)) {
+    r = await api('sh', 'POST', '/field-visits/assignments', { leadId: fvLead, assigneeId: baId, priority: 'HIGH', instructions: 'Collect the GST certificate' });
+    check(r.status === 201 || r.status === 200, 'field visit API: the Sales Department Head assigns a lead to a Business Associate', r);
+    check((await db.query(`select owner_id from customers where id = $1`, [fvLead])).rows[0].owner_id === tcId, 'field visit API: the lead keeps its owner');
+    r = await api('ba1', 'GET', '/field-visits/assigned');
+    const row = (r.json.data.items as any[]).find(x => x.leadId === fvLead);
+    check(r.status === 200 && row && row.priority === 'HIGH' && row.instructions === 'Collect the GST certificate' && row.canVisit === true && row.isMine === false, 'field visit API: it shows for the Business Associate with the priority and instructions', r);
+    check((await filterIds('ba1', 'DH_ASSIGNED')).includes(fvLead), 'field visit API: and under Department Head Assigned');
+    r = await api('tca', 'GET', '/field-visits/assigned');
+    check(!(r.json.data.items as any[]).some(x => x.leadId === fvLead), 'field visit API: the owner does not see it as assigned to them');
+    r = await api('ba1', 'POST', '/field-visits', { leadId: fvLead, visitDate: day(2), purpose: 'Assigned visit', clientRequestId: crypto.randomUUID() });
+    check(r.status === 201 && r.json.data.assignedBy, 'field visit API: the assigned person can plan a visit', r);
+    r = await api('ba1', 'POST', '/field-visits/assignments', { leadId: fvLead, assigneeId: baId, priority: 'LOW' });
+    check(r.status === 403, 'field visit API: an employee cannot change or create an assignment', r);
+    r = await api('ba1', 'DELETE', `/field-visits/assignments/${fvLead}`);
+    check(r.status === 403, 'field visit API: an employee cannot withdraw an assignment', r);
+    r = await api('sh', 'POST', '/field-visits/assignments', { leadId: fvLead, assigneeId: await who('sm'), priority: 'LOW' });
+    check(r.status === 422 || r.status === 404, 'field visit API: a person outside the Sales team cannot be chosen', r);
+    r = await api('sh', 'DELETE', `/field-visits/assignments/${fvLead}`);
+    check(r.status === 200, 'field visit API: the Department Head withdraws the assignment', r);
+    r = await api('ba1', 'POST', '/field-visits', { leadId: fvLead, visitDate: day(2), purpose: 'After withdrawal', clientRequestId: crypto.randomUUID() });
+    check(r.status === 404, 'field visit API: after the withdrawal the person can no longer plan visits for it', r);
+    r = await api('ba1', 'GET', `/field-visits?scope=ALL&pageSize=50`);
+    check(!(r.json.data.items as any[]).some(x => x.purpose === 'After withdrawal'), 'field visit API: and no visit was made');
+  } else {
+    check(false, 'field visit API: the Sales head, Telecaller and Business Associate share a department (test setup)', assignees);
+  }
+  r = await api('a', 'POST', '/field-visits/assignments', { leadId: fvLead, assigneeId: baId, priority: 'LOW' });
+  check(r.status === 403, 'field visit API: a Sales member cannot assign visits', r);
+  for (const t of ['th', 'dh', 'sm', 'influ']) {
+    r = await api(t, 'GET', '/field-visits/overview');
+    check(r.status === 403, `field visit API: ${t} has no Field Visit section`, r);
+    r = await api(t, 'POST', '/field-visits', { leadId: fvLead, visitDate: day(2), purpose: 'x', clientRequestId: crypto.randomUUID() });
+    check(r.status === 403, `field visit API: ${t} cannot plan visits`, r);
+  }
+  r = await api('a', 'GET', '/field-visits/overview');
+  check(r.status === 200, 'field visit API: a Sales Team Member (no Sales role) has the Field Visit section', r);
+  void base;
+}
+
 // --- Team Member Management: Access Control belongs to the Super Admin alone (the page hides it; the API refuses it) ----------------
 {
   const head = (await db.query(`select id from profiles where role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;

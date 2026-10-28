@@ -21,6 +21,20 @@ This changelog documents verified product releases, architectural updates, and w
 
 ---
 
+## Release: Field Visit in the Sales member dashboards
+**Area:** Sales (Telecaller, Business Associate, Sales Team Member, Sales Department Head)
+
+### Added
+- **Field Visit group:** a sidebar group of ten pages inside the existing dashboards (no separate dashboard): Overview with six cards and ten filters, Department Head Assigned Leads, Add Lead, All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts, My Field Visits and Visit History.
+- **Visits that belong to a lead:** schedule, start, record the outcome (Completed or Follow-up Required) and cancel; every visit of a lead is kept in its own history. A position is recorded only when the device shares it and is never called verified.
+- **Department Head assignment:** the Sales Department Head assigns a lead for a visit from **Leads > Lead List** with a priority and instructions. The lead keeps its owner and the employee cannot change the assignment.
+- **Lead source "Field visit"** in the lead forms.
+
+### Changed
+- Nothing existing was removed. The Accounts workflow, lead ownership and the Support dashboards are unchanged. Run `supabase/run_this_sales_field_visits.sql` once.
+
+---
+
 ## Release: Dynamic Invoicing and Order Tax Basis Architecture
 **Milestone:** Enterprise Invoicing & Tax Compliance Release
 

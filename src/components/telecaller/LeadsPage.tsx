@@ -230,14 +230,14 @@ const LeadView: React.FC<{ lead: TelecallerLead; onClose: () => void; onEdit: ()
   );
 };
 
-const emptyForm = (lead?: TelecallerLead) => ({
+const emptyForm = (lead?: TelecallerLead, defaultSource = 'Cold call') => ({
   name: lead?.name ?? '',
   company: lead?.company ?? '',
   phone: lead?.phone ?? '',
   email: lead?.email ?? '',
   address: lead?.address ?? '',
   services: lead?.services ?? ([] as string[]),
-  leadSource: lead?.leadSource && LEAD_SOURCES.includes(lead.leadSource) ? lead.leadSource : lead?.leadSource ? 'Other' : 'Cold call',
+  leadSource: lead?.leadSource && LEAD_SOURCES.includes(lead.leadSource) ? lead.leadSource : lead?.leadSource ? 'Other' : defaultSource,
   otherSource: lead?.leadSource && !LEAD_SOURCES.includes(lead.leadSource) ? lead.leadSource : '',
   leadTemperature: (lead?.leadTemperature ?? '') as LeadTemperature | '',
   callStatus: (lead?.callStatus ?? 'PENDING') as CallStatus,
@@ -246,9 +246,9 @@ const emptyForm = (lead?: TelecallerLead) => ({
 });
 
 /** Add or edit a lead. The same rules run here (for early feedback), in the API and in the database. */
-const LeadDialog: React.FC<{ api: LeadsApi; lead?: TelecallerLead; onClose: () => void; onSaved: (lead: TelecallerLead) => void }> = ({ api, lead, onClose, onSaved }) => {
+export const LeadDialog: React.FC<{ api: LeadsApi; lead?: TelecallerLead; onClose: () => void; onSaved: (lead: TelecallerLead) => void; defaultSource?: string }> = ({ api, lead, onClose, onSaved, defaultSource }) => {
   const catalog = useServiceCatalog();
-  const [form, setForm] = useState(() => emptyForm(lead));
+  const [form, setForm] = useState(() => emptyForm(lead, defaultSource));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

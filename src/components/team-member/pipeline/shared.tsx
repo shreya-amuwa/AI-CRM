@@ -67,7 +67,7 @@ export const LEAD_STATUS_HINT: Record<LeadStatus, string> = {
   INTERESTED: 'Wants a quote',
   READY_TO_BUY: 'Moves to Potential'
 };
-export const LEAD_SOURCES = ['Walk-in', 'Instagram', 'Meta Ads', 'Website', 'Referral', 'Cold call', 'WhatsApp', 'Google', 'Other'];
+export const LEAD_SOURCES = ['Walk-in', 'Instagram', 'Meta Ads', 'Website', 'Referral', 'Cold call', 'WhatsApp', 'Google', 'Field visit', 'Other'];
 export const BUSINESS_CATEGORIES = [
   'Jewellery / Gold', 'Retail', 'Restaurant / Food', 'Healthcare', 'Education', 'Real Estate',
   'Beauty / Salon', 'Fitness', 'Manufacturing', 'Services', 'Other'

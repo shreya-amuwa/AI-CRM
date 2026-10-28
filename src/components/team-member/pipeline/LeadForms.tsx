@@ -233,9 +233,9 @@ const EMPTY = {
   notes: ''
 };
 
-export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string) => void }> = ({ onCancel, onSaved }) => {
+export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string) => void; /** The lead source to start with (e.g. 'Field visit' when added from the Field Visit pages). */ defaultSource?: string }> = ({ onCancel, onSaved, defaultSource }) => {
   const { items: services, error: catalogError } = useServiceCatalog();
-  const [form, setForm] = useState(EMPTY);
+  const [form, setForm] = useState(() => (defaultSource ? { ...EMPTY, leadSource: defaultSource } : EMPTY));
   // Ticked: the WhatsApp number follows the mobile number. Only the final number is saved.
   const [sameWhatsapp, setSameWhatsapp] = useState(false);
   // "Other" opens a text box right under the dropdown so the member types the value in place.

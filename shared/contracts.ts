@@ -3010,6 +3010,157 @@ export interface TelecallerLead {
   /** Set once a Telecaller has converted the lead into a contact for a Business Associate. */
   converted?: { contactId: string; convertedAt: string; businessAssociate: string | null } | null;
 }
+// ---------------------------------------------------------------------------
+// Field Visit (Sales: Telecaller, Business Associate, Sales Team Member)
+// ---------------------------------------------------------------------------
+/** The filters of the Field Visit lead table. */
+export const FIELD_VISIT_FILTERS = ['ALL', 'MINE', 'DEPARTMENT', 'DH_ASSIGNED', 'TO_ACCOUNTS', 'RETURNED', 'VISIT_PENDING', 'VISIT_SCHEDULED', 'VISIT_COMPLETED', 'FOLLOW_UP'] as const;
+export type FieldVisitFilter = (typeof FIELD_VISIT_FILTERS)[number];
+export const FIELD_VISIT_FILTER_LABELS: Record<FieldVisitFilter, string> = {
+  ALL: 'All Leads',
+  MINE: 'My Leads',
+  DEPARTMENT: 'Department Leads',
+  DH_ASSIGNED: 'Department Head Assigned',
+  TO_ACCOUNTS: 'To Accounts',
+  RETURNED: 'Returned by Accounts',
+  VISIT_PENDING: 'Field Visit Pending',
+  VISIT_SCHEDULED: 'Visit Scheduled',
+  VISIT_COMPLETED: 'Visit Completed',
+  FOLLOW_UP: 'Follow-up Required'
+};
+export const LEAD_VISIT_STATUSES = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'FOLLOW_UP_REQUIRED', 'CANCELLED'] as const;
+export type LeadVisitStatus = (typeof LEAD_VISIT_STATUSES)[number];
+export const LEAD_VISIT_STATUS_LABELS: Record<LeadVisitStatus | 'NOT_PLANNED', string> = {
+  SCHEDULED: 'Scheduled',
+  IN_PROGRESS: 'In Progress',
+  COMPLETED: 'Completed',
+  FOLLOW_UP_REQUIRED: 'Follow-up Required',
+  CANCELLED: 'Cancelled',
+  NOT_PLANNED: 'Not planned'
+};
+export const VISIT_PRIORITIES = ['LOW', 'NORMAL', 'HIGH', 'URGENT'] as const;
+export type VisitPriority = (typeof VISIT_PRIORITIES)[number];
+export interface FieldVisitOverview {
+  totalAssigned: number;
+  myLeads: number;
+  todayScheduled: number;
+  completed: number;
+  pending: number;
+  followUps: number;
+  filters: Record<FieldVisitFilter, number>;
+}
+export interface FieldVisitAssignmentInfo {
+  id: string;
+  assignedAt: string;
+  priority: VisitPriority;
+  instructions: string | null;
+  assignedBy: string | null;
+}
+export interface FieldVisitLeadRow {
+  leadId: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  leadSource: string | null;
+  leadStatus: LeadStatus;
+  paymentWorkflow: PaymentWorkflow;
+  isMine: boolean;
+  owner: { id: string; fullName: string } | null;
+  department: string | null;
+  assignment: FieldVisitAssignmentInfo | null;
+  /** A visit can be scheduled for it: it is mine or the Department Head assigned it to me. */
+  canVisit: boolean;
+  visitId: string | null;
+  visitDate: string | null;
+  plannedTime: string | null;
+  visitStatus: LeadVisitStatus | 'NOT_PLANNED';
+  lastVisit: string | null;
+  nextFollowUp: string | null;
+}
+export interface FieldVisitLeadList {
+  filter: FieldVisitFilter;
+  total: number;
+  page: number;
+  pageSize: number;
+  items: FieldVisitLeadRow[];
+}
+export interface FieldVisitAssignedRow {
+  id: string;
+  leadId: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  leadSource: string | null;
+  leadStatus: LeadStatus;
+  paymentWorkflow: PaymentWorkflow;
+  services: string;
+  assignedAt: string;
+  assignedBy: string | null;
+  priority: VisitPriority;
+  instructions: string | null;
+  department: string | null;
+  owner: { id: string; fullName: string } | null;
+  isMine: boolean;
+  canVisit: boolean;
+  visits: number;
+  openVisitId: string | null;
+  openVisitStatus: LeadVisitStatus | null;
+}
+export interface FieldVisitAssignedList {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: FieldVisitAssignedRow[];
+}
+export interface LeadVisit {
+  id: string;
+  leadId: string;
+  leadName: string;
+  company: string | null;
+  phone: string | null;
+  visitDate: string;
+  plannedTime: string | null;
+  address: string | null;
+  purpose: string;
+  status: LeadVisitStatus;
+  notes: string | null;
+  outcome: string | null;
+  requirements: string | null;
+  nextSteps: string | null;
+  nextFollowUp: string | null;
+  cancelReason: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  /** True only when the device sent its position when the visit started. Never "verified". */
+  gpsCaptured: boolean;
+  checkinLat: number | null;
+  checkinLng: number | null;
+  checkinAccuracyM: number | null;
+  checkinAt: string | null;
+  locationNote: string | null;
+  assignedBy: string | null;
+  assignmentId: string | null;
+  employee: { id: string; fullName: string };
+  taskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface LeadVisitList {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: LeadVisit[];
+}
+export interface SalesVisitAssignee {
+  id: string;
+  name: string;
+  team: string;
+  role: string;
+}
+
 /** The five filters of the Lead section of a Telecaller and a Business Associate. */
 export const LEAD_SCOPES = ['ALL', 'MINE', 'DEPARTMENT', 'TO_ACCOUNTS', 'RETURNED'] as const;
 export type LeadScope = (typeof LEAD_SCOPES)[number];

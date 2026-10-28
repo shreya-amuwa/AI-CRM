@@ -19,6 +19,9 @@ import {
   TAX_TREATMENTS,
   LEAD_STATUSES,
   LEAD_SCOPES,
+  FIELD_VISIT_FILTERS,
+  LEAD_VISIT_STATUSES,
+  VISIT_PRIORITIES,
   ONBOARDING_FILTERS,
   HANDOVER_STAGES,
   REVIEW_FILTERS,
@@ -1426,6 +1429,68 @@ export const telecallerContactUpdateSchema = z
   })
   .strict()
   .refine(v => v.callStatus !== 'FOLLOW_UP_REQUIRED' || !!v.followUpDate, { message: 'Enter the follow-up date.', path: ['followUpDate'] });
+
+// ---------------------------------------------------------------------------
+// Field Visit
+// ---------------------------------------------------------------------------
+const visitTime = z.preprocess(v => (v === '' ? null : v), z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM.').nullable().optional());
+const visitDate = isoDate;
+export const fieldVisitLeadsQuerySchema = z
+  .object({
+    filter: z.enum(FIELD_VISIT_FILTERS).default('ALL'),
+    search: trimmed(120).optional(),
+    sort: z.enum(['visitDate', 'name', 'newest', 'followUp']).default('visitDate'),
+    ...pageParams
+  })
+  .strict();
+export const fieldVisitAssignedQuerySchema = z.object({ search: trimmed(120).optional(), ...pageParams }).strict();
+export const fieldVisitListQuerySchema = z
+  .object({
+    scope: z.enum(['OPEN', 'HISTORY', 'ALL']).default('OPEN'),
+    status: z.enum(LEAD_VISIT_STATUSES).optional(),
+    leadId: uuidSchema.optional(),
+    search: trimmed(120).optional(),
+    ...pageParams
+  })
+  .strict();
+export const fieldVisitScheduleSchema = z
+  .object({
+    leadId: uuidSchema,
+    visitDate,
+    plannedTime: visitTime,
+    address: optionalText(500),
+    purpose: trimmed(300).min(1, 'Enter the purpose of the visit.'),
+    notes: optionalText(2000),
+    clientRequestId: uuidSchema.optional(),
+    taskId: uuidSchema.optional()
+  })
+  .strict();
+export const fieldVisitUpdateSchema = z
+  .object({ visitDate, plannedTime: visitTime, address: optionalText(500), purpose: trimmed(300).min(1, 'Enter the purpose of the visit.'), notes: optionalText(2000) })
+  .strict();
+export const fieldVisitStartSchema = z
+  .object({
+    latitude: z.number().min(-90).max(90).nullable().optional(),
+    longitude: z.number().min(-180).max(180).nullable().optional(),
+    accuracyMeters: z.number().int().min(0).max(1_000_000).nullable().optional(),
+    locationNote: optionalText(200)
+  })
+  .strict();
+export const fieldVisitCompleteSchema = z
+  .object({
+    status: z.enum(['COMPLETED', 'FOLLOW_UP_REQUIRED']),
+    outcome: trimmed(2000).min(1, 'Enter the outcome of the visit.'),
+    notes: optionalText(2000),
+    requirements: optionalText(2000),
+    nextSteps: optionalText(1000),
+    followUpDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional())
+  })
+  .strict()
+  .refine(v => v.status !== 'FOLLOW_UP_REQUIRED' || !!v.followUpDate, { message: 'Enter the next follow-up date.', path: ['followUpDate'] });
+export const fieldVisitCancelSchema = z.object({ reason: optionalText(500) }).strict();
+export const salesVisitAssignSchema = z
+  .object({ leadId: uuidSchema, assigneeId: uuidSchema, priority: z.enum(VISIT_PRIORITIES).default('NORMAL'), instructions: optionalText(1000) })
+  .strict();
 
 export const leadScopeQuerySchema = z
   .object({

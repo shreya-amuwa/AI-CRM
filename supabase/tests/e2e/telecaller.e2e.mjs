@@ -213,7 +213,7 @@ await dh.close();
 const t1 = await login('tele.one@amuwa.com', { width: 1440, height: 900 }, 'text=Today\'s Focus');
 await expect(/\/telecaller\/dashboard\//.test(t1.url()), 'routing: a Sales Telecaller lands on the Telecaller dashboard', t1.url());
 const navLabels = await t1.locator('aside nav button').allInnerTexts();
-await expect(navLabels.map(s => s.trim()).join('|') === 'Home|Tasks|Leads', 'sidebar: Home, Tasks, Leads', navLabels);
+await expect(navLabels.map(s => s.trim()).join('|') === 'Home|Tasks|Leads|Field Visit', 'sidebar: Home, Tasks, Leads and the Field Visit group', navLabels);
 const tcDesign = await styleOf(t1);
 const refPage = await login('dh@amuwa.com', { width: 1440, height: 900 }, 'nav button');
 const refDesign = await styleOf(refPage); // the Department Head's dashboard is the reference for the design

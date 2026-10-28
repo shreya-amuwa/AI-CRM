@@ -16,6 +16,14 @@ import type {
   TelecallerLead,
   TelecallerLeadList,
   LeadScope,
+  FieldVisitAssignedList,
+  FieldVisitFilter,
+  FieldVisitLeadList,
+  FieldVisitOverview,
+  LeadVisit,
+  LeadVisitList,
+  SalesVisitAssignee,
+  VisitPriority,
   LeadScopeCounts,
   LeadScopeList,
   TelecallerSheet,
@@ -557,6 +565,24 @@ export const salesHeadApi = {
   reports: (q: { who?: string; from?: string; to?: string; taskStatus?: string }) => api.get<SalesReport>('/sales-head/reports', q),
   income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q)
 };
+/** Field Visit: the Sales employee's leads and visits, and the Department Head's assignments. */
+export const fieldVisitApi = {
+  overview: () => api.get<FieldVisitOverview>('/field-visits/overview'),
+  leads: (q: { filter: FieldVisitFilter; search?: string; sort?: string; page?: number; pageSize?: number }) => api.get<FieldVisitLeadList>('/field-visits/leads', q),
+  assigned: (q: { search?: string; page?: number; pageSize?: number } = {}) => api.get<FieldVisitAssignedList>('/field-visits/assigned', q),
+  list: (q: { scope?: 'OPEN' | 'HISTORY' | 'ALL'; status?: string; leadId?: string; search?: string; page?: number; pageSize?: number } = {}) => api.get<LeadVisitList>('/field-visits', q),
+  schedule: (body: { leadId: string; visitDate: string; plannedTime?: string | null; address?: string | null; purpose: string; notes?: string | null; clientRequestId?: string }) =>
+    api.post<LeadVisit>('/field-visits', body),
+  update: (id: string, body: { visitDate: string; plannedTime?: string | null; address?: string | null; purpose: string; notes?: string | null }) => api.patch<LeadVisit>(`/field-visits/${id}`, body),
+  start: (id: string, body: { latitude?: number | null; longitude?: number | null; accuracyMeters?: number | null; locationNote?: string | null }) => api.post<LeadVisit>(`/field-visits/${id}/start`, body),
+  complete: (id: string, body: { status: 'COMPLETED' | 'FOLLOW_UP_REQUIRED'; outcome: string; notes?: string | null; requirements?: string | null; nextSteps?: string | null; followUpDate?: string | null }) =>
+    api.post<LeadVisit>(`/field-visits/${id}/complete`, body),
+  cancel: (id: string, reason?: string | null) => api.post<LeadVisit>(`/field-visits/${id}/cancel`, { reason: reason || null }),
+  assignees: () => api.get<SalesVisitAssignee[]>('/field-visits/assignees'),
+  assign: (body: { leadId: string; assigneeId: string; priority: VisitPriority; instructions?: string | null }) => api.post<{ id: string; leadId: string; assignee: string; reassigned: boolean }>('/field-visits/assignments', body),
+  cancelAssignment: (leadId: string) => api.delete<{ id: string; leadId: string }>(`/field-visits/assignments/${leadId}`)
+};
+
 /** The five filters of the Lead section: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts. */
 export const leadScopeApi = {
   list: (q: { scope: LeadScope; search?: string; source?: string; status?: string; temperature?: string; callStatus?: string; service?: string; followUpFrom?: string; followUpTo?: string; noFollowUp?: boolean; sort?: 'newest' | 'followUp'; page?: number; pageSize?: number }) => api.get<LeadScopeList>('/lead-scope', q),
