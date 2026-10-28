@@ -4899,6 +4899,92 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const ss = (await db.query(`select * from audit_logs where dedupe_key = $1`, [`session:${sid}`])).rows;
   check(ss.length === 1 && ss[0].action === 'SESSION_STARTED' && ss[0].outcome === 'SUCCESS' && ss[0].metadata.method === 'password' && ss[0].actor_role === 'TEAM_MEMBER', 'security: a session is recorded once, with its method (never the token)', ss);
 
+  console.log('--- login location: the address and place come from the hosting platform only');
+  const meId = (await api('a', 'GET', '/me')).json.data.id;
+  const sessionToken = (name: string, sub: string) => {
+    const id = crypto.randomUUID();
+    tokens.set(name, sign({ sub, role: 'authenticated', session_id: id, amr: [{ method: 'password', timestamp: 1 }] }));
+    return id;
+  };
+  const platform = { 'x-vercel-forwarded-for': '203.0.113.50', 'x-vercel-ip-country': 'IN', 'x-vercel-ip-country-region': 'MH', 'x-vercel-ip-city': 'Pune', 'x-vercel-ip-latitude': '18.5204', 'x-vercel-ip-longitude': '73.8567' };
+  const placeOf = async (lsid: string) => (await db.query(`select a.id, a.ip, a.actor_id, a.outcome, l.* from audit_logs a left join audit_log_locations l on l.audit_id = a.id where a.dedupe_key = $1`, [`session:${lsid}`])).rows;
+
+  // 1. not behind a trusted platform (a laptop, a test run, a server reachable directly): the headers are only text the caller typed
+  delete process.env.VERCEL;
+  delete process.env.TRUST_PROXY_HEADERS;
+  let lsid = sessionToken('loc1', meId);
+  r = await api('loc1', 'GET', '/me', undefined, undefined, platform);
+  let rows = await placeOf(lsid);
+  check(r.status === 200 && rows.length === 1 && rows[0].ip === null && rows[0].audit_id === null, 'login location: forged platform headers are ignored off the platform (no address, no place)', rows);
+
+  // 2. behind the platform
+  process.env.TRUST_PROXY_HEADERS = 'true';
+  lsid = sessionToken('loc2', meId);
+  r = await api('loc2', 'GET', '/me', undefined, undefined, platform);
+  rows = await placeOf(lsid);
+  check(r.status === 200 && rows.length === 1 && rows[0].ip === '203.0.113.50' && rows[0].actor_id === meId && rows[0].outcome === 'SUCCESS'
+    && rows[0].city === 'Pune' && rows[0].region === 'MH' && rows[0].country === 'India' && rows[0].source === 'PLATFORM_IP' && rows[0].accuracy === 'CITY'
+    && Number(rows[0].latitude) === 18.52 && Number(rows[0].longitude) === 73.86, 'login location: a staff sign-in records the platform address and place, with source and accuracy', rows);
+  const locEventId = rows[0].id;
+
+  lsid = sessionToken('loc3', meId);
+  r = await api('loc3', 'GET', '/me', undefined, undefined, { 'x-vercel-forwarded-for': 'not-an-address; drop table', 'x-vercel-ip-country': 'ZZZZ', 'x-vercel-ip-latitude': '999', 'x-vercel-ip-longitude': 'abc' });
+  rows = await placeOf(lsid);
+  check(r.status === 200 && rows.length === 1 && rows[0].ip === null && rows[0].audit_id === null, 'login location: a malformed address or place is dropped, not stored, and the sign-in still works', rows);
+
+  lsid = sessionToken('loc4', meId);
+  r = await api('loc4', 'GET', '/me');
+  rows = await placeOf(lsid);
+  check(r.status === 200 && rows.length === 1 && rows[0].audit_id === null, 'login location: with no place available the sign-in is recorded and works, with no place', rows);
+
+  r = await api('loc2', 'GET', '/me', undefined, undefined, { ...platform, 'x-vercel-ip-city': 'Mumbai' });
+  check(r.status === 200 && (await db.query(`select 1 from audit_logs where action = 'SESSION_STARTED' and dedupe_key like 'session:%' and ip = '203.0.113.50'`)).rowCount === 1, 'login location: later requests of the same session add nothing', r);
+
+  // the viewer: Super Admin only
+  r = await api('sa', 'GET', '/audit-logs/search?q=pune&pageSize=100');
+  const pune = r.json.data?.items?.find((i: any) => String(i.id) === String(locEventId));
+  check(r.status === 200 && pune && pune.location?.city === 'Pune' && pune.location.country === 'India' && pune.location.source === 'PLATFORM_IP' && pune.ip === '203.0.113.50',
+    'login location: the Super Admin finds the event by city and reads the place and address', r);
+  r = await api('sa', 'GET', '/audit-logs/search?q=india&pageSize=100');
+  check(r.status === 200 && r.json.data.items.some((i: any) => String(i.id) === String(locEventId)), 'login location: and by country', r);
+  r = await api('dh', 'GET', '/audit-logs/search?pageSize=100');
+  check(r.status === 200 && r.json.data.items.length > 0 && r.json.data.items.every((i: any) => i.ip === null && i.location === null), 'login location: a Department Head sees events without any address or place', r);
+  r = await api('dh', 'GET', '/audit-logs/search?q=pune&pageSize=100');
+  check(r.status === 200 && r.json.data.total === 0, 'login location: and cannot find an event by its place', r);
+  check(!JSON.stringify((await api('sa', 'GET', '/audit-logs/search?pageSize=100')).json).match(/"(password|token|authorization|apiKey)"\s*:/i), 'login location: nothing returned carries a secret');
+
+  console.log('--- login location: a refused password is recorded as an attempt, never as a person');
+  const attempt = async (headers: Record<string, string>, body: unknown) => api(null, 'POST', '/auth/login-failed', body, undefined, headers);
+  r = await attempt({ ...platform, 'x-real-ip': '203.0.113.50' }, { identifier: ' Shreya.Test@Example.COM ' });
+  let fl = (await db.query(`select a.*, l.city, l.country from audit_logs a left join audit_log_locations l on l.audit_id = a.id where a.action = 'LOGIN_ATTEMPT_FAILED' and a.request_id = $1`, [r.requestId])).rows;
+  check(r.status === 200 && r.json.data.recorded === true && fl.length === 1 && fl[0].actor_id === null && fl[0].outcome === 'FAILURE' && fl[0].ip === '203.0.113.50' && fl[0].city === 'Pune'
+    && fl[0].metadata.identifier === 's***@example.com' && fl[0].metadata.identifierVerified === false && fl[0].entity_type === 'auth', 'login failure: recorded with address and place, the e-mail masked and unverified, no account', fl);
+  check(!JSON.stringify(fl).toLowerCase().includes('shreya'), 'login failure: the typed e-mail is not stored in full');
+  const repeat = await attempt({ ...platform, 'x-real-ip': '203.0.113.50' }, { identifier: 'shreya.test@example.com' });
+  check(repeat.status === 200 && (await db.query(`select 1 from audit_logs where action = 'LOGIN_ATTEMPT_FAILED' and metadata->>'identifier' = 's***@example.com'`)).rowCount === 1, 'login failure: the same attempt again in the same minute is one event');
+  // a real person's token on the request does not turn it into that person's event
+  r = await api('a', 'POST', '/auth/login-failed', { identifier: 'zed.else@example.com' }, undefined, { ...platform, 'x-real-ip': '203.0.113.51' });
+  fl = (await db.query(`select * from audit_logs where action = 'LOGIN_ATTEMPT_FAILED' and request_id = $1`, [r.requestId])).rows;
+  check(r.status === 200 && fl.length === 1 && fl[0].actor_id === null, 'login failure: never tied to an account, even when the request carries a token', fl);
+  r = await attempt({ 'x-real-ip': '203.0.113.52' }, { identifier: 'a@b.co', userId: meId });
+  check(r.status === 422, 'login failure: unknown fields (a user id) are refused', r);
+  r = await attempt({ 'x-real-ip': '203.0.113.52' }, { identifier: 'x'.repeat(300) });
+  check(r.status === 422, 'login failure: an oversized identifier is refused', r);
+  let limited = 0;
+  for (let i = 0; i < 14; i++) limited += (await attempt({ 'x-real-ip': '203.0.113.99' }, { identifier: `try${i}@example.com` })).status === 429 ? 1 : 0;
+  check(limited >= 3, 'login failure: one caller can record only a few attempts per quarter hour', limited);
+  r = await api('sa', 'GET', '/audit-logs/actions');
+  check(r.status === 200 && r.json.data.includes('LOGIN_ATTEMPT_FAILED'), 'login failure: the event type can be filtered');
+  r = await api('sa', 'GET', '/audit-logs/search?action=LOGIN_ATTEMPT_FAILED&pageSize=100');
+  check(r.status === 200 && r.json.data.items.length >= 2 && r.json.data.items.every((i: any) => i.actorId === null && i.outcome === 'FAILURE'), 'login failure: the Super Admin sees them as failed, with no person', r);
+  delete process.env.TRUST_PROXY_HEADERS;
+
+  console.log('--- departments: no lock for the Super Admin to set');
+  r = await api('sa', 'PATCH', `/departments/${wab.id}`, { isLocked: true });
+  check(r.status === 422, 'departments: the API no longer accepts a lock', r);
+  r = await api('sa', 'PATCH', `/departments/${wab.id}`, { description: 'Lock removal check' });
+  check(r.status === 200 && r.json.data.isLocked === false, 'departments: other changes still work and the department stays open', r);
+
   console.log('--- security: exports');
   r = await api('a', 'POST', '/security/data-exports', { dataset: 'leads', rows: 12 });
   check(r.status === 200, 'security: an export is recorded', r);

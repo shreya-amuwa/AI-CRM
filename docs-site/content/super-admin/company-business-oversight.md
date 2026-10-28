@@ -27,7 +27,7 @@ The **Super Admin Dashboard** is organized into 10 primary navigation tabs in th
 | Sidebar Tab | Component / Scope | Key Capabilities |
 | --- | --- | --- |
 | **Executive Overview** | `SuperAdminDashboard.tsx` | Enterprise KPI cards, total verified revenue, outstanding balances, active client counts, departmental revenue split, and global customer inspection/deletion. |
-| **Departments** | Department Hub | Inspect and drill into individual business units (**Wabastore**, **Whatsbox**, **Dtalk**, **Digitree**, **Mpillar**, **Design Studio**, **Accounts**, **HR**), lock/unlock access, and monitor session caps. |
+| **Departments** | Department Hub | Inspect and drill into individual business units (**Wabastore**, **Whatsbox**, **Dtalk**, **Digitree**, **Mpillar**, **Design Studio**, **Accounts**, **HR**), open any of them directly, and monitor session caps. |
 | **Company Workflow** | Workflow & Attribution | Visual end-to-end CRM stage map and configurable **Client Dashboard purchase attribution rules** (`SUPPORT`, `ORIGIN`, `FIFTY_FIFTY`, `CUSTOM`). |
 | **Tax & Agreements** | Agreement Ledger | Audit customer commercial agreements by tax basis (`EXCLUSIVE`, `INCLUSIVE`, `NA`), verified payments, invoiced totals, and remaining order balances. |
 | **Client Notices** | `ClientNoticePanel.tsx` | Broadcast targeted or global notices (`PAYMENT_REMINDER`, `RENEWAL_DUE`, `DOCUMENT_REQUEST`, `SERVICE_UPDATE`, `GENERAL`) to Client Portals and track `Read` vs `Unread` receipts. |

@@ -59,7 +59,7 @@ When composing a notice in **Client Notices**, select the appropriate classifica
 Click **Departments** in the **Super Admin Dashboard** sidebar to oversee all corporate divisions (**Wabastore**, **Whatsbox**, **Dtalk**, **Digitree**, **Mpillar**, **Design Studio**, **Accounts**, and **HR**):
 
 1. **Department Drill-Down**: Click any department card to inspect its active staff roster, lead pipeline, onboarding queue, and revenue KPIs.
-2. **Lock / Unlock Department**: Toggle a department's lock state during maintenance or restructuring. Locking a department blocks non-admin logins to that division and records an entry in **Security & Audit Logs**.
+2. **Open any department**: As Super Admin you enter every department directly with **Enter Panel**. There are no lock or unlock controls, and nothing stops you from opening a department.
 3. **Concurrent Session Ceilings**: Monitor `activeSessions / maxSessions` per department and terminate stale sessions if an employee left a workstation open.
 
 ## What you should see
