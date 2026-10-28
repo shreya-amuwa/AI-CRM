@@ -2102,6 +2102,18 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
   const smId = await idOf('sm@amuwa.com'), tm2Id = await idOf('tm.delivery@amuwa.com'), tl2Id = await idOf('tl.delivery@amuwa.com'), aId = await idOf('a@amuwa.com');
   const mid = () => crypto.randomUUID();
+  // End-to-end encryption: the internal chats take envelopes only. The API tests cannot do real cryptography (that is tested in the browser code),
+  // so they send envelopes of the right SHAPE, sealed for each member's published key, and check what the server does with them.
+  const pubOf = (name: string) => Buffer.concat([Buffer.from([4]), crypto.createHash('sha256').update(name).digest(), crypto.createHash('sha256').update(name + 'y').digest()]).toString('base64');
+  const backupBlob = { v: 1, kdf: 'PBKDF2-SHA256', iter: 600000, salt: 'A'.repeat(22) + '==', iv: 'A'.repeat(16), ct: 'A'.repeat(44) };
+  const setupKeys = async (who: string) => (await api(who, 'POST', '/chat/keys', { publicKey: pubOf(who), backup: backupBlob })).status;
+  const envelope = async (who: string, conv: string) => {
+    const keys = ((await api(who, 'GET', `/chat/conversations/${conv}/keys`)).json.data as any[]).slice().sort((x, y) => (x.profileId < y.profileId ? -1 : 1));
+    const st = (await api(who, 'GET', '/chat/keys/status')).json.data;
+    return { v: 1, sv: st.version, iv: 'A'.repeat(16), ct: Buffer.from('opaque ' + crypto.randomUUID()).toString('base64'), wraps: keys.map(k => ({ to: k.profileId, kv: k.keyVersion, enc: k.publicKey, w: 'W'.repeat(24) })) };
+  };
+  const secureSend = async (who: string, conv: string, extra: Record<string, unknown> = {}) =>
+    api(who, 'POST', `/chat/conversations/${conv}/secure-messages`, { clientMsgId: mid(), attachmentIds: [], e2ee: await envelope(who, conv), ...extra });
 
   // ---- who can reach the chat routes at all
   r = await api(null, 'GET', '/chat/internal');
@@ -2191,6 +2203,36 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 200 && r.json.data.some((p: any) => p.id === tm2Id) && !r.json.data.some((p: any) => 'email' in p), 'chat: the directory finds colleagues without e-mail addresses', r);
   r = await api('imp', 'GET', '/chat/directory');
   check(r.status === 401 || r.status === 403, 'chat: a client cannot list employees', r);
+  // everybody who will chat internally sets up secure messaging first (the browser does this with the recovery passphrase)
+  check(await api(null, 'GET', '/chat/keys/status').then(x => x.status === 401), 'chat keys: signing in is required');
+  r = await api('imp', 'GET', '/chat/keys/status');
+  check(r.status === 401 || r.status === 403, 'chat keys: a client login has no secure messaging', r);
+  r = await api('sm', 'GET', '/chat/keys/status');
+  check(r.status === 200 && r.json.data.hasKey === false && r.json.data.hasBackup === false, 'chat keys: nobody has a key before setting up', r);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: 'short', backup: backupBlob });
+  check(r.status === 422, 'chat keys: a public key of the wrong size is refused', r);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: pubOf('x'), backup: { ...backupBlob, iter: 10 } });
+  check(r.status === 422, 'chat keys: a backup with a weak key-derivation setting is refused', r);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: pubOf('x'), backup: backupBlob, privateKey: 'AAAA' });
+  check(r.status === 422, 'chat keys: a request that names anything else (a private key, say) is refused', r);
+  for (const who of ['sm', 'tm2', 'tl2', 'a']) check((await setupKeys(who)) === 201, `chat keys: ${who} sets up secure messaging`);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: pubOf('other'), backup: backupBlob });
+  check(r.status === 409, 'chat keys: a second setup cannot replace the key silently', r);
+  r = await api('sm', 'GET', '/chat/keys/status');
+  check(r.json.data.hasKey && r.json.data.version === 1 && r.json.data.publicKey === pubOf('sm') && /^[0-9a-f]{64}$/.test(r.json.data.fingerprint) && r.json.data.hasBackup, 'chat keys: the status shows the public key and its fingerprint', r);
+  r = await api('sm', 'GET', '/chat/keys/backup');
+  check(r.status === 200 && r.json.data.blob.kdf === 'PBKDF2-SHA256' && r.json.data.version === 1, 'chat keys: a person can fetch their own encrypted backup', r);
+  r = await api('tm2', 'GET', '/chat/keys/backup');
+  check(r.status === 200 && JSON.stringify(r.json.data).indexOf(pubOf('sm')) === -1, "chat keys: and only their own (not anybody else's)", r);
+  r = await api('sm', 'POST', '/chat/keys/backup', { backup: backupBlob, version: 5 });
+  check(r.status === 409, 'chat keys: a backup can only be replaced for the current key', r);
+  r = await api('sm', 'POST', '/chat/keys/backup', { backup: backupBlob, version: 1 });
+  check(r.status === 200, 'chat keys: the current one can (a new recovery passphrase)', r);
+  r = await api('tm2', 'GET', `/chat/keys/lookup?profileId=${smId}&version=1`);
+  check(r.status === 200 && r.json.data.publicKey === pubOf('sm') && !('privateKey' in r.json.data), "chat keys: a colleague's public key can be looked up", r);
+  r = await api('tm2', 'GET', `/chat/keys/lookup?profileId=${smId}&version=1&extra=1`);
+  check(r.status === 422, 'chat keys: with nothing extra', r);
+
   r = await api('sm', 'POST', '/chat/direct', { profileId: tm2Id });
   check(r.status === 200 && r.json.data.kind === 'DIRECT' && r.json.data.title === 'Mohan Member' || r.json.data?.kind === 'DIRECT', 'chat: an employee starts a direct conversation', r);
   const dm = r.json.data.id as string;
@@ -2199,11 +2241,34 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await api('sm', 'POST', '/chat/direct', { profileId: smId });
   check(r.status === 422, 'chat: nobody can open a conversation with themselves', r);
   r = await api('sm', 'POST', `/chat/conversations/${dm}/messages`, { body: 'Got a minute?', clientMsgId: mid() });
-  check(r.status === 201 && r.json.data.senderLabel === null, 'chat: a direct message is sent', r);
+  check(r.status === 422, 'chat: a readable message is refused in a direct chat (it must be encrypted first)', r);
+  r = await secureSend('sm', dm);
+  check(r.status === 201 && r.json.data.senderLabel === null && r.json.data.encrypted === true && r.json.data.body === '' && r.json.data.e2ee.wrap.to === smId, 'chat: an encrypted direct message is sent', r);
+  const dm1 = r.json.data;
   r = await api('tm2', 'GET', '/chat/internal');
-  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].unread === 1 && r.json.data[0].lastMessagePreview === 'Got a minute?', 'chat: the other person has it in their list with 1 unread', r);
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].unread === 1 && r.json.data[0].lastMessagePreview === 'Encrypted message', 'chat: the other person has it in their list with 1 unread (the preview never shows content)', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 200 && r.json.data.messages[0].e2ee.wrap.to === tm2Id && r.json.data.messages[0].e2ee.wrap.w === 'W'.repeat(24) && !('wraps' in r.json.data.messages[0].e2ee) && r.json.data.messages[0].senderId === smId, 'chat: the other person receives the envelope with THEIR key wrap only', r);
+  {
+    const { rows: [row] } = await db.query(`select body, encrypted, e2ee::text as e from public.chat_messages where id = $1`, [dm1.id]);
+    check(row.body === '' && row.encrypted === true && !row.e.includes('Got a minute'), 'chat: the database holds the envelope and no readable text', row.e.slice(0, 80));
+  }
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), body: 'plain text too', e2ee: await envelope('sm', dm) });
+  check(r.status === 422, 'chat: an encrypted message cannot also carry readable text (unknown field refused)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { v: 1, sv: 1, iv: 'short', ct: 'AAAAAAAA', wraps: [] } });
+  check(r.status === 422, 'chat: a badly formed envelope is refused', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { ...(await envelope('sm', dm)), sv: 7 } });
+  check(r.status === 409, 'chat: an envelope made with a key that is not the sender\'s current one is refused (KEYS_CHANGED)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { ...(await envelope('sm', dm)), wraps: (await envelope('sm', dm)).wraps.slice(1) } });
+  check(r.status === 409, 'chat: one that leaves a member out is refused', r);
+  const sameId = mid(); const sameEnv = await envelope('sm', dm);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: sameId, e2ee: sameEnv });
+  const again = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: sameId, e2ee: sameEnv });
+  check(r.status === 201 && again.json.data.id === r.json.data.id, 'chat: a retry with the same message id stores one message', again);
+  r = await api('tl2', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: sameEnv });
+  check(r.status === 404, 'chat: a non-member cannot send into it', r);
   r = await api('tm2', 'GET', '/chat/unread');
-  check(r.json.data.internal === 1, 'chat: and in their unread summary', r);
+  check(r.json.data.internal >= 1, 'chat: and in their unread summary', r);
   r = await api('tl2', 'GET', `/chat/conversations/${dm}/messages`);
   check(r.status === 404, 'chat: a third person cannot read the direct conversation', r);
   r = await api('dh', 'GET', `/chat/conversations/${dm}/messages`);
@@ -2221,9 +2286,9 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 422, 'chat: a group needs a name', r);
   r = await api('sm', 'POST', '/chat/groups', { title: 'x', memberIds: [] });
   check(r.status === 422, 'chat: and someone to talk to', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: 'Welcome', clientMsgId: mid() });
-  check(r.status === 201, 'chat: the admin writes in it', r);
-  r = await api('tm2', 'POST', `/chat/conversations/${grp}/messages`, { body: 'Thanks', clientMsgId: mid() });
+  r = await secureSend('sm', grp);
+  check(r.status === 201, 'chat: the admin writes in it (every member has set up secure messaging)', r);
+  r = await secureSend('tm2', grp);
   check(r.status === 201, 'chat: a member writes in it', r);
   r = await api('tm2', 'POST', `/chat/groups/${grp}/members`, { profileIds: [aId] });
   check(r.status === 403, 'chat: a member who is not an admin cannot add people', r);
@@ -2240,43 +2305,117 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await api('sm', 'POST', `/chat/groups/${grp}/members`, { profileIds: [crypto.randomUUID()] });
   check(r.status === 422, 'chat: a person who does not exist cannot be added', r);
 
-  // ---- files
-  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n% chat file\n'), Buffer.alloc(2000, 0x20), Buffer.from('\n%%EOF\n')]);
+  // ---- files (in an internal chat a file is encrypted in the browser: the server stores an opaque envelope that starts "AME2")
+  const enc = Buffer.concat([Buffer.from('AME2'), Buffer.from([1]), crypto.randomBytes(2000)]);
   r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'virus.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
   check(r.status === 422, 'chat: a file type that is not allowed is refused', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'big.pdf', mimeType: 'application/pdf', sizeBytes: 6 * 1024 * 1024 });
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: 2000 });
+  check(r.status === 422, 'chat: a readable file is refused in an internal chat (it has to be encrypted first)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: 6 * 1024 * 1024 });
   check(r.status === 422, 'chat: a file over 5 MB is refused', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
-  check(r.status === 201 && r.json.data.bucket === 'chat-attachments' && r.json.data.path.startsWith(`${grp}/`) && !r.json.data.path.includes('..'), 'chat: an upload is booked under the conversation', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: enc.length });
+  check(r.status === 201 && r.json.data.bucket === 'chat-attachments' && r.json.data.path.startsWith(`${grp}/`) && !r.json.data.path.includes('..') && r.json.data.attachment.name === 'encrypted-file', 'chat: an upload is booked under the conversation (the real file name is not stored)', r);
   const tk = r.json.data;
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: 'with file', clientMsgId: mid(), attachmentIds: [tk.attachment.id] });
+  r = await secureSend('sm', grp, { attachmentIds: [tk.attachment.id] });
   check(r.status === 422, 'chat: a file that has not finished uploading cannot be sent', r);
   r = await api('sm', 'POST', `/chat/uploads/${tk.attachment.id}/complete`);
   check(r.status === 422, 'chat: completing an upload that never arrived is refused', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: enc.length });
   const tk2 = r.json.data;
-  const put = await fetch(`${GW}/storage/v1/object/upload/sign/${tk2.bucket}/${tk2.path}?token=${tk2.token}`, { method: 'PUT', headers: { 'content-type': 'application/pdf', 'x-upsert': 'false' }, body: pdf });
-  check(put.status < 300, 'chat: the file is uploaded with the single-use link', await put.text().catch(() => ''));
-  r = await api('tm2', 'POST', `/chat/uploads/${tk2.attachment.id}/complete`);
-  check(r.status === 404, 'chat: someone else cannot confirm my upload', r);
+  const bad = await fetch(`${GW}/storage/v1/object/upload/sign/${tk2.bucket}/${tk2.path}?token=${tk2.token}`, { method: 'PUT', headers: { 'content-type': 'application/x-amuwa-e2ee', 'x-upsert': 'false' }, body: Buffer.concat([Buffer.from('%PDF-1.4 not encrypted'), Buffer.alloc(100)]) });
+  check(bad.status < 300, 'chat: (a file that is not an encrypted envelope is uploaded to the single-use link ...)');
   r = await api('sm', 'POST', `/chat/uploads/${tk2.attachment.id}/complete`);
-  check(r.status === 200 && r.json.data.name === 'Plan.pdf', 'chat: the uploader confirms it', r);
-  r = await api('tm2', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 422, 'chat: ... and is refused when the upload is confirmed (the stored file must be an encrypted envelope)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: enc.length });
+  const tk3 = r.json.data;
+  const put = await fetch(`${GW}/storage/v1/object/upload/sign/${tk3.bucket}/${tk3.path}?token=${tk3.token}`, { method: 'PUT', headers: { 'content-type': 'application/x-amuwa-e2ee', 'x-upsert': 'false' }, body: enc });
+  check(put.status < 300, 'chat: the encrypted file is uploaded with the single-use link', await put.text().catch(() => ''));
+  r = await api('tm2', 'POST', `/chat/uploads/${tk3.attachment.id}/complete`);
+  check(r.status === 404, 'chat: someone else cannot confirm my upload', r);
+  r = await api('sm', 'POST', `/chat/uploads/${tk3.attachment.id}/complete`);
+  check(r.status === 200 && r.json.data.name === 'encrypted-file', 'chat: the uploader confirms it', r);
+  r = await api('tm2', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: before it is sent only the uploader can reach the file', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: '', clientMsgId: mid(), attachmentIds: [tk2.attachment.id] });
-  check(r.status === 201 && r.json.data.attachments[0].name === 'Plan.pdf', 'chat: a message can be a file only', r);
-  r = await api('tm2', 'GET', `/chat/attachments/${tk2.attachment.id}/url?action=download`);
-  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.fileName === 'Plan.pdf' && r.json.data.expiresInSeconds <= 120, 'chat: a member gets a short-lived download link', r);
-  const dl = await fetch(r.json.data.url);
-  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(pdf), 'chat: and the file is the one that was uploaded');
-  r = await api('a', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await secureSend('sm', grp, { attachmentIds: [tk3.attachment.id] });
+  check(r.status === 201 && r.json.data.attachments[0].id === tk3.attachment.id && !('name' in r.json.data.attachments[0]), 'chat: a message can carry the file (the server lists only its id and size, not its name or type)', r);
+  const fileMsg = r.json.data;
+  r = await api('tm2', 'GET', `/chat/attachments/${tk3.attachment.id}/url?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'chat: a member gets a short-lived download link', r);
+  const dlUrl = r.json.data.url as string;
+  const dl = await fetch(dlUrl);
+  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(enc), 'chat: and the stored file is the encrypted envelope that was uploaded (never the original)');
+  r = await api('a', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 200, 'chat: the member who joined later can open files sent after they joined', r);
-  r = await api('imp', 'GET', `/client/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('imp', 'GET', `/client/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: a client cannot open an internal file even with its id', r);
-  r = await api('imp', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('imp', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 401 || r.status === 403, 'chat: nor through the employee route', r);
-  r = await api('dh', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('dh', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: a Department Head cannot open an employee group\'s file', r);
+
+  // ---- deleting messages: for me, and for everyone
+  const dmMsgs = async (who: string) => ((await api(who, 'GET', `/chat/conversations/${dm}/messages?limit=100`)).json.data.messages as any[]);
+  r = await api('tm2', 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 200 && r.json.data.hidden === true, 'chat delete: delete for me', r);
+  check(!(await dmMsgs('tm2')).some(m => m.id === dm1.id) && (await dmMsgs('sm')).some(m => m.id === dm1.id), 'chat delete: it is gone for that person only (the sender still has it)');
+  r = await api('tm2', 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 200, 'chat delete: doing it twice is harmless', r);
+  r = await api('tm2', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 403, "chat delete: a person cannot delete somebody else's message for everyone", r);
+  r = await api('tl2', 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 404, 'chat delete: a person outside the conversation cannot touch it', r);
+  r = await api('tl2', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 404, 'chat delete: nor for everyone', r);
+  r = await api('dh', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 404, 'chat delete: a Department Head has no power over employees\' chats', r);
+  r = await api('sa', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 404, 'chat delete: nor the Super Admin (administration and message access are separate)', r);
+  r = await api('sm', 'DELETE', `/chat/messages/not-a-uuid/for-me`);
+  check(r.status === 422, 'chat delete: a malformed id is refused', r);
+  r = await api(null, 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 401, 'chat delete: signing in is required', r);
+  const stored = (await db.query(`select e2ee is not null as has, deleted_at from public.chat_messages where id = $1`, [dm1.id])).rows[0];
+  check(stored.has && stored.deleted_at === null, 'chat delete: delete for me did not touch the shared message');
+
+  // a message with a file, deleted for everyone: the stored file goes too
+  r = await api('tm2', 'DELETE', `/chat/messages/${fileMsg.id}/for-everyone`);
+  check(r.status === 403, 'chat delete: the receiver cannot remove the sender\'s file message for everyone', r);
+  r = await api('sm', 'DELETE', `/chat/messages/${fileMsg.id}/for-everyone`);
+  check(r.status === 200 && r.json.data.deleted === true, 'chat delete: the sender deletes it for everyone', r);
+  {
+    const { rows: [m] } = await db.query(`select body, e2ee, attachments::text as a, deleted_at is not null as gone from public.chat_messages where id = $1`, [fileMsg.id]);
+    check(m.gone && m.body === '' && m.e2ee === null && m.a === '[]', 'chat delete: the server wiped the ciphertext, the key wraps and the file list', m);
+    const { rows: [f] } = await db.query(`select status, storage_removed_at is not null as removed from public.chat_attachments where id = $1`, [tk3.attachment.id]);
+    check(f.status === 'DELETED' && f.removed === true, 'chat delete: the file is marked deleted and its removal from storage was recorded', f);
+  }
+  const afterDel = await fetch(dlUrl);
+  check(afterDel.status >= 400, 'chat delete: the stored encrypted file is gone from storage (an earlier link no longer works)', afterDel.status);
+  r = await api('tm2', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
+  check(r.status === 404, 'chat delete: no new link can be made for it', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${grp}/messages?limit=100`);
+  const tomb = (r.json.data.messages as any[]).find(m => m.id === fileMsg.id);
+  check(tomb && tomb.deleted === true && tomb.body === '' && tomb.e2ee === null && tomb.attachments.length === 0, 'chat delete: the other member gets a tombstone with nothing in it', tomb);
+  r = await api('sm', 'DELETE', `/chat/messages/${fileMsg.id}/for-everyone`);
+  check(r.status === 200, 'chat delete: deleting again is harmless', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action = 'CHAT_MESSAGE_DELETED_FOR_ALL' and entity_id = $1`, [fileMsg.id])).rows[0].n === 1, 'chat delete: it is in the audit log once, without content');
+  // client conversations keep their history
+  const clientMsgs = (await api('sm', 'GET', `/chat/conversations/${conv}/messages`)).json.data.messages as any[];
+  r = await api('sm', 'DELETE', `/chat/messages/${clientMsgs[0].id}/for-everyone`);
+  check(r.status === 403, 'chat delete: a client conversation keeps its history (no delete for everyone)', r);
+  r = await api('sm', 'DELETE', `/chat/messages/${clientMsgs[0].id}/for-me`);
+  check(r.status === 403, 'chat delete: nor delete for me', r);
+
+  // ---- a reset changes the key: old envelopes stay unreadable to a new device, new messages are sealed for the new key
+  r = await api('tm2', 'POST', '/chat/keys/reset', { publicKey: pubOf('tm2-new'), backup: backupBlob });
+  check(r.status === 200 && r.json.data.version === 2, 'chat keys: a reset publishes a new key version', r);
+  r = await api('sm', 'GET', `/chat/conversations/${dm}/keys`);
+  check((r.json.data as any[]).find(k => k.profileId === tm2Id).keyVersion === 2 && (r.json.data as any[]).find(k => k.profileId === tm2Id).publicKey === pubOf('tm2-new'), "chat keys: the other person's screen sees the new key", r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { ...sameEnv, ct: Buffer.from('stale ' + mid()).toString('base64') } });
+  check(r.status === 409, 'chat keys: a message sealed for the retired key is refused', r);
+  r = await secureSend('sm', dm);
+  check(r.status === 201 && r.json.data.e2ee.wrap.to === smId, 'chat keys: one sealed for the new key is accepted', r);
+  r = await api('sm', 'GET', `/chat/keys/lookup?profileId=${tm2Id}&version=1`);
+  check(r.status === 200 && r.json.data.retired === true, 'chat keys: the old key stays known (to check old messages), marked retired', r);
 
   // ---- removing a member
   r = await api('sm', 'DELETE', `/chat/groups/${grp}/members/${tl2Id}`);
@@ -2285,7 +2424,7 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 404, 'chat: the removed member can no longer read the group', r);
   r = await api('tl2', 'POST', `/chat/conversations/${grp}/messages`, { body: 'still here', clientMsgId: mid() });
   check(r.status === 404, 'chat: nor write in it', r);
-  r = await api('tl2', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('tl2', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: nor download its files', r);
   r = await api('tm2', 'POST', `/chat/groups/${grp}/leave`);
   check(r.status === 200, 'chat: a member leaves', r);
@@ -2826,13 +2965,18 @@ provider.close();
 {
   r = await api('sa', 'GET', '/departments');
   const hrDept = r.json.data.find((d: any) => d.slug === 'hr');
-  const details = { designation: 'Department Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', emergencyContact: '+91 98765 43210' };
+  const details = { designation: 'Department Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56789', emergencyContact: '+91 98765 43210' };
   const hrBody = { email: 'hr.api@amuwa.com', fullName: 'HR Api', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id };
 
   // Add Member: the new details are validated before any account exists
   for (const [label, bad] of [
     ['an unknown blood group', { ...details, bloodGroup: 'Z+' }],
     ['a bad emergency number', { ...details, emergencyContact: 'call me' }],
+    ['a missing contact number', (({ contactNumber: _c, ...rest }) => rest)(details)],
+    ['a contact number that is not a number', { ...details, contactNumber: 'call me' }],
+    ['a too short contact number', { ...details, contactNumber: '+91 12345' }],
+    ['an Indian number that cannot be a mobile', { ...details, contactNumber: '+91 12345 67890' }],
+    ['a contact number that is the emergency number', { ...details, contactNumber: '+91 98765 43210' }],
     ['a birth date in the future', { ...details, dateOfBirth: '2999-01-01' }],
     ['a joining date that is not a date', { ...details, joiningDate: '2026-13-45' }],
     ['an unknown designation', { ...details, designation: 'Boss' }],
@@ -2845,6 +2989,11 @@ provider.close();
   r = await api('sa', 'POST', '/users', { ...hrBody, details });
   check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.department.slug === 'hr', 'a member is created with the new details', r);
   const hrId = r.json.data.id;
+  check(JSON.stringify(r.json).indexOf('91234') === -1 && JSON.stringify(r.json).indexOf('+919123456789') === -1, "the member's own number is not part of the ordinary profile everyone can read (profiles.phone is not used)");
+  {
+    const { rows: [pd] } = await db.query(`select contact_number, emergency_contact from public.employee_personal_details where profile_id = $1`, [hrId]);
+    check(pd.contact_number === '+919123456789' && pd.emergency_contact === '+91 98765 43210', 'the contact number is stored normalised with its country code, separate from the emergency contact', pd);
+  }
   tokens.set('hr', tokenFor(hrId));
   check(JSON.stringify(r.json).indexOf('B+') === -1 && JSON.stringify(r.json).indexOf('98765') === -1, 'the details are not part of the ordinary profile everyone can read');
   r = await api('sa', 'POST', '/users', { ...hrBody, details });
@@ -2878,9 +3027,14 @@ provider.close();
   r = await api('a', 'GET', '/hr/attendance');
   check(r.status === 403, 'a Sales member still cannot open the HR data', r);
   r = await api('hr', 'GET', '/hr/personal-details');
-  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
+  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.contactNumber === '+919123456789' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
   r = await api('a', 'GET', '/hr/personal-details');
   check(r.status === 403, 'an ordinary employee cannot read employee details', r);
+  // international and 10-digit numbers
+  for (const [label, input, stored] of [['an international number', '+44 7911 123456', '+447911123456'], ['a 10-digit Indian number', '98765 11111', '+919876511111'], ['a number with a leading 0', '098765 22222', '+919876522222'], ['a +1 number', '+1 (415) 555-2671', '+14155552671']] as const) {
+    r = await api('sa', 'POST', '/users', { ...hrBody, email: `intl.${stored.slice(-6)}@amuwa.com`, details: { ...details, designation: 'Team Member', contactNumber: input }, role: 'TEAM_MEMBER', departmentId: undefined, teamId: (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id])).rows[0].id });
+    check(r.status === 201 && (await db.query(`select 1 from public.employee_personal_details where profile_id = $1 and contact_number = $2`, [r.json.data.id, stored])).rowCount === 1, `Add Member accepts ${label} and stores ${stored}`, r);
+  }
   r = await api('dh', 'GET', '/hr/personal-details');
   check(r.status === 403, 'nor can another department\'s head', r);
   r = await api('dh', 'POST', '/users', { email: 'plain.api@amuwa.com', fullName: 'Plain', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: (await api('sa', 'GET', `/teams?departmentId=${wab.id}`)).json.data.find((t: any) => t.name === 'Sales').id });
@@ -6449,6 +6603,122 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
   r = await api('sa', 'GET', `/users/${head}/department-access`);
   check(r.status === 200, 'access control API: the Super Admin can', r);
+}
+
+// --- The Super Admin is at the top of the hierarchy: nobody changes the account from the application, however the request is made -----------
+{
+  const saId = (await api('sa', 'GET', '/me')).json.data.id as string;
+  const thProfile = (await api('th', 'GET', '/me')).json.data;
+  // the shape of the production bug report: the Super Admin sits inside a team, so a Team Lead's member list reaches the row
+  await db.query(`update public.profiles set team_id = $2, department_id = $3 where id = $1`, [saId, thProfile.teamId, thProfile.departmentId]);
+  const saState = async () => (await db.query(`select role, status from public.profiles where id = $1`, [saId])).rows[0];
+
+  for (const who of ['th', 'dh', 'a', 'sa']) {
+    r = await api(who, 'POST', `/users/${saId}/status`, { status: 'REVOKED', reason: 'x' });
+    check(r.status === 403, `Super Admin protection API: ${who} cannot revoke the Super Admin`, r);
+    r = await api(who, 'POST', `/users/${saId}/status`, { status: 'SUSPENDED' });
+    check(r.status === 403, `Super Admin protection API: ${who} cannot suspend the Super Admin`, r);
+    r = await api(who, 'DELETE', `/users/${saId}`);
+    check(r.status === 403, `Super Admin protection API: ${who} cannot delete the Super Admin`, r);
+    r = await api(who, 'PATCH', `/users/${saId}`, { role: 'TEAM_MEMBER', teamId: thProfile.teamId });
+    check(r.status === 403, `Super Admin protection API: ${who} cannot demote the Super Admin`, r);
+    r = await api(who, 'PATCH', `/users/${saId}`, { role: 'SUPER_ADMIN', teamId: thProfile.teamId });
+    check(r.status === 403 || r.status === 422, `Super Admin protection API: ${who} cannot send a Super Admin role either`, r);
+    r = await api(who, 'POST', `/users/${saId}/sales-sub-role`, { role: 'TELECALLER' });
+    check(r.status === 403 || r.status === 404 || r.status === 422, `Super Admin protection API: ${who} cannot give the Super Admin a Sales role`, r);
+    r = await api(who, 'POST', `/users/${saId}/technical-consultant`, { value: true });
+    check(r.status === 403 || r.status === 404 || r.status === 422, `Super Admin protection API: ${who} cannot make the Super Admin a consultant`, r);
+  }
+  r = await api('th', 'POST', `/users/${saId}/status`, { status: 'REVOKED', role: 'TEAM_MEMBER' });
+  check(r.status === 422, 'Super Admin protection API: an extra "role" in the body changes nothing (unknown field refused)', r);
+  r = await api('th', 'POST', `/users/${saId.toUpperCase()}/status`, { status: 'REVOKED' });
+  check(r.status === 403 || r.status === 404, 'Super Admin protection API: another spelling of the id is no way round', r);
+  r = await api('th', 'POST', `/users/${saId}/department-access`, { departmentId: thProfile.departmentId, division: 'SALES', granted: true });
+  check(r.status === 403, 'Super Admin protection API: a Team Lead cannot touch access control', r);
+  const after = await saState();
+  check(after.role === 'SUPER_ADMIN' && after.status === 'ACTIVE', 'Super Admin protection API: the account is untouched after all the attempts', after);
+  // the Team Lead's member list does not offer the Super Admin at all; the Super Admin's own list does
+  r = await api('th', 'GET', `/users?teamId=${thProfile.teamId}&pageSize=100`);
+  check(r.status === 200 && !(r.json.data.items as any[]).some(u => u.role === 'SUPER_ADMIN' || u.id === saId), "Super Admin protection API: a Team Lead's member list does not include the Super Admin", r);
+  r = await api('dh', 'GET', `/users?departmentId=${thProfile.departmentId}&pageSize=100`);
+  check(r.status === 200 && !(r.json.data.items as any[]).some(u => u.role === 'SUPER_ADMIN'), "Super Admin protection API: nor a Department Head's", r);
+  r = await api('sa', 'GET', `/users?role=SUPER_ADMIN&pageSize=100`);
+  check(r.status === 200 && (r.json.data.items as any[]).some(u => u.id === saId), "Super Admin protection API: the Super Admin's own list still shows the account", r);
+  // legitimate management below is unchanged
+  const victim = (await db.query(`select id from public.profiles where role = 'TEAM_MEMBER' and status = 'ACTIVE' and team_id = $1 order by created_at limit 1`, [thProfile.teamId])).rows[0].id as string;
+  r = await api('th', 'POST', `/users/${victim}/status`, { status: 'SUSPENDED', reason: 'test' });
+  check(r.status === 200 && r.json.data.status === 'SUSPENDED', 'Super Admin protection API: a Team Lead still suspends a Team Member of their team', r);
+  r = await api('th', 'POST', `/users/${victim}/status`, { status: 'ACTIVE' });
+  check(r.status === 200 && r.json.data.status === 'ACTIVE', 'Super Admin protection API: and restores them', r);
+  r = await api('sa', 'POST', `/users/${victim}/status`, { status: 'SUSPENDED', reason: 'test' });
+  check(r.status === 200, 'Super Admin protection API: the Super Admin still suspends a Team Member', r);
+  r = await api('sa', 'POST', `/users/${victim}/status`, { status: 'ACTIVE' });
+  check(r.status === 200, 'Super Admin protection API: and restores them', r);
+  await db.query(`update public.profiles set team_id = null, department_id = null where id = $1`, [saId]);
+}
+
+// --- the one-time clean-up of the chat between a Team Lead and the Sales Department Head (scripts/delete-team-lead-sales-head-chat.mjs) ---
+{
+  const { purgeTeamLeadSalesHeadChat } = await import('../../scripts/delete-team-lead-sales-head-chat.mjs');
+  const { r2Config } = await import('../../scripts/sweep-orphan-customer-files.mjs');
+  const { createClient } = await import('@supabase/supabase-js');
+  const service = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const R2 = { key: 'r2-chat-key', secret: 'r2-chat-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  const r2 = r2Config({ R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket } as any);
+  const idOfEmail = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
+  const tl = await idOfEmail('tl.delivery@amuwa.com'), sh = await idOfEmail('shared.sales.acx@amuwa.com'), other = await idOfEmail('tm.delivery@amuwa.com');
+  const directBetween = async (a: string, b: string, n: number) => {
+    const key = [a, b].sort().join(':');
+    const conv = (await db.query(`insert into public.chat_conversations (kind, direct_key, created_by) values ('DIRECT', $1, $2) returning id`, [key, a])).rows[0].id as string;
+    for (const m of [a, b]) await db.query(`insert into public.chat_members (conversation_id, profile_id) values ($1, $2)`, [conv, m]);
+    for (let i = 1; i <= n; i++) {
+      const row = (await db.query(`insert into public.chat_messages (conversation_id, seq, sender_id, sender_kind, sender_name, body, encrypted, e2ee)
+        values ($1, $2, $3, 'STAFF', 'x', '', true, '{"v":1,"ct":"opaque"}'::jsonb) returning id`, [conv, i, i % 2 ? a : b])).rows[0];
+      if (i === 1) {
+        const path = `${conv}/${crypto.randomUUID()}`;
+        await db.query(`insert into public.chat_attachments (conversation_id, message_id, uploader_id, file_name, mime_type, size_bytes, status, storage_bucket, storage_path, storage_provider)
+          values ($1, $2, $3, 'encrypted-file', 'application/x-amuwa-e2ee', 100, 'READY', 'chat-attachments', $4, 'R2')`, [conv, row.id, a, path]);
+        fake.objects.set(`chat-attachments/${path}`, { body: Buffer.from('AME2' + 'x'.repeat(96)), type: 'application/x-amuwa-e2ee' });
+      }
+    }
+    return conv;
+  };
+  const target = await directBetween(tl, sh, 4);
+  const decoyDirect = await directBetween(tl, other, 3);
+  const decoyGroup = (await db.query(`insert into public.chat_conversations (kind, title, created_by) values ('GROUP', 'Decoy group', $1) returning id`, [tl])).rows[0].id as string;
+  await db.query(`insert into public.chat_members (conversation_id, profile_id) values ($1, $2), ($1, $3)`, [decoyGroup, tl, sh]);
+  const count = async (table: string, conv: string) => Number((await db.query(`select count(*) c from public.${table} where conversation_id = $1`, [conv])).rows[0].c);
+  const objectsBefore = fake.objects.size;
+  const run = (o: Record<string, unknown> = {}) => purgeTeamLeadSalesHeadChat({ supabase: service, r2, teamLead: 'tl.delivery@amuwa.com', salesHead: 'shared.sales.acx@amuwa.com', ...o });
+
+  let rep = await run();
+  check(rep.found && rep.applied === false && rep.conversationId === target && rep.messages === 4 && rep.files === 1, 'one-time chat clean-up: the preview names the exact conversation, its messages and its files', rep);
+  check((await count('chat_messages', target)) === 4 && fake.objects.size === objectsBefore, 'one-time chat clean-up: the preview deletes nothing');
+  for (const bad of [{ teamLead: 'tm.delivery@amuwa.com' }, { salesHead: 'dh@amuwa.com' }, { teamLead: crypto.randomUUID() }, { salesHead: 'shared.support.acx@amuwa.com' }]) {
+    let err = '';
+    await run({ ...bad, apply: true, confirm: target }).catch(e => { err = e.message; });
+    check(err.length > 0, `one-time chat clean-up: wrong people are refused (${JSON.stringify(bad).slice(0, 60)}): ${err.slice(0, 70)}`);
+  }
+  let err = '';
+  await run({ apply: true }).catch(e => { err = e.message; });
+  check(/--confirm/.test(err) && (await count('chat_messages', target)) === 4, 'one-time chat clean-up: --apply alone, or with a wrong confirmation, deletes nothing');
+  err = '';
+  await run({ apply: true, confirm: decoyDirect }).catch(e => { err = e.message; });
+  check(err.length > 0 && (await count('chat_messages', decoyDirect)) === 3, 'one-time chat clean-up: another conversation id cannot be confirmed in its place');
+  rep = await run({ apply: true, confirm: target });
+  check(rep.applied === true && rep.removedFiles === 1 && rep.messages === 4, 'one-time chat clean-up: with the exact confirmation the conversation is deleted', rep);
+  check((await db.query(`select 1 from public.chat_conversations where id = $1`, [target])).rowCount === 0
+    && (await count('chat_messages', target)) === 0 && (await count('chat_members', target)) === 0 && (await count('chat_attachments', target)) === 0,
+    'one-time chat clean-up: its messages, members and file records are gone');
+  check(fake.objects.size === objectsBefore - 1, 'one-time chat clean-up: the stored file was removed from storage (and only that one)');
+  check((await count('chat_messages', decoyDirect)) === 3 && (await count('chat_attachments', decoyDirect)) === 1 && (await count('chat_members', decoyGroup)) === 2
+    && [...fake.objects.keys()].some(k => k.includes(decoyDirect)), 'one-time chat clean-up: the other direct chat of the Team Lead, and the group, are untouched');
+  const audit = (await db.query(`select metadata from public.audit_logs where action = 'CHAT_CONVERSATION_PURGED' and entity_type = 'chat_conversation'`)).rows;
+  check(audit.length === 1 && audit[0].metadata.conversation_id === target && audit[0].metadata.messages === 4 && !JSON.stringify(audit[0].metadata).includes('opaque'), 'one-time chat clean-up: one audit entry with ids and counts, no content');
+  rep = await run();
+  check(rep.found === false, 'one-time chat clean-up: run again, there is nothing left to delete');
+  await new Promise(res => fake.server.close(res));
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

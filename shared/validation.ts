@@ -166,6 +166,45 @@ function dayNumber(v: string): number | null {
 }
 const today = () => Math.floor(Date.now() / 86_400_000);
 
+/**
+ * A person's own phone number, as one international number: '+' and the country code and the number ('+919876543210').
+ *  - '+' followed by 8 to 15 digits (E.164), whatever the country; an Indian number (+91) must have a 10 digit mobile number starting 6-9
+ *  - without a '+': an Indian mobile number of 10 digits (optionally with a leading 0, or 91) is taken as +91
+ *  - spaces, dashes and brackets are allowed for typing and removed. Returns null when it is not a phone number.
+ */
+export function normalizePhone(raw: string): string | null {
+  const s = raw.trim();
+  if (!/^\+?[0-9 ()-]{7,24}$/.test(s) || (s.includes('+') && !s.startsWith('+'))) return null;
+  let digits = s.replace(/\D/g, '');
+  if (s.startsWith('+') || digits.startsWith('00')) {
+    if (digits.startsWith('00')) digits = digits.slice(2);
+  } else if (digits.length === 11 && digits.startsWith('0')) {
+    digits = `91${digits.slice(1)}`;
+  } else if (digits.length === 10) {
+    digits = `91${digits}`;
+  } else if (!(digits.length === 12 && digits.startsWith('91'))) {
+    return null;
+  }
+  if (!/^[1-9][0-9]{7,14}$/.test(digits)) return null;
+  if (digits.startsWith('91') && !/^91[6-9][0-9]{9}$/.test(digits)) return null;
+  return `+${digits}`;
+}
+const sameNumber = (a: string, b: string) => a.replace(/\D/g, '').slice(-10) === b.replace(/\D/g, '').slice(-10);
+
+/** The team member's own contact number (country code allowed, +91 by default), stored normalised. */
+export const contactNumberSchema = z
+  .string()
+  .trim()
+  .min(1, 'Enter the team member\'s contact number.')
+  .transform((v, ctx) => {
+    const n = normalizePhone(v);
+    if (!n) {
+      ctx.addIssue({ code: 'custom', message: 'Enter a valid contact number with its country code (for example +91 98765 43210).' });
+      return z.NEVER;
+    }
+    return n;
+  });
+
 /** Employee details collected when a member is added (all required once sent). */
 export const memberDetailsSchema = z
   .object({
@@ -183,9 +222,15 @@ export const memberDetailsSchema = z
       .string()
       .trim()
       .regex(/^\+?[0-9 ()-]{7,20}$/, 'Enter a valid emergency contact number.')
-      .refine(v => v.replace(/\D/g, '').length >= 10 && v.replace(/\D/g, '').length <= 15, 'Enter a valid emergency contact number (10 to 15 digits).')
+      .refine(v => v.replace(/\D/g, '').length >= 10 && v.replace(/\D/g, '').length <= 15, 'Enter a valid emergency contact number (10 to 15 digits).'),
+    /** The member's own number: a different person's number from the emergency contact. */
+    contactNumber: contactNumberSchema
   })
-  .strict();
+  .strict()
+  .refine(d => typeof d.contactNumber !== 'string' || typeof d.emergencyContact !== 'string' || !sameNumber(d.contactNumber, d.emergencyContact), {
+    message: 'The emergency contact must be a different number from the team member\'s own number.',
+    path: ['emergencyContact']
+  });
 export type MemberDetailsInput = z.infer<typeof memberDetailsSchema>;
 
 export const userCreateSchema = z
@@ -1343,6 +1388,42 @@ export const chatSendSchema = z
   .strict()
   .refine(v => v.body.trim().length > 0 || v.attachmentIds.length > 0, { message: 'Write a message first.', path: ['body'] });
 
+const base64 = (min: number, max: number) => z.string().min(min).max(max).regex(/^[A-Za-z0-9+/]+={0,2}$/, 'Not valid base64.');
+/** The envelope of an end-to-end encrypted message. The server checks its SHAPE; it cannot read it. */
+export const chatE2eeSchema = z
+  .object({
+    v: z.literal(1),
+    sv: z.number().int().min(1).max(1_000_000),
+    iv: base64(16, 16),
+    ct: base64(8, 90_000),
+    wraps: z
+      .array(z.object({ to: uuidSchema, kv: z.number().int().min(1).max(1_000_000), enc: base64(88, 88), w: base64(16, 400) }).strict())
+      .min(1)
+      .max(200)
+  })
+  .strict();
+export const chatSendEncryptedSchema = z
+  .object({
+    clientMsgId: uuidSchema,
+    replyTo: uuidSchema.optional(),
+    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([]),
+    e2ee: chatE2eeSchema
+  })
+  .strict();
+const chatKeyBackupBlobSchema = z
+  .object({
+    v: z.literal(1),
+    kdf: z.literal('PBKDF2-SHA256'),
+    iter: z.number().int().min(100_000).max(10_000_000),
+    salt: base64(16, 64),
+    iv: base64(16, 16),
+    ct: base64(32, 50_000)
+  })
+  .strict();
+export const chatKeySetupSchema = z.object({ publicKey: base64(88, 88), backup: chatKeyBackupBlobSchema }).strict();
+export const chatKeyBackupSetSchema = z.object({ backup: chatKeyBackupBlobSchema, version: z.number().int().min(1).max(1_000_000) }).strict();
+export const chatKeyLookupQuerySchema = z.object({ profileId: uuidSchema, version: z.coerce.number().int().min(1).max(1_000_000) }).strict();
+
 export const chatMessagesQuerySchema = z
   .object({
     before: z.coerce.number().int().min(0).optional(),
@@ -1366,8 +1447,9 @@ export const chatAdminSchema = z.object({ profileId: uuidSchema, admin: z.boolea
 export const chatUploadSchema = z
   .object({
     fileName: z.string().trim().min(1, 'The file needs a name.').max(200),
-    mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
-    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+    // 'application/x-amuwa-e2ee' is a file encrypted in the browser (internal chats): the server only ever sees the envelope
+    mimeType: z.enum([...CHAT_MIME_TYPES, 'application/x-amuwa-e2ee'], { errorMap: () => ({ message: 'This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES + 64, 'Files can be at most 5 MB.')
   })
   .strict();
 

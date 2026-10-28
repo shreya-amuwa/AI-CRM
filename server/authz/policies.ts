@@ -27,6 +27,13 @@ export function assertManager(actor: Actor): void {
   if (!isManager(actor)) throw new AppError('FORBIDDEN');
 }
 
+/** The Super Admin account is the top of the hierarchy: nobody changes its status, role or existence through the application. */
+export function assertNotSuperAdminTarget(target: { role: Role } | null | undefined): void {
+  if (target?.role === 'SUPER_ADMIN') {
+    throw new AppError('FORBIDDEN', 'The Super Admin account cannot be suspended, revoked, deleted or changed from the application.');
+  }
+}
+
 export function assertSuperAdmin(actor: Actor): void {
   if (!isSuperAdmin(actor)) throw new AppError('FORBIDDEN');
 }

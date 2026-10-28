@@ -80,6 +80,7 @@ const mk = async (owner, name, company, phone, amount, verified) => {
   const l = await api(owner, 'POST', '/pipeline/leads', { name, company, phone, leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Wants to buy.' });
   if (amount) {
     await api(owner, 'POST', `/pipeline/customers/${l.id}/send-to-accounts`, { amount });
+    if (verified) await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/order-gst`, { rate: 0 });
     if (verified) await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/payments`, { type: 'PART', amount: verified, method: 'CASH', verify: true });
   }
   return l.id;
@@ -255,6 +256,21 @@ const tlDir = await tl.locator('#staff-panel-members').innerText();
 await expect(/Neha Shah/.test(tlDir) && !/Mohan Member|Dina Delivery|acc\.member@amuwa\.com/.test(tlDir), 'the Team Lead directory lists their own team only', tlDir.slice(0, 400));
 const tlRoles = await tl.locator('#staff-panel-add #staff-role option').allInnerTexts();
 await expect(tlRoles.length > 0 && tlRoles.every(o => !/Department Head|Team Lead/.test(o)), 'a Team Lead can only create Team Members', tlRoles);
+await expect(!/root@amuwa\.com|Super Admin/.test(tlDir), 'the Team Lead directory does not list the Super Admin at all');
+const saRow = await q(`select id, status from profiles where email = 'root@amuwa.com'`);
+const tlSelf = await idOf('lead@amuwa.com');
+for (const [method, path, body] of [['POST', 'status', { status: 'SUSPENDED', reason: 'x' }], ['POST', 'status', { status: 'REVOKED' }], ['DELETE', '', undefined], ['PATCH', '', { role: 'TEAM_MEMBER' }]]) {
+  const hit = await call(sign({ sub: tlSelf, role: 'authenticated' }), method, `/users/${saRow[0].id}${path ? '/' + path : ''}`, body);
+  await expect(hit.status === 403, `a Team Lead's direct API call ${method} /users/:superAdmin${path ? '/' + path : ''} is refused (${hit.status})`);
+}
+await expect((await q(`select status from profiles where email = 'root@amuwa.com'`))[0].status === saRow[0].status, 'and the Super Admin account is unchanged');
+await tl.locator('[data-testid="tab-add"]').click();
+await tl.locator('[data-testid="member-contact-number"]').waitFor({ timeout: 10000 }).catch(() => fail('the Add Team Member form has no Team member contact number field'));
+const order = await tl.evaluate(() => { const labels = [...document.querySelectorAll('#staff-panel-add label')].map(l => l.innerText.trim()); return [labels.findIndex(t => /^Team member contact number/.test(t)), labels.findIndex(t => /^Emergency contact number/.test(t))]; });
+await expect(order[0] >= 0 && order[1] === order[0] + 1, 'the Team member contact number field sits right before the Emergency contact number field', order);
+await tl.locator('[data-testid="member-contact-number"]').fill('+44 7700 900123');
+await tl.locator('[data-testid="member-contact-number"]').blur();
+await expect((await tl.locator('[data-testid="member-contact-number"]').inputValue()) === '+44 7700 900123', 'an international number (+44) is accepted as typed and kept');
 await tl.screenshot({ path: `${OUT}/team-members-team-lead.png`, fullPage: true });
 await tl.context().close();
 

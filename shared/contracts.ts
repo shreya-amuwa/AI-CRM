@@ -2468,6 +2468,8 @@ export interface ChatAttachment {
   name: string;
   mime: string;
   size: number;
+  /** Encrypted chats only, set by the browser from inside the encrypted message: the key of the encrypted file (never sent to the server on its own). */
+  secretKey?: string;
 }
 export interface ChatMessage {
   id: string;
@@ -2483,12 +2485,85 @@ export interface ChatMessage {
   attachments: ChatAttachment[];
   clientMsgId: string | null;
   createdAt: string;
-  replyTo: { id: string; seq: number; senderName: string | null; body: string } | null;
+  replyTo: { id: string; seq: number; senderName: string | null; body: string; deleted?: boolean } | null;
+  /** Deleted for everyone: only a tombstone is left (no text, no files, no ciphertext). */
+  deleted?: boolean;
+  /** End-to-end encrypted (internal chats): `body` is empty and `e2ee` holds what only the recipients' devices can open. */
+  encrypted?: boolean;
+  /** Who sealed an encrypted message (needed to check it); null for other messages. */
+  senderId?: string | null;
+  e2ee?: ChatE2eeForViewer | null;
+  /** Set by the BROWSER after it opened (or failed to open) an encrypted message. The server never sets it. */
+  secure?: ChatSecureState;
 }
+/** What the server hands to ONE member of an encrypted message: the ciphertext and the key sealed for that member. */
+export interface ChatE2eeForViewer {
+  v: 1;
+  /** Key version of the sender. */
+  sv: number;
+  iv: string;
+  ct: string;
+  wrap: ChatE2eeWrap | null;
+}
+export interface ChatE2eeWrap {
+  to: string;
+  /** Version of the recipient's key the message key was sealed for. */
+  kv: number;
+  /** HPKE encapsulated key. */
+  enc: string;
+  /** The message key, sealed. */
+  w: string;
+}
+/** What the browser made of an encrypted message. */
+export type ChatSecureState =
+  | { state: 'ok' }
+  | { state: 'legacy' }
+  | { state: 'failed'; reason: 'locked' | 'no-key' | 'old-key' | 'bad-signature' | 'damaged' | 'unknown-sender' };
 export interface ChatMessagePage {
   messages: ChatMessage[];
   hasMore: boolean;
   lastSeq: number;
+  /** Messages the screen already has that were deleted for everyone meanwhile (only when asking for newer messages). */
+  deletedIds?: string[];
+}
+export interface ChatKeyStatus {
+  hasKey: boolean;
+  version: number | null;
+  publicKey: string | null;
+  fingerprint: string | null;
+  hasBackup: boolean;
+}
+export interface ChatMemberKey {
+  profileId: string;
+  name: string;
+  keyVersion: number | null;
+  publicKey: string | null;
+  fingerprint: string | null;
+}
+export interface ChatPublicKey {
+  profileId: string;
+  keyVersion: number;
+  publicKey: string;
+  fingerprint: string;
+  retired: boolean;
+}
+/** The recovery-passphrase-encrypted private key(s). Opaque to the server. */
+export interface ChatKeyBackupBlob {
+  v: 1;
+  kdf: 'PBKDF2-SHA256';
+  iter: number;
+  salt: string;
+  iv: string;
+  ct: string;
+}
+export interface ChatKeyBackup {
+  version: number;
+  blob: ChatKeyBackupBlob;
+}
+export interface ChatDeleteResult {
+  id: string;
+  deleted?: boolean;
+  hidden?: boolean;
 }
 export interface ChatClientView {
   conversation: ChatConversation;

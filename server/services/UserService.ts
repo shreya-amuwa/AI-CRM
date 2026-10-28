@@ -15,7 +15,7 @@ import {
   uuidSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
-import { assertCanAssignRole, assertManager } from '../authz/policies.js';
+import { assertCanAssignRole, assertManager, assertNotSuperAdminTarget } from '../authz/policies.js';
 import { parse } from '../http/validate.js';
 import { AppError } from '../http/errors.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
@@ -40,7 +40,8 @@ export class UserService {
 
   list(actor: Actor, query: unknown): Promise<Paginated<Profile>> {
     assertManager(actor);
-    return this.profiles.list(parse(userListQuerySchema, query));
+    // the Super Admin is not part of anybody's team to manage: only a Super Admin's own list shows the account
+    return this.profiles.list(parse(userListQuerySchema, query), actor.role !== 'SUPER_ADMIN');
   }
 
   get(id: string): Promise<Profile> {
@@ -125,10 +126,16 @@ export class UserService {
     return this.profiles.findById(id);
   }
 
+  /** The Super Admin account is never changed from the application. A person who cannot even see the account gets the database's own answer. */
+  private async refuseSuperAdminTarget(userId: string): Promise<void> {
+    assertNotSuperAdminTarget(await this.profiles.findById(userId).catch(() => null));
+  }
+
   async setStatus(actor: Actor, id: string, body: unknown): Promise<Profile> {
     assertManager(actor);
     const userId = parse(uuidSchema, id);
     const { status, reason } = parse(userStatusSchema, body);
+    await this.refuseSuperAdminTarget(userId);
     await this.profiles.setStatus(userId, status, reason);
     await this.authAdmin.setSignInBlocked(userId, status !== 'ACTIVE');
     return this.profiles.findById(userId);
@@ -138,6 +145,7 @@ export class UserService {
     const userId = parse(uuidSchema, id);
     const input = parse(userAssignSchema, body);
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
+    await this.refuseSuperAdminTarget(userId);
     await this.profiles.assign(userId, input.role, input.departmentId, input.teamId);
     return this.profiles.findById(userId);
   }
@@ -147,6 +155,7 @@ export class UserService {
     assertManager(actor);
     const userId = parse(uuidSchema, id);
     const { role } = parse(salesSubRoleSchema, body);
+    await this.refuseSuperAdminTarget(userId);
     await this.profiles.setSalesSubRole(userId, role);
     return this.profiles.findById(userId);
   }
@@ -226,6 +235,7 @@ export class UserService {
     assertManager(actor);
     const userId = parse(uuidSchema, id);
     const { value } = parse(technicalConsultantSchema, body);
+    await this.refuseSuperAdminTarget(userId);
     await this.profiles.setTechnicalConsultant(userId, value);
     return this.profiles.findById(userId);
   }
@@ -233,6 +243,8 @@ export class UserService {
   /** Removal follows the hierarchy; delete_user() enforces who may remove whom. */
   async delete(actor: Actor, id: string): Promise<void> {
     assertManager(actor);
-    await this.profiles.delete(parse(uuidSchema, id));
+    const userId = parse(uuidSchema, id);
+    await this.refuseSuperAdminTarget(userId);
+    await this.profiles.delete(userId);
   }
 }

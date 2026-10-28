@@ -71,6 +71,7 @@ await sa.getByPlaceholder('min. 10 characters').fill(pw);
 await sa.locator('input[type="date"]').first().fill('2025-01-10');
 await sa.locator('input[type="date"]').nth(1).fill('1990-05-05');
 await sa.locator('select').filter({ has: sa.locator('option', { hasText: 'A+' }) }).first().selectOption('A+');
+await sa.getByTestId('member-contact-number').fill('+91 98111 22222');
 await sa.getByPlaceholder('+91 98765 43210').fill('+91 98765 43210');
 await expect(await sa.getByRole('button', { name: /Create|Add team member|Add member/i }).last().isDisabled(), 'creating is blocked until Sales or Support is chosen');
 await sa.locator('#staff-head-division').selectOption('SALES');

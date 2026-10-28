@@ -1,4 +1,4 @@
-import type { ChatClientView, ChatConversation, ChatMessage, ChatMessagePage, ChatUploadTicket, ClientDocumentUrl } from '../../shared/contracts.js';
+import type { ChatClientView, ChatConversation, ChatDeleteResult, ChatMessage, ChatMessagePage, ChatUploadTicket, ClientDocumentUrl } from '../../shared/contracts.js';
 import {
   chatAdminSchema,
   chatDirectSchema,
@@ -6,9 +6,13 @@ import {
   chatGroupRenameSchema,
   chatMembersSchema,
   chatMessagesQuerySchema,
+  chatKeyBackupSetSchema,
+  chatKeyLookupQuerySchema,
+  chatKeySetupSchema,
   chatReadSchema,
   chatReviewQuerySchema,
   chatSearchQuerySchema,
+  chatSendEncryptedSchema,
   chatSendSchema,
   chatUploadSchema,
   clientFileQuerySchema,
@@ -69,6 +73,35 @@ export class ChatService {
   }
   messages(id: string, query: unknown): Promise<ChatMessagePage> { return this.repo.messages(parse(uuidSchema, id), parse(chatMessagesQuerySchema, query ?? {})); }
   send(id: string, body: unknown): Promise<ChatMessage> { return this.repo.send(parse(uuidSchema, id), parse(chatSendSchema, body)); }
+  /** The server stores the envelope as it is: it checks who it is sealed for, never what it says. */
+  sendEncrypted(id: string, body: unknown): Promise<ChatMessage> { return this.repo.sendEncrypted(parse(uuidSchema, id), parse(chatSendEncryptedSchema, body)); }
+  deleteForMe(messageId: string): Promise<ChatDeleteResult> { return this.repo.deleteForMe(parse(uuidSchema, messageId)); }
+  /** The database wipes the message and says which stored files must go; they are removed here, and the database is told when they are gone. */
+  async deleteForEveryone(messageId: string): Promise<ChatDeleteResult> {
+    const done = await this.repo.deleteForEveryone(parse(uuidSchema, messageId));
+    const removed: string[] = [];
+    for (const f of done.files) {
+      try {
+        await this.storage.remove(f.bucket, [f.path], f.provider);
+        removed.push(f.id);
+      } catch (err) {
+        console.error('[chat] could not remove a deleted file from storage', { file: f.id, message: (err as Error).message });
+      }
+    }
+    if (removed.length) await this.repo.attachmentsRemoved(removed).catch(() => undefined);
+    if (removed.length < done.files.length) throw new AppError('SERVICE_UNAVAILABLE', 'The message was deleted, but a file could not be removed from storage yet. Delete the message again to retry the file.');
+    return { id: done.id, deleted: true };
+  }
+
+  // ---------------------------------------------------------------- keys for end-to-end encryption
+  keyStatus() { return this.repo.keyStatus(); }
+  keySetup(body: unknown) { const i = parse(chatKeySetupSchema, body); return this.repo.keySetup(i.publicKey, i.backup); }
+  keyReset(body: unknown) { const i = parse(chatKeySetupSchema, body); return this.repo.keyReset(i.publicKey, i.backup); }
+  keyBackupGet() { return this.repo.keyBackupGet(); }
+  async keyBackupSet(body: unknown): Promise<null> { const i = parse(chatKeyBackupSetSchema, body); await this.repo.keyBackupSet(i.backup, i.version); return null; }
+  memberKeys(id: string) { return this.repo.memberKeys(parse(uuidSchema, id)); }
+  keyLookup(query: unknown) { const i = parse(chatKeyLookupQuerySchema, query); return this.repo.keyLookup(i.profileId, i.version); }
+
   markRead(id: string, body: unknown) { return this.repo.markRead(parse(uuidSchema, id), parse(chatReadSchema, body ?? {}).seq); }
 
   // ---------------------------------------------------------------- clients (the conversation always comes from the login)

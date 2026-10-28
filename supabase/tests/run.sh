@@ -88,3 +88,9 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/login_location_test.sql 2>&1 | sed
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meta_verifier_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/client_provisioning_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/client_progress_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/super_admin_protection_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/member_contact_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_e2ee_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

@@ -91,6 +91,7 @@ export class AuthAdminRepository {
       date_of_birth: d.dateOfBirth,
       blood_group: d.bloodGroup,
       emergency_contact: d.emergencyContact,
+      contact_number: d.contactNumber,
       updated_at: new Date().toISOString()
     });
     if (error) {
