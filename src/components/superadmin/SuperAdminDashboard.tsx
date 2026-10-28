@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, LayoutDashboard, Network, RotateCcw, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { BarChart3, Bell, Building2, LayoutDashboard, RotateCcw, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -13,15 +13,13 @@ import { BusinessReports } from '../reports/BusinessReports';
 import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
-import { CompanyWorkflow } from './CompanyWorkflow';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 
-type Page = 'overview' | 'departments' | 'team' | 'workflow' | 'reports' | 'income' | 'security' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'security' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
  *   Overview            the company in one page (figures from the database, see CompanyOverview)
- *   Company Workflow    every department, team and person, and the hand-offs between them, from the live records
  *   Departments         the department cards: open a department's own panel, lock / unlock, add one (unchanged functions)
  *   Business Reports    the existing company business report
  *   Team Members        Team Member Management in full screen: Add Team Member, Team Members (the directory), Access Control
@@ -49,7 +47,6 @@ export const SuperAdminDashboard: React.FC = () => {
         items: [
           { id: 'departments', label: 'Departments', icon: Building2 },
           { id: 'team', label: 'Team Members', icon: Users },
-          { id: 'workflow', label: 'Company Workflow', icon: Network },
           { id: 'income', label: 'Department Income', icon: Building2 },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
         ]
@@ -80,7 +77,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'workflow' || page === 'income' || page === 'team'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'team'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -107,7 +104,6 @@ export const SuperAdminDashboard: React.FC = () => {
         </div>
       )}
       {page === 'team' && <TeamMemberManagement initialTab={teamTab.tab} openRequest={teamTab.n} />}
-      {page === 'workflow' && <CompanyWorkflow />}
       {page === 'income' && <DepartmentIncome />}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}

@@ -1,5 +1,7 @@
 # Company Workflow (Super Admin)
 
+> **Removed from the Super Admin dashboard.** The *Company Workflow* menu entry and page no longer exist. The read-only API (`GET /dashboard/company-workflow`) and the database function `company_workflow()` were left in place and are not used by any screen. The rest of this page describes what the page used to show.
+
 **Super Admin -> Company Workflow** draws the whole company as one diagram: every department, its teams (sub-departments), its Department Head, Team Leads and members, and the hand-offs that already exist between them. It is read from the live records every time it opens, so a new department, team or person, or a changed assignment, appears on the next read. Nothing in the picture is typed in.
 
 Migration: `20261112000300_company_workflow.sql` (adds one read-only function, safe to run again). Run it after `20261112000200_paid_only_invoices.sql`.

@@ -48,6 +48,8 @@ const login = async (email, ready) => {
 };
 
 const sa = await login('root@amuwa.com', 'button:has-text("Add Team Member")');
+const saMenu = (await sa.locator('aside nav button').allInnerTexts()).map(t => t.trim());
+await expect(saMenu.includes('Departments') && saMenu.includes('Team Members') && !saMenu.some(t => /workflow/i.test(t)), 'the Super Admin menu has no Company Workflow', saMenu);
 await sa.getByRole('button', { name: 'Add Team Member' }).click();
 await sa.locator('#add-staff-department').waitFor({ timeout: 15000 });
 await sa.locator('#add-staff-department').selectOption({ label: 'Wabastore' });
