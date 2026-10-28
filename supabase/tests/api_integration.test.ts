@@ -1591,6 +1591,113 @@ r = await api('tc', 'GET', `/pipeline/customers/${leadA}/client-messages`);
 check(r.status === 200 && r.json.data.automated === false && r.json.data.stage === null && r.json.data.messages.every((m: any) => m.stage === 'ACCOUNT_CREATED' && m.status === 'SKIPPED'),
   'customers without the WhatsApp API service get no onboarding messages (only the account-created one, here dry-run)', r);
 
+// --- Meta Verifier workflow: notes, hand-over, the Technical Consultant's follow-up (nothing is sent: the mode is still dry run) ---
+{
+  const wf = await autoCustomer({ name: 'Flow One', company: 'Flow One Traders', email: 'flow.one@example.com', whatsapp: '9819900077', phone: '9819900078' }, 'https://flow-one.example');
+  r = await api('tc', 'GET', `/pipeline/customers/${wf}/verification/notes`);
+  check(r.status === 404, 'workflow: the Technical Consultant cannot read the notes of a Meta customer before the hand-over', r);
+  r = await api('a', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE' });
+  check(r.status === 404, 'workflow: Sales cannot write verification notes', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'GST certificate checked', outcome: 'NOTE' });
+  check(r.status === 201 && r.json.data.length === 1 && r.json.data[0].author === 'Meta Verifier', 'workflow: the Meta Verifier records a note (returns the history)', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'Address proof is blurred', outcome: 'NEEDS_CORRECTION' });
+  check(r.status === 201 && r.json.data.length === 2 && r.json.data[0].outcome === 'NEEDS_CORRECTION', 'workflow: the history keeps both, newest first', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOPE' });
+  check(r.status === 422, 'workflow: an unknown outcome is refused', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: '', outcome: 'NOTE' });
+  check(r.status === 422, 'workflow: an empty note is refused', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE', extra: 1 });
+  check(r.status === 422, 'workflow: unknown fields are refused', r);
+
+  // settings: the delay has no default and only the Super Admin sets it
+  r = await api('sa', 'GET', '/workflow/settings');
+  check(r.status === 200 && r.json.data.tcFollowupDelayDays === null && r.json.data.canEdit === true, 'workflow: the follow-up delay has no default', r);
+  r = await api('tc', 'GET', '/workflow/settings');
+  check(r.status === 200 && r.json.data.canEdit === false, 'workflow: the Technical Consultant can read but not edit the settings', r);
+  r = await api('a', 'GET', '/workflow/settings');
+  check(r.status === 403 || r.status === 404, 'workflow: Sales cannot read them', r);
+  r = await api('dh', 'POST', '/workflow/tc-followup-delay', { days: 3 });
+  check(r.status === 403, 'workflow: a Department Head cannot set the delay', r);
+  r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 0 });
+  check(r.status === 422, 'workflow: zero days is refused', r);
+  r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 'three' });
+  check(r.status === 422, 'workflow: and so is a non-number', r);
+
+  // hand-over (the WABA ID first, then every document)
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, { note: 'too early' });
+  check(r.status === 422, 'workflow: no hand-over before everything is authorized', r);
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/consultant-items/WABA_ID`, { value: '109876543210999' });
+  check(r.status === 200, 'workflow: the verifier enters the WABA ID', r);
+  r = await api('tc', 'PATCH', `/pipeline/customers/${wf}/consultant-items/WABA_ID`, { value: '109876543210999' });
+  check(r.status === 404, 'workflow: the Technical Consultant has no part in this stage', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/checklist/verify-all`);
+  check(r.status === 200, 'workflow: the verifier authorizes every document', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${wf}/handover/department-head`, {});
+  check(r.status === 404, 'workflow: the Technical Consultant cannot hand a Meta customer over', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, { note: 'All verified' });
+  check(r.status === 200, 'workflow: the verifier hands the customer to the Department Head', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, {});
+  check(r.status === 404, 'workflow: it cannot be handed over twice', r);
+  const { rows: fu } = await db.query(`select id, status, due_at from public.tc_followups where customer_id = $1`, [wf]);
+  check(fu.length === 1 && fu[0].status === 'AWAITING_CONFIGURATION' && fu[0].due_at === null, 'workflow: one follow-up, waiting because no delay is set', fu);
+  r = await api('tc', 'GET', '/consultant/followups');
+  check(r.status === 200 && r.json.data.some((f: any) => f.customerId === wf && f.effectiveStatus === 'AWAITING_CONFIGURATION' && f.handedOverBy === 'Meta Verifier'), 'workflow: the Technical Consultant sees it, with who handed it over', r.json.data);
+  r = await api('mv', 'GET', '/consultant/followups');
+  check(r.status === 403, 'workflow: the Meta Verifier has no follow-up list', r);
+  r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'CONTACTED' });
+  check(r.status === 409, 'workflow: it cannot be worked before it is scheduled', r);
+
+  // the delay is set: scheduled at once; the job notifies once when it is due
+  r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 2 });
+  check(r.status === 200 && r.json.data.tcFollowupDelayDays === 2, 'workflow: the Super Admin sets the delay', r);
+  const { rows: fu2 } = await db.query(`select status, due_at - eligible_at as gap from public.tc_followups where id = $1`, [fu[0].id]);
+  check(fu2[0].status === 'SCHEDULED' && fu2[0].gap.days === 2, 'workflow: the waiting follow-up is scheduled 2 days after the hand-over', fu2);
+  let d2 = await dispatch('dispatch-secret-0123456789');
+  check(d2.status === 200 && d2.json.data.tcFollowups && d2.json.data.tcFollowups.due === 0, 'workflow: the dispatch run reports the follow-up job and nothing is due yet', d2.json.data);
+  await db.query(`update public.tc_followups set due_at = now() - interval '1 minute' where id = $1`, [fu[0].id]);
+  d2 = await dispatch('dispatch-secret-0123456789');
+  check(d2.json.data.tcFollowups.due === 1, 'workflow: when the date has passed the job marks it due', d2.json.data);
+  d2 = await dispatch('dispatch-secret-0123456789');
+  check(d2.json.data.tcFollowups.due === 0, 'workflow: and does not do it twice', d2.json.data);
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'TC_FOLLOWUP_DUE' and entity_id = $1`, [wf])).rows[0].n === 1, 'workflow: exactly one notification');
+  r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'CALL_BACK' });
+  check(r.status === 422, 'workflow: a call-back needs the next date', r);
+  r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'COMPLETED', note: 'Explained the add-ons' });
+  check(r.status === 201 && r.json.data.status === 'DONE', 'workflow: the consultant records the consultation and it is done', r);
+  r = await api('tc', 'GET', '/consultant/followups?scope=DONE');
+  check(r.status === 200 && r.json.data.some((f: any) => f.customerId === wf && f.contacts === 1), 'workflow: the history stays under Done', r);
+  await api('sa', 'POST', '/workflow/tc-followup-delay', { days: null });
+
+  // catalogue and route
+  r = await api('dh', 'PATCH', '/pipeline/service-journeys/AI_CALLING/meta-verification', { value: true });
+  check(r.status === 403, 'workflow: a Department Head cannot change which services the Meta Verifier verifies', r);
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/AI_CALLING/meta-verification', { value: true });
+  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'AI_CALLING').requiresMetaVerification === true && r.json.data.find((x: any) => x.code === 'WHATSAPP_API').requiresMetaVerification === true, 'workflow: the Super Admin changes it (the catalogue answers with the new setting)', r);
+  await api('sa', 'PATCH', '/pipeline/service-journeys/AI_CALLING/meta-verification', { value: false });
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/NOT_A_SERVICE/meta-verification', { value: true });
+  check(r.status === 404 || r.status === 422, 'workflow: an unknown service is refused', r);
+  r = await api('a', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'TECHNICAL', reason: 'because' });
+  check(r.status === 404, 'workflow: Sales cannot re-route', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'TECHNICAL', reason: '' });
+  check(r.status === 422, 'workflow: a re-route needs a reason', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'TECHNICAL', reason: 'The customer wants the consultant to take it' });
+  check(r.status === 200, 'workflow: the Department Head re-routes a customer in verification', r);
+  r = await api('mv', 'GET', `/pipeline/customers/${autoB}/verification/notes`);
+  check(r.status === 404, 'workflow: and the Meta Verifier loses it', r);
+  r = await api('tc', 'GET', `/pipeline/customers/${autoB}/client-messages`);
+  check(r.status === 200, 'workflow: while the Technical Consultant gets it', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'META', reason: 'Back to the verifier' });
+  check(r.status === 200, 'workflow: and it can go back', r);
+  r = await api('dh', 'GET', '/pipeline/verification-route-review');
+  check(r.status === 200 && Array.isArray(r.json.data), 'workflow: the Department Head can list customers whose route differs from their services', r);
+  r = await api('a', 'GET', '/pipeline/verification-route-review');
+  check(r.status === 403 || r.status === 404, 'workflow: Sales cannot', r);
+
+  // the Meta Verifier role itself
+  r = await api('mv', 'POST', `/users/${(await db.query(`select id from public.profiles where email = 'mv@amuwa.com'`)).rows[0].id}/meta-verifier`, { value: false });
+  check(r.status === 403, 'workflow: a Meta Verifier cannot change their own role', r);
+}
+
 // Live, test recipients only
 Object.assign(process.env, { AUTOMATION_MODE: 'live', AUTOMATION_TEST_RECIPIENTS: '9819900011, 9819900022, auto.client@example.com, nosite.client@example.com' });
 r = await api('mv', 'POST', `/pipeline/customers/${autoB}/checklist/verify-all`);
