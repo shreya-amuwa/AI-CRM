@@ -1816,6 +1816,8 @@ export const salesIncomeQuerySchema = z.object({ from: isoDate.optional(), to: i
 export const verificationNoteSchema = z
   .object({ body: trimmed(2000).min(1, 'Write the note.'), outcome: z.enum(['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED']).default('NOTE') })
   .strict();
+// The account / user ID of a customer's WhatsApp panel. The database enforces the exact format and refuses anything that looks like a password.
+export const panelDetailsSchema = z.object({ platform: trimmed(120).nullish(), account: trimmed(200).nullish() }).strict();
 export const rerouteVerificationSchema = z.object({ route: z.enum(['META', 'TECHNICAL']), reason: trimmed(500).min(1, 'Give the reason.') }).strict();
 export const serviceMetaVerificationSchema = z.object({ value: z.boolean() }).strict();
 export const followUpListQuerySchema = z.object({ scope: z.enum(['OPEN', 'DONE', 'ALL']).default('OPEN') }).strict();

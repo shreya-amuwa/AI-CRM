@@ -22,6 +22,7 @@ import type {
   PipelineCounts,
   ReviewCounts,
   PipelineCustomer,
+  OnboardingHandoffInfo,
   PipelineCustomerDetail,
   ServiceCatalogItem
 } from '../../shared/contracts.js';
@@ -421,6 +422,10 @@ export class PipelineService {
     const customerId = parse(uuidSchema, id);
     await this.repo.consultantStartOnboarding(customerId);
     return this.repo.get(customerId);
+  }
+
+  async handoffInfo(id: string): Promise<OnboardingHandoffInfo> {
+    return this.repo.handoffInfo(parse(uuidSchema, id));
   }
 
   async forwardToSupport(id: string): Promise<PipelineCustomer> {

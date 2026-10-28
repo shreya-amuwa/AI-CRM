@@ -44,6 +44,7 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
+import { ClientLoginDetails } from './ClientLoginDetails';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
 import { VerificationNotes } from './VerificationNotes';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
@@ -566,7 +567,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           <ConsultationNotes customerId={c.id} canWrite services={c.services} />
         )}
 
-        <ClientLoginCard account={c.handover?.clientAccount} />
+        {mode === 'verifier' ? <ClientLoginDetails customerId={c.id} /> : <ClientLoginCard account={c.handover?.clientAccount} />}
       </div>
     </div>
   );

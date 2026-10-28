@@ -759,6 +759,13 @@ export interface ClientMessages {
   messages: ClientMessage[];
 }
 
+/** Where Sales' next send goes (decided by the database from the services ordered) and whether anybody is there to receive it. */
+export interface OnboardingHandoffInfo {
+  route: 'META' | 'TECHNICAL';
+  recipient: 'Meta Verifier' | 'Technical Consultant';
+  recipientAvailable: boolean;
+}
+
 export interface PipelineCustomerDetail extends PipelineCustomer {
   documents: CustomerDocument[];
   documentTypes: DocumentType[];
@@ -1806,6 +1813,39 @@ export interface ClientInvoice {
   paymentConfirmedAt?: string | null;
   taxSummary?: { cgst: number; sgst: number; igst: number } | null;
   paymentSummary?: InvoicePaymentSummary | null;
+}
+/** One invoice of an order, with the share of the order's confirmed money that covers it. */
+export interface ClientBillingInvoice {
+  id: string;
+  number: string | null;
+  total: number;
+  allocated: number;
+  balance: number;
+  state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+  status: 'Paid' | 'Pending';
+}
+/** What the client owes for one order (the agreed order, or an add-on order): payable - confirmed = balance; pending money never reduces it. */
+export interface ClientBillingOrder {
+  key: string;
+  kind: 'ORDER' | 'ADDON';
+  title: string;
+  /** Accounts has not yet chosen the GST rate: the payable amount is not final, so no balance is shown. */
+  gstPending: boolean;
+  gstRate: number | null;
+  totalPayable: number;
+  confirmed: number;
+  /** Recorded by Accounts, waiting for verification. */
+  pending: number;
+  balance: number;
+  state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+  invoicedTotal: number;
+  /** Part of the payable amount no invoice covers yet. */
+  notYetInvoiced: number;
+  invoices: ClientBillingInvoice[];
+}
+export interface ClientBilling {
+  orders: ClientBillingOrder[];
+  totals: { payable: number; confirmed: number; pending: number; outstanding: number };
 }
 export type ClientTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
 export interface ClientTicket {
@@ -3796,6 +3836,18 @@ export interface VerificationNote {
   body: string;
   createdAt: string;
   author: string | null;
+}
+/** The internal WhatsApp panel details of a customer's WhatsApp service (the account / user ID only - never a password), and the Accounts-owned dashboard login, read only. */
+export interface PanelDetailsService {
+  code: string;
+  name: string;
+  platform: string | null;
+  panelAccount: string | null;
+}
+export interface PanelDetails {
+  canEdit: boolean;
+  services: PanelDetailsService[];
+  dashboardLogin: { email: string; createdAt: string } | null;
 }
 /** A customer already in verification whose services say another route than the one it has: for the Super Admin or the Department Head to decide. */
 export interface VerificationRouteReviewItem {

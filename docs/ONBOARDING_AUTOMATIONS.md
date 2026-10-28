@@ -77,6 +77,19 @@ builder, open the route filters and check, one by one:
    `{"name":"Test","email":"me@example.com","phone":"91XXXXXXXXXX","department":"Wabastore","website":"","whatsapp_number":"91XXXXXXXXXX","status":"Meta Verification","stage_code":"META_VERIFICATION","source":"AI CRM","automation":"Client Onboarding","event_key":"test|1"}`
 Use a new `event_key` for each test, because the builder ignores a repeated one.
 
+**What "Authorize All" does, end to end (so you can prove which side is wrong).** The Authorize All button (`verify_all_onboarding_entries`) saves the documents as verified. When that
+completes the checklist (and the website link is authorized), the database moves the customer to `META_VERIFICATION` and, in the same transaction, queues exactly one e-mail job and
+one WhatsApp job for that stage (`advance_client_status`; the job key is `ONBOARD|<customer>|<channel>|META_VERIFICATION`, so a second click, a retry or a re-run queues nothing new).
+`COMPLETED` is queued only by the verifier recording that Meta completed the verification (`mark_meta_verification_completed`); creating the client login, saving the panel login details,
+or any other edit never queues a message. To see what the CRM actually posted for a customer, open the customer's **Messages** timeline: the WhatsApp line reads
+`Meta Verification WhatsApp request accepted by webhook (HTTP 200 ...)` - the word before "WhatsApp" is the `status` that was posted. If it says `Meta Verification` and the customer still
+received the completed text, the wrong template was chosen inside the builder (steps 1-3 above); nothing in the CRM can change that.
+
+**Re-aligning the router text without a code change.** If you would rather give the in-progress route an unmistakable name, set `WHATSAPP_STATUS_META_VERIFICATION` on the server (for
+example `Meta Verification In Progress`) **and** change the route's condition in the builder to the same text, then redeploy. The same variable form exists for every stage
+(`WHATSAPP_STATUS_UNDER_REVIEW`, `WHATSAPP_STATUS_WEBSITE_READY`, ...). Nothing is set by default, so today's behaviour is unchanged; `stage_code` and the e-mail never change; and a value with
+"complete" in it is ignored for every stage except `COMPLETED`, so the pending stage can never be given the completed wording by a typo. Note the new `event_key` follows the text.
+
 ## How it works
 
 1. **The database decides when.** Triggers on `customer_onboarding`, `customer_onboarding_entries` (website) and
@@ -121,6 +134,7 @@ Supabase Auth keeps the password (hashed) for signing in. For the completion ema
 | Resend / Brevo (`EMAIL_PROVIDER=resend` or `brevo`) | `EMAIL_API_KEY`. Verify `amuwa.com` with the provider (SPF/DKIM records) so `meta@amuwa.com` can send. |
 | `EMAIL_FROM` | `Amuwa Corporation <meta@amuwa.com>` (default). `EMAIL_REPLY_TO` defaults to `meta@amuwa.com`. `EMAIL_CC` / `EMAIL_BCC` are optional. |
 | `WHATSAPP_WEBHOOK_URL` | The 1automations webhook. Generate a new one: the old one was shared in the Apps Script. |
+| `WHATSAPP_STATUS_<STAGE>` (optional) | Replaces the WhatsApp `status` text of one stage, e.g. `WHATSAPP_STATUS_META_VERIFICATION=Meta Verification In Progress`. Change the router's condition to the same text at the same time. Unset by default. |
 | `AUTOMATION_TEST_RECIPIENTS` | **Leave it empty / delete it in production**: the CRM then sends to each customer's own email and WhatsApp number from the database. Set it only to test: everyone not in the list is skipped ("not a test recipient"). |
 | `AUTOMATION_SECRET_KEY` | A long random string. Without it the completion email says the password is shared separately. |
 | `AUTOMATION_DISPATCH_SECRET` | A long random string (16+ characters) for the dispatch endpoint. |
