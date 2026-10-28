@@ -27,6 +27,8 @@ import { GeneratedInvoiceService } from './GeneratedInvoiceService.js';
 import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
+import { WorkflowService } from './WorkflowService.js';
+import { WorkflowRepository } from '../repositories/WorkflowRepository.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
 import { CustomerImportService } from './CustomerImportService.js';
@@ -40,6 +42,8 @@ import { PerformanceService } from './PerformanceService.js';
 import { RecruitmentService } from './RecruitmentService.js';
 import { TrainingService } from './TrainingService.js';
 import { TelecallerService } from './TelecallerService.js';
+import { FieldVisitService } from './FieldVisitService.js';
+import { FieldVisitRepository } from '../repositories/FieldVisitRepository.js';
 import { SalesHeadService } from './SalesHeadService.js';
 import { BusinessAssociateService } from './BusinessAssociateService.js';
 import { BusinessAssociateRepository } from '../repositories/BusinessAssociateRepository.js';
@@ -57,6 +61,7 @@ export function createServices(db: SupabaseClient) {
     performance: new PerformanceService(new PerformanceRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
     training: new TrainingService(new TrainingRepository(db)),
+    fieldVisit: new FieldVisitService(new FieldVisitRepository(db)),
     telecaller: new TelecallerService(new TelecallerRepository(db), new StorageRepository()),
     salesHead: new SalesHeadService(new SalesHeadRepository(db), new StorageRepository()),
     ba: new BusinessAssociateService(new BusinessAssociateRepository(db), new StorageRepository()),
@@ -68,6 +73,7 @@ export function createServices(db: SupabaseClient) {
     dashboards: new DashboardService(new DashboardRepository(db)),
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
     automations: new AutomationService(new PipelineRepository(db)),
+    workflow: new WorkflowService(new WorkflowRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),
     departmentIncome: new DepartmentIncomeService(new DepartmentIncomeRepository(db)),
     businessReport: new BusinessReportService(new BusinessReportRepository(db)),

@@ -4,7 +4,7 @@ import { AuthUser, DepartmentId, UserSession, Department } from '../types/crm';
 import { sessionManager } from '../services/sessionManager';
 import { useDepartments } from './DepartmentContext';
 import { getSupabase } from '../services/supabaseClient';
-import { hrApi, meApi } from '../lib/api/endpoints';
+import { hrApi, meApi, signInReportApi } from '../lib/api/endpoints';
 import { officeToday } from '../lib/officeTime';
 import { errorMessage } from '../lib/api/client';
 import { toAuthUser } from '../lib/auth/roleMapping';
@@ -241,6 +241,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     if (error) {
       if (error.status === 429 || /too many|rate limit/i.test(error.message)) return { ok: false, message: 'Too many sign-in attempts. Please wait a few minutes and try again.' };
+      // a refused password (not a network or server problem): the server notes the attempt with its address and place
+      if (error.status === 400 || error.status === 401 || error.code === 'invalid_credentials') signInReportApi.failed(email);
       return { ok: false, message: /confirm/i.test(error.message) ? 'Please confirm your e-mail address first.' : 'Invalid email or password.' };
     }
     if (await sendClientToDashboard()) return { ok: true };
@@ -314,14 +316,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /**
    * Navigation into a department workspace. Super Admins may open any
-   * unlocked department; department heads only their own. (The data inside
-   * is independently scoped by RLS.)
+   * department, whatever its lock flag says; every other role only its own,
+   * and only while the department is not locked. (The data inside is
+   * independently scoped by RLS.)
    */
   const selectDepartment = (departmentId: DepartmentId): boolean => {
     if (!user) return false;
     const dept = getDepartment(departmentId);
-    if (!dept || dept.locked) return false;
-    if (user.role !== 'superadmin' && user.departmentId !== departmentId) return false;
+    if (!dept) return false;
+    if (user.role !== 'superadmin' && (dept.locked || user.departmentId !== departmentId)) return false;
 
     setActiveDepartmentId(departmentId);
     try {

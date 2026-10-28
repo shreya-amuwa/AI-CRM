@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'telecaller' | 'business-associate' | 'sales-role' | 'sales-head' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'business-associate' | 'sales-role' | 'sales-head' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -103,6 +103,14 @@ export const parseCurrentRoute = (): ParsedRoute => {
     };
   }
 
+  // 1c-bis. /meta-verifier/dashboard
+  if (path === '/meta-verifier/dashboard' || path.startsWith('/meta-verifier')) {
+    return {
+      path,
+      type: 'meta-verifier'
+    };
+  }
+
   // 1c. /technical-support/dashboard or /technical-support
   if (path === '/technical-support/dashboard' || path.startsWith('/technical-support')) {
     return {
@@ -149,6 +157,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
   switch (user.role) {
     case 'technical-support':
       return '/technical-support/dashboard';
+    case 'meta-verifier':
+      return '/meta-verifier/dashboard';
     case 'team-member':
       return `/team-member/dashboard/${user.id}`;
     case 'support-member':
@@ -191,6 +201,14 @@ export const validateRouteAccess = (
   // If user is not logged in:
   if (!user) {
     return { allowed: false, redirectTo: '/login' };
+  }
+
+  // If user is a meta-verifier:
+  if (user.role === 'meta-verifier') {
+    if (route.type === 'meta-verifier') {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: '/meta-verifier/dashboard' };
   }
 
   // If user is technical-support:

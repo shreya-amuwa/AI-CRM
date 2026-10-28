@@ -22,7 +22,7 @@ Amuwa AI CRM enforces strict role-based access control (RBAC). Your access is de
 
 | Role | Department / Division | Dashboard Opened | Key Capabilities |
 | --- | --- | --- | --- |
-| **Super Admin** | Corporate | Department Hub | Full oversight, staff creation, revenue reports, department locking |
+| **Super Admin** | Corporate | Department Hub | Full oversight, staff creation, revenue reports, every department open |
 | **Department Head** | Assigned Department | Department Head Dashboard | Team monitoring, customer handovers, leave approvals, ticket SLAs |
 | **Sales Team Lead** | Sales Division | Sales Team Lead Dashboard | Lead distribution, pod performance monitoring, pipeline oversight |
 | **Sales Team Member** | Sales Division | Sales Member Dashboard | Adding leads, recording conversations, sending deals to Accounts |

@@ -1,31 +1,36 @@
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, Home, Target } from 'lucide-react';
+import { ClipboardList, Home, MapPinned, Target } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
-import { DashboardShell, groupNavItems } from '../layout/shell';
+import { DashboardShell, PageTitle, groupNavItems } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { FIELD_VISIT_GROUP_ID, FIELD_VISIT_NAV, FIELD_VISIT_SEGMENT, FieldVisitWorkspace, fieldVisitPageFromSegment, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
 import { HomePage } from './HomePage';
 import { ConvertLead } from './ConvertLead';
-import { LeadsPage } from './LeadsPage';
+import { LeadDialog, LeadsPage, telecallerLeadsApi } from './LeadsPage';
 import { TasksPage } from './TasksPage';
 
-export type TelecallerPage = 'home' | 'tasks' | 'leads' | 'notifications';
+export type TelecallerPage = 'home' | 'tasks' | 'leads' | 'notifications' | FieldVisitPage;
 export interface TelecallerNavigate {
   (page: TelecallerPage, options?: { status?: string; addLead?: boolean }): void;
 }
 
-const NAV: { id: TelecallerPage; label: string; icon: React.ElementType }[] = [
+const NAV: { id: string; label: string; icon: React.ElementType; children?: { id: string; label: string }[] }[] = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'tasks', label: 'Tasks', icon: ClipboardList },
-  { id: 'leads', label: 'Leads', icon: Target }
+  { id: 'leads', label: 'Leads', icon: Target },
+  // Field Visit: planning and recording visits to leads, inside this same dashboard
+  { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV }
 ];
 
 export const TELECALLER_BASE = (userId: string) => `/telecaller/dashboard/${userId}`;
 
 export function parseTelecallerPage(path: string): TelecallerPage {
   const seg = path.replace(/\/+$/, '').split('/')[4];
+  const visit = fieldVisitPageFromSegment(seg);
+  if (visit) return visit;
   return seg === 'tasks' || seg === 'leads' || seg === 'notifications' ? seg : 'home';
 }
 
@@ -49,11 +54,11 @@ export const TelecallerDashboard: React.FC = () => {
   const go: TelecallerNavigate = (next, options) => {
     setIntent(i => ({ ...options, n: i.n + 1 }));
     setPage(next);
-    navigateTo(next === 'home' ? TELECALLER_BASE(userId) : `${TELECALLER_BASE(userId)}/${next}`);
+    navigateTo(next === 'home' ? TELECALLER_BASE(userId) : `${TELECALLER_BASE(userId)}/${isFieldVisitPage(next) ? FIELD_VISIT_SEGMENT[next] : next}`);
   };
 
   const displayName = profile?.fullName || user?.name || 'Telecaller';
-  const groups = groupNavItems(NAV, [{ ids: ['home', 'tasks', 'leads'] }]);
+  const groups = groupNavItems(NAV, [{ ids: ['home', 'tasks', 'leads', FIELD_VISIT_GROUP_ID] }]);
 
   return (
     <DashboardShell
@@ -84,6 +89,18 @@ export const TelecallerDashboard: React.FC = () => {
         {page === 'tasks' && <TasksPage key={`tasks-${intent.n}`} initialStatus={intent.status} />}
         {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} scopeFilters openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
         {page === 'notifications' && <NotificationsPage />}
+        {isFieldVisitPage(page) && (
+          <FieldVisitWorkspace
+            page={page}
+            onNavigate={next => go(next)}
+            renderAddLead={a => (
+              <>
+                <PageTitle title="Add Lead" subtitle="Add a lead you found on a field visit. It joins your leads like any other." />
+                <LeadDialog api={telecallerLeadsApi} defaultSource={a.source} onClose={a.onCancel} onSaved={a.onSaved} />
+              </>
+            )}
+          />
+        )}
       </div>
     </DashboardShell>
   );

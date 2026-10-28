@@ -19,8 +19,6 @@ interface DepartmentContextType {
   addDepartment: (input: DepartmentCreateInput) => Promise<{ ok: boolean; error?: string; department?: Department }>;
   deleteDepartment: (id: DepartmentId) => Promise<{ ok: boolean; error?: string }>;
   refreshDepartments: () => Promise<void>;
-  lockDepartment: (id: DepartmentId) => Promise<{ ok: boolean; error?: string }>;
-  unlockDepartment: (id: DepartmentId) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const DepartmentContext = createContext<DepartmentContextType | undefined>(undefined);
@@ -115,22 +113,6 @@ export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     [departments]
   );
 
-  const setLocked = useCallback(
-    async (id: DepartmentId, isLocked: boolean) => {
-      const dbId = withDbId(id);
-      if (!dbId) return { ok: false, error: 'Department not found.' };
-      try {
-        const updated = toDepartment(await organizationApi.updateDepartment(dbId, { isLocked }));
-        setDepartments(prev => prev.map(d => (d.id === id ? updated : d)));
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: errorMessage(err) };
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [departments]
-  );
-
   return (
     <DepartmentContext.Provider
       value={{
@@ -140,9 +122,7 @@ export const DepartmentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         getDepartment,
         addDepartment,
         deleteDepartment,
-        refreshDepartments,
-        lockDepartment: id => setLocked(id, true),
-        unlockDepartment: id => setLocked(id, false)
+        refreshDepartments
       }}
     >
       {children}

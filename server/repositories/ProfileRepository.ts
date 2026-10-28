@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, Paginated, Profile, Role } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, sales_sub_role, head_division, default_dashboard, status, status_reason,
+const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, is_meta_verifier, is_operations_head, sales_sub_role, head_division, default_dashboard, status, status_reason,
   department_id, team_id, approved_at, created_at,
   department:departments!profiles_department_id_fkey(id, slug, name),
   team:teams!profiles_team_in_department(id, name, division)`;
@@ -18,6 +18,8 @@ export function mapProfile(row: any): Profile {
     position: row.position,
     role: row.role,
     isTechnicalConsultant: !!row.is_technical_consultant,
+    isMetaVerifier: !!row.is_meta_verifier,
+    isOperationsHead: !!row.is_operations_head,
     salesSubRole: row.sales_sub_role ?? null,
     headDivision: row.head_division ?? null,
     defaultDashboard: row.default_dashboard ?? null,
@@ -140,6 +142,29 @@ export class ProfileRepository {
 
   async setTechnicalConsultant(id: string, value: boolean): Promise<void> {
     unwrap(await this.db.rpc('set_technical_consultant', { p_user_id: id, p_value: value }));
+  }
+
+  /** Super Admin: make a Department Head an Operations Head (or take it back). The database refuses anyone else. */
+  /** The department each id counts under (a facet such as Wabatalk counts under its base department). */
+  async baseDepartments(ids: string[]): Promise<Map<string, string>> {
+    const rows = unwrap(await this.db.from('departments').select('id, facet_of').in('id', ids)) as { id: string; facet_of: string | null }[];
+    return new Map(rows.map(r => [r.id, r.facet_of ?? r.id]));
+  }
+
+  async setMetaVerifier(id: string, value: boolean): Promise<void> {
+    unwrap(await this.db.rpc('set_meta_verifier', { p_user_id: id, p_value: value }));
+  }
+
+  async setOperationsHead(id: string, value: boolean, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('set_operations_head', { p_profile: id, p_value: value, p_note: note }));
+  }
+
+  async operationsHeadReview(): Promise<OperationsHeadReviewItem[]> {
+    return unwrap(await this.db.rpc('operations_head_review')) as OperationsHeadReviewItem[];
+  }
+
+  async operationsOverview(): Promise<OperationsOverviewRow[]> {
+    return unwrap(await this.db.rpc('operations_overview')) as OperationsOverviewRow[];
   }
 
   async setSalesSubRole(id: string, role: string | null): Promise<void> {

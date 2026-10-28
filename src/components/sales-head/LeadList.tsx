@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownUp, Eye, Search, UserCheck } from 'lucide-react';
+import { ArrowDownUp, Eye, MapPinned, Search, UserCheck } from 'lucide-react';
 import { SALES_LEAD_FILTERS, type SalesTeamPerson, type SalesLeadDetail, type SalesLeadFilter, type SalesLeadList, type SalesLeadRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { salesHeadApi } from '../../lib/api/endpoints';
@@ -7,6 +7,7 @@ import { PageTitle } from '../layout/shell';
 import { Avatar, Card, Tabs } from '../tasks/head/headParts';
 import { Dialog, ErrorBanner, Pager, Spinner, useDebounced } from '../team-member/pipeline/shared';
 import { CallStatusBadge, EmptyState, TemperatureBadge, dateText, dateTimeText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
+import { AssignVisitDialog } from '../field-visit/AssignVisitDialog';
 import type { SalesHeadNavigate } from './SalesHeadDashboard';
 
 const FILTER_LABEL: Record<SalesLeadFilter, string> = {
@@ -46,6 +47,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
   const [people, setPeople] = useState<SalesTeamPerson[]>([]);
   const [detail, setDetail] = useState<{ id: string; lead: SalesLeadDetail | null; error?: string } | null>(null);
   const [assigning, setAssigning] = useState<SalesLeadRow | null>(null);
+  const [visitFor, setVisitFor] = useState<SalesLeadRow | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setPage(1), [filter, query, assignee, sort, dir, pageSize]);
@@ -142,6 +144,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
                         <div className="flex items-center gap-1.5">
                           <button type="button" className={tcBtn.row} onClick={() => open(l)} aria-label={`View ${l.name}`}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> View</button>
                           {l.kind === 'INBOUND' && <button type="button" className={tcBtn.row} onClick={() => setAssigning(l)} aria-label={`Assign ${l.name}`}><UserCheck className="w-3.5 h-3.5" aria-hidden="true" /> Assign</button>}
+                          {l.kind === 'CUSTOMER' && <button type="button" className={tcBtn.row} onClick={() => setVisitFor(l)} aria-label={`Assign ${l.name} for a field visit`} data-testid="assign-visit"><MapPinned className="w-3.5 h-3.5" aria-hidden="true" /> Field visit</button>}
                         </div>
                       </td>
                     </tr>
@@ -164,6 +167,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
                   <div className="flex gap-2">
                     <button type="button" className={tcBtn.row} onClick={() => open(l)}><Eye className="w-3.5 h-3.5" aria-hidden="true" /> View</button>
                     {l.kind === 'INBOUND' && <button type="button" className={tcBtn.row} onClick={() => setAssigning(l)}><UserCheck className="w-3.5 h-3.5" aria-hidden="true" /> Assign</button>}
+                    {l.kind === 'CUSTOMER' && <button type="button" className={tcBtn.row} onClick={() => setVisitFor(l)}><MapPinned className="w-3.5 h-3.5" aria-hidden="true" /> Field visit</button>}
                   </div>
                 </li>
               ))}
@@ -179,6 +183,17 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
         <Dialog title={detail.lead?.name ?? 'Lead'} description={detail.lead ? `${detail.lead.leadCode} · ${detail.lead.company || 'No company'}` : undefined} onClose={() => setDetail(null)} wide>
           {detail.error ? <ErrorBanner message={detail.error} /> : !detail.lead ? <Spinner label="Loading the lead…" /> : <LeadDetailBody lead={detail.lead} />}
         </Dialog>
+      )}
+      {visitFor && (
+        <AssignVisitDialog
+          lead={visitFor}
+          onClose={() => setVisitFor(null)}
+          onDone={message => {
+            setVisitFor(null);
+            setNotice(message);
+            setTimeout(() => setNotice(null), 5000);
+          }}
+        />
       )}
       {assigning && (
         <AssignInbound

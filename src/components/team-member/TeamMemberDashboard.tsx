@@ -27,9 +27,11 @@ import { MemberCalendarDashboard } from './MemberCalendarDashboard';
 import { MemberInvoicesDashboard } from './MemberInvoicesDashboard';
 import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
+import { AddLeadView } from './pipeline/LeadForms';
 import { usePipelineCounts } from './pipeline/shared';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
+import { FieldVisitWorkspace, isFieldVisitPage } from '../field-visit/FieldVisitWorkspace';
 import { BusinessAssociateWorkspace, BA_WORKSPACE_NAV, baPageOfNav } from '../business-associate/BusinessAssociateWorkspace';
 import type { BaNavigate, BaTarget } from '../business-associate/BusinessAssociateDashboard';
 
@@ -474,6 +476,13 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({
           <BusinessAssociateWorkspace page={baPageOfNav(activeNav)!} target={baTarget} resetKey={navNonce} onGo={goBa} />
         )}
 
+        {user?.subDepartment === 'sales' && isFieldVisitPage(activeNav) && (
+          <FieldVisitWorkspace
+            page={activeNav}
+            onNavigate={next => setActiveNav(next)}
+            renderAddLead={a => <AddLeadView defaultSource={a.source} onCancel={a.onCancel} onSaved={a.onSaved} />}
+          />
+        )}
         {activeNav === 'notifications' && <NotificationsPage />}
 
         {/* ========================================================================= */}

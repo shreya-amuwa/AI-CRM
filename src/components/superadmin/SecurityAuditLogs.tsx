@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Search, ShieldCheck, X } from 'lucide-react';
-import type { AuditEvent, AuditOutcome } from '../../../shared/contracts';
+import type { AuditEvent, AuditLocation, AuditOutcome } from '../../../shared/contracts';
+import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
 import { auditApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
@@ -27,7 +28,26 @@ const when = (iso: string) =>
   new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/** Events that are a sign-in: a place is expected on them, so its absence is shown as "Unavailable" (older events never had one). */
+const SIGN_IN_EVENTS = new Set(['SESSION_STARTED', 'LOGIN_ATTEMPT_FAILED', 'LOGIN_FAILED', 'LOGIN_LOCKED']);
+const SOURCE_LABEL: Record<AuditLocation['source'], string> = {
+  PLATFORM_IP: 'Hosting platform IP lookup',
+  IP_PROVIDER: 'IP lookup service',
+  BROWSER_PERMISSION: 'Shared by the person from their browser'
+};
+const ACCURACY_LABEL: Record<AuditLocation['accuracy'], string> = {
+  COUNTRY: 'Country level, approximate',
+  REGION: 'Region level, approximate',
+  CITY: 'City level, approximate',
+  DEVICE: 'Device location the person agreed to share'
+};
+/** "Pune, MH, India": the parts that exist; a place with none of them is "Unknown". */
+const placeLabel = (l: AuditLocation) => [l.city, l.region, l.country].filter(Boolean).join(', ') || 'Unknown';
+const locationCell = (e: AuditEvent) => (e.location ? placeLabel(e.location) : SIGN_IN_EVENTS.has(e.action) ? 'Unavailable' : '-');
+
 export const SecurityAuditLogs: React.FC = () => {
+  // the place and address of an event are the Super Admin's: the database returns them to nobody else, so nobody else gets the column
+  const showLocation = useAuth().user?.role === 'superadmin';
   const [q, setQ] = useState('');
   const [typed, setTyped] = useState('');
   const [action, setAction] = useState('');
@@ -109,7 +129,7 @@ export const SecurityAuditLogs: React.FC = () => {
             <span className="block text-xs font-semibold text-slate-600 mb-1">Search</span>
             <span className="relative block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
-              <input className={`${fieldCls} pl-9`} value={typed} onChange={e => setTyped(e.target.value)} placeholder="Person, event or request id" maxLength={100} />
+              <input className={`${fieldCls} pl-9`} value={typed} onChange={e => setTyped(e.target.value)} placeholder={showLocation ? 'Person, event, request id or place' : 'Person, event or request id'} maxLength={100} />
             </span>
           </label>
           <label>
@@ -198,7 +218,7 @@ export const SecurityAuditLogs: React.FC = () => {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[56rem]">
+            <table className="w-full text-sm min-w-[64rem]">
               <thead>
                 <tr className="text-left text-xs text-slate-500 border-b border-slate-100 bg-slate-50">
                   <th className="py-2.5 pl-5 pr-3 font-semibold">When</th>
@@ -206,6 +226,7 @@ export const SecurityAuditLogs: React.FC = () => {
                   <th className="py-2.5 px-3 font-semibold">Event</th>
                   <th className="py-2.5 px-3 font-semibold">About</th>
                   <th className="py-2.5 px-3 font-semibold">Outcome</th>
+                  {showLocation && <th className="py-2.5 px-3 font-semibold">Location</th>}
                   <th className="py-2.5 pl-3 pr-5 font-semibold">Request</th>
                 </tr>
               </thead>
@@ -229,6 +250,12 @@ export const SecurityAuditLogs: React.FC = () => {
                     <td className="py-3 px-3">
                       <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-bold ${OUTCOME_CLS[r.outcome]}`}>{OUTCOME_LABEL[r.outcome]}</span>
                     </td>
+                    {showLocation && (
+                      <td className={`py-3 px-3 ${r.location ? 'text-slate-700' : 'text-slate-400'}`}>
+                        {locationCell(r)}
+                        {r.location && <span className="block text-[11px] text-slate-400">{r.location.accuracy === 'DEVICE' ? 'shared device location' : 'approximate'}</span>}
+                      </td>
+                    )}
                     <td className="py-3 pl-3 pr-5 font-mono text-xs text-slate-500">{r.requestId ? r.requestId.slice(0, 13) : '-'}</td>
                   </tr>
                 ))}
@@ -250,7 +277,7 @@ export const SecurityAuditLogs: React.FC = () => {
         </div>
       </Card>
 
-      {open && <EventDetail event={open} onClose={() => setOpen(null)} />}
+      {open && <EventDetail event={open} showLocation={showLocation} onClose={() => setOpen(null)} />}
     </div>
   );
 };
@@ -262,7 +289,7 @@ const Field: React.FC<{ k: string; children: React.ReactNode }> = ({ k, children
   </div>
 );
 
-const EventDetail: React.FC<{ event: AuditEvent; onClose: () => void }> = ({ event: e, onClose }) => {
+const EventDetail: React.FC<{ event: AuditEvent; showLocation: boolean; onClose: () => void }> = ({ event: e, showLocation, onClose }) => {
   useEffect(() => {
     const onKey = (k: KeyboardEvent) => k.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -282,7 +309,10 @@ const EventDetail: React.FC<{ event: AuditEvent; onClose: () => void }> = ({ eve
           </button>
         </div>
         <dl className="px-6 py-3">
-          <Field k="When">{when(e.at)}</Field>
+          <Field k="When">
+            {when(e.at)}
+            <span className="block font-mono text-[11px] text-slate-500">{new Date(e.at).toISOString().replace('T', ' ').slice(0, 19)} UTC</span>
+          </Field>
           <Field k="Outcome">
             <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-bold ${OUTCOME_CLS[e.outcome]}`}>{OUTCOME_LABEL[e.outcome]}</span>
           </Field>
@@ -294,7 +324,36 @@ const EventDetail: React.FC<{ event: AuditEvent; onClose: () => void }> = ({ eve
             {e.entityId && <span className="block font-mono text-xs text-slate-500">{e.entityId}</span>}
           </Field>
           <Field k="Request id">{e.requestId ? <span className="font-mono text-xs">{e.requestId}</span> : '-'}</Field>
-          <Field k="Address">{e.ip ? <span className="font-mono text-xs">{e.ip}</span> : '-'}</Field>
+          {showLocation && (
+            <>
+              <Field k="Address">{e.ip ? <span className="font-mono text-xs">{e.ip}</span> : SIGN_IN_EVENTS.has(e.action) ? 'Unavailable' : '-'}</Field>
+              <Field k="Location">
+                {e.location ? (
+                  <>
+                    {placeLabel(e.location)}
+                    <span className="block text-xs text-slate-500">{ACCURACY_LABEL[e.location.accuracy]}</span>
+                  </>
+                ) : SIGN_IN_EVENTS.has(e.action) ? (
+                  'Unavailable'
+                ) : (
+                  '-'
+                )}
+              </Field>
+              {e.location && <Field k="Source">{SOURCE_LABEL[e.location.source]}</Field>}
+              {e.location && (
+                <Field k="Coordinates">
+                  {e.location.latitude !== null && e.location.longitude !== null ? (
+                    <span className="font-mono text-xs">
+                      {e.location.latitude.toFixed(2)}, {e.location.longitude.toFixed(2)}
+                    </span>
+                  ) : (
+                    'Not available'
+                  )}
+                  <span className="block text-[11px] text-slate-500">Where the network is, roughly: not the person&rsquo;s exact position.</span>
+                </Field>
+              )}
+            </>
+          )}
           <Field k="Event number">{e.id}</Field>
         </dl>
         <div className="px-6 pb-8">

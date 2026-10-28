@@ -18,6 +18,7 @@ import type {
   DocumentUrl,
   InboundLead,
   Paginated,
+  ProvisioningQueue,
   PipelineCounts,
   ReviewCounts,
   PipelineCustomer,
@@ -27,6 +28,8 @@ import type {
 import {
   accountsBackOffSchema,
   accountsClientLoginSchema,
+  customerEmailCorrectionSchema,
+  provisioningQuerySchema,
   deliveryQueueQuerySchema,
   sendToDeliverySchema,
   serviceJourneySchema,
@@ -64,7 +67,6 @@ import {
   recordPaymentSchema,
   assignToMemberSchema,
   backOutSchema,
-  clientAccountSchema,
   consultantWebsiteSchema,
   handoverNoteSchema,
   passToTeamLeadSchema,
@@ -78,7 +80,7 @@ import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
-import { encryptSecret } from '../automations/secrets.js';
+import { randomBytes } from 'node:crypto';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageProviderName, StorageRepository } from '../repositories/StorageRepository.js';
@@ -203,47 +205,60 @@ export class PipelineService {
   }
 
   /**
-   * The Technical Consultant creates the client's panel login. The database checks
-   * who may do it first; Supabase Auth then stores the (hashed) password, which the
-   * client's mobile app signs in with. For the "Status Completed" email the password
-   * is also passed on encrypted; the database erases it once that email is sent.
+   * Accounts creates the client's dashboard login, for every service. The database checks who may and when (a verified payment), refuses a
+   * second click while one is running, and returns the e-mail ON THE CUSTOMER RECORD - the request carries none, so a screen can never
+   * substitute another address. The login gets a random password nobody knows (nothing is typed, stored, logged or sent); the client
+   * chooses their own from the one-time link in the "account created" e-mail, which is queued only after the login is saved.
+   * A failure is recorded on the customer with a safe reason and the attempt can be repeated; a half-made login (created, not saved)
+   * is removed - or, if that is not possible, finished by the retry - so no customer ever has two.
    */
-  async createClientAccount(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
+  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string; status: 'CREATED' }> {
     const customerId = parse(uuidSchema, id);
-    const input = parse(clientAccountSchema, body);
-    await this.repo.assertClientAccountAllowed(customerId, input.email);
-    const userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
-    const key = automationSettings().secretKey;
-    try {
-      await this.repo.recordClientAccount(customerId, userId, input.email, key ? encryptSecret(input.password, key) : null);
-    } catch (e) {
-      await this.authAdmin.deleteUser(userId).catch(() => undefined);
-      throw e;
-    }
-    return { email: input.email };
-  }
-
-  /**
-   * Accounts creates the dashboard login of a customer whose services need no Technical Consultant. The database checks who may
-   * and when (a verified payment; the journey), marks the attempt, and refuses a second click while one is running. The password is
-   * hashed by Supabase Auth and never stored or e-mailed by the CRM. A failure is recorded on the customer with its reason and the
-   * attempt can be repeated; a half-made login (user created, record not saved) is removed so a retry starts clean.
-   */
-  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
-    const customerId = parse(uuidSchema, id);
-    const input = parse(accountsClientLoginSchema, body);
-    await this.repo.accountsClientLoginBegin(customerId, input.email);
+    parse(accountsClientLoginSchema, body ?? {});
+    const target = await this.repo.accountsClientLoginBegin(customerId);
     let userId: string | null = null;
+    let created = false;
     try {
-      userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
-      await this.repo.recordClientAccount(customerId, userId, input.email, null);
+      userId = await this.authAdmin.clientUserFor(customerId, target.email);
+      if (!userId) {
+        userId = await this.authAdmin.createClientUser({
+          email: target.email,
+          password: randomBytes(32).toString('base64url'),
+          customerId,
+          provisionedBy: actor.id
+        });
+        created = true;
+      }
+      await this.repo.recordClientAccount(customerId, userId, target.email);
     } catch (e) {
-      if (userId) await this.authAdmin.deleteUser(userId).catch(() => undefined);
+      if (userId && created) await this.authAdmin.deleteUser(userId).catch(() => undefined);
       const message = e instanceof AppError ? e.message : 'The login could not be created.';
       await this.repo.accountsClientLoginFailed(customerId, message).catch(() => undefined);
       throw e;
     }
-    return { email: input.email };
+    return { email: target.email, status: 'CREATED' };
+  }
+
+  /** Accounts: customers with a verified payment and the state of their login (customer, ID, order, e-mail, status, time, result). */
+  provisioningQueue(query: unknown): Promise<ProvisioningQueue> {
+    return this.repo.accountsProvisioningQueue(parse(provisioningQuerySchema, query ?? {}));
+  }
+
+  /** Accounts: correct a missing or wrong e-mail on the record before the login is made (reason required, audited). */
+  async correctCustomerEmail(id: string, body: unknown): Promise<void> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(customerEmailCorrectionSchema, body);
+    await this.repo.accountsSetCustomerEmail(customerId, input.email, input.reason);
+  }
+
+  /** Accounts: send the set-password e-mail again (a failed one is retried, a delivered one at most every 10 minutes). */
+  async resendAccountEmail(id: string): Promise<void> {
+    await this.repo.accountsResendAccountEmail(parse(uuidSchema, id));
+  }
+
+  /** Meta has completed the verification: the "completed" message is queued, once. */
+  async markMetaVerificationCompleted(id: string): Promise<void> {
+    await this.repo.markMetaVerificationCompleted(parse(uuidSchema, id));
   }
 
   /** Where a customer is: its journey, login, documents and delivery state, and what the caller may do next. */

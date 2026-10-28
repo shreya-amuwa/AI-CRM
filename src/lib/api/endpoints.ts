@@ -3,6 +3,8 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  OperationsHeadReviewItem, OperationsOverviewRow,
+  TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
@@ -16,6 +18,14 @@ import type {
   TelecallerLead,
   TelecallerLeadList,
   LeadScope,
+  FieldVisitAssignedList,
+  FieldVisitFilter,
+  FieldVisitLeadList,
+  FieldVisitOverview,
+  LeadVisit,
+  LeadVisitList,
+  SalesVisitAssignee,
+  VisitPriority,
   LeadScopeCounts,
   LeadScopeList,
   TelecallerSheet,
@@ -56,6 +66,8 @@ import type {
   ClientCalendarEvent,
   ClientDocumentQueueItem,
   CustomerJourneyInfo,
+  ProvisioningFilter,
+  ProvisioningQueue,
   DeliveryQueueItem,
   ServiceJourneySetting,
   AttendanceDay,
@@ -248,9 +260,17 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/payments`, body),
   /** Where the customer is on its journey, and what the signed-in person may do next. */
   customerJourney: (id: string) => api.get<CustomerJourneyInfo>(`/pipeline/customers/${id}/journey`),
-  /** Accounts: create the dashboard login of a customer whose services need no Technical Consultant. */
-  accountsCreateClientLogin: (id: string, body: { email: string; password: string }) =>
-    api.post<{ email: string }>(`/pipeline/customers/${id}/accounts/client-login`, body),
+  /** Accounts: create the dashboard login (any service). The e-mail is the one on the customer record; no password is typed or sent. */
+  accountsCreateClientLogin: (id: string) => api.post<{ email: string; status: 'CREATED' }>(`/pipeline/customers/${id}/accounts/client-login`, {}),
+  /** Accounts: the Client logins queue (customer, ID, order, e-mail, status, time, result). */
+  clientLogins: (q: { status?: ProvisioningFilter; search?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<ProvisioningQueue>('/pipeline/accounts/client-logins', { ...q }),
+  /** Accounts: correct the e-mail on the record before a login is made (reason required, audited). */
+  correctCustomerEmail: (id: string, body: { email: string; reason: string }) => api.post<null>(`/pipeline/customers/${id}/accounts/customer-email`, body),
+  /** Accounts: send the set-password e-mail again. */
+  resendAccountEmail: (id: string) => api.post<null>(`/pipeline/customers/${id}/accounts/account-email/resend`, {}),
+  /** Department Head / Super Admin / the verifier: Meta has completed the verification. */
+  markMetaVerificationCompleted: (id: string) => api.post<null>(`/pipeline/customers/${id}/meta-verification-completed`, {}),
   /** Sales / Support: send the verified services to the department that delivers them. */
   sendToDelivery: (id: string, note?: string | null) =>
     api.post<{ sent: number; remaining: number; departments: string | null }>(`/pipeline/customers/${id}/send-to-delivery`, { note: note || null }),
@@ -259,8 +279,6 @@ export const pipelineApi = {
   /** Super Admin only. */
   setServiceJourney: (code: string, body: { requiresTechnicalConsultant: boolean; deliveryDepartmentId?: string | null }) =>
     api.patch<ServiceJourneySetting[]>(`/pipeline/service-journeys/${code}`, body),
-  createClientAccount: (id: string, body: { email: string; password: string }) =>
-    api.post<{ email: string }>(`/pipeline/customers/${id}/client-account`, body),
   sendToDepartmentHead: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/handover/department-head`, { note: note || null }),
   passToTeamLead: (id: string, teamLeadId: string, note?: string | null) =>
     api.post<null>(`/pipeline/customers/${id}/handover/team-lead`, { teamLeadId, note: note || null }),
@@ -481,6 +499,11 @@ export const usersApi = {
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
   setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
+  setMetaVerifier: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/meta-verifier`, { value }),
+  /** Super Admin: make a Department Head an Operations Head (several departments), or take it back. */
+  setOperationsHead: (id: string, value: boolean, note?: string | null) => api.post<Profile>(`/users/${id}/operations-head`, { value, note: note || null }),
+  operationsHeadReview: () => api.get<OperationsHeadReviewItem[]>('/users/operations-head-review'),
+  operationsOverview: () => api.get<OperationsOverviewRow[]>('/operations/overview'),
   setHeadDivision: (id: string, division: HeadDivision | null) => api.post<Profile>(`/users/${id}/head-division`, { division }),
   /** Department Heads who work in a department (own or authorised), with all their departments. */
   departmentHeads: (departmentId: string) => api.get<DepartmentHeadAccess[]>('/users/department-heads', { departmentId }),
@@ -557,6 +580,24 @@ export const salesHeadApi = {
   reports: (q: { who?: string; from?: string; to?: string; taskStatus?: string }) => api.get<SalesReport>('/sales-head/reports', q),
   income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q)
 };
+/** Field Visit: the Sales employee's leads and visits, and the Department Head's assignments. */
+export const fieldVisitApi = {
+  overview: () => api.get<FieldVisitOverview>('/field-visits/overview'),
+  leads: (q: { filter: FieldVisitFilter; search?: string; sort?: string; page?: number; pageSize?: number }) => api.get<FieldVisitLeadList>('/field-visits/leads', q),
+  assigned: (q: { search?: string; page?: number; pageSize?: number } = {}) => api.get<FieldVisitAssignedList>('/field-visits/assigned', q),
+  list: (q: { scope?: 'OPEN' | 'HISTORY' | 'ALL'; status?: string; leadId?: string; search?: string; page?: number; pageSize?: number } = {}) => api.get<LeadVisitList>('/field-visits', q),
+  schedule: (body: { leadId: string; visitDate: string; plannedTime?: string | null; address?: string | null; purpose: string; notes?: string | null; clientRequestId?: string }) =>
+    api.post<LeadVisit>('/field-visits', body),
+  update: (id: string, body: { visitDate: string; plannedTime?: string | null; address?: string | null; purpose: string; notes?: string | null }) => api.patch<LeadVisit>(`/field-visits/${id}`, body),
+  start: (id: string, body: { latitude?: number | null; longitude?: number | null; accuracyMeters?: number | null; locationNote?: string | null }) => api.post<LeadVisit>(`/field-visits/${id}/start`, body),
+  complete: (id: string, body: { status: 'COMPLETED' | 'FOLLOW_UP_REQUIRED'; outcome: string; notes?: string | null; requirements?: string | null; nextSteps?: string | null; followUpDate?: string | null }) =>
+    api.post<LeadVisit>(`/field-visits/${id}/complete`, body),
+  cancel: (id: string, reason?: string | null) => api.post<LeadVisit>(`/field-visits/${id}/cancel`, { reason: reason || null }),
+  assignees: () => api.get<SalesVisitAssignee[]>('/field-visits/assignees'),
+  assign: (body: { leadId: string; assigneeId: string; priority: VisitPriority; instructions?: string | null }) => api.post<{ id: string; leadId: string; assignee: string; reassigned: boolean }>('/field-visits/assignments', body),
+  cancelAssignment: (leadId: string) => api.delete<{ id: string; leadId: string }>(`/field-visits/assignments/${leadId}`)
+};
+
 /** The five filters of the Lead section: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts. */
 export const leadScopeApi = {
   list: (q: { scope: LeadScope; search?: string; source?: string; status?: string; temperature?: string; callStatus?: string; service?: string; followUpFrom?: string; followUpTo?: string; noFollowUp?: boolean; sort?: 'newest' | 'followUp'; page?: number; pageSize?: number }) => api.get<LeadScopeList>('/lead-scope', q),
@@ -700,10 +741,21 @@ export const hrApi = {
   runEmailAutomation: () => api.post<HrEmailRunSummary>('/hr/email-automation/run', {})
 };
 
+/** Tells the server a sign-in was refused, so it can note the attempt with the address and place the hosting platform reports. Never throws. */
+export const signInReportApi = {
+  failed: (identifier: string): void => {
+    try {
+      void fetch('/api/v1/auth/login-failed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: identifier.trim().slice(0, 254) }), keepalive: true }).catch(() => undefined);
+    } catch {
+      /* best effort: the sign-in screen is not affected */
+    }
+  }
+};
+
 export const organizationApi = {
   departments: () => api.get<Department[]>('/departments'),
   createDepartment: (body: { name: string; description?: string; category?: string }) => api.post<Department>('/departments', body),
-  updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description' | 'isLocked'>>) => api.patch<Department>(`/departments/${id}`, body),
+  updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description'>>) => api.patch<Department>(`/departments/${id}`, body),
   deleteDepartment: (id: string) => api.delete<null>(`/departments/${id}`),
   teams: (departmentId?: string) => api.get<Team[]>('/teams', { departmentId }),
   createTeam: (body: { departmentId: string; name: string; division?: TeamDivision }) => api.post<Team>('/teams', body)
@@ -799,4 +851,19 @@ export const businessReportApi = {
   people: () => api.get<BusinessPerson[]>('/accounts/business-report/people'),
   invoiceBusiness: (invoiceId: string) => api.get<InvoiceBusinessInfo>(`/accounts/invoices/${invoiceId}/business`),
   tagInvoice: (invoiceId: string, body: InvoiceBusinessTagInput) => api.post<null>(`/accounts/invoices/${invoiceId}/business`, body)
+};
+
+/** The Meta Verifier workflow: verification notes, re-routing, the consultant's follow-ups and the follow-up delay. */
+export const workflowApi = {
+  verificationNotes: (customerId: string) => api.get<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`),
+  addVerificationNote: (customerId: string, body: { body: string; outcome: string }) => api.post<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`, body),
+  reroute: (customerId: string, route: 'META' | 'TECHNICAL', reason: string) => api.post<null>(`/pipeline/customers/${customerId}/verification/reroute`, { route, reason }),
+  routeReview: () => api.get<VerificationRouteReviewItem[]>('/pipeline/verification-route-review'),
+  setServiceMetaVerification: (code: string, value: boolean) => api.patch<ServiceJourneySetting[]>(`/pipeline/service-journeys/${code}/meta-verification`, { value }),
+  followUps: (scope: 'OPEN' | 'DONE' | 'ALL' = 'OPEN') => api.get<TcFollowUp[]>('/consultant/followups', { scope }),
+  recordContact: (id: string, body: { channel: string; outcome: string; note?: string | null; nextFollowUpAt?: string | null }) =>
+    api.post<{ id: string; status: string }>(`/consultant/followups/${id}/contact`, { ...body, note: body.note || null, nextFollowUpAt: body.nextFollowUpAt || null }),
+  assignFollowUp: (id: string, profileId: string) => api.post<null>(`/consultant/followups/${id}/assign`, { profileId }),
+  settings: () => api.get<WorkflowSettings>('/workflow/settings'),
+  setFollowUpDelay: (days: number | null) => api.post<WorkflowSettings>('/workflow/tc-followup-delay', { days })
 };

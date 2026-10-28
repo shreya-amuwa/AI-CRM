@@ -38,6 +38,10 @@ export const usersController = {
   assign: (async ctx => ok(await svc(ctx).users.assign(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setStatus: (async ctx => ok(await svc(ctx).users.setStatus(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setTechnicalConsultant: (async ctx => ok(await svc(ctx).users.setTechnicalConsultant(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  setMetaVerifier: (async ctx => ok(await svc(ctx).users.setMetaVerifier(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  setOperationsHead: (async ctx => ok(await svc(ctx).users.setOperationsHead(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  operationsHeadReview: (async ctx => ok(await svc(ctx).users.operationsHeadReview(ctx.actor))) as Handler,
+  operationsOverview: (async ctx => ok(await svc(ctx).users.operationsOverview())) as Handler,
   setHeadDivision: (async ctx => ok(await svc(ctx).users.setHeadDivision(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setSalesSubRole: (async ctx => ok(await svc(ctx).users.setSalesSubRole(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   departmentHeads: (async ctx => ok(await svc(ctx).users.departmentHeads(ctx.actor, (ctx.req.query as Record<string, unknown>).departmentId))) as Handler,
@@ -242,12 +246,15 @@ export const pipelineController = {
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
   accountsCreateClientLogin: (async ctx => ok(await svc(ctx).pipeline.accountsCreateClientLogin(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
+  provisioningQueue: (async ctx => ok(await svc(ctx).pipeline.provisioningQueue(ctx.req.query))) as Handler,
+  correctCustomerEmail: (async ctx => ok(await svc(ctx).pipeline.correctCustomerEmail(ctx.params.id, ctx.req.body))) as Handler,
+  resendAccountEmail: (async ctx => ok(await svc(ctx).pipeline.resendAccountEmail(ctx.params.id))) as Handler,
+  markMetaVerificationCompleted: (async ctx => ok(await svc(ctx).pipeline.markMetaVerificationCompleted(ctx.params.id))) as Handler,
   customerJourney: (async ctx => ok(await svc(ctx).pipeline.customerJourney(ctx.params.id))) as Handler,
   sendToDelivery: (async ctx => ok(await svc(ctx).pipeline.sendToDelivery(ctx.params.id, ctx.req.body))) as Handler,
   deliveryQueue: (async ctx => ok(await svc(ctx).pipeline.deliveryQueue(ctx.req.query))) as Handler,
   serviceJourneys: (async ctx => ok(await svc(ctx).pipeline.serviceJourneys())) as Handler,
   setServiceJourney: (async ctx => ok(await svc(ctx).pipeline.setServiceJourney(ctx.params.code, ctx.req.body))) as Handler,
-  createClientAccount: (async ctx => ok(await svc(ctx).pipeline.createClientAccount(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
   consultantSetWebsite: (async ctx => ok(await svc(ctx).pipeline.consultantSetWebsite(ctx.params.id, ctx.req.body))) as Handler,
   resendClientMessages: (async ctx => ok(await svc(ctx).pipeline.resendClientMessages(ctx.params.id))) as Handler,
   clientMessages: (async ctx => ok(await svc(ctx).pipeline.clientMessages(ctx.params.id))) as Handler,
@@ -472,6 +479,21 @@ export const telecallerController = {
   updateLead: (async ctx => ok(await svc(ctx).telecaller.updateLead(ctx.params.id, ctx.req.body))) as Handler
 };
 
+export const fieldVisitController = {
+  overview: (async ctx => ok(await svc(ctx).fieldVisit.overview())) as Handler,
+  leads: (async ctx => ok(await svc(ctx).fieldVisit.leads(ctx.req.query))) as Handler,
+  assigned: (async ctx => ok(await svc(ctx).fieldVisit.assigned(ctx.req.query))) as Handler,
+  list: (async ctx => ok(await svc(ctx).fieldVisit.list(ctx.req.query))) as Handler,
+  schedule: (async ctx => ok(await svc(ctx).fieldVisit.schedule(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).fieldVisit.update(ctx.params.id, ctx.req.body))) as Handler,
+  start: (async ctx => ok(await svc(ctx).fieldVisit.start(ctx.params.id, ctx.req.body))) as Handler,
+  complete: (async ctx => ok(await svc(ctx).fieldVisit.complete(ctx.params.id, ctx.req.body))) as Handler,
+  cancel: (async ctx => ok(await svc(ctx).fieldVisit.cancel(ctx.params.id, ctx.req.body))) as Handler,
+  assignees: (async ctx => ok(await svc(ctx).fieldVisit.assignees())) as Handler,
+  assign: (async ctx => ok(await svc(ctx).fieldVisit.assign(ctx.req.body), 201)) as Handler,
+  cancelAssignment: (async ctx => ok(await svc(ctx).fieldVisit.cancelAssignment(ctx.params.leadId))) as Handler
+};
+
 export const salesHeadController = {
   overview: (async ctx => ok(await svc(ctx).salesHead.overview())) as Handler,
   assignees: (async ctx => ok(await svc(ctx).salesHead.assignees())) as Handler,
@@ -525,4 +547,17 @@ export const businessAssociateController = {
   lead: (async ctx => ok(await svc(ctx).ba.lead(ctx.params.id))) as Handler,
   createLead: (async ctx => ok(await svc(ctx).ba.createLead(ctx.req.body), 201)) as Handler,
   updateLead: (async ctx => ok(await svc(ctx).ba.updateLead(ctx.params.id, ctx.req.body))) as Handler
+};
+
+export const workflowController = {
+  verificationNotes: (async ctx => ok(await svc(ctx).workflow.verificationNotes(ctx.params.id))) as Handler,
+  addVerificationNote: (async ctx => ok(await svc(ctx).workflow.addVerificationNote(ctx.params.id, ctx.req.body), 201)) as Handler,
+  reroute: (async ctx => (await svc(ctx).workflow.reroute(ctx.params.id, ctx.req.body), ok(null))) as Handler,
+  routeReview: (async ctx => ok(await svc(ctx).workflow.routeReview())) as Handler,
+  setServiceMetaVerification: (async ctx => (await svc(ctx).workflow.setServiceMetaVerification(ctx.params.code, ctx.req.body), ok(await svc(ctx).pipeline.serviceJourneys()))) as Handler,
+  followUps: (async ctx => ok(await svc(ctx).workflow.followUps(ctx.req.query))) as Handler,
+  recordContact: (async ctx => ok(await svc(ctx).workflow.recordContact(ctx.params.id, ctx.req.body), 201)) as Handler,
+  assignFollowUp: (async ctx => (await svc(ctx).workflow.assign(ctx.params.id, ctx.req.body), ok(null))) as Handler,
+  settings: (async ctx => ok(await svc(ctx).workflow.settings())) as Handler,
+  setFollowUpDelay: (async ctx => ok(await svc(ctx).workflow.setFollowUpDelay(ctx.req.body))) as Handler
 };

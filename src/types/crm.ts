@@ -29,8 +29,8 @@ export interface Department {
   totalLeads: number;
   activeSessions: number;
   maxSessions: number;
-  // Access state - replaces the old free-text "status" field entirely.
-  // Controlled solely by the inline department lock/unlock control.
+  // Kept from the database (departments.is_locked). Nothing in the app sets it any more and it never stops a Super Admin;
+  // it still keeps other roles out of a department that was locked before the control was removed.
   locked: boolean;
   // Department Head assignment (Phase 2 will add full credential management)
   headUserId?: string;
@@ -95,7 +95,7 @@ export interface AuthUser {
   name: string;
   email: string;
   avatar?: string;
-  role: 'superadmin' | 'admin' | 'hr' | 'client' | 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'telecaller' | 'business-associate' | 'sales-role' | 'sales-head';
+  role: 'superadmin' | 'admin' | 'hr' | 'client' | 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'business-associate' | 'sales-role' | 'sales-head';
   clientCompany?: string;
   departmentId?: string;
   subDepartment?: string;

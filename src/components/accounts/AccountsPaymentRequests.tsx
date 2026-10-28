@@ -95,7 +95,7 @@ const RequestDetail: React.FC<{
         </div>
 
         {journey && <JourneyStrip journey={journey} />}
-        {journey && journey.journey === 'DIRECT' && item.status !== 'RETURNED' && (
+        {journey && item.status !== 'RETURNED' && (
           <ClientLoginCard journey={journey} customerId={item.id} defaultEmail={item.email} onChanged={() => { reloadJourney(); onChanged(); }} />
         )}
 

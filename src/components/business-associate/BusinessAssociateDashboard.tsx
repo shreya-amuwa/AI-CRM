@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, ClipboardList, FileText, FileSignature, Home, Target } from 'lucide-react';
+import { CalendarClock, ClipboardList, FileText, FileSignature, Home, MapPinned, Target } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { FIELD_VISIT_GROUP_ID, FIELD_VISIT_NAV, FIELD_VISIT_SEGMENT, FieldVisitWorkspace, fieldVisitPageFromSegment, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
+import { AddLeadView } from '../team-member/pipeline/LeadForms';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { HomePage } from './HomePage';
@@ -15,7 +17,7 @@ import { ScopePage } from './ScopePage';
 
 export type BaPage = 'home' | 'tasks' | 'leads' | 'quotation' | 'demos' | 'scope';
 /** The pages of this dashboard: the Business Associate pages plus the rest of the Leads group (Leads is the first of its four). */
-type Section = BaPage | Exclude<PipelineSection, 'leads'>;
+type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage;
 /** Where a button sends the Business Associate: a page, and optionally the client (and document) to open there. */
 export interface BaTarget { contactId?: string; quotationId?: string; scopeId?: string; stage?: string; addLead?: boolean; newDemo?: boolean }
 export type BaNavigate = (page: BaPage, target?: BaTarget) => void;
@@ -35,11 +37,14 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
       { id: 'part-payments', label: 'Part payments' }
     ]
   },
+  // Field Visit: planning and recording visits to leads, inside this same dashboard
+  { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV },
   { id: 'quotation', label: 'Quotation', icon: FileText },
   { id: 'demos', label: 'Demo Schedule', icon: CalendarClock },
   { id: 'scope', label: 'Scope of Project', icon: FileSignature }
 ];
 const SEGMENT: Record<Section, string> = {
+  ...FIELD_VISIT_SEGMENT,
   home: '', tasks: 'tasks', leads: 'leads', potential: 'potential', onboarding: 'customer-onboarding', 'part-payments': 'part-payments',
   quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project'
 };
@@ -47,6 +52,8 @@ const SEGMENT: Record<Section, string> = {
 export const BA_BASE = (userId: string) => `/business-associate/dashboard/${userId}`;
 export function parseBaPage(path: string): Section {
   const seg = path.replace(/\/+$/, '').split('/')[4];
+  const visit = fieldVisitPageFromSegment(seg);
+  if (visit) return visit;
   return (Object.keys(SEGMENT) as Section[]).find(p => SEGMENT[p] && SEGMENT[p] === seg) ?? 'home';
 }
 
@@ -76,7 +83,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
   const go: BaNavigate = (next, t) => open(next, t);
 
   const displayName = profile?.fullName || user?.name || 'Business Associate';
-  const groups = groupNavItems(NAV, [{ ids: ['home'] }, { ids: ['tasks', 'leads-group', 'quotation', 'demos', 'scope'] }]);
+  const groups = groupNavItems(NAV, [{ ids: ['home'] }, { ids: ['tasks', 'leads-group', FIELD_VISIT_GROUP_ID, 'quotation', 'demos', 'scope'] }]);
   const key = `${page}-${target.n}`;
 
   return (
@@ -108,6 +115,13 @@ export const BusinessAssociateDashboard: React.FC = () => {
         {page === 'tasks' && <TasksPage key={key} go={go} initialContactId={target.contactId} initialStage={target.stage} />}
         {(page === 'leads' || page === 'potential' || page === 'onboarding' || page === 'part-payments') && (
           <PipelineWorkspace section={page} counts={pipelineCounts} leadFilters startWithAdd={page === 'leads' && !!target.addLead} resetKey={target.n} onNavigate={next => open(next)} />
+        )}
+        {isFieldVisitPage(page) && (
+          <FieldVisitWorkspace
+            page={page}
+            onNavigate={next => open(next)}
+            renderAddLead={a => <AddLeadView defaultSource={a.source} onCancel={a.onCancel} onSaved={a.onSaved} />}
+          />
         )}
         {page === 'quotation' && <QuotationPage key={key} go={go} initialContactId={target.contactId} initialQuotationId={target.quotationId} />}
         {page === 'demos' && <DemoSchedulePage key={key} go={go} initialContactId={target.contactId} openNew={!!target.newDemo} />}

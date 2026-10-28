@@ -124,7 +124,7 @@ export const NavParent: React.FC<{
                   on ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
-                <span className="flex-1 min-w-0 truncate">{k.label}</span>
+                <span className="flex-1 min-w-0 leading-snug" title={k.label}>{k.label}</span>
                 {k.badge ? <span className="shrink-0 text-[11px] font-bold bg-amber-50 text-amber-700 rounded-full px-2 py-0.5">{k.badge > 99 ? '99+' : k.badge}</span> : null}
               </button>
             );

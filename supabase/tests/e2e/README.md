@@ -61,6 +61,15 @@ Performance cards and workspace, Reports (Team Lead / Team Member, CSV), Income,
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-sales-head.sh ./sales-head-screenshots
 ```
 
+`run-field-visit.sh` (own ports) checks Field Visit inside the Telecaller, Business Associate and Sales Team Member dashboards: the Field Visit group and its ten pages (no separate dashboard, and
+none for Support members, Team Leads or the Department Head), the Overview cards and ten filters against the database, Add Lead (the dashboard's own form, source "Field visit", no duplicate
+on a double click), scheduling (validation, double click), Start with the position refused (never marked as captured) and granted (recorded, shown as "captured by the device"), the outcome with
+a follow-up, per-lead visit history, the Sales Department Head assigning a lead (the lead keeps its owner; priority and instructions shown; the employee cannot change it) and withdrawing it,
+the Accounts pages, and tablet / phone layouts.
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-field-visit.sh ./field-visit-screenshots
+```
+
 ## "Need help?" and the Sales-only pages
 
 `run-sales-only-need-help.sh` (own ports) signs in as twelve internal roles at desktop and phone width and checks "Need help?" is nowhere on the page (phone menu open),

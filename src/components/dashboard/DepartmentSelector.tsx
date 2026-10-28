@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Building2, ShoppingBag, MessageSquare, PhoneCall, Cpu, Layers, Sparkles, Star,
-  ArrowRight, Plus, Lock, Unlock, X, AlertTriangle, GraduationCap, Users, FileText,
+  ArrowRight, Plus, Lock, X, AlertTriangle, GraduationCap, Users, FileText,
   Trash2, DollarSign
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -31,33 +31,28 @@ const CARD_BASE =
   'bg-white/95 backdrop-blur-xl rounded-3xl transition-all duration-300 group flex flex-col justify-between border shadow-md overflow-hidden relative p-6 space-y-5';
 
 /**
- * The department cards: open a department's own panel, lock / unlock one, add one (Super Admin). These are the existing
- * administrative functions, kept as they were; they now live on the "Departments" page of the Super Admin dashboard.
+ * The department cards: open a department's own panel, add or delete one (Super Admin). They live on the "Departments" page of the
+ * Super Admin dashboard. There is no lock / unlock here: the Super Admin enters every department.
  */
 export const DepartmentGrid: React.FC = () => {
   const { selectDepartment, user } = useAuth();
-  const { departments, addDepartment, deleteDepartment, lockDepartment, unlockDepartment } = useDepartments();
+  const { departments, addDepartment, deleteDepartment } = useDepartments();
   const { openDepartment, tabs } = useTabs();
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr';
 
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [lockTarget, setLockTarget] = useState<Department | null>(null);
-  const [lockedNotice, setLockedNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const showNotice = (message: string) => {
-    setLockedNotice(message);
-    setTimeout(() => setLockedNotice(null), 4000);
+    setNotice(message);
+    setTimeout(() => setNotice(null), 4000);
   };
 
   // Access is decided by the user's database profile: Super Admins may open
-  // any unlocked department, department heads only their own. (No shared
+  // any department, department heads only their own. (No shared
   // department passwords - data inside is scoped by RLS regardless.)
   const handleEnter = (dept: Department) => {
-    if (dept.locked) {
-      showNotice(`${dept.name} is locked by the Super Admin.`);
-      return;
-    }
     if (!selectDepartment(dept.id)) {
       showNotice(`You do not have access to ${dept.name}.`);
     }
@@ -70,12 +65,12 @@ export const DepartmentGrid: React.FC = () => {
 
   return (
     <div>
-      {/* Transient locked-department notice */}
-      {lockedNotice && (
+      {/* Transient notice (no access / could not delete) */}
+      {notice && (
         <div className="z-20 mb-2">
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium shadow-sm animate-fade-in">
-            <Lock className="w-4 h-4 shrink-0" />
-            <span>{lockedNotice}</span>
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>{notice}</span>
           </div>
         </div>
       )}
@@ -89,11 +84,7 @@ export const DepartmentGrid: React.FC = () => {
           return (
             <div
               key={dept.id}
-              className={`${CARD_BASE} ${
-                dept.locked
-                  ? 'border-slate-200/90 opacity-90'
-                  : 'border-slate-200/90 hover:border-blue-500/80 hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-1.5 shadow-slate-200/50 cursor-pointer'
-              }`}
+              className={`${CARD_BASE} border-slate-200/90 hover:border-blue-500/80 hover:shadow-2xl hover:shadow-blue-500/10 hover:-translate-y-1.5 shadow-slate-200/50 cursor-pointer`}
               onClick={() => handleEnter(dept)}
             >
               {/* Top Accent Gradient Stripe */}
@@ -117,26 +108,6 @@ export const DepartmentGrid: React.FC = () => {
                   className="absolute top-4 left-4 z-10 flex items-center justify-center w-7 h-7 rounded-full bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 transition-all cursor-pointer shadow-xs active:scale-95"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-
-              {/* Inline lock control for SuperAdmin or lock icon for Admin/HR */}
-              {isSuperAdmin && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLockTarget(dept);
-                  }}
-                  title={dept.locked ? 'Unlock department' : 'Lock department'}
-                  aria-label={dept.locked ? `Unlock ${dept.name}` : `Lock ${dept.name}`}
-                  className={`absolute top-4 right-4 z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-mono font-semibold border transition-all active:scale-95 ${
-                    dept.locked
-                      ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-                  }`}
-                >
-                  {dept.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                  {dept.locked ? 'Locked' : 'Unlocked'}
                 </button>
               )}
 
@@ -176,33 +147,24 @@ export const DepartmentGrid: React.FC = () => {
 
               {/* Enter Panel Action Buttons */}
               <div className="pt-3 border-t border-slate-100 space-y-2">
-                {dept.locked ? (
-                  <div className="w-full py-3.5 px-4 rounded-2xl bg-slate-100 text-slate-400 font-bold font-mono text-xs flex items-center justify-center gap-2">
-                    <Lock className="w-4 h-4" />
-                    <span>Department Locked</span>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEnter(dept); }}
-                      className="w-full py-3.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold font-mono text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 group-hover:bg-blue-600"
-                    >
-                      <span>Enter Panel</span>
-                      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                    </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleEnter(dept); }}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold font-mono text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 group-hover:bg-blue-600"
+                >
+                  <span>Enter Panel</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </button>
 
-                    {/* Open in New Tab button */}
-                    {tabs.length > 0 && (
-                      <button
-                        onClick={(e) => handleOpenInTab(e, dept)}
-                        className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold font-mono text-xs flex items-center justify-center gap-2 transition-all active:scale-95"
-                        title="Open in a new tab"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>New Tab</span>
-                      </button>
-                    )}
-                  </>
+                {/* Open in New Tab button */}
+                {tabs.length > 0 && (
+                  <button
+                    onClick={(e) => handleOpenInTab(e, dept)}
+                    className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold font-mono text-xs flex items-center justify-center gap-2 transition-all active:scale-95"
+                    title="Open in a new tab"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>New Tab</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -231,18 +193,6 @@ export const DepartmentGrid: React.FC = () => {
 
       {isAddOpen && (
         <AddDepartmentModal onClose={() => setIsAddOpen(false)} onCreate={addDepartment} />
-      )}
-
-      {lockTarget && (
-        <LockConfirmModal
-          department={lockTarget}
-          onCancel={() => setLockTarget(null)}
-          onConfirm={() => {
-            const action = lockTarget.locked ? unlockDepartment(lockTarget.id) : lockDepartment(lockTarget.id);
-            void action.then(r => !r.ok && showNotice(r.error || 'Could not update department.'));
-            setLockTarget(null);
-          }}
-        />
       )}
 
     </div>
@@ -359,59 +309,6 @@ const AddDepartmentModal: React.FC<AddDepartmentModalProps> = ({ onClose, onCrea
             </button>
           </div>
         </form>
-      </div>
-    </div>
-  );
-};
-
-// ---------------------------------------------------------------------------
-// Lock / Unlock confirmation - non-destructive, data always stays intact
-// ---------------------------------------------------------------------------
-
-interface LockConfirmModalProps {
-  department: Department;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-const LockConfirmModal: React.FC<LockConfirmModalProps> = ({ department, onCancel, onConfirm }) => {
-  const willLock = !department.locked;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 sm:p-7 shadow-2xl relative animate-scale-up">
-        <div className="flex items-start gap-3 mb-4">
-          <div className={`p-2.5 rounded-xl ${willLock ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
-            {willLock ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
-          </div>
-          <div>
-            <h3 className="text-lg font-bold font-heading text-slate-900">
-              {willLock ? `Lock ${department.name}?` : `Unlock ${department.name}?`}
-            </h3>
-            <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">
-              {willLock
-                ? 'Locking this department will temporarily prevent its Department Head and users from accessing it. Data and records will remain intact.'
-                : 'Unlocking this department restores access for its Department Head and users immediately.'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-sm font-medium transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className={`px-5 py-2.5 rounded-xl text-white text-sm font-bold shadow-md active:scale-95 transition-all ${
-              willLock ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-            }`}
-          >
-            {willLock ? 'Lock Department' : 'Unlock Department'}
-          </button>
-        </div>
       </div>
     </div>
   );

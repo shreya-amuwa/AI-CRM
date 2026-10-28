@@ -31,7 +31,8 @@ const PAGE_SIZE = 10;
  * "Send for onboarding" moves the customer's original services on and is never blocked by the add-ons.
  * Every change is saved straight to the database and re-checked there.
  */
-export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: () => void; onGoToAddons: () => void }> = ({ onSent, onGoToOnboarding, onGoToAddons }) => {
+export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: () => void; onGoToAddons: () => void; mode?: 'consultant' | 'verifier' }> = ({ onSent, onGoToOnboarding, onGoToAddons, mode = 'consultant' }) => {
+  const verifier = mode === 'verifier';
   const { byCode } = useServiceCatalog();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -68,7 +69,9 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
         <div>
           <h1 className="text-2xl sm:text-[28px] font-bold text-slate-900">Customers</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Customers confirmed by Accounts. Note whether you contacted them and whether they need add-ons, then send each one on.
+            {verifier
+              ? 'WhatsApp customers confirmed by Accounts. Start the verification of each one: review the documents, record your notes and hand over to the Department Head.'
+              : 'Customers confirmed by Accounts. Note whether you contacted them and whether they need add-ons, then send each one on.'}
           </p>
         </div>
         <label className="relative w-full md:w-72 shrink-0">
@@ -111,8 +114,8 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
                 <tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100 bg-slate-50/60">
                   <th scope="col" className="px-5 py-3 font-semibold">Name &amp; business</th>
                   <th scope="col" className="px-3 py-3 font-semibold">Services</th>
-                  <th scope="col" className="px-3 py-3 font-semibold">Contacted</th>
-                  <th scope="col" className="px-3 py-3 font-semibold w-80">Add-ons</th>
+                  {!verifier && <th scope="col" className="px-3 py-3 font-semibold">Contacted</th>}
+                  {!verifier && <th scope="col" className="px-3 py-3 font-semibold w-80">Add-ons</th>}
                   <th scope="col" className="px-5 py-3 font-semibold text-right">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -123,6 +126,7 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
                   <IntakeRow
                     key={c.id}
                     customer={c}
+                    verifier={verifier}
                     serviceName={code => byCode.get(code)?.name || code}
                     onChanged={patchRow}
                     onOpen={edit => setOpen({ id: c.id, edit })}
@@ -133,7 +137,7 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
                       load();
                     }}
                     onSent={(name, to) => {
-                      setNotice({ text: `${name} was sent for onboarding.`, to });
+                      setNotice({ text: verifier ? `${name}: verification started.` : `${name} was sent for onboarding.`, to });
                       notifyPipelineChanged();
                       onSent();
                       load();
@@ -155,7 +159,8 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
         <CustomerDetailsDialog
           key={open.id}
           customer={openCustomer}
-          startEditing={open.edit}
+          startEditing={open.edit && !verifier}
+          canEdit={!verifier}
           serviceName={code => byCode.get(code)?.name || code}
           onChanged={patchRow}
           onClose={() => setOpen(null)}
@@ -175,7 +180,9 @@ const IntakeRow: React.FC<{
   onOpen: (edit: boolean) => void;
   onAddonsSubmitted: (name: string) => void;
   onSent: (name: string, to: 'onboarding' | 'addons') => void;
-}> = ({ customer: c, serviceName, onChanged, onOpen, onAddonsSubmitted, onSent }) => {
+  /** The Meta Verifier does not take part in add-ons or the "contacted" step (the Technical Consultant's later work). */
+  verifier?: boolean;
+}> = ({ customer: c, serviceName, onChanged, onOpen, onAddonsSubmitted, onSent, verifier = false }) => {
   const [busy, setBusy] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
   const [confirmNo, setConfirmNo] = useState(false);
@@ -241,6 +248,8 @@ const IntakeRow: React.FC<{
           </ul>
         )}
       </td>
+      {!verifier && (
+        <>
       <td className="px-3 py-4">
         <select
           aria-label={`Contacted: ${label}`}
@@ -290,13 +299,17 @@ const IntakeRow: React.FC<{
           </p>
         )}
       </td>
+        </>
+      )}
       <td className="px-5 py-4 text-right whitespace-nowrap">
         <div className="inline-flex items-center gap-2">
-          <button type="button" onClick={() => onOpen(true)} className={btn.secondary} aria-label={`Edit ${label}`}>
-            <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
-          </button>
-          <button type="button" disabled={busy} onClick={() => void send()} className={btn.primary} aria-label={`Send ${label} for onboarding`}>
-            <Send className="w-3.5 h-3.5" aria-hidden="true" /> Send for onboarding
+          {!verifier && (
+            <button type="button" onClick={() => onOpen(true)} className={btn.secondary} aria-label={`Edit ${label}`}>
+              <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
+            </button>
+          )}
+          <button type="button" disabled={busy} onClick={() => void send()} className={btn.primary} aria-label={`${verifier ? 'Start verification of' : 'Send'} ${label}${verifier ? '' : ' for onboarding'}`}>
+            <Send className="w-3.5 h-3.5" aria-hidden="true" /> {verifier ? 'Start verification' : 'Send for onboarding'}
           </button>
         </div>
       </td>
@@ -359,7 +372,8 @@ const CustomerDetailsDialog: React.FC<{
   serviceName: (code: string) => string;
   onChanged: (c: PipelineCustomer) => void;
   onClose: () => void;
-}> = ({ customer, startEditing, serviceName, onChanged, onClose }) => {
+  canEdit?: boolean;
+}> = ({ customer, startEditing, serviceName, onChanged, onClose, canEdit = true }) => {
   const [editing, setEditing] = useState(startEditing);
   const [saved, setSaved] = useState(false);
   const [name, setName] = useState(customer.name);
@@ -420,7 +434,7 @@ const CustomerDetailsDialog: React.FC<{
       <section aria-label="Customer details" className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-bold text-slate-900">Details</h3>
-          {!editing && (
+          {!editing && canEdit && (
             <button type="button" onClick={beginEdit} className={btn.secondary} aria-label={`Edit ${label}`}>
               <Pencil className="w-3.5 h-3.5" aria-hidden="true" /> Edit
             </button>

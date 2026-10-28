@@ -126,7 +126,7 @@ export const CompanyOverview: React.FC<{ onOpenDepartment: (id: string) => void 
           <TrendCard d={data} />
           <DepartmentPerformance rows={data.departments} onOpen={onOpenDepartment} />
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 items-start">
-            <Attention alerts={data.alerts} />
+            <Attention alerts={data.alerts.filter(a => a.key !== 'locked_departments')} />
             <Recent d={data} />
           </div>
           <Operations d={data} />
@@ -343,7 +343,7 @@ const DepartmentPerformance: React.FC<{ rows: CompanyDepartmentRow[]; onOpen: (i
                     <td className="py-3 pl-5 pr-3">
                       <div className="font-bold text-slate-900">{r.name}</div>
                       <div className="text-xs text-slate-500">
-                        {r.staff} staff{r.locked ? ' · locked' : ''}
+                        {r.staff} staff
                       </div>
                     </td>
                     <td className="py-3 px-3">
@@ -374,7 +374,7 @@ const DepartmentPerformance: React.FC<{ rows: CompanyDepartmentRow[]; onOpen: (i
                       {r.pastSla > 0 && <div className="text-xs text-rose-700">{r.pastSla} past SLA</div>}
                     </td>
                     <td className="py-3 pl-3 pr-5 text-right">
-                      <button type="button" onClick={() => onOpen(r.slug)} disabled={r.locked} className="inline-flex items-center gap-1 text-[13px] font-bold text-blue-700 hover:text-blue-800 disabled:text-slate-400" aria-label={`Open ${r.name}`}>
+                      <button type="button" onClick={() => onOpen(r.slug)} className="inline-flex items-center gap-1 text-[13px] font-bold text-blue-700 hover:text-blue-800" aria-label={`Open ${r.name}`}>
                         Open <ChevronRight className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </td>

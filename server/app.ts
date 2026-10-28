@@ -12,7 +12,7 @@ import { ConfigurationError, getEnv } from './config/env.js';
 import { healthCheck } from './health.js';
 import { AppError, fromDatabaseError } from './http/errors.js';
 import { parse } from './http/validate.js';
-import { biometricPunchSchema } from '../shared/validation.js';
+import { biometricPunchSchema, loginFailureReportSchema } from '../shared/validation.js';
 import { enforce, ipBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HttpMethod, RouteDef } from './http/types.js';
 import { routes } from './routes.js';
@@ -32,6 +32,7 @@ import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
 import { requestInfo } from './http/context.js';
 import { recordSecurityEvent, sessionClaims } from './security/events.js';
+import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
@@ -140,6 +141,14 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     if (error) log('error', 'ticket escalation failed', c, { message: error.message });
     else ticketsEscalated = Number(data) || 0;
   }
+  // The Technical Consultant's consultation follow-ups: revalidate every open one against the persisted customer, cancel what no longer applies,
+  // notify the responsible user ONCE when one has become due. Persistent (no browser timers); idempotent.
+  let tcFollowups: unknown = null;
+  if (hasServiceClient()) {
+    const { data, error } = await getServiceClient().rpc('tc_followups_process_due');
+    if (error) log('error', 'consultation follow-ups failed', c, { message: error.message });
+    else tcFollowups = data;
+  }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
   const hr = await runHrAutomation();
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
@@ -153,7 +162,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".
@@ -176,6 +185,41 @@ app.post('/integrations/biometric/punch', async c => {
 app.post('/client-auth/forgot-password', async c => {
   await enforce([{ key: `forgot:${clientIp(c)}`, limit: 5, window: 900 }], 'memory');
   return c.json(ok(await clientForgotPassword(await readJson(c), c.req.header('origin'))));
+});
+
+/** a***@example.com: enough to recognise a typing mistake, not enough to learn an address from the log */
+function maskIdentifier(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (!v) return '';
+  const at = v.indexOf('@');
+  return at > 0 ? `${v[0]}***${v.slice(at)}` : `${v[0]}***`;
+}
+
+/**
+ * The sign-in page reports a refused password (no login exists yet, so this is public). It is evidence about the ATTEMPT, never about an
+ * account: the row has no person, the typed e-mail is kept masked and marked unverified, the address and place come from the platform
+ * (not from the body), and a caller can record only a few per quarter hour. (A refusal for a known account is also written by the
+ * Auth password hook as LOGIN_FAILED, which has no address.)
+ */
+app.post('/auth/login-failed', async c => {
+  await enforce([{ key: `loginfail:${clientIp(c)}`, limit: 10, window: 900 }], 'memory');
+  const input = parse(loginFailureReportSchema, await readJson(c));
+  const ip = auditIp(c);
+  const identifier = maskIdentifier(input.identifier ?? '');
+  if (ip || identifier) {
+    await recordSecurityEvent({
+      action: 'LOGIN_ATTEMPT_FAILED',
+      entityType: 'auth',
+      actorId: null,
+      outcome: 'FAILURE',
+      requestId: c.get('requestId'),
+      ip: ip ?? undefined,
+      location: await locateRequest(name => c.req.header(name), ip),
+      dedupeKey: `loginfail:${ip ?? clientIp(c)}:${identifier}:${Math.floor(Date.now() / 60_000)}`,
+      metadata: { surface: 'staff', identifier: identifier || null, identifierVerified: false }
+    });
+  }
+  return c.json(ok({ recorded: true }));
 });
 
 // The client dashboard: the customer's own login, their own records only.
@@ -293,6 +337,14 @@ function clientIp(c: Context): string {
   );
 }
 
+/**
+ * The address recorded in the audit log: only what the hosting platform itself set (see security/clientNetwork.ts). clientIp() above
+ * also serves rate limiting, where a forged value can only hurt the forger; an audit record must never hold one.
+ */
+function auditIp(c: Context): string | null {
+  return trustedClientIp(name => c.req.header(name));
+}
+
 function setRateHeaders(c: Context, r: BucketResult) {
   c.header('RateLimit-Limit', String(r.max_hits));
   c.header('RateLimit-Remaining', String(Math.max(0, r.max_hits - r.hits)));
@@ -319,7 +371,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/integrations/biometric/punch', '/client-auth/forgot-password']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/login-failed']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {
@@ -335,7 +387,8 @@ function securityAudit(): MiddlewareHandler<Env> {
     if (!code || (status !== 401 && status !== 403 && status !== 429)) return;
     const actor = c.get('actor');
     const route = routeLabel(c.req.method, relativePath(c));
-    const ip = clientIp(c);
+    const ip = auditIp(c);
+    const rateKey = clientIp(c);
     const action = status === 401 ? 'AUTH_REJECTED' : status === 429 ? 'RATE_LIMITED' : 'ACCESS_DENIED';
     await recordSecurityEvent({
       action,
@@ -343,9 +396,9 @@ function securityAudit(): MiddlewareHandler<Env> {
       actorId: actor?.id ?? null,
       outcome: 'DENIED',
       requestId: c.get('requestId'),
-      ip: ip === 'unknown' ? undefined : ip,
+      ip: ip ?? undefined,
       // one row per caller, kind of refusal and route per five minutes: a retry or a flood is a single event
-      dedupeKey: `${action}:${code}:${actor?.id ?? ip}:${c.req.method}:${route}:${Math.floor(Date.now() / 300_000)}`,
+      dedupeKey: `${action}:${code}:${actor?.id ?? rateKey}:${c.req.method}:${route}:${Math.floor(Date.now() / 300_000)}`,
       metadata: { method: c.req.method, route, status, code, ...(actor ? { role: actor.role, accountStatus: actor.status } : {}) }
     });
   };
@@ -358,6 +411,9 @@ async function noteSessionStart(c: Context<Env>, actor: Actor | null, extra: Rec
   if (!claims || knownSessions.has(claims.sessionId)) return;
   if (knownSessions.size > 5000) knownSessions.clear();
   knownSessions.add(claims.sessionId);
+  const ip = auditIp(c);
+  // the place of a staff sign-in (customers' sign-ins keep only the address): bounded wait, never a reason for the request to fail
+  const location = actor ? await locateRequest(name => c.req.header(name), ip) : null;
   await recordSecurityEvent({
     action: 'SESSION_STARTED',
     entityType: actor ? 'session' : 'client_session',
@@ -365,7 +421,8 @@ async function noteSessionStart(c: Context<Env>, actor: Actor | null, extra: Rec
     actorId: actor?.id ?? null,
     outcome: 'SUCCESS',
     requestId: c.get('requestId'),
-    ip: clientIp(c) === 'unknown' ? undefined : clientIp(c),
+    ip: ip ?? undefined,
+    location,
     dedupeKey: `session:${claims.sessionId}`,
     metadata: { method: claims.method, ...(actor ? { role: actor.role } : {}) }
   });
