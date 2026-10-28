@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AgreementReviewItem, Invoice, InvoicePrefill, InvoiceStage, InvoiceWhatsAppDispatch, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
+import type { AgreementReviewItem, Invoice, InvoicePrefill, InvoiceStage, PaymentInvoiceBilling, InvoiceWhatsAppDispatch, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
 import type { GeneratedInvoiceIssueInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
@@ -41,8 +41,18 @@ export class GeneratedInvoiceRepository {
   }
 
   /** The paid invoice of one verified payment (made and marked paid in one step; asking again returns the same invoice). */
-  async issueForPayment(paymentId: string): Promise<Invoice & { replayed: boolean }> {
-    return unwrap(await this.db.rpc('accounts_issue_payment_invoice', { p_payment: paymentId })) as Invoice & { replayed: boolean };
+  async issueForPayment(paymentId: string, customer?: Record<string, unknown> | null): Promise<Invoice & { replayed: boolean }> {
+    return unwrap(await this.db.rpc('accounts_issue_payment_invoice_billed', { p_payment: paymentId, p_customer: customer ?? null })) as Invoice & { replayed: boolean };
+  }
+
+  /** The billing details that invoice would use, and which of them the customer record lacks (address, state). */
+  async paymentInvoiceBilling(paymentId: string): Promise<PaymentInvoiceBilling> {
+    return unwrap(await this.db.rpc('accounts_payment_invoice_billing', { p_payment: paymentId })) as PaymentInvoiceBilling;
+  }
+
+  /** An Accounts team lead / head cancels a wrongly made invoice of the agreed services (kept, marked Cancelled, out of the order's totals). */
+  async cancelInvoice(invoiceId: string, reason: string): Promise<Invoice & { replayed: boolean }> {
+    return unwrap(await this.db.rpc('accounts_cancel_invoice', { p_invoice: invoiceId, p_reason: reason })) as Invoice & { replayed: boolean };
   }
 
   async claim(invoiceId: string, stage: InvoiceStage): Promise<ClaimedStage> {

@@ -926,9 +926,18 @@ export interface LedgerPayment {
 }
 
 /** What happened to the paid invoice of a payment right after it was recorded / verified (or when Accounts asked for it). */
+/** The billing details a payment's invoice would use, and which of them the customer record lacks (Accounts adds those with the click). */
+export interface PaymentInvoiceBilling {
+  customer: { name?: string | null; businessName?: string | null; address?: string | null; contactPerson?: string | null; contactNumber?: string | null; gstin?: string | null; stateCode?: string | null; state?: string | null };
+  taxTreatment: TaxTreatmentName | null;
+  missing: ('address' | 'state')[];
+}
+
 export interface PaymentInvoiceOutcome {
   /** CREATED: made now. EXISTS: it was made before. FAILED: the payment stands, the invoice could not be made (see message). */
   status: 'CREATED' | 'EXISTS' | 'FAILED';
+  /** The payment the invoice is (or was to be) made for. */
+  paymentId?: string;
   invoiceId?: string;
   number?: string;
   /** PDF / e-mail / WhatsApp, one line each. */
@@ -1250,7 +1259,7 @@ export interface Invoice {
   tax: number;
   /** Null for an uploaded invoice whose total was not entered. */
   total: number | null;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Cancelled';
   paidAt: string | null;
   items: PricedLine[];
   note: string | null;
@@ -1429,6 +1438,8 @@ export interface GeneratedInvoice {
   lifecycle: 'ISSUED' | 'PAID';
   /** True for an invoice made under the paid-only rule: no unpaid PDF is ever created or e-mailed, only the paid invoice. */
   paidOnly?: boolean;
+  /** Set when Accounts cancelled this invoice (made by mistake): it stays on record but no longer counts toward the order. */
+  cancelled?: { at: string; by: string | null; reason: string | null } | null;
   /** Total - confirmed payments applied to this invoice. Worked out by the database from the payment records, never typed or sent by the browser. */
   paymentSummary: InvoicePaymentSummary | null;
   payment: { confirmedAt: string; confirmedBy: string | null; method: PaymentMethod | null; reference: string | null; note: string | null; paidOn: string | null } | null;

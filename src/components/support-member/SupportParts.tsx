@@ -117,7 +117,7 @@ export function paymentStatus(inv: Pick<SupportInvoice, 'status' | 'dueDate'>): 
   const due = new Date(inv.dueDate.length === 10 ? `${inv.dueDate}T23:59:59` : inv.dueDate);
   return !Number.isNaN(due.getTime()) && due.getTime() < Date.now() ? 'Overdue' : 'Issued';
 }
-export const outstandingOf = (inv: Pick<SupportInvoice, 'status' | 'amount'>) => (inv.status === 'Paid' ? 0 : inv.amount);
+export const outstandingOf = (inv: Pick<SupportInvoice, 'status' | 'amount'>) => (inv.status === 'Paid' || inv.status === 'Cancelled' ? 0 : inv.amount);
 
 const PAYMENT_CLS = {
   Paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',

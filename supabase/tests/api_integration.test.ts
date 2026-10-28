@@ -3976,8 +3976,14 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   process.env.AUTOMATION_DISPATCH_SECRET = 'dispatch-secret-0123456789';
   const invoicesBeforeWa = (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n;
 
+  r = await api('accm', 'GET', '/accounts/invoice-whatsapp/settings');
+  check(r.status === 200 && r.json.data.enabled === true && r.json.data.autoSend === true, 'invoice WhatsApp: it starts switched ON with automatic sending (nobody has to switch it on)', r.json);
+  // the checks below are about the switched-off state: the Super Admin switches it off for them
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: false, autoSend: false, templateName: null, templateLanguage: 'en', templateApproved: false });
+  check(r.status === 200 && r.json.data.enabled === false, 'invoice WhatsApp: the Super Admin can still switch it off', r.json);
+  await db.query(`delete from public.invoice_whatsapp_dispatches`); // what the automatic sending queued before the checks below (they start from nothing)
   r = await waSend('accm', a.id);
-  check(r.status === 409 && /switched off/.test(r.json.error.message), 'invoice WhatsApp: switched off by default, a request says so', r);
+  check(r.status === 409 && /switched off/.test(r.json.error.message), 'invoice WhatsApp: switched off, a request says so', r);
   r = await waSend('a', a.id);
   check(r.status === 403, 'invoice WhatsApp: a salesperson cannot send an invoice by WhatsApp', r);
   r = await api('a', 'GET', `/accounts/generated-invoices/${a.id}/whatsapp`);
@@ -4160,6 +4166,66 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     r = await api('accm', 'POST', `/pipeline/customers/${na}/accounts/payments`, { type: 'PART', amount: 5000, method: 'UPI', reference: 'NA-1', verify: true });
     check(r.status === 201 && r.json.data.paymentInvoice?.status === 'FAILED' && /address/i.test(r.json.data.paymentInvoice.message) && r.json.data.verified === 5000,
       'each payment: with no address on record the payment is saved as verified and the answer says why there is no invoice', r.json.data);
+
+    // ... and what Accounts does about it: the screen asks which billing details are missing, they are typed once, and the invoice is made
+    const naPay = (await db.query(`select id from customer_payments where customer_id = $1`, [na])).rows[0].id as string;
+    r = await api('a', 'GET', `/accounts/payments/${naPay}/invoice-billing`);
+    check(r.status === 403, 'billing: Sales cannot ask', r);
+    r = await api('accm', 'GET', `/accounts/payments/${naPay}/invoice-billing`);
+    check(r.status === 200 && r.json.data.missing.includes('address') && r.json.data.missing.includes('state') && r.json.data.taxTreatment === null, 'billing: the screen is told that the address and the state are missing', r.json.data);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, {});
+    check(r.status === 422 && /billing address and state/.test(r.json.error.message), 'billing: without them the answer says what to enter', r);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, { customer: { address: 'Shop 9, FC Road, Pune 411004', stateCode: '27', gstin: 'NOT-A-GSTIN' } });
+    check(r.status === 422, 'billing: a GSTIN that is not valid is refused', r);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, { customer: { address: 'Shop 9, FC Road, Pune 411004', stateCode: '27' }, extra: 1 });
+    check(r.status === 422, 'billing: nothing else can ride along', r);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, { customer: { businessName: 'No Address Co', address: 'Shop 9, FC Road, Pune 411004', stateCode: '27' } });
+    check(r.status === 200 && r.json.data.status === 'CREATED' && r.json.data.paymentId === naPay && r.json.data.steps.every((x: any) => x.status === 'DONE'), 'billing: with the details typed once, the paid invoice of the payment is made, stored and sent', r.json);
+    r = await api('accm', 'GET', `/accounts/payments/${naPay}/invoice-billing`);
+    check(r.json.data.missing.length === 0, 'billing: nothing is missing any more for this customer', r.json.data);
+
+    // an invoice for the whole amount made by hand covers the money; cancelling it lets every payment have its own invoice
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Whole First', company: 'Whole First Co', email: 'whole.first@example.com', phone: '9820000913', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const wf = r.json.data.id;
+    await api('a', 'POST', `/pipeline/customers/${wf}/send-to-accounts`, { amount: 100000 });
+    await chooseGst(wf, 18);
+    const todayWf = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', {
+      requestId: crypto.randomUUID(), customerId: wf, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: todayWf, orderNumber: 'Verbal',
+      customer: { name: 'Whole First', businessName: 'Whole First Co', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', contactPerson: 'Whole First', contactNumber: '9820000913', gstin: null, stateCode: '27' },
+      taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+      lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: 100000 }]
+    });
+    const wholeInv = r.json.data?.invoice;
+    check(r.status === 201 && wholeInv.total === 118000, 'cancel: the whole order is invoiced by hand (1,18,000)', r);
+    await api('accm', 'POST', `/pipeline/customers/${wf}/accounts/payments`, { type: 'PART', amount: 59000, method: 'UPI', reference: 'WF-API-1', verify: true, invoice: false });
+    await api('accm', 'POST', `/pipeline/customers/${wf}/accounts/payments`, { type: 'FULL', amount: 59000, method: 'UPI', reference: 'WF-API-2', verify: true, invoice: false });
+    const wfPays = (await db.query(`select id from customer_payments where customer_id = $1 order by recorded_at`, [wf])).rows.map((x: any) => x.id as string);
+    r = await api('accm', 'POST', `/accounts/payments/${wfPays[0]}/invoice`, {});
+    check(r.status === 409 && /already covered/.test(r.json.error.message), 'cancel: the whole-order invoice covers the money, so a second invoice on top of it is refused (it would bill it twice)', r);
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 403, 'cancel: an Accounts member cannot cancel an invoice', r);
+    r = await api('a', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 403 || r.status === 404, 'cancel: nor Sales', r);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'no' });
+    check(r.status === 422, 'cancel: a real reason is required', r);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake', extra: 1 });
+    check(r.status === 422, 'cancel: nothing else can ride along', r);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 200 && r.json.data.status === 'Cancelled' && r.json.data.replayed === false && r.json.data.generated.cancelled.reason === 'Made for the whole amount by mistake', 'cancel: the Accounts head cancels it with a reason; the invoice says so', r.json.data?.generated?.cancelled);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 200 && r.json.data.replayed === true, 'cancel: cancelling again changes nothing', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${wf}/payment-overview`);
+    check(r.json.data.order.invoicedTotal === 0 && r.json.data.dealAmount === 118000 && r.json.data.verified === 118000, 'cancel: the order no longer counts it, and the payments and the payable did not change', r.json.data.order);
+    r = await api('accm', 'POST', `/accounts/payments/${wfPays[0]}/invoice`, {});
+    const wf1 = r.json.data;
+    check(r.status === 200 && wf1.status === 'CREATED' && wf1.steps.every((x: any) => x.status === 'DONE'), 'cancel: the first payment (part) now has its own paid invoice', r);
+    r = await api('accm', 'POST', `/accounts/payments/${wfPays[1]}/invoice`, {});
+    check(r.status === 200 && r.json.data.status === 'CREATED' && r.json.data.invoiceId !== wf1.invoiceId, 'cancel: the second payment (full) has its own paid invoice too', r);
+    r = await api('accm', 'GET', `/invoices/${wholeInv.id}`);
+    check(r.status === 200 && r.json.data.status === 'Cancelled', 'cancel: the cancelled invoice stays on record', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${wf}/payment-overview`);
+    check(r.json.data.order.invoicedTotal === 118000 && r.json.data.order.balance === 0 && r.json.data.dealAmount === 118000 && r.json.data.payments.every((x: any) => x.invoice && x.invoice.number), 'cancel: two paid invoices of 59,000 are the order (1,18,000), every payment names its invoice', r.json.data.order);
 
     // the same through the WhatsApp Automation Builder webhook (the onboarding one): no Wabastore, and no approved template needed
     const hookHits: any[] = [];

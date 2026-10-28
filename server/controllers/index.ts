@@ -19,7 +19,7 @@ async function withPaymentInvoice(ctx: Parameters<Handler>[0], customerId: strin
     outcome = await s.generatedInvoices.invoiceForPayment(paymentId);
   } catch (e) {
     if (!(e instanceof AppError)) console.error('[invoice] the paid invoice of a payment could not be made', { payment: paymentId, message: (e as Error)?.message });
-    outcome = { status: 'FAILED', message: e instanceof AppError ? e.message : 'The paid invoice could not be made. Use "Generate invoice" on the payment to try again.' };
+    outcome = { status: 'FAILED', paymentId, message: e instanceof AppError ? e.message : 'The paid invoice could not be made. Use "Generate invoice" on the payment to try again.' };
   }
   return { ...(await s.pipeline.paymentOverviewOf(customerId)), paymentInvoice: outcome };
 }
@@ -434,7 +434,9 @@ export const generatedInvoiceController = {
   confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
   /** "Generate invoice" on a verified payment (also the retry when the automatic one could not be made). Failures are answered as errors. */
-  invoiceForPayment: (async ctx => ok(await svc(ctx).generatedInvoices.invoiceForPayment(ctx.params.paymentId))) as Handler,
+  invoiceForPayment: (async ctx => ok(await svc(ctx).generatedInvoices.invoiceForPayment(ctx.params.paymentId, ctx.req.body))) as Handler,
+  paymentInvoiceBilling: (async ctx => ok(await svc(ctx).generatedInvoices.paymentInvoiceBilling(ctx.params.paymentId))) as Handler,
+  cancel: (async ctx => ok(await svc(ctx).generatedInvoices.cancelInvoice(ctx.params.id, ctx.req.body))) as Handler,
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
   sendWhatsApp: (async ctx => ok(await svc(ctx).generatedInvoices.sendWhatsApp(ctx.params.id, ctx.req.body))) as Handler,
   whatsAppHistory: (async ctx => ok(await svc(ctx).generatedInvoices.whatsAppHistory(ctx.params.id))) as Handler,
