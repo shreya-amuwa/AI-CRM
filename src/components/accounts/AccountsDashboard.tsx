@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BarChart3, Bell, Building2, FileText, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
+import { BadgeCheck, BarChart3, Bell, Building2, FileText, KeyRound, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -10,6 +10,7 @@ import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { AccountsConfirmations } from './AccountsConfirmations';
+import { ClientLogins } from './ClientLogins';
 import { BusinessVerification } from './BusinessVerification';
 import { AccountsInvoices } from './AccountsInvoices';
 import { AccountsPlans } from './AccountsPlans';
@@ -23,7 +24,7 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'business-reports' | 'expenses' | 'chat' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'client-logins' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'business-reports' | 'expenses' | 'chat' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -58,6 +59,7 @@ export const AccountsDashboard: React.FC = () => {
       label: 'Payments',
       items: [
         { id: 'confirmations', label: 'Confirmation', icon: ReceiptIndianRupee, badge: (counts?.requestsPending ?? 0) + (counts?.onboardingPending ?? 0) },
+        { id: 'client-logins', label: 'Client Logins', icon: KeyRound },
         { id: 'business-verification', label: 'Business Verification', icon: BadgeCheck, badge: addonsWaiting },
         { id: 'part-payments', label: 'Part Payment', icon: Wallet, badge: counts?.followUpsDue ?? 0 },
         { id: 'invoices', label: 'Invoices', icon: FileText },
@@ -109,6 +111,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'overview' && <AccountsOverview />}
       {page === 'income' && <AccountsIncome />}
       {page === 'confirmations' && <AccountsConfirmations onCountsChanged={refreshCounts} />}
+      {page === 'client-logins' && <ClientLogins />}
       {page === 'business-verification' && <BusinessVerification onCountsChanged={refreshCounts} />}
       {page === 'invoices' && <AccountsInvoices />}
       {page === 'plans' && <AccountsPlans />}

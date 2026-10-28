@@ -15,8 +15,8 @@ export interface TemplateData {
   panelUrl: string;
   /** The client's panel login (user ID) - the login e-mail. */
   userId: string;
-  /** Plain text, only for the completion email, never stored. */
-  password: string | null;
+  /** The client already has a panel login (Accounts creates it); the completed message never carries a password. */
+  hasLogin: boolean;
   /** The customer started at Website Pending: our team created the website. */
   websiteCreated: boolean;
   /** The customer's website address (the mini website, in the "website ready" email). */
@@ -133,30 +133,29 @@ function mailInProgress(d: TemplateData) {
   ${signature('Support Team')}`;
 }
 
-// status "Status Completed"
+// status "Status Completed": Meta finished the verification. No password is ever in this e-mail.
 function mailCompleted(d: TemplateData) {
-  const password = d.password
-    ? esc(d.password)
-    : 'the password shared with you by our Technical Consultant';
-  return `
-  <p>Dear ${esc(d.name)},</p>
-  <p>We are pleased to inform you that your <b>Meta Verification process has been successfully completed</b>.</p>
-  <p>Your panel access details are provided below:</p>
+  const access = d.hasLogin
+    ? `<p>Your panel access details are provided below:</p>
   <p>
     <b>Department:</b> ${esc(d.department)}<br>
     <b>Panel Website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a><br>
-    <b>User ID:</b> ${esc(d.userId)}<br>
-    <b>Password:</b> ${password}
+    <b>User ID:</b> ${esc(d.userId)}
   </p>
-  <p>You can use the above credentials to log in to your panel.</p>
+  <p>Sign in with the password you chose from the "Set your password" e-mail we sent you. If you have not set it yet, or you forgot it, use "Forgot password?" on the sign-in page.</p>`
+    : `<p>Your panel login is being prepared by our accounts team. You will receive a separate e-mail with a link to set your own password.</p>`;
+  return `
+  <p>Dear ${esc(d.name)},</p>
+  <p>We are pleased to inform you that your <b>Meta Verification process has been successfully completed</b>.</p>
+  ${access}
   <p>If you have any questions regarding the panel, login process, or Meta verification, please contact our team. We will be happy to assist you.</p>
   ${teamContact()}
   <p>Thank you for choosing <b>Amuwa Corporation</b>.</p>
   ${signature('Support Team')}`;
 }
 
-/** The stages with a customer email (the Accounts payment email has its own template). */
-type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT'>;
+/** The onboarding stages with a template here (the Accounts payment e-mail and the account e-mail, which carries a link, have their own). */
+type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED'>;
 
 const TEMPLATES: Record<CustomerStage, { subject: string; html: (d: TemplateData) => string }> = {
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },

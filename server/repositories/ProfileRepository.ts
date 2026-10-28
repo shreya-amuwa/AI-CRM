@@ -3,7 +3,7 @@ import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepart
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, is_operations_head, sales_sub_role, head_division, default_dashboard, status, status_reason,
+const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, is_meta_verifier, is_operations_head, sales_sub_role, head_division, default_dashboard, status, status_reason,
   department_id, team_id, approved_at, created_at,
   department:departments!profiles_department_id_fkey(id, slug, name),
   team:teams!profiles_team_in_department(id, name, division)`;
@@ -18,6 +18,7 @@ export function mapProfile(row: any): Profile {
     position: row.position,
     role: row.role,
     isTechnicalConsultant: !!row.is_technical_consultant,
+    isMetaVerifier: !!row.is_meta_verifier,
     isOperationsHead: !!row.is_operations_head,
     salesSubRole: row.sales_sub_role ?? null,
     headDivision: row.head_division ?? null,
@@ -147,6 +148,10 @@ export class ProfileRepository {
   async baseDepartments(ids: string[]): Promise<Map<string, string>> {
     const rows = unwrap(await this.db.from('departments').select('id, facet_of').in('id', ids)) as { id: string; facet_of: string | null }[];
     return new Map(rows.map(r => [r.id, r.facet_of ?? r.id]));
+  }
+
+  async setMetaVerifier(id: string, value: boolean): Promise<void> {
+    unwrap(await this.db.rpc('set_meta_verifier', { p_user_id: id, p_value: value }));
   }
 
   async setOperationsHead(id: string, value: boolean, note: string | null): Promise<void> {

@@ -13,7 +13,7 @@ import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
 import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, type HeadFunction } from '../../lib/scope/headAssignment';
 import {
-  OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
+  META_VERIFIER_LABEL, OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isMetaVerifier, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
 
 /**
@@ -58,7 +58,7 @@ interface StaffManagementPanelProps {
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
 /** Technical Consultant is a team member of a support team with its own dashboard. */
 /** An Operations Head is a Department Head who oversees several departments (only the Super Admin makes one). */
-type StaffChoice = StaffRole | 'TECHNICAL_CONSULTANT' | 'OPERATIONS_HEAD';
+type StaffChoice = StaffRole | 'TECHNICAL_CONSULTANT' | 'META_VERIFIER' | 'OPERATIONS_HEAD';
 
 const DIVISION_BY_SUBDEPT: Record<string, TeamDivision> = { sales: 'SALES', support: 'SUPPORT' };
 
@@ -161,12 +161,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const canCreateConsultant = allowedRoles.includes('TEAM_MEMBER') && supportTeams.length > 0 && (!division || division === 'SUPPORT');
   const canCreateOperationsHead = profile?.role === 'SUPER_ADMIN' && allowedRoles.includes('DEPARTMENT_HEAD');
   const choices = useMemo<StaffChoice[]>(
-    () => [...allowedRoles, ...(canCreateConsultant ? (['TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])],
+    () => [...allowedRoles, ...(canCreateConsultant ? (['META_VERIFIER', 'TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])],
     [canCreateConsultant, canCreateOperationsHead, allowedRoles]
   );
   const consultant = choice === 'TECHNICAL_CONSULTANT';
+  const metaVerifier = choice === 'META_VERIFIER';
   const operationsHead = choice === 'OPERATIONS_HEAD';
-  const role: StaffRole = consultant ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : choice;
+  const role: StaffRole = consultant || metaVerifier ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : choice;
   // The designation starts as the matching one for the role (they stay separate fields: the role decides access).
   useEffect(() => {
     setDesignation(operationsHead ? OPERATIONS_HEAD_LABEL : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member');
@@ -176,10 +177,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     if (!choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
   }, [choices, allowedRoles, choice]);
 
-  // A Technical Consultant always belongs to a support team.
+  // A Technical Consultant and a Meta Verifier always belong to a support team.
   useEffect(() => {
-    if (consultant && !supportTeams.some(t => t.id === teamId) && supportTeams[0]) setTeamId(supportTeams[0].id);
-  }, [consultant, supportTeams, teamId]);
+    if ((consultant || metaVerifier) && !supportTeams.some(t => t.id === teamId) && supportTeams[0]) setTeamId(supportTeams[0].id);
+  }, [consultant, metaVerifier, supportTeams, teamId]);
 
   const loadMembers = useCallback(async () => {
     // the Add Member page shows no list, so it does not ask the database for one
@@ -276,7 +277,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const existingHead = role === 'DEPARTMENT_HEAD' && headDivision ? headOfSide(headDivision) : null;
   // The Sales role (Telecaller, ...) is chosen for a Team Member of a Sales team, by the Super Admin or the Department Head.
   const canSetSalesRole = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD';
-  const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && selectedTeam?.division === 'SALES';
+  const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && !metaVerifier && selectedTeam?.division === 'SALES';
   const subDeptLabel = selectedTeam ? `${department?.name || ''} · ${selectedTeam.name}` : department?.name || departmentSlug;
 
   // Heads who work here without being placed here (shared heads) are listed too, with every department they work in.
@@ -384,6 +385,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       teamId: needsTeam ? teamId || undefined : undefined,
       position: position || undefined,
       technicalConsultant: consultant || undefined,
+      metaVerifier: metaVerifier || undefined,
       salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
       headDivision: headPlan?.headDivision,
       operationsHead: operationsHead || undefined,
@@ -403,7 +405,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setCreated({
         profile: newProfile,
         password: newProfile.department?.slug === 'hr' ? password : undefined,
-        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision)
+        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision, isMetaVerifier(newProfile))
       });
       resetForm();
       onCreated?.(newProfile);
@@ -412,6 +414,18 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setFormError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleMetaVerifier = async (member: Profile) => {
+    const value = !isMetaVerifier(member);
+    setActionNotice(null);
+    try {
+      await usersApi.setMetaVerifier(member.id, value);
+      setActionNotice({ text: `${member.fullName} is now a ${value ? META_VERIFIER_LABEL : ROLE_LABELS.TEAM_MEMBER}.`, ok: true });
+      await loadMembers();
+    } catch (err) {
+      setActionNotice({ text: errorMessage(err), ok: false });
     }
   };
 
@@ -445,6 +459,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setActionNotice(null);
     try {
       if (to === 'TEAM_HEAD' && isTechnicalConsultant(member)) await usersApi.setTechnicalConsultant(member.id, false);
+      if (to === 'TEAM_HEAD' && isMetaVerifier(member)) await usersApi.setMetaVerifier(member.id, false);
       await usersApi.assign(
         member.id,
         to === 'TEAM_HEAD'
@@ -528,7 +543,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               ) : (
                 <>
                   {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - you can create:{' '}
-                  {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r])).join(', ')}
+                  {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'META_VERIFIER' ? META_VERIFIER_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r])).join(', ')}
                 </>
               )}
             </p>
@@ -650,7 +665,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               onChange={e => setChoice(e.target.value as StaffChoice)}
             >
               {choices.map(r => (
-                <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r]}</option>
+                <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'META_VERIFIER' ? META_VERIFIER_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r]}</option>
               ))}
             </select>
           </label>
@@ -665,7 +680,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 disabled={isTeamLead}
               >
                 <option value="">Select team…</option>
-                {(consultant ? supportTeams : teams).map(t => (
+                {(consultant || metaVerifier ? supportTeams : teams).map(t => (
                   <option key={t.id} value={t.id}>{t.name} ({t.division.toLowerCase()})</option>
                 ))}
               </select>
@@ -743,7 +758,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' ? headDivision || null : null)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' ? headDivision || null : null, metaVerifier)}</strong>
           </div>
 
           {role === 'DEPARTMENT_HEAD' && existingHead && (
@@ -907,7 +922,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             </select>
                           </label>
                         )}
-                        {manage && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && (
+                        {manage && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && !isTechnicalConsultant(m) && (
+                          <button
+                            type="button"
+                            onClick={() => void toggleMetaVerifier(m)}
+                            className="mt-1 mr-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+                            aria-label={`${isMetaVerifier(m) ? 'Make team member' : 'Make Meta Verifier'}: ${m.fullName}`}
+                          >
+                            {isMetaVerifier(m) ? 'Make team member' : 'Make Meta Verifier'}
+                          </button>
+                        )}
+                        {manage && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && !isMetaVerifier(m) && (
                           <button
                             type="button"
                             onClick={() => void toggleConsultant(m)}
@@ -950,7 +975,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           {new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
                       )}
-                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision)}</td>}
+                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision, isMetaVerifier(m))}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>

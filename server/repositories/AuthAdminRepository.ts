@@ -19,6 +19,7 @@ export class AuthAdminRepository {
     departmentId?: string;
     teamId?: string;
     technicalConsultant?: boolean;
+    metaVerifier?: boolean;
     headDivision?: HeadDivision;
     provisionedBy: string;
   }): Promise<string> {
@@ -35,7 +36,8 @@ export class AuthAdminRepository {
         provisioned_department_id: input.departmentId ?? null,
         provisioned_team_id: input.teamId ?? null,
         provisioned_head_division: input.headDivision ?? null,
-        provisioned_technical_consultant: input.technicalConsultant === true
+        provisioned_technical_consultant: input.technicalConsultant === true,
+        provisioned_meta_verifier: input.metaVerifier === true
       }
     });
     if (error || !data.user) {
@@ -58,7 +60,7 @@ export class AuthAdminRepository {
       email: input.email,
       password: input.password,
       email_confirm: true,
-      app_metadata: { client_customer_id: input.customerId, provisioned_by_consultant: input.provisionedBy }
+      app_metadata: { client_customer_id: input.customerId, provisioned_by: input.provisionedBy }
     });
     if (error || !data.user) {
       if (/already (been )?registered|exists/i.test(error?.message || '')) {
@@ -68,6 +70,16 @@ export class AuthAdminRepository {
       throw new AppError('INTERNAL', 'Could not create the client login.');
     }
     return data.user.id;
+  }
+
+  /** A sign-in an earlier, interrupted attempt left for this customer and e-mail (so the retry finishes it instead of making a second one). */
+  async clientUserFor(customerId: string, email: string): Promise<string | null> {
+    const { data, error } = await getServiceClient().rpc('client_auth_user_for', { p_customer: customerId, p_email: email });
+    if (error) {
+      console.error('[api] client_auth_user_for failed', error.message);
+      throw new AppError('INTERNAL', 'Could not check for an existing login.');
+    }
+    return (data as string | null) ?? null;
   }
 
   /** Joining date, date of birth, blood group, emergency contact and designation (not readable by ordinary users). */

@@ -48,7 +48,7 @@ export function toAuthUser(profile: Profile): AuthUser {
         role = profile.salesSubRole === 'TELECALLER' ? 'telecaller' : profile.salesSubRole === 'BUSINESS_ASSOCIATE' ? 'business-associate' : 'sales-role';
         break;
       }
-      role = isTechnicalConsultant(profile) ? 'technical-support' : isSupportMember(profile) ? 'support-member' : 'team-member';
+      role = isMetaVerifier(profile) ? 'meta-verifier' : isTechnicalConsultant(profile) ? 'technical-support' : isSupportMember(profile) ? 'support-member' : 'team-member';
   }
   return {
     id: profile.id,
@@ -98,9 +98,14 @@ export function isSupportLead(p: Pick<Profile, 'role' | 'team' | 'defaultDashboa
   return p.team?.division === 'SUPPORT';
 }
 
-/** A team member of a Support team who is not a Technical Consultant. */
-export function isSupportMember(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): boolean {
-  return p.role === 'TEAM_MEMBER' && p.team?.division === 'SUPPORT' && !isTechnicalConsultant(p);
+/** A team member of a Support team who is neither a Technical Consultant nor a Meta Verifier. */
+export function isSupportMember(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'isMetaVerifier' | 'team'>): boolean {
+  return p.role === 'TEAM_MEMBER' && p.team?.division === 'SUPPORT' && !isTechnicalConsultant(p) && !isMetaVerifier(p);
+}
+
+/** A support team member created (or marked) as Meta Verifier: does the first WhatsApp verification, then hands over to the Department Head. */
+export function isMetaVerifier(p: Pick<Profile, 'role' | 'isMetaVerifier' | 'team'>): boolean {
+  return p.role === 'TEAM_MEMBER' && !!p.isMetaVerifier && p.team?.division === 'SUPPORT';
 }
 
 /** A Team Member of a Sales team who has a Sales role (Telecaller, Business Associate, ...). */
@@ -119,12 +124,15 @@ export function isOperationsHead(p: Pick<Profile, 'role' | 'isOperationsHead'>):
 }
 
 /** Label for a profile's role, with Technical Consultant and Operations Head shown as their own roles. */
-export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'isOperationsHead' | 'team'>): string {
+export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'isMetaVerifier' | 'isOperationsHead' | 'team'>): string {
   if (isOperationsHead(p)) return OPERATIONS_HEAD_LABEL;
+  if (isMetaVerifier(p)) return META_VERIFIER_LABEL;
   return isTechnicalConsultant(p) ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[p.role];
 }
 
 export const OPERATIONS_HEAD_LABEL = 'Operations Head';
+
+export const META_VERIFIER_LABEL = 'Meta Verifier';
 
 export const TECHNICAL_CONSULTANT_LABEL = 'Technical Consultant';
 
@@ -157,7 +165,8 @@ export function defaultDashboardLabel(
   technicalConsultant = false,
   departmentSlug?: string,
   salesSubRole?: SalesSubRole | null,
-  headDivision?: HeadDivision | null
+  headDivision?: HeadDivision | null,
+  metaVerifier = false
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
   // HR and Accounts staff open their department's own dashboard.
@@ -173,6 +182,7 @@ export function defaultDashboardLabel(
       if (division === 'SALES') return `Sales Team Lead Dashboard${dept}`;
       return `Team Lead Dashboard${dept}`;
     default:
+      if (metaVerifier && division === 'SUPPORT') return `Meta Verifier Dashboard${dept}`;
       if (technicalConsultant && division === 'SUPPORT') return `Technical Consultant Dashboard${dept}`;
       if (division === 'SALES' && salesSubRole === 'TELECALLER') return `Telecaller Dashboard${dept}`;
       if (division === 'SALES' && salesSubRole === 'BUSINESS_ASSOCIATE') return `Business Associate Dashboard${dept}`;

@@ -48,7 +48,7 @@ const job = (stage: ClientStage, channel: 'EMAIL' | 'WHATSAPP'): ClaimedJob => (
 
 const stages = Object.keys(EXPECTED) as ClientStage[];
 const s = automationSettings();
-const baseMail = { name: 'Test Client', email: 'x@example.com', department: 'Wabastore', panelUrl: 'https://panel.example/login', userId: 'u', password: 'p', websiteCreated: false, website: 'https://test.example' };
+const baseMail = { name: 'Test Client', email: 'x@example.com', department: 'Wabastore', panelUrl: 'https://panel.example/login', userId: 'u', hasLogin: true, websiteCreated: false, website: 'https://test.example' };
 
 for (const stage of stages) {
   const want = EXPECTED[stage];
@@ -62,7 +62,7 @@ for (const stage of stages) {
 }
 
 // the statuses must be distinct, and none may be contained in another one's text (a router that matches "contains" cannot confuse them)
-const statuses = stages.map(st => STAGE_LABEL[st]);
+const statuses = [...stages, 'ACCOUNT_CREATED' as ClientStage].map(st => STAGE_LABEL[st]);
 check(new Set(statuses).size === statuses.length, 'every stage has its own status');
 const lower = statuses.map(x => x.toLowerCase());
 const overlaps = lower.flatMap((a, i) => lower.filter((b, j) => i !== j && a.includes(b)).map(b => `${a} ⊃ ${b}`));
@@ -75,7 +75,18 @@ const pending = hits[0];
 check(!/complet/i.test(pending.status) && pending.stage_code !== 'COMPLETED', 'META_VERIFICATION never posts a completed status');
 check(!/complet/i.test(renderEmail('META_VERIFICATION', baseMail).subject), 'META_VERIFICATION never has the completed e-mail subject');
 check(!/successfully completed/i.test(renderEmail('META_VERIFICATION', baseMail).html) && !/Password:/i.test(renderEmail('META_VERIFICATION', baseMail).html), 'META_VERIFICATION e-mail has no completion wording and no credentials');
-check(/Password:/.test(renderEmail('COMPLETED', baseMail).html) && !/Password:/.test(renderEmail('UNDER_REVIEW', baseMail).html), 'only the completion e-mail carries login details');
+check(/User ID/.test(renderEmail('COMPLETED', baseMail).html) && !/User ID/.test(renderEmail('UNDER_REVIEW', baseMail).html), 'only the completion e-mail names the login');
+for (const stage of stages) check(!/Password:/i.test(renderEmail(stage as any, baseMail).html) && !/Password:/i.test(renderEmail(stage as any, baseMail).text), `${stage}: no e-mail carries a password`);
+const noLogin = renderEmail('COMPLETED', { ...baseMail, hasLogin: false }).html;
+check(!/User ID/.test(noLogin) && /separate e-mail/.test(noLogin), 'with no login yet the completed e-mail does not pretend there is one');
+
+// "account created" is its own event: its own status and stage code, and the WhatsApp never carries a password
+hits.length = 0;
+const acc = await processJob(s, job('ACCOUNT_CREATED', 'WHATSAPP'));
+check(acc.outcome === 'SENT' && hits.length === 1 && hits[0].status === 'Account Created' && hits[0].stage_code === 'ACCOUNT_CREATED' && hits[0].event_key === 'crm|c-1|account created|919819900011',
+  'ACCOUNT_CREATED: one WhatsApp request with its own status and stage code', hits[0]);
+check(!/password/i.test(JSON.stringify(hits[0])), 'and it carries no password');
+check(!/complet/i.test(hits[0].status), 'and never the completed wording');
 
 // the e-mail and the WhatsApp for the same stage are produced by the same job stage: switching the channel changes nothing about the stage
 for (const stage of stages) {

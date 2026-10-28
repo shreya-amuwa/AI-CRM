@@ -27,6 +27,8 @@ import { GeneratedInvoiceService } from './GeneratedInvoiceService.js';
 import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
+import { WorkflowService } from './WorkflowService.js';
+import { WorkflowRepository } from '../repositories/WorkflowRepository.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
 import { CustomerImportService } from './CustomerImportService.js';
@@ -71,6 +73,7 @@ export function createServices(db: SupabaseClient) {
     dashboards: new DashboardService(new DashboardRepository(db)),
     pipeline: new PipelineService(new PipelineRepository(db), new StorageRepository()),
     automations: new AutomationService(new PipelineRepository(db)),
+    workflow: new WorkflowService(new WorkflowRepository(db)),
     finance: new AccountsFinanceService(new AccountsFinanceRepository(db)),
     departmentIncome: new DepartmentIncomeService(new DepartmentIncomeRepository(db)),
     businessReport: new BusinessReportService(new BusinessReportRepository(db)),

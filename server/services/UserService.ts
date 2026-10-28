@@ -8,6 +8,7 @@ import {
   salesSubRoleSchema,
   userAssignSchema,
   technicalConsultantSchema,
+  metaVerifierSchema,
   userCreateSchema,
   userListQuerySchema,
   userStatusSchema,
@@ -57,6 +58,9 @@ export class UserService {
     await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
+    }
+    if (input.metaVerifier && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
+      throw new AppError('VALIDATION_ERROR', 'A Meta Verifier must be in a support team.');
     }
     if (input.salesSubRole) {
       // Only the Super Admin and the Department Head give a Sales role, and only to a member of a Sales team.
@@ -207,6 +211,15 @@ export class UserService {
   /** Operations Head (and the Super Admin): the departments side by side. */
   operationsOverview(): Promise<OperationsOverviewRow[]> {
     return this.profiles.operationsOverview();
+  }
+
+  /** Make a support team member a Meta Verifier (or take it back). The database checks who may and that the person is not a Technical Consultant. */
+  async setMetaVerifier(actor: Actor, id: string, body: unknown): Promise<Profile> {
+    assertManager(actor);
+    const userId = parse(uuidSchema, id);
+    const { value } = parse(metaVerifierSchema, body);
+    await this.profiles.setMetaVerifier(userId, value);
+    return this.profiles.findById(userId);
   }
 
   async setTechnicalConsultant(actor: Actor, id: string, body: unknown): Promise<Profile> {
