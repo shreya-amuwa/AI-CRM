@@ -726,10 +726,21 @@ export const hrApi = {
   runEmailAutomation: () => api.post<HrEmailRunSummary>('/hr/email-automation/run', {})
 };
 
+/** Tells the server a sign-in was refused, so it can note the attempt with the address and place the hosting platform reports. Never throws. */
+export const signInReportApi = {
+  failed: (identifier: string): void => {
+    try {
+      void fetch('/api/v1/auth/login-failed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier: identifier.trim().slice(0, 254) }), keepalive: true }).catch(() => undefined);
+    } catch {
+      /* best effort: the sign-in screen is not affected */
+    }
+  }
+};
+
 export const organizationApi = {
   departments: () => api.get<Department[]>('/departments'),
   createDepartment: (body: { name: string; description?: string; category?: string }) => api.post<Department>('/departments', body),
-  updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description' | 'isLocked'>>) => api.patch<Department>(`/departments/${id}`, body),
+  updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description'>>) => api.patch<Department>(`/departments/${id}`, body),
   deleteDepartment: (id: string) => api.delete<null>(`/departments/${id}`),
   teams: (departmentId?: string) => api.get<Team[]>('/teams', { departmentId }),
   createTeam: (body: { departmentId: string; name: string; division?: TeamDivision }) => api.post<Team>('/teams', body)

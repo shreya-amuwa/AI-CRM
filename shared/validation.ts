@@ -331,6 +331,11 @@ export const departmentCreateSchema = z
   })
   .strict();
 
+/** A refused sign-in reported by the sign-in page: only what was typed in the e-mail box (it is never trusted as who someone is). */
+export const loginFailureReportSchema = z
+  .object({ identifier: z.string().max(254).optional() })
+  .strict();
+
 export const departmentUpdateSchema = z
   .object({
     name: trimmed(120).min(2).optional(),
@@ -338,8 +343,7 @@ export const departmentUpdateSchema = z
     category: optionalText(120),
     iconName: trimmed(40).optional(),
     accentColor: colorSchema.optional(),
-    logoUrl: optionalText(1000),
-    isLocked: z.boolean().optional()
+    logoUrl: optionalText(1000)
   })
   .strict()
   .refine(d => Object.keys(d).length > 0, { message: 'Nothing to update.' });

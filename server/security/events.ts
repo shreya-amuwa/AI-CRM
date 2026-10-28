@@ -1,4 +1,5 @@
 import { hasServiceClient, getServiceClient } from '../db/supabase.js';
+import type { GeoLocation } from './clientNetwork.js';
 
 /**
  * Security events recorded by the API server (what the database cannot record itself: a refused request rolls its own transaction
@@ -20,6 +21,8 @@ export interface SecurityEvent {
   outcome: SecurityOutcome;
   requestId?: string;
   ip?: string;
+  /** Where the caller was, when the platform or the configured lookup service could tell (never guessed, never from the caller). */
+  location?: GeoLocation | null;
   /** Same key = same event: it is recorded once. */
   dedupeKey: string;
   metadata?: Record<string, unknown>;
@@ -73,7 +76,8 @@ export async function recordSecurityEvent(e: SecurityEvent): Promise<void> {
       p_request_id: e.requestId ?? null,
       p_ip: e.ip && e.ip !== 'unknown' ? e.ip : null,
       p_dedupe_key: e.dedupeKey,
-      p_metadata: e.metadata ?? {}
+      p_metadata: e.metadata ?? {},
+      p_location: e.location ?? null
     });
     if (error) {
       // forget it, so the next attempt is not suppressed by a failed write

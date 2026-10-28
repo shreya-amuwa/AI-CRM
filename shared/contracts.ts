@@ -254,6 +254,17 @@ export interface AuditLog {
 
 /** One row of the security and audit log viewer (read-only). */
 export type AuditOutcome = 'SUCCESS' | 'FAILURE' | 'DENIED';
+export interface AuditLocation {
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  /** About 1 km: rounded when stored. */
+  latitude: number | null;
+  longitude: number | null;
+  source: 'PLATFORM_IP' | 'IP_PROVIDER' | 'BROWSER_PERMISSION';
+  accuracy: 'COUNTRY' | 'REGION' | 'CITY' | 'DEVICE';
+}
+
 export interface AuditEvent {
   id: number;
   at: string;
@@ -269,7 +280,13 @@ export interface AuditEvent {
   department: string | null;
   /** The API request that caused it (the same id is in the server log). */
   requestId: string | null;
+  /** The address the request came from, as the hosting platform reported it. Super Admin only (null for everyone else). */
   ip: string | null;
+  /**
+   * Where a sign-in came from. Super Admin only; null when it was not recorded (older events, or the platform / lookup could not tell).
+   * A place found from an address is the network's location, approximately: never the person's exact position.
+   */
+  location: AuditLocation | null;
   /** Safe details only: secrets are removed before an event is stored. */
   metadata: Record<string, unknown>;
 }
