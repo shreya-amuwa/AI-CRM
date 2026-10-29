@@ -297,23 +297,30 @@ export interface ClientPasswordMailData {
   businessName?: string | null;
   loginEmail: string;
   link: string;
-  /** WELCOME: a new login (from the Excel import); RESET: "Forgot password?" or sent again by the team. */
-  kind: 'WELCOME' | 'RESET';
+  /** WELCOME: a new login (from the Excel import); ONBOARDING: the login made when the payment was confirmed; RESET: "Forgot password?" or sent again by the team. */
+  kind: 'WELCOME' | 'ONBOARDING' | 'RESET';
 }
 
 /** The client sets their own password from this link; nobody types or sends a password. */
 export function renderClientPasswordEmail(d: ClientPasswordMailData): RenderedEmail {
   const welcome = d.kind === 'WELCOME';
+  const onboarding = d.kind === 'ONBOARDING';
+  const business = d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : '';
   const html = wrap(`
   <p>Dear ${esc(d.name)},</p>
-  ${welcome
-    ? `<p>Your <b>Amuwa client dashboard</b>${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''} is ready. There you can see your services, plans, message and calling usage, campaigns, invoices and support tickets.</p>`
-    : `<p>We received a request to set a new password for your Amuwa client dashboard.</p>`}
+  ${onboarding
+    ? `<p>Thank you. We have <b>confirmed your payment</b> and your <b>Amuwa client dashboard</b>${business} is ready. Sign in to follow your <b>Onboarding Journey</b>: Meta verification, your Relationship Manager, and the setup of each of your services. You can message your Meta Verifier from the dashboard, and submit any document we ask for.</p>`
+    : welcome
+      ? `<p>Your <b>Amuwa client dashboard</b>${business} is ready. There you can see your services, plans, message and calling usage, campaigns, invoices and support tickets.</p>`
+      : `<p>We received a request to set a new password for your Amuwa client dashboard.</p>`}
   <p><b>Your login e-mail:</b> ${esc(d.loginEmail)}</p>
   <p><a href="${esc(d.link)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Set your password</a></p>
   <p>Choose your own password on that page; after that you sign in with your login e-mail and that password. The link works once and expires soon. If it has expired, use "Forgot password?" on the sign-in page.</p>
-  ${welcome ? '' : '<p>If you did not ask for this, you can ignore this e-mail - your password stays the same.</p>'}
+  ${welcome || onboarding ? '' : '<p>If you did not ask for this, you can ignore this e-mail - your password stays the same.</p>'}
   ${teamContact()}
   ${signature('Support Team')}`);
-  return { subject: welcome ? 'Your Amuwa client dashboard - set your password' : 'Set a new password for your Amuwa client dashboard', html, text: toText(html) };
+  const subject = onboarding
+    ? 'Payment confirmed - your Amuwa client dashboard login'
+    : welcome ? 'Your Amuwa client dashboard - set your password' : 'Set a new password for your Amuwa client dashboard';
+  return { subject, html, text: toText(html) };
 }

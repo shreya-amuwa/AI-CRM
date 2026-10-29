@@ -1,10 +1,11 @@
 import React from 'react';
 import { displayTicketNo } from '../lib/ticketFormat';
-import { AlertTriangle, Bell, Building2, CalendarClock, CreditCard, FileText, FolderUp, LifeBuoy, Package, Phone, RefreshCw, Sparkles } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, CalendarClock, CreditCard, FileText, FolderUp, LifeBuoy, MessageCircle, Package, Phone, RefreshCw, Sparkles } from 'lucide-react';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
 import { useClientLive, useLoad, type Loaded } from './hooks';
-import { dashboardPath, notificationTarget, useShell } from './shell';
+import { dashboardPath, notificationTarget, sectionState, useShell } from './shell';
+import { JourneySummary } from './Journey';
 import { Badge, Button, Card, EmptyState, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, fmtNum, inr, hueOf, serviceStatus, tagOf, usageBar } from './ui';
 
 /** One block of the overview: its own loading, error (with the real reason and a retry) and empty state. */
@@ -41,12 +42,16 @@ function greetingWord(): string {
 }
 
 export const Overview: React.FC = () => {
-  const { go } = useShell();
+  const { go, journey } = useShell();
   const { me } = useClientAuth();
-  const services = useLoad(() => clientApi.services());
-  const plans = useLoad(() => clientApi.plans());
+  // a section the server has not opened yet is not asked for (the server would refuse it); its card says when it opens
+  const svcGate = sectionState(journey.data, 'services', journey.loading);
+  const planGate = sectionState(journey.data, 'plans', journey.loading);
+  const tkGate = sectionState(journey.data, 'tickets', journey.loading);
+  const services = useLoad(() => (svcGate.enabled ? clientApi.services() : Promise.resolve([] as Awaited<ReturnType<typeof clientApi.services>>)), [svcGate.enabled]);
+  const plans = useLoad(() => (planGate.enabled ? clientApi.plans() : Promise.resolve({ current: null, available: [] } as unknown as Awaited<ReturnType<typeof clientApi.plans>>)), [planGate.enabled]);
   const invoices = useLoad(() => clientApi.invoices());
-  const tickets = useLoad(() => clientApi.tickets());
+  const tickets = useLoad(() => (tkGate.enabled ? clientApi.tickets() : Promise.resolve([] as Awaited<ReturnType<typeof clientApi.tickets>>)), [tkGate.enabled]);
   const notes = useLoad(() => clientApi.notifications(3, 0));
   const docs = useLoad(() => clientApi.documents());
   const billing = useLoad(() => clientApi.billing());
@@ -86,8 +91,10 @@ export const Overview: React.FC = () => {
               {me.clientSince ? <span className="cd-hero-pill">Customer since {fmtDate(me.clientSince)}</span> : null}
             </div>
             <div className="cd-hero-actions">
-              <Button className="gold" onClick={() => go(dashboardPath('tickets'))}><LifeBuoy size={16} aria-hidden /> Raise a ticket</Button>
-              <Button variant="outline" onClick={() => go(dashboardPath('explore'))}><Sparkles size={16} aria-hidden /> Explore services</Button>
+              {tkGate.enabled
+                ? <Button className="gold" onClick={() => go(dashboardPath('tickets'))}><LifeBuoy size={16} aria-hidden /> Raise a ticket</Button>
+                : <Button className="gold" onClick={() => go(dashboardPath('chat'))}><MessageCircle size={16} aria-hidden /> Message our team</Button>}
+              {sectionState(journey.data, 'explore', journey.loading).enabled ? <Button variant="outline" onClick={() => go(dashboardPath('explore'))}><Sparkles size={16} aria-hidden /> Explore services</Button> : null}
             </div>
           </div>
           {docSummary && docPct !== null ? (
@@ -103,15 +110,16 @@ export const Overview: React.FC = () => {
       </section>
 
       <div className="cd-stack" style={{ gap: 24 }}>
+        {journey.data && !journey.data.completed ? <JourneySummary j={journey.data} go={go} /> : null}
         <div className="cd-grid c4">
-          <Stat icon={<Package size={20} />} hue={1} label="Active services" value={stat(services, live)}
-            hint={services.data && services.data.some(s => s.status === 'SETTING_UP') ? `${services.data.filter(s => s.status === 'SETTING_UP').length} being set up` : 'Running now'} onClick={() => go(dashboardPath('services'))} />
-          <Stat icon={<CreditCard size={20} />} hue={4} label="Current plan" value={<span style={{ fontSize: 22 }}>{plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</span>}
-            hint={current ? `${inr(current.price)} / month` : 'Choose one in Monthly Plans'} onClick={() => go(dashboardPath('plans'))} />
+          <Stat icon={<Package size={20} />} hue={1} label="Active services" value={svcGate.enabled ? stat(services, live) : '-'}
+            hint={!svcGate.enabled ? svcGate.reason ?? undefined : services.data && services.data.some(s => s.status === 'SETTING_UP') ? `${services.data.filter(s => s.status === 'SETTING_UP').length} being set up` : 'Running now'} onClick={() => go(dashboardPath(svcGate.enabled ? 'services' : 'journey'))} />
+          <Stat icon={<CreditCard size={20} />} hue={4} label="Current plan" value={<span style={{ fontSize: 22 }}>{!planGate.enabled ? '-' : plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</span>}
+            hint={!planGate.enabled ? planGate.reason ?? undefined : current ? `${inr(current.price)} / month` : 'Choose one in Monthly Plans'} onClick={() => go(dashboardPath(planGate.enabled ? 'plans' : 'journey'))} />
           <Stat icon={<FileText size={20} />} hue={3} label="Outstanding balance" value={<span style={{ fontSize: 22 }}>{stat(billing, billing.data ? inr(billing.data.totals.outstanding) : '')}</span>}
             hint={billing.data ? (billing.data.totals.pending > 0 ? `${inr(billing.data.totals.pending)} awaiting verification` : billing.data.totals.outstanding > 0 ? `of ${inr(billing.data.totals.payable)} payable incl. GST` : billing.data.orders.length ? 'Nothing due' : undefined) : invoices.data ? `${pending} invoice${pending === 1 ? '' : 's'} pending` : undefined} onClick={() => go(dashboardPath('invoices'))} />
-          <Stat icon={<LifeBuoy size={20} />} hue={2} label="Open tickets" value={stat(tickets, open)}
-            hint={tickets.data ? `${tickets.data.length} in total` : undefined} onClick={() => go(dashboardPath('tickets'))} />
+          <Stat icon={<LifeBuoy size={20} />} hue={2} label="Open tickets" value={tkGate.enabled ? stat(tickets, open) : '-'}
+            hint={!tkGate.enabled ? tkGate.reason ?? undefined : tickets.data ? `${tickets.data.length} in total` : undefined} onClick={() => go(dashboardPath(tkGate.enabled ? 'tickets' : 'journey'))} />
         </div>
 
         {low.map(({ s, bar }) => (
@@ -132,8 +140,10 @@ export const Overview: React.FC = () => {
         )}
 
         <div className="cd-grid c2" style={{ alignItems: 'start' }}>
-          <Section title="Your services" q={services} onViewAll={() => go(dashboardPath('services'))}>
-            {list => list.length === 0 ? (
+          <Section title="Your services" q={services} onViewAll={svcGate.enabled ? () => go(dashboardPath('services')) : undefined}>
+            {list => !svcGate.enabled ? (
+              <EmptyState icon={<Package size={22} />} title="Not open yet" text={`${svcGate.reason ?? ''} Follow each service's setup in your onboarding journey.`} />
+            ) : list.length === 0 ? (
               <EmptyState icon={<Package size={22} />} title="No services yet" text="Services show up here once your consultant has set them up." />
             ) : (
               <div className="cd-list">
@@ -148,8 +158,10 @@ export const Overview: React.FC = () => {
             )}
           </Section>
 
-          <Section title="Support tickets" q={tickets} onViewAll={() => go(dashboardPath('tickets'))}>
-            {list => list.length === 0 ? (
+          <Section title="Support tickets" q={tickets} onViewAll={tkGate.enabled ? () => go(dashboardPath('tickets')) : undefined}>
+            {list => !tkGate.enabled ? (
+              <EmptyState icon={<LifeBuoy size={22} />} title="Not open yet" text={`${tkGate.reason ?? ''} Until then, message your contact in the chat.`} />
+            ) : list.length === 0 ? (
               <EmptyState icon={<LifeBuoy size={22} />} title="No tickets" text="Having a problem? Raise a ticket and our team will help." />
             ) : (
               <div className="cd-list">

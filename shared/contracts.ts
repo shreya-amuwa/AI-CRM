@@ -1941,6 +1941,7 @@ export interface ClientNotifications {
 }
 export interface ClientOverview {
   profile: ClientProfile;
+  journey: ClientJourney;
   services: { total: number; live: number; items: ClientService[] };
   plan: ClientPlans['current'];
   invoices: { total: number; pending: number; recent: ClientInvoice[] };
@@ -1948,6 +1949,82 @@ export interface ClientOverview {
   notifications: { unread: number; recent: ClientNotification[] };
   renewals: { kind: 'SERVICE' | 'PLAN'; name: string; renewsOn: string }[];
 }
+// ---- Onboarding journey: payment -> login -> Meta verification -> Relationship Manager -> service setup -> completed ----
+export const JOURNEY_STAGE_KEYS = ['PAYMENT', 'META_VERIFICATION', 'RELATIONSHIP_MANAGER', 'SERVICE_SETUP', 'COMPLETED'] as const;
+export type JourneyStageKey = (typeof JOURNEY_STAGE_KEYS)[number];
+export type JourneyStageStatus = 'COMPLETED' | 'IN_PROGRESS' | 'PENDING' | 'ACTION_REQUIRED' | 'REJECTED';
+export const META_STATUSES = ['PENDING', 'IN_PROGRESS', 'DOCUMENTS_REQUIRED', 'REJECTED', 'COMPLETED'] as const;
+export type MetaStatus = (typeof META_STATUSES)[number];
+export type ServiceSetupStatus = 'PENDING' | 'IN_PROGRESS' | 'READY';
+/** The dashboard sections the database opens and closes by stage. */
+export const CLIENT_SECTIONS = ['overview', 'journey', 'services', 'campaigns', 'explore', 'plans', 'calendar', 'documents', 'invoices', 'tickets', 'chat', 'notifications', 'docs'] as const;
+export type ClientSectionKey = (typeof CLIENT_SECTIONS)[number];
+export interface JourneyPerson { name: string; position: string | null }
+export interface JourneyOutstandingItem { code: string; label: string; status: 'MISSING' | 'REJECTED'; note: string | null }
+export interface JourneyServiceStatus {
+  code: string;
+  name: string;
+  category: string;
+  status: ServiceSetupStatus;
+  /** What this service is waiting for ("Meta verification", "Relationship Manager assignment"); null when nothing blocks it. */
+  waitingFor: string | null;
+  readyAt: string | null;
+  note: string | null;
+}
+export type JourneyStage =
+  | { key: 'PAYMENT'; status: JourneyStageStatus; current: boolean; completedAt: string | null; accountCreatedAt: string | null; accountEmail: string | null }
+  | {
+      key: 'META_VERIFICATION';
+      status: JourneyStageStatus;
+      current: boolean;
+      required: boolean;
+      metaStatus: MetaStatus | 'NOT_REQUIRED';
+      startedAt: string | null;
+      completedAt: string | null;
+      feedback: string | null;
+      updatedAt: string | null;
+      outstanding: JourneyOutstandingItem[];
+      verifier: JourneyPerson | null;
+    }
+  | { key: 'RELATIONSHIP_MANAGER'; status: JourneyStageStatus; current: boolean; required: boolean; completedAt: string | null; manager: JourneyPerson | null; teamLead: JourneyPerson | null }
+  | { key: 'SERVICE_SETUP'; status: JourneyStageStatus; current: boolean; completedAt: string | null; services: JourneyServiceStatus[] }
+  | { key: 'COMPLETED'; status: JourneyStageStatus; current: boolean; completedAt: string | null };
+export interface ClientSectionAccess { enabled: boolean; reason: string | null }
+export interface ClientJourney {
+  stage: JourneyStageKey;
+  completed: boolean;
+  completedAt: string | null;
+  stages: JourneyStage[];
+  chat: { active: ChatChannel; channels: { channel: ChatChannel; label: string; open: boolean; visible: boolean; with: JourneyPerson | null }[] };
+  access: Record<ClientSectionKey, ClientSectionAccess>;
+}
+/** What the team sees of a customer's journey (Meta verification, verifier, Relationship Manager, each service). */
+export interface CustomerJourneyStatus {
+  applies: boolean;
+  metaRequired: boolean;
+  meta: {
+    status: MetaStatus;
+    feedback: string | null;
+    changedAt: string | null;
+    startedAt: string | null;
+    completedAt: string | null;
+    verifier: { id: string; fullName: string } | null;
+    canChange: boolean;
+    canAssign: boolean;
+    readyToComplete: boolean;
+  };
+  relationshipManager: { id: string; fullName: string } | null;
+  completedAt: string | null;
+  services: { code: string; name: string; status: ServiceSetupStatus; note: string | null; updatedAt: string | null; readyAt: string | null; canChange: boolean }[];
+}
+/** What happened to the client's login when Accounts confirmed the payment. */
+export interface ClientLoginOutcome {
+  status: 'CREATED' | 'EXISTS' | 'NOT_CREATED';
+  email?: string;
+  mail?: 'SENT' | 'NOT_SENT';
+  detail?: string;
+}
+
 // ---- Client calendar (what the team did, with insights) and documents the client provides ----
 export const CLIENT_ACTIVITY_KINDS = ['CAMPAIGN', 'CALL_CAMPAIGN', 'POST', 'AD', 'SETUP', 'REPORT', 'MEETING', 'OTHER'] as const;
 export type ClientActivityKind = (typeof CLIENT_ACTIVITY_KINDS)[number];
@@ -2501,11 +2578,19 @@ export interface ChatMember {
   department: string | null;
   me: boolean;
 }
+/** A client conversation belongs to one channel: the Meta Verifier's (until Meta verification is completed) or the Relationship Manager's. */
+export type ChatChannel = 'META' | 'RM';
 export interface ChatConversation {
   id: string;
   kind: ChatKind;
+  /** Client conversations only. */
+  channel?: ChatChannel | null;
   access: ChatAccess;
   canWrite: boolean;
+  /** Why nobody can write in this client conversation right now (null when it is live). */
+  blockReason?: string | null;
+  /** Client conversations: the assigned Meta Verifier (name and position only). */
+  verifier?: ChatPerson | null;
   /** Group name, the other person's name, the business (staff view of a client chat) or "Your Amuwa team" (client view). */
   title: string | null;
   /** Staff view of a client chat only. */
@@ -2650,7 +2735,8 @@ export interface ChatMyClient {
   lastMessagePreview: string | null;
   unread: number;
   hasLogin: boolean;
-  role: 'Team Member' | 'Team Lead';
+  channel?: ChatChannel;
+  role: 'Relationship Manager' | 'Team Lead' | 'Meta Verifier' | 'Team Member';
 }
 export interface ChatReviewList {
   total: number;

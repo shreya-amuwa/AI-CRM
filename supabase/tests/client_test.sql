@@ -27,6 +27,10 @@ update customers set lifecycle_stage = 'CUSTOMER' where id in (select id from cl
 -- both went through onboarding with the Technical Consultant
 insert into customer_onboarding (customer_id, forwarded_to_support_at, stage) select id, now(), 'SETUP' from cl
   on conflict (customer_id) do update set forwarded_to_support_at = now();
+-- ... and are fully set up: this suite is about what an active client sees (the stages of a new client are tested in client_journey_test.sql)
+update customer_onboarding set meta_status = 'COMPLETED', onboarding_completed_at = now(), accounts_confirmed_at = coalesce(accounts_confirmed_at, now())
+ where customer_id in (select id from cl);
+update customer_services set setup_status = 'READY', setup_completed_at = now() where customer_id in (select id from cl);
 
 -- ---------------------------------------------------------------- who am I
 set role authenticated;

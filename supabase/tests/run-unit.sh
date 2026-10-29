@@ -19,7 +19,7 @@ for t in api_client_cache realtime_shared installment_split invoice_calc invoice
   rm -f "./.unit_$t.tmp.mjs"
 done
 # Browser tests: the "Same as mobile number" checkbox, and the scrolling of pop-ups / the page lock (need Playwright + Chromium, skipped when they are missing)
-for ui in docs_navigation ui_whatsapp ui_scroll ui_head_departments ui_access_control ui_audit_location ui_client_logins ocr_shop_photo; do
+for ui in docs_navigation ui_whatsapp ui_scroll ui_head_departments ui_access_control ui_audit_location ui_client_logins ui_client_journey ocr_shop_photo; do
   [ -f "supabase/tests/$ui.test.mjs" ] || continue
   echo "=== $ui"
   node "supabase/tests/$ui.test.mjs" || status=1

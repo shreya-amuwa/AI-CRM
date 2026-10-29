@@ -81,7 +81,7 @@ export const chatController = {
   review: (async ctx => ok(await svc(ctx).chat.review(ctx.req.query))) as Handler,
   reviewOpen: (async ctx => ok(await svc(ctx).chat.reviewOpen(ctx.params.id))) as Handler,
   unread: (async ctx => ok(await svc(ctx).chat.unread())) as Handler,
-  customerConversation: (async ctx => ok(await svc(ctx).chat.customerConversation(ctx.params.customerId))) as Handler,
+  customerConversation: (async ctx => ok(await svc(ctx).chat.customerConversation(ctx.params.customerId, ctx.req.query))) as Handler,
   detail: (async ctx => ok(await svc(ctx).chat.detail(ctx.params.id))) as Handler,
   directory: (async ctx => ok(await svc(ctx).chat.directory(ctx.req.query))) as Handler,
   openDirect: (async ctx => ok(await svc(ctx).chat.openDirect(ctx.req.body))) as Handler,
@@ -251,6 +251,11 @@ export const pipelineController = {
   resendAccountEmail: (async ctx => ok(await svc(ctx).pipeline.resendAccountEmail(ctx.params.id))) as Handler,
   markMetaVerificationCompleted: (async ctx => ok(await svc(ctx).pipeline.markMetaVerificationCompleted(ctx.params.id))) as Handler,
   customerJourney: (async ctx => ok(await svc(ctx).pipeline.customerJourney(ctx.params.id))) as Handler,
+  journeyStatus: (async ctx => ok(await svc(ctx).pipeline.journeyStatus(ctx.params.id))) as Handler,
+  setMetaVerification: (async ctx => ok(await svc(ctx).pipeline.setMetaVerification(ctx.params.id, ctx.req.body))) as Handler,
+  assignMetaVerifier: (async ctx => ok(await svc(ctx).pipeline.assignMetaVerifier(ctx.params.id, ctx.req.body))) as Handler,
+  metaVerifierCandidates: (async ctx => ok(await svc(ctx).pipeline.metaVerifierCandidates(ctx.params.id))) as Handler,
+  setServiceSetup: (async ctx => ok(await svc(ctx).pipeline.setServiceSetup(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
   sendToDelivery: (async ctx => ok(await svc(ctx).pipeline.sendToDelivery(ctx.params.id, ctx.req.body))) as Handler,
   deliveryQueue: (async ctx => ok(await svc(ctx).pipeline.deliveryQueue(ctx.req.query))) as Handler,
   serviceJourneys: (async ctx => ok(await svc(ctx).pipeline.serviceJourneys())) as Handler,
@@ -298,10 +303,8 @@ export const pipelineController = {
   }) as Handler,
   rejectAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.rejectAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
   reverseAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.reverseAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
-  confirmAndReturn: (async ctx => {
-    await svc(ctx).pipeline.confirmAndReturn(ctx.params.id, ctx.req.body);
-    return ok(null);
-  }) as Handler,
+  /** Confirms the payment and returns the customer to Sales; the answer says what happened to the client's dashboard login. */
+  confirmAndReturn: (async ctx => ok({ clientLogin: await svc(ctx).pipeline.confirmAndReturn(ctx.actor, ctx.params.id, ctx.req.body) })) as Handler,
   returnToLeads: (async ctx => {
     await svc(ctx).pipeline.returnToLeads(ctx.params.id, ctx.req.body);
     return ok(null);

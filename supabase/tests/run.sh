@@ -101,3 +101,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_meta_handoff_test.sql 2>&1 |
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/panel_details_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/client_credentials_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/handover_service_name_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/client_journey_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

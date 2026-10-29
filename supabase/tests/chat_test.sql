@@ -73,7 +73,7 @@ select test.check((select chat_mark_read(pg_temp.g('conv')::uuid) ->> 'readSeq' 
 select test.check((select (chat_conversation_detail(pg_temp.g('conv')::uuid) ->> 'unread')::int = 0), 'unread is 0');
 create temp table m3 as select chat_send_message(pg_temp.g('conv')::uuid, 'Hi, we are looking into it', '55555555-5555-5555-5555-555555555555') as j;
 grant all on m3 to authenticated;
-select test.check((select j ->> 'senderKind' = 'STAFF' and j ->> 'senderLabel' = 'Team Member' and (j ->> 'seq')::int = 3 from m3), 'the Team Member replies (labelled Team Member)');
+select test.check((select j ->> 'senderKind' = 'STAFF' and j ->> 'senderLabel' = 'Relationship Manager' and (j ->> 'seq')::int = 3 from m3), 'the Team Member replies (labelled Relationship Manager)');
 select test.must_fail($$select chat_delete_for_me(((select j ->> 'id' from m3))::uuid)$$, 'a client conversation keeps its history: no delete for me', 'kept for the client');
 select test.must_fail($$select chat_delete_for_everyone(((select j ->> 'id' from m3))::uuid)$$, 'and no delete for everyone, even of the sender''s own message', 'kept for the client');
 reset role;
@@ -170,7 +170,7 @@ select test.check((select count(*) = 0 from chat_messages), 'row level security 
 select test.must_fail($$select chat_send_message(pg_temp.g('conv')::uuid, 'still here?', gen_random_uuid())$$, 'and cannot write', 'not found');
 select test.login('sup_b');
 select test.check((select jsonb_array_length(chat_messages_page(pg_temp.g('conv')::uuid) -> 'messages') = 6), 'the new Team Member sees the thread (the customer''s history stays with the customer)');
-select test.check((select chat_send_message(pg_temp.g('conv')::uuid, 'Hello, I am your new contact', gen_random_uuid()) ->> 'senderLabel' = 'Team Member'), 'and can reply');
+select test.check((select chat_send_message(pg_temp.g('conv')::uuid, 'Hello, I am your new contact', gen_random_uuid()) ->> 'senderLabel' = 'Relationship Manager'), 'and can reply');
 select test.login('chat_client');
 select test.check((select chat_conversation_detail(pg_temp.g('conv')::uuid) -> 'team' -> 'teamMember' ->> 'name' = 'Member B' or (chat_conversation_detail(pg_temp.g('conv')::uuid) -> 'team' -> 'teamMember' ->> 'name') is not null), 'the client sees the new Team Member');
 

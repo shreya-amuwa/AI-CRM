@@ -11,7 +11,7 @@ related: [accounts/recording-payments, technical-consultant/provisioning-client-
 updated: 2026-10-29
 ---
 
-Once a payment is verified, Accounts creates the customer's **Client Dashboard** login from **Accounts > Client Logins**. It is created with the e-mail on the customer record - you never type an e-mail or a password.
+Once a payment is verified, the customer's **Client Dashboard** login is created - automatically when you press **Confirm payment & return to Sales**, or by you from **Accounts > Client Logins** (for example when the e-mail on the record had to be corrected first). The login only opens the client's **Onboarding Journey**: the other sections open stage by stage (Meta verification, Relationship Manager, service setup). It is created with the e-mail on the customer record - you never type an e-mail or a password.
 
 ## Before you start
 
