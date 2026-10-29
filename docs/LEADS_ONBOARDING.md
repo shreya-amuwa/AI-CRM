@@ -186,7 +186,7 @@ name and mobile number are asked for every customer (Business basics) and GST / 
 | AI Calling | customer number, business details & caller's role |
 | Voice Message (Bulk) | WhatsApp mobile number, website (optional) |
 | AI QR | Instagram / Facebook / WhatsApp URLs, e-mail & website, brand logo, brand name, Google Map location, payment QR |
-| Crocodile (Call CRM) | employee details, domain (optional), monthly / yearly billing |
+| Crocodial (Call CRM) | employee details, domain (optional), monthly / yearly billing |
 | Google Business Profile - Setup | no existing profile, address / phone / category / timings, photos |
 | Meta Ads Management | e-mail, brand logo, location, Facebook / Instagram / WhatsApp access |
 | Social Media Management | business model & audience, Facebook / Instagram access, content library |

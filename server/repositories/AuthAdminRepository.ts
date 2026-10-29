@@ -1,6 +1,6 @@
 import type { HeadDivision, Role } from '../../shared/contracts.js';
 import type { MemberDetailsInput } from '../../shared/validation.js';
-import { getServiceClient, hasServiceClient } from '../db/supabase.js';
+import { getAnonClient, getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { AppError } from '../http/errors.js';
 
 const BAN_FOREVER = '876000h';
@@ -70,6 +70,34 @@ export class AuthAdminRepository {
       throw new AppError('INTERNAL', 'Could not create the client login.');
     }
     return data.user.id;
+  }
+
+  /**
+   * Puts a new password on a client's login (a fresh temporary one for Accounts' resend, or the client's own choice). Hashed by Supabase Auth;
+   * never stored, logged or returned by the CRM.
+   */
+  async setClientPassword(userId: string, password: string): Promise<void> {
+    const { error } = await getServiceClient().auth.admin.updateUserById(userId, { password });
+    if (error) {
+      console.error('[api] auth.admin.updateUserById (client password) failed', error.status ?? error.code);
+      throw new AppError('INTERNAL', 'Could not save the password.');
+    }
+  }
+
+  /** True when `password` already signs this e-mail in (so a client cannot "choose" the temporary password again). */
+  async passwordSignsIn(email: string, password: string): Promise<boolean> {
+    const { data, error } = await getAnonClient().auth.signInWithPassword({ email, password });
+    if (data?.session) await getAnonClient().auth.signOut().catch(() => undefined);
+    return !error && !!data?.session;
+  }
+
+  /** Stored by the database once the client's own password is in place: the temporary one stops being required. */
+  async clientPasswordChanged(userId: string): Promise<void> {
+    const { error } = await getServiceClient().rpc('client_password_changed', { p_user: userId });
+    if (error) {
+      console.error('[api] client_password_changed failed', error.message);
+      throw new AppError('INTERNAL', 'Could not finish changing the password.');
+    }
   }
 
   /** A sign-in an earlier, interrupted attempt left for this customer and e-mail (so the retry finishes it instead of making a second one). */

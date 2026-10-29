@@ -44,6 +44,7 @@ import {
   ErrorBanner,
   inputCls,
   longDate,
+  longDateTime,
   money,
   notifyPipelineChanged,
   PAYMENT_METHOD_LABEL,
@@ -316,7 +317,6 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
   const [actionError, setActionError] = useState<string | null>(null);
   const [forwarding, setForwarding] = useState(false);
   const [confirmSend, setConfirmSend] = useState(false);
-  const [editingHandover, setEditingHandover] = useState(false);
   const [paying, setPaying] = useState(false);
   // where the next send goes (decided by the database from the services ordered) and whether anybody is there to receive it
   const [handoff, setHandoff] = useState<OnboardingHandoffInfo | null>(null);
@@ -443,24 +443,19 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           </div>
           <InfoTile label="Sales owner" value={c.owner?.fullName || '-'} />
           <InfoTile label="Started" value={longDate(c.onboarding?.startedAt)} />
-          <div className="px-3 py-2 rounded-xl border border-slate-200">
-            <dt className="text-[11px] text-slate-500">Target handover</dt>
+          {/* The handover date is the moment of the handover, written by the database: nobody picks it. */}
+          <div className="px-3 py-2 rounded-xl border border-slate-200" data-testid="handover-tile">
+            <dt className="text-[11px] text-slate-500">Handed over to {recipient}</dt>
             <dd className="font-semibold text-slate-900 mt-0.5">
-              {editingHandover ? (
-                <HandoverEditor
-                  customerId={c.id}
-                  value={c.onboarding?.targetHandoverDate || ''}
-                  onDone={() => {
-                    setEditingHandover(false);
-                    load();
-                  }}
-                />
+              {c.onboarding?.forwardedToSupportAt ? (
+                <time dateTime={c.onboarding.forwardedToSupportAt}>{longDateTime(c.onboarding.forwardedToSupportAt)}</time>
               ) : (
-                <button type="button" className="underline decoration-dotted hover:text-indigo-700" onClick={() => setEditingHandover(true)}>
-                  {c.onboarding?.targetHandoverDate ? longDate(c.onboarding.targetHandoverDate) : 'Set date'}
-                </button>
+                <span className="font-normal text-slate-500">Set automatically when it is sent</span>
               )}
             </dd>
+            {c.onboarding?.firstHandedOverAt && c.onboarding.firstHandedOverAt !== c.onboarding.forwardedToSupportAt && (
+              <dd className="text-[11px] text-slate-500 mt-0.5">First handed over {longDateTime(c.onboarding.firstHandedOverAt)}</dd>
+            )}
           </div>
         </dl>
       </Card>
@@ -696,35 +691,6 @@ const InfoTile: React.FC<{ label: string; value: string }> = ({ label, value }) 
   </div>
 );
 
-const HandoverEditor: React.FC<{ customerId: string; value: string; onDone: () => void }> = ({ customerId, value, onDone }) => {
-  const [v, setV] = useState(value);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const save = async () => {
-    setBusy(true);
-    try {
-      await pipelineApi.updateOnboarding(customerId, { targetHandoverDate: v || null });
-      onDone();
-    } catch (e) {
-      setErr(errorMessage(e));
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="space-y-1">
-      <input type="date" aria-label="Target handover date" min={todayIso()} className={`${inputCls} py-1 text-xs`} value={v} onChange={e => setV(e.target.value)} />
-      <div className="flex gap-1">
-        <button type="button" className={`${btn.primary} px-2 py-1`} onClick={save} disabled={busy}>
-          Save
-        </button>
-        <button type="button" className={`${btn.secondary} px-2 py-1`} onClick={onDone} disabled={busy}>
-          Cancel
-        </button>
-      </div>
-      {err && <p className="text-[11px] text-rose-600">{err}</p>}
-    </div>
-  );
-};
 
 const ProgressRing: React.FC<{ pct: number; label: string; start?: boolean }> = ({ pct, label, start }) => {
   const r = 42;

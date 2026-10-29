@@ -29,3 +29,33 @@ export function decryptSecret(token: string | null | undefined, secret: string |
     return null;
   }
 }
+
+const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const LOWER = 'abcdefghjkmnpqrstuvwxyz';
+const DIGIT = '23456789';
+
+/**
+ * A random temporary password a person can read off an e-mail without mistaking characters (no 0/O, 1/l/I): 14 characters, drawn with
+ * rejection sampling from the system's CSPRNG, with at least one upper-case letter, lower-case letter and digit.
+ */
+export function temporaryPassword(length = 14): string {
+  const all = UPPER + LOWER + DIGIT;
+  const pick = (set: string): string => {
+    const limit = 256 - (256 % set.length);
+    for (;;) {
+      const b = randomBytes(1)[0];
+      if (b < limit) return set[b % set.length];
+    }
+  };
+  const chars = [pick(UPPER), pick(LOWER), pick(DIGIT)];
+  while (chars.length < length) chars.push(pick(all));
+  // shuffle so the three required characters are not always first (Fisher-Yates with the same unbiased draw)
+  for (let i = chars.length - 1; i > 0; i--) {
+    const limit = 256 - (256 % (i + 1));
+    let b = randomBytes(1)[0];
+    while (b >= limit) b = randomBytes(1)[0];
+    const j = b % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}

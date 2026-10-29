@@ -21,6 +21,23 @@ This changelog documents verified product releases, architectural updates, and w
 
 ---
 
+## Release: Handover date, client credentials, Accounts e-mails, installments, invoice layout
+**Area:** Accounts, Meta Verifier, Sales, invoices
+
+### Added
+- **Handover date is automatic:** the first handover is stamped by the database and each handover writes a line in the history; the manual "Target handover / Set date" step is gone.
+- **Temporary password for the Client Dashboard login** (Accounts > Client Logins) with a forced change at the first sign-in, and the **panel password** the Meta Verifier sets on the customer's WhatsApp panel, e-mailed to the customer once and never stored.
+- **Installment helper** in Record payment (Part payment only): splits what is still to receive into two proposed installments; the second is a plan, not a payment.
+
+### Changed
+- **Payment e-mails reach every active Accounts member** (one e-mail each).
+- **Invoice e-mails** greet the customer's contact person; the PDF keeps the business name.
+- **Invoice PDF** margins and padding of the payment block, footer and PAID stamp.
+- **"Crocodile" is now "Crocodial"** (same service, same code).
+- Run `supabase/run_these_3_migrations_handover_accounts_email_credentials.sql` once and set `AUTOMATION_SECRET_KEY`. Details: `docs/CREDENTIALS_AND_NOTIFICATIONS.md`.
+
+---
+
 ## Release: Field Visit in the Sales member dashboards
 **Area:** Sales (Telecaller, Business Associate, Sales Team Member, Sales Department Head)
 

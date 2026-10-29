@@ -100,7 +100,7 @@ async function sendSmtp(s: AutomationSettings, to: { email: string; name: string
 }
 
 /** Sends one email through the configured provider: SMTP (nodemailer), Resend or Brevo. */
-export async function sendEmail(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
+export async function sendEmail(s: AutomationSettings, to: { email: string; name: string; /** Resend only: send as "Name <address>" so the recipient's mail app shows the name. */ display?: boolean }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
   const { provider, apiKey } = s.email;
   if (provider === 'smtp') return sendSmtp(s, to, mail, attachments);
   if (!provider || !apiKey) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
@@ -108,7 +108,7 @@ export async function sendEmail(s: AutomationSettings, to: { email: string; name
     if (provider === 'resend') {
       const r = await post(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), { authorization: `Bearer ${apiKey}` }, {
         from: `${s.email.fromName} <${s.email.fromEmail}>`,
-        to: [to.email],
+        to: [to.display && to.name && to.name !== to.email ? `${to.name} <${to.email}>` : to.email],
         subject: mail.subject,
         html: mail.html,
         text: mail.text,

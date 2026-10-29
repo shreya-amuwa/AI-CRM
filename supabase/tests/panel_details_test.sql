@@ -28,20 +28,20 @@ select test.check((panel_details_list((select id from pd where name = 'wa')) ->>
 select test.check((panel_details_list((select id from pd where name = 'wa')) -> 'dashboardLogin') = 'null'::jsonb, 'no dashboard login yet - and the section has nothing to create one with (Accounts owns it)');
 
 \echo '   save the details: persisted, history, audit without the values'
-select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodile Panel', 'hand.one@example.com');
+select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodial Panel', 'hand.one@example.com');
 select test.check((panel_details_list((select id from pd where name = 'wa')) -> 'services' -> 0 ->> 'panelAccount') = 'hand.one@example.com'
-                  and (panel_details_list((select id from pd where name = 'wa')) -> 'services' -> 0 ->> 'platform') = 'Crocodile Panel', 'saved against the right customer and service');
+                  and (panel_details_list((select id from pd where name = 'wa')) -> 'services' -> 0 ->> 'platform') = 'Crocodial Panel', 'saved against the right customer and service');
 reset role;
 select test.check((select panel_account = 'hand.one@example.com' from customer_services where customer_id = (select id from pd where name = 'wa') and service_code = 'WHATSAPP_API'), 'it is in the existing panel_account column (no new field)');
-select test.check((select count(*) = 1 from customer_activities where customer_id = (select id from pd where name = 'wa') and type = 'PANEL_DETAILS_SAVED' and note not like '%hand.one%' and note not like '%Crocodile%'), 'the history says it was saved, without the values');
+select test.check((select count(*) = 1 from customer_activities where customer_id = (select id from pd where name = 'wa') and type = 'PANEL_DETAILS_SAVED' and note not like '%hand.one%' and note not like '%Crocodial%'), 'the history says it was saved, without the values');
 select test.check((select count(*) = 1 from audit_logs where action = 'SERVICE_PANEL_DETAILS_SET' and created_at >= (select t from pd_t) and entity_id = (select id from pd where name = 'wa') and actor_id = test.id('late_verifier')
-                   and metadata ->> 'service' = 'WHATSAPP_API' and metadata::text not like '%hand.one%' and metadata::text not like '%Crocodile%'), 'the audit names who, which service and which fields - never the values');
+                   and metadata ->> 'service' = 'WHATSAPP_API' and metadata::text not like '%hand.one%' and metadata::text not like '%Crocodial%'), 'the audit names who, which service and which fields - never the values');
 select test.check((select (select count(*) from automation_jobs) = jobs and (select count(*) from client_notifications) = notes from pd_before), 'saving the details sends nothing and queues nothing');
 
 \echo '   the same values again change nothing'
 set role authenticated;
 select test.login('late_verifier');
-select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodile Panel', 'hand.one@example.com');
+select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodial Panel', 'hand.one@example.com');
 reset role;
 select test.check((select count(*) = 1 from customer_activities where customer_id = (select id from pd where name = 'wa') and type = 'PANEL_DETAILS_SAVED'), 'no second history line or audit row for an unchanged save');
 
@@ -64,10 +64,10 @@ select test.login('late_consultant');
 select test.must_fail($$select panel_details_list((select id from pd where name = 'wa'))$$, 'the Technical Consultant cannot read a Meta customer''s details', 'NOT_FOUND');
 select test.must_fail($$select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', null, 'tc@example.com')$$, 'nor write them', 'NOT_FOUND');
 select test.login('dh_wab');
-select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodile Panel', 'hand.one.dh@example.com');
+select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodial Panel', 'hand.one.dh@example.com');
 select test.check((panel_details_list((select id from pd where name = 'wa')) -> 'services' -> 0 ->> 'panelAccount') = 'hand.one.dh@example.com', 'the Department Head can');
 select test.login('sa');
-select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodile Panel', 'hand.one@example.com');
+select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', 'Crocodial Panel', 'hand.one@example.com');
 select test.check((panel_details_list((select id from pd where name = 'wa')) -> 'services' -> 0 ->> 'panelAccount') = 'hand.one@example.com', 'and so can the Super Admin');
 select test.login('late_verifier');
 select panel_details_set((select id from pd where name = 'wa'), 'WHATSAPP_API', '', '');

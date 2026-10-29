@@ -6,7 +6,7 @@ group: Payments
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/AccountsPaymentPanel.tsx, supabase/migrations/20261201000100_order_level_gst.sql, docs/PAYMENT_GST.md]
+sources: [shared/installments.ts, docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/AccountsPaymentPanel.tsx, supabase/migrations/20261201000100_order_level_gst.sql, docs/PAYMENT_GST.md]
 related: [accounts/payment-confirmation-queue, accounts/managing-part-payments-accounts, accounts/dynamic-invoices-overview]
 updated: 2026-10-27
 ---
@@ -47,8 +47,17 @@ The **Record payment** form has no GST field. You enter the amount that actually
    - **Transaction / reference no.**: the bank UTR, UPI transaction ID, card auth code or cheque number (required for `UPI`, `Bank transfer`, `Card` and `Cheque`; optional for `Cash` and `Other`).
    - **Payment date & time**: when the funds settled (not in the future).
    - **Note (optional)**.
+   - **Split what is still to receive into two installments** (optional, shown only for a new *Part payment*): fills the first installment as this payment and shows the second as *planned, not received*. See "Splitting what is left into two installments" below.
 5. Optional: tick **I have received this money and verified it** to record and verify in one step; otherwise the payment is saved as `PENDING`.
 6. Click **Record & verify** (or **Record payment**).
+
+### Splitting what is left into two installments
+
+For a **Part payment** you can tick **Split what is still to receive into two installments**. The helper works from the amount **still to receive** (the total payable including GST minus the money already on record) and divides it in whole rupees so that the two parts add up exactly: if ₹81,600 is still to receive, it proposes ₹40,800 now and ₹40,800 later; if the amount is odd, the extra rupee goes to the first installment. It fills the first installment into **Amount received** (you can still type another amount - the second installment follows it).
+
+:::warning The second installment is a plan, not a payment
+Nothing is recorded for the second installment. It is not a payment, it is not verified, no invoice is made for it and the order is not settled. GST, invoice totals and balances do not change. When the money arrives, record it as its own payment. The helper is hidden for **Full payment**, which always fills the whole outstanding amount including GST.
+:::
 
 ```flow
 Choose GST Rate | Accounts Staff | Once per order; saved in the database; locks after the first payment or invoice

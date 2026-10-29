@@ -41,7 +41,7 @@ WA = 'WhatsApp API + Blue Tick'
 AI = 'AI Calling'
 RCS, VOICE = 'RCS Registration + Platform', 'Voice Message (Bulk)'
 PACKAGES = [('50,000', 50000), ('1 Lakh', 100000), ('2 Lakh', 200000), ('5 Lakh', 500000), ('10 Lakh', 1000000), ('Custom', None)]
-PANELS = ['Wabastore (chat.wabastore.shop)', 'Whatsbox(app.whatsbox.shop)', 'Bolify AI', 'Crocodile', 'Meta Business Suite', 'Google', 'Other']
+PANELS = ['Wabastore (chat.wabastore.shop)', 'Whatsbox(app.whatsbox.shop)', 'Bolify AI', 'Crocodial', 'Meta Business Suite', 'Google', 'Other']
 DEFAULT_PANEL = {WA: 'Wabastore (chat.wabastore.shop)', AI: 'Bolify AI'}
 
 

@@ -207,7 +207,7 @@ def build():
         lists.cell(i, 1, src['Lists'].cell(i, 1).value)
     for i, label in enumerate(['50,000', '1 Lakh', '2 Lakh', '5 Lakh', '10 Lakh', 'Custom'], start=1):
         lists.cell(i, 3, label)
-    for i, p in enumerate(['Wabastore (chat.wabastore.shop)', 'Whatsbox(app.whatsbox.shop)', 'Bolify AI', 'Crocodile', 'Meta Business Suite', 'Google', 'Other'], start=1):
+    for i, p in enumerate(['Wabastore (chat.wabastore.shop)', 'Whatsbox(app.whatsbox.shop)', 'Bolify AI', 'Crocodial', 'Meta Business Suite', 'Google', 'Other'], start=1):
         lists.cell(i, 5, p)
     lists.sheet_state = 'hidden'
 

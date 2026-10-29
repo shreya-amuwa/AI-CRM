@@ -4,7 +4,7 @@
  */
 import type {
   OperationsHeadReviewItem, OperationsOverviewRow,
-  PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
+  ClientAccessMethod, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
@@ -263,7 +263,7 @@ export const pipelineApi = {
   /** Where the customer is on its journey, and what the signed-in person may do next. */
   customerJourney: (id: string) => api.get<CustomerJourneyInfo>(`/pipeline/customers/${id}/journey`),
   /** Accounts: create the dashboard login (any service). The e-mail is the one on the customer record; no password is typed or sent. */
-  accountsCreateClientLogin: (id: string) => api.post<{ email: string; status: 'CREATED' }>(`/pipeline/customers/${id}/accounts/client-login`, {}),
+  accountsCreateClientLogin: (id: string, method: ClientAccessMethod = 'LINK') => api.post<{ email: string; status: 'CREATED'; method: ClientAccessMethod }>(`/pipeline/customers/${id}/accounts/client-login`, { method }),
   /** Accounts: the Client logins queue (customer, ID, order, e-mail, status, time, result). */
   clientLogins: (q: { status?: ProvisioningFilter; search?: string; page?: number; pageSize?: number } = {}) =>
     api.get<ProvisioningQueue>('/pipeline/accounts/client-logins', { ...q }),
@@ -866,6 +866,9 @@ export const workflowApi = {
   panelDetails: (customerId: string) => api.get<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details`),
   setPanelDetails: (customerId: string, serviceCode: string, body: { platform: string | null; account: string | null }) =>
     api.patch<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}`, body),
+  /** The password the Meta Verifier set on the customer's WhatsApp panel, e-mailed to the customer once. `requestId` makes a retry a no-op. */
+  sendPanelCredentials: (customerId: string, serviceCode: string, body: { password: string; requestId: string }) =>
+    api.post<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}/credentials`, body),
   addVerificationNote: (customerId: string, body: { body: string; outcome: string }) => api.post<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`, body),
   reroute: (customerId: string, route: 'META' | 'TECHNICAL', reason: string) => api.post<null>(`/pipeline/customers/${customerId}/verification/reroute`, { route, reason }),
   routeReview: () => api.get<VerificationRouteReviewItem[]>('/pipeline/verification-route-review'),

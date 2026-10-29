@@ -136,6 +136,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/verification/notes', handler: workflow.addVerificationNote },
   { method: 'GET', path: '/pipeline/customers/:id/verification/panel-details', handler: workflow.panelDetails },
   { method: 'PATCH', path: '/pipeline/customers/:id/verification/panel-details/:code', handler: workflow.setPanelDetails, options: S },
+  { method: 'POST', path: '/pipeline/customers/:id/verification/panel-details/:code/credentials', handler: workflow.sendPanelCredentials, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/verification/reroute', handler: workflow.reroute, options: S },
   { method: 'GET', path: '/pipeline/verification-route-review', handler: workflow.routeReview },
   { method: 'PATCH', path: '/pipeline/service-journeys/:code/meta-verification', handler: workflow.setServiceMetaVerification, options: S },

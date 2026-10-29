@@ -133,14 +133,14 @@ function setup(mail: (i: { stage: string; pdf: Uint8Array; to: string | null }) 
   const repo = new FakeRepo();
   const storage = new FakeStorage();
   const renders: string[] = [];
-  const mails: { stage: string; bytes: string; to: string | null; fileName: string }[] = [];
+  const mails: { stage: string; bytes: string; to: string | null; fileName: string; contactName?: string | null; customerName?: string }[] = [];
   const service = new GeneratedInvoiceService(repo as unknown as GeneratedInvoiceRepository, storage as unknown as StorageRepository, {
     render: async (inv, o) => {
       renders.push(o.stage);
       return renderInvoicePdf(inv, o);
     },
-    mail: (async (i: Parameters<typeof mail>[0] & { fileName: string }) => {
-      mails.push({ stage: i.stage, bytes: sha(i.pdf), to: i.to, fileName: i.fileName });
+    mail: (async (i: Parameters<typeof mail>[0] & { fileName: string; contactName?: string | null; customerName?: string }) => {
+      mails.push({ stage: i.stage, bytes: sha(i.pdf), to: i.to, fileName: i.fileName, contactName: i.contactName, customerName: i.customerName });
       return mail(i);
     }) as never
   });
@@ -161,6 +161,7 @@ console.log('--- 1. The normal run: every step in order, each recorded only afte
   check(stored.length < 500000 && sha(stored) === t.mails[0].bytes, 'the e-mail carries exactly the stored file, which is below 500,000 bytes');
   check(t.repo.records.pdf[0].size === stored.length && t.repo.records.pdf[0].ref.endsWith(`customer-documents/${path}`), 'the recorded reference and size are those of the stored object');
   check(t.mails[0].fileName === 'INV-2026-00022-invoice.pdf' && t.mails[0].to === 'priya@example.com', 'the attachment is named after the invoice and goes to the customer');
+  check(t.mails[0].contactName === snapshot.customer.contactPerson && t.mails[0].customerName === snapshot.customer.businessName, 'the e-mail is given the contact person to greet (the business name stays the fallback)');
   check(!t.repo.lease.UNPAID, 'the stage is not left locked');
 }
 

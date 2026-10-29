@@ -267,6 +267,7 @@ export class GeneratedInvoiceService {
           const sent = await this.work.mail({
             stage,
             to: snap.recipientEmail,
+            contactName: snap.customer.contactPerson || snap.customer.name,
             customerName: snap.customer.businessName || snap.customer.name,
             number: snap.number,
             invoiceDate: invoiceDate(snap.invoiceDate),

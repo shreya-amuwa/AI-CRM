@@ -15,6 +15,10 @@ export class WorkflowRepository {
   async setPanelDetails(customerId: string, service: string, platform: string | null, account: string | null): Promise<void> {
     unwrap(await this.db.rpc('panel_details_set', { p_customer: customerId, p_service: service, p_platform: platform, p_account: account }));
   }
+  /** `secret` is the ENCRYPTED panel password; the database queues one e-mail for it and keeps only who/when. */
+  async sendPanelCredentials(customerId: string, service: string, secret: string, request: string): Promise<{ queued: boolean; replayed: boolean }> {
+    return unwrap(await this.db.rpc('panel_credentials_send', { p_customer: customerId, p_service: service, p_secret: secret, p_request: request })) as { queued: boolean; replayed: boolean };
+  }
   async addVerificationNote(customerId: string, body: string, outcome: string): Promise<void> {
     unwrap(await this.db.rpc('verification_note_add', { p_customer: customerId, p_body: body, p_outcome: outcome }));
   }

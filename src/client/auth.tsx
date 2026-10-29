@@ -15,6 +15,8 @@ interface ClientAuth {
   me: ClientProfile | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Reads the profile again (after the client chose their own password in place of a temporary one). */
+  refreshMe: () => Promise<void>;
   /** Shown on the login page after a forced sign-out ("session expired"). */
   notice: string;
   clearNotice: () => void;
@@ -89,6 +91,10 @@ export const ClientAuthProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setMe(null); setNotice(''); setStatus('signedOut');
   }, []);
 
-  const value = useMemo(() => ({ status, me, signIn, signOut, notice, clearNotice: () => setNotice('') }), [status, me, signIn, signOut, notice]);
+  const refreshMe = useCallback(async () => {
+    try { setMe(await clientApi.me()); } catch { /* the next screen shows its own error; the session is still valid */ }
+  }, []);
+
+  const value = useMemo(() => ({ status, me, signIn, signOut, refreshMe, notice, clearNotice: () => setNotice('') }), [status, me, signIn, signOut, refreshMe, notice]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 };
