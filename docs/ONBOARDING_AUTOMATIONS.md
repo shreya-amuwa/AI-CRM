@@ -57,7 +57,7 @@ both always describe the same event. What the CRM sends for each stage (checked 
 | `UNDER_REVIEW` | Documents Received – Under Review | `Under Review` | the "documents received / under review" template |
 | `WEBSITE_READY` | Your Mini Website is Ready | `Website Ready` | the "website ready" template (**no route exists for this one in the current builder: add it**) |
 | `META_VERIFICATION` | Meta Verification **In Progress** | `Meta Verification` | the **in progress / pending** template (about 2-3 weeks), **not** the completed one |
-| `COMPLETED` | Meta Verification **Completed** – Panel Access Details | `Status Completed` | the "completed" template, only when the client login is created |
+| `COMPLETED` | Meta Verification **Completed** – Panel Access Details | `Status Completed` | the "completed" template, only when the client login is created. The payload also carries `panel_url` (the customer's saved Client Panel URL) when there is one |
 
 The CRM payload also carries `stage_code` (the fixed code in the first column) next to the unchanged keys (`name, email, phone, department, website, whatsapp_number, status, source,
 automation, event_key`). Existing routes keep working on `status`; new or repaired routes can match `stage_code` instead of the display text.

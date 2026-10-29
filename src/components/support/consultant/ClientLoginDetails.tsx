@@ -77,8 +77,9 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
-  const dirty = url.trim() !== (service.panelUrl ?? '');
   const check = checkPanelUrl(url);
+  // compared as it will be saved (host in lower case, spaces trimmed), so a saved address never looks "unsaved"
+  const dirty = (check.ok ? check.url ?? '' : url.trim()) !== (service.panelUrl ?? '');
   const problem = url.trim() && !check.ok ? check.message : null;
   const link = service.link;
 
@@ -95,6 +96,7 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
     setNotice(null);
     try {
       onSaved(await workflowApi.setPanelUrl(customerId, service.code, check.ok ? check.url : null));
+      if (check.ok) setUrl(check.url ?? '');
       setNotice('Panel URL saved. Nothing was sent to the customer yet.');
       requestId.current = crypto.randomUUID();
     } catch (err) {

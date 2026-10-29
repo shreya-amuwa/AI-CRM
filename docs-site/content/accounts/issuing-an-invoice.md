@@ -6,9 +6,9 @@ group: Invoicing & Tax
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [docs/DYNAMIC_INVOICES.md, shared/contracts.ts, src/components/invoices/InvoiceBuilder.tsx, supabase/migrations/20261113000200_manual_invoice_pricing.sql]
+sources: [docs/ACCOUNTS_FINANCE_AND_WORKFLOW.md, supabase/migrations/20261209000100_invoice_series.sql, docs/DYNAMIC_INVOICES.md, shared/contracts.ts, src/components/invoices/InvoiceBuilder.tsx, supabase/migrations/20261113000200_manual_invoice_pricing.sql]
 related: [accounts/dynamic-invoices-overview, accounts/confirming-payment-invoice, accounts/recording-payments]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
 The **Accounts > Invoices** workspace allows Accounts staff to either build a dynamic GST tax invoice using the native **Invoice Builder** (`Create invoice`) or attach an external PDF invoice (`Upload invoice PDF` up to **500 KB**). Issuing or uploading an invoice automatically unlocks item **5. Invoice Confirmation** on the customer's onboarding checklist.
@@ -19,6 +19,21 @@ The **Accounts > Invoices** workspace allows Accounts staff to either build a dy
 - Sign in as **Accounts Staff**, **Department Head**, or **Super Admin** and open **Accounts > Invoices**.
 - Verify the customer's billing address, state code, and optional GSTIN.
 - Know the individual service price breakdown if the customer purchased 2 or more services in the same order.
+:::
+
+## Invoice numbers: two series, assigned by the system
+
+You never type the number of an invoice you build. The database assigns it when the invoice is saved, in one of two separate series for the Indian financial year (April to March):
+
+| Invoice | Series | Examples |
+| --- | --- | --- |
+| GST invoice (the lines carry GST) | `GST/<FY>/<serial>` | `GST/26-27/001`, `GST/26-27/002` |
+| Non-GST invoice (every line at 0%) | `Amuwa/<FY>/<serial>` | `Amuwa/26-27/001` |
+
+The type follows the tax on the lines. Each series counts up by one with no gaps or repeats, restarts at `001` on 1 April, and a number is never changed once issued. The PDF, the e-mail and the WhatsApp message all show the number saved on the invoice. The form shows the *next* number only as a preview; two invoices saved at the same moment get different numbers. A GST invoice is titled **Tax Invoice**; a non-GST invoice is titled **Invoice** and says that no GST is charged. Whether a registered supplier may issue non-GST invoices at all is a question for your tax adviser.
+
+:::note Uploaded PDFs
+An invoice you upload from another tool keeps the number you type; it is not part of these two series.
 :::
 
 ## Multi-service invoice line-item pricing rule

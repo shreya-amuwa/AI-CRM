@@ -6,12 +6,12 @@ group: Client Delivery & Handovers
 roles: [Department Head, Team Lead, Technical Consultant]
 audience: internal
 status: verified
-sources: [src/components/Workspaces/DepartmentHeadDashboard.tsx, src/components/Workspaces/HandoverBoard.tsx, src/components/Workspaces/TeamsAndPeoplePanel.tsx]
+sources: [src/components/handover/HandoverBoard.tsx, supabase/migrations/20261209000600_department_head_handover_queue.sql, supabase/migrations/20261205000200_meta_verifier_workflow.sql]
 related: [department-head/department-head-overview, technical-consultant/department-handover-tc, delivery/managing-delivery-queue]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
-When a Technical Consultant completes document verification and provisions the client portal login (or when Accounts verifies payment on a direct-delivery service), the customer is transferred to the target delivery department (`handoverStage = 'DEPARTMENT_HEAD'`). As Department Head, you use the **Onboarding**, **Handovers**, and **Teams & People** tabs in `DepartmentHeadDashboard.tsx` to inspect incoming accounts, organize squads, and assign each customer to a **Team Lead**.
+When the **Meta Verifier** has authorized every document and detail of a WhatsApp customer and clicks *Send to Department Head* (for customers that do not go through Meta verification, the **Technical Consultant** does this), the customer is transferred to your department (`handoverStage = 'DEPARTMENT_HEAD'`) and appears in **Client hand-overs** immediately. Nothing the Technical Consultant does afterwards holds the customer back: the consultation is a separate follow-up task. As Department Head, you use the **Onboarding**, **Handovers**, and **Teams & People** tabs in `DepartmentHeadDashboard.tsx` to inspect incoming accounts, organize squads, and assign each customer to a **Team Lead**.
 
 ## Before you start
 
@@ -24,7 +24,7 @@ When a Technical Consultant completes document verification and provisions the c
 ## Handover and team allocation flow
 
 ```flow
-Customer reaches Department Queue | Technical Consultant / Accounts | handoverStage = DEPARTMENT_HEAD
+Customer reaches Department Queue | Meta Verifier (or Technical Consultant) | handoverStage = DEPARTMENT_HEAD, visible at once
 Inspect Onboarding & Dossier | Department Head | Onboarding & Handovers tabs
 Select Pass to Team Lead | Department Head | Choose Team Lead + add operational note
 -> No Team Lead available in squad | Configure squad in Teams & People first
@@ -45,6 +45,18 @@ Team Lead Assigns Team Member | Team Lead | handoverStage = TEAM_LEAD -> TEAM_ME
 4. Click **Pass to Team Lead** on the customer card.
 5. In the **Assign Team Lead** dialog, choose the target **Team Lead** from your department roster and enter an optional **Assignment Note** (such as target launch dates, priority instructions, or special client requirements).
 6. Click **Confirm Assignment**.
+
+## The Technical Consultant's consultation is separate
+
+At the moment the Meta Verifier sends a customer to you, the system also creates **one** consultation follow-up for the department's Technical Consultant (it is assigned to the consultant with the fewest open follow-ups and falls due after the delay the Super Admin set). It does not move the customer, does not hide it from you and is never created twice. On the customer's detail you see who verified it, who sent it, and the follow-up's state (*waiting for its date*, *due …* or *done*).
+
+:::note Who sees the queue
+A Support-side Department Head sees every customer handed over in the department, including customers that Sales teams own. Before migration `20261209000600` the page stayed empty for Support-side heads, because their access was limited to customers owned by a Support team. A Sales-side head gets no new access from this.
+:::
+
+## Customers caught between the old and the current workflow
+
+The Super Admin and each Department Head can read the *hand-over reconciliation* report (`GET /api/v1/workflow/handover-reconciliation`): customers that are fully authorized but still waiting for the Meta Verifier to send them, and customers handed over without a consultation follow-up. The Super Admin can create the missing follow-ups with one audited action (`POST /api/v1/workflow/handover-reconciliation/apply`); it changes no customer, assignment or hand-over date and creates nothing twice.
 
 ## Managing squads in Teams & People
 
@@ -69,4 +81,5 @@ When an existing customer purchases an add-on service delivered by your departme
 ## If something goes wrong
 
 - **No Team Leads appear in the dropdown**: Open **Teams & People** to verify that at least one active staff member in your current department holds the `TEAM_HEAD` role.
+- **The queue is empty but a verifier says they sent a customer**: confirm you are in the right department in the top scope bar and that you work on the Support side (or have no side). A Sales-side head is not the recipient of Support hand-overs.
 - **Customer is stuck in Onboarding**: See [Handover and Progression Blockers](/troubleshooting/handover-and-progression-blockers).

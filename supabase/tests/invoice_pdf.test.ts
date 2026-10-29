@@ -71,7 +71,21 @@ for (const n of [1, 2, 5, 10, 25, 50]) {
   const c = await renderInvoicePdf(sampleInvoice(7), { stage: 'PAID' });
   check(sha(a.bytes) !== sha(c.bytes), 'the paid PDF differs from the unpaid one');
   const doc = await PDFDocument.load(c.bytes);
-  check(doc.getTitle() === 'Invoice INV-2026-00022 (Paid)' && doc.getAuthor() === 'Amuwa Corporation', 'document properties carry the invoice number');
+  check(doc.getTitle() === 'Tax Invoice INV-2026-00022 (Paid)' && doc.getAuthor() === 'Amuwa Corporation', 'document properties carry the invoice number (a GST invoice is a "Tax Invoice")');
+}
+{
+  // a non-GST invoice (the Amuwa series): plain "Invoice", no GST anywhere in its totals, and a different file from the GST one
+  const g = sampleInvoice(2);
+  const base = 5000;
+  const ng = { ...g, number: 'Amuwa/26-27/001', invoiceType: 'NON_GST' as const, taxTreatment: 'INTRA_STATE' as const,
+    lines: [{ position: 1, particulars: 'Consulting', hsnSac: '998313', taxRate: 0, quantity: '1 Nos', baseAmount: base, gstAmount: 0, totalAmount: base }],
+    totals: { subtotal: base, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalGst: 0, total: base, inWords: 'Five Thousand Only/-', breakdown: [{ rate: 0, base, gst: 0, cgst: 0, sgst: 0, igst: 0 }] } };
+  const a = await renderInvoicePdf(ng, { stage: 'PAID' });
+  const b = await renderInvoicePdf(ng, { stage: 'PAID' });
+  check(sha(a.bytes) === sha(b.bytes), 'a non-GST invoice is also byte-identical on a retry');
+  const doc = await PDFDocument.load(a.bytes);
+  check(doc.getTitle() === 'Invoice Amuwa/26-27/001 (Paid)', 'a non-GST invoice is titled "Invoice" and carries its own series number', doc.getTitle());
+  check(sha(a.bytes) !== sha((await renderInvoicePdf({ ...ng, invoiceType: 'GST' as const }, { stage: 'PAID' })).bytes), 'and differs from the same figures drawn as a GST invoice');
 }
 {
   // the size rule is enforced, not assumed: a PDF over the limit is re-drawn lean, and refused when it is still too big
