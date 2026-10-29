@@ -154,7 +154,7 @@ function mailCompleted(d: TemplateData) {
 }
 
 /** The onboarding stages with a template here (the Accounts payment e-mail and the account e-mail, which carries a link, have their own). */
-type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS'>;
+type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS' | 'PANEL_LINK'>;
 
 const TEMPLATES: Record<CustomerStage, { subject: string; html: (d: TemplateData) => string }> = {
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },
@@ -257,6 +257,33 @@ export function renderPanelCredentialsEmail(d: PanelCredentialsMailData): Render
   ${teamContact()}
   ${signature('Support Team')}`);
   return { subject: `Your ${d.serviceName} panel login - sign-in details`, html, text: toText(html) };
+}
+
+export interface PanelLinkMailData {
+  name: string;
+  businessName?: string | null;
+  serviceName: string;
+  panel?: string | null;
+  /** The saved Client Panel URL (HTTPS, no credentials in it). */
+  panelUrl: string;
+  /** The panel account / user ID (not a secret); the password is never in this e-mail. */
+  account?: string | null;
+}
+
+/** The sign-in address of the customer's service panel. No password, no token: the customer signs in with the password already shared with them. */
+export function renderPanelLinkEmail(d: PanelLinkMailData): RenderedEmail {
+  const html = wrap(`
+  <p>Dear ${esc(d.name)},</p>
+  <p>Here is the sign-in address of your <b>${esc(d.serviceName)}</b> panel${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''}.</p>
+  <p>
+    ${d.panel ? `<b>Panel:</b> ${esc(d.panel)}<br>` : ''}
+    <b>Panel website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a>
+    ${d.account ? `<br><b>Account / user ID:</b> ${esc(d.account)}` : ''}
+  </p>
+  <p>Sign in with the password we shared with you. If you do not have it or have forgotten it, ask your Amuwa consultant. We never ask for your password by e-mail or message.</p>
+  ${teamContact()}
+  ${signature('Support Team')}`);
+  return { subject: `Your ${d.serviceName} panel link | Amuwa Corporation`, html, text: toText(html) };
 }
 
 const ACCOUNTS_HEADING: Record<string, string> = {

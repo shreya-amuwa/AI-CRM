@@ -65,6 +65,23 @@ insert into customer_payments (customer_id, payment_type, amount, method, refere
 select test.check((select array_agg(recipient_email) = array['fx.a.sup@amuwa.com'] and bool_and(department_id = test.dept('finx-alpha'))
                      from finance_mail_events where customer_id = (select id from fn where name = 'c2')), 'an order attributed to FinX Alpha Support goes to Alpha''s Support head - not to the customer''s own department (Wabastore) and not to Alpha''s Sales head');
 
+\echo '   add-on and invoice payments are covered the same way (the trigger runs on all three payment tables)'
+reset role;
+insert into addon_requests (customer_id, status, total) values ((select id from fn where name = 'c1'), 'INVOICE_GENERATED', 900) returning id \gset ao_
+insert into revenue_attributions (order_key, customer_id, division, department_id, source) values ('ADDON:' || :'ao_id', (select id from fn where name = 'c1'), 'SUPPORT', test.dept('finx-alpha'), 'MANUAL')
+  on conflict (order_key) do update set division = 'SUPPORT', department_id = test.dept('finx-alpha');
+insert into addon_payments (request_id, customer_id, amount, method, reference, status) values (:'ao_id', (select id from fn where name = 'c1'), 900, 'UPI', 'FIN-AO-SECRETREF', 'PENDING');
+select test.check((select count(*) = 1 and bool_and(kind = 'PAYMENT_RECORDED' and recipient_email = 'fx.a.sup@amuwa.com' and (payload ->> 'amount')::numeric = 900 and payload ->> 'paymentType' = 'ADDON' and payload::text !~ 'FIN-AO-SECRETREF')
+                     from finance_mail_events where payload ->> 'orderRef' like 'Add-on of %' and customer_id = (select id from fn where name = 'c1')), 'an add-on payment e-mails the Support head it is attributed to (no payment reference in it)');
+update addon_payments set status = 'VERIFIED', verified_at = now() where reference = 'FIN-AO-SECRETREF';
+select test.check((select count(*) = 1 from finance_mail_events where kind = 'PAYMENT_VERIFIED' and payload ->> 'orderRef' like 'Add-on of %' and customer_id = (select id from fn where name = 'c1')), 'verifying it sends one verified e-mail');
+update addon_payments set status = 'REJECTED' where reference = 'FIN-AO-SECRETREF';
+select test.check((select count(*) = 2 from finance_mail_events where payload ->> 'orderRef' like 'Add-on of %' and customer_id = (select id from fn where name = 'c1')), 'a rejection sends nothing');
+insert into member_invoices (invoice_number, customer_name, customer_id, status, amount) values ('FINX-INV-1', 'Fin One', (select id from fn where name = 'c1'), 'Pending', 600) returning id \gset inv_
+insert into invoice_payments (invoice_id, customer_id, request_id, payment_type, amount, method, reference, paid_on, status) values (:'inv_id', (select id from fn where name = 'c1'), gen_random_uuid(), 'FULL', 600, 'UPI', 'FIN-INV-REF', current_date, 'VERIFIED');
+select test.check((select count(*) >= 1 and count(*) = count(distinct recipient_email) and bool_and(kind = 'PAYMENT_VERIFIED' and (payload ->> 'amount')::numeric = 600 and payload ->> 'orderRef' = 'Invoice FINX-INV-1')
+                     from finance_mail_events where payload ->> 'orderRef' like 'Invoice FINX-INV-1%' and customer_id = (select id from fn where name = 'c1')), 'a verified invoice payment e-mails each responsible head once, naming the invoice');
+
 \echo '   no active head: nothing is sent, Accounts can see why, the Super Admin is told, and a retry works once there is a head'
 reset role;
 update profiles set status = 'SUSPENDED' where email = 'fx.a.sales@amuwa.com';

@@ -53,8 +53,8 @@ const TABS: Record<BoardRole, { key: HandoverStage; label: string }[]> = {
 const COPY: Record<BoardRole, { title: string; subtitle: string; empty: string }> = {
   DEPARTMENT_HEAD: {
     title: 'Client hand-overs',
-    subtitle: 'Customers the Technical Consultant has verified. Pass each one to a Support Team Lead of your department.',
-    empty: 'No verified customers yet. They appear here once the Technical Consultant sends them to you.'
+    subtitle: 'Customers verified by the Meta Verifier (or the Technical Consultant) and sent to you. Pass each one to a Support Team Lead of your department. The Technical Consultant\'s consultation is a separate follow-up and never holds a customer back from you.',
+    empty: 'No customer has been sent to you yet. A customer appears here as soon as the Meta Verifier verifies it and sends it to you.'
   },
   TEAM_HEAD: {
     title: 'Client hand-overs',
@@ -214,7 +214,12 @@ export const HandoverBoard: React.FC<{ role: BoardRole }> = ({ role }) => {
                     <ServiceChips codes={c.services} catalog={byCode} max={3} />
                   </div>
                   <div className="mt-3 text-xs text-slate-600 space-y-0.5">
-                    {c.onboarding?.toDepartmentHeadAt && <div>Verified {longDate(c.onboarding.toDepartmentHeadAt)}</div>}
+                    {c.onboarding?.toDepartmentHeadAt && (
+                      <div>
+                        Verified{c.onboarding.verificationRoute ? ` by the ${c.onboarding.verificationRoute === 'META' ? 'Meta Verifier' : 'Technical Consultant'}` : ''} · sent {longDate(c.onboarding.toDepartmentHeadAt)}
+                      </div>
+                    )}
+                    {c.onboarding && c.onboarding.itemsTotal > 0 && <div>{c.onboarding.itemsVerified} of {c.onboarding.itemsTotal} documents and details authorized</div>}
                     {stage !== 'DEPARTMENT_HEAD' && <div>Team Lead: {lead || '-'}</div>}
                     {stage === 'TEAM_MEMBER' && <div>Team Member: {member || '-'}</div>}
                   </div>
@@ -425,12 +430,25 @@ const HandoverDetail: React.FC<{
             <b>Note:</b> {h.note}
           </p>
         )}
+        {h?.toDepartmentHeadAt && (
+          <p className="mt-3 text-xs text-slate-600">
+            Verified{h.route ? ` by the ${h.route === 'META' ? 'Meta Verifier' : 'Technical Consultant'}` : ''}{h.sentBy ? ` (${h.sentBy})` : ''} and sent to the Department Head {longDate(h.toDepartmentHeadAt)}.
+            {h.followUp && h.followUp.status !== 'CANCELLED' && (
+              <>
+                {' '}
+                Technical Consultant consultation:{' '}
+                {h.followUp.status === 'DONE' ? 'done' : h.followUp.status === 'AWAITING_CONFIGURATION' ? 'waiting for its date to be set' : h.followUp.dueAt ? `${h.followUp.status === 'DUE' ? 'due since' : 'due'} ${longDate(h.followUp.dueAt)}` : h.followUp.status.toLowerCase()}
+                {h.followUp.assignedTo ? ` · ${h.followUp.assignedTo}` : ''}. This is a separate task; it does not hold this customer here.
+              </>
+            )}
+          </p>
+        )}
       </Card>
 
       <div className="space-y-5">
         <Card className="p-5">
           <h2 className="text-sm font-bold text-slate-900">Verified documents &amp; details</h2>
-          <p className="text-xs text-slate-500 mb-3">Collected by sales and authorized by the Technical Consultant. View only.</p>
+          <p className="text-xs text-slate-500 mb-3">Collected by sales and authorized by the {h?.route === 'TECHNICAL' ? 'Technical Consultant' : 'Meta Verifier'}. View only.</p>
           <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2 items-start">
             {items.map(item => (
               <ReadOnlyItem key={item.code} item={item} customer={c} />
@@ -450,7 +468,7 @@ const HandoverDetail: React.FC<{
               <dd className="font-mono text-slate-900 break-all">{h.clientAccount.email}</dd>
               <dt className="text-xs text-slate-500 mt-2">Created</dt>
               <dd className="text-slate-800">{longDate(h.clientAccount.createdAt)}</dd>
-              <p className="mt-3 text-[11px] text-slate-500">The client signs in to the mobile app with this e-mail and the password set by the Technical Consultant.</p>
+              <p className="mt-3 text-[11px] text-slate-500">The client signs in with this e-mail; Accounts creates the login.</p>
             </dl>
           ) : (
             <p className="text-xs text-slate-500">No login yet.</p>

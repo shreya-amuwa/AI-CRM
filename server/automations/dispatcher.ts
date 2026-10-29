@@ -3,7 +3,8 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { automationSettings, liveChannels, PANEL_URLS, whatsappStatus, type AutomationSettings } from './config.js';
 import { postWhatsApp, sendEmail, type SendResult } from './providers.js';
 import { cleanPhone, EMAIL_RE, maskEmail, maskPhone, STAGE_LABEL, type ClientStage } from './rules.js';
-import { renderClientPasswordEmail, renderPanelCredentialsEmail, renderTemporaryAccessEmail } from './templates.js';
+import { renderClientPasswordEmail, renderPanelCredentialsEmail, renderPanelLinkEmail, renderTemporaryAccessEmail } from './templates.js';
+import { checkPanelUrl } from '../../shared/panelUrl.js';
 import { decryptSecret } from './secrets.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { renderAccountsEmail, renderEmail } from './templates.js';
@@ -33,6 +34,8 @@ export interface ClaimedJob {
     departmentSlug: string;
     department: string;
     website: string | null;
+    /** The Client Panel URL the Meta Verifier saved (the first of the customer's services that has one). */
+    panelUrl?: string | null;
     loginEmail: string | null;
   };
 }
@@ -137,10 +140,33 @@ async function processPanelCredentialsMail(s: AutomationSettings, job: ClaimedJo
   return fromResult(await sendEmail(s, { email, name }, mail), email, `${x.serviceName || 'WhatsApp'} panel login e-mail sent to ${maskEmail(email)}`);
 }
 
+/**
+ * The Client Panel URL the Meta Verifier saved, e-mailed to the customer's address on the record (read now). One job per link; the address in the
+ * job is the one that was approved when the button was pressed. Contains no password or token - the customer signs in with the password they
+ * were given. An invalid address, a dry run or a failure is recorded and never reported as sent.
+ */
+async function processPanelLinkMail(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+  const c = job.customer;
+  const email = (c.email || '').trim().toLowerCase();
+  if (job.channel !== 'EMAIL') return { outcome: 'SKIPPED', detail: 'The panel link is sent by e-mail only' };
+  if (!EMAIL_RE.test(email)) return { outcome: 'FAILED', detail: 'The customer has no valid e-mail address on the record - nothing sent. Ask Accounts to correct it, then send the panel link again.' };
+  const x = job.context;
+  const checked = checkPanelUrl(x.panelUrl);
+  if (!checked.ok || !checked.url) return { outcome: 'FAILED', detail: 'The saved panel URL is not a valid HTTPS address - nothing sent. Save a correct URL and send again.', recipient: email };
+  const name = c.name?.trim() || 'Customer';
+  if (s.mode !== 'live') return { outcome: 'SKIPPED', detail: `Dry run - not sent: ${x.serviceName || 'panel'} link e-mail to ${maskEmail(email)}`, recipient: email };
+  if (s.testRecipients && !s.testRecipients.emails.has(email)) {
+    return { outcome: 'SKIPPED', detail: `Test mode - ${maskEmail(email)} is not a test recipient`, recipient: email };
+  }
+  const mail = renderPanelLinkEmail({ name, businessName: c.company?.trim() || name, serviceName: x.serviceName || 'WhatsApp', panel: x.panel, panelUrl: checked.url, account: x.account });
+  return fromResult(await sendEmail(s, { email, name }, mail), email, `${x.serviceName || 'Panel'} link e-mail sent to ${maskEmail(email)}`);
+}
+
 /** Decide and (in live mode) send one job. Never throws. */
 export async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
   if (job.stage === 'ACCOUNTS_PAYMENT') return processAccountsMail(s, job);
   if (job.stage === 'PANEL_CREDENTIALS') return processPanelCredentialsMail(s, job);
+  if (job.stage === 'PANEL_LINK') return processPanelLinkMail(s, job);
   const c = job.customer;
   const name = c.name?.trim() || 'Customer';
   const phone10 = cleanPhone(c.whatsapp);
@@ -154,7 +180,8 @@ export async function processJob(s: AutomationSettings, job: ClaimedJob): Promis
     if (job.stage === 'WEBSITE_READY' && !websiteOf(c.website)) {
       return { outcome: 'SKIPPED', detail: 'NOT sent – the customer has no website link yet' };
     }
-    const panelUrl = PANEL_URLS[c.departmentSlug] || '';
+    // the customer's own Client Panel URL (saved by the Meta Verifier) comes first; the department's sign-in page is the fallback
+    const panelUrl = (c.panelUrl && checkPanelUrl(c.panelUrl).ok ? c.panelUrl : '') || PANEL_URLS[c.departmentSlug] || '';
     if (job.stage === 'COMPLETED' && !panelUrl) {
       return { outcome: 'SKIPPED', detail: `NOT sent – no panel URL for department "${c.department}"` };
     }
@@ -198,7 +225,9 @@ export async function processJob(s: AutomationSettings, job: ClaimedJob): Promis
     source: s.whatsapp.source,
     automation: 'Client Onboarding',
     event_key: ['crm', c.id, status.toLowerCase(), full].join('|'),
-    stage_code: job.stage
+    stage_code: job.stage,
+    // the customer's own panel address travels with the "Status Completed" message (an added field; templates that do not use it ignore it)
+    ...(job.stage === 'COMPLETED' && c.panelUrl && checkPanelUrl(c.panelUrl).ok ? { panel_url: c.panelUrl } : {})
   });
   return fromResult(r, full, `${status} WhatsApp request accepted by webhook (${r.detail})`);
 }

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, KeyRound } from 'lucide-react';
+import { CheckCircle2, ExternalLink, KeyRound, Link2 } from 'lucide-react';
 import type { PanelDetails, PanelDetailsService } from '../../../../shared/contracts';
+import { checkPanelUrl } from '../../../../shared/panelUrl';
 import { errorMessage } from '../../../lib/api/client';
 import { workflowApi } from '../../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, longDateTime, Spinner, usePipelineRealtime } from '../../team-member/pipeline/shared';
@@ -60,6 +61,133 @@ const PanelPasswordDialog: React.FC<{ customerId: string; service: PanelDetailsS
         </div>
       </form>
     </Dialog>
+  );
+};
+
+const LINK_MAIL_LABEL: Record<string, string> = { SENT: 'E-mail sent', QUEUED: 'E-mail waiting to be sent', SENDING: 'E-mail being sent', FAILED: 'E-mail could not be sent', SKIPPED: 'E-mail not sent', CANCELLED: 'E-mail cancelled' };
+
+/**
+ * The Client Panel URL of one service. Saving it sends nothing; "E-mail the panel link" does, once per link. Changing the URL after it was sent
+ * makes the new link sendable again (and says so); the same link can be sent again on purpose. The same checks as the server: HTTPS, a public
+ * host, no password or token in the address.
+ */
+const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; canEdit: boolean; email: string | null | undefined; onSaved: (d: PanelDetails) => void }> = ({ customerId, service, canEdit, email, onSaved }) => {
+  const [url, setUrl] = useState(service.panelUrl ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const requestId = useRef(crypto.randomUUID());
+  const dirty = url.trim() !== (service.panelUrl ?? '');
+  const check = checkPanelUrl(url);
+  const problem = url.trim() && !check.ok ? check.message : null;
+  const link = service.link;
+
+  useEffect(() => {
+    if (!dirty) setUrl(service.panelUrl ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [service.panelUrl]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (problem || busy || !dirty) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      onSaved(await workflowApi.setPanelUrl(customerId, service.code, check.ok ? check.url : null));
+      setNotice('Panel URL saved. Nothing was sent to the customer yet.');
+      requestId.current = crypto.randomUUID();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const send = async (resend: boolean) => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const d = await workflowApi.sendPanelLink(customerId, service.code, { requestId: requestId.current, resend });
+      onSaved(d);
+      setNotice(d.link.queued ? 'The panel link is on its way to the customer.' : d.link.reason === 'IN_PROGRESS' ? 'This link is already being sent.' : 'This link was already sent. Use "Send again" to send it once more.');
+      requestId.current = crypto.randomUUID();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sentState = !service.panelUrl ? null : !link ? 'NOT_SENT' : link.current ? (link.email?.status === 'SENT' ? 'SENT' : link.email?.status === 'QUEUED' || link.email?.status === 'SENDING' ? 'PENDING' : 'RETRY') : 'CHANGED';
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3 space-y-2" aria-label={`Client panel URL for ${service.name}`}>
+      <form onSubmit={save} className="space-y-1.5">
+        <label className="block text-xs font-semibold text-slate-700">
+          Client panel URL
+          <input
+            className={`${inputCls} mt-1 font-mono`}
+            type="url"
+            inputMode="url"
+            value={url}
+            maxLength={500}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={e => { setUrl(e.target.value); setNotice(null); }}
+            disabled={!canEdit || busy}
+            placeholder="https://panel.example.com/login"
+            aria-invalid={!!problem}
+          />
+        </label>
+        <p className="text-[11px] text-slate-500">The address where the customer signs in to this panel. A secure (https) link only, with no password or token in it.</p>
+        {problem && <p role="alert" className="text-xs font-semibold text-rose-700">{problem}</p>}
+        {error && <p role="alert" className="text-xs font-semibold text-rose-700">{error}</p>}
+        {notice && <p role="status" className="text-xs font-semibold text-emerald-700">{notice}</p>}
+        {canEdit && (
+          <div className="flex justify-end">
+            <button type="submit" className={btn.secondary} disabled={busy || !dirty || !!problem}>{busy ? 'Saving…' : service.panelUrl && !url.trim() ? 'Remove the URL' : 'Save the URL'}</button>
+          </div>
+        )}
+      </form>
+      {service.panelUrl && (
+        <div className="rounded-xl bg-slate-50 px-3 py-2 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-semibold text-slate-700">Panel link e-mail</span>
+            {sentState === 'NOT_SENT' && <span className="rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 font-semibold">Not sent</span>}
+            {sentState === 'CHANGED' && <span className="rounded-full bg-amber-50 text-amber-800 px-2 py-0.5 font-semibold">URL changed since it was sent</span>}
+            {link?.email && sentState !== 'CHANGED' && (
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${link.email.status === 'SENT' ? 'bg-emerald-50 text-emerald-800' : link.email.status === 'FAILED' ? 'bg-rose-50 text-rose-800' : 'bg-amber-50 text-amber-800'}`}>
+                {LINK_MAIL_LABEL[link.email.status] ?? link.email.status}
+              </span>
+            )}
+            <a href={service.panelUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-700 hover:underline ml-auto">
+              Open <ExternalLink className="w-3 h-3" aria-hidden="true" />
+            </a>
+          </div>
+          {link && (
+            <p className="text-xs text-slate-500">
+              Last sent {longDateTime(link.sentAt)}{link.sentBy ? ` by ${link.sentBy}` : ''}{link.email?.to ? ` · to ${link.email.to}` : ''}.
+              {sentState === 'CHANGED' ? ' The customer still has the earlier address; send the new one when you are ready.' : ''}
+            </p>
+          )}
+          {link?.email && link.email.status !== 'SENT' && link.email.detail && sentState !== 'CHANGED' && <p className="text-xs text-rose-700 break-words">{link.email.detail}</p>}
+          {canEdit && (
+            <div className="flex justify-end">
+              {sentState === 'SENT' ? (
+                <button type="button" className={btn.secondary} disabled={busy || dirty || !email} onClick={() => send(true)}>
+                  <Link2 className="w-3.5 h-3.5" aria-hidden="true" /> Send again
+                </button>
+              ) : (
+                <button type="button" className={btn.primary} disabled={busy || dirty || !email || sentState === 'PENDING'} title={dirty ? 'Save the URL first.' : !email ? 'The customer has no e-mail address on the record.' : undefined} onClick={() => send(false)}>
+                  <Link2 className="w-3.5 h-3.5" aria-hidden="true" /> {sentState === 'CHANGED' ? 'E-mail the new link' : sentState === 'RETRY' ? 'Try sending again' : 'E-mail the panel link'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -131,6 +259,7 @@ const ServiceRow: React.FC<{ customerId: string; service: PanelDetailsService; c
           </div>
         )}
       </form>
+      <PanelUrlBox customerId={customerId} service={service} canEdit={canEdit} email={email} onSaved={onSaved} />
       <div className="mt-3 border-t border-slate-100 pt-3 space-y-1.5" aria-label={`Panel password for ${service.name}`}>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="font-semibold text-slate-700">Panel password</span>

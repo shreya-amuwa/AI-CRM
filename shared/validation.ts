@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
+import { checkPanelUrl } from './panelUrl.js';
 import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
   ACCOUNT_STATUSES,
@@ -776,7 +777,7 @@ export const expenseSchema = z
   .object({
     date: isoDate,
     description: trimmed(300).min(1, 'Describe the expense.'),
-    /** The older way: one department (or none = company-wide). Ignored when `allocations` is sent. */
+    /** The older way: one department (or none = company-wide). Not together with `allocations`. */
     departmentId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
     category: trimmed(80).min(1, 'Enter the category.'),
     amount: money2,
@@ -790,6 +791,10 @@ export const expenseSchema = z
   .strict()
   .superRefine((v, ctx) => {
     if (!v.allocations || v.allocations.length === 0) return;
+    if (v.departmentId) ctx.addIssue({ code: 'custom', path: ['departmentId'], message: 'Send one department or a list of department amounts, not both.' });
+    if (new Set(v.allocations.map(a => a.departmentId)).size !== v.allocations.length) {
+      ctx.addIssue({ code: 'custom', path: ['allocations'], message: 'Each department can appear only once.' });
+    }
     // exact: in paise, so 33.33 + 33.33 + 33.34 is 100.00 and nothing is lost to floating point
     const sum = v.allocations.reduce((a, r) => a + Math.round(r.amount * 100), 0);
     if (sum !== Math.round(v.amount * 100)) {
@@ -1862,6 +1867,15 @@ export const verificationNoteSchema = z
   .strict();
 // The account / user ID of a customer's WhatsApp panel. The database enforces the exact format and refuses anything that looks like a password.
 export const panelDetailsSchema = z.object({ platform: trimmed(120).nullish(), account: trimmed(200).nullish() }).strict();
+// The Client Panel URL of one service: HTTPS, a public host, no credentials in the link (the database applies the same rules). Empty clears it.
+export const panelUrlSchema = z
+  .object({ url: z.string().max(600).nullish() })
+  .strict()
+  .superRefine((b, ctx) => {
+    const r = checkPanelUrl(b.url);
+    if (!r.ok) ctx.addIssue({ code: z.ZodIssueCode.custom, message: r.message, path: ['url'] });
+  });
+export const panelLinkSendSchema = z.object({ requestId: uuidSchema, resend: z.boolean().optional() }).strict();
 export const rerouteVerificationSchema = z.object({ route: z.enum(['META', 'TECHNICAL']), reason: trimmed(500).min(1, 'Give the reason.') }).strict();
 export const serviceMetaVerificationSchema = z.object({ value: z.boolean() }).strict();
 export const followUpListQuerySchema = z.object({ scope: z.enum(['OPEN', 'DONE', 'ALL']).default('OPEN') }).strict();

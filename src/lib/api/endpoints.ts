@@ -870,6 +870,11 @@ export const workflowApi = {
   panelDetails: (customerId: string) => api.get<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details`),
   setPanelDetails: (customerId: string, serviceCode: string, body: { platform: string | null; account: string | null }) =>
     api.patch<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}`, body),
+  /** The Client Panel URL of one service (null clears it). Sends nothing; the link goes out only with sendPanelLink. */
+  setPanelUrl: (customerId: string, serviceCode: string, url: string | null) =>
+    api.patch<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}/url`, { url }),
+  sendPanelLink: (customerId: string, serviceCode: string, body: { requestId: string; resend?: boolean }) =>
+    api.post<PanelDetails & { link: { queued: boolean; replayed: boolean; reason?: string } }>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}/link`, body),
   /** The password the Meta Verifier set on the customer's WhatsApp panel, e-mailed to the customer once. `requestId` makes a retry a no-op. */
   sendPanelCredentials: (customerId: string, serviceCode: string, body: { password: string; requestId: string }) =>
     api.post<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}/credentials`, body),

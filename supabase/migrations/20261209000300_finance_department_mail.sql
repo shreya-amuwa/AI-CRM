@@ -174,7 +174,7 @@ begin
       v_kind := 'PAYMENT_VERIFIED';
     end if;
     if v_kind is null then return new; end if;
-    if v_src = 'CP' and new.source = 'LEGACY' then return new; end if;   -- records brought in from older systems send nothing
+    if v_src = 'CP' and to_jsonb(new) ->> 'source' = 'LEGACY' then return new; end if;   -- records brought in from older systems send nothing
     v_ctx := private.payment_mail_context(v_src, new.id);
     if (v_ctx ->> 'departmentId') is null then return new; end if;
     select name into v_dept from public.departments where id = (v_ctx ->> 'departmentId')::uuid;

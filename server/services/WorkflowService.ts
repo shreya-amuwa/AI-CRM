@@ -1,10 +1,12 @@
-import type { PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { HandoverReconciliation, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import {
   followUpAssignSchema,
   followUpContactSchema,
   followUpListQuerySchema,
   panelCredentialsSchema,
   panelDetailsSchema,
+  panelLinkSendSchema,
+  panelUrlSchema,
   rerouteVerificationSchema,
   serviceMetaVerificationSchema,
   tcFollowupDelaySchema,
@@ -41,6 +43,20 @@ export class WorkflowService {
     await this.repo.setPanelDetails(id, parse(codeSchema, serviceCode), input.platform ?? null, input.account ?? null);
     return this.repo.panelDetails(id);
   }
+  /** The Client Panel URL of one service (HTTPS, no credentials in it; the database checks the same rules and who may do this). Sends nothing. */
+  async setPanelUrl(customerId: string, serviceCode: string, body: unknown): Promise<PanelDetails> {
+    const id = parse(uuidSchema, customerId);
+    const input = parse(panelUrlSchema, body);
+    await this.repo.setPanelUrl(id, parse(codeSchema, serviceCode), input.url?.trim() || null);
+    return this.repo.panelDetails(id);
+  }
+  /** E-mail the saved panel link to the customer: once per link (a repeat is a no-op), again on purpose with `resend`. */
+  async sendPanelLink(customerId: string, serviceCode: string, body: unknown): Promise<PanelDetails & { link: { queued: boolean; replayed: boolean; reason?: string } }> {
+    const id = parse(uuidSchema, customerId);
+    const input = parse(panelLinkSendSchema, body);
+    const link = await this.repo.sendPanelLink(id, parse(codeSchema, serviceCode), input.requestId, input.resend ?? false);
+    return { ...(await this.repo.panelDetails(id)), link };
+  }
   /**
    * The Meta Verifier set a password on the customer's WhatsApp panel: it is encrypted here, queued on ONE e-mail to the customer's address on
    * the record and erased by the database once that e-mail is done. Nothing about the password is returned, logged or stored in any ordinary
@@ -58,6 +74,13 @@ export class WorkflowService {
   async reroute(customerId: string, body: unknown): Promise<void> {
     const input = parse(rerouteVerificationSchema, body);
     await this.repo.reroute(parse(uuidSchema, customerId), input.route, input.reason);
+  }
+  handoverReconciliation(): Promise<HandoverReconciliation> {
+    return this.repo.handoverReconciliation();
+  }
+  /** Creates the missing consultation follow-ups (and nothing else). Super Admin only - the database decides. */
+  reconcileFollowUps(): Promise<{ customers: number }> {
+    return this.repo.reconcileFollowUps();
   }
   routeReview(): Promise<VerificationRouteReviewItem[]> {
     return this.repo.routeReview();

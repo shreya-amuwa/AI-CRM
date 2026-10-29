@@ -553,6 +553,8 @@ export type HandoverStage = (typeof HANDOVER_STAGES)[number];
 
 export interface HandoverInfo {
   stage: HandoverStage;
+  /** Who verified the customer: the Meta Verifier or the Technical Consultant. */
+  route?: 'META' | 'TECHNICAL';
   toDepartmentHeadAt: string | null;
   sentBy: string | null;
   teamLead: { id: string; fullName: string } | null;
@@ -560,6 +562,8 @@ export interface HandoverInfo {
   teamMember: { id: string; fullName: string } | null;
   assignedToMemberAt: string | null;
   note: string | null;
+  /** The Technical Consultant's separate consultation task for this customer (only for people who may see follow-ups). */
+  followUp?: { status: 'AWAITING_CONFIGURATION' | 'SCHEDULED' | 'DUE' | 'DONE' | 'CANCELLED'; dueAt: string | null; assignedTo: string | null } | null;
   /** The client's panel login (the password is never stored or returned). */
   clientAccount: { email: string; createdAt: string } | null;
 }
@@ -639,6 +643,8 @@ export interface CustomerOnboarding {
   consultantItemsTotal: number;
   consultantItemsDone: number;
   handoverStage: HandoverStage;
+  /** Which verification the customer went through: the Meta Verifier or the Technical Consultant. */
+  verificationRoute?: 'META' | 'TECHNICAL' | null;
   teamLeadId: string | null;
   teamMemberId: string | null;
   toDepartmentHeadAt: string | null;
@@ -3850,6 +3856,13 @@ export interface OperationsOverviewRow {
 // ---- Meta Verifier, hand-over to the Department Head and the Technical Consultant's follow-up ---------------------------------------
 
 export type VerificationRoute = 'META' | 'TECHNICAL';
+/** Customers caught between the old and the current hand-over workflow (for the Super Admin and Department Heads). */
+export interface HandoverReconciliation {
+  /** Everything is authorized but nobody has sent the customer on yet: it waits in the Meta Verifier's queue. */
+  verifiedNotSent: { customerId: string; customer: string; department: string; sentForVerificationAt: string | null }[];
+  /** Handed over by a Meta Verifier, but no consultation follow-up was ever made. */
+  handedOverWithoutFollowUp: { customerId: string; customer: string; department: string; handedOverAt: string | null; stage: HandoverStage }[];
+}
 export const VERIFICATION_OUTCOMES = ['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED'] as const;
 export type VerificationOutcome = (typeof VERIFICATION_OUTCOMES)[number];
 export interface VerificationNote {
@@ -3865,6 +3878,15 @@ export interface PanelDetailsService {
   name: string;
   platform: string | null;
   panelAccount: string | null;
+  /** The Client Panel URL of this service (HTTPS, no credentials in it), or null. */
+  panelUrl?: string | null;
+  /** The e-mail that carried the panel link: when, by whom, whether the saved URL is still the one that was sent, and the e-mail's state. */
+  link?: {
+    sentAt: string;
+    sentBy: string | null;
+    current: boolean;
+    email: { status: string; detail: string | null; sentAt: string | null; to: string | null } | null;
+  } | null;
   /** Whether a panel password was set for the customer, and what happened to the e-mail that carried it. Never the password. */
   credentials?: {
     setAt: string;
