@@ -5611,6 +5611,8 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   await api('a', 'GET', '/dashboard/company-overview');
   check((await db.query(`select count(*)::int n from audit_logs where action = 'ACCESS_DENIED' and actor_id = (select id from profiles where email = 'a@amuwa.com') and metadata ->> 'route' = '/dashboard/company-overview'`)).rows[0].n === 1,
     'security: retrying the same refused request does not add events (one per caller, route and kind in five minutes)');
+  // (the suite has sent many unauthenticated requests by now: the per-minute allowance for anonymous events starts fresh for this check)
+  (await import('../../server/security/events.js')).resetSecurityEventLimits();
   r = await api(null, 'GET', '/dashboard/scope-overview?x=secret-query-value');
   ev = (await db.query(`select * from audit_logs where action = 'AUTH_REJECTED' and request_id = $1`, [r.requestId])).rows;
   check(r.status === 401 && ev.length === 1 && ev[0].actor_id === null && ev[0].outcome === 'DENIED' && !JSON.stringify(ev[0]).includes('secret-query-value'), 'security: an unauthenticated request is recorded without its query string', ev);
