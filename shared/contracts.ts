@@ -59,6 +59,7 @@ export type DefaultDashboard =
   | 'sales-member'
   | 'support-member'
   | 'technical-consultant'
+  | 'meta-verifier'
   | 'telecaller'
   | 'business-associate'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
@@ -117,6 +118,10 @@ export interface Profile {
   role: Role;
   /** Team member of a support team who opens the Technical Consultant dashboard. */
   isTechnicalConsultant: boolean;
+  /** Team member of a support team who does the first verification of WhatsApp customers (never also a Technical Consultant). */
+  isMetaVerifier?: boolean;
+  /** A Department Head who oversees the several departments the Super Admin assigned (a Department Head otherwise: one department). */
+  isOperationsHead?: boolean;
   /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
   salesSubRole?: SalesSubRole | null;
   /** Sales or Support side of a Department Head (null when not specified or not a Department Head). */
@@ -616,8 +621,12 @@ export interface CustomerOnboarding {
   /** Documents verified + verified payment + through Accounts (calculated by the database). */
   getStarted: boolean;
   startedAt: string;
+  /** Older records only: a date typed by hand (nobody is asked for it any more). */
   targetHandoverDate: string | null;
+  /** When the customer was handed over to the Meta Verifier / Technical Consultant: written by the database at the moment of the handover. */
   forwardedToSupportAt: string | null;
+  /** The first handover, kept for good (the one above is cleared when the verifier sends the customer back). */
+  firstHandedOverAt?: string | null;
   /** Set when the Technical Consultant sent it back for re-verification. */
   returnedAt: string | null;
   returnNote: string | null;
@@ -727,7 +736,7 @@ export interface AutomationStatus {
 /** Onboarding emails / WhatsApp sent from the CRM (Wabastore, WhatsApp API + Blue Tick). */
 export type ClientStage = 'WEBSITE_PENDING' | 'UNDER_REVIEW' | 'META_VERIFICATION' | 'COMPLETED';
 /** The steps above plus the one-off "your mini website is ready" message. */
-export type MessageStage = ClientStage | 'WEBSITE_READY';
+export type MessageStage = ClientStage | 'WEBSITE_READY' | 'ACCOUNT_CREATED';
 export interface ClientMessage {
   id: string;
   channel: 'EMAIL' | 'WHATSAPP';
@@ -752,6 +761,13 @@ export interface ClientMessages {
   emailReady: boolean;
   whatsappReady: boolean;
   messages: ClientMessage[];
+}
+
+/** Where Sales' next send goes (decided by the database from the services ordered) and whether anybody is there to receive it. */
+export interface OnboardingHandoffInfo {
+  route: 'META' | 'TECHNICAL';
+  recipient: 'Meta Verifier' | 'Technical Consultant';
+  recipientAvailable: boolean;
 }
 
 export interface PipelineCustomerDetail extends PipelineCustomer {
@@ -921,9 +937,18 @@ export interface LedgerPayment {
 }
 
 /** What happened to the paid invoice of a payment right after it was recorded / verified (or when Accounts asked for it). */
+/** The billing details a payment's invoice would use, and which of them the customer record lacks (Accounts adds those with the click). */
+export interface PaymentInvoiceBilling {
+  customer: { name?: string | null; businessName?: string | null; address?: string | null; contactPerson?: string | null; contactNumber?: string | null; gstin?: string | null; stateCode?: string | null; state?: string | null };
+  taxTreatment: TaxTreatmentName | null;
+  missing: ('address' | 'state')[];
+}
+
 export interface PaymentInvoiceOutcome {
   /** CREATED: made now. EXISTS: it was made before. FAILED: the payment stands, the invoice could not be made (see message). */
   status: 'CREATED' | 'EXISTS' | 'FAILED';
+  /** The payment the invoice is (or was to be) made for. */
+  paymentId?: string;
   invoiceId?: string;
   number?: string;
   /** PDF / e-mail / WhatsApp, one line each. */
@@ -1245,7 +1270,7 @@ export interface Invoice {
   tax: number;
   /** Null for an uploaded invoice whose total was not entered. */
   total: number | null;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Cancelled';
   paidAt: string | null;
   items: PricedLine[];
   note: string | null;
@@ -1424,6 +1449,8 @@ export interface GeneratedInvoice {
   lifecycle: 'ISSUED' | 'PAID';
   /** True for an invoice made under the paid-only rule: no unpaid PDF is ever created or e-mailed, only the paid invoice. */
   paidOnly?: boolean;
+  /** Set when Accounts cancelled this invoice (made by mistake): it stays on record but no longer counts toward the order. */
+  cancelled?: { at: string; by: string | null; reason: string | null } | null;
   /** Total - confirmed payments applied to this invoice. Worked out by the database from the payment records, never typed or sent by the browser. */
   paymentSummary: InvoicePaymentSummary | null;
   payment: { confirmedAt: string; confirmedBy: string | null; method: PaymentMethod | null; reference: string | null; note: string | null; paidOn: string | null } | null;
@@ -1633,6 +1660,10 @@ export interface ClientProfile {
   department: string | null;
   loginEmail: string;
   clientSince: string;
+  /** True after Accounts gave a temporary password: until the client chooses their own, the dashboard shows only the change-password screen. */
+  mustChangePassword?: boolean;
+  /** The sign-in's own id (from the server; never sent back by the client). */
+  loginId?: string;
 }
 export type ClientServiceStatus = 'LIVE' | 'SETTING_UP' | 'PAUSED' | 'EXPIRED' | 'CANCELLED';
 export interface ClientService {
@@ -1658,6 +1689,25 @@ export interface ClientService {
   /** Monthly deliverables, newest month first (at most 6). */
   monthly?: { month: string; metrics: Record<string, unknown> }[];
   campaignCount?: number;
+}
+/** One step of a purchased service's journey, in words written for the client (no staff, notes or internal records). */
+export interface ClientServiceStep {
+  key: string;
+  label: string;
+  state: 'DONE' | 'CURRENT' | 'UPCOMING';
+  /** When it was reached (done steps that have a date). */
+  at: string | null;
+  /** What is happening now / what the client may need to do (the current step only). */
+  hint: string | null;
+}
+export interface ClientServiceProgress {
+  code: string;
+  name: string;
+  status: ClientServiceStatus;
+  steps: ClientServiceStep[];
+  /** The key of the current step; null when the service is live. */
+  current: string | null;
+  headline: string | null;
 }
 export interface ClientServiceUsage {
   kind: 'WHATSAPP' | 'AI_CALLING' | 'RCS' | 'VOICE';
@@ -1771,6 +1821,39 @@ export interface ClientInvoice {
   paymentConfirmedAt?: string | null;
   taxSummary?: { cgst: number; sgst: number; igst: number } | null;
   paymentSummary?: InvoicePaymentSummary | null;
+}
+/** One invoice of an order, with the share of the order's confirmed money that covers it. */
+export interface ClientBillingInvoice {
+  id: string;
+  number: string | null;
+  total: number;
+  allocated: number;
+  balance: number;
+  state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+  status: 'Paid' | 'Pending';
+}
+/** What the client owes for one order (the agreed order, or an add-on order): payable - confirmed = balance; pending money never reduces it. */
+export interface ClientBillingOrder {
+  key: string;
+  kind: 'ORDER' | 'ADDON';
+  title: string;
+  /** Accounts has not yet chosen the GST rate: the payable amount is not final, so no balance is shown. */
+  gstPending: boolean;
+  gstRate: number | null;
+  totalPayable: number;
+  confirmed: number;
+  /** Recorded by Accounts, waiting for verification. */
+  pending: number;
+  balance: number;
+  state: 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+  invoicedTotal: number;
+  /** Part of the payable amount no invoice covers yet. */
+  notYetInvoiced: number;
+  invoices: ClientBillingInvoice[];
+}
+export interface ClientBilling {
+  orders: ClientBillingOrder[];
+  totals: { payable: number; confirmed: number; pending: number; outstanding: number };
 }
 export type ClientTicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
 export interface ClientTicket {
@@ -2162,6 +2245,8 @@ export interface ServiceJourneySetting {
   category: string;
   isActive: boolean;
   requiresTechnicalConsultant: boolean;
+  /** The first verification is done by a Meta Verifier (WhatsApp API, Blue Tick) instead of the Technical Consultant. */
+  requiresMetaVerification?: boolean;
   deliveryDepartmentId: string | null;
   deliveryDepartment: string | null;
 }
@@ -2188,6 +2273,46 @@ export interface CustomerJourneyInfo {
   delivery: { sent: number; total: number; unsentDirect: number; allSent: boolean };
   /** What the signed-in person may do now (the server decides; the screen only offers these). */
   can: { createLogin: boolean; returnToSales: boolean; verifyDocuments: boolean; sendToDelivery: boolean };
+}
+
+/** One message of the "account created" pair, as the Accounts queue shows it. */
+export interface AccountNotificationState {
+  status: 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
+  detail: string | null;
+  sentAt: string | null;
+  attempts: number;
+}
+export type ProvisioningFilter = 'ALL' | 'NOT_STARTED' | 'PENDING' | 'FAILED' | 'CREATED';
+export type ClientEmailProblem = 'MISSING' | 'INVALID' | 'IN_USE';
+
+/** A customer in the Accounts "Client logins" queue: the login Accounts creates for every service. */
+export interface ProvisioningRow {
+  customerId: string;
+  code: string | null;
+  name: string;
+  company: string | null;
+  /** The e-mail on the customer record - the only one the login is made with. */
+  email: string | null;
+  emailProblem: ClientEmailProblem | null;
+  order: { services: string[]; dealAmount: number | null; verified: number; balance: number; paymentStatus: PaymentStatus | null };
+  journey: JourneyKind;
+  status: ClientLoginStatus;
+  attempts: number;
+  lastError: string | null;
+  requestedAt: string | null;
+  updatedAt: string | null;
+  createdAt: string | null;
+  createdBy: string | null;
+  loginEmail: string | null;
+  /** How the login was made (LINK: set-password link; TEMPORARY: temporary password) and whether the client has since chosen their own. */
+  accessMethod?: ClientAccessMethod | null;
+  mustChangePassword?: boolean | null;
+  passwordChangedAt?: string | null;
+  notification: { email: AccountNotificationState | null; whatsapp: AccountNotificationState | null } | null;
+  can: { create: boolean; fixEmail: boolean; resend: boolean };
+}
+export interface ProvisioningQueue extends Paginated<ProvisioningRow> {
+  counts: Record<ProvisioningFilter, number>;
 }
 
 export interface DeliveryQueueItem {
@@ -2491,6 +2616,8 @@ export interface ChatAttachment {
   name: string;
   mime: string;
   size: number;
+  /** Encrypted chats only, set by the browser from inside the encrypted message: the key of the encrypted file (never sent to the server on its own). */
+  secretKey?: string;
 }
 export interface ChatMessage {
   id: string;
@@ -2506,12 +2633,85 @@ export interface ChatMessage {
   attachments: ChatAttachment[];
   clientMsgId: string | null;
   createdAt: string;
-  replyTo: { id: string; seq: number; senderName: string | null; body: string } | null;
+  replyTo: { id: string; seq: number; senderName: string | null; body: string; deleted?: boolean } | null;
+  /** Deleted for everyone: only a tombstone is left (no text, no files, no ciphertext). */
+  deleted?: boolean;
+  /** End-to-end encrypted (internal chats): `body` is empty and `e2ee` holds what only the recipients' devices can open. */
+  encrypted?: boolean;
+  /** Who sealed an encrypted message (needed to check it); null for other messages. */
+  senderId?: string | null;
+  e2ee?: ChatE2eeForViewer | null;
+  /** Set by the BROWSER after it opened (or failed to open) an encrypted message. The server never sets it. */
+  secure?: ChatSecureState;
 }
+/** What the server hands to ONE member of an encrypted message: the ciphertext and the key sealed for that member. */
+export interface ChatE2eeForViewer {
+  v: 1;
+  /** Key version of the sender. */
+  sv: number;
+  iv: string;
+  ct: string;
+  wrap: ChatE2eeWrap | null;
+}
+export interface ChatE2eeWrap {
+  to: string;
+  /** Version of the recipient's key the message key was sealed for. */
+  kv: number;
+  /** HPKE encapsulated key. */
+  enc: string;
+  /** The message key, sealed. */
+  w: string;
+}
+/** What the browser made of an encrypted message. */
+export type ChatSecureState =
+  | { state: 'ok' }
+  | { state: 'legacy' }
+  | { state: 'failed'; reason: 'locked' | 'no-key' | 'old-key' | 'bad-signature' | 'damaged' | 'unknown-sender' };
 export interface ChatMessagePage {
   messages: ChatMessage[];
   hasMore: boolean;
   lastSeq: number;
+  /** Messages the screen already has that were deleted for everyone meanwhile (only when asking for newer messages). */
+  deletedIds?: string[];
+}
+export interface ChatKeyStatus {
+  hasKey: boolean;
+  version: number | null;
+  publicKey: string | null;
+  fingerprint: string | null;
+  hasBackup: boolean;
+}
+export interface ChatMemberKey {
+  profileId: string;
+  name: string;
+  keyVersion: number | null;
+  publicKey: string | null;
+  fingerprint: string | null;
+}
+export interface ChatPublicKey {
+  profileId: string;
+  keyVersion: number;
+  publicKey: string;
+  fingerprint: string;
+  retired: boolean;
+}
+/** The recovery-passphrase-encrypted private key(s). Opaque to the server. */
+export interface ChatKeyBackupBlob {
+  v: 1;
+  kdf: 'PBKDF2-SHA256';
+  iter: number;
+  salt: string;
+  iv: string;
+  ct: string;
+}
+export interface ChatKeyBackup {
+  version: number;
+  blob: ChatKeyBackupBlob;
+}
+export interface ChatDeleteResult {
+  id: string;
+  deleted?: boolean;
+  hidden?: boolean;
 }
 export interface ChatClientView {
   conversation: ChatConversation;
@@ -3696,4 +3896,109 @@ export interface SalesIncome {
   transactions: { date: string; customer: string; customerId: string; reference: string | null; type: string; service: string | null; amount: number; status: string; method: string | null; source: string }[];
   /** Expenses are recorded per department, not per Sales / Support side: there is no Sales-only figure, so this is null. */
   expenses: null;
+}
+
+/** The Super Admin's review of Department Heads who work in several departments (see docs/ROLES_AND_LIFECYCLE.md). */
+export interface OperationsHeadReviewItem {
+  profileId: string;
+  name: string;
+  email: string;
+  homeDepartment: string | null;
+  isOperationsHead: boolean;
+  /** Not an Operations Head, yet holds extra departments from before the role existed: kept as they were until the Super Admin decides. */
+  needsDecision: boolean;
+  extraDepartments: { departmentId: string; department: string; division: HeadDivision; transition: boolean }[];
+}
+
+/** One department in the Operations Head's overview. */
+export interface OperationsOverviewRow {
+  departmentId: string;
+  name: string;
+  slug: string;
+  people: number;
+  leads: number;
+  onboarding: number;
+  customers: number;
+  awaitingDepartmentHead: number;
+  withVerifier: number;
+}
+
+// ---- Meta Verifier, hand-over to the Department Head and the Technical Consultant's follow-up ---------------------------------------
+
+export type VerificationRoute = 'META' | 'TECHNICAL';
+export const VERIFICATION_OUTCOMES = ['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED'] as const;
+export type VerificationOutcome = (typeof VERIFICATION_OUTCOMES)[number];
+export interface VerificationNote {
+  id: string;
+  outcome: VerificationOutcome;
+  body: string;
+  createdAt: string;
+  author: string | null;
+}
+/** The internal WhatsApp panel details of a customer's WhatsApp service (the account / user ID only - never a password), and the Accounts-owned dashboard login, read only. */
+export interface PanelDetailsService {
+  code: string;
+  name: string;
+  platform: string | null;
+  panelAccount: string | null;
+  /** Whether a panel password was set for the customer, and what happened to the e-mail that carried it. Never the password. */
+  credentials?: {
+    setAt: string;
+    setBy: string | null;
+    email: { status: string; detail: string | null; sentAt: string | null; to: string | null } | null;
+  } | null;
+}
+export interface PanelDetails {
+  canEdit: boolean;
+  services: PanelDetailsService[];
+  /** The address a panel password is e-mailed to (the one on the customer record), or null when there is none. */
+  customerEmail?: string | null;
+  dashboardLogin: { email: string; createdAt: string } | null;
+}
+export type ClientAccessMethod = 'LINK' | 'TEMPORARY';
+/** A customer already in verification whose services say another route than the one it has: for the Super Admin or the Department Head to decide. */
+export interface VerificationRouteReviewItem {
+  customerId: string;
+  name: string;
+  department: string;
+  route: VerificationRoute | null;
+  suggestedRoute: VerificationRoute;
+  reviewState: string | null;
+}
+
+export const FOLLOWUP_CHANNELS = ['CALL', 'WHATSAPP', 'EMAIL', 'MEETING', 'OTHER'] as const;
+export type FollowUpChannel = (typeof FOLLOWUP_CHANNELS)[number];
+export const TC_FOLLOWUP_OUTCOMES = ['NO_ANSWER', 'CALL_BACK', 'CONTACTED', 'ADDON_INTERESTED', 'NOT_INTERESTED', 'COMPLETED'] as const;
+export type TcFollowUpOutcome = (typeof TC_FOLLOWUP_OUTCOMES)[number];
+export type TcFollowUpStatus = 'AWAITING_CONFIGURATION' | 'SCHEDULED' | 'DUE' | 'DONE' | 'CANCELLED';
+export interface TcFollowUp {
+  id: string;
+  customerId: string;
+  customer: string;
+  contact: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  services: string[];
+  status: TcFollowUpStatus;
+  /** SCHEDULED whose date has passed shows as DUE even before the scheduled job has run. */
+  effectiveStatus: TcFollowUpStatus;
+  dueAt: string | null;
+  eligibleAt: string;
+  reason: string | null;
+  lastOutcome: TcFollowUpOutcome | null;
+  assignedTo: { id: string; name: string } | null;
+  handedOverBy: string | null;
+  handoverNote: string | null;
+  contacts: number;
+  lastContact: { at: string; outcome: TcFollowUpOutcome; channel: FollowUpChannel; note: string | null } | null;
+  cancelledReason: string | null;
+}
+export interface WorkflowSettings {
+  /** null until the Super Admin sets it: the business has not decided how many days the consultant waits. */
+  tcFollowupDelayDays: number | null;
+  updatedAt: string;
+  canEdit: boolean;
+  /** Follow-ups waiting for the delay to be set (in the caller's scope). */
+  awaiting: number;
 }

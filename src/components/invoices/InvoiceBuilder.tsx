@@ -414,6 +414,12 @@ export const InvoiceBuilder: React.FC<{
             </ul>
           )}
 
+          {purpose === 'SERVICES' && prefill.order && prefill.order.confirmed - prefill.order.invoicedTotal > 0.005 && (
+            <p className="text-[11px] text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2" role="note" data-testid="invoice-per-payment-note">
+              {rs(toPaise(prefill.order.confirmed - prefill.order.invoicedTotal) ?? 0)} of verified payments has no invoice yet. Each payment gets its own paid invoice: close this and use <b>Generate invoice</b> on the payment in the Payments list. An invoice for the whole amount made here would cover those payments, and they could not have their own.
+            </p>
+          )}
+
           {!addon && (
             <Field label="This invoice is for" htmlFor="inv-purpose">
               <select id="inv-purpose" className={selectCls} value={purpose} disabled={busy} onChange={e => setPurpose(e.target.value as InvoicePurpose)}>

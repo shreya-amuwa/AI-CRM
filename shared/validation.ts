@@ -166,6 +166,45 @@ function dayNumber(v: string): number | null {
 }
 const today = () => Math.floor(Date.now() / 86_400_000);
 
+/**
+ * A person's own phone number, as one international number: '+' and the country code and the number ('+919876543210').
+ *  - '+' followed by 8 to 15 digits (E.164), whatever the country; an Indian number (+91) must have a 10 digit mobile number starting 6-9
+ *  - without a '+': an Indian mobile number of 10 digits (optionally with a leading 0, or 91) is taken as +91
+ *  - spaces, dashes and brackets are allowed for typing and removed. Returns null when it is not a phone number.
+ */
+export function normalizePhone(raw: string): string | null {
+  const s = raw.trim();
+  if (!/^\+?[0-9 ()-]{7,24}$/.test(s) || (s.includes('+') && !s.startsWith('+'))) return null;
+  let digits = s.replace(/\D/g, '');
+  if (s.startsWith('+') || digits.startsWith('00')) {
+    if (digits.startsWith('00')) digits = digits.slice(2);
+  } else if (digits.length === 11 && digits.startsWith('0')) {
+    digits = `91${digits.slice(1)}`;
+  } else if (digits.length === 10) {
+    digits = `91${digits}`;
+  } else if (!(digits.length === 12 && digits.startsWith('91'))) {
+    return null;
+  }
+  if (!/^[1-9][0-9]{7,14}$/.test(digits)) return null;
+  if (digits.startsWith('91') && !/^91[6-9][0-9]{9}$/.test(digits)) return null;
+  return `+${digits}`;
+}
+const sameNumber = (a: string, b: string) => a.replace(/\D/g, '').slice(-10) === b.replace(/\D/g, '').slice(-10);
+
+/** The team member's own contact number (country code allowed, +91 by default), stored normalised. */
+export const contactNumberSchema = z
+  .string()
+  .trim()
+  .min(1, 'Enter the team member\'s contact number.')
+  .transform((v, ctx) => {
+    const n = normalizePhone(v);
+    if (!n) {
+      ctx.addIssue({ code: 'custom', message: 'Enter a valid contact number with its country code (for example +91 98765 43210).' });
+      return z.NEVER;
+    }
+    return n;
+  });
+
 /** Employee details collected when a member is added (all required once sent). */
 export const memberDetailsSchema = z
   .object({
@@ -183,9 +222,15 @@ export const memberDetailsSchema = z
       .string()
       .trim()
       .regex(/^\+?[0-9 ()-]{7,20}$/, 'Enter a valid emergency contact number.')
-      .refine(v => v.replace(/\D/g, '').length >= 10 && v.replace(/\D/g, '').length <= 15, 'Enter a valid emergency contact number (10 to 15 digits).')
+      .refine(v => v.replace(/\D/g, '').length >= 10 && v.replace(/\D/g, '').length <= 15, 'Enter a valid emergency contact number (10 to 15 digits).'),
+    /** The member's own number: a different person's number from the emergency contact. */
+    contactNumber: contactNumberSchema
   })
-  .strict();
+  .strict()
+  .refine(d => typeof d.contactNumber !== 'string' || typeof d.emergencyContact !== 'string' || !sameNumber(d.contactNumber, d.emergencyContact), {
+    message: 'The emergency contact must be a different number from the team member\'s own number.',
+    path: ['emergencyContact']
+  });
 export type MemberDetailsInput = z.infer<typeof memberDetailsSchema>;
 
 export const userCreateSchema = z
@@ -199,11 +244,15 @@ export const userCreateSchema = z
     position: optionalText(120),
     /** Team member of a support team who opens the Technical Consultant dashboard. */
     technicalConsultant: z.boolean().optional(),
+    /** Team member of a support team who does the first verification of WhatsApp customers (not also a Technical Consultant). */
+    metaVerifier: z.boolean().optional(),
     /** Sales role of a Sales team member (Telecaller, ...). Only a Team Member of a Sales team has one. */
     salesSubRole: z.enum(SALES_SUB_ROLES).optional(),
     /** Sales or Support side of a Department Head (a department has one head for each). */
     headDivision: z.enum(HEAD_DIVISIONS).optional(),
-    /** More (department, function) pairs the head works in, besides their own department and side (a shared head, or one person handling Sales and Support). Super Admin only. */
+    /** An Operations Head oversees several departments (the Super Admin makes one; a plain Department Head works in one department). */
+    operationsHead: z.boolean().optional(),
+    /** More (department, function) pairs the head works in, besides their own department and side. Another DEPARTMENT is for an Operations Head only. Super Admin only. */
     additionalAccess: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(40).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
@@ -220,6 +269,18 @@ export const userCreateSchema = z
   .refine(u => !u.additionalAccess?.length || u.role === 'DEPARTMENT_HEAD', {
     message: 'Only a Department Head can work in more than one department or function.',
     path: ['additionalAccess']
+  })
+  .refine(u => !u.metaVerifier || u.role === 'TEAM_MEMBER', {
+    message: 'A Meta Verifier is created as a team member of a support team.',
+    path: ['role']
+  })
+  .refine(u => !(u.metaVerifier && u.technicalConsultant), {
+    message: 'A person is either a Meta Verifier or a Technical Consultant.',
+    path: ['metaVerifier']
+  })
+  .refine(u => !u.operationsHead || u.role === 'DEPARTMENT_HEAD', {
+    message: 'Only a Department Head can be an Operations Head.',
+    path: ['operationsHead']
   })
   .refine(u => !u.headDivision || u.role === 'DEPARTMENT_HEAD', {
     message: 'Only a Department Head is a Sales or Support head.',
@@ -263,6 +324,8 @@ export const userAssignSchema = z
   .strict();
 
 export const technicalConsultantSchema = z.object({ value: z.boolean() }).strict();
+export const metaVerifierSchema = z.object({ value: z.boolean() }).strict();
+export const operationsHeadSchema = z.object({ value: z.boolean(), note: optionalText(500) }).strict();
 
 export const profileSelfUpdateSchema = z
   .object({
@@ -591,11 +654,35 @@ export const conversationSchema = z.object({ note: trimmed(5000).min(1, 'Write w
 
 const wholeRupees = (message: string) => z.coerce.number().positive(message).int('Enter the amount in whole rupees (no paise).').max(1e12);
 
-/** Accounts creates the dashboard login of a customer whose services need no Technical Consultant. */
-export const accountsClientLoginSchema = z
+/**
+ * Creating the login takes no e-mail: it is the one on the customer record. The only choice is HOW the client gets in:
+ * LINK (an e-mailed one-time set-password link, the default) or TEMPORARY (a server-made temporary password in the e-mail; the client
+ * must choose their own at the first sign-in). The password itself is never part of a request.
+ */
+export const accountsClientLoginSchema = z.object({ method: z.enum(['LINK', 'TEMPORARY']).default('LINK') }).strict();
+/** The client's own new password (forced change after a temporary one, or after the recovery link). The same rules as the set-password page. */
+export const clientNewPasswordSchema = z
+  .object({ password: z.string().min(10, 'Use at least 10 characters.').max(72, 'Use at most 72 characters.') })
+  .strict();
+/**
+ * Meta Verifier: the password they set on the customer's WhatsApp panel, to be e-mailed to the customer. `requestId` is made by the screen
+ * once per click-intent, so a retried request is not sent twice. The password is encrypted by the API before it reaches the database.
+ */
+export const panelCredentialsSchema = z
+  .object({ password: z.string().min(8, 'Use at least 8 characters.').max(128, 'Use at most 128 characters.'), requestId: uuidSchema })
+  .strict();
+/** Accounts' client-login queue. The login's e-mail is never part of a request: it is the one on the customer record. */
+export const provisioningQuerySchema = z.object({
+  status: z.enum(['ALL', 'NOT_STARTED', 'PENDING', 'FAILED', 'CREATED']).default('ALL'),
+  search: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+/** Accounts corrects a wrong or missing e-mail on the customer record before a login is made (audited). */
+export const customerEmailCorrectionSchema = z
   .object({
     email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254),
-    password: z.string().min(10, 'The password must be at least 10 characters.').max(72)
+    reason: z.string().trim().min(3, 'Give the reason for changing the e-mail.').max(300)
   })
   .strict();
 export const sendToDeliverySchema = z.object({ note: optionalText(1000) }).strict();
@@ -949,6 +1036,28 @@ export const invoiceConfirmPaymentSchema = z
   })
   .strict();
 export const invoiceDeliverSchema = z.object({ stage: z.enum(INVOICE_STAGES) }).strict();
+/** "Generate invoice" on a payment: the billing details the customer record lacks (address, state ...) typed by Accounts with the click. Nothing else rides along. */
+export const paymentInvoiceInputSchema = z
+  .object({
+    customer: z
+      .object({
+        name: z.string().trim().max(200).optional(),
+        businessName: z.string().trim().max(200).optional(),
+        address: z.string().trim().max(500, 'Keep the address under 500 characters.').optional(),
+        contactPerson: z.string().trim().max(200).optional(),
+        contactNumber: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), phoneSchema.optional()),
+        gstin: z.preprocess(
+          v => (typeof v === 'string' ? normalizeGstin(v) || undefined : v),
+          z.string().optional().refine(v => !v || isValidGstinFormat(v), 'The GSTIN is not valid. Check it against the customer\'s GST certificate.')
+        ),
+        stateCode: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.string().trim().regex(/^[0-9]{2}$/, 'Choose the customer\'s state.').optional())
+      })
+      .strict()
+      .optional()
+  })
+  .strict();
+/** Cancelling a wrongly made invoice of the agreed services: a reason is always given (the database checks it again). */
+export const invoiceCancelSchema = z.object({ reason: trimmed(500).min(5, 'Give the reason for cancelling this invoice (at least 5 characters).') }).strict();
 export const invoiceWhatsAppRequestSchema = z.object({ resend: z.boolean().default(false) }).strict();
 export const invoiceWhatsAppSettingsSchema = z
   .object({
@@ -1316,6 +1425,42 @@ export const chatSendSchema = z
   .strict()
   .refine(v => v.body.trim().length > 0 || v.attachmentIds.length > 0, { message: 'Write a message first.', path: ['body'] });
 
+const base64 = (min: number, max: number) => z.string().min(min).max(max).regex(/^[A-Za-z0-9+/]+={0,2}$/, 'Not valid base64.');
+/** The envelope of an end-to-end encrypted message. The server checks its SHAPE; it cannot read it. */
+export const chatE2eeSchema = z
+  .object({
+    v: z.literal(1),
+    sv: z.number().int().min(1).max(1_000_000),
+    iv: base64(16, 16),
+    ct: base64(8, 90_000),
+    wraps: z
+      .array(z.object({ to: uuidSchema, kv: z.number().int().min(1).max(1_000_000), enc: base64(88, 88), w: base64(16, 400) }).strict())
+      .min(1)
+      .max(200)
+  })
+  .strict();
+export const chatSendEncryptedSchema = z
+  .object({
+    clientMsgId: uuidSchema,
+    replyTo: uuidSchema.optional(),
+    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([]),
+    e2ee: chatE2eeSchema
+  })
+  .strict();
+const chatKeyBackupBlobSchema = z
+  .object({
+    v: z.literal(1),
+    kdf: z.literal('PBKDF2-SHA256'),
+    iter: z.number().int().min(100_000).max(10_000_000),
+    salt: base64(16, 64),
+    iv: base64(16, 16),
+    ct: base64(32, 50_000)
+  })
+  .strict();
+export const chatKeySetupSchema = z.object({ publicKey: base64(88, 88), backup: chatKeyBackupBlobSchema }).strict();
+export const chatKeyBackupSetSchema = z.object({ backup: chatKeyBackupBlobSchema, version: z.number().int().min(1).max(1_000_000) }).strict();
+export const chatKeyLookupQuerySchema = z.object({ profileId: uuidSchema, version: z.coerce.number().int().min(1).max(1_000_000) }).strict();
+
 export const chatMessagesQuerySchema = z
   .object({
     before: z.coerce.number().int().min(0).optional(),
@@ -1339,8 +1484,9 @@ export const chatAdminSchema = z.object({ profileId: uuidSchema, admin: z.boolea
 export const chatUploadSchema = z
   .object({
     fileName: z.string().trim().min(1, 'The file needs a name.').max(200),
-    mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
-    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+    // 'application/x-amuwa-e2ee' is a file encrypted in the browser (internal chats): the server only ever sees the envelope
+    mimeType: z.enum([...CHAT_MIME_TYPES, 'application/x-amuwa-e2ee'], { errorMap: () => ({ message: 'This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES + 64, 'Files can be at most 5 MB.')
   })
   .strict();
 
@@ -1684,16 +1830,37 @@ export const salesIncomeQuerySchema = z.object({ from: isoDate.optional(), to: i
 // ---------------------------------------------------------------------------
 // Onboarding journey
 // ---------------------------------------------------------------------------
-/** The Meta verification status a Technical Consultant sets (PENDING is only the starting state). */
+/** The Meta verification status the Meta Verifier (or the Technical Consultant on the other route) sets (PENDING is only the starting state). */
 export const metaVerificationSchema = z
   .object({
     status: z.enum(['IN_PROGRESS', 'DOCUMENTS_REQUIRED', 'REJECTED', 'COMPLETED']),
     feedback: z.string().trim().max(1000, 'The feedback can have at most 1000 characters.').nullish()
   })
   .strict();
-/** No verifier given: the signed-in Technical Consultant takes the verification. */
-export const metaVerifierSchema = z.object({ verifierId: uuidSchema.nullish() }).strict();
+/** No verifier given: the signed-in verifier takes the verification. */
+export const journeyVerifierSchema = z.object({ verifierId: uuidSchema.nullish() }).strict();
 export const serviceSetupSchema = z
   .object({ status: z.enum(['IN_PROGRESS', 'READY']), note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
   .strict();
 export const chatChannelSchema = z.enum(['META', 'RM']);
+
+// ---- Meta Verifier workflow -----------------------------------------------------------------------------------------------------------
+export const verificationNoteSchema = z
+  .object({ body: trimmed(2000).min(1, 'Write the note.'), outcome: z.enum(['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED']).default('NOTE') })
+  .strict();
+// The account / user ID of a customer's WhatsApp panel. The database enforces the exact format and refuses anything that looks like a password.
+export const panelDetailsSchema = z.object({ platform: trimmed(120).nullish(), account: trimmed(200).nullish() }).strict();
+export const rerouteVerificationSchema = z.object({ route: z.enum(['META', 'TECHNICAL']), reason: trimmed(500).min(1, 'Give the reason.') }).strict();
+export const serviceMetaVerificationSchema = z.object({ value: z.boolean() }).strict();
+export const followUpListQuerySchema = z.object({ scope: z.enum(['OPEN', 'DONE', 'ALL']).default('OPEN') }).strict();
+export const followUpContactSchema = z
+  .object({
+    channel: z.enum(['CALL', 'WHATSAPP', 'EMAIL', 'MEETING', 'OTHER'], { errorMap: () => ({ message: 'Choose how you contacted the customer.' }) }),
+    outcome: z.enum(['NO_ANSWER', 'CALL_BACK', 'CONTACTED', 'ADDON_INTERESTED', 'NOT_INTERESTED', 'COMPLETED'], { errorMap: () => ({ message: 'Choose the outcome.' }) }),
+    note: optionalText(2000),
+    nextFollowUpAt: z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true }).nullable().optional())
+  })
+  .strict()
+  .refine(b => !['NO_ANSWER', 'CALL_BACK'].includes(b.outcome) || !!b.nextFollowUpAt, { message: 'Give the date of the next follow-up.', path: ['nextFollowUpAt'] });
+export const followUpAssignSchema = z.object({ profileId: uuidSchema }).strict();
+export const tcFollowupDelaySchema = z.object({ days: z.number().int().min(1, 'Enter 1 to 365 days.').max(365, 'Enter 1 to 365 days.').nullable() }).strict();

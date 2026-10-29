@@ -1,15 +1,19 @@
 import type {
   ClientAnnouncement, ClientJourney, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
-  ClientService, ClientServiceRequest, ClientTicket, ClientTicketDetail, TicketAttachment, TicketUploadTicket
+  ClientBilling, ClientService, ClientServiceProgress, ClientServiceRequest, ClientTicket, ClientTicketDetail, TicketAttachment, TicketUploadTicket
 } from '../../shared/contracts';
 import { api } from '../lib/api/client';
 
 /** Everything the client dashboard can ask the server. No customer id is ever sent: the server works it out from the login. */
 export const clientApi = {
   me: () => api.get<ClientProfile>('/client/me'),
+  /** Choose your own password (the server sets it, so a temporary password cannot be kept). */
+  changePassword: (password: string) => api.post<{ changed: true }>('/client/password', { password }),
   overview: () => api.get<ClientOverview>('/client/overview'),
   journey: () => api.get<ClientJourney>('/client/journey'),
   services: () => api.get<ClientService[]>('/client/services'),
+  billing: () => api.get<ClientBilling>('/client/billing'),
+  serviceProgress: () => api.get<ClientServiceProgress[]>('/client/service-progress'),
   campaigns: () => api.get<ClientCampaign[]>('/client/campaigns'),
   /** No login needed; the answer is the same whatever the e-mail. */
   forgotPassword: (email: string) => api.post<{ ok: true }>('/client-auth/forgot-password', { email }),

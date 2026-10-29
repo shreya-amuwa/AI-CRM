@@ -15,24 +15,23 @@ export interface TemplateData {
   panelUrl: string;
   /** The client's panel login (user ID) - the login e-mail. */
   userId: string;
-  /** Plain text, only for the completion email, never stored. */
-  password: string | null;
+  /** The client already has a panel login (Accounts creates it); the completed message never carries a password. */
+  hasLogin: boolean;
   /** The customer started at Website Pending: our team created the website. */
   websiteCreated: boolean;
   /** The customer's website address (the mini website, in the "website ready" email). */
   website: string;
 }
 
-/** The email to the Accounts person who handles a payment request (not a customer email). */
+/** The email to each Accounts member for a request that waits for Accounts (not a customer email). No amounts and no customer phone / e-mail. */
 export interface AccountsMailData {
   toName: string;
   kind: string;
   title: string;
-  body: string;
   customer: string;
   contact: string;
-  phone?: string;
-  customerEmail?: string;
+  /** The customer's CRM reference (CUS-00001). */
+  reference?: string;
   from?: string;
   fromDepartment?: string;
   /** A link to the request in the CRM (empty when the CRM's address is not configured). */
@@ -133,30 +132,29 @@ function mailInProgress(d: TemplateData) {
   ${signature('Support Team')}`;
 }
 
-// status "Status Completed"
+// status "Status Completed": Meta finished the verification. No password is ever in this e-mail.
 function mailCompleted(d: TemplateData) {
-  const password = d.password
-    ? esc(d.password)
-    : 'the password you set from the e-mail we sent when your payment was confirmed (use "Forgot password?" on the sign-in page if you need a new one)';
-  return `
-  <p>Dear ${esc(d.name)},</p>
-  <p>We are pleased to inform you that your <b>Meta Verification process has been successfully completed</b>.</p>
-  <p>Your panel access details are provided below:</p>
+  const access = d.hasLogin
+    ? `<p>Your panel access details are provided below:</p>
   <p>
     <b>Department:</b> ${esc(d.department)}<br>
     <b>Panel Website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a><br>
-    <b>User ID:</b> ${esc(d.userId)}<br>
-    <b>Password:</b> ${password}
+    <b>User ID:</b> ${esc(d.userId)}
   </p>
-  <p>You can use the above credentials to log in to your panel.</p>
+  <p>Sign in with the password you chose from the "Set your password" e-mail we sent you. If you have not set it yet, or you forgot it, use "Forgot password?" on the sign-in page.</p>`
+    : `<p>Your panel login is being prepared by our accounts team. You will receive a separate e-mail with a link to set your own password.</p>`;
+  return `
+  <p>Dear ${esc(d.name)},</p>
+  <p>We are pleased to inform you that your <b>Meta Verification process has been successfully completed</b>.</p>
+  ${access}
   <p>If you have any questions regarding the panel, login process, or Meta verification, please contact our team. We will be happy to assist you.</p>
   ${teamContact()}
   <p>Thank you for choosing <b>Amuwa Corporation</b>.</p>
   ${signature('Support Team')}`;
 }
 
-/** The stages with a customer email (the Accounts payment email has its own template). */
-type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT'>;
+/** The onboarding stages with a template here (the Accounts payment e-mail and the account e-mail, which carries a link, have their own). */
+type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS'>;
 
 const TEMPLATES: Record<CustomerStage, { subject: string; html: (d: TemplateData) => string }> = {
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },
@@ -199,29 +197,97 @@ export function renderClientCredentialsEmail(d: ClientCredentialsMailData): Rend
   return { subject: 'Your Amuwa client dashboard - sign-in details', html, text: toText(html) };
 }
 
+export interface TemporaryAccessMailData {
+  name: string;
+  businessName?: string | null;
+  loginEmail: string;
+  /** The temporary password. It is in this e-mail and nowhere else: the CRM does not keep it. */
+  password: string;
+  loginUrl: string;
+}
+
+/**
+ * The client dashboard sign-in details when Accounts chose a TEMPORARY password: the address, the login e-mail, the temporary password and
+ * the plain instruction that the client will be asked to choose their own at the first sign-in. Says "dashboard" throughout, never "panel",
+ * so it cannot be mistaken for the WhatsApp panel login.
+ */
+export function renderTemporaryAccessEmail(d: TemporaryAccessMailData): RenderedEmail {
+  const html = wrap(`
+  <p>Dear ${esc(d.name)},</p>
+  <p>Your <b>Amuwa client dashboard</b>${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''} is ready. There you can see your services, plans, message and calling usage, campaigns, invoices and support tickets.</p>
+  <p>Your sign-in details are below:</p>
+  <p>
+    <b>Dashboard:</b> <a href="${esc(d.loginUrl)}">${esc(d.loginUrl)}</a><br>
+    <b>Login e-mail:</b> ${esc(d.loginEmail)}<br>
+    <b>Temporary password:</b> ${esc(d.password)}
+  </p>
+  <p>This is a temporary password. When you sign in for the first time you will be asked to choose your own password, and this one stops working. Please keep this e-mail private and delete it afterwards.</p>
+  <p>If you did not expect this e-mail, please tell us and do not sign in.</p>
+  ${teamContact()}
+  ${signature('Support Team')}`);
+  return { subject: 'Your Amuwa client dashboard - temporary sign-in details', html, text: toText(html) };
+}
+
+export interface PanelCredentialsMailData {
+  name: string;
+  businessName?: string | null;
+  serviceName: string;
+  /** The panel's name / address as recorded by the Meta Verifier (optional). */
+  panel?: string | null;
+  /** The account / user ID of the panel login. */
+  account: string;
+  /** The password the Meta Verifier set on the panel. In this e-mail and nowhere else. */
+  password: string;
+}
+
+/**
+ * The login of the customer's WhatsApp service PANEL (the external platform that runs it) - not the Amuwa client dashboard. The subject and
+ * the first line name the service and say which login this is, because the customer may also hold a dashboard login.
+ */
+export function renderPanelCredentialsEmail(d: PanelCredentialsMailData): RenderedEmail {
+  const html = wrap(`
+  <p>Dear ${esc(d.name)},</p>
+  <p>Your <b>${esc(d.serviceName)}</b> panel${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''} is set up. This e-mail carries the login of that <b>WhatsApp panel</b> - it is separate from your Amuwa client dashboard login.</p>
+  <p>
+    ${d.panel ? `<b>Panel:</b> ${esc(d.panel)}<br>` : ''}
+    <b>Account / user ID:</b> ${esc(d.account)}<br>
+    <b>Password:</b> ${esc(d.password)}
+  </p>
+  <p>Please keep this e-mail private. If you want a new password, ask your Amuwa consultant.</p>
+  ${teamContact()}
+  ${signature('Support Team')}`);
+  return { subject: `Your ${d.serviceName} panel login - sign-in details`, html, text: toText(html) };
+}
+
 const ACCOUNTS_HEADING: Record<string, string> = {
   PAYMENT_CONFIRMATION_REQUESTED: 'New payment confirmation request',
   PAYMENT_TO_VERIFY: 'A payment is waiting for verification',
   ADDON_SUBMITTED: 'Add-on services are waiting for verification'
 };
 
-/** Sent to the one Accounts person who handles the request, so they can resolve it. */
+/** What Accounts is asked to do, per request: said here, so no amount from the notification travels in the e-mail. */
+const ACCOUNTS_ACTION: Record<string, string> = {
+  PAYMENT_CONFIRMATION_REQUESTED: 'Sales sent a customer for payment confirmation. Open the request in the CRM, record the payment and confirm it.',
+  PAYMENT_TO_VERIFY: 'A payment was recorded for this customer and waits for you to verify it against the bank statement.',
+  ADDON_SUBMITTED: 'Add-on services were sent to Accounts. Check them, issue the invoice and confirm the payment.'
+};
+
+/** Sent to every active Accounts member (one e-mail each), so whoever is at their desk can resolve the request. */
 export function renderAccountsEmail(d: AccountsMailData): RenderedEmail {
   const heading = ACCOUNTS_HEADING[d.kind] ?? 'A request is waiting for Accounts';
   const row = (label: string, value?: string) => (value ? `<b>${label}:</b> ${esc(value)}<br>` : '');
   const html = wrap(`
   <p>Hello ${esc(d.toName || 'team')},</p>
   <p><b>${esc(heading)}.</b></p>
-  <p>${esc(d.body)}</p>
+  <p>${esc(ACCOUNTS_ACTION[d.kind] ?? 'A request is waiting for Accounts. Open it in the CRM.')}</p>
   <p>
     ${row('Customer', d.customer)}
+    ${row('Reference', d.reference)}
     ${row('Contact person', d.contact !== d.customer ? d.contact : undefined)}
-    ${row('Phone', d.phone)}
-    ${row('E-mail', d.customerEmail)}
     ${row('Sent by', d.from ? `${d.from}${d.fromDepartment ? ` (${d.fromDepartment})` : ''}` : undefined)}
   </p>
   ${d.link ? `<p><a href="${esc(d.link)}">Open it in the CRM</a></p>` : ''}
-  <p>You are receiving this because you handle payment requests for Accounts. Please verify it in the CRM so the team can continue.</p>
+  <p>You are receiving this because you are on the Accounts team: every active Accounts member gets it, so please check in the CRM whether a colleague has already handled it.</p>
   <p>Best Regards,<br><b>Amuwa CRM</b></p>`);
   return { subject: `${heading}: ${d.customer} | Amuwa CRM`, html, text: toText(html) };
 }

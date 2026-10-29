@@ -34,6 +34,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/business_test.sql 2>&1 | sed -E "s
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/paid_invoices_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/payment_invoices_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/payment_invoice_billing_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/invoice_whatsapp_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
@@ -78,10 +79,26 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/department_scopes_test.sql 2>&1 | 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/wabatalk_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/department_heads_overview_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/access_control_apply_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/operations_head_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_department_head_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/field_visit_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/performance_scope_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/login_location_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/meta_verifier_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/client_provisioning_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/client_progress_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/super_admin_protection_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/member_contact_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_e2ee_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/client_billing_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_meta_handoff_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/panel_details_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/client_credentials_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/handover_service_name_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/client_journey_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

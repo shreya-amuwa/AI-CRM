@@ -10,6 +10,9 @@ export function matchesSignature(head: Buffer, mimeType: string): boolean {
       return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
     case 'image/webp':
       return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
+    case 'application/x-amuwa-e2ee':
+      // a file encrypted in the browser: our envelope header ("AME2", version 1), then the nonce and the AES-GCM ciphertext. The server never sees what is inside.
+      return head.subarray(0, 4).toString('latin1') === 'AME2' && head[4] === 1;
     case 'audio/wav':
       return ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WAVE';
     case 'audio/mp4':

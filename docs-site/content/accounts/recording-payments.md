@@ -6,7 +6,7 @@ group: Payments
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/AccountsPaymentPanel.tsx, supabase/migrations/20261201000100_order_level_gst.sql, docs/PAYMENT_GST.md]
+sources: [shared/installments.ts, docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/AccountsPaymentPanel.tsx, supabase/migrations/20261201000100_order_level_gst.sql, docs/PAYMENT_GST.md]
 related: [accounts/payment-confirmation-queue, accounts/managing-part-payments-accounts, accounts/dynamic-invoices-overview]
 updated: 2026-10-27
 ---
@@ -47,8 +47,17 @@ The **Record payment** form has no GST field. You enter the amount that actually
    - **Transaction / reference no.**: the bank UTR, UPI transaction ID, card auth code or cheque number (required for `UPI`, `Bank transfer`, `Card` and `Cheque`; optional for `Cash` and `Other`).
    - **Payment date & time**: when the funds settled (not in the future).
    - **Note (optional)**.
+   - **Split what is still to receive into two installments** (optional, shown only for a new *Part payment*): fills the first installment as this payment and shows the second as *planned, not received*. See "Splitting what is left into two installments" below.
 5. Optional: tick **I have received this money and verified it** to record and verify in one step; otherwise the payment is saved as `PENDING`.
 6. Click **Record & verify** (or **Record payment**).
+
+### Splitting what is left into two installments
+
+For a **Part payment** you can tick **Split what is still to receive into two installments**. The helper works from the amount **still to receive** (the total payable including GST minus the money already on record) and divides it in whole rupees so that the two parts add up exactly: if ₹81,600 is still to receive, it proposes ₹40,800 now and ₹40,800 later; if the amount is odd, the extra rupee goes to the first installment. It fills the first installment into **Amount received** (you can still type another amount - the second installment follows it).
+
+:::warning The second installment is a plan, not a payment
+Nothing is recorded for the second installment. It is not a payment, it is not verified, no invoice is made for it and the order is not settled. GST, invoice totals and balances do not change. When the money arrives, record it as its own payment. The helper is hidden for **Full payment**, which always fills the whole outstanding amount including GST.
+:::
 
 ```flow
 Choose GST Rate | Accounts Staff | Once per order; saved in the database; locks after the first payment or invoice
@@ -62,6 +71,14 @@ Verify Payment | Accounts Staff | Only verified money reduces the outstanding ba
 ## Invoices and balances
 
 Every invoice line uses the order's GST rate (it is shown read-only in the invoice builder). You can issue one invoice for the whole order or several partial invoices; each is taxed on its own part, and together they cannot pass the agreed amount. Two balances are shown apart, on screen and on the PDF: the **invoice balance** (this invoice's total less the confirmed money applied to it) and the **order balance** (the order's total payable less all confirmed payments).
+
+## A paid invoice for each payment
+
+Every verified payment, part or full, can have its own **paid invoice** for exactly that payment. When you **Record & verify** (the invoice box is ticked) the invoice is made, stored, e-mailed and sent by WhatsApp. For a payment without one, use **Generate invoice** on the payment row.
+
+- **The customer has no billing address or state?** Generate invoice opens **Billing details for the invoice**. Type the address (the state is picked up from it, or choose it) and, if the customer has one, the GSTIN, then **Make the invoice**. They go on this invoice and the customer's next invoices use them, so you are asked once. The state decides CGST + SGST or IGST.
+- **"The money of this payment is already covered by the invoices issued so far"** means an invoice for the whole amount (made with **Create Invoice** before the payments) already covers it, so a second one would bill the same money twice. If that invoice was made by mistake, an Accounts team lead or head opens it and chooses **Cancel invoice** (a reason is required). The invoice stays on record marked **Cancelled**, it no longer counts toward the order, and **Generate invoice** then works for each payment.
+- Each payment gets one invoice, worth the money received; together they never exceed what was verified.
 
 ## Verifying a pending payment
 

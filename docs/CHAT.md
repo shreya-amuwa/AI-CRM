@@ -121,6 +121,11 @@ that calls an employee route is answered `401` (it has no CRM profile). Manageme
 * A message counts as read only when it was on screen in a visible tab.
 * Subscriptions are removed when a screen closes.
 
+## Encryption, deleting messages, emoji
+
+Internal chats are end-to-end encrypted, messages can be deleted for me / for everyone, and the message box has an emoji picker: see
+`docs/CHAT_ENCRYPTION.md` (protocol, key management, limits, the one-time clean-up script). Client chats are not end-to-end encrypted.
+
 ## Tests
 
 * `supabase/tests/chat_test.sql` (part of `npm run test:db`): the denials come first - a client against another client's chat,
@@ -144,4 +149,7 @@ that calls an employee route is answered `401` (it has no CRM profile). Manageme
    `supabase_realtime` publication.
 2. Deploy the web app and API. No new environment variable is needed: chat files use the same storage driver as customer
    documents (`STORAGE_PROVIDER`, the Cloudflare R2 settings, CORS on the R2 bucket for `PUT` from the app's origin).
-3. Supabase Realtime must be enabled for the project (it is by default).
+3. Chat deletion + encryption: run `supabase/migrations/20261206000300_chat_deletion_and_e2ee.sql` (or the bundle
+   `supabase/run_these_4_migrations_hierarchy_contact_secure_chat.sql`). For encrypted files the R2 bucket's CORS rule must also allow `GET`
+   from the app's origin.
+4. Supabase Realtime must be enabled for the project (it is by default).

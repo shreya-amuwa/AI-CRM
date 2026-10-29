@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StorageProviderName } from './StorageRepository.js';
 import type {
+  ProvisioningQueue,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
   DeliveryQueueItem,
@@ -22,6 +23,7 @@ import type {
   HandoverInfo,
   InboundLead,
   Paginated,
+  OnboardingHandoffInfo,
   PipelineCounts,
   PipelineCustomer,
   ServiceCatalogItem,
@@ -36,7 +38,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   owner:profiles!customers_owner_id_fkey(id, full_name),
   creator:profiles!customers_created_by_fkey(id, full_name),
   services:customer_services(service_code),
-  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, addons_required, addons_submitted_at, addons_submitted_by, addons_by:profiles!addons_submitted_by(full_name), addon_items_total, addon_items_saved, addon_items_verified, addon_items_rejected, addon_request_status, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, returned_at, return_note, mandatory_saved,
+  onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, addons_required, addons_submitted_at, addons_submitted_by, addons_by:profiles!addons_submitted_by(full_name), addon_items_total, addon_items_saved, addon_items_verified, addon_items_rejected, addon_request_status, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, first_handed_over_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
     handover_stage, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
 
@@ -108,6 +110,7 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           startedAt: o.started_at,
           targetHandoverDate: o.target_handover_date,
           forwardedToSupportAt: o.forwarded_to_support_at,
+          firstHandedOverAt: o.first_handed_over_at ?? null,
           returnedAt: o.returned_at ?? null,
           returnNote: o.return_note ?? null,
           mandatorySaved: o.mandatory_saved ?? 0,
@@ -376,12 +379,9 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('record_customer_payment', { p_id: id, p_amount: amount, p_method: method ?? null }));
   }
 
-  async assertClientAccountAllowed(customerId: string, email: string): Promise<void> {
-    unwrap(await this.db.rpc('assert_client_account_allowed', { p_customer: customerId, p_email: email }));
-  }
-
-  async recordClientAccount(customerId: string, userId: string, email: string, secret: string | null): Promise<void> {
-    unwrap(await this.db.rpc('record_client_account', { p_customer: customerId, p_user_id: userId, p_email: email, p_secret: secret }));
+  /** `secret` is the ENCRYPTED temporary password (access method TEMPORARY) - queued on the one e-mail job and erased by the database after it. */
+  async recordClientAccount(customerId: string, userId: string, email: string, secret: string | null = null): Promise<void> {
+    unwrap(await this.db.rpc('record_client_account_with_access', { p_customer: customerId, p_user_id: userId, p_email: email, p_secret: secret }));
   }
 
   async resendClientMessages(customerId: string): Promise<{ stage: string; queued: number }> {
@@ -490,6 +490,10 @@ export class PipelineRepository {
 
   async consultantStartOnboarding(id: string): Promise<void> {
     unwrap(await this.db.rpc('consultant_start_onboarding', { p_customer: id }));
+  }
+
+  async handoffInfo(id: string): Promise<OnboardingHandoffInfo> {
+    return unwrap(await this.db.rpc('onboarding_handoff_info', { p_id: id })) as OnboardingHandoffInfo;
   }
 
   async forwardToSupport(id: string): Promise<void> {
@@ -671,17 +675,6 @@ export class PipelineRepository {
     return unwrap(await this.db.rpc('customer_journey_info', { p_customer: customerId })) as CustomerJourneyInfo;
   }
 
-  /** Accounts: the customer's own e-mail and name, whether a login exists and whether one may be created now. */
-  async accountsClientLoginTarget(customerId: string): Promise<{ email: string; name: string; businessName: string; hasLogin: boolean; canCreate: boolean }> {
-    return unwrap(await this.db.rpc('accounts_client_login_target', { p_customer: customerId })) as { email: string; name: string; businessName: string; hasLogin: boolean; canCreate: boolean };
-  }
-
-  /** The customer's name and business for a mail to the client (best effort: null when the caller may not read it). */
-  async accountsClientLoginTargetQuiet(customerId: string): Promise<{ name: string; businessName: string } | null> {
-    const { data, error } = await this.db.rpc('client_login_invite_target', { p_customer: customerId });
-    return error || !data ? null : (data as { name: string; businessName: string });
-  }
-
   // ---- onboarding journey: Meta verification, the Meta Verifier, service setup ----
   async journeyStatus(customerId: string): Promise<CustomerJourneyStatus> {
     return unwrap(await this.db.rpc('customer_journey_status', { p_customer: customerId })) as CustomerJourneyStatus;
@@ -703,8 +696,30 @@ export class PipelineRepository {
     unwrap(await this.db.rpc('set_service_setup', { p_customer: customerId, p_service: service, p_status: status, p_note: note }));
   }
 
-  async accountsClientLoginBegin(customerId: string, email: string): Promise<void> {
-    unwrap(await this.db.rpc('accounts_client_login_begin', { p_customer: customerId, p_email: email }));
+  /** Marks the attempt and returns the e-mail ON THE CUSTOMER RECORD (the request never carries one). */
+  async accountsClientLoginBegin(customerId: string, method: 'LINK' | 'TEMPORARY' = 'LINK'): Promise<{ email: string; name: string; businessName: string; method: 'LINK' | 'TEMPORARY' }> {
+    return unwrap(await this.db.rpc('accounts_client_login_begin_method', { p_customer: customerId, p_method: method })) as { email: string; name: string; businessName: string; method: 'LINK' | 'TEMPORARY' };
+  }
+
+  /** What the customer's login is now (id, method, whether the temporary password is still in force). Accounts only. */
+  async accountsClientAccountState(customerId: string): Promise<{ exists: boolean; authUserId?: string; email?: string; accessMethod?: 'LINK' | 'TEMPORARY'; mustChangePassword?: boolean }> {
+    return unwrap(await this.db.rpc('accounts_client_account_state', { p_customer: customerId })) as any;
+  }
+
+  async accountsSetCustomerEmail(customerId: string, email: string, reason: string): Promise<void> {
+    unwrap(await this.db.rpc('accounts_set_customer_email', { p_customer: customerId, p_email: email, p_reason: reason }));
+  }
+
+  async accountsResendAccountEmail(customerId: string, secret: string | null = null): Promise<void> {
+    unwrap(await this.db.rpc('accounts_resend_account_email_with', { p_customer: customerId, p_secret: secret }));
+  }
+
+  async accountsProvisioningQueue(q: { status: string; search?: string; page: number; pageSize: number }): Promise<ProvisioningQueue> {
+    return unwrap(await this.db.rpc('accounts_provisioning_queue', { p_status: q.status, p_search: q.search ?? null, p_page: q.page, p_page_size: q.pageSize })) as ProvisioningQueue;
+  }
+
+  async markMetaVerificationCompleted(customerId: string): Promise<void> {
+    unwrap(await this.db.rpc('mark_meta_verification_completed', { p_customer: customerId }));
   }
 
   async accountsClientLoginFailed(customerId: string, message: string): Promise<void> {

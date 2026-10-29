@@ -49,9 +49,11 @@ export function addonPaymentState(r: { status: AddonRequestStatus; total: number
   return { label: 'Pending Payment', tone: 'orange' };
 }
 
-const isOverdue = (i: Invoice) => i.status !== 'Paid' && !!i.dueDate && i.dueDate < todayIso();
+const isOverdue = (i: Invoice) => i.status !== 'Paid' && i.status !== 'Cancelled' && !!i.dueDate && i.dueDate < todayIso();
 export const InvoiceStatusPill: React.FC<{ invoice: Invoice }> = ({ invoice }) =>
-  invoice.status === 'Paid' ? (
+  invoice.status === 'Cancelled' ? (
+    <Pill tone="slate">Cancelled</Pill>
+  ) : invoice.status === 'Paid' ? (
     <Pill tone="green">Paid</Pill>
   ) : invoice.generated?.paymentSummary?.state === 'PARTIALLY_PAID' ? (
     <Pill tone="indigo">Partially paid</Pill>
@@ -353,7 +355,7 @@ export const Totals: React.FC<{ subtotal: number; discount: number; tax: number;
 );
 
 /** Read-only list of one customer's invoices (Sales, Technical Consultant, Support, heads). */
-export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean; kind?: Invoice['kind']; /** Accounts: replace the PDF / edit details from the opened invoice. */ canManage?: boolean }> = ({ customerId, compact, kind, canManage }) => {
+export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean; kind?: Invoice['kind']; /** Accounts: replace the PDF / edit details from the opened invoice. */ canManage?: boolean; /** Called after an invoice of this customer changed (cancelled, paid ...), so the payments beside it can refresh. */ onInvoiceChanged?: () => void }> = ({ customerId, compact, kind, canManage, onInvoiceChanged }) => {
   const [items, setItems] = useState<Invoice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Invoice | null>(null);
@@ -392,7 +394,7 @@ export const CustomerInvoices: React.FC<{ customerId: string; compact?: boolean;
           ))}
         </ul>
       )}
-      {open && <InvoiceDetail invoice={open} canManage={canManage} onChanged={inv => { setOpen(inv); load(); }} onClose={() => setOpen(null)} />}
+      {open && <InvoiceDetail invoice={open} canManage={canManage} onChanged={inv => { setOpen(inv); load(); onInvoiceChanged?.(); }} onClose={() => setOpen(null)} />}
     </div>
   );
 };

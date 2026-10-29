@@ -139,6 +139,13 @@ async function handleAuth(req, res, path, url) {
     });
   }
   const m = /^\/admin\/users\/([0-9a-f-]{36})$/.exec(path);
+  if (m && req.method === 'PUT' && body.password) {
+    // updateUserById({ password }): the new password signs in from now on, the old one no longer does
+    const { rows } = await db.query('select * from auth.users where id = $1', [m[1]]);
+    if (!rows[0]) return json(res, 404, { msg: 'not found' });
+    passwords.set(rows[0].email, body.password);
+    return json(res, 200, userJson(rows[0]));
+  }
   if (m && req.method === 'PUT') {
     const { rows } = await db.query(
       `update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object('banned', $2::text) where id = $1 returning *`,

@@ -19,7 +19,7 @@ async function withPaymentInvoice(ctx: Parameters<Handler>[0], customerId: strin
     outcome = await s.generatedInvoices.invoiceForPayment(paymentId);
   } catch (e) {
     if (!(e instanceof AppError)) console.error('[invoice] the paid invoice of a payment could not be made', { payment: paymentId, message: (e as Error)?.message });
-    outcome = { status: 'FAILED', message: e instanceof AppError ? e.message : 'The paid invoice could not be made. Use "Generate invoice" on the payment to try again.' };
+    outcome = { status: 'FAILED', paymentId, message: e instanceof AppError ? e.message : 'The paid invoice could not be made. Use "Generate invoice" on the payment to try again.' };
   }
   return { ...(await s.pipeline.paymentOverviewOf(customerId)), paymentInvoice: outcome };
 }
@@ -38,6 +38,10 @@ export const usersController = {
   assign: (async ctx => ok(await svc(ctx).users.assign(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setStatus: (async ctx => ok(await svc(ctx).users.setStatus(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setTechnicalConsultant: (async ctx => ok(await svc(ctx).users.setTechnicalConsultant(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  setMetaVerifier: (async ctx => ok(await svc(ctx).users.setMetaVerifier(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  setOperationsHead: (async ctx => ok(await svc(ctx).users.setOperationsHead(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  operationsHeadReview: (async ctx => ok(await svc(ctx).users.operationsHeadReview(ctx.actor))) as Handler,
+  operationsOverview: (async ctx => ok(await svc(ctx).users.operationsOverview())) as Handler,
   setHeadDivision: (async ctx => ok(await svc(ctx).users.setHeadDivision(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setSalesSubRole: (async ctx => ok(await svc(ctx).users.setSalesSubRole(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   departmentHeads: (async ctx => ok(await svc(ctx).users.departmentHeads(ctx.actor, (ctx.req.query as Record<string, unknown>).departmentId))) as Handler,
@@ -90,6 +94,16 @@ export const chatController = {
   messages: (async ctx => ok(await svc(ctx).chat.messages(ctx.params.id, ctx.req.query))) as Handler,
   send: (async ctx => ok(await svc(ctx).chat.send(ctx.params.id, ctx.req.body), 201)) as Handler,
   markRead: (async ctx => ok(await svc(ctx).chat.markRead(ctx.params.id, ctx.req.body))) as Handler,
+  sendEncrypted: (async ctx => ok(await svc(ctx).chat.sendEncrypted(ctx.params.id, ctx.req.body), 201)) as Handler,
+  deleteForMe: (async ctx => ok(await svc(ctx).chat.deleteForMe(ctx.params.id))) as Handler,
+  deleteForEveryone: (async ctx => ok(await svc(ctx).chat.deleteForEveryone(ctx.params.id))) as Handler,
+  keyStatus: (async ctx => ok(await svc(ctx).chat.keyStatus())) as Handler,
+  keySetup: (async ctx => ok(await svc(ctx).chat.keySetup(ctx.req.body), 201)) as Handler,
+  keyReset: (async ctx => ok(await svc(ctx).chat.keyReset(ctx.req.body))) as Handler,
+  keyBackupGet: (async ctx => ok(await svc(ctx).chat.keyBackupGet())) as Handler,
+  keyBackupSet: (async ctx => ok(await svc(ctx).chat.keyBackupSet(ctx.req.body))) as Handler,
+  memberKeys: (async ctx => ok(await svc(ctx).chat.memberKeys(ctx.params.id))) as Handler,
+  keyLookup: (async ctx => ok(await svc(ctx).chat.keyLookup(ctx.req.query))) as Handler,
   beginUpload: (async ctx => ok(await svc(ctx).chat.beginUpload(ctx.params.id, ctx.req.body), 201)) as Handler,
   completeUpload: (async ctx => ok(await svc(ctx).chat.completeUpload(ctx.params.id))) as Handler,
   abortUpload: (async ctx => ok(await svc(ctx).chat.abortUpload(ctx.params.id))) as Handler,
@@ -232,6 +246,10 @@ export const pipelineController = {
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
   accountsCreateClientLogin: (async ctx => ok(await svc(ctx).pipeline.accountsCreateClientLogin(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
+  provisioningQueue: (async ctx => ok(await svc(ctx).pipeline.provisioningQueue(ctx.req.query))) as Handler,
+  correctCustomerEmail: (async ctx => ok(await svc(ctx).pipeline.correctCustomerEmail(ctx.params.id, ctx.req.body))) as Handler,
+  resendAccountEmail: (async ctx => ok(await svc(ctx).pipeline.resendAccountEmail(ctx.params.id))) as Handler,
+  markMetaVerificationCompleted: (async ctx => ok(await svc(ctx).pipeline.markMetaVerificationCompleted(ctx.params.id))) as Handler,
   customerJourney: (async ctx => ok(await svc(ctx).pipeline.customerJourney(ctx.params.id))) as Handler,
   journeyStatus: (async ctx => ok(await svc(ctx).pipeline.journeyStatus(ctx.params.id))) as Handler,
   setMetaVerification: (async ctx => ok(await svc(ctx).pipeline.setMetaVerification(ctx.params.id, ctx.req.body))) as Handler,
@@ -242,7 +260,6 @@ export const pipelineController = {
   deliveryQueue: (async ctx => ok(await svc(ctx).pipeline.deliveryQueue(ctx.req.query))) as Handler,
   serviceJourneys: (async ctx => ok(await svc(ctx).pipeline.serviceJourneys())) as Handler,
   setServiceJourney: (async ctx => ok(await svc(ctx).pipeline.setServiceJourney(ctx.params.code, ctx.req.body))) as Handler,
-  createClientAccount: (async ctx => ok(await svc(ctx).pipeline.createClientAccount(ctx.actor, ctx.params.id, ctx.req.body, ctx.req.headers.origin), 201)) as Handler,
   consultantSetWebsite: (async ctx => ok(await svc(ctx).pipeline.consultantSetWebsite(ctx.params.id, ctx.req.body))) as Handler,
   resendClientMessages: (async ctx => ok(await svc(ctx).pipeline.resendClientMessages(ctx.params.id))) as Handler,
   clientMessages: (async ctx => ok(await svc(ctx).pipeline.clientMessages(ctx.params.id))) as Handler,
@@ -287,7 +304,7 @@ export const pipelineController = {
   rejectAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.rejectAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
   reverseAccountsPayment: (async ctx => ok(await svc(ctx).pipeline.reverseAccountsPayment(ctx.params.paymentId, ctx.params.id, ctx.req.body))) as Handler,
   /** Confirms the payment and returns the customer to Sales; the answer says what happened to the client's dashboard login. */
-  confirmAndReturn: (async ctx => ok({ clientLogin: await svc(ctx).pipeline.confirmAndReturn(ctx.actor, ctx.params.id, ctx.req.body, ctx.req.headers.origin) })) as Handler,
+  confirmAndReturn: (async ctx => ok({ clientLogin: await svc(ctx).pipeline.confirmAndReturn(ctx.actor, ctx.params.id, ctx.req.body) })) as Handler,
   returnToLeads: (async ctx => {
     await svc(ctx).pipeline.returnToLeads(ctx.params.id, ctx.req.body);
     return ok(null);
@@ -307,6 +324,7 @@ export const pipelineController = {
   noteUpdate: (async ctx => ok(await svc(ctx).pipeline.noteUpdate(ctx.params.id, ctx.params.noteId, ctx.req.body))) as Handler,
   consultantUpdateCustomer: (async ctx => ok(await svc(ctx).pipeline.consultantUpdateCustomer(ctx.params.id, ctx.req.body))) as Handler,
   consultantStartOnboarding: (async ctx => ok(await svc(ctx).pipeline.consultantStartOnboarding(ctx.params.id))) as Handler,
+  handoffInfo: (async ctx => ok(await svc(ctx).pipeline.handoffInfo(ctx.params.id))) as Handler,
   forwardToSupport: (async ctx => ok(await svc(ctx).pipeline.forwardToSupport(ctx.params.id))) as Handler,
   returnToSales: (async ctx => {
     await svc(ctx).pipeline.returnToSales(ctx.params.id, ctx.req.body);
@@ -420,7 +438,9 @@ export const generatedInvoiceController = {
   confirmPayment: (async ctx => ok(await svc(ctx).generatedInvoices.confirmPayment(ctx.params.id, ctx.req.body))) as Handler,
   deliver: (async ctx => ok(await svc(ctx).generatedInvoices.deliver(ctx.params.id, ctx.req.body))) as Handler,
   /** "Generate invoice" on a verified payment (also the retry when the automatic one could not be made). Failures are answered as errors. */
-  invoiceForPayment: (async ctx => ok(await svc(ctx).generatedInvoices.invoiceForPayment(ctx.params.paymentId))) as Handler,
+  invoiceForPayment: (async ctx => ok(await svc(ctx).generatedInvoices.invoiceForPayment(ctx.params.paymentId, ctx.req.body))) as Handler,
+  paymentInvoiceBilling: (async ctx => ok(await svc(ctx).generatedInvoices.paymentInvoiceBilling(ctx.params.paymentId))) as Handler,
+  cancel: (async ctx => ok(await svc(ctx).generatedInvoices.cancelInvoice(ctx.params.id, ctx.req.body))) as Handler,
   file: (async ctx => ok(await svc(ctx).generatedInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
   sendWhatsApp: (async ctx => ok(await svc(ctx).generatedInvoices.sendWhatsApp(ctx.params.id, ctx.req.body))) as Handler,
   whatsAppHistory: (async ctx => ok(await svc(ctx).generatedInvoices.whatsAppHistory(ctx.params.id))) as Handler,
@@ -533,4 +553,20 @@ export const businessAssociateController = {
   lead: (async ctx => ok(await svc(ctx).ba.lead(ctx.params.id))) as Handler,
   createLead: (async ctx => ok(await svc(ctx).ba.createLead(ctx.req.body), 201)) as Handler,
   updateLead: (async ctx => ok(await svc(ctx).ba.updateLead(ctx.params.id, ctx.req.body))) as Handler
+};
+
+export const workflowController = {
+  verificationNotes: (async ctx => ok(await svc(ctx).workflow.verificationNotes(ctx.params.id))) as Handler,
+  addVerificationNote: (async ctx => ok(await svc(ctx).workflow.addVerificationNote(ctx.params.id, ctx.req.body), 201)) as Handler,
+  panelDetails: (async ctx => ok(await svc(ctx).workflow.panelDetails(ctx.params.id))) as Handler,
+  setPanelDetails: (async ctx => ok(await svc(ctx).workflow.setPanelDetails(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
+  sendPanelCredentials: (async ctx => ok(await svc(ctx).workflow.sendPanelCredentials(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
+  reroute: (async ctx => (await svc(ctx).workflow.reroute(ctx.params.id, ctx.req.body), ok(null))) as Handler,
+  routeReview: (async ctx => ok(await svc(ctx).workflow.routeReview())) as Handler,
+  setServiceMetaVerification: (async ctx => (await svc(ctx).workflow.setServiceMetaVerification(ctx.params.code, ctx.req.body), ok(await svc(ctx).pipeline.serviceJourneys()))) as Handler,
+  followUps: (async ctx => ok(await svc(ctx).workflow.followUps(ctx.req.query))) as Handler,
+  recordContact: (async ctx => ok(await svc(ctx).workflow.recordContact(ctx.params.id, ctx.req.body), 201)) as Handler,
+  assignFollowUp: (async ctx => (await svc(ctx).workflow.assign(ctx.params.id, ctx.req.body), ok(null))) as Handler,
+  settings: (async ctx => ok(await svc(ctx).workflow.settings())) as Handler,
+  setFollowUpDelay: (async ctx => ok(await svc(ctx).workflow.setFollowUpDelay(ctx.req.body))) as Handler
 };

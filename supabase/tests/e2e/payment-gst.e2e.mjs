@@ -123,7 +123,22 @@ await expect(await acc.getByTestId('order-gst-rate').isDisabled(), 'the rate is 
 // a full payment: the whole outstanding amount including GST, filled in and read-only
 await acc.getByRole('button', { name: 'Record payment' }).first().click();
 const d2 = acc.getByRole('dialog', { name: 'Record payment' });
+// the optional installment helper (part payment only): 81,600 still to receive -> 40,800 + 40,800, a plan and not a payment
+await expect(/Still to receive\s*₹81,600/.test(await d2.innerText()), 'the second form shows 81,600 still to receive');
+await expect((await d2.getByTestId('pay-split').count()) === 1 && !(await d2.getByTestId('pay-split-toggle').isChecked()), 'a part payment offers the installment helper, off by default');
+await d2.getByTestId('pay-split-toggle').check();
+await expect((await d2.locator('#pay-amount').inputValue()) === '40800', 'the helper proposes 40,800 for this payment');
+await expect(/₹40,800/.test(await d2.getByTestId('pay-split-now').innerText()) && /₹40,800/.test(await d2.getByTestId('pay-split-later').innerText()), 'and 40,800 for the second installment');
+await expect(/not a payment/i.test(await d2.getByTestId('pay-split').innerText()), 'the form says the second installment is only a plan');
+await d2.screenshot({ path: `${OUT}/gst-3b-split-helper.png` });
+await d2.locator('#pay-amount').fill('50000');
+await expect(/₹31,600/.test(await d2.getByTestId('pay-split-later').innerText()), 'the plan follows an amount typed over: 50,000 now leaves 31,600');
+await d2.locator('#pay-amount').fill('81600');
+await expect(/Enter a whole-rupee amount below/.test(await d2.getByTestId('pay-split').innerText()), 'paying everything is not a part payment: no plan');
+const planned = (await q('select count(*)::int n from customer_payments where customer_id = $1', [lead]))[0].n;
+await expect(planned === 1, 'the helper created no payment (only the 60,000 exists)');
 await d2.getByLabel('Full payment').check();
+await expect((await d2.getByTestId('pay-split').count()) === 0, 'a full payment hides the helper');
 await expect((await d2.locator('#pay-amount').inputValue()) === '81600', 'a full payment fills what is outstanding including GST (81,600)');
 await expect(await d2.locator('#pay-amount').evaluate(e => e.readOnly), 'and the amount cannot be typed over');
 await d2.locator('#pay-ref').fill('GST-E2E-2');
@@ -195,6 +210,102 @@ const sums = (await q('select sum(total_amount)::numeric s from generated_invoic
 await expect(Number(sums.s) <= 17 && Number(sums.s) >= 16.5, 'together the invoices are worth what was received (not more than 17)');
 await acc.getByRole('list', { name: 'Payment history' }).scrollIntoViewIfNeeded();
 await acc.screenshot({ path: `${OUT}/gst-8-two-invoices.png`, fullPage: true });
+
+// ------------------------------------------------------------------ the invoice of each payment: billing details asked once, a wrong invoice cancelled
+// A customer made quickly (no address, no state): the paid invoice of a payment asks for them with the click.
+const noAddr = (await api(rahul, 'POST', '/pipeline/leads', { name: 'Quick Lead', company: 'Quick Lead Traders', phone: '+91 98200 33333', leadSource: 'Walk-in', services: ['AI_CALLING'], notes: 'Wants to buy.' })).id;
+await api(rahul, 'POST', `/pipeline/customers/${noAddr}/send-to-accounts`, { amount: 120000 });
+const accMember = await idOf('acc.member@amuwa.com');
+await api(accMember, 'POST', `/pipeline/customers/${noAddr}/accounts/order-gst`, { rate: 18 });
+await acc.goto(BASE + '/');
+await menu(acc, 'Confirmation');
+await acc.getByText('Quick Lead Traders').first().click();
+await acc.getByTestId('order-gst').waitFor({ timeout: 10000 });
+await acc.getByRole('button', { name: 'Record payment' }).first().click();
+const e1 = acc.getByRole('dialog', { name: 'Record payment' });
+await e1.locator('#pay-amount').fill('70800');
+await e1.locator('#pay-ref').fill('INV-E2E-1');
+await e1.getByLabel(/I have received this money and verified it/).check();
+await e1.getByRole('button', { name: 'Record & verify' }).click();
+await e1.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the dialog did not close'));
+const banner = acc.getByRole('alert').filter({ hasText: 'could not be made' }).first();
+await banner.waitFor({ timeout: 15000 }).catch(() => fail('no message that the paid invoice could not be made'));
+await expect(/billing address and state/.test(await banner.innerText()), 'the payment is saved and the message says the invoice needs the billing address and state');
+await acc.screenshot({ path: `${OUT}/inv-1-needs-billing.png`, fullPage: true });
+await banner.getByRole('button', { name: 'Generate invoice' }).click();
+const bd1 = acc.getByRole('dialog', { name: 'Billing details for the invoice' });
+await bd1.waitFor({ timeout: 10000 });
+await expect(/needs the customer's billing address and state/.test(await bd1.innerText()), 'the billing details dialog explains what is missing');
+await bd1.getByRole('button', { name: 'Make the invoice' }).click();
+await expect(/Enter the business address/.test(await bd1.innerText()), 'the address is required');
+await bd1.locator('#bill-address').fill('Shop 9, FC Road, Shivajinagar, Pune 411004, Maharashtra');
+await bd1.locator('#bill-address').blur();
+await expect((await bd1.locator('#bill-state').inputValue()) === '27', 'the state is taken from the address (Maharashtra)');
+await acc.screenshot({ path: `${OUT}/inv-2-billing-dialog.png`, fullPage: true });
+await bd1.getByRole('button', { name: 'Make the invoice' }).click();
+await bd1.waitFor({ state: 'detached', timeout: 20000 }).catch(() => fail('the billing dialog did not close'));
+const inv1 = (await q('select total_amount, customer_state_code, tax_treatment from generated_invoices where customer_id = $1', [noAddr]))[0];
+await expect(inv1 && Number(inv1.total_amount) === 70800 && inv1.customer_state_code === '27' && inv1.tax_treatment === 'INTRA_STATE', 'the first 70,800 payment has its own paid invoice of 70,800 (Maharashtra, CGST + SGST)');
+await expect(/Paid invoice .* made for this payment/.test(await text(acc)), 'the screen says the invoice was made');
+await acc.screenshot({ path: `${OUT}/inv-3-made.png`, fullPage: true });
+
+// the second payment: nothing is asked again, the invoice is made with the payment
+await acc.getByRole('button', { name: 'Record payment' }).first().click();
+const e2 = acc.getByRole('dialog', { name: 'Record payment' });
+await e2.getByLabel('Full payment').check();
+await e2.locator('#pay-ref').fill('INV-E2E-2');
+await e2.getByLabel(/I have received this money and verified it/).check();
+await e2.getByRole('button', { name: 'Record & verify' }).click();
+await e2.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the second dialog did not close'));
+await acc.waitForTimeout(1500);
+const invs = await q('select total_amount from generated_invoices where customer_id = $1 order by issued_at', [noAddr]);
+await expect(invs.length === 2 && invs.every(i => Number(i.total_amount) === 70800), 'the second 70,800 payment (the full one) has its own invoice too, with no more questions: two invoices of 70,800');
+
+// an invoice for the whole amount made by mistake: cancelled by the Accounts head, then each payment is invoiced
+const whole = (await api(rahul, 'POST', '/pipeline/leads', { name: 'Whole First', company: 'Whole First Traders', phone: '+91 98200 44444', leadSource: 'Walk-in', services: ['AI_CALLING'], address: 'Shop 5, FC Road, Pune 411004, Maharashtra', notes: 'Wants to buy.' })).id;
+await api(rahul, 'POST', `/pipeline/customers/${whole}/send-to-accounts`, { amount: 120000 });
+await api(accMember, 'POST', `/pipeline/customers/${whole}/accounts/order-gst`, { rate: 18 });
+const wholeInv = await api(accMember, 'POST', '/accounts/generated-invoices', {
+  requestId: crypto.randomUUID(), customerId: whole, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10), orderNumber: 'Verbal',
+  customer: { name: 'Whole First', businessName: 'Whole First Traders', address: 'Shop 5, FC Road, Pune 411004, Maharashtra', contactPerson: 'Whole First', contactNumber: '9820044444', gstin: null, stateCode: '27' },
+  taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+  lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: 120000 }]
+});
+await api(accMember, 'POST', `/pipeline/customers/${whole}/accounts/payments`, { type: 'PART', amount: 70800, method: 'UPI', reference: 'WH-E2E-1', verify: true, invoice: false });
+await api(accMember, 'POST', `/pipeline/customers/${whole}/accounts/payments`, { type: 'FULL', amount: 70800, method: 'UPI', reference: 'WH-E2E-2', verify: true, invoice: false });
+const head = await login('acc.head@amuwa.com', { width: 1440, height: 900 }, 'nav button');
+await menu(head, 'Payment confirmations');
+await head.getByText('Whole First Traders').first().click();
+await head.getByTestId('order-gst').waitFor({ timeout: 10000 });
+await head.getByRole('button', { name: 'Generate invoice' }).first().click();
+await head.getByText(/already covered by the invoices issued so far/).first().waitFor({ timeout: 15000 }).catch(() => fail('with the whole-order invoice in place the payment invoice should be refused, with the reason'));
+ok('with the whole-order invoice in place the payment invoice is refused, with the reason');
+await head.screenshot({ path: `${OUT}/inv-4-covered.png`, fullPage: true });
+// open the whole-order invoice and cancel it
+await head.getByRole('button', { name: new RegExp(wholeInv.invoice.number) }).first().click().catch(async () => head.getByText(wholeInv.invoice.number).first().click());
+await head.getByRole('button', { name: 'Cancel invoice' }).first().click();
+const cd = head.getByRole('dialog', { name: new RegExp(`Cancel invoice ${wholeInv.invoice.number}`) });
+await cd.waitFor({ timeout: 10000 });
+await cd.getByRole('button', { name: 'Cancel invoice' }).click();
+await expect(/at least 5 characters/.test(await cd.innerText()), 'a reason is required to cancel');
+await cd.locator('#cancel-reason').fill('Made for the whole amount by mistake');
+await head.screenshot({ path: `${OUT}/inv-5-cancel-dialog.png`, fullPage: true });
+await cd.getByRole('button', { name: 'Cancel invoice' }).click();
+await cd.waitFor({ state: 'detached', timeout: 15000 }).catch(() => fail('the cancel dialog did not close'));
+await head.getByTestId('invoice-cancelled').waitFor({ timeout: 10000 }).catch(() => fail('the invoice does not say it was cancelled'));
+await expect(/Made for the whole amount by mistake/.test(await head.getByTestId('invoice-cancelled').innerText()), 'the invoice says it was cancelled, with the reason');
+const cst = (await q(`select m.status, g.payment_ledger from generated_invoices g join member_invoices m on m.id = g.invoice_id where g.invoice_id = $1`, [wholeInv.invoice.id]))[0];
+await expect(cst.status === 'Cancelled' && cst.payment_ledger === 'CANCELLED', 'cancelled in the database: the invoice stays, marked Cancelled, out of the order');
+await head.screenshot({ path: `${OUT}/inv-6-cancelled.png`, fullPage: true });
+await head.getByRole('dialog').last().getByRole('button', { name: 'Close', exact: true }).click();
+await head.waitForTimeout(500);
+for (const n of [1, 2]) {
+  await head.getByRole('button', { name: 'Generate invoice' }).first().click();
+  await head.waitForTimeout(2500);
+}
+const per = await q(`select m.status, g.total_amount from generated_invoices g join member_invoices m on m.id = g.invoice_id where g.customer_id = $1 and g.payment_ledger = 'CUSTOMER'`, [whole]);
+await expect(per.length === 2 && per.every(x => Number(x.total_amount) === 70800 && x.status === 'Paid'), 'after the cancellation each 70,800 payment (part and full) has its own paid invoice of 70,800');
+await head.screenshot({ path: `${OUT}/inv-7-each-payment.png`, fullPage: true });
 
 // phone-sized
 const ph = await login('acc.member@amuwa.com', { width: 390, height: 800 }, 'main');

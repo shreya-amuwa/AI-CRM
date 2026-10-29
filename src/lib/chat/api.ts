@@ -1,6 +1,6 @@
 import type {
-  ChatAttachment, ChatChannel, ChatClientView, ChatConversation, ChatDirectoryPerson, ChatMessage, ChatMessagePage, ChatMyClient, ChatReviewList,
-  ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl
+  ChatAttachment, ChatChannel, ChatClientView, ChatConversation, ChatDeleteResult, ChatDirectoryPerson, ChatE2eeWrap, ChatKeyBackup, ChatKeyBackupBlob, ChatKeyStatus, ChatMemberKey, ChatMessage,
+  ChatMessagePage, ChatMyClient, ChatPublicKey, ChatReviewList, ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl
 } from '../../../shared/contracts';
 import { api } from '../api/client';
 
@@ -9,6 +9,13 @@ export interface SendInput {
   clientMsgId: string;
   replyTo?: string;
   attachmentIds: string[];
+}
+/** The envelope of an end-to-end encrypted message (what the server stores). */
+export interface SecureSendInput {
+  clientMsgId: string;
+  replyTo?: string;
+  attachmentIds: string[];
+  e2ee: { v: 1; sv: number; iv: string; ct: string; wraps: ChatE2eeWrap[] };
 }
 export interface UploadInput {
   fileName: string;
@@ -27,6 +34,11 @@ export interface ChatTransport {
   detail(): Promise<ChatConversation>;
   messages(q: { before?: number; after?: number; limit?: number }): Promise<ChatMessagePage>;
   send(i: SendInput): Promise<ChatMessage>;
+  /** Internal chats only (the other transports do not have it): the message goes as an encrypted envelope. */
+  sendSecure?(i: SecureSendInput): Promise<ChatMessage>;
+  /** Internal chats only: hide a message for the signed-in person / remove it for everybody (sender only). */
+  deleteForMe?(messageId: string): Promise<ChatDeleteResult>;
+  deleteForEveryone?(messageId: string): Promise<ChatDeleteResult>;
   markRead(seq: number): Promise<unknown>;
   beginUpload(i: UploadInput): Promise<ChatUploadTicket>;
   completeUpload(id: string): Promise<ChatAttachment>;
@@ -74,6 +86,9 @@ export function staffTransport(conversationId: string, opts: { review?: boolean 
     detail: () => api.get<ChatConversation>(base),
     messages: q => api.get<ChatMessagePage>(`${base}/messages`, q),
     send: i => api.post<ChatMessage>(`${base}/messages`, i),
+    sendSecure: i => api.post<ChatMessage>(`${base}/secure-messages`, i),
+    deleteForMe: id => api.delete<ChatDeleteResult>(`/chat/messages/${id}/for-me`),
+    deleteForEveryone: id => api.delete<ChatDeleteResult>(`/chat/messages/${id}/for-everyone`),
     markRead: seq => api.post(`${base}/read`, { seq }),
     beginUpload: i => api.post<ChatUploadTicket>(`${base}/uploads`, i),
     completeUpload: id => api.post<ChatAttachment>(`/chat/uploads/${id}/complete`, {}),
@@ -81,6 +96,17 @@ export function staffTransport(conversationId: string, opts: { review?: boolean 
     attachmentUrl: (id, action) => api.get<ClientDocumentUrl>(`/chat/attachments/${id}/url`, { action })
   };
 }
+
+/** Keys for end-to-end encryption: public keys and the passphrase-encrypted backup. No secret is ever sent through these calls. */
+export const chatKeysApi = {
+  status: () => api.get<ChatKeyStatus>('/chat/keys/status'),
+  setup: (publicKey: string, backup: ChatKeyBackupBlob) => api.post<{ version: number; fingerprint: string }>('/chat/keys', { publicKey, backup }),
+  reset: (publicKey: string, backup: ChatKeyBackupBlob) => api.post<{ version: number; fingerprint: string }>('/chat/keys/reset', { publicKey, backup }),
+  backup: () => api.get<ChatKeyBackup | null>('/chat/keys/backup'),
+  setBackup: (backup: ChatKeyBackupBlob, version: number) => api.post<null>('/chat/keys/backup', { backup, version }),
+  members: (conversationId: string) => api.get<ChatMemberKey[]>(`/chat/conversations/${conversationId}/keys`),
+  lookup: (profileId: string, version: number) => api.get<ChatPublicKey | null>('/chat/keys/lookup', { profileId, version })
+};
 
 /** Lists, people and group management for employees. */
 export const chatApi = {

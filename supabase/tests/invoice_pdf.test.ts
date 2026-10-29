@@ -218,6 +218,32 @@ console.log('--- 4. Payment status and the remaining balance');
   check(sha(again.bytes) === sha(a.bytes), 'the same invoice and payments give the same file (a retry stores the same bytes)');
 }
 // ---------------------------------------------------------------------------
+console.log('--- 4b. Margins and padding of the payment block, the stamp and the footer');
+{
+  const base = sampleInvoice(2);
+  const order = { totalPayable: 236000, confirmed: 70800, balance: 165200, state: 'PARTIALLY_PAID' as const };
+  const withOrder = { total: base.totals.total, confirmed: 70800, balance: base.totals.total - 70800, state: 'PARTIALLY_PAID' as const, payments: [{ amount: 70800 }], order };
+  const r = await renderInvoicePdf({ ...base, paymentSummary: withOrder }, { stage: 'PAID' });
+  const pay = r.boxes.find(x => x.kind === 'payment')!;
+  // seven rows plus a gap: each row has at least 15 pt, and the block a margin above and below them
+  check(pay.h >= 7 * 15 + 6 + 2 * 5 - 0.01, `the payment block gives every row room (${pay.h.toFixed(1)} pt for 7 rows)`);
+  const sig = r.boxes.find(x => x.kind === 'signatory')!;
+  const stamp = r.boxes.find(x => x.kind === 'stamp')!;
+  check(stamp.x >= sig.x && stamp.x + stamp.w <= sig.x + sig.w && stamp.y >= sig.y + 16 && stamp.y + stamp.h <= sig.y + sig.h - 12, 'the PAID stamp stays clear of "For Amuwa Corporation" above it and the signature line below it');
+  const foot = r.boxes.find(x => x.kind === 'footer')!;
+  const body = r.boxes.filter(x => BODY_KINDS.includes(x.kind));
+  check(body.every(x => x.y + x.h <= foot.y - 5.9), 'every block ends at least 6 pt above the footer');
+  check(body.every(x => x.x >= 27.9 && x.x + x.w <= 595.28 - 27.9), 'and keeps the 28 pt side margins');
+  if (HAS_TEXT) {
+    // a payment bigger than the invoice never prints a negative invoice balance
+    const odd = await renderInvoicePdf({ ...base, paymentSummary: withOrder }, { stage: 'UNPAID' });
+    const t = flat(text(odd.bytes, 'neg-balance'));
+    check(/Invoice Balance: Rs\.0\.00/.test(t) && !/Rs\.-/.test(t), 'an invoice balance is never printed negative');
+    const tf = flat(text(r.bytes, 'footer-order'));
+    check(/Contact: \+91 9359 734 757/.test(tf) && /Page 1 of \d/.test(tf) && /Business Sales Department/.test(tf), 'the footer still carries the contact line, the offices and the page number');
+  }
+}
+// ---------------------------------------------------------------------------
 console.log('--- 5. The whole order next to the invoice (an agreement of 1,20,000 before GST)');
 {
   const calc = calculateInvoice([{ baseAmount: 60000, taxRate: 18 }], 'INTRA_STATE');

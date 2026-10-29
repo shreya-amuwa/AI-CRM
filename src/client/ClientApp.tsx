@@ -57,7 +57,7 @@ const ONBOARDING_TABS: SectionSlug[] = ['overview', 'journey', 'documents', 'cha
 const TAB_LABEL: Partial<Record<SectionSlug, string>> = { overview: 'Home', journey: 'Journey', documents: 'Documents', notifications: 'Updates', services: 'Services', tickets: 'Tickets', campaigns: 'Campaigns', chat: 'Live chat' };
 
 const Inner: React.FC = () => {
-  const { status, me, signOut } = useClientAuth();
+  const { status, me, signOut, refreshMe } = useClientAuth();
   const [path, go] = usePath();
   const [menu, setMenu] = useState(false);
   const { open: nav, collapsed, toggle: toggleNav, close: closeNav } = useMenu();
@@ -66,8 +66,10 @@ const Inner: React.FC = () => {
   const [findOpen, setFindOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [lockNote, setLockNote] = useState<string | null>(null);
-  const notices = useAnnouncements(status === 'ready');
-  const chat = useChatUnread(chatApi.clientUnread, status === 'ready');
+  // while a temporary password is in force the server refuses everything but choosing a new one, so nothing else is asked
+  const active = status === 'ready' && !me?.mustChangePassword;
+  const notices = useAnnouncements(active);
+  const chat = useChatUnread(chatApi.clientUnread, active);
 
   // The onboarding journey: the stage, and which sections are open. The server decides; this reloads when something changes
   // (a new notification, a return to the tab, a change of page) so a section opens as soon as it may.
@@ -91,13 +93,13 @@ const Inner: React.FC = () => {
   }, [status, path, go]);
 
   useEffect(() => {
-    if (status !== 'ready') return;
+    if (!active) return;
     // No timer: the bell is read when the dashboard opens and when the tab comes back into view.
     refreshUnread();
     const onVisible = () => document.visibilityState === 'visible' && refreshUnread();
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [status, refreshUnread]);
+  }, [active, refreshUnread]);
 
   useEffect(() => { closeNav(); setMenu(false); setLockNote(null); }, [path]);
   useEffect(() => { if (status === 'ready') journeyRef.current(); }, [path, status]);
@@ -118,6 +120,7 @@ const Inner: React.FC = () => {
   if (status === 'loading') return <div className="cd" style={{ padding: 24 }}><LoadingBlock rows={2} /></div>;
   if (status === 'signedOut') return <div className="cd"><Login onDone={() => go(dashboardPath('overview'), true)} /></div>;
   if (!me) return null;
+  if (me.mustChangePassword) return <div className="cd"><SetPassword forced onChanged={() => { void refreshMe(); }} /></div>;
 
   const isDirectDocs = path === '/client/docs' || path.startsWith('/client/docs/');
   const parts = isDirectDocs ? ['docs'] : path.replace('/client/dashboard/', '').split('/');

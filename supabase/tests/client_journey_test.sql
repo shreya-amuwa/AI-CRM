@@ -1,5 +1,5 @@
 -- =============================================================================
--- Client onboarding journey (migrations 20261205000100 / 20261205000200): payment -> login -> Meta verification -> Relationship Manager
+-- Client onboarding journey (migrations 20261209000100 / 20261209000200): payment -> login -> Meta verification -> Relationship Manager
 -- -> service setup -> completed, the sections that open at each stage, and the stage-based client chat.
 -- Runs after the other suites on the same database and reuses their staff.
 -- =============================================================================
@@ -8,16 +8,16 @@
 
 reset role;
 -- earlier suites re-apply older migrations (to prove they are re-runnable): put the journey back on top, which also proves it re-runs
-\i supabase/migrations/20261205000100_client_onboarding_journey.sql
-\i supabase/migrations/20261205000200_client_stage_chat.sql
+\i supabase/migrations/20261209000100_client_onboarding_journey.sql
+\i supabase/migrations/20261209000200_client_stage_chat.sql
 
 \echo '--- 80. Journey: a new customer, from payment to a login'
 create temp table jy (name text primary key, id uuid);
 create temp table jym (name text primary key, data jsonb);
 grant all on jy, jym to authenticated, service_role;
 
--- the Meta Verifier is picked from the department's Technical Consultants; make sure there are two so "least busy" has a choice
-select test.check((select count(*) >= 1 from profiles where is_technical_consultant and status = 'ACTIVE' and department_id = test.dept('wabastore')), 'the department has Technical Consultants');
+-- the verifier is picked from the department's Meta Verifiers (WhatsApp customers are on the META route)
+select test.check((select count(*) >= 1 from profiles where is_meta_verifier and status = 'ACTIVE' and department_id = test.dept('wabastore')), 'the department has Meta Verifiers');
 
 set role authenticated;
 select test.login('tm_a');
@@ -40,32 +40,33 @@ select test.check((select accounts_confirmed_at is not null and meta_status = 'P
   'payment confirmed: the onboarding record holds the payment time, Meta verification is pending, onboarding is not complete');
 select test.check((select meta_verifier_id is not null and meta_verifier_assigned_at is not null and meta_verifier_assigned_by is null
                      from customer_onboarding where customer_id = (select id from jy where name = 'A'))
-               and (select p.is_technical_consultant and p.department_id = test.dept('wabastore') from profiles p
+               and (select p.is_meta_verifier and not p.is_technical_consultant and p.department_id = test.dept('wabastore') from profiles p
                      where p.id = (select meta_verifier_id from customer_onboarding where customer_id = (select id from jy where name = 'A'))),
-  'a Meta Verifier (a Technical Consultant of the department) is assigned automatically, not chosen by anybody in the browser');
+  'a Meta Verifier of the department is assigned automatically, not chosen by anybody in the browser');
 select test.check((select count(*) = 1 from notifications where type = 'META_VERIFIER_ASSIGNED' and entity_id = (select id from jy where name = 'A')
                      and recipient_id = (select meta_verifier_id from customer_onboarding where customer_id = (select id from jy where name = 'A'))), 'the verifier is told');
 
 -- Accounts creates the client logins (the API creates the Auth user between "begin" and "record"; here it is made by hand)
 set role authenticated;
 select test.login('acc_m');
-select accounts_client_login_begin((select id from jy where name = 'A'), 'alpha.login@journey.example');
-select accounts_client_login_begin((select id from jy where name = 'B'), 'beta.login@journey.example');
+select accounts_client_login_begin((select id from jy where name = 'A'));
+select accounts_client_login_begin((select id from jy where name = 'B'));
 reset role;
-select test.create_auth_user('jy_a', 'alpha.login@journey.example', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jy where name = 'A')));
-select test.create_auth_user('jy_b', 'beta.login@journey.example', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jy where name = 'B')));
+select test.create_auth_user('jy_a', 'alpha.journey@example.com', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jy where name = 'A')));
+select test.create_auth_user('jy_b', 'beta.journey@example.com', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jy where name = 'B')));
 set role authenticated;
 select test.login('acc_m');
-select record_client_account((select id from jy where name = 'A'), test.id('jy_a'), 'alpha.login@journey.example');
-select record_client_account((select id from jy where name = 'B'), test.id('jy_b'), 'beta.login@journey.example');
+select record_client_account((select id from jy where name = 'A'), test.id('jy_a'), 'alpha.journey@example.com');
+select record_client_account((select id from jy where name = 'B'), test.id('jy_b'), 'beta.journey@example.com');
 select test.admin_check($q$select count(*) = 2 from customer_client_accounts where customer_id in (select id from jy)$q$, 'both clients have a login');
+select test.must_fail($$select accounts_client_login_begin((select id from jy where name = 'A'))$$, 'a second login for the customer is refused', 'already has a login');
 select test.login('tm_a');
-select test.must_fail($$select accounts_client_login_begin((select id from jy where name = 'A'), 'again@journey.example')$$, 'a second login for the customer is refused', 'Only the Accounts|already has a login');
+select test.must_fail($$select accounts_client_login_begin((select id from jy where name = 'A'))$$, 'Sales cannot create a client login', 'Only the Accounts');
 
 \echo '--- 81. Journey: what the client sees right after payment and login'
 select test.login('jy_a');
 select test.check((client_onboarding_journey() ->> 'stage' = 'META_VERIFICATION' and not (client_onboarding_journey() ->> 'completed')::boolean), 'the client lands on the Meta verification stage');
-select test.check((select s ->> 'status' = 'COMPLETED' and s ->> 'completedAt' is not null and s ->> 'accountEmail' = 'alpha.login@journey.example'
+select test.check((select s ->> 'status' = 'COMPLETED' and s ->> 'completedAt' is not null and s ->> 'accountEmail' = 'alpha.journey@example.com'
                      from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'PAYMENT'), 'stage 1: account and payment confirmed, with the date');
 select test.check((select s ->> 'status' = 'PENDING' and s ->> 'metaStatus' = 'PENDING' and (s ->> 'current')::boolean and (s -> 'verifier' ->> 'name') is not null
                      from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'META_VERIFICATION'), 'stage 2: Meta verification is current, pending, with its verifier named');
@@ -107,7 +108,7 @@ select test.check((client_onboarding_journey() ->> 'stage') = 'META_VERIFICATION
 
 -- clients are kept apart
 select test.login('jy_b');
-select test.check((select s ->> 'accountEmail' = 'beta.login@journey.example' from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'PAYMENT'), 'another client reads their own journey');
+select test.check((select s ->> 'accountEmail' = 'beta.journey@example.com' from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'PAYMENT'), 'another client reads their own journey');
 select test.check((select count(*) = 0 from customer_onboarding), 'a client reads no onboarding rows directly (RLS)');
 select test.check((select count(*) = 0 from chat_messages), 'nor messages');
 
@@ -182,7 +183,6 @@ set role authenticated;
 select test.login('jy_a');
 select test.check((select s ->> 'status' = 'IN_PROGRESS' and s ->> 'metaStatus' = 'IN_PROGRESS' from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'META_VERIFICATION'), 'the client sees it in progress');
 select test.login((select name from jyv));
-select consultant_set_addons_required((select id from jy where name = 'A'), false);
 select consultant_start_onboarding((select id from jy where name = 'A'));
 select test.must_fail($$select set_meta_verification((select id from jy where name = 'A'), 'COMPLETED', null)$$, 'documents must be authorized before it can be completed', 'Authorize every document');
 select test.must_fail($$select set_meta_verification((select id from jy where name = 'A'), 'DOCUMENTS_REQUIRED', null)$$, 'a request for documents must say what is needed', 'Tell the client');
@@ -340,12 +340,12 @@ select send_lead_to_accounts((select id from jy where name = 'D'), 3000, null);
 select test.login('acc_m');
 select accounts_set_order_gst((select id from jy where name = 'D'), 0);
 select accounts_record_payment((select id from jy where name = 'D'), 'FULL', 3000, 'CASH', null, null, null, true);
-select accounts_client_login_begin((select id from jy where name = 'D'), 'direct.login@journey.example');
+select accounts_client_login_begin((select id from jy where name = 'D'));
 reset role;
-select test.create_auth_user('jy_d', 'direct.login@journey.example', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jy where name = 'D')));
+select test.create_auth_user('jy_d', 'direct.journey@example.com', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from jy where name = 'D')));
 set role authenticated;
 select test.login('acc_m');
-select record_client_account((select id from jy where name = 'D'), test.id('jy_d'), 'direct.login@journey.example');
+select record_client_account((select id from jy where name = 'D'), test.id('jy_d'), 'direct.journey@example.com');
 -- before the payment is returned to Sales the journey is at payment
 select test.login('jy_d');
 select test.check((client_onboarding_journey() ->> 'stage') = 'PAYMENT', 'a login created at Accounts shows payment as the current stage until the payment is confirmed');
@@ -396,5 +396,21 @@ select test.login('cdash_a');
 select test.check((client_onboarding_journey() ->> 'completed')::boolean and (select bool_and((v ->> 'enabled')::boolean) from jsonb_each(client_onboarding_journey() -> 'access') e(k, v)),
   'a client who was already working with the dashboard keeps every section');
 select test.check(jsonb_array_length(client_services()) >= 2 and (select bool_and(x ->> 'status' = 'LIVE') from jsonb_array_elements(client_services()) x), 'and their services stay Live');
+
+\echo '--- 88. Journey: the Meta status and the existing "Meta verification completed" event are one thing'
 reset role;
-\echo '--- 80-87 done'
+create temp table jyk (cid uuid);
+insert into jyk select c.id from customers c join customer_onboarding o on o.customer_id = c.id
+ where c.name = 'Journey Beta' limit 1;
+update customer_onboarding set meta_status = 'IN_PROGRESS', meta_completed_at = null, onboarding_completed_at = null where customer_id = (select cid from jyk);
+update customer_onboarding set meta_completed_at = now() where customer_id = (select cid from jyk);
+select test.check((select meta_status = 'COMPLETED' and meta_feedback is null from customer_onboarding where customer_id = (select cid from jyk)),
+  'recording Meta completed (mark_meta_verification_completed) completes the journey status too');
+update customer_onboarding set meta_status = 'IN_PROGRESS', meta_completed_at = null where customer_id = (select cid from jyk);
+update customer_onboarding set meta_status = 'COMPLETED' where customer_id = (select cid from jyk);
+select test.check((select meta_completed_at is not null from customer_onboarding where customer_id = (select cid from jyk)),
+  'and completing the status records the same event');
+select test.check(private.is_verifier_for(test.id('late_verifier'), (select cid from jyk)) and not private.is_verifier_for(test.id('late_consultant'), (select cid from jyk)),
+  'on the Meta route the verifier is a Meta Verifier of the department, not a Technical Consultant');
+reset role;
+\echo '--- 80-88 done'

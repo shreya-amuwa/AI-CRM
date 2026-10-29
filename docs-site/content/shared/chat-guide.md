@@ -12,7 +12,7 @@ roles:
   - Technical Consultant
   - Super Admin
 status: verified
-updated: 2026-10-27
+updated: 2026-10-28
 related:
   - /shared/notification-center-guide
   - /department-head/reviewing-client-conversations
@@ -90,13 +90,22 @@ If a customer is reassigned to someone else, the earlier assignee loses access t
 A message from a customer sends you an in-app notification, **New message from** the customer, once for each stretch of unread messages. Click it and the Chat page opens on that conversation. Direct messages and groups show unread counts only; no e-mail or WhatsApp message is sent for any chat.
 :::
 
+:::note Secure messaging, emoji and deleting
+- **Direct messages and groups between employees are end-to-end encrypted.** The first time, choose **Turn on secure messaging** and set a **recovery passphrase**. Only the people in the chat can read the messages; the company's servers, the database and the Super Admin see only scrambled text. Chats with customers are not end-to-end encrypted (the Department Head reviews them).
+- **Keep your recovery passphrase safe.** It opens your messages on a new browser or phone. Nobody can recover it for you. If you lose it, use **Reset secure messaging**: you start again and old messages stay unreadable on new devices.
+- If a colleague's security key changes, sending to them stops until you open **Security** and review the new key (compare the code with them). This protects you from someone pretending to be them.
+- Use the smiley button beside the message box for **emoji**. You can mix emoji with text or send only emoji.
+- Point at a message and open its menu: **Delete for me** hides it only for you, on all your devices. **Delete for everyone** (your own messages only) replaces it with "This message was deleted" for everybody and removes any attached file. It cannot take back a screenshot or a file someone already saved.
+:::
+
 :::warning What chat does not do
-You cannot edit or delete a sent message, and there are no voice or video calls. Messages are protected by access control and by encryption in transit and at rest; they are not end-to-end encrypted. Do not send passwords or card numbers in chat.
+There are no voice or video calls. Chat shows "Encrypted message" in the list instead of a preview. Do not send passwords or card numbers in chat.
 :::
 
 ## If something goes wrong
 
 - **"This conversation is not available"**: you no longer have access to it (for example you were removed from the group, or the customer was reassigned). Go back to the list.
 - **Not sent**: check your connection and click **Retry**.
+- **Locked / "unreadable on this device"**: this browser does not have your keys yet. Open the Chat list and choose **Unlock** with your recovery passphrase.
 - A file is refused: check the type and the 5 MB limit above.
 - For missing customers or permissions, see [Missing records and permissions](/troubleshooting/missing-records-and-permissions).

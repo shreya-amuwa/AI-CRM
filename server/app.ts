@@ -141,6 +141,14 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     if (error) log('error', 'ticket escalation failed', c, { message: error.message });
     else ticketsEscalated = Number(data) || 0;
   }
+  // The Technical Consultant's consultation follow-ups: revalidate every open one against the persisted customer, cancel what no longer applies,
+  // notify the responsible user ONCE when one has become due. Persistent (no browser timers); idempotent.
+  let tcFollowups: unknown = null;
+  if (hasServiceClient()) {
+    const { data, error } = await getServiceClient().rpc('tc_followups_process_due');
+    if (error) log('error', 'consultation follow-ups failed', c, { message: error.message });
+    else tcFollowups = data;
+  }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
   const hr = await runHrAutomation();
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
@@ -154,7 +162,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, hr, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

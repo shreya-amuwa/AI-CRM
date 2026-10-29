@@ -9,15 +9,15 @@ const both = (id: string) => [{ departmentId: id, division: 'SALES' }, { departm
 const teams = [...both('wabastore'), ...both('whatsbox'), { departmentId: 'wabastar', division: 'GENERAL' }, ...both('dtalk'), ...both('mpillar')];
 
 /** The same wiring as the Add Team Member form for a Department Head. */
-const Harness: React.FC = () => {
+const Harness: React.FC<{ multi: boolean }> = ({ multi }) => {
   const [fn, setFn] = useState<HeadFunction | ''>('');
   const [selected, setSelected] = useState<string[]>(['wabastore']);
   const plan = buildHeadAssignment({ fn, selectedIds: selected, departments, teams });
   return (
     <form onSubmit={e => e.preventDefault()} className="p-3 max-w-xl">
-      <HeadDepartmentsField fn={fn} onFn={setFn} selected={selected} onSelected={setSelected} departments={departments} teams={teams} inputClass="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm" />
+      <HeadDepartmentsField fn={fn} onFn={setFn} selected={selected} onSelected={setSelected} departments={departments} teams={teams} inputClass="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm" multi={multi} />
       <output id="plan" style={{ display: "none" }}>{JSON.stringify(plan)}</output>
     </form>
   );
 };
-(window as any).mount = () => createRoot(document.getElementById('root')!).render(<Harness />);
+(window as any).mount = (multi = true) => createRoot(document.getElementById('root')!).render(<Harness multi={multi} />);

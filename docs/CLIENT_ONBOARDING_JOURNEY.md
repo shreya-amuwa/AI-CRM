@@ -17,18 +17,20 @@ Payment confirmed -> Client login -> Onboarding journey -> Meta verification -> 
 | Per-service setup | `customer_services.setup_status` (`PENDING` / `IN_PROGRESS` / `READY`) per purchased service |
 | Meta documents | the existing customer documents and the existing consultant checklist (`WABA_ID`, ...) |
 | Chat | the existing `chat_*` tables; a conversation is one row per `(customer_id, channel)` with `channel` = `META` or `RM` |
-| Assignment | Meta Verifier = the customer's assigned **Technical Consultant** (least-busy of the department, overridable); Relationship Manager = the hand-over **Team Member**, with the **Team Lead** beside them |
+| Assignment | Meta Verifier = an active **Meta Verifier** of the customer's department on the META route (WhatsApp services), the **Technical Consultant** on the other route (`private.is_verifier_for`); the least busy one is assigned when the payment is confirmed and a Department Head can change it. Relationship Manager = the hand-over **Team Member**, with the **Team Lead** beside them |
+| Login | Accounts' existing flow (`accounts_client_login_begin` -> create the Auth user -> `record_client_account`, `ACCOUNT_CREATED` e-mail with a one-time set-password link) |
+| Meta completed | the existing `meta_completed_at` / `mark_meta_verification_completed` event, kept in step with the journey status by a trigger |
 | Audit | the existing audit log; every state change goes through a `SECURITY DEFINER` function that writes it |
 
-Migrations: `20261205000100_client_onboarding_journey.sql` (state, rules, gating) and `20261205000200_client_stage_chat.sql`
-(channel-aware chat).
+Migrations (after the Meta Verifier / client login migrations of `docs/ROLES_AND_LIFECYCLE.md`): `20261209000100_client_onboarding_journey.sql` (state, rules, gating) and `20261209000200_client_stage_chat.sql`
+(channel-aware chat). Re-runnable; no table is dropped and nothing is deleted.
 
 ## The five stages
 
 1. **Account & payment confirmation** - completed when Accounts confirms the payment. The login is created at the same moment.
 2. **Meta verification** - `PENDING`, `IN_PROGRESS`, `DOCUMENTS_REQUIRED`, `REJECTED`, `COMPLETED`. Shows instructions, the documents still
-   needed (with the verifier's note per item), the verifier's feedback and a Message button. Only a Meta Verifier or an admin can move it, and
-   `COMPLETED` is refused while a required item is missing. Uploading a document or paying never completes it.
+   needed (with the verifier's note per item), the verifier's feedback and a Message button. Only the customer's verifier (Meta Verifier / Technical Consultant of the department), the Department Head or the Super Admin can move it, and
+   `COMPLETED` is refused while a required item is missing or the payment/login is missing. The hand-over to the Department Head (which brings the Relationship Manager) is refused until it is completed. Uploading a document or paying never completes it.
 3. **Relationship Manager** - opens when Meta verification is `COMPLETED` and a Team Member is assigned. The client sees the name and position only.
 4. **Service setup & integration** - every purchased service has its own status. A service is `READY` only when the responsible team marks it
    (and, for Meta-dependent services, only after Meta verification).
@@ -39,10 +41,12 @@ every section stays open for them. A migration backfill applies this to existing
 
 ## Sign-in at payment confirmation
 
-When Accounts confirms a payment the API creates the Supabase Auth user for the customer (a random password nobody knows) and e-mails a
-set-password link; the client chooses their own password. Failures never undo the confirmation: the manual "Create client login" card and a
-"Send set-password e-mail" button remain. The existing authentication is unchanged. Set `AUTO_CLIENT_LOGIN=off` to disable automatic creation.
-No password is stored or sent in the automation outbox. The "account created" status e-mail/WhatsApp now follows Meta verification completing.
+When Accounts confirms the payment (`POST /pipeline/customers/:id/accounts/payment-confirmed`) the API runs the same secure flow Accounts uses
+from **Client Logins** (`accountsCreateClientLogin`, method LINK): the e-mail comes from the customer record, the login gets a random password
+nobody knows, and the client receives the one-time set-password e-mail through the automation outbox. Nothing is unlocked by it. A failure
+(no valid e-mail, the sign-in service is down) never undoes the confirmation: the answer says why and Accounts retries from Client Logins.
+Set `AUTO_CLIENT_LOGIN=off` to turn the automatic step off. No password is stored or sent in the outbox, and the "Meta Verification completed"
+message follows Meta verification, not the login.
 
 ## Section access
 
@@ -66,7 +70,7 @@ call returns 403 with that message. Staff calls to the same functions are not af
 
 Client: `GET /client/journey`, `GET/POST /client/chat?channel=...` (existing chat endpoints, channel-aware).
 Staff: `GET /pipeline/customers/:id/journey-status`, `POST .../meta-verification`, `POST .../meta-verifier`, `GET .../meta-verifier/candidates`,
-`POST .../services/:code/setup`, `POST /customers/:id/client-password-email`.
+`POST .../services/:code/setup` (existing: `meta-verification-completed`, Client Logins).
 
 ## Tests
 

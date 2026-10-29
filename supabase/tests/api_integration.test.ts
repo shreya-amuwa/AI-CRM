@@ -664,6 +664,13 @@ check(r.status === 422, 'a Technical Consultant must be in a support team', r);
 r = await api('sa', 'POST', '/users', { email: 'tc@amuwa.com', fullName: 'Tech Consultant', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, technicalConsultant: true });
 check(r.status === 201 && r.json.data.isTechnicalConsultant === true, 'super admin creates a Technical Consultant', r);
 tokens.set('tc', tokenFor(r.json.data.id));
+r = await api('sa', 'POST', '/users', { email: 'mv@amuwa.com', fullName: 'Meta Verifier', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, metaVerifier: true });
+check(r.status === 201 && r.json.data.isMetaVerifier === true && r.json.data.isTechnicalConsultant === false && r.json.data.defaultDashboard === 'meta-verifier', 'super admin creates a Meta Verifier (a separate role from the Technical Consultant)', r);
+tokens.set('mv', tokenFor(r.json.data.id));
+r = await api('sa', 'POST', '/users', { email: 'mv2@amuwa.com', fullName: 'Both', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, metaVerifier: true, technicalConsultant: true });
+check(r.status === 422, 'one person cannot be both a Meta Verifier and a Technical Consultant', r);
+r = await api('sa', 'POST', '/users', { email: 'mv3@amuwa.com', fullName: 'Sales MV', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, metaVerifier: true });
+check(r.status === 422, 'a Meta Verifier must be in a support team', r);
 r = await api('sm', 'POST', `/users/${supportMember}/technical-consultant`, { value: true });
 check(r.status === 403, 'a member cannot make themselves a Technical Consultant', r);
 r = await api('sa', 'POST', `/users/${supportMember}/technical-consultant`, { value: true });
@@ -1132,20 +1139,68 @@ check(r.json.data.total === 1, 'My Customers can be limited to onboarding/custom
 r = await api('b', 'GET', `/pipeline/customers?stage=ONBOARDING`);
 check(r.json.data.total === 0, 'member B sees no onboarding customers of A');
 
-// --- client login + hand-over: consultant → department head → team lead → team member ---
+// --- client login (Accounts creates it from the e-mail on the record) + hand-over: consultant → department head → team lead → team member ---
 const clientEmail = 'client.galaxy@example.com';
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: clientEmail, password: 'short' });
-check(r.status === 422, 'client password must be at least 10 characters', r);
-r = await api('a', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: clientEmail, password: 'ClientPass#2026' });
-check(r.status === 404, 'sales cannot create the client login', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: 'dh@amuwa.com', password: 'ClientPass#2026' });
-check(r.status === 409, "a staff e-mail cannot be used for the client's login", r);
-r = await api('tc', 'POST', '/pipeline/customers/' + leadA + '/handover/department-head', {});
-check(r.status === 422 && /login first/.test(r.json.error.message), 'cannot send to the department head before the client login exists', r);
+/** The client's own choice of password, through the same one-time link the e-mail carries (here made by the local sign-in service). */
+async function setClientPassword(email: string, password: string, link?: string): Promise<boolean> {
+  const svc = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  let action = link;
+  if (!action) {
+    const gl = await fetch(`${process.env.GATEWAY_URL}/auth/v1/admin/generate_link`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${svc}`, apikey: svc },
+      body: JSON.stringify({ type: 'recovery', email, redirectTo: 'http://localhost/client/set-password' })
+    });
+    action = ((await gl.json()) as any).action_link as string;
+  }
+  const v = await fetch(action, { redirect: 'manual' });
+  const token = /access_token=([^&]+)/.exec(v.headers.get('location') || '')?.[1];
+  if (!token) return false;
+  const put = await fetch(`${process.env.GATEWAY_URL}/auth/v1/user`, {
+    method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, apikey: process.env.SUPABASE_ANON_KEY! }, body: JSON.stringify({ password })
+  });
+  return put.status === 200;
+}
+// a verified payment for the customer (what the Accounts payment steps leave behind)
+await db.query(`update public.customers set deal_amount = coalesce(deal_amount, 30000) where id = $1 and amount_verified = 0`, [leadA]);
+await db.query(`update public.customers set amount_received = coalesce(nullif(amount_received, 0), deal_amount), amount_verified = coalesce(nullif(amount_received, 0), deal_amount) where id = $1 and amount_verified = 0`, [leadA]);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: clientEmail, password: 'ClientPass#2026' });
-check(r.status === 201 && r.json.data.email === clientEmail && !JSON.stringify(r.json).includes('ClientPass'), 'consultant creates the client login (no password in the response)', r);
-r = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-account`, { email: 'second@example.com', password: 'ClientPass#2026' });
+check(r.status === 404, 'the Technical Consultant has no client-login route any more', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/accounts/client-login`, {});
+check(r.status === 403 || r.status === 404, 'nor can the Technical Consultant use the Accounts one', r);
+r = await api('a', 'POST', `/pipeline/customers/${leadA}/accounts/client-login`, {});
+check(r.status === 403 || r.status === 404, 'sales cannot create the client login', r);
+r = await api('accm', 'GET', '/pipeline/accounts/client-logins?search=galaxy');
+const queueRow = r.json.data?.items?.find((x: any) => x.customerId === leadA);
+check(r.status === 200 && queueRow && queueRow.status === 'NOT_STARTED' && queueRow.email === null && queueRow.emailProblem === 'MISSING' && queueRow.can.create === false && queueRow.order.services.length === 2,
+  'the Accounts queue lists the customer: no e-mail on the record, so it cannot be created yet', r.json.data);
+r = await api('tc', 'GET', '/pipeline/accounts/client-logins');
+check(r.status === 403, 'the queue is Accounts only', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/client-login`, {});
+check(r.status === 422 && /no e-mail address/.test(r.json.error.message), 'no login without an e-mail on the customer record', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/client-login`, { email: clientEmail });
+check(r.status === 422, 'an e-mail in the request is refused: the login always uses the one on the record', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/customer-email`, { email: 'not-an-email', reason: 'typo fixed' });
+check(r.status === 422, 'a bad e-mail cannot be put on the record', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/customer-email`, { email: 'dh@amuwa.com', reason: 'customer said so' });
+check(r.status === 409, "a staff e-mail cannot be used for the client's login", r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/customer-email`, { email: clientEmail });
+check(r.status === 422, 'correcting the e-mail needs a reason', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/accounts/customer-email`, { email: clientEmail, reason: 'customer said so' });
+check(r.status === 403 || r.status === 404, 'only Accounts can correct it', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/customer-email`, { email: clientEmail, reason: 'Confirmed with the customer on a call' });
+check(r.status === 200, 'Accounts corrects the e-mail on the record (audited)', r);
+check((await db.query(`select count(*)::int n from public.audit_logs where action = 'CLIENT_EMAIL_CORRECTED' and entity_id = $1 and metadata::text not like '%client.galaxy%'`, [leadA])).rows[0].n === 1,
+  'the correction is in the audit log without the full address');
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/client-login`, {});
+check(r.status === 201 && r.json.data.email === clientEmail && r.json.data.status === 'CREATED' && !JSON.stringify(r.json).toLowerCase().includes('password'),
+  'Accounts creates the client login from the e-mail on the record (no password in the response)', r);
+r = await api('accm', 'POST', `/pipeline/customers/${leadA}/accounts/client-login`, {});
 check(r.status === 409, 'only one client login per customer', r);
+r = await api('accm', 'GET', '/pipeline/accounts/client-logins?status=CREATED&search=galaxy');
+check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].loginEmail === clientEmail && r.json.data.items[0].createdAt && r.json.data.items[0].createdBy
+  && r.json.data.items[0].notification.email.status && r.json.data.counts.CREATED >= 1, 'the queue shows the created login with its time, who made it and the state of its e-mail', r.json.data);
+check((await db.query(`select count(*)::int n from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED'`, [leadA])).rows[0].n === 2, 'the account-created e-mail and WhatsApp were queued once');
+check(await setClientPassword(clientEmail, 'ClientPass#2026'), 'the client chooses their own password from the one-time link');
 const clientLogin = await fetch(`${process.env.GATEWAY_URL}/auth/v1/token?grant_type=password`, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -1310,8 +1365,19 @@ r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments/
 check(r.status === 200 && r.json.data.verified === 15000 && r.json.data.balance === 25000 && r.json.data.paymentStatus === 'PARTIALLY_PAID' && r.json.data.payments.length === 1, 'verifying updates the totals without adding a payment', r);
 r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payments/${apiPay1}/verify`, {});
 check(r.status === 409, 'cannot verify twice', r);
+await db.query(`update public.customers set email = 'pay.lead@example.com' where id = $1`, [payLead]);
 r = await api('accm', 'POST', `/pipeline/customers/${payLead}/accounts/payment-confirmed`, { note: 'UPI received' });
 check(r.status === 200, 'Confirm payment & return to Sales', r);
+check(r.json.data.clientLogin.status === 'CREATED' && r.json.data.clientLogin.email === 'pay.lead@example.com',
+  'confirming the payment creates the client login by the Accounts flow (the e-mail on the record)', r.json.data);
+{
+  const acct = (await db.query(`select a.email, a.access_method, a.must_change_password from public.customer_client_accounts a where a.customer_id = $1`, [payLead])).rows;
+  check(acct.length === 1 && acct[0].email === 'pay.lead@example.com' && acct[0].access_method === 'LINK' && acct[0].must_change_password === false, 'the login is the set-password kind: nobody knows a password', acct);
+  const jobs = (await db.query(`select channel, status, secret from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' order by channel`, [payLead])).rows;
+  check(jobs.length === 2 && jobs.every((j: any) => j.secret === null), 'the account e-mail and WhatsApp are queued once (whatever the sending mode does with them), with no password', jobs);
+  const st = (await db.query(`select meta_status, onboarding_completed_at from public.customer_onboarding where customer_id = $1`, [payLead])).rows[0];
+  check(st && st.onboarding_completed_at === null, 'the login unlocks nothing: onboarding is not complete', st);
+}
 r = await api('a', 'GET', `/pipeline/customers/${payLead}`);
 check(r.json.data.lifecycleStage === 'ONBOARDING' && r.json.data.paymentWorkflow === 'PAYMENT_CONFIRMED' && r.json.data.onboarding.paymentVerified === true && r.json.data.onboarding.getStarted === false
   && r.json.data.conversations.length === 2 && r.json.data.amountVerified === 15000 && r.json.data.paymentStatus === 'PARTIALLY_PAID',
@@ -1506,11 +1572,13 @@ async function autoCustomer(fields: Record<string, unknown>, website: string | n
   await db.query(`select private.forward_to_consultant(c.id, c, false) from public.customers c where c.id = $1`, [id]);
   await db.query(`update public.customer_onboarding set accounts_confirmed_at = coalesce(accounts_confirmed_at, now()) where customer_id = $1`, [id]);
   // reaching the consultant sends nothing; the messages start when the TC clicks "Send for onboarding"
-  const arrived = await api('tc', 'GET', `/pipeline/customers/${id}/client-messages`);
+  const arrived = await api('mv', 'GET', `/pipeline/customers/${id}/client-messages`);
   check(arrived.status === 200 && arrived.json.data.stage === null && arrived.json.data.messages.length === 0, `${fields.company}: reaching the consultant sends nothing`, arrived.json);
-  const ans = await api('tc', 'POST', `/pipeline/customers/${id}/consultant/addons-required`, { required: opts.addons ?? false });
-  check(ans.status === 200, 'the TC answers the add-ons question', ans);
-  const startRes = await api('tc', 'POST', `/pipeline/customers/${id}/consultant/start-onboarding`);
+  // add-ons are the Technical Consultant's later conversation, not part of the first verification: the Meta Verifier cannot answer it
+  const deny = await api('mv', 'POST', `/pipeline/customers/${id}/consultant/addons-required`, { required: true });
+  check(deny.status === 404, 'the Meta Verifier cannot take part in the add-ons question', deny);
+  await db.query(`update public.customer_onboarding set addons_required = $2 where customer_id = $1`, [id, opts.addons ?? false]);
+  const startRes = await api('mv', 'POST', `/pipeline/customers/${id}/consultant/start-onboarding`);
   check(startRes.status === 200, `${fields.company}: the TC clicks Send for onboarding`, startRes);
   return id;
 }
@@ -1525,7 +1593,7 @@ let d = await dispatch('dispatch-secret-0123456789');
 check(d.status === 200 && d.json.data.mode === 'dry_run' && d.json.data.sent === 0, 'dry run: nothing is sent (the jobs were already processed right after the TC\'s click)', d);
 check((await jobsOf(autoB)).length === 2 && (await jobsOf(autoB)).every(j => j.status === 'SKIPPED'), 'dry run: both jobs are prepared and marked as not sent');
 check(outbox.length === 0, 'dry run: no request reached the email provider or the WhatsApp webhook');
-r = await api('tc', 'GET', `/pipeline/customers/${autoB}/client-messages`);
+r = await api('mv', 'GET', `/pipeline/customers/${autoB}/client-messages`);
 check(r.status === 200 && r.json.data.automated && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.mode === 'dry_run'
   && r.json.data.messages.length === 2 && r.json.data.messages.every((m: any) => m.status === 'SKIPPED' && /^Dry run/.test(m.detail))
   && r.json.data.messages.some((m: any) => m.detail.includes('Documents Received – Under Review') && m.detail.includes('d***@example.com')),
@@ -1536,11 +1604,206 @@ check(r.status === 200 && r.json.data.messages.length === 2, 'the salesperson ca
 r = await api('accm', 'GET', `/pipeline/customers/${autoB}/client-messages`);
 check(r.status === 404, 'staff who cannot see the customer get 404', r);
 r = await api('tc', 'GET', `/pipeline/customers/${leadA}/client-messages`);
-check(r.status === 200 && r.json.data.automated === false && r.json.data.messages.length === 0, 'customers without the WhatsApp API service are not automated', r);
+check(r.status === 200 && r.json.data.automated === false && r.json.data.stage === null && r.json.data.messages.every((m: any) => m.stage === 'ACCOUNT_CREATED' && m.status === 'SKIPPED'),
+  'customers without the WhatsApp API service get no onboarding messages (only the account-created one, here dry-run)', r);
+
+// --- Meta Verifier workflow: notes, hand-over, the Technical Consultant's follow-up (nothing is sent: the mode is still dry run) ---
+{
+  const wf = await autoCustomer({ name: 'Flow One', company: 'Flow One Traders', email: 'flow.one@example.com', whatsapp: '9819900077', phone: '9819900078' }, 'https://flow-one.example');
+  r = await api('tc', 'GET', `/pipeline/customers/${wf}/verification/notes`);
+  check(r.status === 404, 'workflow: the Technical Consultant cannot read the notes of a Meta customer before the hand-over', r);
+  r = await api('a', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE' });
+  check(r.status === 404, 'workflow: Sales cannot write verification notes', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'GST certificate checked', outcome: 'NOTE' });
+  check(r.status === 201 && r.json.data.length === 1 && r.json.data[0].author === 'Meta Verifier', 'workflow: the Meta Verifier records a note (returns the history)', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'Address proof is blurred', outcome: 'NEEDS_CORRECTION' });
+  check(r.status === 201 && r.json.data.length === 2 && r.json.data[0].outcome === 'NEEDS_CORRECTION', 'workflow: the history keeps both, newest first', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOPE' });
+  check(r.status === 422, 'workflow: an unknown outcome is refused', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: '', outcome: 'NOTE' });
+  check(r.status === 422, 'workflow: an empty note is refused', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE', extra: 1 });
+  check(r.status === 422, 'workflow: unknown fields are refused', r);
+
+  // Sales is told where the customer goes; the Meta Verifier records the WhatsApp panel account (never a password)
+  r = await api('sa', 'GET', `/pipeline/customers/${wf}/handoff`);
+  check(r.status === 200 && r.json.data.route === 'META' && r.json.data.recipient === 'Meta Verifier' && r.json.data.recipientAvailable === true, 'workflow: the hand-off says Meta Verifier, and that one exists', r);
+  r = await api('sa', 'GET', `/pipeline/customers/not-a-uuid/handoff`);
+  check(r.status === 422, 'workflow: a bad customer id is refused', r);
+  r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+  check(r.status === 200 && r.json.data.canEdit === true && r.json.data.services.length >= 1 && r.json.data.dashboardLogin === null, 'workflow: the verifier reads the panel details and the (empty) dashboard login', r);
+  const waCode = r.json.data.services[0].code;
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { platform: 'Main Panel', account: 'flow.one@example.com' });
+  check(r.status === 200 && r.json.data.services.find((s: any) => s.code === waCode).panelAccount === 'flow.one@example.com', 'workflow: the verifier saves the account and gets the section back', r);
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { platform: 'Main Panel', account: 'flow.one@example.com:Secret99' });
+  check(r.status === 422 || r.status === 400, 'workflow: a "user:password" pair is refused', r);
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { account: 'flow.one@example.com', password: 'x' });
+  check(r.status === 422, 'workflow: there is no password field - unknown fields are refused', r);
+  r = await api('a', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+  check(r.status === 404, 'workflow: Sales cannot read the panel details', r);
+  r = await api('tc', 'PATCH', `/pipeline/customers/${wf}/verification/panel-details/${waCode}`, { account: 'tc@example.com' });
+  check(r.status === 404, 'workflow: the Technical Consultant cannot write the panel details of a Meta customer', r);
+  check((await db.query(`select count(*)::int as n from public.audit_logs where action = 'SERVICE_PANEL_DETAILS_SET' and metadata::text like '%flow.one%'`)).rows[0].n === 0, 'workflow: the audit never holds the values');
+
+  // The Meta Verifier sets the password on the (external) panel and the CRM e-mails it to the customer once, keeping nothing
+  {
+    const modeBefore = process.env.AUTOMATION_MODE;
+    // the API dispatches right after a change when sending is on; here it is switched off while jobs are queued, then on for one explicit run
+    const go = async () => { process.env.AUTOMATION_MODE = 'live'; await dispatch('dispatch-secret-0123456789'); process.env.AUTOMATION_MODE = 'off'; };
+    process.env.AUTOMATION_MODE = 'off';
+    const credPath = `/pipeline/customers/${wf}/verification/panel-details/${waCode}/credentials`;
+    const panelPw = 'Pnl#Secret-2026';
+    const reqId = crypto.randomUUID();
+    r = await api('mv', 'POST', credPath, { password: 'short', requestId: reqId });
+    check(r.status === 422, 'panel password: too short is refused', r);
+    r = await api('mv', 'POST', credPath, { password: panelPw });
+    check(r.status === 422, 'panel password: a request id is required', r);
+    r = await api('mv', 'POST', credPath, { password: panelPw, requestId: reqId, email: 'someone.else@example.com' });
+    check(r.status === 422, 'panel password: there is no e-mail field - the address is the one on the record', r);
+    for (const [who, label] of [['a', 'Sales'], ['tc', 'the Technical Consultant'], ['accm', 'Accounts']] as const) {
+      r = await api(who, 'POST', credPath, { password: panelPw, requestId: crypto.randomUUID() });
+      check(r.status === 403 || r.status === 404, `panel password: ${label} cannot set it`, r);
+    }
+    r = await api(null, 'POST', credPath, { password: panelPw, requestId: crypto.randomUUID() });
+    check(r.status === 401, 'panel password: no session is refused', r);
+    check((await db.query(`select count(*)::int n from public.automation_jobs where stage = 'PANEL_CREDENTIALS'`)).rows[0].n === 0, 'panel password: no refusal queued anything');
+    const mailsBefore = outbox.filter(o => o.path === '/emails').length;
+    r = await api('mv', 'POST', credPath, { password: panelPw, requestId: reqId });
+    const cred = r.json?.data?.services?.find((x: any) => x.code === waCode)?.credentials;
+    check(r.status === 200 && cred && cred.setBy === 'Meta Verifier' && cred.email?.status === 'QUEUED' && r.json.data.customerEmail === 'flow.one@example.com', 'panel password: set - the section shows who set it and that the e-mail is waiting', r);
+    check(!JSON.stringify(r.json).includes(panelPw), 'panel password: the response never carries the password');
+    r = await api('mv', 'POST', credPath, { password: panelPw, requestId: reqId });
+    check(r.status === 200, 'panel password: the same request again is accepted and does nothing more', r);
+    check((await db.query(`select count(*)::int n, bool_and(secret is not null and secret like 'v1:%' and secret not like '%' || $2 || '%') as enc from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS'`, [wf, panelPw])).rows[0].enc === true
+      && (await db.query(`select count(*)::int n from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS'`, [wf])).rows[0].n === 1, 'panel password: one job, and the password on it is encrypted');
+    await go();
+    const panelMails = outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => /panel login/i.test(o.body.subject));
+    check(panelMails.length === 1 && panelMails[0].body.to?.[0] === 'flow.one@example.com', 'panel password: exactly one e-mail, to the customer\'s address on the record', panelMails.map(m => m.body.to));
+    const pm = panelMails[0].body;
+    check(pm.html.includes(panelPw) && pm.html.includes('WhatsApp panel') && pm.html.includes('flow.one@example.com') && /separate from your Amuwa client dashboard/i.test(pm.html)
+      && !/temporary password/i.test(pm.html) && /Dear Flow One,/.test(pm.html), 'panel password: the e-mail names the panel, the account and the password, and says it is not the dashboard login', pm.html);
+    const pj = (await db.query(`select status, secret, detail, recipient from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS'`, [wf])).rows[0];
+    check(pj.status === 'SENT' && pj.secret === null && pj.recipient === 'flow.one@example.com' && !String(pj.detail).includes(panelPw), 'panel password: the job is sent, the password is erased, and nothing about it is in the result', pj);
+    r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+    check(r.json.data.services.find((x: any) => x.code === waCode).credentials?.email?.status === 'SENT' && !JSON.stringify(r.json).includes(panelPw), 'panel password: the screen shows configured and sent', r);
+    const leaks = (await db.query(`select (select count(*)::int from public.customer_activities where note like '%' || $1 || '%')
+        + (select count(*)::int from public.audit_logs where metadata::text like '%' || $1 || '%')
+        + (select count(*)::int from public.notifications where body like '%' || $1 || '%') as n`, [panelPw])).rows[0].n;
+    check(leaks === 0, 'panel password: it is in no history line, audit entry or notification');
+    // a provider failure: shown as failed and never as sent; the retry still has the password, and the customer gets one e-mail
+    const mails2 = outbox.filter(o => o.path === '/emails').length;
+    failNext['/emails'] = [503];
+    r = await api('mv', 'POST', credPath, { password: 'Second#Pass-77', requestId: crypto.randomUUID() });
+    check(r.status === 200, 'panel password: a new password with a new request', r);
+    await go();
+    let pj2 = (await db.query(`select status, secret, attempts from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS' order by created_at desc limit 1`, [wf])).rows[0];
+    check(pj2.status === 'QUEUED' && pj2.secret !== null && pj2.attempts === 1, 'panel password: after a provider failure the job waits for a retry and still holds the password', pj2);
+    r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+    check(r.json.data.services.find((x: any) => x.code === waCode).credentials.email.status === 'QUEUED', 'panel password: and the screen does not say it was sent', r);
+    await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and stage = 'PANEL_CREDENTIALS' and status = 'QUEUED'`, [wf]);
+    await go();
+    const retried = outbox.filter(o => o.path === '/emails').slice(mails2).filter(o => /panel login/i.test(o.body.subject) && o.body.to?.[0] === 'flow.one@example.com');
+    pj2 = (await db.query(`select status, secret from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS' order by created_at desc limit 1`, [wf])).rows[0];
+    check(retried.length === 2 && retried[retried.length - 1].body.html.includes('Second#Pass-77') && pj2.status === 'SENT' && pj2.secret === null, 'panel password: the retry delivers it once and erases it', pj2);
+    if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+  }
+
+  // settings: the delay has no default and only the Super Admin sets it
+  r = await api('sa', 'GET', '/workflow/settings');
+  check(r.status === 200 && r.json.data.tcFollowupDelayDays === null && r.json.data.canEdit === true, 'workflow: the follow-up delay has no default', r);
+  r = await api('tc', 'GET', '/workflow/settings');
+  check(r.status === 200 && r.json.data.canEdit === false, 'workflow: the Technical Consultant can read but not edit the settings', r);
+  r = await api('a', 'GET', '/workflow/settings');
+  check(r.status === 403 || r.status === 404, 'workflow: Sales cannot read them', r);
+  r = await api('dh', 'POST', '/workflow/tc-followup-delay', { days: 3 });
+  check(r.status === 403, 'workflow: a Department Head cannot set the delay', r);
+  r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 0 });
+  check(r.status === 422, 'workflow: zero days is refused', r);
+  r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 'three' });
+  check(r.status === 422, 'workflow: and so is a non-number', r);
+
+  // hand-over (the WABA ID first, then every document)
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, { note: 'too early' });
+  check(r.status === 422, 'workflow: no hand-over before everything is authorized', r);
+  r = await api('mv', 'PATCH', `/pipeline/customers/${wf}/consultant-items/WABA_ID`, { value: '109876543210999' });
+  check(r.status === 200, 'workflow: the verifier enters the WABA ID', r);
+  r = await api('tc', 'PATCH', `/pipeline/customers/${wf}/consultant-items/WABA_ID`, { value: '109876543210999' });
+  check(r.status === 404, 'workflow: the Technical Consultant has no part in this stage', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/checklist/verify-all`);
+  check(r.status === 200, 'workflow: the verifier authorizes every document', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${wf}/handover/department-head`, {});
+  check(r.status === 404, 'workflow: the Technical Consultant cannot hand a Meta customer over', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, { note: 'All verified' });
+  check(r.status === 422 && /Complete the Meta verification first/.test(r.json.error.message), 'workflow: the hand-over (and so the Relationship Manager) waits for Meta verification to be completed', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/meta-verification-completed`, {});
+  check(r.status === 200, 'workflow: the verifier records that Meta completed the verification', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, { note: 'All verified' });
+  check(r.status === 200, 'workflow: the verifier hands the customer to the Department Head', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${wf}/handover/department-head`, {});
+  check(r.status === 404, 'workflow: it cannot be handed over twice', r);
+  const { rows: fu } = await db.query(`select id, status, due_at from public.tc_followups where customer_id = $1`, [wf]);
+  check(fu.length === 1 && fu[0].status === 'AWAITING_CONFIGURATION' && fu[0].due_at === null, 'workflow: one follow-up, waiting because no delay is set', fu);
+  r = await api('tc', 'GET', '/consultant/followups');
+  check(r.status === 200 && r.json.data.some((f: any) => f.customerId === wf && f.effectiveStatus === 'AWAITING_CONFIGURATION' && f.handedOverBy === 'Meta Verifier'), 'workflow: the Technical Consultant sees it, with who handed it over', r.json.data);
+  r = await api('mv', 'GET', '/consultant/followups');
+  check(r.status === 403, 'workflow: the Meta Verifier has no follow-up list', r);
+  r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'CONTACTED' });
+  check(r.status === 409, 'workflow: it cannot be worked before it is scheduled', r);
+
+  // the delay is set: scheduled at once; the job notifies once when it is due
+  r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 2 });
+  check(r.status === 200 && r.json.data.tcFollowupDelayDays === 2, 'workflow: the Super Admin sets the delay', r);
+  const { rows: fu2 } = await db.query(`select status, due_at - eligible_at as gap from public.tc_followups where id = $1`, [fu[0].id]);
+  check(fu2[0].status === 'SCHEDULED' && fu2[0].gap.days === 2, 'workflow: the waiting follow-up is scheduled 2 days after the hand-over', fu2);
+  let d2 = await dispatch('dispatch-secret-0123456789');
+  check(d2.status === 200 && d2.json.data.tcFollowups && d2.json.data.tcFollowups.due === 0, 'workflow: the dispatch run reports the follow-up job and nothing is due yet', d2.json.data);
+  await db.query(`update public.tc_followups set due_at = now() - interval '1 minute' where id = $1`, [fu[0].id]);
+  d2 = await dispatch('dispatch-secret-0123456789');
+  check(d2.json.data.tcFollowups.due === 1, 'workflow: when the date has passed the job marks it due', d2.json.data);
+  d2 = await dispatch('dispatch-secret-0123456789');
+  check(d2.json.data.tcFollowups.due === 0, 'workflow: and does not do it twice', d2.json.data);
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'TC_FOLLOWUP_DUE' and entity_id = $1`, [wf])).rows[0].n === 1, 'workflow: exactly one notification');
+  r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'CALL_BACK' });
+  check(r.status === 422, 'workflow: a call-back needs the next date', r);
+  r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'COMPLETED', note: 'Explained the add-ons' });
+  check(r.status === 201 && r.json.data.status === 'DONE', 'workflow: the consultant records the consultation and it is done', r);
+  r = await api('tc', 'GET', '/consultant/followups?scope=DONE');
+  check(r.status === 200 && r.json.data.some((f: any) => f.customerId === wf && f.contacts === 1), 'workflow: the history stays under Done', r);
+  await api('sa', 'POST', '/workflow/tc-followup-delay', { days: null });
+
+  // catalogue and route
+  r = await api('dh', 'PATCH', '/pipeline/service-journeys/AI_CALLING/meta-verification', { value: true });
+  check(r.status === 403, 'workflow: a Department Head cannot change which services the Meta Verifier verifies', r);
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/AI_CALLING/meta-verification', { value: true });
+  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'AI_CALLING').requiresMetaVerification === true && r.json.data.find((x: any) => x.code === 'WHATSAPP_API').requiresMetaVerification === true, 'workflow: the Super Admin changes it (the catalogue answers with the new setting)', r);
+  await api('sa', 'PATCH', '/pipeline/service-journeys/AI_CALLING/meta-verification', { value: false });
+  r = await api('sa', 'PATCH', '/pipeline/service-journeys/NOT_A_SERVICE/meta-verification', { value: true });
+  check(r.status === 404 || r.status === 422, 'workflow: an unknown service is refused', r);
+  r = await api('a', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'TECHNICAL', reason: 'because' });
+  check(r.status === 404, 'workflow: Sales cannot re-route', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'TECHNICAL', reason: '' });
+  check(r.status === 422, 'workflow: a re-route needs a reason', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'TECHNICAL', reason: 'The customer wants the consultant to take it' });
+  check(r.status === 200, 'workflow: the Department Head re-routes a customer in verification', r);
+  r = await api('mv', 'GET', `/pipeline/customers/${autoB}/verification/notes`);
+  check(r.status === 404, 'workflow: and the Meta Verifier loses it', r);
+  r = await api('tc', 'GET', `/pipeline/customers/${autoB}/client-messages`);
+  check(r.status === 200, 'workflow: while the Technical Consultant gets it', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${autoB}/verification/reroute`, { route: 'META', reason: 'Back to the verifier' });
+  check(r.status === 200, 'workflow: and it can go back', r);
+  r = await api('dh', 'GET', '/pipeline/verification-route-review');
+  check(r.status === 200 && Array.isArray(r.json.data), 'workflow: the Department Head can list customers whose route differs from their services', r);
+  r = await api('a', 'GET', '/pipeline/verification-route-review');
+  check(r.status === 403 || r.status === 404, 'workflow: Sales cannot', r);
+
+  // the Meta Verifier role itself
+  r = await api('mv', 'POST', `/users/${(await db.query(`select id from public.profiles where email = 'mv@amuwa.com'`)).rows[0].id}/meta-verifier`, { value: false });
+  check(r.status === 403, 'workflow: a Meta Verifier cannot change their own role', r);
+}
 
 // Live, test recipients only
 Object.assign(process.env, { AUTOMATION_MODE: 'live', AUTOMATION_TEST_RECIPIENTS: '9819900011, 9819900022, auto.client@example.com, nosite.client@example.com' });
-r = await api('tc', 'POST', `/pipeline/customers/${autoB}/checklist/verify-all`);
+r = await api('mv', 'POST', `/pipeline/customers/${autoB}/checklist/verify-all`);
 check(r.status === 200, 'the TC authorizes every document', r);
 const metaMail = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification In Progress | Amuwa Corporation');
 const metaWa = outbox.find(o => o.path === '/wa' && o.body.status === 'Meta Verification');
@@ -1570,7 +1833,7 @@ const wpMail = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto
 check(wpMail && wpMail.headers.authorization === 'Bearer re_test_key' && wpMail.body.from === 'Amuwa Corporation <meta@amuwa.com>' && wpMail.body.reply_to === 'meta@amuwa.com'
   && wpMail.body.html.includes('Dear Auto &lt;Client&gt;,') && wpMail.body.html.includes('918879690034') && wpMail.body.text.includes('Mini Website'),
   'Website Pending: the Mini Website email (from meta@amuwa.com, name HTML-escaped, plain-text copy)', wpMail?.body);
-r = await api('tc', 'POST', `/pipeline/customers/${autoA}/checklist/verify-all`);
+r = await api('mv', 'POST', `/pipeline/customers/${autoA}/checklist/verify-all`);
 const metaA = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject.startsWith('Meta Verification In Progress'));
 check(metaA && metaA.body.html.includes('your website has been created') && metaA.body.html.includes('around 2-3 weeks'),
   'Meta Verification email after the website was created: says so, and that it takes about 2-3 weeks', metaA?.body?.html);
@@ -1589,52 +1852,70 @@ const readyJobs = await jobsOf(autoA);
 check(readyJobs.some(j => j.stage === 'WEBSITE_READY' && j.channel === 'WHATSAPP' && j.status === 'SENT' && /accepted by webhook \(HTTP 200: .*msg-/.test(j.detail)),
   'the WhatsApp job keeps what the webhook answered, so a router that ignores a status can be seen', readyJobs.filter(j => j.channel === 'WHATSAPP'));
 
-// Step 3: creating the client login completes nothing (the "completed" messages follow the Meta status); no password is kept in the outbox
+// Step 3: Accounts creates the client login: the "account created" messages are queued (never "completed"), and no password exists anywhere.
 process.env.AUTOMATION_MODE = 'off';
-r = await api('tc', 'POST', `/pipeline/customers/${autoA}/client-account`, { email: 'auto.login@example.com', password: 'AutoPass#2026x' });
-check(r.status === 201 && r.json.data.email === 'auto.login@example.com' && !JSON.stringify(r.json).includes('AutoPass'), 'the TC creates the client login (the password is not in the answer)', r);
+// (part of the payment is verified, so Accounts may create the login; the order is not fully paid)
+await db.query(`update public.customers set deal_amount = 1000, amount_received = 1000, amount_verified = 500 where id = $1`, [autoA]);
+await db.query(`update public.customer_onboarding set accounts_confirmed_at = coalesce(accounts_confirmed_at, now()) where customer_id = $1`, [autoA]);
+r = await api('tc', 'POST', `/pipeline/customers/${autoA}/accounts/client-login`, {});
+check(r.status === 403 || r.status === 404, 'the TC cannot create the client login', r);
+r = await api('accm', 'POST', `/pipeline/customers/${autoA}/accounts/client-login`, {});
+check(r.status === 201 && r.json.data.email === 'auto.client@example.com', 'Accounts creates the client login from the e-mail on the record', r);
 let jobs = await jobsOf(autoA);
-check(!jobs.some(j => j.stage === 'COMPLETED') && jobs.every(j => !j.secret), 'the login completes nothing and no password is stored on any job', jobs);
-r = await api("tc", "PATCH", `/pipeline/customers/${autoA}/consultant-items/WABA_ID`, { value: "112233445566778" });
-check(r.status === 200, 'the TC enters the WABA ID', r);
-r = await api('a', 'POST', `/pipeline/customers/${autoA}/meta-verification`, { status: 'COMPLETED' });
-check(r.status === 404, 'Sales cannot complete the Meta verification', r);
-r = await api('tc', 'POST', `/pipeline/customers/${autoA}/meta-verification`, { status: 'COMPLETED' });
-check(r.status === 200 && r.json.data.meta.status === 'COMPLETED', 'the TC completes the Meta verification', r);
-jobs = await jobsOf(autoA);
-check(jobs.filter(j => j.stage === 'COMPLETED').length === 2 && jobs.every(j => !j.secret), 'Meta verification completed queues the Status Completed email + WhatsApp (and keeps no password)', jobs);
+const accountJobs = jobs.filter(j => j.stage === 'ACCOUNT_CREATED');
+check(accountJobs.length === 2 && accountJobs.every(j => j.status === 'QUEUED'), 'the account-created e-mail and WhatsApp are queued', jobs);
+check(!jobs.some(j => j.stage === 'COMPLETED') && jobs.every(j => !j.secret), 'a login queues no "completed" message, and no password is stored anywhere');
 d = await dispatch('dispatch-secret-0123456789');
 check(d.json.data.claimed === 0, 'sending switched off: nothing is processed');
 process.env.AUTOMATION_MODE = 'live';
+process.env.APP_URL = 'https://crm.example.test';
 failNext['/wa'] = [503];
 d = await dispatch('dispatch-secret-0123456789');
-const done = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification Completed – Panel Access Details | Amuwa Corporation');
-check(done && done.body.html.includes('https://chat.wabastore.shop/login') && done.body.html.includes('auto.login@example.com')
-  && !done.body.html.includes('AutoPass#2026x') && done.body.html.includes('<b>Department:</b> Wabastore') && done.body.html.includes('Forgot password'),
-  'Status Completed email: Wabastore panel link and the login e-mail as user ID; the password is never in it', done?.body?.html);
+const welcome = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject === 'Your Amuwa client dashboard - set your password');
+check(welcome && welcome.body.html.includes('Set your password') && welcome.body.html.includes('client%2Fset-password') && /\/auth\/v1\/verify\?token=/.test(welcome.body.html)
+  && !/Password:/i.test(welcome.body.html) && !/Password:/i.test(welcome.body.text),
+  'the client gets a one-time set-password link by e-mail, and no password', welcome?.body?.html);
+const welcomeLink = /href="([^"]*\/auth\/v1\/verify[^"]*)"/.exec(welcome.body.html)![1].replace(/&amp;/g, '&');
+check(await setClientPassword('auto.client@example.com', 'AutoPass#2026x', welcomeLink), 'the link from the e-mail lets the client choose their password');
+check(!(await setClientPassword('auto.client@example.com', 'Reused#2026x', welcomeLink)), 'and it works once');
 jobs = await jobsOf(autoA);
-const waJob = jobs.find(j => j.stage === 'COMPLETED' && j.channel === 'WHATSAPP');
+check(jobs.every(j => !j.secret) && !JSON.stringify(outbox).includes('AutoPass'), 'no password is stored on any job or sent to any provider');
+// Meta has finished: only now does the "completed" message go out
+check((await jobsOf(autoA)).filter(j => j.stage === 'COMPLETED').length === 0, 'nothing "completed" was queued by creating the login');
+r = await api('a', 'POST', `/pipeline/customers/${autoA}/meta-verification-completed`, {});
+check(r.status === 404, 'Sales cannot record the Meta result', r);
+r = await api('mv', 'POST', `/pipeline/customers/${autoA}/meta-verification-completed`, {});
+check(r.status === 200, 'the verifier records that Meta completed the verification', r);
+r = await api('mv', 'POST', `/pipeline/customers/${autoA}/meta-verification-completed`, {});
+check(r.status === 200 && (await jobsOf(autoA)).filter(j => j.stage === 'COMPLETED').length === 2, 'recording it again queues nothing twice', r);
+await dispatch('dispatch-secret-0123456789');
+const done = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification Completed – Panel Access Details | Amuwa Corporation');
+check(done && done.body.html.includes('https://chat.wabastore.shop/login') && done.body.html.includes('auto.client@example.com')
+  && !done.body.html.includes('AutoPass#2026x') && !/<b>Password:/.test(done.body.html) && done.body.html.includes('<b>Department:</b> Wabastore'),
+  'Status Completed email: Wabastore panel link and the login e-mail as user ID, but no password', done?.body?.html);
+jobs = await jobsOf(autoA);
+const waJob = jobs.find(j => j.stage === 'ACCOUNT_CREATED' && j.channel === 'WHATSAPP');
 check(waJob && waJob.status === 'QUEUED' && waJob.attempts === 1 && /HTTP 503/.test(waJob.detail), 'a WhatsApp webhook error is retried later', waJob);
 await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and status = 'QUEUED'`, [autoA]);
 d = await dispatch('dispatch-secret-0123456789');
-check(d.json.data.sent === 1 && (await jobsOf(autoA)).find(j => j.stage === 'COMPLETED' && j.channel === 'WHATSAPP')?.status === 'SENT', 'the retry succeeds', d);
-r = await api('tc', 'GET', `/pipeline/customers/${autoA}/client-messages`);
-check(r.json.data.stage === 'COMPLETED' && r.json.data.messages.filter((m: any) => m.status === 'SENT').length === 8
+check(d.json.data.sent === 1 && (await jobsOf(autoA)).find(j => j.stage === 'ACCOUNT_CREATED' && j.channel === 'WHATSAPP')?.status === 'SENT', 'the retry succeeds', d);
+r = await api('mv', 'GET', `/pipeline/customers/${autoA}/client-messages`);
+check(r.json.data.stage === 'COMPLETED' && r.json.data.messages.filter((m: any) => m.status === 'SENT').length === 10
   && r.json.data.messages.every((m: any) => m.status === 'SENT'), 'every step of customer A was sent exactly once', r.json.data.messages);
 
 // The TC adds the website link; invalid email is skipped
 const autoC = await autoCustomer({ name: 'No Site', company: 'No Site Stores', email: 'nosite.client@example.com', whatsapp: '9876501234', phone: '9819900022' }, 'NO_WEBSITE');
 r = await api('a', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'https://nosite.example' });
 check(r.status === 404, 'sales cannot use the consultant website action', r);
-r = await api('tc', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'nosite-stores.example' });
+r = await api('mv', 'POST', `/pipeline/customers/${autoC}/consultant/website`, { url: 'nosite-stores.example' });
 check(r.status === 200 && r.json.data.website === 'https://nosite-stores.example', 'the TC saves the website link', r);
 jobs = await jobsOf(autoC);
 check(!jobs.some(j => j.stage === 'WEBSITE_READY'), 'saving the link alone does not send "website ready": the TC must authorize it', jobs);
-r = await api('tc', 'POST', `/pipeline/customers/${autoC}/checklist/WA_WEBSITE_URL/review`, { decision: 'VERIFIED' });
+r = await api('mv', 'POST', `/pipeline/customers/${autoC}/checklist/WA_WEBSITE_URL/review`, { decision: 'VERIFIED' });
 check(r.status === 200, 'the TC authorizes the website', r);
 jobs = await jobsOf(autoC);
 check(jobs.filter(j => j.stage === 'WEBSITE_READY').length === 2, 'authorizing it queues the "website ready" email + WhatsApp', jobs);
-r = await api('tc', 'POST', `/pipeline/customers/${autoC}/checklist/WA_WEBSITE_URL/review`, { decision: 'VERIFIED' });
+r = await api('mv', 'POST', `/pipeline/customers/${autoC}/checklist/WA_WEBSITE_URL/review`, { decision: 'VERIFIED' });
 jobs = await jobsOf(autoC);
 check(jobs.filter(j => j.stage === 'WEBSITE_READY').length === 2, 'authorizing again sends nothing more', jobs);
 check(jobs.some(j => j.stage === 'WEBSITE_PENDING' && j.channel === 'WHATSAPP' && j.status === 'SKIPPED' && /not a test recipient/.test(j.detail)), 'a WhatsApp number outside the test list is not messaged', jobs);
@@ -1643,28 +1924,181 @@ d = await dispatch('dispatch-secret-0123456789');
 jobs = await jobsOf(autoD);
 check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
   && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT'), 'no email address: the email is skipped, the WhatsApp still goes', jobs);
-// --- Payment requests are emailed to the one Accounts person who handles them ---
+// --- Payment requests are emailed to EVERY active Accounts member (one e-mail each) ---
 process.env.APP_URL = 'https://crm.example.test';
-const accEmail = (await db.query(`select p.email from public.profiles p join public.departments d on d.id = p.department_id
-                                     where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id limit 1`)).rows[0].email as string;
+const accEmails = (await db.query(`select p.email from public.profiles p join public.departments d on d.id = p.department_id
+                                     where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id`)).rows.map((x: any) => x.email as string);
+check(accEmails.length >= 2, 'there are two Accounts members configured', accEmails);
 r = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], name: 'Pay Request', company: 'Pay Request Co', phone: '9819900033' });
 const payReq = r.json.data.id as string;
 const mailsBefore = outbox.filter(o => o.path === '/emails').length;
 r = await api('a', 'POST', `/pipeline/customers/${payReq}/send-to-accounts`, { amount: 25000, note: 'Agreed on the call' });
 check(r.status === 200 || r.status === 201, 'Sales sends the customer for payment confirmation', r);
 await dispatch('dispatch-secret-0123456789');
-const accMail = outbox.filter(o => o.path === '/emails').slice(mailsBefore).find(o => o.body.to?.[0] === accEmail);
-check(accMail && accMail.body.subject === 'New payment confirmation request: Pay Request Co | Amuwa CRM' && accMail.body.html.includes('Sales sent a customer for payment confirmation')
-  && accMail.body.html.includes('Sent by') && accMail.body.html.includes(`href="https://crm.example.test/accounts/dashboard/${payReq}"`) && accMail.body.from === 'Amuwa Corporation <meta@amuwa.com>',
-  'the Accounts person gets an email about the payment request, with the sender and a link to it', accMail?.body);
-check(outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => o.body.subject.startsWith('New payment confirmation request')).length === 1,
-  'exactly one person is emailed (not every Accounts staff member)');
+const reqMails = outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => o.body.subject.startsWith('New payment confirmation request'));
+check(reqMails.length === accEmails.length && accEmails.every(e => reqMails.some(m => m.body.to?.[0] === e)), 'every active Accounts member gets the email, exactly once each', reqMails.map(m => m.body.to));
+const accMail = reqMails[0];
+check(accMail.body.subject === 'New payment confirmation request: Pay Request Co | Amuwa CRM' && accMail.body.html.includes('Sales sent a customer for payment confirmation')
+  && accMail.body.html.includes('Sent by') && accMail.body.html.includes('Reference:') && accMail.body.html.includes(`href="https://crm.example.test/accounts/dashboard/${payReq}"`) && accMail.body.from === 'Amuwa Corporation <meta@amuwa.com>',
+  'the email names the customer, its reference and the sender, tells what to do and links to the request', accMail?.body);
+check(reqMails.every(m => !/25,000|25000/.test(m.body.html) && !m.body.html.includes('9819900033')), 'and carries no amount and no customer phone');
 check(!outbox.some(o => o.path === '/wa' && o.body.name === 'Pay Request'), 'no WhatsApp goes out for a payment request');
 r = await api('a', 'GET', `/pipeline/customers/${payReq}/client-messages`);
-check(r.status === 200 && !JSON.stringify(r.json.data).includes(accEmail) && !r.json.data.messages.some((m: any) => m.stage === 'ACCOUNTS_PAYMENT'),
-  'Sales does not see the staff email or its address on the customer');
-const payJob = (await db.query(`select status, internal, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT'`, [payReq])).rows;
-check(payJob.length === 1 && payJob[0].status === 'SENT' && payJob[0].internal && payJob[0].recipient === accEmail, 'the job is recorded as sent to that person', payJob);
+check(r.status === 200 && !accEmails.some(e => JSON.stringify(r.json.data).includes(e)) && !r.json.data.messages.some((m: any) => m.stage === 'ACCOUNTS_PAYMENT'),
+  'Sales does not see the staff emails or their addresses on the customer');
+const payJob = (await db.query(`select status, internal, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT' order by recipient`, [payReq])).rows;
+check(payJob.length === accEmails.length && payJob.every((j: any) => j.status === 'SENT' && j.internal) && accEmails.every(e => payJob.some((j: any) => j.recipient === e)), 'each recipient has a job of their own, recorded as sent', payJob);
+// the provider fails for one of them: that one is retried, the other is not held back
+r = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], name: 'Pay Failing', company: 'Pay Failing Co', phone: '9819900034' });
+const payFail = r.json.data.id as string;
+failNext['/emails'] = [503];
+await api('a', 'POST', `/pipeline/customers/${payFail}/send-to-accounts`, { amount: 12000 });
+await dispatch('dispatch-secret-0123456789');
+const failJobs = (await db.query(`select status, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT'`, [payFail])).rows;
+check(failJobs.length === accEmails.length && failJobs.filter((j: any) => j.status === 'SENT').length === accEmails.length - 1 && failJobs.filter((j: any) => j.status !== 'SENT').length === 1,
+  'a provider failure for one Accounts member is that member\'s retry; the others are sent', failJobs);
+
+// --- Accounts creates the dashboard login with a TEMPORARY password: the server makes it, one e-mail carries it, the client must replace it ---
+{
+  const modeBefore = process.env.AUTOMATION_MODE;
+  const go = async () => { process.env.AUTOMATION_MODE = 'live'; await dispatch('dispatch-secret-0123456789'); process.env.AUTOMATION_MODE = 'off'; };
+  process.env.AUTOMATION_MODE = 'off';
+  const recipientsBefore = process.env.AUTOMATION_TEST_RECIPIENTS;
+  delete process.env.AUTOMATION_TEST_RECIPIENTS; // these customers are real-looking addresses of this test only; nothing leaves the mock provider
+  const signIn = async (email: string, password: string) => {
+    const x = await fetch(`${process.env.GATEWAY_URL}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    return x.status;
+  };
+  const tempCustomer = async (tag: string) => {
+    const id = await autoCustomer({ name: `Temp ${tag}`, company: `Temp ${tag} Co`, email: `temp.${tag.toLowerCase()}@example.com`, whatsapp: `98199001${tag === 'One' ? '11' : tag === 'Two' ? '12' : '13'}`, phone: `98199002${tag === 'One' ? '11' : tag === 'Two' ? '12' : '13'}` }, null);
+    await db.query(`update public.customers set deal_amount = 1000, amount_received = 1000, amount_verified = 500 where id = $1`, [id]);
+    await db.query(`update public.customer_onboarding set accounts_confirmed_at = coalesce(accounts_confirmed_at, now()) where customer_id = $1`, [id]);
+    return id;
+  };
+  const temporaryOf = (mail: any) => /Temporary password:<\/b>\s*([^<\s]+)/.exec(mail.body.html)?.[1] as string;
+  const dashMails = (email: string, from: number) => outbox.filter(o => o.path === '/emails').slice(from).filter(o => o.body.to?.[0] === email && /client dashboard/i.test(o.body.subject));
+
+  const t1 = await tempCustomer('One');
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'SMS' });
+  check(r.status === 422, 'temporary login: an unknown method is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY', password: 'Chosen#By-Browser1' });
+  check(r.status === 422, 'temporary login: the browser cannot send a password', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY', email: 'other@example.com' });
+  check(r.status === 422, 'temporary login: nor an e-mail', r);
+  for (const who of ['a', 'tc', 'mv'] as const) {
+    r = await api(who, 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+    check(r.status === 403 || r.status === 404, `temporary login: ${who} cannot create a login`, r);
+  }
+  check((await db.query(`select count(*)::int n from public.customer_client_accounts where customer_id = $1`, [t1])).rows[0].n === 0, 'temporary login: the refusals created nothing');
+
+  // without the server key a temporary password cannot be handed over safely: refused before anything is made
+  const keyBefore = process.env.AUTOMATION_SECRET_KEY;
+  delete process.env.AUTOMATION_SECRET_KEY;
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+  process.env.AUTOMATION_SECRET_KEY = keyBefore;
+  check(r.status === 503 && /AUTOMATION_SECRET_KEY/.test(r.json.error.message), 'temporary login: refused when the server has no secret key', r);
+  check((await db.query(`select count(*)::int n from public.customer_client_accounts where customer_id = $1`, [t1])).rows[0].n === 0
+    && (await db.query(`select count(*)::int n from public.customer_client_provisioning where customer_id = $1`, [t1])).rows[0].n === 0, 'temporary login: and nothing was started');
+
+  const m0 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+  check(r.status === 201 && r.json.data.email === 'temp.one@example.com' && r.json.data.method === 'TEMPORARY' && !JSON.stringify(r.json).match(/pass/i), 'temporary login: created with the e-mail on the record; the response carries no password', r);
+  const acc1 = (await db.query(`select auth_user_id, must_change_password, access_method from public.customer_client_accounts where customer_id = $1`, [t1])).rows[0];
+  check(acc1.must_change_password === true && acc1.access_method === 'TEMPORARY', 'temporary login: the client must choose their own password', acc1);
+  const queued = (await db.query(`select channel, secret, context from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' order by channel`, [t1])).rows;
+  check(queued.length === 2 && /^v1:/.test(queued.find((j: any) => j.channel === 'EMAIL').secret) && queued.find((j: any) => j.channel === 'WHATSAPP').secret === null
+    && JSON.stringify(queued).indexOf('Temporary') === -1, 'temporary login: the password is on the e-mail job only, and encrypted', queued);
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+  check(r.status === 409, 'temporary login: a second click makes no second login', r);
+  await go();
+  const sent1 = dashMails('temp.one@example.com', m0);
+  check(sent1.length === 1 && sent1[0].body.subject === 'Your Amuwa client dashboard - temporary sign-in details' && /Dear Temp One,/.test(sent1[0].body.html)
+    && sent1[0].body.html.includes('https://crm.example.test/client/login') && /choose your own password/i.test(sent1[0].body.html) && !/panel/i.test(sent1[0].body.html), 'temporary login: one e-mail to the customer, naming the dashboard, with the sign-in address', sent1.map(x => x.body.subject));
+  const tp1 = temporaryOf(sent1[0]);
+  check(tp1 && tp1.length >= 12 && /[A-Z]/.test(tp1) && /[a-z]/.test(tp1) && /\d/.test(tp1), 'temporary login: the password is strong and random', tp1?.length);
+  check((await db.query(`select status, secret, detail from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'`, [t1])).rows.every((j: any) => j.status === 'SENT' && j.secret === null && !String(j.detail).includes(tp1)), 'temporary login: sent, and the stored password is erased');
+  const wa1 = outbox.filter(o => o.path === '/wa').slice(-3).filter(o => o.body.name === 'Temp One');
+  check(!JSON.stringify(outbox.filter(o => o.path === '/wa')).includes(tp1), 'temporary login: the password never goes to WhatsApp', wa1.length);
+  const leak1 = (await db.query(`select (select count(*)::int from public.customer_activities where note like '%' || $1 || '%') + (select count(*)::int from public.audit_logs where metadata::text like '%' || $1 || '%') + (select count(*)::int from public.notifications where body like '%' || $1 || '%') as n`, [tp1])).rows[0].n;
+  check(leak1 === 0, 'temporary login: it is in no history, audit or notification');
+
+  check(await signIn('temp.one@example.com', tp1) === 200, 'temporary login: the client signs in with the emailed password');
+  tokens.set('tempone', tokenFor(acc1.auth_user_id));
+  r = await api('tempone', 'GET', '/client/me');
+  check(r.status === 200 && r.json.data.mustChangePassword === true && r.json.data.customerId === t1, 'temporary login: the dashboard knows the password must change', r);
+  for (const path of ['/client/overview', '/client/services', '/client/invoices', '/client/tickets', '/client/documents']) {
+    r = await api('tempone', 'GET', path);
+    check(r.status === 403 && /own password/i.test(r.json.error.message), `temporary login: ${path} is closed until the password is replaced`, r);
+  }
+  r = await api('tempone', 'POST', '/client/password', { password: tp1 });
+  check(r.status === 422, 'temporary login: the temporary password cannot be chosen again', r);
+  r = await api('tempone', 'POST', '/client/password', { password: 'short' });
+  check(r.status === 422, 'temporary login: too short is refused', r);
+  r = await api('tempone', 'POST', '/client/password', { password: 'Brand#New-Pass-2026', login: 'x' });
+  check(r.status === 422, 'temporary login: nothing but the password is accepted', r);
+  check(await signIn('temp.one@example.com', tp1) === 200, 'temporary login: refused attempts changed nothing');
+  r = await api('tempone', 'POST', '/client/password', { password: 'Brand#New-Pass-2026' });
+  check(r.status === 200 && r.json.data.changed === true, 'temporary login: the client chooses their own password', r);
+  check(await signIn('temp.one@example.com', tp1) === 400 && await signIn('temp.one@example.com', 'Brand#New-Pass-2026') === 200, 'temporary login: the temporary password stops working; the new one signs in');
+  r = await api('tempone', 'GET', '/client/me');
+  check(r.json.data.mustChangePassword === false, 'temporary login: the flag is cleared', r);
+  r = await api('tempone', 'GET', '/client/overview');
+  check(r.status === 200, 'temporary login: the dashboard opens (the onboarding journey, not the sections that wait for a later stage)', r);
+  check((await db.query(`select count(*)::int n from public.customer_activities where customer_id = $1 and type = 'CLIENT_PASSWORD_CHANGED' and note not like '%Brand%'`, [t1])).rows[0].n === 1
+    && (await db.query(`select count(*)::int n from public.audit_logs where entity_id = $1 and metadata::text like '%Brand%'`, [t1])).rows[0].n === 0, 'temporary login: the change is in the history, without any password');
+  r = await api('accm', 'GET', '/pipeline/accounts/client-logins?status=CREATED&search=Temp%20One');
+  const row1 = r.json.data.items[0];
+  check(row1 && row1.accessMethod === 'TEMPORARY' && row1.mustChangePassword === false && row1.loginEmail === 'temp.one@example.com' && row1.notification.email.status === 'SENT' && !JSON.stringify(r.json).includes(tp1), 'temporary login: Accounts sees the method, that the client has chosen their own, and that the e-mail was sent', row1);
+  // sending again after the client chose their own password: the set-password link, never a new temporary password
+  await db.query(`update public.automation_jobs set sent_at = now() - interval '11 minutes' where customer_id = $1 and stage = 'ACCOUNT_CREATED'`, [t1]);
+  const m1 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/account-email/resend`, {});
+  check(r.status === 200, 'temporary login: Accounts can send the e-mail again', r);
+  await go();
+  const again = dashMails('temp.one@example.com', m1);
+  check(again.length === 1 && again[0].body.subject === 'Your Amuwa client dashboard - set your password' && !/Temporary password/i.test(again[0].body.html), 'temporary login: a client who chose their own password gets the set-password link, not a new temporary password', again.map(x => x.body.subject));
+  check(await signIn('temp.one@example.com', 'Brand#New-Pass-2026') === 200, 'temporary login: and their password is untouched');
+
+  // a client who has not replaced the temporary password: Accounts resends and gets a NEW one; the old one stops working
+  const t2 = await tempCustomer('Two');
+  const m2 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t2}/accounts/client-login`, { method: 'TEMPORARY' });
+  check(r.status === 201, 'temporary login: second customer created', r);
+  await go();
+  const first2 = dashMails('temp.two@example.com', m2);
+  const tp2 = temporaryOf(first2[0]);
+  r = await api('accm', 'POST', `/pipeline/customers/${t2}/accounts/account-email/resend`, {});
+  check(r.status === 409, 'temporary login: a resend a moment after the first is refused, and the password still works', r);
+  check(await signIn('temp.two@example.com', tp2) === 200, 'temporary login: a refused resend did not invalidate the password the client holds');
+  await db.query(`update public.automation_jobs set sent_at = now() - interval '11 minutes' where customer_id = $1 and stage = 'ACCOUNT_CREATED'`, [t2]);
+  r = await api('accm', 'POST', `/pipeline/customers/${t2}/accounts/account-email/resend`, {});
+  check(r.status === 200, 'temporary login: Accounts sends the sign-in e-mail again', r);
+  await go();
+  const second2 = dashMails('temp.two@example.com', m2);
+  const tp2b = temporaryOf(second2[second2.length - 1]);
+  check(second2.length === 2 && tp2b && tp2b !== tp2, 'temporary login: the second e-mail carries a new temporary password', second2.length);
+  check(await signIn('temp.two@example.com', tp2) === 400 && await signIn('temp.two@example.com', tp2b) === 200, 'temporary login: the old temporary password no longer works');
+
+  // a provider failure: the login stays, the e-mail waits with its password, and the customer gets exactly one e-mail when it goes through
+  const t3 = await tempCustomer('Three');
+  await go(); // anything else waiting is sent first, so the failure below hits this customer's e-mail
+  const m3 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t3}/accounts/client-login`, { method: 'TEMPORARY' });
+  failNext['/emails'] = [503];
+  check(r.status === 201, 'temporary login: created while the provider is failing', r);
+  await go();
+  const j3 = (await db.query(`select status, secret from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'`, [t3])).rows[0];
+  check(j3.status === 'QUEUED' && j3.secret !== null, 'temporary login: a failed send is not reported as sent, and the retry still has the password', j3);
+  r = await api('accm', 'GET', '/pipeline/accounts/client-logins?status=CREATED&search=Temp%20Three');
+  check(r.json.data.items[0].notification.email.status !== 'SENT', 'temporary login: Accounts does not see "sent"', r.json.data.items[0]?.notification);
+  await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'`, [t3]);
+  await go();
+  const mails3 = dashMails('temp.three@example.com', m3);
+  check(mails3.length === 2 && temporaryOf(mails3[1]) === temporaryOf(mails3[0]), 'temporary login: the retry carries the same password (the one that exists), not a second login', mails3.length);
+  check((await db.query(`select count(*)::int n from public.customer_client_accounts where customer_id = $1`, [t3])).rows[0].n === 1, 'temporary login: still one login');
+  if (recipientsBefore !== undefined) process.env.AUTOMATION_TEST_RECIPIENTS = recipientsBefore;
+  if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+}
 delete process.env.APP_URL;
 
 // --- Mobile numbers and websites must be real ---
@@ -1769,24 +2203,24 @@ check((await jobsOf(autoS3)).find(j => j.channel === 'EMAIL')?.status === 'SENT'
 smtp.close();
 for (const k of ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS']) delete process.env[k];
 process.env.EMAIL_PROVIDER = 'resend';
-r = await api('tc', 'GET', `/pipeline/customers/${autoD}/client-messages`);
+r = await api('mv', 'GET', `/pipeline/customers/${autoD}/client-messages`);
 check(r.json.data.mode === 'live' && r.json.data.emailReady === true && r.json.data.whatsappReady === true, 'the panel knows both senders are set up', r.json.data);
 const keepKey = process.env.EMAIL_API_KEY; delete process.env.EMAIL_API_KEY; delete process.env.WHATSAPP_WEBHOOK_URL;
-r = await api('tc', 'GET', `/pipeline/customers/${autoD}/client-messages`);
+r = await api('mv', 'GET', `/pipeline/customers/${autoD}/client-messages`);
 check(r.json.data.emailReady === false && r.json.data.whatsappReady === false, 'and warns when email or WhatsApp sending is not set up (messages would wait silently)', r.json.data);
 process.env.EMAIL_API_KEY = keepKey!; process.env.WHATSAPP_WEBHOOK_URL = `${P}/wa`;
 // "Send messages for this step": a customer whose step was recorded before the automations were on (no messages)
 await db.query(`delete from public.automation_jobs where customer_id = $1`, [autoD]);
-r = await api('tc', 'GET', `/pipeline/customers/${autoD}/client-messages`);
+r = await api('mv', 'GET', `/pipeline/customers/${autoD}/client-messages`);
 check(r.status === 200 && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.messages.length === 0, 'a step without messages (recorded before go-live) is visible to the TC', r);
 r = await api('a', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
 check(r.status === 404, 'sales cannot send them', r);
-r = await api('tc', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
+r = await api('mv', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
 check(r.status === 200 && r.json.data.stage === 'UNDER_REVIEW' && r.json.data.queued === 2, 'the TC sends the current step\'s messages', r);
 jobs = await jobsOf(autoD);
 check(jobs.length === 2 && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT') && jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED'),
   'they are sent right away (the email is skipped: this customer has no email address)', jobs);
-r = await api('tc', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
+r = await api('mv', 'POST', `/pipeline/customers/${autoD}/client-messages/resend`);
 check(r.status === 409, 'and not again within a minute', r);
 const un = await api('tc', 'POST', `/pipeline/customers/${leadA}/client-messages/resend`);
 check(un.status === 409 || un.status === 404, 'not for customers that are not automated', un);
@@ -1924,6 +2358,18 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
   const smId = await idOf('sm@amuwa.com'), tm2Id = await idOf('tm.delivery@amuwa.com'), tl2Id = await idOf('tl.delivery@amuwa.com'), aId = await idOf('a@amuwa.com');
   const mid = () => crypto.randomUUID();
+  // End-to-end encryption: the internal chats take envelopes only. The API tests cannot do real cryptography (that is tested in the browser code),
+  // so they send envelopes of the right SHAPE, sealed for each member's published key, and check what the server does with them.
+  const pubOf = (name: string) => Buffer.concat([Buffer.from([4]), crypto.createHash('sha256').update(name).digest(), crypto.createHash('sha256').update(name + 'y').digest()]).toString('base64');
+  const backupBlob = { v: 1, kdf: 'PBKDF2-SHA256', iter: 600000, salt: 'A'.repeat(22) + '==', iv: 'A'.repeat(16), ct: 'A'.repeat(44) };
+  const setupKeys = async (who: string) => (await api(who, 'POST', '/chat/keys', { publicKey: pubOf(who), backup: backupBlob })).status;
+  const envelope = async (who: string, conv: string) => {
+    const keys = ((await api(who, 'GET', `/chat/conversations/${conv}/keys`)).json.data as any[]).slice().sort((x, y) => (x.profileId < y.profileId ? -1 : 1));
+    const st = (await api(who, 'GET', '/chat/keys/status')).json.data;
+    return { v: 1, sv: st.version, iv: 'A'.repeat(16), ct: Buffer.from('opaque ' + crypto.randomUUID()).toString('base64'), wraps: keys.map(k => ({ to: k.profileId, kv: k.keyVersion, enc: k.publicKey, w: 'W'.repeat(24) })) };
+  };
+  const secureSend = async (who: string, conv: string, extra: Record<string, unknown> = {}) =>
+    api(who, 'POST', `/chat/conversations/${conv}/secure-messages`, { clientMsgId: mid(), attachmentIds: [], e2ee: await envelope(who, conv), ...extra });
 
   // ---- who can reach the chat routes at all
   r = await api(null, 'GET', '/chat/internal');
@@ -2013,6 +2459,36 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 200 && r.json.data.some((p: any) => p.id === tm2Id) && !r.json.data.some((p: any) => 'email' in p), 'chat: the directory finds colleagues without e-mail addresses', r);
   r = await api('imp', 'GET', '/chat/directory');
   check(r.status === 401 || r.status === 403, 'chat: a client cannot list employees', r);
+  // everybody who will chat internally sets up secure messaging first (the browser does this with the recovery passphrase)
+  check(await api(null, 'GET', '/chat/keys/status').then(x => x.status === 401), 'chat keys: signing in is required');
+  r = await api('imp', 'GET', '/chat/keys/status');
+  check(r.status === 401 || r.status === 403, 'chat keys: a client login has no secure messaging', r);
+  r = await api('sm', 'GET', '/chat/keys/status');
+  check(r.status === 200 && r.json.data.hasKey === false && r.json.data.hasBackup === false, 'chat keys: nobody has a key before setting up', r);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: 'short', backup: backupBlob });
+  check(r.status === 422, 'chat keys: a public key of the wrong size is refused', r);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: pubOf('x'), backup: { ...backupBlob, iter: 10 } });
+  check(r.status === 422, 'chat keys: a backup with a weak key-derivation setting is refused', r);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: pubOf('x'), backup: backupBlob, privateKey: 'AAAA' });
+  check(r.status === 422, 'chat keys: a request that names anything else (a private key, say) is refused', r);
+  for (const who of ['sm', 'tm2', 'tl2', 'a']) check((await setupKeys(who)) === 201, `chat keys: ${who} sets up secure messaging`);
+  r = await api('sm', 'POST', '/chat/keys', { publicKey: pubOf('other'), backup: backupBlob });
+  check(r.status === 409, 'chat keys: a second setup cannot replace the key silently', r);
+  r = await api('sm', 'GET', '/chat/keys/status');
+  check(r.json.data.hasKey && r.json.data.version === 1 && r.json.data.publicKey === pubOf('sm') && /^[0-9a-f]{64}$/.test(r.json.data.fingerprint) && r.json.data.hasBackup, 'chat keys: the status shows the public key and its fingerprint', r);
+  r = await api('sm', 'GET', '/chat/keys/backup');
+  check(r.status === 200 && r.json.data.blob.kdf === 'PBKDF2-SHA256' && r.json.data.version === 1, 'chat keys: a person can fetch their own encrypted backup', r);
+  r = await api('tm2', 'GET', '/chat/keys/backup');
+  check(r.status === 200 && JSON.stringify(r.json.data).indexOf(pubOf('sm')) === -1, "chat keys: and only their own (not anybody else's)", r);
+  r = await api('sm', 'POST', '/chat/keys/backup', { backup: backupBlob, version: 5 });
+  check(r.status === 409, 'chat keys: a backup can only be replaced for the current key', r);
+  r = await api('sm', 'POST', '/chat/keys/backup', { backup: backupBlob, version: 1 });
+  check(r.status === 200, 'chat keys: the current one can (a new recovery passphrase)', r);
+  r = await api('tm2', 'GET', `/chat/keys/lookup?profileId=${smId}&version=1`);
+  check(r.status === 200 && r.json.data.publicKey === pubOf('sm') && !('privateKey' in r.json.data), "chat keys: a colleague's public key can be looked up", r);
+  r = await api('tm2', 'GET', `/chat/keys/lookup?profileId=${smId}&version=1&extra=1`);
+  check(r.status === 422, 'chat keys: with nothing extra', r);
+
   r = await api('sm', 'POST', '/chat/direct', { profileId: tm2Id });
   check(r.status === 200 && r.json.data.kind === 'DIRECT' && r.json.data.title === 'Mohan Member' || r.json.data?.kind === 'DIRECT', 'chat: an employee starts a direct conversation', r);
   const dm = r.json.data.id as string;
@@ -2021,11 +2497,34 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await api('sm', 'POST', '/chat/direct', { profileId: smId });
   check(r.status === 422, 'chat: nobody can open a conversation with themselves', r);
   r = await api('sm', 'POST', `/chat/conversations/${dm}/messages`, { body: 'Got a minute?', clientMsgId: mid() });
-  check(r.status === 201 && r.json.data.senderLabel === null, 'chat: a direct message is sent', r);
+  check(r.status === 422, 'chat: a readable message is refused in a direct chat (it must be encrypted first)', r);
+  r = await secureSend('sm', dm);
+  check(r.status === 201 && r.json.data.senderLabel === null && r.json.data.encrypted === true && r.json.data.body === '' && r.json.data.e2ee.wrap.to === smId, 'chat: an encrypted direct message is sent', r);
+  const dm1 = r.json.data;
   r = await api('tm2', 'GET', '/chat/internal');
-  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].unread === 1 && r.json.data[0].lastMessagePreview === 'Got a minute?', 'chat: the other person has it in their list with 1 unread', r);
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].unread === 1 && r.json.data[0].lastMessagePreview === 'Encrypted message', 'chat: the other person has it in their list with 1 unread (the preview never shows content)', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 200 && r.json.data.messages[0].e2ee.wrap.to === tm2Id && r.json.data.messages[0].e2ee.wrap.w === 'W'.repeat(24) && !('wraps' in r.json.data.messages[0].e2ee) && r.json.data.messages[0].senderId === smId, 'chat: the other person receives the envelope with THEIR key wrap only', r);
+  {
+    const { rows: [row] } = await db.query(`select body, encrypted, e2ee::text as e from public.chat_messages where id = $1`, [dm1.id]);
+    check(row.body === '' && row.encrypted === true && !row.e.includes('Got a minute'), 'chat: the database holds the envelope and no readable text', row.e.slice(0, 80));
+  }
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), body: 'plain text too', e2ee: await envelope('sm', dm) });
+  check(r.status === 422, 'chat: an encrypted message cannot also carry readable text (unknown field refused)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { v: 1, sv: 1, iv: 'short', ct: 'AAAAAAAA', wraps: [] } });
+  check(r.status === 422, 'chat: a badly formed envelope is refused', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { ...(await envelope('sm', dm)), sv: 7 } });
+  check(r.status === 409, 'chat: an envelope made with a key that is not the sender\'s current one is refused (KEYS_CHANGED)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { ...(await envelope('sm', dm)), wraps: (await envelope('sm', dm)).wraps.slice(1) } });
+  check(r.status === 409, 'chat: one that leaves a member out is refused', r);
+  const sameId = mid(); const sameEnv = await envelope('sm', dm);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: sameId, e2ee: sameEnv });
+  const again = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: sameId, e2ee: sameEnv });
+  check(r.status === 201 && again.json.data.id === r.json.data.id, 'chat: a retry with the same message id stores one message', again);
+  r = await api('tl2', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: sameEnv });
+  check(r.status === 404, 'chat: a non-member cannot send into it', r);
   r = await api('tm2', 'GET', '/chat/unread');
-  check(r.json.data.internal === 1, 'chat: and in their unread summary', r);
+  check(r.json.data.internal >= 1, 'chat: and in their unread summary', r);
   r = await api('tl2', 'GET', `/chat/conversations/${dm}/messages`);
   check(r.status === 404, 'chat: a third person cannot read the direct conversation', r);
   r = await api('dh', 'GET', `/chat/conversations/${dm}/messages`);
@@ -2043,9 +2542,9 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 422, 'chat: a group needs a name', r);
   r = await api('sm', 'POST', '/chat/groups', { title: 'x', memberIds: [] });
   check(r.status === 422, 'chat: and someone to talk to', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: 'Welcome', clientMsgId: mid() });
-  check(r.status === 201, 'chat: the admin writes in it', r);
-  r = await api('tm2', 'POST', `/chat/conversations/${grp}/messages`, { body: 'Thanks', clientMsgId: mid() });
+  r = await secureSend('sm', grp);
+  check(r.status === 201, 'chat: the admin writes in it (every member has set up secure messaging)', r);
+  r = await secureSend('tm2', grp);
   check(r.status === 201, 'chat: a member writes in it', r);
   r = await api('tm2', 'POST', `/chat/groups/${grp}/members`, { profileIds: [aId] });
   check(r.status === 403, 'chat: a member who is not an admin cannot add people', r);
@@ -2062,43 +2561,117 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await api('sm', 'POST', `/chat/groups/${grp}/members`, { profileIds: [crypto.randomUUID()] });
   check(r.status === 422, 'chat: a person who does not exist cannot be added', r);
 
-  // ---- files
-  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n% chat file\n'), Buffer.alloc(2000, 0x20), Buffer.from('\n%%EOF\n')]);
+  // ---- files (in an internal chat a file is encrypted in the browser: the server stores an opaque envelope that starts "AME2")
+  const enc = Buffer.concat([Buffer.from('AME2'), Buffer.from([1]), crypto.randomBytes(2000)]);
   r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'virus.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
   check(r.status === 422, 'chat: a file type that is not allowed is refused', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'big.pdf', mimeType: 'application/pdf', sizeBytes: 6 * 1024 * 1024 });
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: 2000 });
+  check(r.status === 422, 'chat: a readable file is refused in an internal chat (it has to be encrypted first)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: 6 * 1024 * 1024 });
   check(r.status === 422, 'chat: a file over 5 MB is refused', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
-  check(r.status === 201 && r.json.data.bucket === 'chat-attachments' && r.json.data.path.startsWith(`${grp}/`) && !r.json.data.path.includes('..'), 'chat: an upload is booked under the conversation', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: enc.length });
+  check(r.status === 201 && r.json.data.bucket === 'chat-attachments' && r.json.data.path.startsWith(`${grp}/`) && !r.json.data.path.includes('..') && r.json.data.attachment.name === 'encrypted-file', 'chat: an upload is booked under the conversation (the real file name is not stored)', r);
   const tk = r.json.data;
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: 'with file', clientMsgId: mid(), attachmentIds: [tk.attachment.id] });
+  r = await secureSend('sm', grp, { attachmentIds: [tk.attachment.id] });
   check(r.status === 422, 'chat: a file that has not finished uploading cannot be sent', r);
   r = await api('sm', 'POST', `/chat/uploads/${tk.attachment.id}/complete`);
   check(r.status === 422, 'chat: completing an upload that never arrived is refused', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'Plan.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: enc.length });
   const tk2 = r.json.data;
-  const put = await fetch(`${GW}/storage/v1/object/upload/sign/${tk2.bucket}/${tk2.path}?token=${tk2.token}`, { method: 'PUT', headers: { 'content-type': 'application/pdf', 'x-upsert': 'false' }, body: pdf });
-  check(put.status < 300, 'chat: the file is uploaded with the single-use link', await put.text().catch(() => ''));
-  r = await api('tm2', 'POST', `/chat/uploads/${tk2.attachment.id}/complete`);
-  check(r.status === 404, 'chat: someone else cannot confirm my upload', r);
+  const bad = await fetch(`${GW}/storage/v1/object/upload/sign/${tk2.bucket}/${tk2.path}?token=${tk2.token}`, { method: 'PUT', headers: { 'content-type': 'application/x-amuwa-e2ee', 'x-upsert': 'false' }, body: Buffer.concat([Buffer.from('%PDF-1.4 not encrypted'), Buffer.alloc(100)]) });
+  check(bad.status < 300, 'chat: (a file that is not an encrypted envelope is uploaded to the single-use link ...)');
   r = await api('sm', 'POST', `/chat/uploads/${tk2.attachment.id}/complete`);
-  check(r.status === 200 && r.json.data.name === 'Plan.pdf', 'chat: the uploader confirms it', r);
-  r = await api('tm2', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  check(r.status === 422, 'chat: ... and is refused when the upload is confirmed (the stored file must be an encrypted envelope)', r);
+  r = await api('sm', 'POST', `/chat/conversations/${grp}/uploads`, { fileName: 'file.enc', mimeType: 'application/x-amuwa-e2ee', sizeBytes: enc.length });
+  const tk3 = r.json.data;
+  const put = await fetch(`${GW}/storage/v1/object/upload/sign/${tk3.bucket}/${tk3.path}?token=${tk3.token}`, { method: 'PUT', headers: { 'content-type': 'application/x-amuwa-e2ee', 'x-upsert': 'false' }, body: enc });
+  check(put.status < 300, 'chat: the encrypted file is uploaded with the single-use link', await put.text().catch(() => ''));
+  r = await api('tm2', 'POST', `/chat/uploads/${tk3.attachment.id}/complete`);
+  check(r.status === 404, 'chat: someone else cannot confirm my upload', r);
+  r = await api('sm', 'POST', `/chat/uploads/${tk3.attachment.id}/complete`);
+  check(r.status === 200 && r.json.data.name === 'encrypted-file', 'chat: the uploader confirms it', r);
+  r = await api('tm2', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: before it is sent only the uploader can reach the file', r);
-  r = await api('sm', 'POST', `/chat/conversations/${grp}/messages`, { body: '', clientMsgId: mid(), attachmentIds: [tk2.attachment.id] });
-  check(r.status === 201 && r.json.data.attachments[0].name === 'Plan.pdf', 'chat: a message can be a file only', r);
-  r = await api('tm2', 'GET', `/chat/attachments/${tk2.attachment.id}/url?action=download`);
-  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.fileName === 'Plan.pdf' && r.json.data.expiresInSeconds <= 120, 'chat: a member gets a short-lived download link', r);
-  const dl = await fetch(r.json.data.url);
-  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(pdf), 'chat: and the file is the one that was uploaded');
-  r = await api('a', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await secureSend('sm', grp, { attachmentIds: [tk3.attachment.id] });
+  check(r.status === 201 && r.json.data.attachments[0].id === tk3.attachment.id && !('name' in r.json.data.attachments[0]), 'chat: a message can carry the file (the server lists only its id and size, not its name or type)', r);
+  const fileMsg = r.json.data;
+  r = await api('tm2', 'GET', `/chat/attachments/${tk3.attachment.id}/url?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'chat: a member gets a short-lived download link', r);
+  const dlUrl = r.json.data.url as string;
+  const dl = await fetch(dlUrl);
+  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(enc), 'chat: and the stored file is the encrypted envelope that was uploaded (never the original)');
+  r = await api('a', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 200, 'chat: the member who joined later can open files sent after they joined', r);
-  r = await api('imp', 'GET', `/client/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('imp', 'GET', `/client/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: a client cannot open an internal file even with its id', r);
-  r = await api('imp', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('imp', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 401 || r.status === 403, 'chat: nor through the employee route', r);
-  r = await api('dh', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('dh', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: a Department Head cannot open an employee group\'s file', r);
+
+  // ---- deleting messages: for me, and for everyone
+  const dmMsgs = async (who: string) => ((await api(who, 'GET', `/chat/conversations/${dm}/messages?limit=100`)).json.data.messages as any[]);
+  r = await api('tm2', 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 200 && r.json.data.hidden === true, 'chat delete: delete for me', r);
+  check(!(await dmMsgs('tm2')).some(m => m.id === dm1.id) && (await dmMsgs('sm')).some(m => m.id === dm1.id), 'chat delete: it is gone for that person only (the sender still has it)');
+  r = await api('tm2', 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 200, 'chat delete: doing it twice is harmless', r);
+  r = await api('tm2', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 403, "chat delete: a person cannot delete somebody else's message for everyone", r);
+  r = await api('tl2', 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 404, 'chat delete: a person outside the conversation cannot touch it', r);
+  r = await api('tl2', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 404, 'chat delete: nor for everyone', r);
+  r = await api('dh', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 404, 'chat delete: a Department Head has no power over employees\' chats', r);
+  r = await api('sa', 'DELETE', `/chat/messages/${dm1.id}/for-everyone`);
+  check(r.status === 404, 'chat delete: nor the Super Admin (administration and message access are separate)', r);
+  r = await api('sm', 'DELETE', `/chat/messages/not-a-uuid/for-me`);
+  check(r.status === 422, 'chat delete: a malformed id is refused', r);
+  r = await api(null, 'DELETE', `/chat/messages/${dm1.id}/for-me`);
+  check(r.status === 401, 'chat delete: signing in is required', r);
+  const stored = (await db.query(`select e2ee is not null as has, deleted_at from public.chat_messages where id = $1`, [dm1.id])).rows[0];
+  check(stored.has && stored.deleted_at === null, 'chat delete: delete for me did not touch the shared message');
+
+  // a message with a file, deleted for everyone: the stored file goes too
+  r = await api('tm2', 'DELETE', `/chat/messages/${fileMsg.id}/for-everyone`);
+  check(r.status === 403, 'chat delete: the receiver cannot remove the sender\'s file message for everyone', r);
+  r = await api('sm', 'DELETE', `/chat/messages/${fileMsg.id}/for-everyone`);
+  check(r.status === 200 && r.json.data.deleted === true, 'chat delete: the sender deletes it for everyone', r);
+  {
+    const { rows: [m] } = await db.query(`select body, e2ee, attachments::text as a, deleted_at is not null as gone from public.chat_messages where id = $1`, [fileMsg.id]);
+    check(m.gone && m.body === '' && m.e2ee === null && m.a === '[]', 'chat delete: the server wiped the ciphertext, the key wraps and the file list', m);
+    const { rows: [f] } = await db.query(`select status, storage_removed_at is not null as removed from public.chat_attachments where id = $1`, [tk3.attachment.id]);
+    check(f.status === 'DELETED' && f.removed === true, 'chat delete: the file is marked deleted and its removal from storage was recorded', f);
+  }
+  const afterDel = await fetch(dlUrl);
+  check(afterDel.status >= 400, 'chat delete: the stored encrypted file is gone from storage (an earlier link no longer works)', afterDel.status);
+  r = await api('tm2', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
+  check(r.status === 404, 'chat delete: no new link can be made for it', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${grp}/messages?limit=100`);
+  const tomb = (r.json.data.messages as any[]).find(m => m.id === fileMsg.id);
+  check(tomb && tomb.deleted === true && tomb.body === '' && tomb.e2ee === null && tomb.attachments.length === 0, 'chat delete: the other member gets a tombstone with nothing in it', tomb);
+  r = await api('sm', 'DELETE', `/chat/messages/${fileMsg.id}/for-everyone`);
+  check(r.status === 200, 'chat delete: deleting again is harmless', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action = 'CHAT_MESSAGE_DELETED_FOR_ALL' and entity_id = $1`, [fileMsg.id])).rows[0].n === 1, 'chat delete: it is in the audit log once, without content');
+  // client conversations keep their history
+  const clientMsgs = (await api('sm', 'GET', `/chat/conversations/${conv}/messages`)).json.data.messages as any[];
+  r = await api('sm', 'DELETE', `/chat/messages/${clientMsgs[0].id}/for-everyone`);
+  check(r.status === 403, 'chat delete: a client conversation keeps its history (no delete for everyone)', r);
+  r = await api('sm', 'DELETE', `/chat/messages/${clientMsgs[0].id}/for-me`);
+  check(r.status === 403, 'chat delete: nor delete for me', r);
+
+  // ---- a reset changes the key: old envelopes stay unreadable to a new device, new messages are sealed for the new key
+  r = await api('tm2', 'POST', '/chat/keys/reset', { publicKey: pubOf('tm2-new'), backup: backupBlob });
+  check(r.status === 200 && r.json.data.version === 2, 'chat keys: a reset publishes a new key version', r);
+  r = await api('sm', 'GET', `/chat/conversations/${dm}/keys`);
+  check((r.json.data as any[]).find(k => k.profileId === tm2Id).keyVersion === 2 && (r.json.data as any[]).find(k => k.profileId === tm2Id).publicKey === pubOf('tm2-new'), "chat keys: the other person's screen sees the new key", r);
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/secure-messages`, { clientMsgId: mid(), e2ee: { ...sameEnv, ct: Buffer.from('stale ' + mid()).toString('base64') } });
+  check(r.status === 409, 'chat keys: a message sealed for the retired key is refused', r);
+  r = await secureSend('sm', dm);
+  check(r.status === 201 && r.json.data.e2ee.wrap.to === smId, 'chat keys: one sealed for the new key is accepted', r);
+  r = await api('sm', 'GET', `/chat/keys/lookup?profileId=${tm2Id}&version=1`);
+  check(r.status === 200 && r.json.data.retired === true, 'chat keys: the old key stays known (to check old messages), marked retired', r);
 
   // ---- removing a member
   r = await api('sm', 'DELETE', `/chat/groups/${grp}/members/${tl2Id}`);
@@ -2107,7 +2680,7 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 404, 'chat: the removed member can no longer read the group', r);
   r = await api('tl2', 'POST', `/chat/conversations/${grp}/messages`, { body: 'still here', clientMsgId: mid() });
   check(r.status === 404, 'chat: nor write in it', r);
-  r = await api('tl2', 'GET', `/chat/attachments/${tk2.attachment.id}/url`);
+  r = await api('tl2', 'GET', `/chat/attachments/${tk3.attachment.id}/url`);
   check(r.status === 404, 'chat: nor download its files', r);
   r = await api('tm2', 'POST', `/chat/groups/${grp}/leave`);
   check(r.status === 200, 'chat: a member leaves', r);
@@ -2142,7 +2715,7 @@ provider.close();
     return ((await res.json()) as any).access_token as string;
   };
   tokens.set('cl1', await signIn(clientEmail, 'ClientPass#2026'));
-  tokens.set('cl2', await signIn('auto.login@example.com', 'AutoPass#2026x'));
+  tokens.set('cl2', await signIn('auto.client@example.com', 'AutoPass#2026x'));
 
   // ---- onboarding journey over the API: a client who is still onboarding sees the journey and only the sections that are open
   console.log('--- client journey over the API');
@@ -2195,6 +2768,35 @@ provider.close();
   r = await api('cl2', 'GET', '/client/journey');
   check(r.json.data.completed && r.json.data.stage === 'COMPLETED' && Object.values(r.json.data.access).every((a: any) => a.enabled), 'journey: completed onboarding opens every section', r);
 
+  // (from here the clients are fully set up: the per-service steps and the balance are sections of a finished onboarding)
+  // service progress: each client reads the steps of their own services only
+  r = await api('cl2', 'GET', '/client/service-progress');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].code === 'WHATSAPP_API_BLUE_TICK' && r.json.data[0].status === 'LIVE'
+    && r.json.data[0].steps.every((x: any) => x.state === 'DONE') && r.json.data[0].headline === 'Live', 'client progress: a WhatsApp customer whose Meta verification was recorded sees every step done', r.json.data);
+  check(!JSON.stringify(r.json).match(/Meta Verifier|Tech Consultant|verification_route|audit|AutoPass/), 'client progress: nothing internal in the answer', r.json.data);
+  r = await api('cl1', 'GET', '/client/service-progress');
+  check(r.status === 200 && r.json.data.length >= 2 && r.json.data.every((p: any) => p.steps.length >= 4 && p.steps.filter((x: any) => x.state === 'CURRENT').length <= 1), 'client progress: another client sees only their own services, each with its steps', r.json.data);
+  r = await api('cl1', 'GET', '/client/services');
+  check(r.status === 200 && r.json.data.every((x: any) => x.status === (r.json.data ? x.status : '')) && Array.isArray(r.json.data), 'client progress: the services list still answers', r);
+  r = await api('a', 'GET', '/client/service-progress');
+  check(r.status === 403 || r.status === 401, 'client progress: a staff token is refused', r);
+  r = await api(null, 'GET', '/client/service-progress');
+  check(r.status === 401, 'client progress: no session is refused', r);
+
+  // billing: what the client owes per order, from the same figures Accounts works from
+  r = await api('cl1', 'GET', '/client/billing');
+  check(r.status === 200 && Array.isArray(r.json.data.orders) && ['payable', 'confirmed', 'pending', 'outstanding'].every(k => typeof r.json.data.totals[k] === 'number'), 'client billing: orders and totals are answered', r.json.data);
+  check(r.json.data.orders.every((o: any) => Math.abs(o.balance - Math.max(o.totalPayable - o.confirmed, 0)) < 0.005 && ['UNPAID', 'PARTIALLY_PAID', 'FULLY_PAID'].includes(o.state)),
+    'client billing: every balance is payable - confirmed, with a state', r.json.data);
+  check(!JSON.stringify(r.json).match(/recorded_by|verified_by|status_reason|note|AutoPass|ClientPass/), 'client billing: no internal notes, staff or secrets in the answer', r.json.data);
+  r = await api('cl2', 'GET', '/client/billing');
+  check(r.status === 200 && r.json.data.orders.every((o: any) => !o.invoices.some((i: any) => i.id === '00000000-0000-0000-0000-000000000000')), 'client billing: another client has an answer of their own', r.json.data);
+  r = await api('a', 'GET', '/client/billing');
+  check(r.status === 403 || r.status === 401, 'client billing: a staff token is refused', r);
+  r = await api(null, 'GET', '/client/billing');
+  check(r.status === 401, 'client billing: no session is refused', r);
+
+
   // chat: another client has their own conversation and sees nothing of the first client's
   {
     const importedConv = (await db.query(`select cv.id from public.chat_conversations cv join public.customers c on c.id = cv.customer_id where c.phone = '9000000201'`)).rows[0].id as string;
@@ -2216,7 +2818,7 @@ provider.close();
   check(r.status === 401 || r.status === 403, 'a client cannot reach the staff API', r);
 
   r = await api('cl1', 'GET', '/client/me');
-  check(r.status === 200 && r.json.data.customerId === leadA && !JSON.stringify(r.json).toLowerCase().includes('password'), 'client API: /me is the customer linked to the login', r);
+  check(r.status === 200 && r.json.data.customerId === leadA && !JSON.stringify(r.json).toLowerCase().replace('mustchangepassword', '').includes('password'), 'client API: /me is the customer linked to the login (and carries no password, only the flag)', r);
   r = await api('cl2', 'GET', '/client/me');
   check(r.status === 200 && r.json.data.customerId === autoA, 'client API: another login gets their own customer', r);
 
@@ -2685,13 +3287,18 @@ provider.close();
 {
   r = await api('sa', 'GET', '/departments');
   const hrDept = r.json.data.find((d: any) => d.slug === 'hr');
-  const details = { designation: 'Department Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', emergencyContact: '+91 98765 43210' };
+  const details = { designation: 'Department Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56789', emergencyContact: '+91 98765 43210' };
   const hrBody = { email: 'hr.api@amuwa.com', fullName: 'HR Api', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id };
 
   // Add Member: the new details are validated before any account exists
   for (const [label, bad] of [
     ['an unknown blood group', { ...details, bloodGroup: 'Z+' }],
     ['a bad emergency number', { ...details, emergencyContact: 'call me' }],
+    ['a missing contact number', (({ contactNumber: _c, ...rest }) => rest)(details)],
+    ['a contact number that is not a number', { ...details, contactNumber: 'call me' }],
+    ['a too short contact number', { ...details, contactNumber: '+91 12345' }],
+    ['an Indian number that cannot be a mobile', { ...details, contactNumber: '+91 12345 67890' }],
+    ['a contact number that is the emergency number', { ...details, contactNumber: '+91 98765 43210' }],
     ['a birth date in the future', { ...details, dateOfBirth: '2999-01-01' }],
     ['a joining date that is not a date', { ...details, joiningDate: '2026-13-45' }],
     ['an unknown designation', { ...details, designation: 'Boss' }],
@@ -2704,6 +3311,11 @@ provider.close();
   r = await api('sa', 'POST', '/users', { ...hrBody, details });
   check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.department.slug === 'hr', 'a member is created with the new details', r);
   const hrId = r.json.data.id;
+  check(JSON.stringify(r.json).indexOf('91234') === -1 && JSON.stringify(r.json).indexOf('+919123456789') === -1, "the member's own number is not part of the ordinary profile everyone can read (profiles.phone is not used)");
+  {
+    const { rows: [pd] } = await db.query(`select contact_number, emergency_contact from public.employee_personal_details where profile_id = $1`, [hrId]);
+    check(pd.contact_number === '+919123456789' && pd.emergency_contact === '+91 98765 43210', 'the contact number is stored normalised with its country code, separate from the emergency contact', pd);
+  }
   tokens.set('hr', tokenFor(hrId));
   check(JSON.stringify(r.json).indexOf('B+') === -1 && JSON.stringify(r.json).indexOf('98765') === -1, 'the details are not part of the ordinary profile everyone can read');
   r = await api('sa', 'POST', '/users', { ...hrBody, details });
@@ -2737,9 +3349,14 @@ provider.close();
   r = await api('a', 'GET', '/hr/attendance');
   check(r.status === 403, 'a Sales member still cannot open the HR data', r);
   r = await api('hr', 'GET', '/hr/personal-details');
-  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
+  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.contactNumber === '+919123456789' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
   r = await api('a', 'GET', '/hr/personal-details');
   check(r.status === 403, 'an ordinary employee cannot read employee details', r);
+  // international and 10-digit numbers
+  for (const [label, input, stored] of [['an international number', '+44 7911 123456', '+447911123456'], ['a 10-digit Indian number', '98765 11111', '+919876511111'], ['a number with a leading 0', '098765 22222', '+919876522222'], ['a +1 number', '+1 (415) 555-2671', '+14155552671']] as const) {
+    r = await api('sa', 'POST', '/users', { ...hrBody, email: `intl.${stored.slice(-6)}@amuwa.com`, details: { ...details, designation: 'Team Member', contactNumber: input }, role: 'TEAM_MEMBER', departmentId: undefined, teamId: (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id])).rows[0].id });
+    check(r.status === 201 && (await db.query(`select 1 from public.employee_personal_details where profile_id = $1 and contact_number = $2`, [r.json.data.id, stored])).rowCount === 1, `Add Member accepts ${label} and stores ${stored}`, r);
+  }
   r = await api('dh', 'GET', '/hr/personal-details');
   check(r.status === 403, 'nor can another department\'s head', r);
   r = await api('dh', 'POST', '/users', { email: 'plain.api@amuwa.com', fullName: 'Plain', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: (await api('sa', 'GET', `/teams?departmentId=${wab.id}`)).json.data.find((t: any) => t.name === 'Sales').id });
@@ -3360,7 +3977,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const payId = (await db.query(`select id from customer_payments where customer_id = $1`, [lead])).rows[0].id;
   r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
   check(r.status === 422 && /Record and verify/.test(r.json.error.message), 'Accounts: an unverified payment cannot confirm the customer', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, {});
   check(r.status === 409 && /Verify a payment first/.test(r.json.error.message), 'Accounts: no login before a payment is verified', r);
   r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payments/${payId}/verify`, {});
   check(r.status === 200 || r.status === 204, 'Accounts: verifies the payment', r);
@@ -3369,25 +3986,19 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/payment-confirmed`, {});
   check(r.status === 422 && /dashboard login/.test(r.json.error.message), 'Accounts: Return to Sales is refused until the login exists', r);
   for (const [who, label] of [['a', 'a Sales member'], ['sm', 'the Support member who owns the customer'], ['tc', 'a Technical Consultant'], ['dh', 'the department head']] as const) {
-    r = await api(who, 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+    r = await api(who, 'POST', `/pipeline/customers/${lead}/accounts/client-login`, {});
     check(r.status === 403 || r.status === 404, `Accounts login: ${label} cannot create it`, r);
   }
-  r = await api(null, 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
+  r = await api(null, 'POST', `/pipeline/customers/${lead}/accounts/client-login`, {});
   check(r.status === 401, 'Accounts login: no session is refused (401)', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'nope', password: 'ClientPass#2026' });
-  check(r.status === 422, 'Accounts login: a bad e-mail is refused', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'short' });
-  check(r.status === 422, 'Accounts login: a short password is refused', r);
-  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'a@amuwa.com', password: 'ClientPass#2026' });
-  check(r.status === 409, 'Accounts login: an e-mail that already has a login is refused', r);
   check((await db.query(`select count(*)::int n from customer_client_accounts where customer_id = $1`, [lead])).rows[0].n === 0, 'Accounts login: nothing was created by the refusals');
-  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'sushma.client@example.com', password: 'ClientPass#2026' });
-  check(r.status === 201 && r.json.data.email === 'sushma.client@example.com', 'Accounts login: Accounts creates the client login', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, {});
+  check(r.status === 201 && r.json.data.email === 'sushma@raoboutique.example', 'Accounts login: Accounts creates the client login with the e-mail on the record', r);
   const prov = (await db.query(`select p.status, p.attempts, p.email, a.auth_user_id from customer_client_provisioning p join customer_client_accounts a on a.customer_id = p.customer_id where p.customer_id = $1`, [lead])).rows[0];
   check(prov.status === 'CREATED' && prov.attempts === 1, 'Accounts login: the provisioning record is settled as created', prov);
   const stored = (await db.query(`select count(*)::int n from automation_jobs where customer_id = $1 and secret is not null`, [lead])).rows[0].n;
   check(stored === 0, 'Accounts login: no password is kept or queued for an e-mail');
-  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, { email: 'another.sushma@example.com', password: 'ClientPass#2026' });
+  r = await api('accm', 'POST', `/pipeline/customers/${lead}/accounts/client-login`, {});
   check(r.status === 409, 'Accounts login: a second login for the same customer is refused', r);
   r = await api('accm', 'GET', `/pipeline/customers/${lead}/journey`);
   check(r.json.data.clientLogin.status === 'CREATED' && r.json.data.step === 'LOGIN_CREATED' && r.json.data.can.returnToSales === true && r.json.data.can.createLogin === false, 'journey: login created, Return to Sales offered', r.json.data);
@@ -3573,8 +4184,8 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('a', 'GET', `/pipeline/customers/${tLead}/journey`);
   check(r.json.data.journey === 'TECHNICAL' && r.json.data.followsTechnicalConsultant === true, 'a WhatsApp API customer follows the Technical Consultant journey', r.json.data);
   r = await api('a', 'POST', `/pipeline/customers/${tLead}/send-to-accounts`, { amount: 6000 });
-  r = await api('accm', 'POST', `/pipeline/customers/${tLead}/accounts/client-login`, { email: 'tara.client@example.com', password: 'ClientPass#2026' });
-  check(r.status === 409, 'Accounts cannot create a login before a payment is verified, whatever the services', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${tLead}/accounts/client-login`, {});
+  check(r.status === 409 && /Verify a payment first/.test(r.json.error.message), 'Accounts creates the login of a Technical Consultant customer too, once a payment is verified (not before)', r);
   r = await api('a', 'POST', `/pipeline/customers/${tLead}/send-to-delivery`, {});
   check(r.status === 409 || r.status === 422, 'and Sales cannot route it to a delivery department', r);
   // mixed order
@@ -3687,8 +4298,14 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   process.env.AUTOMATION_DISPATCH_SECRET = 'dispatch-secret-0123456789';
   const invoicesBeforeWa = (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n;
 
+  r = await api('accm', 'GET', '/accounts/invoice-whatsapp/settings');
+  check(r.status === 200 && r.json.data.enabled === true && r.json.data.autoSend === true, 'invoice WhatsApp: it starts switched ON with automatic sending (nobody has to switch it on)', r.json);
+  // the checks below are about the switched-off state: the Super Admin switches it off for them
+  r = await api('sa', 'POST', '/accounts/invoice-whatsapp/settings', { enabled: false, autoSend: false, templateName: null, templateLanguage: 'en', templateApproved: false });
+  check(r.status === 200 && r.json.data.enabled === false, 'invoice WhatsApp: the Super Admin can still switch it off', r.json);
+  await db.query(`delete from public.invoice_whatsapp_dispatches`); // what the automatic sending queued before the checks below (they start from nothing)
   r = await waSend('accm', a.id);
-  check(r.status === 409 && /switched off/.test(r.json.error.message), 'invoice WhatsApp: switched off by default, a request says so', r);
+  check(r.status === 409 && /switched off/.test(r.json.error.message), 'invoice WhatsApp: switched off, a request says so', r);
   r = await waSend('a', a.id);
   check(r.status === 403, 'invoice WhatsApp: a salesperson cannot send an invoice by WhatsApp', r);
   r = await api('a', 'GET', `/accounts/generated-invoices/${a.id}/whatsapp`);
@@ -3871,6 +4488,66 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     r = await api('accm', 'POST', `/pipeline/customers/${na}/accounts/payments`, { type: 'PART', amount: 5000, method: 'UPI', reference: 'NA-1', verify: true });
     check(r.status === 201 && r.json.data.paymentInvoice?.status === 'FAILED' && /address/i.test(r.json.data.paymentInvoice.message) && r.json.data.verified === 5000,
       'each payment: with no address on record the payment is saved as verified and the answer says why there is no invoice', r.json.data);
+
+    // ... and what Accounts does about it: the screen asks which billing details are missing, they are typed once, and the invoice is made
+    const naPay = (await db.query(`select id from customer_payments where customer_id = $1`, [na])).rows[0].id as string;
+    r = await api('a', 'GET', `/accounts/payments/${naPay}/invoice-billing`);
+    check(r.status === 403, 'billing: Sales cannot ask', r);
+    r = await api('accm', 'GET', `/accounts/payments/${naPay}/invoice-billing`);
+    check(r.status === 200 && r.json.data.missing.includes('address') && r.json.data.missing.includes('state') && r.json.data.taxTreatment === null, 'billing: the screen is told that the address and the state are missing', r.json.data);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, {});
+    check(r.status === 422 && /billing address and state/.test(r.json.error.message), 'billing: without them the answer says what to enter', r);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, { customer: { address: 'Shop 9, FC Road, Pune 411004', stateCode: '27', gstin: 'NOT-A-GSTIN' } });
+    check(r.status === 422, 'billing: a GSTIN that is not valid is refused', r);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, { customer: { address: 'Shop 9, FC Road, Pune 411004', stateCode: '27' }, extra: 1 });
+    check(r.status === 422, 'billing: nothing else can ride along', r);
+    r = await api('accm', 'POST', `/accounts/payments/${naPay}/invoice`, { customer: { businessName: 'No Address Co', address: 'Shop 9, FC Road, Pune 411004', stateCode: '27' } });
+    check(r.status === 200 && r.json.data.status === 'CREATED' && r.json.data.paymentId === naPay && r.json.data.steps.every((x: any) => x.status === 'DONE'), 'billing: with the details typed once, the paid invoice of the payment is made, stored and sent', r.json);
+    r = await api('accm', 'GET', `/accounts/payments/${naPay}/invoice-billing`);
+    check(r.json.data.missing.length === 0, 'billing: nothing is missing any more for this customer', r.json.data);
+
+    // an invoice for the whole amount made by hand covers the money; cancelling it lets every payment have its own invoice
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Whole First', company: 'Whole First Co', email: 'whole.first@example.com', phone: '9820000913', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const wf = r.json.data.id;
+    await api('a', 'POST', `/pipeline/customers/${wf}/send-to-accounts`, { amount: 100000 });
+    await chooseGst(wf, 18);
+    const todayWf = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    r = await api('accm', 'POST', '/accounts/generated-invoices', {
+      requestId: crypto.randomUUID(), customerId: wf, purpose: 'SERVICES', invoiceNumber: null, invoiceDate: todayWf, orderNumber: 'Verbal',
+      customer: { name: 'Whole First', businessName: 'Whole First Co', address: 'Shop 9, FC Road, Pune 411004, Maharashtra', contactPerson: 'Whole First', contactNumber: '9820000913', gstin: null, stateCode: '27' },
+      taxTreatment: 'INTRA_STATE', terms: '100% Payment Against supply.',
+      lines: [{ particulars: 'AI calling set-up', hsnSac: '998313', taxRate: 18, quantity: '1 Nos', baseAmount: 100000 }]
+    });
+    const wholeInv = r.json.data?.invoice;
+    check(r.status === 201 && wholeInv.total === 118000, 'cancel: the whole order is invoiced by hand (1,18,000)', r);
+    await api('accm', 'POST', `/pipeline/customers/${wf}/accounts/payments`, { type: 'PART', amount: 59000, method: 'UPI', reference: 'WF-API-1', verify: true, invoice: false });
+    await api('accm', 'POST', `/pipeline/customers/${wf}/accounts/payments`, { type: 'FULL', amount: 59000, method: 'UPI', reference: 'WF-API-2', verify: true, invoice: false });
+    const wfPays = (await db.query(`select id from customer_payments where customer_id = $1 order by recorded_at`, [wf])).rows.map((x: any) => x.id as string);
+    r = await api('accm', 'POST', `/accounts/payments/${wfPays[0]}/invoice`, {});
+    check(r.status === 409 && /already covered/.test(r.json.error.message), 'cancel: the whole-order invoice covers the money, so a second invoice on top of it is refused (it would bill it twice)', r);
+    r = await api('accm', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 403, 'cancel: an Accounts member cannot cancel an invoice', r);
+    r = await api('a', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 403 || r.status === 404, 'cancel: nor Sales', r);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'no' });
+    check(r.status === 422, 'cancel: a real reason is required', r);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake', extra: 1 });
+    check(r.status === 422, 'cancel: nothing else can ride along', r);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 200 && r.json.data.status === 'Cancelled' && r.json.data.replayed === false && r.json.data.generated.cancelled.reason === 'Made for the whole amount by mistake', 'cancel: the Accounts head cancels it with a reason; the invoice says so', r.json.data?.generated?.cancelled);
+    r = await api('accdh', 'POST', `/accounts/generated-invoices/${wholeInv.id}/cancel`, { reason: 'Made for the whole amount by mistake' });
+    check(r.status === 200 && r.json.data.replayed === true, 'cancel: cancelling again changes nothing', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${wf}/payment-overview`);
+    check(r.json.data.order.invoicedTotal === 0 && r.json.data.dealAmount === 118000 && r.json.data.verified === 118000, 'cancel: the order no longer counts it, and the payments and the payable did not change', r.json.data.order);
+    r = await api('accm', 'POST', `/accounts/payments/${wfPays[0]}/invoice`, {});
+    const wf1 = r.json.data;
+    check(r.status === 200 && wf1.status === 'CREATED' && wf1.steps.every((x: any) => x.status === 'DONE'), 'cancel: the first payment (part) now has its own paid invoice', r);
+    r = await api('accm', 'POST', `/accounts/payments/${wfPays[1]}/invoice`, {});
+    check(r.status === 200 && r.json.data.status === 'CREATED' && r.json.data.invoiceId !== wf1.invoiceId, 'cancel: the second payment (full) has its own paid invoice too', r);
+    r = await api('accm', 'GET', `/invoices/${wholeInv.id}`);
+    check(r.status === 200 && r.json.data.status === 'Cancelled', 'cancel: the cancelled invoice stays on record', r);
+    r = await api('accm', 'GET', `/pipeline/customers/${wf}/payment-overview`);
+    check(r.json.data.order.invoicedTotal === 118000 && r.json.data.order.balance === 0 && r.json.data.dealAmount === 118000 && r.json.data.payments.every((x: any) => x.invoice && x.invoice.number), 'cancel: two paid invoices of 59,000 are the order (1,18,000), every payment names its invoice', r.json.data.order);
 
     // the same through the WhatsApp Automation Builder webhook (the onboarding one): no Wabastore, and no approved template needed
     const hookHits: any[] = [];
@@ -4527,10 +5204,10 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   process.env.BOLIFY_WEBHOOK_URL = bolifyUrl;
   bolifyReply = { status: 200, body: '{"id":"BOL-2002"}' };
   const odc = await autoCustomer({ name: 'Onboard Caller', company: 'Caller Co', phone: '9820011122', email: 'caller@example.com', city: 'Nashik' }, null);
-  r = await api('tc', 'GET', `/pipeline/customers/${odc}/automations`);
+  r = await api('mv', 'GET', `/pipeline/customers/${odc}/automations`);
   check(r.status === 200 && r.json.data.find((a: any) => a.code === 'AI_CALLING').connected === true, 'bolify: AI Calling shows as connected once the webhook is set', r);
   bolifyHits.length = 0;
-  r = await api('tc', 'POST', `/pipeline/customers/${odc}/automations/AI_CALLING`);
+  r = await api('mv', 'POST', `/pipeline/customers/${odc}/automations/AI_CALLING`);
   check(r.status === 200 && bolifyHits.length === 1 && bolifyHits[0].body.name === 'Onboard Caller' && bolifyHits[0].body.phone === '+919820011122' && bolifyHits[0].body.location === 'Nashik' && r.json.data.lastRun.status === 'SENT',
     'bolify: the Technical Consultant\'s AI Calling posts the customer to BolifyAI and records the run', r.json);
   bolify.close();
@@ -5839,6 +6516,27 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'scopes: an unknown function is refused', r);
   r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('accounts').id, division: 'SALES', granted: true });
   check(r.status === 422 && /no Sales team/.test(r.json.error.message), 'scopes: a department with no such team is refused', r);
+  // several departments belong to an Operations Head: the Super Admin makes one first (the database refuses the grant otherwise)
+  r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'SALES', granted: true });
+  check(r.status === 422 && /Operations Head/.test(r.json.error.message), 'operations head: a Department Head who is not an Operations Head cannot be given another department', r);
+  r = await api('gs', 'POST', `/users/${gsId}/operations-head`, { value: true });
+  check(r.status === 403, 'operations head: a Department Head cannot make themselves one', r);
+  r = await api('a', 'POST', `/users/${gsId}/operations-head`, { value: true });
+  check(r.status === 403, 'operations head: nor can a Team Member', r);
+  r = await api('gs', 'GET', '/users/operations-head-review');
+  check(r.status === 403, 'operations head: the Super Admin review is closed to a Department Head', r);
+  r = await api('gs', 'GET', '/operations/overview');
+  check(r.status === 403, 'operations head: a Department Head has no Operations overview', r);
+  for (const id of [gsId, gpId]) {
+    r = await api('sa', 'POST', `/users/${id}/operations-head`, { value: true, note: 'Oversees the shared departments' });
+    check(r.status === 200 && r.json.data.isOperationsHead === true && r.json.data.role === 'DEPARTMENT_HEAD', 'operations head: the Super Admin makes the shared head an Operations Head (still a Department Head for every other rule)', r);
+  }
+  r = await api('gs', 'POST', `/users/${gsId}/operations-head`, { value: false });
+  check(r.status === 403, 'operations head: an Operations Head cannot remove their own role', r);
+  r = await api('gs', 'POST', `/users/${gpId}/department-access`, { departmentId: dep('mpillar').id, division: 'SUPPORT', granted: true });
+  check(r.status === 403, 'operations head: nor give departments (that stays with the Super Admin)', r);
+  r = await api('sa', 'POST', `/users/${gsId}/operations-head`, { value: true, extra: 1 });
+  check(r.status === 422, 'operations head: an unknown field is refused', r);
   for (const [who, id, division] of [['gs', gsId, 'SALES'], ['gp', gpId, 'SUPPORT']] as const) {
     for (const slug of ['mpillar', 'whatsbox']) {
       r = await api('sa', 'POST', `/users/${id}/department-access`, { departmentId: dep(slug).id, division, granted: true });
@@ -5910,9 +6608,18 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // Add Team Member: ONE account created for several departments (shared Support head), or for both functions of a department
   const headCount = async (email: string) => (await db.query(`select count(*)::int n from public.profiles where lower(email) = lower($1)`, [email])).rows[0].n as number;
   r = await api('sa', 'POST', '/users', { email: 'multi.support@amuwa.com', fullName: 'Multi Support Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SUPPORT',
-    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SUPPORT' }, { departmentId: wtId, division: 'SUPPORT' }] });
-  check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SUPPORT', 'create: one Department Head account is created with three departments', r);
+    operationsHead: true, additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SUPPORT' }, { departmentId: wtId, division: 'SUPPORT' }] });
+  check(r.status === 201 && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.headDivision === 'SUPPORT' && r.json.data.isOperationsHead === true, 'create: one Operations Head account is created with three departments', r);
   const multiId = r.json.data.id as string;
+  r = await api('sa', 'POST', '/users', { email: 'multi.plain@amuwa.com', fullName: 'Plain Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SALES',
+    additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SALES' }] });
+  check(r.status === 422 && /Operations Head/.test(r.json.error.message) && (await headCount('multi.plain@amuwa.com')) === 0, 'create: a Department Head created with other departments but not as an Operations Head is refused and no account is made', r);
+  r = await api('dh', 'POST', '/users', { email: 'multi.dhop@amuwa.com', fullName: 'Not Allowed Op', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastore').id, operationsHead: true });
+  check(r.status === 403 && (await headCount('multi.dhop@amuwa.com')) === 0, 'create: only the Super Admin makes an Operations Head', r);
+  r = await api('sa', 'POST', '/users', { email: 'multi.tmop@amuwa.com', fullName: 'Member Op', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Sales'), operationsHead: true });
+  check(r.status === 422 && (await headCount('multi.tmop@amuwa.com')) === 0, 'create: a Team Member cannot be an Operations Head', r);
+  r = await api('sa', 'GET', '/users/operations-head-review');
+  check(r.status === 200 && r.json.data.some((x: any) => x.profileId === multiId && x.isOperationsHead === true && x.needsDecision === false), 'operations head: the Super Admin review lists the Operations Heads', r.json.data);
   check((await headCount('multi.support@amuwa.com')) === 1, 'create: one account, no duplicates');
   r = await api('sa', 'GET', `/users/${multiId}/department-access`);
   check(r.status === 200 && r.json.data.grants.length === 2, 'create: the extra departments are persisted as grants', r);
@@ -5971,6 +6678,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const supportHeadId = await mk('shared.support.acx@amuwa.com', 'Shared Support Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('whatsbox').id, headDivision: 'SUPPORT' });
   tokens.set('acs', tokenFor(salesHeadId));
   tokens.set('acp', tokenFor(supportHeadId));
+  for (const id of [salesHeadId, supportHeadId]) await api('sa', 'POST', `/users/${id}/operations-head`, { value: true });
   for (const slug of ['wabastar', 'wabastore', 'whatsbox', 'dtalk']) {
     for (const side of ['Sales', 'Support']) {
       const owner = await mk(`acx.${slug}.${side.toLowerCase()}@amuwa.com`, `ACX ${slug} ${side} Member`, { role: 'TEAM_MEMBER', teamId: await teamId(slug, side) });
@@ -6283,6 +6991,122 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
   r = await api('sa', 'GET', `/users/${head}/department-access`);
   check(r.status === 200, 'access control API: the Super Admin can', r);
+}
+
+// --- The Super Admin is at the top of the hierarchy: nobody changes the account from the application, however the request is made -----------
+{
+  const saId = (await api('sa', 'GET', '/me')).json.data.id as string;
+  const thProfile = (await api('th', 'GET', '/me')).json.data;
+  // the shape of the production bug report: the Super Admin sits inside a team, so a Team Lead's member list reaches the row
+  await db.query(`update public.profiles set team_id = $2, department_id = $3 where id = $1`, [saId, thProfile.teamId, thProfile.departmentId]);
+  const saState = async () => (await db.query(`select role, status from public.profiles where id = $1`, [saId])).rows[0];
+
+  for (const who of ['th', 'dh', 'a', 'sa']) {
+    r = await api(who, 'POST', `/users/${saId}/status`, { status: 'REVOKED', reason: 'x' });
+    check(r.status === 403, `Super Admin protection API: ${who} cannot revoke the Super Admin`, r);
+    r = await api(who, 'POST', `/users/${saId}/status`, { status: 'SUSPENDED' });
+    check(r.status === 403, `Super Admin protection API: ${who} cannot suspend the Super Admin`, r);
+    r = await api(who, 'DELETE', `/users/${saId}`);
+    check(r.status === 403, `Super Admin protection API: ${who} cannot delete the Super Admin`, r);
+    r = await api(who, 'PATCH', `/users/${saId}`, { role: 'TEAM_MEMBER', teamId: thProfile.teamId });
+    check(r.status === 403, `Super Admin protection API: ${who} cannot demote the Super Admin`, r);
+    r = await api(who, 'PATCH', `/users/${saId}`, { role: 'SUPER_ADMIN', teamId: thProfile.teamId });
+    check(r.status === 403 || r.status === 422, `Super Admin protection API: ${who} cannot send a Super Admin role either`, r);
+    r = await api(who, 'POST', `/users/${saId}/sales-sub-role`, { role: 'TELECALLER' });
+    check(r.status === 403 || r.status === 404 || r.status === 422, `Super Admin protection API: ${who} cannot give the Super Admin a Sales role`, r);
+    r = await api(who, 'POST', `/users/${saId}/technical-consultant`, { value: true });
+    check(r.status === 403 || r.status === 404 || r.status === 422, `Super Admin protection API: ${who} cannot make the Super Admin a consultant`, r);
+  }
+  r = await api('th', 'POST', `/users/${saId}/status`, { status: 'REVOKED', role: 'TEAM_MEMBER' });
+  check(r.status === 422, 'Super Admin protection API: an extra "role" in the body changes nothing (unknown field refused)', r);
+  r = await api('th', 'POST', `/users/${saId.toUpperCase()}/status`, { status: 'REVOKED' });
+  check(r.status === 403 || r.status === 404, 'Super Admin protection API: another spelling of the id is no way round', r);
+  r = await api('th', 'POST', `/users/${saId}/department-access`, { departmentId: thProfile.departmentId, division: 'SALES', granted: true });
+  check(r.status === 403, 'Super Admin protection API: a Team Lead cannot touch access control', r);
+  const after = await saState();
+  check(after.role === 'SUPER_ADMIN' && after.status === 'ACTIVE', 'Super Admin protection API: the account is untouched after all the attempts', after);
+  // the Team Lead's member list does not offer the Super Admin at all; the Super Admin's own list does
+  r = await api('th', 'GET', `/users?teamId=${thProfile.teamId}&pageSize=100`);
+  check(r.status === 200 && !(r.json.data.items as any[]).some(u => u.role === 'SUPER_ADMIN' || u.id === saId), "Super Admin protection API: a Team Lead's member list does not include the Super Admin", r);
+  r = await api('dh', 'GET', `/users?departmentId=${thProfile.departmentId}&pageSize=100`);
+  check(r.status === 200 && !(r.json.data.items as any[]).some(u => u.role === 'SUPER_ADMIN'), "Super Admin protection API: nor a Department Head's", r);
+  r = await api('sa', 'GET', `/users?role=SUPER_ADMIN&pageSize=100`);
+  check(r.status === 200 && (r.json.data.items as any[]).some(u => u.id === saId), "Super Admin protection API: the Super Admin's own list still shows the account", r);
+  // legitimate management below is unchanged
+  const victim = (await db.query(`select id from public.profiles where role = 'TEAM_MEMBER' and status = 'ACTIVE' and team_id = $1 order by created_at limit 1`, [thProfile.teamId])).rows[0].id as string;
+  r = await api('th', 'POST', `/users/${victim}/status`, { status: 'SUSPENDED', reason: 'test' });
+  check(r.status === 200 && r.json.data.status === 'SUSPENDED', 'Super Admin protection API: a Team Lead still suspends a Team Member of their team', r);
+  r = await api('th', 'POST', `/users/${victim}/status`, { status: 'ACTIVE' });
+  check(r.status === 200 && r.json.data.status === 'ACTIVE', 'Super Admin protection API: and restores them', r);
+  r = await api('sa', 'POST', `/users/${victim}/status`, { status: 'SUSPENDED', reason: 'test' });
+  check(r.status === 200, 'Super Admin protection API: the Super Admin still suspends a Team Member', r);
+  r = await api('sa', 'POST', `/users/${victim}/status`, { status: 'ACTIVE' });
+  check(r.status === 200, 'Super Admin protection API: and restores them', r);
+  await db.query(`update public.profiles set team_id = null, department_id = null where id = $1`, [saId]);
+}
+
+// --- the one-time clean-up of the chat between a Team Lead and the Sales Department Head (scripts/delete-team-lead-sales-head-chat.mjs) ---
+{
+  const { purgeTeamLeadSalesHeadChat } = await import('../../scripts/delete-team-lead-sales-head-chat.mjs');
+  const { r2Config } = await import('../../scripts/sweep-orphan-customer-files.mjs');
+  const { createClient } = await import('@supabase/supabase-js');
+  const service = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const R2 = { key: 'r2-chat-key', secret: 'r2-chat-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  const r2 = r2Config({ R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket } as any);
+  const idOfEmail = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
+  const tl = await idOfEmail('tl.delivery@amuwa.com'), sh = await idOfEmail('shared.sales.acx@amuwa.com'), other = await idOfEmail('tm.delivery@amuwa.com');
+  const directBetween = async (a: string, b: string, n: number) => {
+    const key = [a, b].sort().join(':');
+    const conv = (await db.query(`insert into public.chat_conversations (kind, direct_key, created_by) values ('DIRECT', $1, $2) returning id`, [key, a])).rows[0].id as string;
+    for (const m of [a, b]) await db.query(`insert into public.chat_members (conversation_id, profile_id) values ($1, $2)`, [conv, m]);
+    for (let i = 1; i <= n; i++) {
+      const row = (await db.query(`insert into public.chat_messages (conversation_id, seq, sender_id, sender_kind, sender_name, body, encrypted, e2ee)
+        values ($1, $2, $3, 'STAFF', 'x', '', true, '{"v":1,"ct":"opaque"}'::jsonb) returning id`, [conv, i, i % 2 ? a : b])).rows[0];
+      if (i === 1) {
+        const path = `${conv}/${crypto.randomUUID()}`;
+        await db.query(`insert into public.chat_attachments (conversation_id, message_id, uploader_id, file_name, mime_type, size_bytes, status, storage_bucket, storage_path, storage_provider)
+          values ($1, $2, $3, 'encrypted-file', 'application/x-amuwa-e2ee', 100, 'READY', 'chat-attachments', $4, 'R2')`, [conv, row.id, a, path]);
+        fake.objects.set(`chat-attachments/${path}`, { body: Buffer.from('AME2' + 'x'.repeat(96)), type: 'application/x-amuwa-e2ee' });
+      }
+    }
+    return conv;
+  };
+  const target = await directBetween(tl, sh, 4);
+  const decoyDirect = await directBetween(tl, other, 3);
+  const decoyGroup = (await db.query(`insert into public.chat_conversations (kind, title, created_by) values ('GROUP', 'Decoy group', $1) returning id`, [tl])).rows[0].id as string;
+  await db.query(`insert into public.chat_members (conversation_id, profile_id) values ($1, $2), ($1, $3)`, [decoyGroup, tl, sh]);
+  const count = async (table: string, conv: string) => Number((await db.query(`select count(*) c from public.${table} where conversation_id = $1`, [conv])).rows[0].c);
+  const objectsBefore = fake.objects.size;
+  const run = (o: Record<string, unknown> = {}) => purgeTeamLeadSalesHeadChat({ supabase: service, r2, teamLead: 'tl.delivery@amuwa.com', salesHead: 'shared.sales.acx@amuwa.com', ...o });
+
+  let rep = await run();
+  check(rep.found && rep.applied === false && rep.conversationId === target && rep.messages === 4 && rep.files === 1, 'one-time chat clean-up: the preview names the exact conversation, its messages and its files', rep);
+  check((await count('chat_messages', target)) === 4 && fake.objects.size === objectsBefore, 'one-time chat clean-up: the preview deletes nothing');
+  for (const bad of [{ teamLead: 'tm.delivery@amuwa.com' }, { salesHead: 'dh@amuwa.com' }, { teamLead: crypto.randomUUID() }, { salesHead: 'shared.support.acx@amuwa.com' }]) {
+    let err = '';
+    await run({ ...bad, apply: true, confirm: target }).catch(e => { err = e.message; });
+    check(err.length > 0, `one-time chat clean-up: wrong people are refused (${JSON.stringify(bad).slice(0, 60)}): ${err.slice(0, 70)}`);
+  }
+  let err = '';
+  await run({ apply: true }).catch(e => { err = e.message; });
+  check(/--confirm/.test(err) && (await count('chat_messages', target)) === 4, 'one-time chat clean-up: --apply alone, or with a wrong confirmation, deletes nothing');
+  err = '';
+  await run({ apply: true, confirm: decoyDirect }).catch(e => { err = e.message; });
+  check(err.length > 0 && (await count('chat_messages', decoyDirect)) === 3, 'one-time chat clean-up: another conversation id cannot be confirmed in its place');
+  rep = await run({ apply: true, confirm: target });
+  check(rep.applied === true && rep.removedFiles === 1 && rep.messages === 4, 'one-time chat clean-up: with the exact confirmation the conversation is deleted', rep);
+  check((await db.query(`select 1 from public.chat_conversations where id = $1`, [target])).rowCount === 0
+    && (await count('chat_messages', target)) === 0 && (await count('chat_members', target)) === 0 && (await count('chat_attachments', target)) === 0,
+    'one-time chat clean-up: its messages, members and file records are gone');
+  check(fake.objects.size === objectsBefore - 1, 'one-time chat clean-up: the stored file was removed from storage (and only that one)');
+  check((await count('chat_messages', decoyDirect)) === 3 && (await count('chat_attachments', decoyDirect)) === 1 && (await count('chat_members', decoyGroup)) === 2
+    && [...fake.objects.keys()].some(k => k.includes(decoyDirect)), 'one-time chat clean-up: the other direct chat of the Team Lead, and the group, are untouched');
+  const audit = (await db.query(`select metadata from public.audit_logs where action = 'CHAT_CONVERSATION_PURGED' and entity_type = 'chat_conversation'`)).rows;
+  check(audit.length === 1 && audit[0].metadata.conversation_id === target && audit[0].metadata.messages === 4 && !JSON.stringify(audit[0].metadata).includes('opaque'), 'one-time chat clean-up: one audit entry with ids and counts, no content');
+  rep = await run();
+  check(rep.found === false, 'one-time chat clean-up: run again, there is nothing left to delete');
+  await new Promise(res => fake.server.close(res));
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

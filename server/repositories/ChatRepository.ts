@@ -1,10 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ChatConversation,
+  ChatDeleteResult,
   ChatDirectoryPerson,
+  ChatKeyBackup,
+  ChatKeyBackupBlob,
+  ChatKeyStatus,
+  ChatMemberKey,
   ChatMessage,
   ChatMessagePage,
   ChatMyClient,
+  ChatPublicKey,
   ChatReviewList,
   ChatUnreadSummary
 } from '../../shared/contracts.js';
@@ -53,6 +59,24 @@ export class ChatRepository {
   send(id: string, i: { body: string; clientMsgId: string; replyTo?: string; attachmentIds: string[] }) {
     return this.rpc<ChatMessage>('chat_send_message', { p_conversation: id, p_body: i.body, p_client_msg_id: i.clientMsgId, p_reply_to: i.replyTo ?? null, p_attachments: i.attachmentIds });
   }
+  sendEncrypted(id: string, i: { clientMsgId: string; replyTo?: string; attachmentIds: string[]; e2ee: unknown }) {
+    return this.rpc<ChatMessage>('chat_send_encrypted', { p_conversation: id, p_client_msg_id: i.clientMsgId, p_e2ee: i.e2ee, p_reply_to: i.replyTo ?? null, p_attachments: i.attachmentIds });
+  }
+  deleteForMe(messageId: string) { return this.rpc<ChatDeleteResult>('chat_delete_for_me', { p_message: messageId }); }
+  deleteForEveryone(messageId: string) {
+    return this.rpc<{ id: string; deleted: boolean; files: { id: string; bucket: string; path: string; provider: 'R2' | 'SUPABASE' | null }[] }>('chat_delete_for_everyone', { p_message: messageId });
+  }
+  async attachmentsRemoved(ids: string[]) { await this.rpc<null>('chat_attachments_removed', { p_ids: ids }); }
+
+  // ---- end-to-end encryption keys (public keys and the passphrase-encrypted private-key backup; no secret is ever in these calls)
+  keyStatus() { return this.rpc<ChatKeyStatus>('chat_key_status'); }
+  keySetup(publicKey: string, backup: ChatKeyBackupBlob) { return this.rpc<{ version: number; fingerprint: string }>('chat_key_setup', { p_public: publicKey, p_backup: backup }); }
+  keyReset(publicKey: string, backup: ChatKeyBackupBlob) { return this.rpc<{ version: number; fingerprint: string }>('chat_key_reset', { p_public: publicKey, p_backup: backup }); }
+  keyBackupGet() { return this.rpc<ChatKeyBackup | null>('chat_key_backup_get'); }
+  async keyBackupSet(backup: ChatKeyBackupBlob, version: number) { await this.rpc<null>('chat_key_backup_set', { p_backup: backup, p_version: version }); }
+  memberKeys(conversationId: string) { return this.rpc<ChatMemberKey[]>('chat_member_keys', { p_conversation: conversationId }); }
+  keyLookup(profileId: string, version: number) { return this.rpc<ChatPublicKey | null>('chat_key_lookup', { p_profile: profileId, p_version: version }); }
+
   markRead(id: string, seq?: number) { return this.rpc<{ readSeq: number }>('chat_mark_read', { p_conversation: id, p_seq: seq ?? null }); }
 
   // ---- people, direct messages, groups

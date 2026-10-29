@@ -85,12 +85,17 @@ select test.check((select payment_workflow = 'PENDING_PAYMENT_CONFIRMATION' and 
                      from customers where id = (select id from pt where name = 'L2')), 'sent to Accounts: status is Pending payment confirmation, same lead record');
 select test.must_fail($$select send_lead_to_accounts((select id from pt where name = 'L2'), 50000, null)$$, 'a second submission is refused', 'already with Accounts');
 select test.check((select count(*) = 1 from customers where company = 'Desai Clinic'), 'still exactly one customer');
--- The Accounts payment desk is emailed (one person); Sales never sees that job
-select test.admin_check($Q$select (select count(*) = 1 and bool_and(internal and channel = 'EMAIL' and status = 'QUEUED' and context ->> 'kind' = 'PAYMENT_CONFIRMATION_REQUESTED'
-     and context ->> 'to' = (select p.email from profiles p join departments d on d.id = p.department_id where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id limit 1)
-     and context ->> 'customer' = 'Desai Clinic' and context ->> 'from' = 'Member A')
+-- Every eligible Accounts member is emailed (one job each); Sales never sees those jobs
+select test.admin_check($Q$select (select count(*) = (select count(*) from private.payment_desk_recipients()) and count(*) >= 2
+     and count(distinct context ->> 'to') = count(*)
+     and bool_and(internal and channel = 'EMAIL' and status = 'QUEUED' and context ->> 'kind' = 'PAYMENT_CONFIRMATION_REQUESTED'
+     and context ->> 'customer' = 'Desai Clinic' and context ->> 'from' = 'Member A' and context ->> 'reference' like 'CUS-%'
+     and context ->> 'to' in (select p.email from profiles p join departments d on d.id = p.department_id where d.slug = 'accounts' and p.status = 'ACTIVE'))
    from automation_jobs where customer_id = (select id from pt where name = 'L2') and stage = 'ACCOUNTS_PAYMENT')$Q$,
-  'sending to Accounts queues one email to the longest-serving Accounts person (with who sent it)');
+  'sending to Accounts queues one email to EACH active Accounts member (with who sent it and the customer reference)');
+select test.admin_check($Q$select not exists (select 1 from automation_jobs where customer_id = (select id from pt where name = 'L2') and stage = 'ACCOUNTS_PAYMENT'
+     and (context ? 'body' or context ? 'phone' or context ? 'customerEmail' or context::text ~ '[0-9],[0-9]{2},[0-9]{3}|50000'))$Q$,
+  'the job carries no amount and no customer phone or e-mail');
 select test.check((select count(*) = 0 from automation_jobs where stage = 'ACCOUNTS_PAYMENT'), 'Sales cannot see the staff email jobs');
 select test.must_fail($$select update_lead((select id from pt where name = 'L2'), '{"city":"X"}')$$, 'a lead with Accounts cannot be edited', 'with Accounts');
 select test.must_fail($$select move_customer_to_potential((select id from pt where name = 'L2'), 50000, current_date + 3)$$, 'a lead with Accounts cannot be moved to Potential', 'with Accounts');
@@ -498,20 +503,25 @@ reset role;
 -- ---------------------------------------------------------------------------
 \echo '--- Who gets the payment-request email'
 reset role;
-update profiles set payment_desk_order = 1 where id = test.id('acc_m2');
-select test.check((select email = (select email from profiles where id = test.id('acc_m2')) from private.payment_desk_email((select id from pt where name = 'L2'))),
-  'the payment-desk person (lowest number) gets it when nobody is assigned to the customer');
-update profiles set payment_desk_order = 2 where id = test.id('dh_acc');
-select test.check((select email = (select email from profiles where id = test.id('acc_m2')) from private.payment_desk_email((select id from pt where name = 'L2'))), 'only one person: number 1 wins over number 2');
-update customers set accounts_owner_id = test.id('dh_acc') where id = (select id from pt where name = 'L2');
-select test.check((select email = (select email from profiles where id = test.id('dh_acc')) from private.payment_desk_email((select id from pt where name = 'L2'))),
-  'the accountant assigned to the customer gets their request');
+create temp table rcp_status as select p.id, p.status from profiles p join departments d on d.id = p.department_id where d.slug = 'accounts';
+-- the Accounts department head may have been suspended by an earlier suite: both Accounts members are active for these checks
+update profiles set status = 'ACTIVE' where id = test.id('dh_acc');
+select test.check((select status = 'ACTIVE' from profiles where id = test.id('dh_acc')), 'precondition: the Accounts head is active');
+create temp table rcp_before as select email from private.payment_desk_recipients();
+select test.check((select count(*) >= 2 from rcp_before) and (select bool_and(email in (select p.email from profiles p join departments d on d.id = p.department_id where d.slug = 'accounts' and p.status = 'ACTIVE')) from rcp_before),
+  'every active Accounts member is a recipient (both Accounts members, none hardcoded)');
+select test.check(not exists (select 1 from rcp_before r join profiles p on p.email = r.email join departments d on d.id = p.department_id where d.slug <> 'accounts'), 'only Accounts members: nobody from Sales, Support or any other department');
+-- a suspended member is not emailed, and is again when active
 update profiles set status = 'SUSPENDED' where id = test.id('dh_acc');
-select test.check((select email = (select email from profiles where id = test.id('acc_m2')) from private.payment_desk_email((select id from pt where name = 'L2'))),
-  'a suspended assignee is skipped: the payment desk gets it');
-update profiles set status = 'ACTIVE', payment_desk_order = null where id = test.id('dh_acc');
-update profiles set payment_desk_order = null where id = test.id('acc_m2');
-update customers set accounts_owner_id = test.id('acc_m') where id = (select id from pt where name = 'L2');
+select test.check((select count(*) from private.payment_desk_recipients()) = (select count(*) from rcp_before) - 1 and not exists (select 1 from private.payment_desk_recipients() where profile_id = test.id('dh_acc')), 'an inactive member is not a recipient');
+update profiles set status = 'ACTIVE' where id = test.id('dh_acc');
+select test.check((select count(*) = (select count(*) from rcp_before) from private.payment_desk_recipients()), 'and is one again when active');
+-- (an invalid or upper-case address, and two profiles with one address, cannot be stored: profiles_email_check and the unique e-mail index.
+--  The recipient list guards against both anyway; the dispatcher test below covers an invalid address and a provider failure.)
+-- one recipient only: the others are inactive
+update profiles set status = 'SUSPENDED' where id in (select p.id from profiles p join departments d on d.id = p.department_id where d.slug = 'accounts' and p.id <> test.id('acc_m'));
+select test.check((select count(*) = 1 and min(email) = (select email from profiles where id = test.id('acc_m')) from private.payment_desk_recipients()), 'with one active Accounts member, that member is the only recipient');
+update profiles p set status = r.status from rcp_status r where r.id = p.id;
 
 reset role;
 \echo '=== ALL PAYMENT WORKFLOW TESTS PASSED ==='

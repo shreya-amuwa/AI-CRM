@@ -45,6 +45,8 @@ select test.check((select j ->> 'body' = 'Hello, I need help with my campaign' a
 select test.check((select chat_send_message(pg_temp.g('conv')::uuid, 'Hello, I need help with my campaign', '11111111-1111-1111-1111-111111111111') ->> 'id' = (select j ->> 'id' from m1)),
   'sending the same message again (a retry or a double click) returns the stored one');
 select test.check((select count(*) = 1 from chat_messages), 'and it is stored once');
+select test.must_fail($$select chat_delete_for_me(((select j ->> 'id' from m1))::uuid)$$, 'a client cannot delete messages (deleting belongs to employees)', 'Sign in again|FORBIDDEN');
+select test.must_fail($$select chat_delete_for_everyone(((select j ->> 'id' from m1))::uuid)$$, 'nor for everyone', 'Sign in again|FORBIDDEN');
 select test.must_fail($$select chat_send_message(pg_temp.g('conv')::uuid, '   ', '22222222-2222-2222-2222-222222222222')$$, 'an empty message is refused', 'Write a message');
 select test.must_fail($$select chat_send_message(pg_temp.g('conv')::uuid, repeat('x', 4001), '33333333-3333-3333-3333-333333333333')$$, 'a message over 4000 characters is refused', '4000');
 select test.must_fail($$select chat_send_message(pg_temp.g('conv')::uuid, 'no id', null)$$, 'a message without an identifier is refused', 'identifier');
@@ -72,6 +74,8 @@ select test.check((select (chat_conversation_detail(pg_temp.g('conv')::uuid) ->>
 create temp table m3 as select chat_send_message(pg_temp.g('conv')::uuid, 'Hi, we are looking into it', '55555555-5555-5555-5555-555555555555') as j;
 grant all on m3 to authenticated;
 select test.check((select j ->> 'senderKind' = 'STAFF' and j ->> 'senderLabel' = 'Relationship Manager' and (j ->> 'seq')::int = 3 from m3), 'the Team Member replies (labelled Relationship Manager)');
+select test.must_fail($$select chat_delete_for_me(((select j ->> 'id' from m3))::uuid)$$, 'a client conversation keeps its history: no delete for me', 'kept for the client');
+select test.must_fail($$select chat_delete_for_everyone(((select j ->> 'id' from m3))::uuid)$$, 'and no delete for everyone, even of the sender''s own message', 'kept for the client');
 reset role;
 select test.check((select count(*) = 1 from notifications where type = 'CHAT_CLIENT_MESSAGE' and recipient_id = test.id('sup_plain') and read_at is null) = false
                   or (select count(*) from notifications where type = 'CHAT_CLIENT_MESSAGE' and recipient_id = test.id('sup_plain') and read_at is null) = 0, 'reading the chat cleared the Team Member''s bell');
@@ -195,7 +199,35 @@ select set_config('request.jwt.claims', '', false);
 update profiles set status = 'ACTIVE' where id = test.id('sup_plain');
 
 -- ================================================================ internal chat
+-- Internal chats are end-to-end encrypted (migration 20261206000300): the server stores an opaque envelope sealed for every member's public key.
+-- The tests below do not need real cryptography (that is tested in the browser code), only envelopes of the right shape.
+reset role;
+create function pg_temp.env(p_conv uuid) returns jsonb language sql stable security definer as $$
+  select jsonb_build_object('v', 1, 'sv', (select k.key_version from public.chat_user_keys k where k.profile_id = auth.uid() and k.retired_at is null),
+    'iv', 'AAAAAAAAAAAAAAAA', 'ct', translate(encode(convert_to('opaque ciphertext ' || gen_random_uuid(), 'UTF8'), 'base64'), E'\n', ''),
+    'wraps', (select jsonb_agg(jsonb_build_object('to', m.profile_id, 'kv', k.key_version, 'enc', k.public_key, 'w', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')
+                               order by m.profile_id::text collate "C")
+                from public.chat_members m join public.chat_user_keys k on k.profile_id = m.profile_id and k.retired_at is null
+               where m.conversation_id = p_conv and m.left_at is null))
+$$;
+grant execute on function pg_temp.env(uuid) to authenticated;
+create function pg_temp.send(p_conv uuid, p_atts uuid[] default '{}', p_reply uuid default null) returns jsonb language sql as $$
+  select public.chat_send_encrypted(p_conv, gen_random_uuid(), pg_temp.env(p_conv), p_reply, p_atts)
+$$;
+grant execute on function pg_temp.send(uuid, uuid[], uuid) to authenticated;
+create function pg_temp.pub(p_name text) returns text language sql immutable as $$
+  select translate(encode('\x04'::bytea || decode(repeat(md5(p_name), 4), 'hex'), 'base64'), E'\n', '')
+$$;
+grant execute on function pg_temp.pub(text) to authenticated;
 set role authenticated;
+do $do$
+declare n text;
+begin
+  foreach n in array array['sup_plain', 'sup_b', 'sup_th', 'dh_wab'] loop
+    perform set_config('request.jwt.claims', json_build_object('sub', test.id(n), 'role', 'authenticated')::text, false);
+    perform public.chat_key_setup(pg_temp.pub(n), jsonb_build_object('v', 1, 'kdf', 'PBKDF2-SHA256', 'iter', 600000, 'salt', 'AAAAAAAAAAAAAAAAAAAAAA==', 'iv', 'AAAAAAAAAAAAAAAA', 'ct', 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'));
+  end loop;
+end $do$;
 select test.login('sup_plain');
 select test.check((select jsonb_array_length(chat_directory('b')) >= 1 and not exists (select 1 from jsonb_array_elements(chat_directory()) x where x ->> 'id' = test.id('sup_plain')::text)), 'the directory finds colleagues and leaves out the caller');
 select test.check((select not exists (select 1 from jsonb_array_elements(chat_directory()) x where x ? 'email' or x ? 'phone')), 'the directory shows no e-mail or phone');
@@ -206,12 +238,13 @@ insert into ch select 'dm', (select j ->> 'id' from dm);
 select test.check((select j ->> 'kind' = 'DIRECT' and j ->> 'title' = (select full_name from profiles where id = test.id('sup_b')) from dm), 'a direct conversation is named after the other person');
 select test.must_fail($$select chat_open_direct(test.id('sup_plain'))$$, 'nobody can open a conversation with themselves', 'cannot start');
 select test.must_fail($$select chat_open_direct(gen_random_uuid())$$, 'nor with someone who does not exist', 'cannot start');
-select test.check((select chat_send_message(pg_temp.g('dm')::uuid, 'Do you have a minute?', gen_random_uuid()) ->> 'senderLabel' is null), 'a direct message is sent');
+select test.must_fail($$select chat_send_message(pg_temp.g('dm')::uuid, 'plain text', gen_random_uuid())$$, 'a readable message is refused in a direct chat', 'end-to-end encrypted');
+select test.check((select pg_temp.send(pg_temp.g('dm')::uuid) ->> 'senderLabel' is null), 'an encrypted direct message is sent');
 select test.login('sup_b');
 select test.check((select chat_open_direct(test.id('sup_plain')) ->> 'id' = pg_temp.g('dm')), 'the other person opening it gets the same single conversation');
-select test.check((select jsonb_array_length(chat_internal_list()) = 1 and chat_internal_list() -> 0 ->> 'lastMessagePreview' = 'Do you have a minute?' and (chat_internal_list() -> 0 ->> 'unread')::int = 1), 'it is in their list with the preview and 1 unread');
+select test.check((select jsonb_array_length(chat_internal_list()) = 1 and chat_internal_list() -> 0 ->> 'lastMessagePreview' = 'Encrypted message' and (chat_internal_list() -> 0 ->> 'unread')::int = 1), 'it is in their list with the preview and 1 unread');
 select test.check((select (chat_unread_summary() ->> 'internal')::int = 1), 'and in their unread summary');
-select test.check((select chat_send_message(pg_temp.g('dm')::uuid, 'Yes, go ahead', gen_random_uuid()) is not null), 'they reply');
+select test.check((select pg_temp.send(pg_temp.g('dm')::uuid) is not null), 'they reply');
 select chat_mark_read(pg_temp.g('dm')::uuid);
 select test.check((select (chat_unread_summary() ->> 'internal')::int = 0), 'reading clears it');
 select test.login('sup_plain');
@@ -246,10 +279,10 @@ grant all on grp to authenticated;
 insert into ch select 'grp', (select j ->> 'id' from grp);
 select test.check((select j ->> 'kind' = 'GROUP' and j ->> 'title' = 'Support huddle' and (j -> 'isAdmin')::boolean and jsonb_array_length(j -> 'members') = 3 from grp), 'the creator is the admin of a 3-person group');
 select test.check((select jsonb_array_length(chat_messages_page(pg_temp.g('grp')::uuid) -> 'messages') = 1 and chat_messages_page(pg_temp.g('grp')::uuid) -> 'messages' -> 0 ->> 'kind' = 'SYSTEM'), 'the group starts with a system line');
-select chat_send_message(pg_temp.g('grp')::uuid, 'Welcome all', gen_random_uuid());
+select pg_temp.send(pg_temp.g('grp')::uuid);
 select test.login('sup_b');
 select test.check((select jsonb_array_length(chat_messages_page(pg_temp.g('grp')::uuid) -> 'messages') = 2 and not (chat_conversation_detail(pg_temp.g('grp')::uuid) -> 'isAdmin')::boolean), 'a member reads the group and is not an admin');
-select test.check((select chat_send_message(pg_temp.g('grp')::uuid, 'Thanks!', gen_random_uuid()) is not null), 'a member writes in the group');
+select test.check((select pg_temp.send(pg_temp.g('grp')::uuid) is not null), 'a member writes in the group');
 select test.must_fail($$select chat_group_add_members(pg_temp.g('grp')::uuid, array[test.id('dh_wab')])$$, 'a member who is not an admin cannot add people', 'admin');
 select test.must_fail($$select chat_group_rename(pg_temp.g('grp')::uuid, 'Renamed')$$, 'nor rename the group', 'admin');
 select test.must_fail($$select chat_group_remove_member(pg_temp.g('grp')::uuid, test.id('sup_th'))$$, 'nor remove anybody', 'admin');
@@ -262,7 +295,7 @@ select test.check((select count(*) = 0 from chat_messages where conversation_id 
 
 select test.login('sup_plain');
 select test.check((select jsonb_array_length(chat_group_add_members(pg_temp.g('grp')::uuid, array[test.id('dh_wab'), test.id('sup_b')]) -> 'members') = 4), 'the admin adds a person (adding someone who is already in is ignored)');
-select chat_send_message(pg_temp.g('grp')::uuid, 'Message after the new member joined', gen_random_uuid());
+select pg_temp.send(pg_temp.g('grp')::uuid);
 select test.login('dh_wab');
 select test.check((select jsonb_array_length(chat_messages_page(pg_temp.g('grp')::uuid) -> 'messages') = 2), 'a member who joined later sees only what was said after they joined (the "added" line and the new message)');
 select test.check((select count(*) = 2 from chat_messages where conversation_id = pg_temp.g('grp')::uuid), 'and row level security agrees');
@@ -274,22 +307,23 @@ select test.must_fail($$select chat_group_set_admin(pg_temp.g('grp')::uuid, test
 select test.must_fail($$select chat_group_remove_member(pg_temp.g('grp')::uuid, test.id('sup_plain'))$$, 'an admin cannot remove themselves (they leave instead)', 'leave');
 
 -- attachments in the group
-select test.must_fail($$select chat_begin_upload(pg_temp.g('grp')::uuid, 'virus.exe', 'application/x-msdownload', 1000)$$, 'a file type that is not allowed is refused', 'cannot be sent');
-select test.must_fail($$select chat_begin_upload(pg_temp.g('grp')::uuid, 'big.pdf', 'application/pdf', 6000000)$$, 'a file over 5 MB is refused', '5 MB');
-create temp table up as select to_jsonb(chat_begin_upload(pg_temp.g('grp')::uuid, 'Plan.pdf', 'application/pdf', 2048)) as j;
+select test.must_fail($$select chat_begin_upload(pg_temp.g('grp')::uuid, 'virus.exe', 'application/x-msdownload', 1000)$$, 'a file that is not an encrypted envelope is refused in an internal chat', 'encrypted before');
+select test.must_fail($$select chat_begin_upload(pg_temp.g('grp')::uuid, 'plain.pdf', 'application/pdf', 1000)$$, 'even a PDF has to be encrypted first', 'encrypted before');
+select test.must_fail($$select chat_begin_upload(pg_temp.g('grp')::uuid, 'big.enc', 'application/x-amuwa-e2ee', 6000000)$$, 'a file over 5 MB is refused', '5 MB');
+create temp table up as select to_jsonb(chat_begin_upload(pg_temp.g('grp')::uuid, 'file.enc', 'application/x-amuwa-e2ee', 2048)) as j;
 grant all on up to authenticated;
 insert into ch select 'att', (select j ->> 'id' from up);
-select test.check((select j ->> 'status' = 'PENDING' and j ->> 'storage_path' like pg_temp.g('grp') || '/%/Plan.pdf' from up), 'an upload is booked under the conversation (not a guessable public path)');
-select test.must_fail($$select chat_send_message(pg_temp.g('grp')::uuid, 'with file', gen_random_uuid(), null, array[pg_temp.g('att')::uuid])$$, 'a file that has not finished uploading cannot be sent', 'not ready');
+select test.check((select j ->> 'status' = 'PENDING' and j ->> 'storage_path' like pg_temp.g('grp') || '/%/file.enc' and j ->> 'file_name' = 'encrypted-file' from up), 'an upload is booked under the conversation (not a guessable public path)');
+select test.must_fail($$select pg_temp.send(pg_temp.g('grp')::uuid, array[pg_temp.g('att')::uuid])$$, 'a file that has not finished uploading cannot be sent', 'not ready');
 select test.login('sup_b');
 select test.must_fail($$select chat_complete_upload(pg_temp.g('att')::uuid, 2048)$$, 'someone else cannot confirm my upload', 'not found');
 select test.login('sup_plain');
-select test.check((select chat_complete_upload(pg_temp.g('att')::uuid, 2048) ->> 'name' = 'Plan.pdf'), 'the uploader confirms it');
+select test.check((select chat_complete_upload(pg_temp.g('att')::uuid, 2048) ->> 'name' = 'encrypted-file'), 'the uploader confirms it (the real name lives inside the encrypted message)');
 select test.login('sup_b');
 select test.must_fail($$select chat_attachment_download(pg_temp.g('att')::uuid)$$, 'before it is sent only the uploader can reach the file', 'not found');
 select test.login('sup_plain');
-select test.check((select chat_send_message(pg_temp.g('grp')::uuid, '', gen_random_uuid(), null, array[pg_temp.g('att')::uuid]) -> 'attachments' -> 0 ->> 'name' = 'Plan.pdf'), 'a message can be a file only');
-select test.must_fail($$select chat_send_message(pg_temp.g('grp')::uuid, 'again', gen_random_uuid(), null, array[pg_temp.g('att')::uuid])$$, 'a file cannot be sent twice', 'not ready');
+select test.check((select pg_temp.send(pg_temp.g('grp')::uuid, array[pg_temp.g('att')::uuid]) -> 'attachments' -> 0 ->> 'id' = pg_temp.g('att')), 'a message can carry an encrypted file (the server lists only its id and size)');
+select test.must_fail($$select pg_temp.send(pg_temp.g('grp')::uuid, array[pg_temp.g('att')::uuid])$$, 'a file cannot be sent twice', 'not ready');
 select test.check((select (chat_attachment_download(pg_temp.g('att')::uuid)).id is not null), 'a member can download it');
 select test.login('sup_b');
 select test.check((select (chat_attachment_download(pg_temp.g('att')::uuid)).id is not null), 'so can another member');
@@ -330,8 +364,8 @@ declare
 begin
   for i in 1..70 loop
     update public.chat_conversations set last_seq = last_seq + 1 where id = v_conv;
-    insert into public.chat_messages (conversation_id, seq, sender_id, sender_kind, sender_name, body)
-      values (v_conv, (select last_seq from public.chat_conversations where id = v_conv), case when i % 2 = 0 then test.id('sup_plain') else test.id('sup_b') end, 'STAFF', 'x', 'message ' || i);
+    insert into public.chat_messages (conversation_id, seq, sender_id, sender_kind, sender_name, body, encrypted, e2ee)
+      values (v_conv, (select last_seq from public.chat_conversations where id = v_conv), case when i % 2 = 0 then test.id('sup_plain') else test.id('sup_b') end, 'STAFF', 'x', '', true, '{"v":1}'::jsonb);
   end loop;
 end $do$;
 set role authenticated;
@@ -364,7 +398,7 @@ declare
 begin
   for i in 1..70 loop
     begin
-      perform public.chat_send_message(pg_temp.g('grp')::uuid, 'flood ' || i, gen_random_uuid());
+      perform pg_temp.send(pg_temp.g('grp')::uuid);
       v_ok := v_ok + 1;
     exception when others then
       if sqlerrm !~* 'too fast' then

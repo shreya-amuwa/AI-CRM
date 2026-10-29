@@ -16,8 +16,12 @@ export const STAGE_LABEL = {
   COMPLETED: 'Status Completed',
   /** Sent once when the Technical Consultant authorizes the mini website we built for the customer. */
   WEBSITE_READY: 'Website Ready',
+  /** Sent once after Accounts has created the client's panel login: a set-password link by e-mail, a plain "access is ready" WhatsApp (never a password). */
+  ACCOUNT_CREATED: 'Account Created',
   /** Internal: the email to the Accounts payment desk (not a customer message). */
-  ACCOUNTS_PAYMENT: 'Accounts payment request'
+  ACCOUNTS_PAYMENT: 'Accounts payment request',
+  /** The password the Meta Verifier set on the customer's WhatsApp panel, e-mailed to the customer once (never a WhatsApp message, never kept). */
+  PANEL_CREDENTIALS: 'WhatsApp panel login'
 } as const;
 export type ClientStage = keyof typeof STAGE_LABEL;
 

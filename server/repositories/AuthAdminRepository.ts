@@ -1,6 +1,6 @@
 import type { HeadDivision, Role } from '../../shared/contracts.js';
 import type { MemberDetailsInput } from '../../shared/validation.js';
-import { getServiceClient, hasServiceClient } from '../db/supabase.js';
+import { getAnonClient, getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { AppError } from '../http/errors.js';
 
 const BAN_FOREVER = '876000h';
@@ -19,6 +19,7 @@ export class AuthAdminRepository {
     departmentId?: string;
     teamId?: string;
     technicalConsultant?: boolean;
+    metaVerifier?: boolean;
     headDivision?: HeadDivision;
     provisionedBy: string;
   }): Promise<string> {
@@ -35,7 +36,8 @@ export class AuthAdminRepository {
         provisioned_department_id: input.departmentId ?? null,
         provisioned_team_id: input.teamId ?? null,
         provisioned_head_division: input.headDivision ?? null,
-        provisioned_technical_consultant: input.technicalConsultant === true
+        provisioned_technical_consultant: input.technicalConsultant === true,
+        provisioned_meta_verifier: input.metaVerifier === true
       }
     });
     if (error || !data.user) {
@@ -58,7 +60,7 @@ export class AuthAdminRepository {
       email: input.email,
       password: input.password,
       email_confirm: true,
-      app_metadata: { client_customer_id: input.customerId, provisioned_by_consultant: input.provisionedBy }
+      app_metadata: { client_customer_id: input.customerId, provisioned_by: input.provisionedBy }
     });
     if (error || !data.user) {
       if (/already (been )?registered|exists/i.test(error?.message || '')) {
@@ -70,6 +72,44 @@ export class AuthAdminRepository {
     return data.user.id;
   }
 
+  /**
+   * Puts a new password on a client's login (a fresh temporary one for Accounts' resend, or the client's own choice). Hashed by Supabase Auth;
+   * never stored, logged or returned by the CRM.
+   */
+  async setClientPassword(userId: string, password: string): Promise<void> {
+    const { error } = await getServiceClient().auth.admin.updateUserById(userId, { password });
+    if (error) {
+      console.error('[api] auth.admin.updateUserById (client password) failed', error.status ?? error.code);
+      throw new AppError('INTERNAL', 'Could not save the password.');
+    }
+  }
+
+  /** True when `password` already signs this e-mail in (so a client cannot "choose" the temporary password again). */
+  async passwordSignsIn(email: string, password: string): Promise<boolean> {
+    const { data, error } = await getAnonClient().auth.signInWithPassword({ email, password });
+    if (data?.session) await getAnonClient().auth.signOut().catch(() => undefined);
+    return !error && !!data?.session;
+  }
+
+  /** Stored by the database once the client's own password is in place: the temporary one stops being required. */
+  async clientPasswordChanged(userId: string): Promise<void> {
+    const { error } = await getServiceClient().rpc('client_password_changed', { p_user: userId });
+    if (error) {
+      console.error('[api] client_password_changed failed', error.message);
+      throw new AppError('INTERNAL', 'Could not finish changing the password.');
+    }
+  }
+
+  /** A sign-in an earlier, interrupted attempt left for this customer and e-mail (so the retry finishes it instead of making a second one). */
+  async clientUserFor(customerId: string, email: string): Promise<string | null> {
+    const { data, error } = await getServiceClient().rpc('client_auth_user_for', { p_customer: customerId, p_email: email });
+    if (error) {
+      console.error('[api] client_auth_user_for failed', error.message);
+      throw new AppError('INTERNAL', 'Could not check for an existing login.');
+    }
+    return (data as string | null) ?? null;
+  }
+
   /** Joining date, date of birth, blood group, emergency contact and designation (not readable by ordinary users). */
   async savePersonalDetails(userId: string, d: MemberDetailsInput): Promise<void> {
     const { error } = await getServiceClient().from('employee_personal_details').upsert({
@@ -79,6 +119,7 @@ export class AuthAdminRepository {
       date_of_birth: d.dateOfBirth,
       blood_group: d.bloodGroup,
       emergency_contact: d.emergencyContact,
+      contact_number: d.contactNumber,
       updated_at: new Date().toISOString()
     });
     if (error) {

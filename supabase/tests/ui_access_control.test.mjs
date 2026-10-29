@@ -39,7 +39,8 @@ const apiScript = () => {
   ];
   const state = {
     h1: { profileId: 'h1', name: 'Ashwini Rajput', role: 'DEPARTMENT_HEAD', homeDepartmentId: 'd-whatsbox', headDivision: 'SUPPORT', grants: [{ departmentId: 'd-wabatalk', division: 'SUPPORT' }] },
-    h2: { profileId: 'h2', name: 'Sales Head', role: 'DEPARTMENT_HEAD', homeDepartmentId: 'd-whatsbox', headDivision: 'SALES', grants: [] }
+    h2: { profileId: 'h2', name: 'Sales Head', role: 'DEPARTMENT_HEAD', homeDepartmentId: 'd-whatsbox', headDivision: 'SALES', grants: [] },
+    h3: { profileId: 'h3', name: 'Plain Head', role: 'DEPARTMENT_HEAD', homeDepartmentId: 'd-whatsbox', headDivision: 'SUPPORT', grants: [] }
   };
   window.__calls = [];
   window.__failNext = false;
@@ -49,9 +50,10 @@ const apiScript = () => {
     const method = (init.method || 'GET').toUpperCase();
     window.__calls.push(`${method} ${u.pathname}${u.search}`);
     if (u.pathname === '/api/v1/users' && method === 'GET') {
-      const mk = (id, name, email) => ({ id, fullName: name, email, role: 'DEPARTMENT_HEAD', status: 'ACTIVE', department: { id: 'd-whatsbox', slug: 'whatsbox', name: 'Whatsbox' } });
-      return json({ items: [mk('h1', 'Ashwini Rajput', 'a@x.com'), mk('h2', 'Sales Head', 's@x.com')], page: 1, pageSize: 100, total: 2 });
+      const mk = (id, name, email, op) => ({ id, fullName: name, email, role: 'DEPARTMENT_HEAD', isOperationsHead: op, status: 'ACTIVE', department: { id: 'd-whatsbox', slug: 'whatsbox', name: 'Whatsbox' } });
+      return json({ items: [mk('h1', 'Ashwini Rajput', 'a@x.com', true), mk('h2', 'Sales Head', 's@x.com', true), mk('h3', 'Plain Head', 'p@x.com', false)], page: 1, pageSize: 100, total: 3 });
     }
+    if (u.pathname === '/api/v1/users/operations-head-review') return json([]);
     const m = u.pathname.match(/^\/api\/v1\/users\/(h\d)\/department-access(\/apply)?$/);
     if (m) {
       const s = state[m[1]];
@@ -90,6 +92,15 @@ const open = async (vp) => {
   check(await page.isDisabled('[data-testid="cell-dtalk-support"]') && (await page.getAttribute('[data-testid="cell-dtalk-support"]', 'title')).includes('Wabatalk'), "D Talk's Support is disabled and points to Wabatalk");
   check(await page.isDisabled('[data-testid="cell-wabatalk-sales"]') && await page.isDisabled('[data-testid="cell-accounts-sales"]') && await page.isDisabled('[data-testid="cell-accounts-support"]'), 'a function a department does not have cannot be ticked');
   check(await page.isDisabled('[data-testid="access-save"]') && await page.isHidden('[data-testid="unsaved-badge"]').catch(() => true), 'nothing changed: Save is disabled');
+  check(await page.isVisible('[data-testid="operations-head-box"]') && /Operations Head/.test(await page.textContent('[data-testid="operations-head-box"]')), 'an Operations Head is shown as one, with the button to remove the role');
+  // a plain Department Head: another department cannot be ticked (the database refuses it too), the other function of their own can
+  await page.selectOption('[data-testid="access-employee"]', 'h3');
+  await page.waitForSelector('[data-testid="cell-wabastar-support"]');
+  check(await page.isDisabled('[data-testid="cell-wabastar-support"]') && (await page.getAttribute('[data-testid="cell-wabastar-support"]', 'title')).includes('Operations Head'), 'a Department Head who is not an Operations Head cannot be given another department');
+  check(!(await page.isDisabled('[data-testid="cell-whatsbox-sales"]')), 'but can still handle the other function of their own department');
+  check(/Make Operations Head/.test(await page.textContent('[data-testid="operations-head-toggle"]')), 'and the Super Admin can make them an Operations Head from here');
+  await page.selectOption('[data-testid="access-employee"]', 'h1');
+  await page.waitForSelector('[data-testid="cell-wabatalk-support"]');
   await page.check('[data-testid="cell-wabastar-support"]');
   await page.check('[data-testid="cell-wabastore-support"]');
   check(await page.isVisible('[data-testid="unsaved-badge"]') && !(await page.isDisabled('[data-testid="access-save"]')), 'ticking shows "Unsaved changes" and enables Save');

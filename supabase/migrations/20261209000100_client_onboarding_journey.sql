@@ -4,8 +4,9 @@
 --   * customer_onboarding (1:1 with the customer): the document checklist, the Technical Consultant review (review_state), the hand-over
 --     chain Consultant -> Department Head -> Team Lead -> Team Member (the Team Member is the customer's Relationship Manager), the
 --     "client status" used by the e-mail / WhatsApp automations.
---   * customer_client_accounts: the client's Supabase Auth login. Until now it was created by the Technical Consultant as the LAST step
---     (after verification), or by Accounts for services that need no consultant.
+--   * customer_client_accounts: the client's Supabase Auth login, created by Accounts (accounts_client_login_begin -> create -> record_client_account,
+--     20261205000300 / 20261208000300). The API now runs that same flow by itself when Accounts confirms the payment.
+--   * The Meta Verifier role (profiles.is_meta_verifier) and the verification route (customer_onboarding.verification_route META | TECHNICAL).
 --   * The client dashboard RPCs (client_*): every one starts with private.require_client(); nothing differed by stage.
 --   * One CLIENT chat conversation per customer, whose staff side is decided live from the hand-over (support_member_of / support_lead_of).
 --
@@ -21,11 +22,12 @@
 --   4. Staff actions with their own checks: set_meta_verification, assign_meta_verifier, set_service_setup. Completing Meta verification needs
 --      every document authorized; a service becomes READY only after its prerequisites; the hand-over to the Department Head needs Meta
 --      verification completed; onboarding completes by itself when every mandatory stage is done.
---   5. The client login may be created as soon as a payment is verified (every journey), and creating it no longer means "Meta verification
---      completed" for the automations: that now follows the Meta verification status.
---   6. Existing customers keep working: whoever already had a login with live services is marked completed and keeps every section.
+--   5. The Meta status and the existing "Meta verification completed" event (mark_meta_verification_completed, meta_completed_at) are one thing:
+--      either path completes both. The hand-over to the Department Head is refused until it is completed.
+--   6. Existing customers keep working: whoever already works with the dashboard (a customer, a handed-over onboarding, a completed status)
+--      is marked completed and keeps every section.
 --
--- Run after 20261204000100_login_location_audit.sql. Safe to run again.
+-- Run after 20261208000300_client_credentials.sql. Safe to run again.
 
 -- ---------------------------------------------------------------------------
 -- 1. Columns
@@ -124,12 +126,23 @@ alter table public.customer_services alter column setup_status set not null;
 -- ---------------------------------------------------------------------------
 -- 3. Who is who
 -- ---------------------------------------------------------------------------
--- Does the customer go through Meta verification? Yes when any of its services needs the Technical Consultant.
+-- Does the customer go through Meta verification? Yes when any of its services is verified by Meta (the META route) or needs the Technical Consultant.
 create or replace function private.meta_required(p_customer uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
-  select private.customer_journey(p_customer) in ('TECHNICAL', 'MIXED')
+  select private.onboarding_route(p_customer) = 'META' or private.customer_journey(p_customer) in ('TECHNICAL', 'MIXED')
 $$;
 revoke all on function private.meta_required(uuid) from public, anon, authenticated;
+
+-- May this employee be the Meta Verifier of the customer? An active Meta Verifier of the customer's department on the META route,
+-- an active Technical Consultant of it on the other route (the person who verifies the documents there).
+create or replace function private.is_verifier_for(p_profile uuid, p_customer uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1 from public.customers c join public.profiles p on p.department_id = c.department_id and p.status = 'ACTIVE'
+     where c.id = p_customer and p.id = p_profile
+       and case when private.onboarding_route(p_customer) = 'META' then p.is_meta_verifier else p.is_technical_consultant end)
+$$;
+revoke all on function private.is_verifier_for(uuid, uuid) from public, anon, authenticated;
 
 -- The assigned Meta Verifier, when still an active employee.
 create or replace function private.meta_verifier_of(p_customer uuid)
@@ -189,7 +202,7 @@ begin
   -- outside the journey (an older or imported customer, or a completed onboarding) nothing is waiting for anything
   v_pay := not v_applies or (o.customer_id is not null and o.accounts_confirmed_at is not null);
   v_login := exists (select 1 from public.customer_client_accounts a where a.customer_id = p_customer);
-  v_meta := coalesce(o.meta_status, 'PENDING');
+  v_meta := case when o.meta_completed_at is not null then 'COMPLETED' else coalesce(o.meta_status, 'PENDING') end;
   v_meta_done := not v_applies or not v_required or v_meta = 'COMPLETED';
   v_rm := private.rm_of(p_customer);
   v_lead := private.rm_lead_of(p_customer);
@@ -427,7 +440,15 @@ create or replace function private.tg_onboarding_journey_before()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if tg_op = 'UPDATE' then
-    -- the customer reached the consultant: verification starts
+    -- "Meta verification completed" is recorded in two places that must agree: the status and meta_completed_at (the existing event)
+    if new.meta_completed_at is not null and old.meta_completed_at is null and new.meta_status <> 'COMPLETED' then
+      new.meta_status := 'COMPLETED';
+      new.meta_status_auto := false;
+      new.meta_feedback := null;
+    elsif new.meta_status = 'COMPLETED' and old.meta_status <> 'COMPLETED' and new.meta_completed_at is null then
+      new.meta_completed_at := now();
+    end if;
+    -- the customer reached the verifier: verification starts
     if new.meta_status = 'PENDING' and new.forwarded_to_support_at is not null and old.forwarded_to_support_at is null then
       new.meta_status := 'IN_PROGRESS';
       new.meta_status_auto := true;
@@ -457,13 +478,14 @@ drop trigger if exists customer_onboarding_journey_before on public.customer_onb
 create trigger customer_onboarding_journey_before before update on public.customer_onboarding
   for each row execute function private.tg_onboarding_journey_before();
 
--- The least busy active Technical Consultant of the customer's department (none: stays unassigned for a head to assign).
+-- The least busy active verifier of the customer's department (a Meta Verifier on the META route, a Technical Consultant on the other;
+-- none: stays unassigned for a head to assign).
 create or replace function private.pick_meta_verifier(p_customer uuid)
 returns uuid language sql stable security definer set search_path = '' as $$
   select p.id from public.customers c
-    join public.profiles p on p.department_id = c.department_id and p.is_technical_consultant and p.status = 'ACTIVE'
-   where c.id = p_customer
-   order by (select count(*) from public.customer_onboarding x where x.meta_verifier_id = p.id and x.meta_status <> 'COMPLETED'), p.created_at, p.id
+    join public.profiles p on p.department_id = c.department_id and p.status = 'ACTIVE'
+   where c.id = p_customer and private.is_verifier_for(p.id, p_customer)
+   order by (select count(*) from public.customer_onboarding x where x.meta_verifier_id = p.id and x.meta_status <> 'COMPLETED' and x.onboarding_completed_at is null), p.created_at, p.id
    limit 1
 $$;
 revoke all on function private.pick_meta_verifier(uuid) from public, anon, authenticated;
@@ -603,6 +625,12 @@ begin
          meta_verifier_assigned_at = case when meta_verifier_id is null then now() else meta_verifier_assigned_at end,
          meta_verifier_assigned_by = case when meta_verifier_id is null then (select private.my_id()) else meta_verifier_assigned_by end
    where customer_id = p_customer;
+  if v_status = 'COMPLETED' then
+    -- the same event as mark_meta_verification_completed: the client's "Meta verification completed" message, once
+    perform private.advance_client_status(p_customer, false);
+    perform private.log_customer_activity(p_customer, 'META_VERIFICATION_COMPLETED', 'Meta verification marked as completed');
+    perform private.write_audit('META_VERIFICATION_COMPLETED', 'customer', p_customer, c.department_id, c.team_id, '{}'::jsonb);
+  end if;
   select * into o from public.customer_onboarding where customer_id = p_customer;
   return jsonb_build_object('status', o.meta_status, 'feedback', o.meta_feedback, 'changedAt', o.meta_status_changed_at,
                             'completedAt', o.meta_completed_at, 'verifierId', o.meta_verifier_id);
@@ -610,8 +638,8 @@ end $$;
 revoke all on function public.set_meta_verification(uuid, text, text) from public, anon;
 grant execute on function public.set_meta_verification(uuid, text, text) to authenticated;
 
--- Assign the Meta Verifier. A Technical Consultant of the department can take it for themselves (p_verifier null); the Department Head
--- or Super Admin can name any active Technical Consultant of the department.
+-- Assign the Meta Verifier. A verifier of the department (see private.is_verifier_for) can take it for themselves (p_verifier null); the
+-- Department Head or Super Admin can name any active verifier of the department.
 create or replace function public.assign_meta_verifier(p_customer uuid, p_verifier uuid default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -629,8 +657,7 @@ begin
   end if;
   v_target := coalesce(p_verifier, me);
   if not (private.is_super_admin() or (private.my_role() = 'DEPARTMENT_HEAD' and c.department_id = private.my_department_id())
-          or (v_target = me and exists (select 1 from public.profiles p where p.id = me and p.is_technical_consultant and p.status = 'ACTIVE'
-                                         and p.department_id = c.department_id))) then
+          or (v_target = me and private.is_verifier_for(me, p_customer))) then
     raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
   end if;
   select * into o from public.customer_onboarding where customer_id = p_customer for update;
@@ -641,9 +668,9 @@ begin
     raise exception 'CONFLICT: Meta verification is completed; the verifier can no longer change.' using errcode = 'P0001';
   end if;
   select p.full_name into v_name from public.profiles p
-   where p.id = v_target and p.is_technical_consultant and p.status = 'ACTIVE' and p.department_id = c.department_id;
+   where p.id = v_target and private.is_verifier_for(p.id, p_customer);
   if v_name is null then
-    raise exception 'VALIDATION_ERROR: Choose an active Technical Consultant of this department.' using errcode = 'P0001';
+    raise exception 'VALIDATION_ERROR: Choose an active Meta Verifier of this department.' using errcode = 'P0001';
   end if;
   v_old := o.meta_verifier_id;
   if v_old is not distinct from v_target then
@@ -780,7 +807,7 @@ begin
         'verifier', (select jsonb_build_object('id', p.id, 'fullName', p.full_name) from public.profiles p where p.id = o.meta_verifier_id),
         'canChange', v_can_meta and coalesce(o.meta_status, 'PENDING') <> 'COMPLETED',
         'canAssign', private.is_super_admin() or (private.my_role() = 'DEPARTMENT_HEAD' and exists (select 1 from public.customers c where c.id = p_customer and c.department_id = private.my_department_id()))
-                     or exists (select 1 from public.profiles p, public.customers c where c.id = p_customer and p.id = private.my_id() and p.is_technical_consultant and p.department_id = c.department_id),
+                     or private.is_verifier_for(private.my_id(), p_customer),
         'readyToComplete', o.customer_id is not null and o.returned_at is null and o.review_state = 'VERIFIED' and o.accounts_confirmed_at is not null
                            and coalesce((f ->> 'login')::boolean, false)),
     'relationshipManager', (select jsonb_build_object('id', p.id, 'fullName', p.full_name) from public.profiles p where p.id = private.rm_of(p_customer)),
@@ -793,7 +820,7 @@ end $$;
 revoke all on function public.customer_journey_status(uuid) from public, anon;
 grant execute on function public.customer_journey_status(uuid) to authenticated;
 
--- The Technical Consultants a head can pick from.
+-- The verifiers a head can pick from.
 create or replace function public.meta_verifier_candidates(p_customer uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -804,139 +831,31 @@ begin
     raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
   end if;
   return coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'fullName', p.full_name) order by p.full_name)
-                     from public.profiles p where p.department_id = c.department_id and p.is_technical_consultant and p.status = 'ACTIVE'), '[]'::jsonb);
+                     from public.profiles p where p.department_id = c.department_id and private.is_verifier_for(p.id, p_customer)), '[]'::jsonb);
 end $$;
 revoke all on function public.meta_verifier_candidates(uuid) from public, anon;
 grant execute on function public.meta_verifier_candidates(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 8. Rules that moved
+-- 8. The client login and the "completed" message are Accounts' and Meta's existing flows (20261205000300): nothing is redefined here.
+--    The API starts the same Accounts flow when the payment is confirmed; the Meta status and meta_completed_at are kept in step by the trigger above.
+--    The hand-over to the Department Head (and so the Relationship Manager) is 20261205000200's function plus one check: Meta verification first.
 -- ---------------------------------------------------------------------------
--- 8a. The client login can be created as soon as a payment is verified, for every journey (Accounts) or by the consultant (as before).
-create or replace function private.accounts_may_create_login(p_customer uuid)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select private.is_accounts_staff() and exists (
-    select 1 from public.customers c
-     where c.id = p_customer
-       and c.amount_verified > 0
-       and c.payment_workflow in ('PENDING_PAYMENT_CONFIRMATION', 'PAYMENT_CONFIRMED')
-       and c.lifecycle_stage in ('LEAD', 'ONBOARDING')
-       and private.accounts_can_view(c.id))
-$$;
-revoke all on function private.accounts_may_create_login(uuid) from public, anon, authenticated;
-
-create or replace function public.assert_client_account_allowed(p_customer uuid, p_email text)
-returns void language plpgsql security definer set search_path = '' as $$
-declare
-  v_email text := lower(trim(coalesce(p_email, '')));
-begin
-  if not private.may_manage_client_account(p_customer) then
-    raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
-  end if;
-  if exists (select 1 from public.customer_client_accounts where customer_id = p_customer) then
-    raise exception 'CONFLICT: This customer already has a login.' using errcode = 'P0001';
-  end if;
-  if v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' or length(v_email) > 254 then
-    raise exception 'VALIDATION_ERROR: Enter a valid e-mail address.' using errcode = 'P0001';
-  end if;
-  if exists (select 1 from auth.users where lower(email) = v_email) or exists (select 1 from public.profiles where lower(email) = v_email) then
-    raise exception 'CONFLICT: That e-mail already has a login. Use a different e-mail for the client.' using errcode = 'P0001';
-  end if;
-end $$;
-revoke all on function public.assert_client_account_allowed(uuid, text) from public, anon;
-grant execute on function public.assert_client_account_allowed(uuid, text) to authenticated;
-
-create or replace function public.accounts_client_login_begin(p_customer uuid, p_email text)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare
-  v public.customers;
-  pr public.customer_client_provisioning;
-  v_email text := lower(trim(coalesce(p_email, '')));
-begin
-  perform private.require_accounts_staff();
-  select * into v from public.customers where id = p_customer for update;
-  if v.id is null or not private.accounts_can_view(p_customer) then
-    raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
-  end if;
-  if not private.accounts_may_create_login(p_customer) then
-    raise exception 'CONFLICT: Verify a payment first. The client login is created once the payment is verified.' using errcode = 'P0001';
-  end if;
-  if exists (select 1 from public.customer_client_accounts where customer_id = p_customer) then
-    raise exception 'CONFLICT: This customer already has a login.' using errcode = 'P0001';
-  end if;
-  select * into pr from public.customer_client_provisioning where customer_id = p_customer for update;
-  if pr.customer_id is not null and pr.status = 'PENDING' and pr.updated_at > now() - interval '2 minutes' then
-    raise exception 'CONFLICT: The login is already being created. Wait a moment and refresh.' using errcode = 'P0001';
-  end if;
-  perform public.assert_client_account_allowed(p_customer, v_email);
-  insert into public.customer_client_provisioning (customer_id, status, email, attempts, requested_by, requested_at, updated_at)
-  values (p_customer, 'PENDING', v_email, 1, (select private.my_id()), now(), now())
-  on conflict (customer_id) do update
-    set status = 'PENDING', email = excluded.email, attempts = public.customer_client_provisioning.attempts + 1,
-        last_error = null, requested_by = excluded.requested_by, requested_at = now(), updated_at = now();
-  update public.customers set updated_at = now() where id = p_customer;
-  perform private.log_customer_activity(p_customer, 'CLIENT_LOGIN_REQUESTED', format('Accounts started creating the client login (%s)', v_email));
-  return jsonb_build_object('status', 'PENDING', 'email', v_email);
-end $$;
-revoke all on function public.accounts_client_login_begin(uuid, text) from public, anon;
-grant execute on function public.accounts_client_login_begin(uuid, text) to authenticated;
-
--- What the API needs to create a login right after the payment is confirmed (Accounts only): the customer's own e-mail and name.
-create or replace function public.accounts_client_login_target(p_customer uuid)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare
-  c public.customers;
-begin
-  perform private.require_accounts_staff();
-  select * into c from public.customers where id = p_customer;
-  if c.id is null or not private.accounts_can_view(p_customer) then
-    raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
-  end if;
-  return jsonb_build_object('email', lower(btrim(coalesce(c.email, ''))), 'name', c.name, 'businessName', coalesce(nullif(btrim(c.company), ''), c.name),
-    'hasLogin', exists (select 1 from public.customer_client_accounts a where a.customer_id = p_customer),
-    'canCreate', private.accounts_may_create_login(p_customer));
-end $$;
-revoke all on function public.accounts_client_login_target(uuid) from public, anon;
-grant execute on function public.accounts_client_login_target(uuid) to authenticated;
-
--- 8b. Creating the login no longer means "Meta verification completed": the automations follow the Meta status.
-create or replace function private.client_status_target(p_customer uuid)
-returns text language plpgsql stable security definer set search_path = '' as $$
-declare
-  o public.customer_onboarding;
-  e public.customer_onboarding_entries;
-  v_site text := private.customer_website(p_customer);
-  v_has_site boolean;
-begin
-  select * into o from public.customer_onboarding where customer_id = p_customer;
-  if o.customer_id is null or o.forwarded_to_support_at is null or o.consultant_started_at is null then
-    return null; -- the consultant has not started onboarding yet
-  end if;
-  v_has_site := v_site is not null and v_site <> 'NO_WEBSITE';
-  -- "completed" is the Meta verification status (it used to be "a client login exists")
-  if o.meta_status = 'COMPLETED' then
-    return 'COMPLETED';
-  end if;
-  select * into e from public.customer_onboarding_entries where customer_id = p_customer and item_code = 'WA_WEBSITE_URL';
-  if o.returned_at is null and o.items_total > 0 and o.items_verified >= o.items_total and o.items_rejected = 0
-     and v_has_site and e.status = 'VERIFIED' then
-    return 'META_VERIFICATION';
-  end if;
-  return case when v_has_site then 'UNDER_REVIEW' else 'WEBSITE_PENDING' end;
-end $$;
-revoke all on function private.client_status_target(uuid) from public, anon, authenticated;
-
--- 8c. The hand-over to the Department Head (and so the Relationship Manager) needs Meta verification completed.
-create or replace function public.send_to_department_head(p_customer uuid, p_note text default null)
-returns void language plpgsql security definer set search_path = '' as $$
+CREATE OR REPLACE FUNCTION public.send_to_department_head(p_customer uuid, p_note text DEFAULT NULL::text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
 declare
   v public.customers;
   o public.customer_onboarding;
   v_note text := left(nullif(trim(coalesce(p_note, '')), ''), 1000);
   v_head uuid;
   v_count integer := 0;
+  v_meta boolean;
 begin
-  if not private.may_manage_client_account(p_customer) then
+  if not private.can_review_onboarding(p_customer) then
     raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
   end if;
   select * into v from public.customers where id = p_customer for update;
@@ -950,10 +869,9 @@ begin
   if o.returned_at is not null or o.review_state <> 'VERIFIED' then
     raise exception 'VALIDATION_ERROR: Authorize every document and detail first (including the WABA ID where it applies).' using errcode = 'P0001';
   end if;
-  if not exists (select 1 from public.customer_client_accounts where customer_id = p_customer) then
-    raise exception 'VALIDATION_ERROR: Create the client''s login first.' using errcode = 'P0001';
-  end if;
-  if private.meta_required(p_customer) and o.meta_status <> 'COMPLETED' then
+  v_meta := private.onboarding_route(p_customer) = 'META';
+  -- the Relationship Manager takes over only after Meta verification (the onboarding journey)
+  if private.meta_required(p_customer) and o.meta_status <> 'COMPLETED' and o.meta_completed_at is null then
     raise exception 'VALIDATION_ERROR: Complete the Meta verification first. The Relationship Manager takes over only after it.' using errcode = 'P0001';
   end if;
 
@@ -972,63 +890,65 @@ begin
    where customer_id = p_customer;
   perform private.log_customer_activity(p_customer, 'SENT_TO_DEPARTMENT_HEAD', 'Verified and sent to the Department Head' || coalesce(' · ' || v_note, ''));
   perform private.write_audit('HANDOVER_TO_DEPARTMENT_HEAD', 'customer', p_customer, v.department_id, v.team_id,
-    jsonb_build_object('note', v_note));
+    jsonb_build_object('note', v_note, 'route', case when v_meta then 'META' else 'TECHNICAL' end));
+  -- the Technical Consultant's consultation follows some days later (a persistent follow-up; the delay is a setting)
+  if v_meta then
+    perform private.schedule_tc_followup(p_customer, 'The Meta Verifier verified the customer and handed it over. Contact the customer for the consultation and any add-on services.');
+  end if;
 
   for v_head in
     select id from public.profiles where role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' and department_id = v.department_id
   loop
     perform private.notify(v_head, 'HANDOVER_TO_DEPARTMENT_HEAD', format('New client to assign: %s', coalesce(v.company, v.name)),
-      coalesce(v_note, 'The Technical Consultant verified everything and created the client''s login.'), 'customer', p_customer);
+      coalesce(v_note, case when v_meta then 'The Meta Verifier verified everything.' else 'The Technical Consultant verified everything.' end), 'customer', p_customer);
   end loop;
   perform private.notify(v.owner_id, 'HANDOVER_TO_DEPARTMENT_HEAD', format('Verified: %s', coalesce(v.company, v.name)),
-    'The Technical Consultant verified the customer and sent it to the Department Head.', 'customer', p_customer);
-end $$;
+    case when v_meta then 'The Meta Verifier verified the customer and sent it to the Department Head.' else 'The Technical Consultant verified the customer and sent it to the Department Head.' end, 'customer', p_customer);
+end $function$;
 revoke all on function public.send_to_department_head(uuid, text) from public, anon;
 grant execute on function public.send_to_department_head(uuid, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 9. The client's services: the status follows the setup, not the whole onboarding
+-- 9. The client's services: while the journey applies the status follows the setup, not the whole onboarding
 -- ---------------------------------------------------------------------------
-create or replace function public.client_services()
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
+-- The same function the services list and the progress steps already share (20261206000400); the journey branch is the only addition:
+-- a service of a customer who is still onboarding is "setting up" until the responsible team marks it READY.
+create or replace function private.client_service_state(p_customer uuid, p_service text)
+returns text language plpgsql stable security definer set search_path = '' as $$
 declare
-  v_customer uuid := private.require_client();
-  v_plan_id uuid;
-  v_plan_name text;
+  cs public.customer_services;
+  sv public.crm_services;
+  o public.customer_onboarding;
+  c public.customers;
 begin
-  select p.id, p.name into v_plan_id, v_plan_name
-    from public.customer_plans cp join public.monthly_plans p on p.id = cp.plan_id
-   where cp.customer_id = v_customer and cp.status = 'ACTIVE'
-   order by cp.created_at desc
-   limit 1;
-
-  return coalesce((
-    select jsonb_agg(jsonb_build_object(
-      'code', s.code, 'name', s.name, 'category', s.category, 'description', s.description,
-      'purchasedAt', coalesce(cs.started_on::timestamptz, cs.created_at), 'activatedAt', cs.activated_at, 'renewsOn', cs.renews_on,
-      'status', case when cs.setup_status = 'READY' then coalesce(cs.service_status, 'LIVE')
-                     when cs.service_status in ('PAUSED', 'EXPIRED', 'CANCELLED') then cs.service_status
-                     else 'SETTING_UP' end,
-      'setupStatus', cs.setup_status,
-      'plan', case when v_plan_id is not null and exists (
-                select 1 from public.monthly_plan_services ps where ps.plan_id = v_plan_id and ps.service_code = s.code)
-              then v_plan_name end,
-      'planName', cs.plan_name, 'price', cs.price, 'billingCycle', cs.billing_cycle, 'platform', cs.platform,
-      'panelAccount', cs.panel_account,
-      'usage', (select jsonb_build_object('kind', u.kind, 'metrics', u.metrics, 'asOf', u.as_of, 'validUntil', u.valid_until)
-                  from public.service_usage u where u.customer_id = v_customer and u.service_code = s.code and u.period = ''
-                 order by u.updated_at desc limit 1),
-      'monthly', (select coalesce(jsonb_agg(jsonb_build_object('month', m.period, 'metrics', m.metrics) order by m.period desc), '[]'::jsonb)
-                    from (select * from public.service_usage u where u.customer_id = v_customer and u.service_code = s.code and u.kind = 'MONTHLY'
-                           order by u.period desc limit 6) m),
-      'campaignCount', (select count(*) from public.service_campaigns sc where sc.customer_id = v_customer and sc.service_code = s.code),
-      'details', case when jsonb_typeof(cs.details) = 'object' then cs.details else '{}'::jsonb end)
-      order by cs.created_at, s.name)
-    from public.customer_services cs join public.crm_services s on s.code = cs.service_code
-   where cs.customer_id = v_customer), '[]'::jsonb);
+  select * into cs from public.customer_services where customer_id = p_customer and service_code = p_service;
+  if cs.customer_id is null then
+    return 'SETTING_UP';
+  end if;
+  if coalesce((private.client_facts(p_customer) ->> 'applies')::boolean, false) then
+    return case when cs.setup_status = 'READY' then coalesce(cs.service_status, 'LIVE')
+                when cs.service_status in ('PAUSED', 'EXPIRED', 'CANCELLED') then cs.service_status
+                else 'SETTING_UP' end;
+  end if;
+  if cs.service_status is not null then
+    return cs.service_status;
+  end if;
+  if cs.activated_at is not null then
+    return 'LIVE';
+  end if;
+  select * into c from public.customers where id = p_customer;
+  select * into o from public.customer_onboarding where customer_id = p_customer;
+  select * into sv from public.crm_services where code = p_service;
+  if c.lifecycle_stage in ('LEAD', 'POTENTIAL', 'ONBOARDING') then
+    if sv.requires_technical_consultant and coalesce(o.verification_route, case when sv.requires_meta_verification then 'META' else 'TECHNICAL' end) = 'META'
+       and (o.meta_completed_at is not null or (to_jsonb(o) ->> 'client_status') = 'COMPLETED') then
+      return 'LIVE';
+    end if;
+    return 'SETTING_UP';
+  end if;
+  return case when coalesce((to_jsonb(o) ->> 'client_status') = 'COMPLETED' or o.stage = 'COMPLETED', true) then 'LIVE' else 'SETTING_UP' end;
 end $$;
-revoke all on function public.client_services() from public, anon;
-grant execute on function public.client_services() to authenticated;
+revoke all on function private.client_service_state(uuid, text) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 10. Gate the closed sections. The original function moves to private.open_<name>(); public.<name>() checks the stage, then calls it.
@@ -1076,6 +996,7 @@ revoke all on function private.gate_client_function(text, text, text, boolean) f
 select private.gate_client_function(g.name, g.args, g.section, g.passthrough)
   from (values
     ('client_services', '', 'services', false),
+    ('client_service_progress', '', 'services', false),
     ('client_campaigns', '', 'campaigns', false),
     ('client_calendar', 'date, date', 'calendar', false),
     ('client_service_catalog', '', 'explore', false),
@@ -1143,24 +1064,27 @@ declare
   r record;
 begin
   for r in select o.customer_id from public.customer_onboarding o where o.journey_migrated_at is null loop
+    -- Meta verification is completed for whoever it was already recorded for (the existing event, or the "completed" client status) and for
+    -- whoever was already handed to the Department Head or is already a customer: their verification is behind them. A login alone proves
+    -- nothing (Accounts now creates it as soon as the payment is verified).
     update public.customer_onboarding o
        set meta_status = case
-             when exists (select 1 from public.customer_client_accounts a where a.customer_id = o.customer_id) then 'COMPLETED'
+             when o.meta_completed_at is not null or o.client_status = 'COMPLETED' or o.handover_stage <> 'CONSULTANT'
+                  or (select c.lifecycle_stage from public.customers c where c.id = o.customer_id) = 'CUSTOMER' then 'COMPLETED'
              when o.forwarded_to_support_at is not null then 'IN_PROGRESS'
              else 'PENDING' end,
-           meta_started_at = case when o.forwarded_to_support_at is not null or exists (select 1 from public.customer_client_accounts a where a.customer_id = o.customer_id)
-                                  then coalesce(o.forwarded_to_support_at, o.accounts_confirmed_at, o.started_at) end,
-           meta_completed_at = (select a.created_at from public.customer_client_accounts a where a.customer_id = o.customer_id),
+           meta_started_at = case when o.forwarded_to_support_at is not null then o.forwarded_to_support_at end,
+           meta_completed_at = case when o.meta_completed_at is null and o.client_status = 'COMPLETED' then coalesce(o.client_status_changed_at, now()) else o.meta_completed_at end,
            meta_status_changed_at = now(),
            journey_migrated_at = now()
      where o.customer_id = r.customer_id;
-    -- a customer who already has a login and works with live services (or is already a customer) is complete
+    -- already a customer (everything was handed on), or working with live services and a login: the onboarding is complete
     update public.customer_onboarding o
        set onboarding_completed_at = now()
      where o.customer_id = r.customer_id and o.onboarding_completed_at is null
-       and exists (select 1 from public.customer_client_accounts a where a.customer_id = o.customer_id)
-       and (exists (select 1 from public.customer_services cs where cs.customer_id = o.customer_id and cs.setup_status = 'READY')
-            or (select c.lifecycle_stage from public.customers c where c.id = o.customer_id) = 'CUSTOMER');
+       and ((select c.lifecycle_stage from public.customers c where c.id = o.customer_id) = 'CUSTOMER'
+            or (exists (select 1 from public.customer_client_accounts a where a.customer_id = o.customer_id)
+                and exists (select 1 from public.customer_services cs where cs.customer_id = o.customer_id and cs.setup_status = 'READY')));
   end loop;
 end $$;
 alter table public.customer_onboarding alter column journey_migrated_at set default now();

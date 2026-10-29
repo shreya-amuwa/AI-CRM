@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Copy, KeyRound, RefreshCw, Send, Wand2 } from 'lucide-react';
+import { CheckCircle2, KeyRound, RefreshCw, Send } from 'lucide-react';
 import type { ClientLoginStatus, CustomerJourneyInfo, JourneyKind, JourneyStep } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
-import { SetPasswordEmailButton } from './SetPasswordEmailButton';
 import { btn, Card, ErrorBanner, Field, inputCls, longDate, money, notifyPipelineChanged, Pill, usePipelineRealtime, type Tone } from '../team-member/pipeline/shared';
 
 export const JOURNEY_LABEL: Record<JourneyKind, string> = {
-  TECHNICAL: 'Technical Consultant journey',
+  TECHNICAL: 'Technical journey (Meta Verifier / Technical Consultant)',
   DIRECT: 'Direct journey (no Technical Consultant)',
   MIXED: 'Mixed order (Technical Consultant journey)',
   NONE: 'No service selected'
@@ -18,7 +17,7 @@ export const STEP_LABEL: Record<JourneyStep, string> = {
   PENDING_PAYMENT: 'With Accounts: payment to be verified',
   PAYMENT_PARTIAL: 'Part payment verified',
   PAYMENT_CONFIRMED: 'Payment verified',
-  LOGIN_PENDING: 'Payment verified: client login to be created',
+  LOGIN_PENDING: 'Payment verified: client login to be created by Accounts',
   LOGIN_FAILED: 'Client login failed: try again',
   LOGIN_CREATED: 'Client login created: ready to return to Sales',
   RETURNED_TO_SALES: 'Returned to Sales: collect the documents',
@@ -26,7 +25,7 @@ export const STEP_LABEL: Record<JourneyStep, string> = {
   DOCUMENTS_VERIFIED: 'Documents verified: send to the department',
   PARTLY_SENT_TO_DELIVERY: 'Partly sent to the delivery department',
   SENT_TO_DELIVERY: 'Sent to the delivery department',
-  TECHNICAL_CONSULTANT: 'With the Technical Consultant journey',
+  TECHNICAL_CONSULTANT: 'In verification (Meta Verifier / Technical Consultant)',
   CUSTOMER: 'Customer',
   LOST: 'Lost'
 };
@@ -98,17 +97,12 @@ export const JourneyStrip: React.FC<{ journey: CustomerJourneyInfo }> = ({ journ
   </div>
 );
 
-/** A strong password the person can read out or paste. */
-function generatePassword(): string {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => alphabet[b % alphabet.length]).join('') + '#7';
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Accounts: creates the client's dashboard login (customers whose services need no Technical Consultant). The password is hashed by
- * the sign-in service; the CRM does not store or e-mail it. A failure stays visible with its reason and can be tried again.
+ * Accounts: creates the client's dashboard login - for every service. The login uses the e-mail on the customer record (never one typed
+ * here); nobody chooses, sees or sends a password. The client gets an e-mail with a one-time link to set their own. A wrong or missing
+ * e-mail is corrected on the record first (with a reason). A failure stays visible with its reason and can be tried again.
  */
 export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerId: string; defaultEmail?: string | null; onChanged: () => void }> = ({
   journey: j,
@@ -116,26 +110,22 @@ export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerI
   defaultEmail,
   onChanged
 }) => {
-  const [email, setEmail] = useState(defaultEmail ?? '');
-  const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ email: string; password: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [fixing, setFixing] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [reason, setReason] = useState('');
   const login = j.clientLogin;
+  const recordEmail = (defaultEmail ?? '').trim();
+  const emailOk = EMAIL_RE.test(recordEmail);
   const staleAttempt = login.status === 'PENDING' && login.updatedAt && Date.now() - new Date(login.updatedAt).getTime() > 2 * 60_000;
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const create = async () => {
     if (busy) return;
-    if (password.length < 10) return setError('The password must be at least 10 characters.');
     setBusy(true);
     setError(null);
     try {
-      await pipelineApi.accountsCreateClientLogin(customerId, { email: email.trim(), password });
-      setCreated({ email: email.trim().toLowerCase(), password });
-      setPassword('');
+      await pipelineApi.accountsCreateClientLogin(customerId);
       notifyPipelineChanged();
       onChanged();
     } catch (err) {
@@ -145,13 +135,22 @@ export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerI
       setBusy(false);
     }
   };
-  const copy = async () => {
-    if (!created) return;
+  const correct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      await navigator.clipboard.writeText(`${created.email}\n${created.password}`);
-      setCopied(true);
-    } catch {
-      setCopied(false);
+      await pipelineApi.correctCustomerEmail(customerId, { email: newEmail.trim(), reason: reason.trim() });
+      setFixing(false);
+      setNewEmail('');
+      setReason('');
+      notifyPipelineChanged();
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -166,7 +165,7 @@ export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerI
             Client dashboard login
           </h3>
           <p className="text-xs text-slate-500">
-            These services need no Technical Consultant, so Accounts creates the customer&apos;s login before returning the customer to Sales. The password is not stored or e-mailed by the CRM: give it to the customer through a safe channel.
+            Accounts creates the customer&apos;s login for every service. It uses the e-mail on the customer record, and the customer receives an e-mail with a link to choose their own password - nobody types, sees or sends a password.
           </p>
         </div>
       </div>
@@ -177,12 +176,11 @@ export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerI
           <span>
             Login created for <b>{login.email}</b>
             {login.createdAt ? ` on ${longDate(login.createdAt)}` : ''}
-            {login.createdBy ? ` by ${login.createdBy}` : ''}.
+            {login.createdBy ? ` by ${login.createdBy}` : ''}. The set-password e-mail was queued (see Client Logins for its state).
           </span>
-          <SetPasswordEmailButton customerId={customerId} />
         </div>
       ) : (
-        <form onSubmit={submit} className="space-y-3" aria-label="Create the client login">
+        <div className="space-y-3">
           {login.status === 'FAILED' && login.lastError && <ErrorBanner message={`The last attempt failed: ${login.lastError} You can try again.`} />}
           {login.status === 'PENDING' && !staleAttempt && (
             <p role="status" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
@@ -192,46 +190,41 @@ export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerI
           {!j.can.createLogin && login.status !== 'PENDING' && (
             <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">Verify a payment first. The login can be created once the money is verified.</p>
           )}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Customer e-mail (the login)" htmlFor="cl-email" required>
-              <input id="cl-email" type="email" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} autoComplete="off" disabled={busy || !j.can.createLogin} />
-            </Field>
-            <Field label="Password (at least 10 characters)" htmlFor="cl-password" required>
-              <div className="flex gap-2">
-                <input
-                  id="cl-password"
-                  type={show ? 'text' : 'password'}
-                  className={inputCls}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                  disabled={busy || !j.can.createLogin}
-                />
-                <button type="button" className={btn.secondary} onClick={() => { setPassword(generatePassword()); setShow(true); }} disabled={busy || !j.can.createLogin} aria-label="Generate a password">
-                  <Wand2 className="w-3.5 h-3.5" aria-hidden="true" />
+          <dl className="text-xs">
+            <dt className="text-slate-500">E-mail on the customer record (the login)</dt>
+            <dd className={`mt-0.5 font-mono break-all ${emailOk ? 'text-slate-900' : 'text-rose-700'}`}>{recordEmail || 'No e-mail on the record'}</dd>
+          </dl>
+          {!emailOk && <p className="text-xs text-rose-700">Add a valid e-mail to the record before creating the login.</p>}
+          {fixing ? (
+            <form onSubmit={correct} className="space-y-2 p-3 rounded-xl border border-slate-200 bg-slate-50" aria-label="Correct the customer e-mail">
+              <Field label="Correct e-mail" htmlFor="cl-new-email" required>
+                <input id="cl-new-email" type="email" className={inputCls} value={newEmail} onChange={e => setNewEmail(e.target.value)} autoComplete="off" disabled={busy} />
+              </Field>
+              <Field label="Why is it being changed?" htmlFor="cl-reason" required>
+                <input id="cl-reason" className={inputCls} value={reason} maxLength={300} onChange={e => setReason(e.target.value)} disabled={busy} />
+              </Field>
+              <div className="flex justify-end gap-2">
+                <button type="button" className={btn.secondary} onClick={() => setFixing(false)} disabled={busy}>
+                  Cancel
+                </button>
+                <button type="submit" className={btn.primary} disabled={busy || !EMAIL_RE.test(newEmail.trim()) || reason.trim().length < 3}>
+                  {busy ? 'Saving…' : 'Save the e-mail'}
                 </button>
               </div>
-            </Field>
-          </div>
+            </form>
+          ) : null}
           {error && <ErrorBanner message={error} />}
-          <div className="flex justify-end">
-            <button type="submit" className={btn.primary} disabled={busy || !j.can.createLogin || (login.status === 'PENDING' && !staleAttempt)}>
+          <div className="flex flex-wrap justify-end gap-2">
+            {!fixing && (
+              <button type="button" className={btn.secondary} onClick={() => setFixing(true)} disabled={busy || login.status === 'PENDING'}>
+                Correct the e-mail
+              </button>
+            )}
+            <button type="button" className={btn.primary} onClick={() => void create()} disabled={busy || !emailOk || !j.can.createLogin || (login.status === 'PENDING' && !staleAttempt)}>
               {login.status === 'FAILED' || staleAttempt ? <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> : <KeyRound className="w-3.5 h-3.5" aria-hidden="true" />}
               {busy ? 'Creating…' : login.status === 'FAILED' || staleAttempt ? 'Try again' : 'Create client login'}
             </button>
           </div>
-        </form>
-      )}
-
-      {created && (
-        <div role="status" className="text-xs rounded-xl px-3 py-2 border text-emerald-900 bg-emerald-50 border-emerald-200 space-y-1">
-          <div className="font-bold">The login is ready. Note the password now: it is shown only here.</div>
-          <div className="font-mono break-all">
-            {created.email} / {created.password}
-          </div>
-          <button type="button" className={btn.secondary} onClick={() => void copy()}>
-            <Copy className="w-3.5 h-3.5" aria-hidden="true" /> {copied ? 'Copied' : 'Copy'}
-          </button>
         </div>
       )}
     </section>

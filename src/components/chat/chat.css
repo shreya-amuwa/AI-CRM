@@ -171,3 +171,49 @@ button.ch-person:hover { background: var(--ch-surface); }
 .ch-picked span { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; background: var(--ch-surface); border-radius: 999px; padding: 2px 4px 2px 10px; }
 .ch-note { font-size: 12.5px; color: var(--ch-muted); margin: 0; }
 .ch-section-title { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ch-muted); margin: 6px 0 0; }
+
+/* ------------------------------------------------------------------ emoji picker, message menu, secure messaging */
+.ch-input { position: relative; }
+.ch-emoji { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30; width: min(340px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--ch-border); border-radius: 14px; box-shadow: 0 12px 32px rgba(15, 23, 42, 0.22); display: flex; flex-direction: column; overflow: hidden; }
+.ch-emoji-search { margin: 8px; padding: 8px 12px; border: 1px solid var(--ch-border); border-radius: 999px; font: inherit; font-size: 14px; background: var(--ch-surface); }
+.ch-emoji-search:focus { outline: 2px solid color-mix(in oklab, var(--ch-accent), transparent 55%); }
+.ch-emoji-tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--ch-border); }
+.ch-emoji-tabs button { flex: 1; border: 0; background: transparent; padding: 6px 0; font-size: 20px; cursor: pointer; border-bottom: 2px solid transparent; }
+.ch-emoji-tabs button[aria-selected='true'] { border-bottom-color: var(--ch-accent); }
+.ch-emoji-body { padding: 4px 8px 10px; max-height: 240px; overflow-y: auto; }
+.ch-emoji-title { margin: 8px 4px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ch-muted); }
+.ch-emoji-none { margin: 12px 4px; font-size: 13px; color: var(--ch-muted); }
+.ch-emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.ch-emoji-grid button { border: 0; background: transparent; border-radius: 8px; padding: 4px 0; font-size: 22px; line-height: 1.2; cursor: pointer; font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; }
+.ch-emoji-grid button:hover, .ch-emoji-grid button:focus-visible { background: var(--ch-surface); outline: none; }
+.ch-text { font-family: inherit; }
+.ch-text, .ch-quote span, .ch-replying span { font-feature-settings: normal; }
+
+.ch-menu-btn { opacity: 0; border: 0; background: rgba(255, 255, 255, 0.85); color: var(--ch-muted); width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; margin-bottom: 4px; }
+.ch-row:hover .ch-menu-btn, .ch-menu-btn:focus-visible, .ch-menu-btn[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .ch-menu-btn, .ch-reply-btn { opacity: 1; } }
+.ch-menu-wrap { position: relative; display: inline-flex; }
+.ch-menu { position: absolute; z-index: 40; bottom: 32px; min-width: 190px; background: #fff; border: 1px solid var(--ch-border); border-radius: 12px; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22); padding: 4px; display: flex; flex-direction: column; }
+.ch-row.mine .ch-menu { right: 0; }
+.ch-row.theirs .ch-menu { left: 0; }
+.ch-menu button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 14px; color: var(--ch-text); cursor: pointer; }
+.ch-menu button:hover, .ch-menu button:focus-visible { background: var(--ch-surface); outline: none; }
+.ch-menu button.danger { color: var(--ch-danger); }
+
+.ch-deleted { margin: 0; font-style: italic; color: var(--ch-muted); display: flex; align-items: center; gap: 6px; }
+.ch-quote.gone span { font-style: italic; }
+.ch-locked-msg { margin: 0; display: flex; align-items: flex-start; gap: 6px; color: var(--ch-muted); font-size: 13.5px; }
+.ch-locked-msg b { color: var(--ch-text); }
+.ch-legacy { display: block; margin-top: 2px; font-size: 11px; color: var(--ch-muted); }
+
+.ch-secure-bar { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 12.5px; background: #e7f5ef; color: #14532d; border-bottom: 1px solid #c8e6d6; flex: none; }
+.ch-secure-bar.warn { background: #fff7e0; color: #7a4b00; border-bottom-color: #f2dba0; }
+.ch-secure-bar.bad { background: #fde8e8; color: #7f1d1d; border-bottom-color: #f5b5b5; }
+.ch-secure-bar span { flex: 1; min-width: 0; }
+.ch-secure-bar .ch-link { margin-left: 0; color: inherit; }
+.ch-fp { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; letter-spacing: 0.04em; padding: 8px 10px; background: var(--ch-surface); border-radius: 8px; word-break: break-all; }
+.ch-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
+.ch-field input { font: inherit; font-weight: 400; padding: 9px 12px; border: 1px solid var(--ch-border); border-radius: 10px; }
+.ch-field input:focus { outline: 2px solid color-mix(in oklab, var(--ch-accent), transparent 55%); }
+.ch-note { margin: 0; font-size: 13px; color: var(--ch-muted); }
+.ch-note.warn { color: #7a4b00; background: #fff7e0; padding: 8px 10px; border-radius: 8px; }

@@ -39,6 +39,8 @@ export class ClientService {
   overview() { return this.repo.overview(); }
   journey() { return this.repo.journey(); }
   async services() { return (await this.repo.services()) ?? []; }
+  billing() { return this.repo.billing(); }
+  async serviceProgress() { return (await this.repo.serviceProgress()) ?? []; }
   campaigns() { return this.repo.campaigns(); }
   catalog() { return this.repo.catalog(); }
   serviceRequests() { return this.repo.serviceRequests(); }

@@ -21,10 +21,18 @@ export const HeadDepartmentsField: React.FC<{
   departments: AssignableDepartment[];
   teams: AssignableTeam[];
   inputClass: string;
-}> = ({ fn, onFn, selected, onSelected, departments, teams, inputClass }) => {
+  /** An Operations Head oversees several departments; a Department Head works in one (plus the other function of it, for example D Talk and Wabatalk). */
+  multi?: boolean;
+}> = ({ fn, onFn, selected, onSelected, departments, teams, inputClass, multi = false }) => {
   const offer = useMemo(() => offers(departments, teams), [departments, teams]);
   const byId = useMemo(() => new Map(departments.map(d => [d.id, d])), [departments]);
-  const toggle = (id: string) => onSelected(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]);
+  const baseOf = (id: string) => byId.get(id)?.facetOf ?? id;
+  const toggle = (id: string) => {
+    if (selected.includes(id)) return onSelected(selected.filter(x => x !== id));
+    // a Department Head works in one department: choosing another department replaces the choice (a facet such as Wabatalk stays with its department)
+    if (multi || selected.length === 0 || baseOf(id) === baseOf(selected[0])) return onSelected([...selected, id]);
+    onSelected([id]);
+  };
   const makeHome = (id: string) => onSelected([id, ...selected.filter(x => x !== id)]);
 
   return (
@@ -44,7 +52,7 @@ export const HeadDepartmentsField: React.FC<{
       </label>
 
       <fieldset className="block text-xs font-semibold text-slate-700">
-        <legend className="mb-1">Departments this head manages * <span className="font-normal text-slate-500">(one account, one login)</span></legend>
+        <legend className="mb-1">{multi ? 'Departments this Operations Head oversees *' : 'Department this head manages *'} <span className="font-normal text-slate-500">(one account, one login)</span></legend>
         {selected.length > 0 ? (
           <ul className="flex flex-wrap gap-1.5 mb-2" aria-label="Selected departments">
             {selected.map((id, i) => {
@@ -96,7 +104,9 @@ export const HeadDepartmentsField: React.FC<{
           })}
         </div>
         <span className="block mt-1 font-normal text-slate-500">
-          The first department is the home department. The head signs in once and switches between these departments inside the dashboard; the Super Admin can change them later under “Departments &amp; functions”.
+          {multi
+            ? 'The first department is the home department. The Operations Head signs in once and switches between these departments inside the dashboard; the Super Admin can change them later in Access Control.'
+            : 'A Department Head works in one department. To oversee several departments, create an Operations Head instead.'}
         </span>
       </fieldset>
     </div>

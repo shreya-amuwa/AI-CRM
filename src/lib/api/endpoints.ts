@@ -3,6 +3,8 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  OperationsHeadReviewItem, OperationsOverviewRow,
+  ClientAccessMethod, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
   HeadDivision,
@@ -66,6 +68,8 @@ import type {
   CustomerJourneyInfo,
   CustomerJourneyStatus,
   ClientLoginOutcome,
+  ProvisioningFilter,
+  ProvisioningQueue,
   DeliveryQueueItem,
   ServiceJourneySetting,
   AttendanceDay,
@@ -106,6 +110,7 @@ import type {
   InvoiceWhatsAppDispatch,
   InvoiceWhatsAppResult,
   InvoiceWhatsAppSettings,
+  PaymentInvoiceBilling,
   PaymentInvoiceOutcome,
   AccountsPaymentCounts,
   ChecklistItem,
@@ -152,6 +157,7 @@ import type {
   AutomationStatus,
   ClientMessages,
   PipelineCustomer,
+  OnboardingHandoffInfo,
   PipelineCustomerDetail,
   PipelineStage,
   ServiceCatalogItem,
@@ -266,9 +272,17 @@ export const pipelineApi = {
   metaVerifierCandidates: (id: string) => api.get<{ id: string; fullName: string }[]>(`/pipeline/customers/${id}/meta-verifier/candidates`),
   setServiceSetup: (id: string, service: string, body: { status: 'IN_PROGRESS' | 'READY'; note?: string | null }) =>
     api.post<CustomerJourneyStatus>(`/pipeline/customers/${id}/services/${service}/setup`, body),
-  /** Accounts: create the dashboard login of a customer whose services need no Technical Consultant. */
-  accountsCreateClientLogin: (id: string, body: { email: string; password: string }) =>
-    api.post<{ email: string }>(`/pipeline/customers/${id}/accounts/client-login`, body),
+  /** Accounts: create the dashboard login (any service). The e-mail is the one on the customer record; no password is typed or sent. */
+  accountsCreateClientLogin: (id: string, method: ClientAccessMethod = 'LINK') => api.post<{ email: string; status: 'CREATED'; method: ClientAccessMethod }>(`/pipeline/customers/${id}/accounts/client-login`, { method }),
+  /** Accounts: the Client logins queue (customer, ID, order, e-mail, status, time, result). */
+  clientLogins: (q: { status?: ProvisioningFilter; search?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<ProvisioningQueue>('/pipeline/accounts/client-logins', { ...q }),
+  /** Accounts: correct the e-mail on the record before a login is made (reason required, audited). */
+  correctCustomerEmail: (id: string, body: { email: string; reason: string }) => api.post<null>(`/pipeline/customers/${id}/accounts/customer-email`, body),
+  /** Accounts: send the set-password e-mail again. */
+  resendAccountEmail: (id: string) => api.post<null>(`/pipeline/customers/${id}/accounts/account-email/resend`, {}),
+  /** Department Head / Super Admin / the verifier: Meta has completed the verification. */
+  markMetaVerificationCompleted: (id: string) => api.post<null>(`/pipeline/customers/${id}/meta-verification-completed`, {}),
   /** Sales / Support: send the verified services to the department that delivers them. */
   sendToDelivery: (id: string, note?: string | null) =>
     api.post<{ sent: number; remaining: number; departments: string | null }>(`/pipeline/customers/${id}/send-to-delivery`, { note: note || null }),
@@ -277,8 +291,6 @@ export const pipelineApi = {
   /** Super Admin only. */
   setServiceJourney: (code: string, body: { requiresTechnicalConsultant: boolean; deliveryDepartmentId?: string | null }) =>
     api.patch<ServiceJourneySetting[]>(`/pipeline/service-journeys/${code}`, body),
-  createClientAccount: (id: string, body: { email: string; password: string }) =>
-    api.post<{ email: string }>(`/pipeline/customers/${id}/client-account`, body),
   sendToDepartmentHead: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/handover/department-head`, { note: note || null }),
   passToTeamLead: (id: string, teamLeadId: string, note?: string | null) =>
     api.post<null>(`/pipeline/customers/${id}/handover/team-lead`, { teamLeadId, note: note || null }),
@@ -289,6 +301,7 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/start-onboarding`, body),
   updateOnboarding: (id: string, body: { targetHandoverDate: string | null }) =>
     api.patch<PipelineCustomer>(`/pipeline/customers/${id}/onboarding`, body),
+  handoffInfo: (id: string) => api.get<OnboardingHandoffInfo>(`/pipeline/customers/${id}/handoff`),
   forwardToSupport: (id: string) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/forward-to-support`),
   consultantSetContract: (id: string, signed: boolean) => api.post<PipelineCustomer>(`/pipeline/customers/${id}/consultant/contract`, { signed }),
   consultantUpdateCustomer: (id: string, body: { name: string; company?: string | null; phone?: string | null; email?: string | null; expectedUpdatedAt?: string | null }) =>
@@ -434,7 +447,11 @@ export const generatedInvoicesApi = {
   confirmPayment: (id: string, body: { method?: PaymentMethod | null; reference?: string | null; note?: string | null; paidOn?: string | null; amount?: string | null; requestId?: string }) =>
     api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/confirm-payment`, body),
   /** The paid invoice of one verified payment (also the retry when the automatic one could not be made). Idempotent. */
-  invoiceForPayment: (paymentId: string) => api.post<PaymentInvoiceOutcome>(`/accounts/payments/${paymentId}/invoice`, {}),
+  invoiceForPayment: (paymentId: string, body: { customer?: Record<string, string | undefined> } = {}) => api.post<PaymentInvoiceOutcome>(`/accounts/payments/${paymentId}/invoice`, body),
+  /** Which billing details the payment's invoice has and which the customer record lacks (address, state). */
+  paymentInvoiceBilling: (paymentId: string) => api.get<PaymentInvoiceBilling>(`/accounts/payments/${paymentId}/invoice-billing`),
+  /** An Accounts team lead / head cancels a wrongly made invoice (reason required). */
+  cancel: (id: string, reason: string) => api.post<Invoice & { replayed: boolean }>(`/accounts/generated-invoices/${id}/cancel`, { reason }),
   /** Retry what is left of a stage (a missing PDF or e-mail). */
   deliver: (id: string, stage: InvoiceStage) => api.post<InvoiceRunResult>(`/accounts/generated-invoices/${id}/deliver`, { stage }),
   /** A short-lived link to a stored PDF (anyone who may read the invoice). */
@@ -500,6 +517,11 @@ export const usersApi = {
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
     api.post<Profile>(`/users/${id}/status`, { status, reason }),
   setTechnicalConsultant: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/technical-consultant`, { value }),
+  setMetaVerifier: (id: string, value: boolean) => api.post<Profile>(`/users/${id}/meta-verifier`, { value }),
+  /** Super Admin: make a Department Head an Operations Head (several departments), or take it back. */
+  setOperationsHead: (id: string, value: boolean, note?: string | null) => api.post<Profile>(`/users/${id}/operations-head`, { value, note: note || null }),
+  operationsHeadReview: () => api.get<OperationsHeadReviewItem[]>('/users/operations-head-review'),
+  operationsOverview: () => api.get<OperationsOverviewRow[]>('/operations/overview'),
   setHeadDivision: (id: string, division: HeadDivision | null) => api.post<Profile>(`/users/${id}/head-division`, { division }),
   /** Department Heads who work in a department (own or authorised), with all their departments. */
   departmentHeads: (departmentId: string) => api.get<DepartmentHeadAccess[]>('/users/department-heads', { departmentId }),
@@ -847,4 +869,25 @@ export const businessReportApi = {
   people: () => api.get<BusinessPerson[]>('/accounts/business-report/people'),
   invoiceBusiness: (invoiceId: string) => api.get<InvoiceBusinessInfo>(`/accounts/invoices/${invoiceId}/business`),
   tagInvoice: (invoiceId: string, body: InvoiceBusinessTagInput) => api.post<null>(`/accounts/invoices/${invoiceId}/business`, body)
+};
+
+/** The Meta Verifier workflow: verification notes, re-routing, the consultant's follow-ups and the follow-up delay. */
+export const workflowApi = {
+  verificationNotes: (customerId: string) => api.get<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`),
+  panelDetails: (customerId: string) => api.get<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details`),
+  setPanelDetails: (customerId: string, serviceCode: string, body: { platform: string | null; account: string | null }) =>
+    api.patch<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}`, body),
+  /** The password the Meta Verifier set on the customer's WhatsApp panel, e-mailed to the customer once. `requestId` makes a retry a no-op. */
+  sendPanelCredentials: (customerId: string, serviceCode: string, body: { password: string; requestId: string }) =>
+    api.post<PanelDetails>(`/pipeline/customers/${customerId}/verification/panel-details/${serviceCode}/credentials`, body),
+  addVerificationNote: (customerId: string, body: { body: string; outcome: string }) => api.post<VerificationNote[]>(`/pipeline/customers/${customerId}/verification/notes`, body),
+  reroute: (customerId: string, route: 'META' | 'TECHNICAL', reason: string) => api.post<null>(`/pipeline/customers/${customerId}/verification/reroute`, { route, reason }),
+  routeReview: () => api.get<VerificationRouteReviewItem[]>('/pipeline/verification-route-review'),
+  setServiceMetaVerification: (code: string, value: boolean) => api.patch<ServiceJourneySetting[]>(`/pipeline/service-journeys/${code}/meta-verification`, { value }),
+  followUps: (scope: 'OPEN' | 'DONE' | 'ALL' = 'OPEN') => api.get<TcFollowUp[]>('/consultant/followups', { scope }),
+  recordContact: (id: string, body: { channel: string; outcome: string; note?: string | null; nextFollowUpAt?: string | null }) =>
+    api.post<{ id: string; status: string }>(`/consultant/followups/${id}/contact`, { ...body, note: body.note || null, nextFollowUpAt: body.nextFollowUpAt || null }),
+  assignFollowUp: (id: string, profileId: string) => api.post<null>(`/consultant/followups/${id}/assign`, { profileId }),
+  settings: () => api.get<WorkflowSettings>('/workflow/settings'),
+  setFollowUpDelay: (days: number | null) => api.post<WorkflowSettings>('/workflow/tc-followup-delay', { days })
 };

@@ -625,7 +625,7 @@ export interface SupportInvoice {
   customerCode: string | null;
   company: string;
   amount: number;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: 'Paid' | 'Pending' | 'Overdue' | 'Cancelled';
   issueDate: string;
   dueDate: string;
   taxAmount: number | null;

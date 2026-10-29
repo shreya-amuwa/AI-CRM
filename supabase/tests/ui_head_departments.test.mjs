@@ -27,11 +27,11 @@ const check = (ok, name, extra) => { if (!ok) { console.error('not ok -', name, 
 let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); process.exit(0); }
 
-const open = async (vp) => {
+const open = async (vp, multi = true) => {
   const page = await browser.newPage({ viewport: vp });
   await page.setContent(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div>`);
   await page.addScriptTag({ content: bundle });
-  await page.evaluate(() => window.mount());
+  await page.evaluate(m => window.mount(m), multi);
   await page.waitForSelector('[data-testid="head-departments"]');
   return page;
 };
@@ -63,6 +63,23 @@ const plan = async page => JSON.parse(await page.textContent('#plan'));
   await page.check('[data-testid="head-dept-mpillar"]');
   p = await plan(page);
   check(p.ok && p.departmentId === 'mpillar' && !p.headDivision && p.additionalAccess.map(a => a.division).sort().join() === 'SALES,SUPPORT', 'one person for both functions: both pairs, no side', p);
+  await page.close();
+}
+{
+  // a plain Department Head works in one department: choosing another replaces the choice; a facet of the same department (Wabatalk) stays
+  const page = await open({ width: 1280, height: 900 }, false);
+  await page.selectOption('#staff-head-division', 'SUPPORT');
+  await page.check('[data-testid="head-dept-whatsbox"]');
+  let chips = await page.$$eval('[aria-label="Selected departments"] li', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+  check(chips.length === 1 && /Whatsbox/.test(chips[0]), 'a Department Head: choosing another department replaces the choice (one department)', chips);
+  check(/one department/i.test(await page.textContent('[data-testid="head-departments"]')), 'and the field says a Department Head works in one department');
+  await page.selectOption('#staff-head-division', 'BOTH');
+  await page.check('[data-testid="head-dept-dtalk"]');
+  await page.check('[data-testid="head-dept-wabatalk"]');
+  chips = await page.$$eval('[aria-label="Selected departments"] li', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+  check(chips.length === 2 && /D Talk/.test(chips[0]) && /Wabatalk/.test(chips[1]), 'one person for Sales and Support of D Talk: D Talk and its Support side Wabatalk together', chips);
+  const p = JSON.parse(await page.textContent('#plan'));
+  check(p.ok && p.departmentId === 'dtalk' && p.additionalAccess.map(a => `${a.departmentId}:${a.division}`).sort().join() === 'dtalk:SALES,wabatalk:SUPPORT', 'the plan stays inside D Talk', p);
   await page.close();
 }
 for (const [name, vp] of [['phone', { width: 360, height: 740 }], ['tablet', { width: 768, height: 1024 }], ['desktop', { width: 1440, height: 900 }]]) {

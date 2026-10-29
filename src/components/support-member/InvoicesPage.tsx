@@ -19,25 +19,27 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ data, onOpenCustomer
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // a cancelled invoice (made by mistake, cancelled by Accounts) is not an invoice of the customer any more
+  const standing = useMemo(() => data.invoices.filter(i => i.status !== 'Cancelled'), [data.invoices]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return data.invoices.filter(i => {
+    return standing.filter(i => {
       if (status !== 'ALL' && paymentStatus(i) !== status) return false;
       return !q || [i.invoiceNumber, i.customerName, i.customerCode || ''].some(v => v.toLowerCase().includes(q));
     });
-  }, [data.invoices, search, status]);
+  }, [standing, search, status]);
   const rows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const open = data.invoices.find(i => i.id === openId) || null;
-  const outstanding = data.invoices.reduce((n, i) => n + outstandingOf(i), 0);
-  const overdue = data.invoices.filter(i => paymentStatus(i) === 'Overdue');
+  const open = standing.find(i => i.id === openId) || null;
+  const outstanding = standing.reduce((n, i) => n + outstandingOf(i), 0);
+  const overdue = standing.filter(i => paymentStatus(i) === 'Overdue');
 
   return (
     <div className="space-y-5">
       <PageHeader title="Invoices" subtitle="Invoices for your customers. You can view and download them here; invoices are uploaded and managed by Accounts." />
       {data.error && <ErrorBanner message={data.error} onRetry={() => void data.reload()} />}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Invoices" value={data.invoices.length} />
-        <KpiCard label="Paid" value={data.invoices.filter(i => i.status === 'Paid').length} tone="text-emerald-700" />
+        <KpiCard label="Invoices" value={standing.length} />
+        <KpiCard label="Paid" value={standing.filter(i => i.status === 'Paid').length} tone="text-emerald-700" />
         <KpiCard label="Overdue" value={overdue.length} tone="text-rose-700" />
         <KpiCard label="Outstanding" value={fmtMoney(outstanding)} tone="text-amber-700" />
       </div>

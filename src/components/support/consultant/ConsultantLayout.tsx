@@ -1,13 +1,13 @@
 import React from 'react';
-import { Bell, CalendarPlus, FolderCheck, PackagePlus, UserPlus, Users } from 'lucide-react';
+import { Bell, CalendarClock, CalendarPlus, FolderCheck, PackagePlus, UserPlus, Users } from 'lucide-react';
 import { useNotifications } from '../../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../../layout/shell';
 import { LeaveCenter } from '../../leave/LeaveCenter';
 import { CHAT_NAV, useChatNavBadge } from '../../chat/ChatRoute';
 
-export type ConsultantPage = 'customers' | 'addons' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'notifications';
+export type ConsultantPage = 'customers' | 'addons' | 'followups' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'notifications';
 
-/** Shell of the Technical Consultant dashboard (sidebar + top bar), responsive. */
+/** Shell of the Technical Consultant / Meta Verifier dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{
   userName: string;
   count?: number;
@@ -15,11 +15,16 @@ export const ConsultantLayout: React.FC<{
   newCount?: number;
   /** Customers in Add-ons Services. */
   addonsCount?: number;
+  /** Follow-ups due for consultation. */
+  followUpsCount?: number;
+  /** The Meta Verifier does the first verification only: no add-ons, no follow-ups. */
+  mode?: 'consultant' | 'verifier';
   page: ConsultantPage;
   onSelectPage: (page: ConsultantPage) => void;
   onSignOut: () => void;
   children: React.ReactNode;
-}> = ({ userName, count, newCount, addonsCount, page, onSelectPage, onSignOut, children }) => {
+}> = ({ userName, count, newCount, addonsCount, followUpsCount, mode = 'consultant', page, onSelectPage, onSignOut, children }) => {
+  const verifier = mode === 'verifier';
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
   const groups: ShellNavGroup[] = [
@@ -27,8 +32,13 @@ export const ConsultantLayout: React.FC<{
       label: 'Customers',
       items: [
         { id: 'customers', label: 'Customers', icon: Users, count: newCount },
-        { id: 'addons', label: 'Add-ons Services', icon: PackagePlus, count: addonsCount },
-        { id: 'onboarding', label: 'Onboarding Customers', icon: UserPlus, count }
+        ...(verifier
+          ? []
+          : [
+              { id: 'addons', label: 'Add-ons Services', icon: PackagePlus, count: addonsCount },
+              { id: 'followups', label: 'Follow-ups', icon: CalendarClock, count: followUpsCount }
+            ]),
+        { id: 'onboarding', label: verifier ? 'Verification Customers' : 'Onboarding Customers', icon: UserPlus, count }
       ]
     },
     {
@@ -49,12 +59,12 @@ export const ConsultantLayout: React.FC<{
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle="Technical Consulting"
-      ariaLabel="Technical Consultant navigation"
+      subtitle={verifier ? 'Meta Verification' : 'Technical Consulting'}
+      ariaLabel={verifier ? 'Meta Verifier navigation' : 'Technical Consultant navigation'}
       groups={groups}
       active={page}
       onSelect={id => onSelectPage(id as ConsultantPage)}
-      user={{ name: userName, role: 'Technical Consultant' }}
+      user={{ name: userName, role: verifier ? 'Meta Verifier' : 'Technical Consultant' }}
       onSignOut={onSignOut}
       topActions={<LeaveCenter />}
       wide

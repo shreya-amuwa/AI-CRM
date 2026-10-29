@@ -3,7 +3,7 @@ import { displayTicketNo } from '../lib/ticketFormat';
 import { AlertTriangle, Bell, Building2, CalendarClock, CreditCard, FileText, FolderUp, LifeBuoy, MessageCircle, Package, Phone, RefreshCw, Sparkles } from 'lucide-react';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
-import { useLoad, type Loaded } from './hooks';
+import { useClientLive, useLoad, type Loaded } from './hooks';
 import { dashboardPath, notificationTarget, sectionState, useShell } from './shell';
 import { JourneySummary } from './Journey';
 import { Badge, Button, Card, EmptyState, Skeleton, TICKET_LABEL, daysUntil, fmtDate, fmtDateTime, fmtNum, inr, hueOf, serviceStatus, tagOf, usageBar } from './ui';
@@ -54,6 +54,9 @@ export const Overview: React.FC = () => {
   const tickets = useLoad(() => (tkGate.enabled ? clientApi.tickets() : Promise.resolve([] as Awaited<ReturnType<typeof clientApi.tickets>>)), [tkGate.enabled]);
   const notes = useLoad(() => clientApi.notifications(3, 0));
   const docs = useLoad(() => clientApi.documents());
+  const billing = useLoad(() => clientApi.billing());
+  // a payment recorded, verified or rejected by Accounts, or a new invoice, updates the balance without a refresh
+  useClientLive(() => { billing.reload(); invoices.reload(); });
   if (!me) return null;
 
   const docSummary = docs.data?.summary;
@@ -113,8 +116,8 @@ export const Overview: React.FC = () => {
             hint={!svcGate.enabled ? svcGate.reason ?? undefined : services.data && services.data.some(s => s.status === 'SETTING_UP') ? `${services.data.filter(s => s.status === 'SETTING_UP').length} being set up` : 'Running now'} onClick={() => go(dashboardPath(svcGate.enabled ? 'services' : 'journey'))} />
           <Stat icon={<CreditCard size={20} />} hue={4} label="Current plan" value={<span style={{ fontSize: 22 }}>{!planGate.enabled ? '-' : plans.data ? (current ? current.name : 'No plan yet') : stat(plans, '')}</span>}
             hint={!planGate.enabled ? planGate.reason ?? undefined : current ? `${inr(current.price)} / month` : 'Choose one in Monthly Plans'} onClick={() => go(dashboardPath(planGate.enabled ? 'plans' : 'journey'))} />
-          <Stat icon={<FileText size={20} />} hue={3} label="Invoices to pay" value={stat(invoices, pending)}
-            hint={invoices.data ? `${invoices.data.length} in total` : undefined} onClick={() => go(dashboardPath('invoices'))} />
+          <Stat icon={<FileText size={20} />} hue={3} label="Outstanding balance" value={<span style={{ fontSize: 22 }}>{stat(billing, billing.data ? inr(billing.data.totals.outstanding) : '')}</span>}
+            hint={billing.data ? (billing.data.totals.pending > 0 ? `${inr(billing.data.totals.pending)} awaiting verification` : billing.data.totals.outstanding > 0 ? `of ${inr(billing.data.totals.payable)} payable incl. GST` : billing.data.orders.length ? 'Nothing due' : undefined) : invoices.data ? `${pending} invoice${pending === 1 ? '' : 's'} pending` : undefined} onClick={() => go(dashboardPath('invoices'))} />
           <Stat icon={<LifeBuoy size={20} />} hue={2} label="Open tickets" value={tkGate.enabled ? stat(tickets, open) : '-'}
             hint={!tkGate.enabled ? tkGate.reason ?? undefined : tickets.data ? `${tickets.data.length} in total` : undefined} onClick={() => go(dashboardPath(tkGate.enabled ? 'tickets' : 'journey'))} />
         </div>

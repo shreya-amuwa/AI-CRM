@@ -330,38 +330,40 @@ async function drawHeader(p: Painter) {
 async function drawFooter(p: Painter, no: number, of: number) {
   const { f } = p;
   const top = PAGE_H - FOOTER_H;
-  p.rect(0, PAGE_H - 62, PAGE_W, 62, { fill: WASH });
+  // the green band starts clear of the logos and of the contact line above it (they used to touch and straddle its top edge)
+  const BAND = 54;
+  p.rect(0, PAGE_H - BAND, PAGE_W, BAND, { fill: WASH });
   if (!p.lean) {
-    await p.image('wabastore', 34, top + 4, 66);
-    await p.image('aiqr', 436, top, 40);
-    await p.image('croc', 486, top + 6, 38, 38);
+    await p.image('wabastore', 34, top + 6, 66);
+    await p.image('aiqr', 440, top + 1, 34);
+    await p.image('croc', 486, top + 7, 38, 38);
   } else {
     p.text('Wabastore | AIQR | CROC DIAL', 34, top + 30, { font: f.bold, size: 9 });
   }
   p.text('Toll Free No: ', 150, top + 36, { size: 11 });
   p.text(COMPANY_DETAILS.tollFree, 152 + f.width(f.regular, 'Toll Free No: ', 11), top + 36, { font: f.bold, size: 11 });
-  // contact line (the same details as the header)
+  // contact line (the same details as the header), above the band with room on both sides
   p.text(
     `Contact: ${COMPANY_DETAILS.phones.join(', ')}   |   Email: ${COMPANY_DETAILS.email}   |   ${COMPANY_DETAILS.websites.join('   |   ')}`,
     MX,
-    top + 63,
+    top + 62,
     { size: 6.8, color: MUTED }
   );
-  p.text(`Page ${no} of ${of}`, PAGE_W - MX, top + 63, { size: 6.8, color: MUTED, align: 'right' });
-  // the two offices
-  p.text('Business Sales Department', 34, PAGE_H - 48, { font: f.bold, size: 8 });
-  p.paragraph(COMPANY_DETAILS.salesDepartment, 34, PAGE_H - 45, 178, { size: 7, leading: 9 });
-  p.text('Customer & Technical Support', 232, PAGE_H - 48, { font: f.monoBold, size: 7.6 });
-  p.paragraph(COMPANY_DETAILS.supportDepartment, 232, PAGE_H - 45, 190, { font: f.mono, size: 6.4, leading: 8.4 });
+  p.text(`Page ${no} of ${of}`, PAGE_W - MX, top + 62, { size: 6.8, color: MUTED, align: 'right' });
+  // the two offices, inside the band with a margin of their own
+  p.text('Business Sales Department', MX + 6, PAGE_H - 42, { font: f.bold, size: 8 });
+  p.paragraph(COMPANY_DETAILS.salesDepartment, MX + 6, PAGE_H - 39, 178, { size: 7, leading: 9 });
+  p.text('Customer & Technical Support', 232, PAGE_H - 42, { font: f.monoBold, size: 7.6 });
+  p.paragraph(COMPANY_DETAILS.supportDepartment, 232, PAGE_H - 39, 190, { font: f.mono, size: 6.4, leading: 8.4 });
   // made with love in India
-  p.text('Made with Love', PAGE_W - 94, PAGE_H - 10, { font: f.bold, size: 7.5, align: 'right' });
+  p.text('Made with Love', PAGE_W - 94, PAGE_H - 12, { font: f.bold, size: 7.5, align: 'right' });
   p.page.drawSvgPath('M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z', {
     x: PAGE_W - 91,
-    y: 18,
+    y: 20,
     scale: 0.36,
     color: rgb(0.85, 0.1, 0.15)
   });
-  p.text('In India', PAGE_W - 78, PAGE_H - 10, { font: f.bold, size: 7.5 });
+  p.text('In India', PAGE_W - 78, PAGE_H - 12, { font: f.bold, size: 7.5 });
   p.box('footer', 0, top, PAGE_W, FOOTER_H);
 }
 
@@ -589,34 +591,38 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
       ? [
           { k: 'Current Invoice Total:', v: money(ps.total), bold: true },
           { k: 'Payments Applied to This Invoice:', v: money(ps.confirmed) },
-          { k: 'Invoice Balance:', v: money(ps.balance), bold: true },
+          { k: 'Invoice Balance:', v: money(Math.max(ps.balance, 0)), bold: true },
           { k: 'Order Total Payable (incl. GST):', v: money(order.totalPayable), gap: true },
           { k: 'Total Confirmed Payments:', v: money(order.confirmed) },
-          { k: 'Total Order Balance Outstanding:', v: money(order.balance), bold: true, fill: true },
+          { k: 'Total Order Balance Outstanding:', v: money(Math.max(order.balance, 0)), bold: true, fill: true },
           { k: 'Payment Status:', v: statusText(order.state), bold: true }
         ]
       : [
           { k: 'Invoice Total:', v: money(ps.total) },
           { k: 'Payments Received:', v: money(settled ? ps.total : ps.confirmed) },
           ...(settled && ps.payments && ps.payments.length ? [{ k: 'This Payment:', v: money(ps.payments[ps.payments.length - 1].amount) }] : []),
-          { k: 'Balance Outstanding:', v: money(settled ? 0 : ps.balance), bold: true },
+          { k: 'Balance Outstanding:', v: money(settled ? 0 : Math.max(ps.balance, 0)), bold: true },
           { k: 'Payment Status:', v: settled || ps.state === 'FULLY_PAID' ? 'Fully Paid' : statusText(ps.state), bold: true }
         ];
-  const PAY_ROW = order ? 12.2 : 13.2;
-  const payGap = payRows.filter(r => r.gap).length * 4;
+  // every row has its own height with the text centred in it, and the block has a margin top and bottom: nothing touches a rule
+  const PAY_ROW = order ? 15.5 : 15.5;
+  const PAY_PAD = 5;
+  const payGap = payRows.filter(r => r.gap).length * 6;
   const payment: Block = {
-    h: ps ? 12 + payRows.length * PAY_ROW + payGap : 0,
+    h: ps ? 2 * PAY_PAD + payRows.length * PAY_ROW + payGap : 0,
     draw: (y, h) => {
       p.rect(MX, y, LW, h, { border: BLUE });
-      let ry = y;
+      let ry = y + PAY_PAD;
       payRows.forEach(r => {
         if (r.gap) {
-          p.line(MX, ry + 10, MX + LW, ry + 10);
-          ry += 4;
+          p.line(MX, ry + 3, MX + LW, ry + 3);
+          ry += 6;
         }
-        if (r.fill) p.rect(MX, ry + 4.4, LW, PAY_ROW + 1.4, { fill: HEAD_FILL, border: BLUE });
-        p.text(r.k, MX + 7, ry + 13, { font: f.bold, size: r.fill ? 8.8 : 8.4 });
-        p.text(r.v, MX + LW - 8, ry + 13, { font: r.bold ? f.bold : f.regular, size: r.fill ? 9.2 : 8.4, align: 'right' });
+        if (r.fill) p.rect(MX, ry, LW, PAY_ROW, { fill: HEAD_FILL, border: BLUE });
+        const size = r.fill ? 8.8 : 8.4;
+        const base = ry + PAY_ROW / 2 + size * 0.36;
+        p.text(r.k, MX + 7, base, { font: f.bold, size });
+        p.text(r.v, MX + LW - 8, base, { font: r.bold ? f.bold : f.regular, size: r.fill ? 9.2 : 8.4, align: 'right' });
         ry += PAY_ROW;
       });
       p.box('payment', MX, y, LW, h);
@@ -624,7 +630,7 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
   };
   const termLines = f.wrap(f.regular, inv.terms || '', 8, LW - 14);
   const terms: Block = {
-    h: 30 + Math.max(2, termLines.length) * 10.4,
+    h: 30 + Math.max(1, termLines.length) * 10.4,
     draw: (y, h) => {
       p.rect(MX, y, LW, h, { border: BLUE });
       p.text('Terms & Conditions', MX + 7, y + 13, { font: f.bold, size: 8.6 });
@@ -689,13 +695,13 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
   };
   // the signatory area: blank on the unpaid invoice; the PAID stamp goes here on the paid invoice, nowhere else
   const signatory: Block = {
-    h: 92,
+    h: 104,
     draw: (y, h) => {
       p.rect(RX, y, RW, h, { border: BLUE });
       p.text(`For ${COMPANY_DETAILS.name}`, RX + RW - 10, y + 13, { font: f.bold, size: 8.4, align: 'right' });
       p.text('Authorised Signatory', RX + RW - 10, y + h - 8, { size: 7.6, align: 'right', color: MUTED });
       p.box('signatory', RX, y, RW, h);
-      if (stage === 'PAID') drawPaidStamp(p, RX + RW / 2 + 4, y + h / 2 + 2);
+      if (stage === 'PAID') drawPaidStamp(p, RX + RW / 2 + 4, y + h / 2 + 3);
     }
   };
   const right = [summary, address, signatory];
@@ -705,12 +711,12 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
 
 /** The PAID stamp: a blue, double-bordered rectangle, tilted, in the signatory area. Only the PAID stage draws it. */
 function drawPaidStamp(p: Painter, cx: number, cy: number) {
-  const w = 112;
-  const h = 46;
+  const w = 104;
+  const h = 42;
   p.page.pushOperators(pushGraphicsState(), translate(cx, PAGE_H - cy), rotateDegrees(13));
   p.page.drawRectangle({ x: -w / 2, y: -h / 2, width: w, height: h, borderColor: STAMP_BLUE, borderWidth: 2.4, borderOpacity: 0.92 });
   p.page.drawRectangle({ x: -w / 2 + 4.5, y: -h / 2 + 4.5, width: w - 9, height: h - 9, borderColor: STAMP_BLUE, borderWidth: 0.9, borderOpacity: 0.92 });
-  const size = 27;
+  const size = 25;
   const tw = p.f.bold.widthOfTextAtSize('PAID', size);
   p.page.drawText('PAID', { x: -tw / 2, y: -size * 0.36, size, font: p.f.bold, color: STAMP_BLUE, opacity: 0.92 });
   p.page.pushOperators(popGraphicsState());
@@ -751,9 +757,9 @@ async function build(inv: InvoicePdfInput, stage: InvoiceStage, lean: boolean): 
     }
     p.text('Invoice', PAGE_W / 2, BODY_TOP + 24, { font: fonts.serifBold, size: 22, align: 'center' });
     p.box('title', MX, BODY_TOP + 4, CW, 28);
-    const gridTop = BODY_TOP + 40;
+    const gridTop = BODY_TOP + 38;
     const gh = drawInfoGrid(p, inv, gridTop);
-    return gridTop + gh + 10;
+    return gridTop + gh + 9;
   };
 
   let y = await start(false);

@@ -5,13 +5,15 @@ import { clientApi } from './api';
 import { useClientLive, useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, fmtDate, inr } from './ui';
+import { BillingSummary } from './Billing';
 
 const statusOf = (i: ClientInvoice) => i.status === 'Paid' ? { label: 'Paid', tone: 'success' as const } : i.overdue ? { label: 'Overdue', tone: 'danger' as const } : { label: 'Pending', tone: 'attention' as const };
 
 export const Invoices: React.FC = () => {
   const q = useLoad(() => clientApi.invoices());
-  // A new invoice, or the paid copy of one, appears when Accounts finishes it: refreshed by the live feed, never by a timer.
-  useClientLive(q.reload);
+  const billing = useLoad(() => clientApi.billing());
+  // A new invoice, the paid copy of one, or a recorded / verified payment appears when Accounts finishes it: refreshed by the live feed, never by a timer.
+  useClientLive(() => { q.reload(); billing.reload(); });
   const [open, setOpen] = useState<ClientInvoice | null>(null);
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
@@ -33,6 +35,7 @@ export const Invoices: React.FC = () => {
       <PageHeader title="Invoices" subtitle="Invoices issued to you by Amuwa Accounts." />
       <div className="cd-banner info" style={{ marginBottom: 14 }}><Info size={18} style={{ flexShrink: 0 }} /><span>Invoices are issued and updated only by our Accounts team. You can view and download them here.</span></div>
       {error && <div className="cd-banner danger" role="alert" style={{ marginBottom: 14 }}>{error}</div>}
+      <BillingSummary q={billing} onOpenInvoice={id => { const inv = q.data?.find(x => x.id === id); if (inv) setOpen(inv); }} />
       <Query q={q} empty={d => d.length === 0 ? <Card><EmptyState icon={<FileText size={24} />} title="No invoices yet" text="When our Accounts team issues an invoice for you, it will appear here." /></Card> : null}>
         {list => (
           <Card style={{ padding: 6 }}>

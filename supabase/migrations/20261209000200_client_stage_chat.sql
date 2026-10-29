@@ -9,7 +9,7 @@
 --   * Writing is allowed only while the channel is live: META until verification is completed (also when it is rejected or documents are
 --     requested), RM once verification is completed and someone is assigned. A closed channel stays readable (history).
 --
--- Run after 20261205000100_client_onboarding_journey.sql. Safe to run again.
+-- Run after 20261209000100_client_onboarding_journey.sql. Safe to run again.
 
 drop index if exists public.chat_conversations_client_key;
 create unique index if not exists chat_conversations_client_channel_key on public.chat_conversations (customer_id, channel) where kind = 'CLIENT';
@@ -449,6 +449,7 @@ begin
   return private.chat_message_json(v_msg);
 end $$;
 
+-- (20261206000300's version, plus: nobody uploads into a closed conversation)
 create or replace function public.chat_begin_upload(p_conversation uuid, p_file_name text, p_mime text, p_size bigint)
 returns public.chat_attachments language plpgsql security definer set search_path = '' as $$
 declare
@@ -456,6 +457,9 @@ declare
   me uuid := auth.uid();
   v_id uuid := gen_random_uuid();
   v_name text := btrim(coalesce(p_file_name, ''));
+  v_kind text;
+  v_secure boolean;
+  v_max bigint;
   r public.chat_attachments;
 begin
   if a is null then
@@ -467,15 +471,22 @@ begin
   if private.chat_block_reason(p_conversation) is not null then
     raise exception 'VALIDATION_ERROR: %', private.chat_block_reason(p_conversation) using errcode = 'P0001';
   end if;
+  select kind into v_kind from public.chat_conversations where id = p_conversation;
+  v_secure := v_kind in ('DIRECT', 'GROUP');
   if length(v_name) < 1 or length(v_name) > 200 then
     raise exception 'VALIDATION_ERROR: The file needs a name (up to 200 characters).' using errcode = 'P0001';
   end if;
-  if p_mime not in ('image/png', 'image/jpeg', 'image/webp', 'application/pdf', 'text/plain', 'text/csv',
-                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') then
+  if v_secure then
+    if p_mime is distinct from 'application/x-amuwa-e2ee' then
+      raise exception 'VALIDATION_ERROR: Files in this chat are encrypted before they are sent. Reload the page and try again.' using errcode = 'P0001';
+    end if;
+  elsif p_mime not in ('image/png', 'image/jpeg', 'image/webp', 'application/pdf', 'text/plain', 'text/csv',
+                       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') then
     raise exception 'VALIDATION_ERROR: This file type cannot be sent. Use an image, PDF, text, CSV, Word or Excel file.' using errcode = 'P0001';
   end if;
-  if p_size is null or p_size < 1 or p_size > 5242880 then
+  v_max := case when v_secure then 5242944 else 5242880 end;
+  if p_size is null or p_size < 1 or p_size > v_max then
     raise exception 'VALIDATION_ERROR: Files can be at most 5 MB.' using errcode = 'P0001';
   end if;
   if (select count(*) from public.chat_attachments t where t.uploader_id = me and t.status = 'PENDING' and t.created_at > now() - interval '1 hour') >= 10 then
@@ -483,7 +494,8 @@ begin
   end if;
   update public.chat_attachments set status = 'FAILED' where uploader_id = me and status = 'PENDING' and created_at < now() - interval '1 day';
   insert into public.chat_attachments (id, conversation_id, uploader_id, file_name, mime_type, size_bytes, storage_path)
-  values (v_id, p_conversation, me, v_name, p_mime, p_size, format('%s/%s/%s', p_conversation, v_id, private.chat_clean_name(v_name)))
+  values (v_id, p_conversation, me, case when v_secure then 'encrypted-file' else v_name end, p_mime, p_size,
+          format('%s/%s/%s', p_conversation, v_id, case when v_secure then 'file.enc' else private.chat_clean_name(v_name) end))
   returning * into r;
   return r;
 end $$;

@@ -20,15 +20,19 @@ import type {
   DocumentUrl,
   InboundLead,
   Paginated,
+  ProvisioningQueue,
   PipelineCounts,
   ReviewCounts,
   PipelineCustomer,
+  OnboardingHandoffInfo,
   PipelineCustomerDetail,
   ServiceCatalogItem
 } from '../../shared/contracts.js';
 import {
   accountsBackOffSchema,
   accountsClientLoginSchema,
+  customerEmailCorrectionSchema,
+  provisioningQuerySchema,
   deliveryQueueQuerySchema,
   sendToDeliverySchema,
   serviceJourneySchema,
@@ -66,9 +70,8 @@ import {
   recordPaymentSchema,
   assignToMemberSchema,
   backOutSchema,
-  clientAccountSchema,
   metaVerificationSchema,
-  metaVerifierSchema,
+  journeyVerifierSchema,
   serviceSetupSchema,
   consultantWebsiteSchema,
   handoverNoteSchema,
@@ -77,16 +80,15 @@ import {
   startOnboardingSchema,
   uuidSchema
 } from '../../shared/validation.js';
-import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Actor } from '../auth/authenticate.js';
 import { AppError } from '../http/errors.js';
+import { hasServiceClient } from '../db/supabase.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
-import { renderClientCredentialsEmail, renderClientPasswordEmail } from '../automations/templates.js';
-import { hasServiceClient } from '../db/supabase.js';
-import { clientLoginUrl, sendClientMail, setPasswordUrl } from './clientMail.js';
+import { randomBytes } from 'node:crypto';
+import { encryptSecret, temporaryPassword } from '../automations/secrets.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageProviderName, StorageRepository } from '../repositories/StorageRepository.js';
@@ -211,53 +213,90 @@ export class PipelineService {
   }
 
   /**
-   * The Technical Consultant creates the client's panel login (before or after Meta verification: the login only opens the
-   * dashboard, the sections open by stage). The database checks who may do it first; Supabase Auth then stores the (hashed)
-   * password. The client gets the sign-in details in one e-mail sent from memory right now; the CRM keeps no copy of the password.
+   * Accounts creates the client's dashboard login, for every service. The database checks who may and when (a verified payment), refuses a
+   * second click while one is running, and returns the e-mail ON THE CUSTOMER RECORD - the request carries none, so a screen can never
+   * substitute another address. Two ways in (the request's `method`):
+   *  - LINK (default): the login gets a random password nobody knows; the client chooses their own from the one-time link in the e-mail.
+   *  - TEMPORARY: the SERVER makes a random temporary password, creates the login with it and queues ONE e-mail carrying it (encrypted on
+   *    the job, erased by the database once the job is done). The browser never sees it. The client must choose their own at the first
+   *    sign-in; until then every client function is refused. Needs AUTOMATION_SECRET_KEY, otherwise it is refused before anything is made.
+   * The e-mail is queued only after the login is saved. A failure is recorded on the customer with a safe reason and the attempt can be
+   * repeated; a half-made login (created, not saved) is removed - or, if that is not possible, finished by the retry - so no customer ever
+   * has two.
    */
-  async createClientAccount(actor: Actor, id: string, body: unknown, origin?: string): Promise<{ email: string; mail?: 'SENT' | 'NOT_SENT'; detail?: string }> {
+  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string; status: 'CREATED'; method: 'LINK' | 'TEMPORARY' }> {
     const customerId = parse(uuidSchema, id);
-    const input = parse(clientAccountSchema, body);
-    await this.repo.assertClientAccountAllowed(customerId, input.email);
-    const userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
-    try {
-      await this.repo.recordClientAccount(customerId, userId, input.email, null);
-    } catch (e) {
-      await this.authAdmin.deleteUser(userId).catch(() => undefined);
-      throw e;
+    const { method } = parse(accountsClientLoginSchema, body ?? {});
+    const key = automationSettings().secretKey;
+    if (method === 'TEMPORARY' && !key) {
+      throw new AppError('SERVICE_UNAVAILABLE', 'Temporary passwords need AUTOMATION_SECRET_KEY on the server. Use the set-password link, or ask your administrator to set it.');
     }
-    try {
-      const t = await this.repo.accountsClientLoginTargetQuiet(customerId);
-      const r = await sendClientMail({ email: input.email, name: t?.name ?? input.email }, renderClientCredentialsEmail({
-        name: t?.name ?? input.email, businessName: t?.businessName ?? null, loginEmail: input.email, password: input.password, loginUrl: clientLoginUrl(origin)
-      }));
-      return { email: input.email, mail: r.sent ? 'SENT' : 'NOT_SENT', ...(r.detail ? { detail: r.detail } : {}) };
-    } catch (e) {
-      return { email: input.email, mail: 'NOT_SENT', detail: e instanceof AppError ? e.message : 'The e-mail could not be sent.' };
-    }
-  }
-
-  /**
-   * Accounts creates the dashboard login of a customer whose services need no Technical Consultant. The database checks who may
-   * and when (a verified payment; the journey), marks the attempt, and refuses a second click while one is running. The password is
-   * hashed by Supabase Auth and never stored or e-mailed by the CRM. A failure is recorded on the customer with its reason and the
-   * attempt can be repeated; a half-made login (user created, record not saved) is removed so a retry starts clean.
-   */
-  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
-    const customerId = parse(uuidSchema, id);
-    const input = parse(accountsClientLoginSchema, body);
-    await this.repo.accountsClientLoginBegin(customerId, input.email);
+    const target = await this.repo.accountsClientLoginBegin(customerId, method);
+    const temporary = method === 'TEMPORARY' ? temporaryPassword() : null;
     let userId: string | null = null;
+    let created = false;
     try {
-      userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
-      await this.repo.recordClientAccount(customerId, userId, input.email, null);
+      userId = await this.authAdmin.clientUserFor(customerId, target.email);
+      if (!userId) {
+        userId = await this.authAdmin.createClientUser({
+          email: target.email,
+          password: temporary ?? randomBytes(32).toString('base64url'),
+          customerId,
+          provisionedBy: actor.id
+        });
+        created = true;
+      } else if (temporary) {
+        // an earlier, interrupted attempt made the sign-in; its temporary password is lost, so this attempt's replaces it
+        await this.authAdmin.setClientPassword(userId, temporary);
+      }
+      await this.repo.recordClientAccount(customerId, userId, target.email, temporary ? encryptSecret(temporary, key!) : null);
     } catch (e) {
-      if (userId) await this.authAdmin.deleteUser(userId).catch(() => undefined);
+      if (userId && created) await this.authAdmin.deleteUser(userId).catch(() => undefined);
       const message = e instanceof AppError ? e.message : 'The login could not be created.';
       await this.repo.accountsClientLoginFailed(customerId, message).catch(() => undefined);
       throw e;
     }
-    return { email: input.email };
+    return { email: target.email, status: 'CREATED', method };
+  }
+
+  /** Accounts: customers with a verified payment and the state of their login (customer, ID, order, e-mail, status, time, result). */
+  provisioningQueue(query: unknown): Promise<ProvisioningQueue> {
+    return this.repo.accountsProvisioningQueue(parse(provisioningQuerySchema, query ?? {}));
+  }
+
+  /** Accounts: correct a missing or wrong e-mail on the record before the login is made (reason required, audited). */
+  async correctCustomerEmail(id: string, body: unknown): Promise<void> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(customerEmailCorrectionSchema, body);
+    await this.repo.accountsSetCustomerEmail(customerId, input.email, input.reason);
+  }
+
+  /**
+   * Accounts: send the account e-mail again (a failed one is retried, a delivered one at most every 10 minutes). If the client has not yet
+   * chosen their own password after a temporary one, a NEW temporary password is made and put on the login first (the old one is gone - it
+   * was never stored); otherwise the set-password link is sent. An existing password is never reset for a client who chose their own.
+   */
+  async resendAccountEmail(id: string): Promise<void> {
+    const customerId = parse(uuidSchema, id);
+    const state = await this.repo.accountsClientAccountState(customerId);
+    if (state.exists && state.accessMethod === 'TEMPORARY' && state.mustChangePassword && state.authUserId) {
+      const key = automationSettings().secretKey;
+      if (!key) {
+        throw new AppError('SERVICE_UNAVAILABLE', 'Temporary passwords need AUTOMATION_SECRET_KEY on the server.');
+      }
+      const temporary = temporaryPassword();
+      // the database refuses (and nothing changes) when an e-mail is on its way or was sent a moment ago: so ask it first with the new secret
+      // and only then change the password, in that order, so a refused resend never invalidates the password the client already holds
+      await this.repo.accountsResendAccountEmail(customerId, encryptSecret(temporary, key));
+      await this.authAdmin.setClientPassword(state.authUserId, temporary);
+      return;
+    }
+    await this.repo.accountsResendAccountEmail(customerId);
+  }
+
+  /** Meta has completed the verification: the "completed" message is queued, once. */
+  async markMetaVerificationCompleted(id: string): Promise<void> {
+    await this.repo.markMetaVerificationCompleted(parse(uuidSchema, id));
   }
 
   /** Where a customer is: its journey, login, documents and delivery state, and what the caller may do next. */
@@ -420,6 +459,10 @@ export class PipelineService {
     const customerId = parse(uuidSchema, id);
     await this.repo.consultantStartOnboarding(customerId);
     return this.repo.get(customerId);
+  }
+
+  async handoffInfo(id: string): Promise<OnboardingHandoffInfo> {
+    return this.repo.handoffInfo(parse(uuidSchema, id));
   }
 
   async forwardToSupport(id: string): Promise<PipelineCustomer> {
@@ -679,51 +722,29 @@ export class PipelineService {
   }
 
   /**
-   * "Confirm payment & return to Sales": the customer moves to Customer onboarding, and the client's dashboard login is made and
-   * e-mailed (a set-password link: nobody types or sends a password). Making the login never fails the confirmation: when it
-   * cannot be made the reason is returned and Accounts can create it from the customer.
+   * "Confirm payment & return to Sales": the customer moves to Customer onboarding and the client's dashboard login is made right away by
+   * the same secure flow Accounts uses from Client Logins (accountsCreateClientLogin: the e-mail on the customer record, a random password
+   * nobody knows, a one-time set-password link e-mailed through the outbox). Nothing is unlocked by it: the dashboard shows the onboarding
+   * journey and opens the other sections stage by stage (the database decides). Making the login never fails the confirmation: when it
+   * cannot be made the reason is returned and Accounts can create it from Client Logins. AUTO_CLIENT_LOGIN=off turns this off.
    */
-  async confirmAndReturn(actor: Actor, id: string, body: unknown, origin?: string): Promise<ClientLoginOutcome> {
+  async confirmAndReturn(actor: Actor, id: string, body: unknown): Promise<ClientLoginOutcome> {
     const customerId = parse(uuidSchema, id);
     await this.repo.confirmAndReturn(customerId, parse(accountsConfirmReturnSchema, body ?? {}).note ?? null);
-    return this.provisionLoginAfterPayment(actor, customerId, origin);
+    return this.provisionLoginAfterPayment(actor, customerId);
   }
 
-  private async provisionLoginAfterPayment(actor: Actor, customerId: string, origin?: string): Promise<ClientLoginOutcome> {
+  private async provisionLoginAfterPayment(actor: Actor, customerId: string): Promise<ClientLoginOutcome> {
     if (!hasServiceClient() || process.env.AUTO_CLIENT_LOGIN === 'off') {
-      return { status: 'NOT_CREATED', detail: 'Client logins are not created automatically on this server. Create it from the customer.' };
+      return { status: 'NOT_CREATED', detail: 'Client logins are not created automatically on this server. Create it from Client Logins.' };
     }
     try {
-      const t = await this.repo.accountsClientLoginTarget(customerId);
-      if (t.hasLogin) return { status: 'EXISTS', email: undefined };
-      if (!t.canCreate) return { status: 'NOT_CREATED', detail: 'The client login cannot be created yet.' };
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t.email) || t.email.length > 254) {
-        return { status: 'NOT_CREATED', detail: 'The customer has no valid e-mail address. Add one and create the login from the customer.' };
-      }
-      await this.repo.accountsClientLoginBegin(customerId, t.email);
-      let userId: string | null = null;
-      try {
-        // a password nobody knows: the client chooses their own from the e-mailed link
-        userId = await this.authAdmin.createClientUser({ email: t.email, password: randomBytes(24).toString('base64url'), customerId, provisionedBy: actor.id });
-        await this.repo.recordClientAccount(customerId, userId, t.email, null);
-      } catch (e) {
-        if (userId) await this.authAdmin.deleteUser(userId).catch(() => undefined);
-        const message = e instanceof AppError ? e.message : 'The login could not be created.';
-        await this.repo.accountsClientLoginFailed(customerId, message).catch(() => undefined);
-        return { status: 'NOT_CREATED', detail: message };
-      }
-      try {
-        const link = await this.authAdmin.passwordLink(t.email, setPasswordUrl(origin));
-        const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({
-          name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'ONBOARDING'
-        }));
-        return { status: 'CREATED', email: t.email, mail: r.sent ? 'SENT' : 'NOT_SENT', ...(r.detail ? { detail: r.detail } : {}) };
-      } catch (e) {
-        return { status: 'CREATED', email: t.email, mail: 'NOT_SENT', detail: e instanceof AppError ? e.message : 'The e-mail could not be sent.' };
-      }
+      const r = await this.accountsCreateClientLogin(actor, customerId, {});
+      return { status: 'CREATED', email: r.email };
     } catch (e) {
-      console.error('[api] automatic client login failed', { customerId, message: (e as Error)?.message });
-      return { status: 'NOT_CREATED', detail: e instanceof AppError ? e.message : 'The client login could not be created. Create it from the customer.' };
+      const message = e instanceof AppError ? e.message : 'The client login could not be created. Create it from Client Logins.';
+      // a login that already exists is not a problem; anything else is shown to Accounts, who can retry from Client Logins
+      return { status: /already has a login/i.test(message) ? 'EXISTS' : 'NOT_CREATED', ...(/already has a login/i.test(message) ? {} : { detail: message }) };
     }
   }
 
@@ -743,7 +764,7 @@ export class PipelineService {
   /** A Technical Consultant takes the verification (no verifier given) or a head names one. */
   async assignMetaVerifier(id: string, body: unknown): Promise<CustomerJourneyStatus> {
     const customerId = parse(uuidSchema, id);
-    await this.repo.assignMetaVerifier(customerId, parse(metaVerifierSchema, body ?? {}).verifierId ?? null);
+    await this.repo.assignMetaVerifier(customerId, parse(journeyVerifierSchema, body ?? {}).verifierId ?? null);
     return this.repo.journeyStatus(customerId);
   }
 

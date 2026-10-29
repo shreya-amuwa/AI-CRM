@@ -36,6 +36,7 @@ import {
   ErrorBanner,
   inputCls,
   longDate,
+  longDateTime,
   money,
   notifyPipelineChanged,
   Pager,
@@ -44,8 +45,10 @@ import {
   usePipelineRealtime,
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
+import { ClientLoginDetails } from './ClientLoginDetails';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
 import { CustomerJourneyAdmin } from '../../journey/CustomerJourneyAdmin';
+import { VerificationNotes } from './VerificationNotes';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
 import { CustomerAddonDetails } from './CustomerAddonDetails';
@@ -264,7 +267,10 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
 // ---------------------------------------------------------------------------
 // Detail
 // ---------------------------------------------------------------------------
-export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void }> = ({ id, onBack }) => {
+/** `verifier`: the Meta Verifier's first verification (no add-ons, no consultation notes); `consultant`: the Technical Consultant. */
+export type ConsultantMode = 'consultant' | 'verifier';
+
+export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void; mode?: ConsultantMode }> = ({ id, onBack, mode = 'consultant' }) => {
   const { byCode } = useServiceCatalog();
   const [c, setC] = useState<PipelineCustomerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -310,10 +316,9 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   /** Passed on to the Department Head (or further): the consultant's review is closed. */
   const handedOver = !!c.onboarding && c.onboarding.handoverStage !== 'CONSULTANT';
   const locked = waiting || handedOver;
-  const canSend = statusOf(c.onboarding) === 'AUTHORIZED' && !!c.handover?.clientAccount;
-  const sendReason = !c.handover?.clientAccount
-    ? "Create the client's login first"
-    : 'Authorize every document and detail first';
+  // The client login is Accounts' job; it is no condition for handing the customer over.
+  const canSend = statusOf(c.onboarding) === 'AUTHORIZED';
+  const sendReason = 'Authorize every document and detail first';
 
   const sendBack = async () => {
     setSendingBack(true);
@@ -359,6 +364,11 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">{c.company || c.name}</h1>
               <p className="text-sm text-slate-500">Onboarding since {longDate(c.onboarding?.startedAt)}</p>
+              {c.onboarding?.forwardedToSupportAt && (
+                <p className="text-sm text-slate-500" data-testid="handover-line">
+                  Handed over by Sales on <time dateTime={c.onboarding.forwardedToSupportAt}>{longDateTime(c.onboarding.forwardedToSupportAt)}</time>
+                </p>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -530,7 +540,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           )}
         </section>
 
-        {c.onboarding?.addonRequestStatus && (
+        {mode === 'consultant' && c.onboarding?.addonRequestStatus && (
           <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" aria-labelledby="addons-heading">
             <div className="flex flex-wrap items-center gap-2">
               <h2 id="addons-heading" className="font-bold text-slate-900">
@@ -558,18 +568,15 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           onChanged={changed}
         />
 
-        <ConsultationNotes customerId={c.id} canWrite services={c.services} />
+        {mode === 'verifier' ? (
+          <VerificationNotes customerId={c.id} canWrite={!handedOver} />
+        ) : (
+          <ConsultationNotes customerId={c.id} canWrite services={c.services} />
+        )}
 
         <CustomerJourneyAdmin customerId={c.id} onChanged={changed} />
 
-        <ClientLoginCard
-          customerId={c.id}
-          defaultEmail={c.email}
-          account={c.handover?.clientAccount}
-          locked={waiting || handedOver}
-          emailsLogin={!!messages?.automated}
-          onChanged={changed}
-        />
+        {mode === 'verifier' ? <ClientLoginDetails customerId={c.id} /> : <ClientLoginCard account={c.handover?.clientAccount} />}
       </div>
     </div>
   );

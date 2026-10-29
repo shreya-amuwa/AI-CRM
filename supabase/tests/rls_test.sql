@@ -1337,6 +1337,21 @@ end $$;
 select test.check((select role = 'TEAM_MEMBER' and status = 'ACTIVE' and is_technical_consultant
                      from profiles where id = test.id('late_consultant')), 'late app_metadata: technical consultant provisioned');
 
+-- ... and a Meta Verifier of the same support team (the first verification of a WhatsApp customer is theirs)
+do $$
+declare v uuid := gen_random_uuid();
+begin
+  insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data)
+  values (v, 'late.verifier@amuwa.com', '{"full_name":"Late Verifier"}', '{"provider":"email","providers":["email"]}');
+  update auth.users set raw_app_meta_data = raw_app_meta_data || jsonb_build_object(
+    'provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Support'),
+    'provisioned_meta_verifier', true)
+  where id = v;
+  insert into test.users values ('late_verifier', v);
+end $$;
+select test.check((select role = 'TEAM_MEMBER' and status = 'ACTIVE' and is_meta_verifier and not is_technical_consultant
+                     from profiles where id = test.id('late_verifier')), 'late app_metadata: meta verifier provisioned');
+
 do $$
 declare v uuid := gen_random_uuid();
 begin
@@ -1374,12 +1389,21 @@ set role authenticated;
 select test.login('tm_b');
 select test.must_fail($$select send_to_department_head((select id from pipeline where name = 'A'), null)$$, 'consultant must authorize everything first', 'Authorize every');
 select verify_all_onboarding_entries((select id from pipeline where name = 'A'));
-select test.must_fail($$select send_to_department_head((select id from pipeline where name = 'A'), null)$$, 'consultant must create the client login first', 'login first');
-select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'not-an-email')$$, 'client login needs a valid e-mail', 'valid e-mail');
+-- Accounts (not the consultant) creates the client login, from the e-mail on the record, once a payment is verified
+reset role;
+update customers set amount_verified = amount_received where id = (select id from pipeline where name = 'A') and amount_verified = 0;
+set role authenticated;
+select test.login('tm_b');
+select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'fresh.client@example.com')$$, 'the consultant can no longer create the client login', 'NOT_FOUND');
+select test.must_fail($$select record_client_account((select id from pipeline where name = 'A'), gen_random_uuid(), 'client.a@example.com')$$, 'nor record one', 'NOT_FOUND');
+select test.login('acc_m');
+select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'not-an-email')$$, 'client login needs a valid e-mail', 'not a valid e-mail');
 select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'DH.WAB@amuwa.com')$$, 'client login cannot reuse a staff e-mail', 'already has a login');
-select assert_client_account_allowed((select id from pipeline where name = 'A'), 'fresh.client@example.com');
+select test.must_fail($$select accounts_client_login_begin((select id from pipeline where name = 'A'))$$, 'the record has no e-mail yet: Accounts must add it first', 'no e-mail address');
+select accounts_set_customer_email((select id from pipeline where name = 'A'), 'client.a@example.com', 'confirmed with the customer');
+select accounts_client_login_begin((select id from pipeline where name = 'A'));
 select test.must_fail($$select record_client_account((select id from pipeline where name = 'A'), gen_random_uuid(), 'client.a@example.com')$$, 'only a login made by the API can be recorded', 'not created');
-select test.must_fail($$select record_client_account((select id from pipeline where name = 'A'), test.id('tm_a'), 'a@amuwa.com')$$, 'a staff account cannot be linked as the client login', 'not created');
+select test.must_fail($$select record_client_account((select id from pipeline where name = 'A'), test.id('tm_a'), 'a@amuwa.com')$$, 'a staff account cannot be linked as the client login', 'e-mail on the customer record');
 select record_client_account((select id from pipeline where name = 'A'), test.id('client_a'), 'client.a@example.com');
 select test.must_fail($$select assert_client_account_allowed((select id from pipeline where name = 'A'), 'another@example.com')$$, 'one login per customer', 'already has a login');
 select test.login('tm_a');

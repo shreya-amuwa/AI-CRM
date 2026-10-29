@@ -10,7 +10,7 @@ import { CustomerInvoices } from './invoiceShared';
  * works on payments. "Upload Invoice PDF" has the customer preset; the list opens each invoice to
  * preview, download or (Accounts only) replace its PDF.
  */
-export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLabel: string; canUpload?: boolean }> = ({ customerId, customerLabel, canUpload = true }) => {
+export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLabel: string; canUpload?: boolean; /** Called after an invoice changed (made, cancelled ...), so the payments list beside it can refresh. */ onChanged?: () => void }> = ({ customerId, customerLabel, canUpload = true, onChanged }) => {
   const [uploading, setUploading] = useState(false);
   const [building, setBuilding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,7 +37,7 @@ export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLa
           {notice}
         </p>
       )}
-      <CustomerInvoices customerId={customerId} compact canManage key={reload} />
+      <CustomerInvoices customerId={customerId} compact canManage key={reload} onInvoiceChanged={onChanged} />
       {building && (
         <InvoiceBuilder
           customer={{ id: customerId, label: customerLabel }}
@@ -47,6 +47,7 @@ export const AccountsCustomerInvoices: React.FC<{ customerId: string; customerLa
             setNotice(`Invoice ${r.invoice.number} was saved. Open it from the list to see the PDF and e-mail status.`);
             window.dispatchEvent(new CustomEvent('crm:pipeline-changed'));
             setReload(n => n + 1);
+            onChanged?.();
           }}
         />
       )}

@@ -412,7 +412,6 @@ export const PaymentDialog: React.FC<{
   // part payment asks for the amount received now.
   const [amount, setAmount] = useState(mode === 'onboard' ? String(deal || already) : '');
   const [method, setMethod] = useState<PaymentMethod>('UPI');
-  const [handover, setHandover] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -436,7 +435,7 @@ export const PaymentDialog: React.FC<{
       // Waits for the server to confirm before the customer moves (no optimistic update).
       const c =
         mode === 'onboard'
-          ? await pipelineApi.startOnboarding(customer.id, { amountReceived: receivedNow, paymentMethod: method, targetHandoverDate: handover || null })
+          ? await pipelineApi.startOnboarding(customer.id, { amountReceived: receivedNow, paymentMethod: method })
           : await pipelineApi.recordPayment(customer.id, { amount: receivedNow, method });
       onDone(c);
     } catch (err) {
@@ -471,11 +470,6 @@ export const PaymentDialog: React.FC<{
             ))}
           </select>
         </Field>
-        {mode === 'onboard' && (
-          <Field label="Target handover date" htmlFor="pay-handover">
-            <input id="pay-handover" type="date" min={todayIso()} className={inputCls} value={handover} onChange={e => setHandover(e.target.value)} />
-          </Field>
-        )}
         {error && <ErrorBanner message={error} />}
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>
