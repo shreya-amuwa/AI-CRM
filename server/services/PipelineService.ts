@@ -1,5 +1,7 @@
 import type {
+  ClientLoginOutcome,
   CustomerJourneyInfo,
+  CustomerJourneyStatus,
   DeliveryQueueItem,
   ServiceJourneySetting,
   DivisionLeadsOverview,
@@ -65,6 +67,9 @@ import {
   assignToMemberSchema,
   backOutSchema,
   clientAccountSchema,
+  metaVerificationSchema,
+  metaVerifierSchema,
+  serviceSetupSchema,
   consultantWebsiteSchema,
   handoverNoteSchema,
   passToTeamLeadSchema,
@@ -72,13 +77,16 @@ import {
   startOnboardingSchema,
   uuidSchema
 } from '../../shared/validation.js';
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Actor } from '../auth/authenticate.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
-import { encryptSecret } from '../automations/secrets.js';
+import { renderClientCredentialsEmail, renderClientPasswordEmail } from '../automations/templates.js';
+import { hasServiceClient } from '../db/supabase.js';
+import { clientLoginUrl, sendClientMail, setPasswordUrl } from './clientMail.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageProviderName, StorageRepository } from '../repositories/StorageRepository.js';
@@ -203,24 +211,30 @@ export class PipelineService {
   }
 
   /**
-   * The Technical Consultant creates the client's panel login. The database checks
-   * who may do it first; Supabase Auth then stores the (hashed) password, which the
-   * client's mobile app signs in with. For the "Status Completed" email the password
-   * is also passed on encrypted; the database erases it once that email is sent.
+   * The Technical Consultant creates the client's panel login (before or after Meta verification: the login only opens the
+   * dashboard, the sections open by stage). The database checks who may do it first; Supabase Auth then stores the (hashed)
+   * password. The client gets the sign-in details in one e-mail sent from memory right now; the CRM keeps no copy of the password.
    */
-  async createClientAccount(actor: Actor, id: string, body: unknown): Promise<{ email: string }> {
+  async createClientAccount(actor: Actor, id: string, body: unknown, origin?: string): Promise<{ email: string; mail?: 'SENT' | 'NOT_SENT'; detail?: string }> {
     const customerId = parse(uuidSchema, id);
     const input = parse(clientAccountSchema, body);
     await this.repo.assertClientAccountAllowed(customerId, input.email);
     const userId = await this.authAdmin.createClientUser({ ...input, customerId, provisionedBy: actor.id });
-    const key = automationSettings().secretKey;
     try {
-      await this.repo.recordClientAccount(customerId, userId, input.email, key ? encryptSecret(input.password, key) : null);
+      await this.repo.recordClientAccount(customerId, userId, input.email, null);
     } catch (e) {
       await this.authAdmin.deleteUser(userId).catch(() => undefined);
       throw e;
     }
-    return { email: input.email };
+    try {
+      const t = await this.repo.accountsClientLoginTargetQuiet(customerId);
+      const r = await sendClientMail({ email: input.email, name: t?.name ?? input.email }, renderClientCredentialsEmail({
+        name: t?.name ?? input.email, businessName: t?.businessName ?? null, loginEmail: input.email, password: input.password, loginUrl: clientLoginUrl(origin)
+      }));
+      return { email: input.email, mail: r.sent ? 'SENT' : 'NOT_SENT', ...(r.detail ? { detail: r.detail } : {}) };
+    } catch (e) {
+      return { email: input.email, mail: 'NOT_SENT', detail: e instanceof AppError ? e.message : 'The e-mail could not be sent.' };
+    }
   }
 
   /**
@@ -664,9 +678,86 @@ export class PipelineService {
     return this.repo.paymentOverview(parse(uuidSchema, customerId));
   }
 
-  /** "Confirm payment & return to Sales": the customer moves to Customer onboarding. */
-  async confirmAndReturn(id: string, body: unknown): Promise<void> {
-    await this.repo.confirmAndReturn(parse(uuidSchema, id), parse(accountsConfirmReturnSchema, body ?? {}).note ?? null);
+  /**
+   * "Confirm payment & return to Sales": the customer moves to Customer onboarding, and the client's dashboard login is made and
+   * e-mailed (a set-password link: nobody types or sends a password). Making the login never fails the confirmation: when it
+   * cannot be made the reason is returned and Accounts can create it from the customer.
+   */
+  async confirmAndReturn(actor: Actor, id: string, body: unknown, origin?: string): Promise<ClientLoginOutcome> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.confirmAndReturn(customerId, parse(accountsConfirmReturnSchema, body ?? {}).note ?? null);
+    return this.provisionLoginAfterPayment(actor, customerId, origin);
+  }
+
+  private async provisionLoginAfterPayment(actor: Actor, customerId: string, origin?: string): Promise<ClientLoginOutcome> {
+    if (!hasServiceClient() || process.env.AUTO_CLIENT_LOGIN === 'off') {
+      return { status: 'NOT_CREATED', detail: 'Client logins are not created automatically on this server. Create it from the customer.' };
+    }
+    try {
+      const t = await this.repo.accountsClientLoginTarget(customerId);
+      if (t.hasLogin) return { status: 'EXISTS', email: undefined };
+      if (!t.canCreate) return { status: 'NOT_CREATED', detail: 'The client login cannot be created yet.' };
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t.email) || t.email.length > 254) {
+        return { status: 'NOT_CREATED', detail: 'The customer has no valid e-mail address. Add one and create the login from the customer.' };
+      }
+      await this.repo.accountsClientLoginBegin(customerId, t.email);
+      let userId: string | null = null;
+      try {
+        // a password nobody knows: the client chooses their own from the e-mailed link
+        userId = await this.authAdmin.createClientUser({ email: t.email, password: randomBytes(24).toString('base64url'), customerId, provisionedBy: actor.id });
+        await this.repo.recordClientAccount(customerId, userId, t.email, null);
+      } catch (e) {
+        if (userId) await this.authAdmin.deleteUser(userId).catch(() => undefined);
+        const message = e instanceof AppError ? e.message : 'The login could not be created.';
+        await this.repo.accountsClientLoginFailed(customerId, message).catch(() => undefined);
+        return { status: 'NOT_CREATED', detail: message };
+      }
+      try {
+        const link = await this.authAdmin.passwordLink(t.email, setPasswordUrl(origin));
+        const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({
+          name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'ONBOARDING'
+        }));
+        return { status: 'CREATED', email: t.email, mail: r.sent ? 'SENT' : 'NOT_SENT', ...(r.detail ? { detail: r.detail } : {}) };
+      } catch (e) {
+        return { status: 'CREATED', email: t.email, mail: 'NOT_SENT', detail: e instanceof AppError ? e.message : 'The e-mail could not be sent.' };
+      }
+    } catch (e) {
+      console.error('[api] automatic client login failed', { customerId, message: (e as Error)?.message });
+      return { status: 'NOT_CREATED', detail: e instanceof AppError ? e.message : 'The client login could not be created. Create it from the customer.' };
+    }
+  }
+
+  // ---- onboarding journey: Meta verification, the Meta Verifier, service setup ----
+  journeyStatus(id: string): Promise<CustomerJourneyStatus> {
+    return this.repo.journeyStatus(parse(uuidSchema, id));
+  }
+
+  /** The Technical Consultant sets the Meta verification status (the database checks who may and which moves are allowed). */
+  async setMetaVerification(id: string, body: unknown): Promise<CustomerJourneyStatus> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(metaVerificationSchema, body);
+    await this.repo.setMetaVerification(customerId, input.status, input.feedback ?? null);
+    return this.repo.journeyStatus(customerId);
+  }
+
+  /** A Technical Consultant takes the verification (no verifier given) or a head names one. */
+  async assignMetaVerifier(id: string, body: unknown): Promise<CustomerJourneyStatus> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.assignMetaVerifier(customerId, parse(metaVerifierSchema, body ?? {}).verifierId ?? null);
+    return this.repo.journeyStatus(customerId);
+  }
+
+  metaVerifierCandidates(id: string): Promise<{ id: string; fullName: string }[]> {
+    return this.repo.metaVerifierCandidates(parse(uuidSchema, id));
+  }
+
+  /** The responsible team starts or finishes the setup of one purchased service (the database checks the prerequisites). */
+  async setServiceSetup(id: string, code: string, body: unknown): Promise<CustomerJourneyStatus> {
+    const customerId = parse(uuidSchema, id);
+    const service = parse(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.'), code);
+    const input = parse(serviceSetupSchema, body);
+    await this.repo.setServiceSetup(customerId, service, input.status, input.note ?? null);
+    return this.repo.journeyStatus(customerId);
   }
 
   /** "Customer backed off": the customer returns to My Leads → Leads. */

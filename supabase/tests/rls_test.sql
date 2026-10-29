@@ -1389,6 +1389,8 @@ select test.login('th_wab');
 select test.must_fail($$select pass_to_team_lead((select id from pipeline where name = 'A'), test.id('th_gen'), null)$$, 'team lead cannot pass a customer on before the department head', 'NOT_FOUND');
 
 select test.login('tm_b');
+select test.must_fail($$select send_to_department_head((select id from pipeline where name = 'A'), null)$$, 'the hand-over waits for Meta verification to be completed', 'Complete the Meta verification');
+select set_meta_verification((select id from pipeline where name = 'A'), 'COMPLETED', null);
 select send_to_department_head((select id from pipeline where name = 'A'), 'All verified, panel created');
 select test.check((select handover_stage = 'DEPARTMENT_HEAD' and stage = 'HANDOVER' and to_department_head_at is not null from customer_onboarding
                     where customer_id = (select id from pipeline where name = 'A')), 'sent to the department head');

@@ -10,6 +10,7 @@ import type {
   ClientDocumentQueueItem,
   ClientDocuments,
   ClientInvoice,
+  ClientJourney,
   ClientNotifications,
   ClientOverview,
   ClientPlans,
@@ -36,6 +37,8 @@ export class ClientRepository {
 
   me() { return this.rpc<ClientProfile>('client_me'); }
   overview() { return this.rpc<ClientOverview>('client_overview'); }
+  /** Where the client is in the onboarding journey, and which sections are open (worked out by the database from the stored records). */
+  journey() { return this.rpc<ClientJourney>('client_onboarding_journey'); }
   services() { return this.rpc<ClientService[]>('client_services'); }
   campaigns() { return this.rpc<ClientCampaign[]>('client_campaigns'); }
   catalog() { return this.rpc<ClientCatalogService[]>('client_service_catalog'); }

@@ -45,6 +45,7 @@ import {
   useServiceCatalog
 } from '../../team-member/pipeline/shared';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
+import { CustomerJourneyAdmin } from '../../journey/CustomerJourneyAdmin';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
 import { CustomerAddonDetails } from './CustomerAddonDetails';
@@ -558,6 +559,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
         />
 
         <ConsultationNotes customerId={c.id} canWrite services={c.services} />
+
+        <CustomerJourneyAdmin customerId={c.id} onChanged={changed} />
 
         <ClientLoginCard
           customerId={c.id}

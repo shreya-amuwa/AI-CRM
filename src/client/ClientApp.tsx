@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { BookOpen, Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, LogOut, Megaphone, Menu, MessageCircle, Package, Search, Sparkles, X } from 'lucide-react';
+import { BookOpen, Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, Lock, LogOut, Megaphone, Menu, MessageCircle, Milestone, Package, Search, Sparkles, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../lib/documentation';
 import './client.css';
 import { clientApi } from './api';
 import { chatApi } from '../lib/chat/api';
 import { useChatUnread } from '../lib/chat/useChatUnread';
 import { ClientAuthProvider, useClientAuth } from './auth';
-import { usePath } from './hooks';
+import { useClientLive, useLoad, usePath } from './hooks';
 import { Login } from './Login';
 import { SetPassword } from './SetPassword';
 import { Campaigns } from './Campaigns';
@@ -21,14 +21,16 @@ import { Calendar } from './Calendar';
 import { Documents } from './Documents';
 import { Tickets } from './Tickets';
 import { Chat } from './Chat';
+import { Journey } from './Journey';
 import { Notifications } from './Notifications';
 import { Docs } from './Docs';
-import { LoadingBlock, initials } from './ui';
-import { ShellCtx, dashboardPath, type SectionSlug } from './shell';
+import { Button, Card, EmptyState, LoadingBlock, initials } from './ui';
+import { ShellCtx, dashboardPath, sectionState, type SectionSlug } from './shell';
 
 /** Sidebar, in the order the product owner asked for. */
 export const SECTIONS = [
   { slug: 'overview', label: 'Overview', Icon: LayoutDashboard },
+  { slug: 'journey', label: 'Onboarding Journey', Icon: Milestone },
   { slug: 'services', label: 'My Services', Icon: Package },
   { slug: 'campaigns', label: 'Campaigns', Icon: Megaphone },
   { slug: 'explore', label: 'Explore Services', Icon: Search },
@@ -44,14 +46,15 @@ export const SECTIONS = [
 
 /** The sidebar groups from the Amuwa Connect design; every section appears exactly once. */
 const NAV_GROUPS: { label?: string; slugs: SectionSlug[] }[] = [
-  { slugs: ['overview'] },
+  { slugs: ['overview', 'journey'] },
   { label: 'Your account', slugs: ['services', 'plans', 'invoices', 'documents'] },
   { label: 'Activity', slugs: ['campaigns', 'calendar', 'tickets', 'chat', 'notifications'] },
   { label: 'Discover & Help', slugs: ['explore', 'docs'] }
 ];
-/** Phone bottom tab bar: the five places clients use most. */
+/** Phone bottom tab bar: the five places clients use most; while onboarding, the places that are open to them (the drawer lists everything). */
 const TABS: SectionSlug[] = ['overview', 'services', 'tickets', 'campaigns', 'chat'];
-const TAB_LABEL: Partial<Record<SectionSlug, string>> = { overview: 'Home', services: 'Services', tickets: 'Tickets', campaigns: 'Campaigns', chat: 'Live chat' };
+const ONBOARDING_TABS: SectionSlug[] = ['overview', 'journey', 'documents', 'chat', 'notifications'];
+const TAB_LABEL: Partial<Record<SectionSlug, string>> = { overview: 'Home', journey: 'Journey', documents: 'Documents', notifications: 'Updates', services: 'Services', tickets: 'Tickets', campaigns: 'Campaigns', chat: 'Live chat' };
 
 const Inner: React.FC = () => {
   const { status, me, signOut } = useClientAuth();
@@ -62,8 +65,17 @@ const Inner: React.FC = () => {
   const [find, setFind] = useState('');
   const [findOpen, setFindOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [lockNote, setLockNote] = useState<string | null>(null);
   const notices = useAnnouncements(status === 'ready');
   const chat = useChatUnread(chatApi.clientUnread, status === 'ready');
+
+  // The onboarding journey: the stage, and which sections are open. The server decides; this reloads when something changes
+  // (a new notification, a return to the tab, a change of page) so a section opens as soon as it may.
+  const journey = useLoad(() => (status === 'ready' ? clientApi.journey() : Promise.reject(new Error('Not signed in'))), [status]);
+  const reloadJourney = journey.reload;
+  useClientLive(reloadJourney, undefined, status === 'ready');
+  const journeyRef = useRef(reloadJourney);
+  journeyRef.current = reloadJourney;
 
   const refreshUnread = useCallback(() => {
     clientApi.notifications(1, 0).then(n => setUnread(n.unread), () => { /* the bell is a convenience; pages show their own errors */ });
@@ -87,7 +99,13 @@ const Inner: React.FC = () => {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [status, refreshUnread]);
 
-  useEffect(() => { closeNav(); setMenu(false); }, [path]);
+  useEffect(() => { closeNav(); setMenu(false); setLockNote(null); }, [path]);
+  useEffect(() => { if (status === 'ready') journeyRef.current(); }, [path, status]);
+  useEffect(() => {
+    if (!lockNote) return;
+    const t = setTimeout(() => setLockNote(null), 6000);
+    return () => clearTimeout(t);
+  }, [lockNote]);
   useEffect(() => {
     if (!menu) return;
     const close = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
@@ -111,8 +129,16 @@ const Inner: React.FC = () => {
   const matches = find.trim() ? SECTIONS.filter(x => x.label.toLowerCase().includes(find.trim().toLowerCase())) : [];
   const badgeFor = (s: string) => (s === 'chat' ? chat.summary.total : s === 'notifications' ? unread : 0);
 
+  const gate = sectionState(journey.data, slug, journey.loading);
   const page = (() => {
+    // a closed section is never rendered, so it asks the server for nothing (the server would refuse it anyway)
+    if (!gate.enabled) {
+      return gate.pending
+        ? <LoadingBlock rows={2} />
+        : <LockedSection label={sectionOf(slug).label} reason={gate.reason} onJourney={() => to(dashboardPath('journey'))} />;
+    }
     switch (slug) {
+      case 'journey': return <Journey />;
       case 'services': return <MyServices />;
       case 'campaigns': return <Campaigns />;
       case 'explore': return <ExploreServices />;
@@ -127,9 +153,10 @@ const Inner: React.FC = () => {
       default: return <Overview />;
     }
   })();
+  const tabs = journey.data && !journey.data.completed ? ONBOARDING_TABS : TABS;
 
   return (
-    <ShellCtx.Provider value={{ go: to, unread, refreshUnread, chatUnread: chat.summary.total, refreshChatUnread: chat.refresh, sub }}>
+    <ShellCtx.Provider value={{ go: to, unread, refreshUnread, chatUnread: chat.summary.total, refreshChatUnread: chat.refresh, sub, journey }}>
       <div className="cd">
         <div className={`cd-shell ${collapsed ? 'cd-collapsed' : ''}`}>
           <div className={`cd-scrim ${nav ? 'open' : ''}`} onClick={closeNav} />
@@ -142,6 +169,18 @@ const Inner: React.FC = () => {
                   {g.slugs.map(s => {
                     const { label, Icon } = sectionOf(s);
                     const n = badgeFor(s);
+                    const st = sectionState(journey.data, s, journey.loading);
+                    if (!st.enabled && !st.pending) {
+                      // visible but closed: it explains itself and goes nowhere (and a typed address shows the same explanation)
+                      return (
+                        <button key={s} className="cd-nav-item locked" aria-disabled="true" title={st.reason ?? undefined}
+                          onClick={() => setLockNote(`${label}: ${st.reason ?? 'not available yet.'}`)}>
+                          <Icon size={19} aria-hidden />
+                          <span className="lbl">{label}<small>{st.reason}</small></span>
+                          <Lock size={14} aria-hidden className="lk" />
+                        </button>
+                      );
+                    }
                     return (
                       <button key={s} className="cd-nav-item" aria-current={slug === s ? 'page' : undefined} onClick={() => to(dashboardPath(s))}>
                         <Icon size={19} aria-hidden />
@@ -174,13 +213,22 @@ const Inner: React.FC = () => {
                   <input value={find} placeholder="Jump to a page - services, invoices, tickets" aria-label="Jump to a page"
                     onChange={e => { setFind(e.target.value); setFindOpen(true); }} onFocus={() => setFindOpen(true)}
                     onBlur={() => setTimeout(() => setFindOpen(false), 120)}
-                    onKeyDown={e => { if (e.key === 'Enter' && matches[0]) { setFind(''); to(dashboardPath(matches[0].slug)); } if (e.key === 'Escape') { setFind(''); setFindOpen(false); } }} />
+                    onKeyDown={e => { if (e.key === 'Enter' && matches[0]) { setFind(''); const st = sectionState(journey.data, matches[0].slug, journey.loading); if (st.enabled) to(dashboardPath(matches[0].slug)); else setLockNote(`${matches[0].label}: ${st.reason ?? 'not available yet.'}`); } if (e.key === 'Escape') { setFind(''); setFindOpen(false); } }} />
                 </label>
                 {findOpen && find.trim() ? (
                   <ul role="listbox" aria-label="Pages">
-                    {matches.length === 0 ? <li><button disabled>No page matches "{find.trim()}"</button></li> : matches.map(m => (
-                      <li key={m.slug}><button role="option" aria-selected="false" onMouseDown={e => e.preventDefault()} onClick={() => { setFind(''); to(dashboardPath(m.slug)); }}><m.Icon size={16} aria-hidden /> {m.label}</button></li>
-                    ))}
+                    {matches.length === 0 ? <li><button disabled>No page matches "{find.trim()}"</button></li> : matches.map(m => {
+                      const st = sectionState(journey.data, m.slug, journey.loading);
+                      const closed = !st.enabled && !st.pending;
+                      return (
+                        <li key={m.slug}>
+                          <button role="option" aria-selected="false" aria-disabled={closed || undefined} title={closed ? st.reason ?? undefined : undefined} onMouseDown={e => e.preventDefault()}
+                            onClick={() => { setFind(''); if (closed) setLockNote(`${m.label}: ${st.reason ?? 'not available yet.'}`); else to(dashboardPath(m.slug)); }}>
+                            <m.Icon size={16} aria-hidden /> {m.label}{closed ? <small><Lock size={12} aria-hidden /> locked</small> : null}
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : null}
               </div>
@@ -207,13 +255,14 @@ const Inner: React.FC = () => {
               </div>
             </header>
             <main className={`cd-content ${slug === 'chat' ? 'cd-content-flush' : ''}`} id="cd-main">
+              {lockNote ? <div className="cd-banner attention cd-lock-note" role="status" style={{ marginBottom: 16 }}><Lock size={18} aria-hidden style={{ flexShrink: 0 }} /><span>{lockNote}</span></div> : null}
               <NoticeBanners items={notices.items} onDismiss={notices.dismiss} />
               {page}
             </main>
             <NewServicePopup items={notices.items} onDismiss={notices.dismiss} go={to} />
           </div>
-          <nav className="cd-tabbar" aria-label="Quick navigation">
-            {TABS.map(s => {
+          <nav className="cd-tabbar" aria-label="Quick navigation" data-tabs={tabs.length}>
+            {tabs.map(s => {
               const { Icon } = sectionOf(s);
               const n = badgeFor(s);
               return (
@@ -229,6 +278,18 @@ const Inner: React.FC = () => {
     </ShellCtx.Provider>
   );
 };
+
+/** What a closed section shows (also when its address is typed in): why it is closed, and where to look instead. No data is requested. */
+const LockedSection: React.FC<{ label: string; reason: string | null; onJourney: () => void }> = ({ label, reason, onJourney }) => (
+  <Card className="cd-locked-page">
+    <EmptyState
+      icon={<Lock size={24} />}
+      title={`${label} is not open yet`}
+      text={reason ?? 'It opens as your onboarding moves forward.'}
+      action={<Button onClick={onJourney}><Milestone size={16} aria-hidden /> See your onboarding journey</Button>}
+    />
+  </Card>
+);
 
 function greeting(): string {
   const h = new Date().getHours();

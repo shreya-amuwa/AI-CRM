@@ -37,8 +37,8 @@ export class ChatRepository {
   }
 
   // ---- opening conversations
-  clientConversation() { return this.rpc<ChatConversation>('chat_client_conversation'); }
-  customerConversation(customerId: string) { return this.rpc<ChatConversation>('chat_customer_conversation', { p_customer: customerId }); }
+  clientConversation(channel?: string | null) { return this.rpc<ChatConversation>('chat_client_conversation', { p_channel: channel ?? null }); }
+  customerConversation(customerId: string, channel?: string | null) { return this.rpc<ChatConversation>('chat_customer_conversation', { p_customer: customerId, p_channel: channel ?? null }); }
   detail(id: string) { return this.rpc<ChatConversation>('chat_conversation_detail', { p_conversation: id }); }
   myClients(q: string | null) { return this.rpc<ChatMyClient[]>('chat_my_clients', { p_search: q }); }
   internalList(q: string | null) { return this.rpc<ChatConversation[]>('chat_internal_list', { p_search: q }); }

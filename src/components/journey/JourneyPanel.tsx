@@ -3,6 +3,7 @@ import { CheckCircle2, Copy, KeyRound, RefreshCw, Send, Wand2 } from 'lucide-rea
 import type { ClientLoginStatus, CustomerJourneyInfo, JourneyKind, JourneyStep } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
+import { SetPasswordEmailButton } from './SetPasswordEmailButton';
 import { btn, Card, ErrorBanner, Field, inputCls, longDate, money, notifyPipelineChanged, Pill, usePipelineRealtime, type Tone } from '../team-member/pipeline/shared';
 
 export const JOURNEY_LABEL: Record<JourneyKind, string> = {
@@ -178,6 +179,7 @@ export const ClientLoginCard: React.FC<{ journey: CustomerJourneyInfo; customerI
             {login.createdAt ? ` on ${longDate(login.createdAt)}` : ''}
             {login.createdBy ? ` by ${login.createdBy}` : ''}.
           </span>
+          <SetPasswordEmailButton customerId={customerId} />
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-3" aria-label="Create the client login">

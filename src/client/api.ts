@@ -1,5 +1,5 @@
 import type {
-  ClientAnnouncement, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
+  ClientAnnouncement, ClientJourney, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
   ClientService, ClientServiceRequest, ClientTicket, ClientTicketDetail, TicketAttachment, TicketUploadTicket
 } from '../../shared/contracts';
 import { api } from '../lib/api/client';
@@ -8,6 +8,7 @@ import { api } from '../lib/api/client';
 export const clientApi = {
   me: () => api.get<ClientProfile>('/client/me'),
   overview: () => api.get<ClientOverview>('/client/overview'),
+  journey: () => api.get<ClientJourney>('/client/journey'),
   services: () => api.get<ClientService[]>('/client/services'),
   campaigns: () => api.get<ClientCampaign[]>('/client/campaigns'),
   /** No login needed; the answer is the same whatever the e-mail. */

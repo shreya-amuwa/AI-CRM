@@ -1,5 +1,5 @@
 import type {
-  ChatAttachment, ChatClientView, ChatConversation, ChatDirectoryPerson, ChatMessage, ChatMessagePage, ChatMyClient, ChatReviewList,
+  ChatAttachment, ChatChannel, ChatClientView, ChatConversation, ChatDirectoryPerson, ChatMessage, ChatMessagePage, ChatMyClient, ChatReviewList,
   ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl
 } from '../../../shared/contracts';
 import { api } from '../api/client';
@@ -34,18 +34,31 @@ export interface ChatTransport {
   attachmentUrl(id: string, action: 'view' | 'download'): Promise<ClientDocumentUrl>;
 }
 
-export const clientTransport: ChatTransport = {
-  key: 'client',
-  open: limit => api.get<ChatClientView>('/client/chat', { limit }),
-  detail: async () => (await api.get<ChatClientView>('/client/chat', { limit: 1 })).conversation,
-  messages: q => api.get<ChatMessagePage>('/client/chat/messages', q),
-  send: i => api.post<ChatMessage>('/client/chat/messages', i),
-  markRead: seq => api.post('/client/chat/read', { seq }),
-  beginUpload: i => api.post<ChatUploadTicket>('/client/chat/uploads', i),
-  completeUpload: id => api.post<ChatAttachment>(`/client/chat/uploads/${id}/complete`, {}),
-  abortUpload: id => api.post(`/client/chat/uploads/${id}/abort`, {}),
-  attachmentUrl: (id, action) => api.get<ClientDocumentUrl>(`/client/chat/attachments/${id}/url`, { action })
-};
+/**
+ * The client's conversation of one channel (the Meta Verifier's or the Relationship Manager's). The client only names the channel: who is on
+ * the other side comes from the customer's assignment on the server, and a channel that is not open at their stage is refused there.
+ * No channel: the server picks the one in use now.
+ */
+const clientTransports = new Map<string, ChatTransport>();
+export function clientTransport(channel?: ChatChannel): ChatTransport {
+  const known = clientTransports.get(channel ?? 'current');
+  if (known) return known;
+  const ch = channel ? { channel } : {};
+  const made: ChatTransport = {
+    key: `client:${channel ?? 'current'}`,
+    open: limit => api.get<ChatClientView>('/client/chat', { limit, ...ch }),
+    detail: async () => (await api.get<ChatClientView>('/client/chat', { limit: 1, ...ch })).conversation,
+    messages: q => api.get<ChatMessagePage>('/client/chat/messages', { ...q, ...ch }),
+    send: i => api.post<ChatMessage>('/client/chat/messages', { ...i, ...ch }),
+    markRead: seq => api.post('/client/chat/read', { seq, ...ch }),
+    beginUpload: i => api.post<ChatUploadTicket>('/client/chat/uploads', { ...i, ...ch }),
+    completeUpload: id => api.post<ChatAttachment>(`/client/chat/uploads/${id}/complete`, {}),
+    abortUpload: id => api.post(`/client/chat/uploads/${id}/abort`, {}),
+    attachmentUrl: (id, action) => api.get<ClientDocumentUrl>(`/client/chat/attachments/${id}/url`, { action })
+  };
+  clientTransports.set(channel ?? 'current', made);
+  return made;
+}
 
 /** An employee's view of one conversation (a direct chat, a group, a customer's chat, or one under review). */
 export function staffTransport(conversationId: string, opts: { review?: boolean } = {}): ChatTransport {

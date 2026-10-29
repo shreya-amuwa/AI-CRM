@@ -33,6 +33,7 @@ const ok = <T>(data: T, status = 200): HandlerResult => ({ status, data });
 export const clientRoutes: ClientRouteDef[] = [
   { method: 'GET', path: '/me', handler: async c => ok(c.me) },
   { method: 'GET', path: '/overview', handler: async c => ok(await c.services.client.overview()) },
+  { method: 'GET', path: '/journey', handler: async c => ok(await c.services.client.journey()) },
   { method: 'GET', path: '/services', handler: async c => ok(await c.services.client.services()) },
   { method: 'GET', path: '/campaigns', handler: async c => ok(await c.services.client.campaigns()) },
   { method: 'GET', path: '/catalog', handler: async c => ok(await c.services.client.catalog()) },

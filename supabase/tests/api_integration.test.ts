@@ -1164,6 +1164,10 @@ check(r.json.data.handover?.clientAccount?.email === clientEmail && r.json.data.
 r = await api('a', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, {});
 check(r.status === 404, 'sales cannot send to the department head', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, { note: 'All verified' });
+check(r.status === 422 && /Meta verification/.test(r.json.error.message), 'the hand-over waits for Meta verification to be completed', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/meta-verification`, { status: 'COMPLETED' });
+check(r.status === 200, 'the consultant completes the Meta verification', r);
+r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, { note: 'All verified' });
 check(r.status === 200, 'consultant sends the verified customer to the department head', r);
 r = await api('tc', 'POST', `/pipeline/customers/${leadA}/handover/department-head`, {});
 check(r.status === 404, 'cannot send twice (the consultant review is closed)', r);
@@ -1500,6 +1504,7 @@ async function autoCustomer(fields: Record<string, unknown>, website: string | n
   await db.query(`select private.refresh_onboarding_progress($1)`, [id]);
   // what Accounts confirming the payment does: the customer reaches the Technical Consultant
   await db.query(`select private.forward_to_consultant(c.id, c, false) from public.customers c where c.id = $1`, [id]);
+  await db.query(`update public.customer_onboarding set accounts_confirmed_at = coalesce(accounts_confirmed_at, now()) where customer_id = $1`, [id]);
   // reaching the consultant sends nothing; the messages start when the TC clicks "Send for onboarding"
   const arrived = await api('tc', 'GET', `/pipeline/customers/${id}/client-messages`);
   check(arrived.status === 200 && arrived.json.data.stage === null && arrived.json.data.messages.length === 0, `${fields.company}: reaching the consultant sends nothing`, arrived.json);
@@ -1584,14 +1589,20 @@ const readyJobs = await jobsOf(autoA);
 check(readyJobs.some(j => j.stage === 'WEBSITE_READY' && j.channel === 'WHATSAPP' && j.status === 'SENT' && /accepted by webhook \(HTTP 200: .*msg-/.test(j.detail)),
   'the WhatsApp job keeps what the webhook answered, so a router that ignores a status can be seen', readyJobs.filter(j => j.channel === 'WHATSAPP'));
 
-// Step 3: the client login. The password is kept encrypted only until the email is sent.
+// Step 3: creating the client login completes nothing (the "completed" messages follow the Meta status); no password is kept in the outbox
 process.env.AUTOMATION_MODE = 'off';
 r = await api('tc', 'POST', `/pipeline/customers/${autoA}/client-account`, { email: 'auto.login@example.com', password: 'AutoPass#2026x' });
-check(r.status === 201, 'the TC creates the client login', r);
+check(r.status === 201 && r.json.data.email === 'auto.login@example.com' && !JSON.stringify(r.json).includes('AutoPass'), 'the TC creates the client login (the password is not in the answer)', r);
 let jobs = await jobsOf(autoA);
-const pending = jobs.find(j => j.stage === 'COMPLETED' && j.channel === 'EMAIL');
-check(pending && pending.status === 'QUEUED' && /^v1:/.test(pending.secret) && !pending.secret.includes('AutoPass'), 'the password is stored encrypted on the completion email job only', pending);
-check(jobs.filter(j => j.secret).length === 1, 'and nowhere else');
+check(!jobs.some(j => j.stage === 'COMPLETED') && jobs.every(j => !j.secret), 'the login completes nothing and no password is stored on any job', jobs);
+r = await api("tc", "PATCH", `/pipeline/customers/${autoA}/consultant-items/WABA_ID`, { value: "112233445566778" });
+check(r.status === 200, 'the TC enters the WABA ID', r);
+r = await api('a', 'POST', `/pipeline/customers/${autoA}/meta-verification`, { status: 'COMPLETED' });
+check(r.status === 404, 'Sales cannot complete the Meta verification', r);
+r = await api('tc', 'POST', `/pipeline/customers/${autoA}/meta-verification`, { status: 'COMPLETED' });
+check(r.status === 200 && r.json.data.meta.status === 'COMPLETED', 'the TC completes the Meta verification', r);
+jobs = await jobsOf(autoA);
+check(jobs.filter(j => j.stage === 'COMPLETED').length === 2 && jobs.every(j => !j.secret), 'Meta verification completed queues the Status Completed email + WhatsApp (and keeps no password)', jobs);
 d = await dispatch('dispatch-secret-0123456789');
 check(d.json.data.claimed === 0, 'sending switched off: nothing is processed');
 process.env.AUTOMATION_MODE = 'live';
@@ -1599,10 +1610,9 @@ failNext['/wa'] = [503];
 d = await dispatch('dispatch-secret-0123456789');
 const done = outbox.find(o => o.path === '/emails' && o.body.subject === 'Meta Verification Completed – Panel Access Details | Amuwa Corporation');
 check(done && done.body.html.includes('https://chat.wabastore.shop/login') && done.body.html.includes('auto.login@example.com')
-  && done.body.html.includes('AutoPass#2026x') && done.body.html.includes('<b>Department:</b> Wabastore'),
-  'Status Completed email: Wabastore panel link, the login e-mail as user ID and the password', done?.body?.html);
+  && !done.body.html.includes('AutoPass#2026x') && done.body.html.includes('<b>Department:</b> Wabastore') && done.body.html.includes('Forgot password'),
+  'Status Completed email: Wabastore panel link and the login e-mail as user ID; the password is never in it', done?.body?.html);
 jobs = await jobsOf(autoA);
-check(jobs.every(j => !j.secret), 'once sent, the encrypted password is erased');
 const waJob = jobs.find(j => j.stage === 'COMPLETED' && j.channel === 'WHATSAPP');
 check(waJob && waJob.status === 'QUEUED' && waJob.attempts === 1 && /HTTP 503/.test(waJob.detail), 'a WhatsApp webhook error is retried later', waJob);
 await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and status = 'QUEUED'`, [autoA]);
@@ -1951,13 +1961,13 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   // ---- the assigned Team Member
   r = await api('sm', 'GET', '/chat/my-clients');
   const mine = r.json.data?.find((x: any) => x.customerId === cust);
-  check(r.status === 200 && mine && mine.unread === 1 && mine.role === 'Team Member' && mine.conversationId === conv, 'chat: the Team Member sees the customer with 1 unread message', r);
+  check(r.status === 200 && mine && mine.unread === 1 && mine.role === 'Relationship Manager' && mine.conversationId === conv, 'chat: the Team Member sees the customer with 1 unread message', r);
   r = await api('sm', 'GET', `/chat/customers/${cust}`);
   check(r.status === 200 && r.json.data.id === conv && r.json.data.access === 'STAFF' && r.json.data.customer.business.includes('Import Traders'), 'chat: and opens the conversation from the customer', r);
   r = await api('sm', 'GET', `/chat/conversations/${conv}/messages?limit=10`);
   check(r.status === 200 && r.json.data.messages.length === 1 && r.json.data.messages[0].body === 'Hello team' && r.json.data.messages[0].mine === false, 'chat: and reads it', r);
   r = await api('sm', 'POST', `/chat/conversations/${conv}/messages`, { body: 'Hi, how can we help?', clientMsgId: mid() });
-  check(r.status === 201 && r.json.data.senderKind === 'STAFF' && r.json.data.senderLabel === 'Team Member' && r.json.data.seq === 2, 'chat: and replies', r);
+  check(r.status === 201 && r.json.data.senderKind === 'STAFF' && r.json.data.senderLabel === 'Relationship Manager' && r.json.data.seq === 2, 'chat: and replies', r);
   r = await api('sm', 'POST', `/chat/conversations/${conv}/read`, {});
   check(r.status === 200 && r.json.data.readSeq === 2, 'chat: and marks it read', r);
   r = await api('imp', 'GET', '/client/chat');
@@ -2133,6 +2143,57 @@ provider.close();
   };
   tokens.set('cl1', await signIn(clientEmail, 'ClientPass#2026'));
   tokens.set('cl2', await signIn('auto.login@example.com', 'AutoPass#2026x'));
+
+  // ---- onboarding journey over the API: a client who is still onboarding sees the journey and only the sections that are open
+  console.log('--- client journey over the API');
+  r = await api('cl2', 'GET', '/client/journey');
+  check(r.status === 200 && r.json.data.stage === 'RELATIONSHIP_MANAGER' && !r.json.data.completed && r.json.data.stages.length === 5, 'journey: Meta verification is done, the Relationship Manager is next', r.json.data?.stage);
+  check(r.json.data.stages[1].metaStatus === 'COMPLETED' && r.json.data.stages[0].status === 'COMPLETED' && r.json.data.stages[2].status === 'IN_PROGRESS', 'journey: stages and their statuses', r.json.data.stages.map((x: any) => x.status));
+  check(r.json.data.access.tickets.enabled === false && r.json.data.access.chat.enabled && r.json.data.access.documents.enabled && r.json.data.access.journey.enabled, 'journey: closed and open sections', r.json.data.access);
+  for (const [path, label] of [['/client/services', 'My Services'], ['/client/campaigns', 'Campaigns'], ['/client/tickets', 'Tickets'], ['/client/catalog', 'Explore Services'], ['/client/plans', 'Monthly Plans'], ['/client/calendar?from=2026-01-01&to=2026-01-31', 'the Calendar'], ['/client/service-requests', 'service requests']] as const) {
+    r = await api('cl2', 'GET', path);
+    check(r.status === 403 && /Available after/.test(r.json.error.message), `journey: ${label} is refused by the server while it is closed`, r);
+  }
+  r = await api('cl2', 'POST', '/client/tickets', { subject: 'Hello', description: 'Please help me start', category: 'GENERAL' });
+  check(r.status === 403, 'journey: a ticket cannot be raised directly', r);
+  r = await api('cl2', 'POST', '/client/service-requests', { serviceCode: 'AI_QR' });
+  check(r.status === 403, 'journey: nor a service requested', r);
+  r = await api('cl2', 'GET', '/client/overview');
+  check(r.status === 200 && r.json.data.journey.stage === 'RELATIONSHIP_MANAGER' && r.json.data.services.total === 0 && r.json.data.tickets.total === 0, 'journey: the overview opens and shows nothing of the closed sections', r);
+  r = await api('cl2', 'GET', '/client/documents');
+  check(r.status === 200, 'journey: documents stay open', r);
+  // chat: the Meta conversation is closed (kept), the Relationship Manager's has nobody yet
+  r = await api('cl2', 'GET', '/client/chat?channel=SOMEONE');
+  check(r.status === 422, 'journey chat: an unknown channel is refused', r);
+  r = await api('cl2', 'GET', '/client/chat?channel=META');
+  check(r.status === 200 && r.json.data.conversation.channel === 'META' && r.json.data.conversation.canWrite === false && /Meta verification is completed/.test(r.json.data.conversation.blockReason), 'journey chat: the Meta conversation is kept and closed', r);
+  const metaConv = r.json.data.conversation.id;
+  r = await api('cl2', 'GET', '/client/chat?channel=RM');
+  check(r.status === 200 && r.json.data.conversation.channel === 'RM' && r.json.data.conversation.id !== metaConv && r.json.data.conversation.canWrite === false, 'journey chat: the Relationship Manager conversation is separate and has nobody to write to yet', r);
+  r = await api('cl2', 'POST', '/client/chat/messages', { channel: 'META', body: 'one more', clientMsgId: crypto.randomUUID() });
+  check(r.status === 422 && /closed/.test(r.json.error.message), 'journey chat: nobody can add to a closed Meta conversation', r);
+  r = await api('cl2', 'POST', '/client/chat/messages', { channel: 'RM', body: 'hello', clientMsgId: crypto.randomUUID() });
+  check(r.status === 422, 'journey chat: nor write to a Relationship Manager that is not assigned', r);
+  r = await api('cl2', 'POST', '/client/chat/messages', { body: 'hello', clientMsgId: crypto.randomUUID(), employeeId: crypto.randomUUID() });
+  check(r.status === 422, 'journey chat: a client cannot name an employee (unknown field refused)', r);
+  // staff side
+  r = await api('a', 'POST', `/pipeline/customers/${autoA}/services/WHATSAPP_API_BLUE_TICK/setup`, { status: 'READY' });
+  check(r.status === 404, 'journey: Sales cannot mark a service ready', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${autoA}/services/WHATSAPP_API_BLUE_TICK/setup`, { status: 'READY' });
+  check(r.status === 422 && /Relationship Manager/.test(r.json.error.message), 'journey: a service cannot be ready before the Relationship Manager is assigned', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${autoA}/services/WHATSAPP_API_BLUE_TICK/setup`, { status: 'DONE' });
+  check(r.status === 422, 'journey: an unknown setup status is refused', r);
+  r = await api('tc', 'GET', `/pipeline/customers/${autoA}/journey-status`);
+  check(r.status === 200 && r.json.data.meta.status === 'COMPLETED' && r.json.data.services.length === 1 && r.json.data.completedAt === null, 'journey: the team reads the status', r);
+  r = await api('cl2', 'GET', `/pipeline/customers/${autoA}/journey-status`);
+  check(r.status === 401 || r.status === 403, 'journey: a client cannot use the staff journey endpoints', r);
+  r = await api('cl2', 'POST', `/pipeline/customers/${autoA}/meta-verification`, { status: 'COMPLETED' });
+  check(r.status === 401 || r.status === 403, 'journey: nor change the Meta status', r);
+  // the rest of this block is about the dashboard's features: both clients are fully set up
+  await db.query(`update public.customer_services set setup_status = 'READY', setup_completed_at = now() where customer_id in ($1, $2)`, [leadA, autoA]);
+  await db.query(`update public.customer_onboarding set onboarding_completed_at = coalesce(onboarding_completed_at, now()) where customer_id in ($1, $2)`, [leadA, autoA]);
+  r = await api('cl2', 'GET', '/client/journey');
+  check(r.json.data.completed && r.json.data.stage === 'COMPLETED' && Object.values(r.json.data.access).every((a: any) => a.enabled), 'journey: completed onboarding opens every section', r);
 
   // chat: another client has their own conversation and sees nothing of the first client's
   {
@@ -3513,7 +3574,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.json.data.journey === 'TECHNICAL' && r.json.data.followsTechnicalConsultant === true, 'a WhatsApp API customer follows the Technical Consultant journey', r.json.data);
   r = await api('a', 'POST', `/pipeline/customers/${tLead}/send-to-accounts`, { amount: 6000 });
   r = await api('accm', 'POST', `/pipeline/customers/${tLead}/accounts/client-login`, { email: 'tara.client@example.com', password: 'ClientPass#2026' });
-  check(r.status === 409 && /Technical Consultant/.test(r.json.error.message), 'Accounts cannot create the login of a Technical Consultant customer', r);
+  check(r.status === 409, 'Accounts cannot create a login before a payment is verified, whatever the services', r);
   r = await api('a', 'POST', `/pipeline/customers/${tLead}/send-to-delivery`, {});
   check(r.status === 409 || r.status === 422, 'and Sales cannot route it to a delivery department', r);
   // mixed order

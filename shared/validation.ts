@@ -1680,3 +1680,20 @@ export const salesReportsQuerySchema = z
   })
   .strict();
 export const salesIncomeQuerySchema = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
+
+// ---------------------------------------------------------------------------
+// Onboarding journey
+// ---------------------------------------------------------------------------
+/** The Meta verification status a Technical Consultant sets (PENDING is only the starting state). */
+export const metaVerificationSchema = z
+  .object({
+    status: z.enum(['IN_PROGRESS', 'DOCUMENTS_REQUIRED', 'REJECTED', 'COMPLETED']),
+    feedback: z.string().trim().max(1000, 'The feedback can have at most 1000 characters.').nullish()
+  })
+  .strict();
+/** No verifier given: the signed-in Technical Consultant takes the verification. */
+export const metaVerifierSchema = z.object({ verifierId: uuidSchema.nullish() }).strict();
+export const serviceSetupSchema = z
+  .object({ status: z.enum(['IN_PROGRESS', 'READY']), note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
+  .strict();
+export const chatChannelSchema = z.enum(['META', 'RM']);

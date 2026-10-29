@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StorageProviderName } from './StorageRepository.js';
 import type {
   CustomerJourneyInfo,
+  CustomerJourneyStatus,
   DeliveryQueueItem,
   ServiceJourneySetting,
   AccountsConfirmation,
@@ -668,6 +669,38 @@ export class PipelineRepository {
   // ---- service journeys, client-login provisioning and delivery departments ----
   async customerJourney(customerId: string): Promise<CustomerJourneyInfo> {
     return unwrap(await this.db.rpc('customer_journey_info', { p_customer: customerId })) as CustomerJourneyInfo;
+  }
+
+  /** Accounts: the customer's own e-mail and name, whether a login exists and whether one may be created now. */
+  async accountsClientLoginTarget(customerId: string): Promise<{ email: string; name: string; businessName: string; hasLogin: boolean; canCreate: boolean }> {
+    return unwrap(await this.db.rpc('accounts_client_login_target', { p_customer: customerId })) as { email: string; name: string; businessName: string; hasLogin: boolean; canCreate: boolean };
+  }
+
+  /** The customer's name and business for a mail to the client (best effort: null when the caller may not read it). */
+  async accountsClientLoginTargetQuiet(customerId: string): Promise<{ name: string; businessName: string } | null> {
+    const { data, error } = await this.db.rpc('client_login_invite_target', { p_customer: customerId });
+    return error || !data ? null : (data as { name: string; businessName: string });
+  }
+
+  // ---- onboarding journey: Meta verification, the Meta Verifier, service setup ----
+  async journeyStatus(customerId: string): Promise<CustomerJourneyStatus> {
+    return unwrap(await this.db.rpc('customer_journey_status', { p_customer: customerId })) as CustomerJourneyStatus;
+  }
+
+  async setMetaVerification(customerId: string, status: string, feedback: string | null): Promise<void> {
+    unwrap(await this.db.rpc('set_meta_verification', { p_customer: customerId, p_status: status, p_feedback: feedback }));
+  }
+
+  async assignMetaVerifier(customerId: string, verifierId: string | null): Promise<void> {
+    unwrap(await this.db.rpc('assign_meta_verifier', { p_customer: customerId, p_verifier: verifierId }));
+  }
+
+  async metaVerifierCandidates(customerId: string): Promise<{ id: string; fullName: string }[]> {
+    return (unwrap(await this.db.rpc('meta_verifier_candidates', { p_customer: customerId })) as { id: string; fullName: string }[] | null) ?? [];
+  }
+
+  async setServiceSetup(customerId: string, service: string, status: string, note: string | null): Promise<void> {
+    unwrap(await this.db.rpc('set_service_setup', { p_customer: customerId, p_service: service, p_status: status, p_note: note }));
   }
 
   async accountsClientLoginBegin(customerId: string, email: string): Promise<void> {

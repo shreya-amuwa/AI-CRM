@@ -34,6 +34,8 @@ const RequestDetail: React.FC<{
   const { journey, reload: reloadJourney } = useJourney(pending || item.status === 'CONFIRMED' ? item.id : null);
   // A direct-journey customer needs its dashboard login first (the database enforces it; this only tells the person why).
   const needsLogin = journey?.journey === 'DIRECT' && journey.clientLogin.status !== 'CREATED';
+  // every other customer's login is made automatically when the payment is confirmed; the card below lets Accounts make it by hand if it could not be
+  const showLoginCard = !!journey && item.status !== 'RETURNED' && (journey.journey === 'DIRECT' || (item.status === 'CONFIRMED' && journey.clientLogin.status !== 'CREATED'));
   const canConfirm = pending && hasVerified && (journey ? journey.can.returnToSales : true);
 
   return (
@@ -95,7 +97,7 @@ const RequestDetail: React.FC<{
         </div>
 
         {journey && <JourneyStrip journey={journey} />}
-        {journey && journey.journey === 'DIRECT' && item.status !== 'RETURNED' && (
+        {journey && showLoginCard && (
           <ClientLoginCard journey={journey} customerId={item.id} defaultEmail={item.email} onChanged={() => { reloadJourney(); onChanged(); }} />
         )}
 
@@ -159,9 +161,12 @@ const RequestDetail: React.FC<{
           required={false}
           onClose={() => setConfirmOpen(false)}
           onConfirm={async note => {
-            await pipelineApi.confirmPaymentAndReturn(item.id, note);
+            const { clientLogin } = await pipelineApi.confirmPaymentAndReturn(item.id, note);
             setConfirmOpen(false);
-            onResolved(`${name} confirmed and returned to Sales for onboarding.`);
+            const login = clientLogin.status === 'CREATED'
+              ? ` The client dashboard login (${clientLogin.email}) was created${clientLogin.mail === 'SENT' ? ' and e-mailed to the client.' : `, but the e-mail was not sent${clientLogin.detail ? ` (${clientLogin.detail})` : ''}: use "Send set-password e-mail" on the customer.`}`
+              : clientLogin.status === 'EXISTS' ? '' : ` The client login was not created: ${clientLogin.detail ?? 'create it from the customer.'}`;
+            onResolved(`${name} confirmed and returned to Sales for onboarding.${login}`);
           }}
         />
       )}

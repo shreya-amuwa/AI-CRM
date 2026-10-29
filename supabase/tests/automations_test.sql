@@ -67,6 +67,7 @@ select test.check((select count(*) = 0 from automation_jobs where customer_id in
 
 -- Reaching the Technical Consultant (Accounts confirmed) sends nothing yet
 select private.forward_to_consultant(a.id, c, false) from au a join customers c on c.id = a.id;
+update customer_onboarding set accounts_confirmed_at = coalesce(accounts_confirmed_at, now()) where customer_id in (select id from au);
 select test.check((select count(*) = 0 from automation_jobs where customer_id in (select id from au))
                    and (select bool_and(client_status is null) from customer_onboarding where customer_id in (select id from au)),
   'reaching the Technical Consultant sends nothing: the messages wait for "Send for onboarding"');
@@ -111,8 +112,7 @@ select test.check((select count(*) = 2 from automation_jobs where customer_id = 
 -- Step 2: the TC authorizes every document (website already there)
 set role authenticated;
 select test.login('late_consultant');
-select test.must_fail($$select assert_client_account_allowed((select id from au where name = 'early'), 'early.client@example.com')$$,
-  'the client login cannot be created before the Meta Verification step', 'Save the customer''s website link');
+select assert_client_account_allowed((select id from au where name = 'early'), 'early.client@example.com');
 select verify_all_onboarding_entries((select id from au where name = 'site'));
 reset role;
 select test.check((select client_status = 'META_VERIFICATION' from customer_onboarding where customer_id = (select id from au where name = 'site'))
@@ -173,7 +173,7 @@ select test.check((select count(*) = 6 from automation_jobs where customer_id = 
 select test.check((select count(*) = 0 from automation_jobs where customer_id = (select id from au where name = 'site') and stage = 'WEBSITE_READY'),
   'a customer who had a website from the start gets no "website ready" message');
 
--- Step 3: the TC creates the client login; the encrypted password rides only on the email job
+-- Step 3: the client login no longer means "Meta Verification completed": the TC completes the Meta status (after the login exists)
 set role authenticated;
 select test.login('late_consultant');
 select assert_client_account_allowed((select id from au where name = 'site'), 'site.client@example.com');
@@ -190,13 +190,19 @@ select test.login('late_consultant');
 select record_client_account((select id from au where name = 'site'), test.id('client_site'), 'site.client@example.com', 'v1:iv:tag:ciphertext');
 select test.check(coalesce(current_setting('crm.automation_secret', true), '') = '', 'the password is not left in the session');
 reset role;
+select test.check((select client_status = 'META_VERIFICATION' from customer_onboarding where customer_id = (select id from au where name = 'site'))
+                   and (select count(*) = 0 from automation_jobs where customer_id = (select id from au where name = 'site') and stage = 'COMPLETED'),
+  'creating the client login does not complete anything: Meta verification is still in progress');
+select test.check((select count(*) = 0 from automation_jobs where secret is not null), 'no password is kept for any job: the client sets or is given it outside the outbox');
+set role authenticated;
+select test.login('late_consultant');
+select test.must_fail($$select set_meta_verification((select id from au where name = 'site'), 'COMPLETED', null)$$, 'Meta verification cannot be completed before the consultant''s own items (WABA ID) are done', 'Authorize every document');
+select save_consultant_entry((select id from au where name = 'site'), 'WABA_ID', '123456789012345');
+select set_meta_verification((select id from au where name = 'site'), 'COMPLETED', null);
+reset role;
 select test.check((select client_status = 'COMPLETED' from customer_onboarding where customer_id = (select id from au where name = 'site'))
                    and (select count(*) = 2 from automation_jobs where customer_id = (select id from au where name = 'site') and stage = 'COMPLETED'),
-  'client login created: Status Completed email + WhatsApp queued');
-select test.check((select secret = 'v1:iv:tag:ciphertext' from automation_jobs where customer_id = (select id from au where name = 'site') and stage = 'COMPLETED' and channel = 'EMAIL')
-                   and (select secret is null from automation_jobs where customer_id = (select id from au where name = 'site') and stage = 'COMPLETED' and channel = 'WHATSAPP')
-                   and (select count(*) = 1 from automation_jobs where secret is not null),
-  'the encrypted password is kept only on the completion email job');
+  'Meta verification completed: Status Completed email + WhatsApp queued');
 -- Moving the review back after completion changes nothing
 update customer_onboarding set returned_at = now() where customer_id = (select id from au where name = 'site');
 update customer_onboarding set returned_at = null where customer_id = (select id from au where name = 'site');
@@ -231,9 +237,9 @@ select test.check((select jsonb_array_length(automation_claim_jobs(array['EMAIL'
 select test.check((select j -> 'customer' ->> 'email' = 'site.owner@example.com' and j -> 'customer' ->> 'whatsapp' = '+91 98199 00011'
                           and j -> 'customer' ->> 'departmentSlug' = 'wabastore' and j -> 'customer' ->> 'department' = 'Wabastore'
                           and j -> 'customer' ->> 'website' = 'https://www.site-traders.example' and j -> 'customer' ->> 'loginEmail' = 'site.client@example.com'
-                          and j ->> 'secret' = 'v1:iv:tag:ciphertext'
+                          and j ->> 'secret' is null
                      from claimed where j ->> 'stage' = 'COMPLETED'),
-  'a claimed job carries the customer''s current details, login e-mail and the encrypted password');
+  'a claimed job carries the customer''s current details and login e-mail (and no password)');
 select test.check((select j -> 'customer' ->> 'whatsapp' = '9819900022' from claimed where j ->> 'stage' = 'WEBSITE_PENDING'),
   'without a WhatsApp number the phone number is used');
 
