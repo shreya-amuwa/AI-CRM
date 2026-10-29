@@ -621,8 +621,12 @@ export interface CustomerOnboarding {
   /** Documents verified + verified payment + through Accounts (calculated by the database). */
   getStarted: boolean;
   startedAt: string;
+  /** Older records only: a date typed by hand (nobody is asked for it any more). */
   targetHandoverDate: string | null;
+  /** When the customer was handed over to the Meta Verifier / Technical Consultant: written by the database at the moment of the handover. */
   forwardedToSupportAt: string | null;
+  /** The first handover, kept for good (the one above is cleared when the verifier sends the customer back). */
+  firstHandedOverAt?: string | null;
   /** Set when the Technical Consultant sent it back for re-verification. */
   returnedAt: string | null;
   returnNote: string | null;
@@ -1656,6 +1660,10 @@ export interface ClientProfile {
   department: string | null;
   loginEmail: string;
   clientSince: string;
+  /** True after Accounts gave a temporary password: until the client chooses their own, the dashboard shows only the change-password screen. */
+  mustChangePassword?: boolean;
+  /** The sign-in's own id (from the server; never sent back by the client). */
+  loginId?: string;
 }
 export type ClientServiceStatus = 'LIVE' | 'SETTING_UP' | 'PAUSED' | 'EXPIRED' | 'CANCELLED';
 export interface ClientService {
@@ -2219,6 +2227,10 @@ export interface ProvisioningRow {
   createdAt: string | null;
   createdBy: string | null;
   loginEmail: string | null;
+  /** How the login was made (LINK: set-password link; TEMPORARY: temporary password) and whether the client has since chosen their own. */
+  accessMethod?: ClientAccessMethod | null;
+  mustChangePassword?: boolean | null;
+  passwordChangedAt?: string | null;
   notification: { email: AccountNotificationState | null; whatsapp: AccountNotificationState | null } | null;
   can: { create: boolean; fixEmail: boolean; resend: boolean };
 }
@@ -3843,12 +3855,21 @@ export interface PanelDetailsService {
   name: string;
   platform: string | null;
   panelAccount: string | null;
+  /** Whether a panel password was set for the customer, and what happened to the e-mail that carried it. Never the password. */
+  credentials?: {
+    setAt: string;
+    setBy: string | null;
+    email: { status: string; detail: string | null; sentAt: string | null; to: string | null } | null;
+  } | null;
 }
 export interface PanelDetails {
   canEdit: boolean;
   services: PanelDetailsService[];
+  /** The address a panel password is e-mailed to (the one on the customer record), or null when there is none. */
+  customerEmail?: string | null;
   dashboardLogin: { email: string; createdAt: string } | null;
 }
+export type ClientAccessMethod = 'LINK' | 'TEMPORARY';
 /** A customer already in verification whose services say another route than the one it has: for the Super Admin or the Department Head to decide. */
 export interface VerificationRouteReviewItem {
   customerId: string;

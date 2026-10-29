@@ -93,6 +93,8 @@ select test.must_fail($$select accounts_set_customer_email((select id from cp wh
 reset role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', false);
 set role service_role;
+-- the staff e-mails to Accounts that earlier suites queued (one per Accounts member now) are not this test's business: they are done, so the batch below reaches the login e-mails
+update automation_jobs set status = 'SENT' where stage = 'ACCOUNTS_PAYMENT' and status in ('QUEUED', 'SENDING');
 create temp table cp_claimed (j jsonb);
 grant all on cp_claimed to service_role;
 insert into cp_claimed select jsonb_array_elements(automation_claim_jobs(array['EMAIL'], 200)) ;

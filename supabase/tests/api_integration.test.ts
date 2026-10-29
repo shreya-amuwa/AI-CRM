@@ -1629,6 +1629,69 @@ check(r.status === 200 && r.json.data.automated === false && r.json.data.stage =
   check(r.status === 404, 'workflow: the Technical Consultant cannot write the panel details of a Meta customer', r);
   check((await db.query(`select count(*)::int as n from public.audit_logs where action = 'SERVICE_PANEL_DETAILS_SET' and metadata::text like '%flow.one%'`)).rows[0].n === 0, 'workflow: the audit never holds the values');
 
+  // The Meta Verifier sets the password on the (external) panel and the CRM e-mails it to the customer once, keeping nothing
+  {
+    const modeBefore = process.env.AUTOMATION_MODE;
+    // the API dispatches right after a change when sending is on; here it is switched off while jobs are queued, then on for one explicit run
+    const go = async () => { process.env.AUTOMATION_MODE = 'live'; await dispatch('dispatch-secret-0123456789'); process.env.AUTOMATION_MODE = 'off'; };
+    process.env.AUTOMATION_MODE = 'off';
+    const credPath = `/pipeline/customers/${wf}/verification/panel-details/${waCode}/credentials`;
+    const panelPw = 'Pnl#Secret-2026';
+    const reqId = crypto.randomUUID();
+    r = await api('mv', 'POST', credPath, { password: 'short', requestId: reqId });
+    check(r.status === 422, 'panel password: too short is refused', r);
+    r = await api('mv', 'POST', credPath, { password: panelPw });
+    check(r.status === 422, 'panel password: a request id is required', r);
+    r = await api('mv', 'POST', credPath, { password: panelPw, requestId: reqId, email: 'someone.else@example.com' });
+    check(r.status === 422, 'panel password: there is no e-mail field - the address is the one on the record', r);
+    for (const [who, label] of [['a', 'Sales'], ['tc', 'the Technical Consultant'], ['accm', 'Accounts']] as const) {
+      r = await api(who, 'POST', credPath, { password: panelPw, requestId: crypto.randomUUID() });
+      check(r.status === 403 || r.status === 404, `panel password: ${label} cannot set it`, r);
+    }
+    r = await api(null, 'POST', credPath, { password: panelPw, requestId: crypto.randomUUID() });
+    check(r.status === 401, 'panel password: no session is refused', r);
+    check((await db.query(`select count(*)::int n from public.automation_jobs where stage = 'PANEL_CREDENTIALS'`)).rows[0].n === 0, 'panel password: no refusal queued anything');
+    const mailsBefore = outbox.filter(o => o.path === '/emails').length;
+    r = await api('mv', 'POST', credPath, { password: panelPw, requestId: reqId });
+    const cred = r.json?.data?.services?.find((x: any) => x.code === waCode)?.credentials;
+    check(r.status === 200 && cred && cred.setBy === 'Meta Verifier' && cred.email?.status === 'QUEUED' && r.json.data.customerEmail === 'flow.one@example.com', 'panel password: set - the section shows who set it and that the e-mail is waiting', r);
+    check(!JSON.stringify(r.json).includes(panelPw), 'panel password: the response never carries the password');
+    r = await api('mv', 'POST', credPath, { password: panelPw, requestId: reqId });
+    check(r.status === 200, 'panel password: the same request again is accepted and does nothing more', r);
+    check((await db.query(`select count(*)::int n, bool_and(secret is not null and secret like 'v1:%' and secret not like '%' || $2 || '%') as enc from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS'`, [wf, panelPw])).rows[0].enc === true
+      && (await db.query(`select count(*)::int n from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS'`, [wf])).rows[0].n === 1, 'panel password: one job, and the password on it is encrypted');
+    await go();
+    const panelMails = outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => /panel login/i.test(o.body.subject));
+    check(panelMails.length === 1 && panelMails[0].body.to?.[0] === 'flow.one@example.com', 'panel password: exactly one e-mail, to the customer\'s address on the record', panelMails.map(m => m.body.to));
+    const pm = panelMails[0].body;
+    check(pm.html.includes(panelPw) && pm.html.includes('WhatsApp panel') && pm.html.includes('flow.one@example.com') && /separate from your Amuwa client dashboard/i.test(pm.html)
+      && !/temporary password/i.test(pm.html) && /Dear Flow One,/.test(pm.html), 'panel password: the e-mail names the panel, the account and the password, and says it is not the dashboard login', pm.html);
+    const pj = (await db.query(`select status, secret, detail, recipient from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS'`, [wf])).rows[0];
+    check(pj.status === 'SENT' && pj.secret === null && pj.recipient === 'flow.one@example.com' && !String(pj.detail).includes(panelPw), 'panel password: the job is sent, the password is erased, and nothing about it is in the result', pj);
+    r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+    check(r.json.data.services.find((x: any) => x.code === waCode).credentials?.email?.status === 'SENT' && !JSON.stringify(r.json).includes(panelPw), 'panel password: the screen shows configured and sent', r);
+    const leaks = (await db.query(`select (select count(*)::int from public.customer_activities where note like '%' || $1 || '%')
+        + (select count(*)::int from public.audit_logs where metadata::text like '%' || $1 || '%')
+        + (select count(*)::int from public.notifications where body like '%' || $1 || '%') as n`, [panelPw])).rows[0].n;
+    check(leaks === 0, 'panel password: it is in no history line, audit entry or notification');
+    // a provider failure: shown as failed and never as sent; the retry still has the password, and the customer gets one e-mail
+    const mails2 = outbox.filter(o => o.path === '/emails').length;
+    failNext['/emails'] = [503];
+    r = await api('mv', 'POST', credPath, { password: 'Second#Pass-77', requestId: crypto.randomUUID() });
+    check(r.status === 200, 'panel password: a new password with a new request', r);
+    await go();
+    let pj2 = (await db.query(`select status, secret, attempts from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS' order by created_at desc limit 1`, [wf])).rows[0];
+    check(pj2.status === 'QUEUED' && pj2.secret !== null && pj2.attempts === 1, 'panel password: after a provider failure the job waits for a retry and still holds the password', pj2);
+    r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+    check(r.json.data.services.find((x: any) => x.code === waCode).credentials.email.status === 'QUEUED', 'panel password: and the screen does not say it was sent', r);
+    await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and stage = 'PANEL_CREDENTIALS' and status = 'QUEUED'`, [wf]);
+    await go();
+    const retried = outbox.filter(o => o.path === '/emails').slice(mails2).filter(o => /panel login/i.test(o.body.subject) && o.body.to?.[0] === 'flow.one@example.com');
+    pj2 = (await db.query(`select status, secret from public.automation_jobs where customer_id = $1 and stage = 'PANEL_CREDENTIALS' order by created_at desc limit 1`, [wf])).rows[0];
+    check(retried.length === 2 && retried[retried.length - 1].body.html.includes('Second#Pass-77') && pj2.status === 'SENT' && pj2.secret === null, 'panel password: the retry delivers it once and erases it', pj2);
+    if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+  }
+
   // settings: the delay has no default and only the Super Admin sets it
   r = await api('sa', 'GET', '/workflow/settings');
   check(r.status === 200 && r.json.data.tcFollowupDelayDays === null && r.json.data.canEdit === true, 'workflow: the follow-up delay has no default', r);
@@ -1841,28 +1904,181 @@ d = await dispatch('dispatch-secret-0123456789');
 jobs = await jobsOf(autoD);
 check(jobs.some(j => j.channel === 'EMAIL' && j.status === 'SKIPPED' && j.detail === 'Invalid client email – nothing sent')
   && jobs.some(j => j.channel === 'WHATSAPP' && j.status === 'SENT'), 'no email address: the email is skipped, the WhatsApp still goes', jobs);
-// --- Payment requests are emailed to the one Accounts person who handles them ---
+// --- Payment requests are emailed to EVERY active Accounts member (one e-mail each) ---
 process.env.APP_URL = 'https://crm.example.test';
-const accEmail = (await db.query(`select p.email from public.profiles p join public.departments d on d.id = p.department_id
-                                     where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id limit 1`)).rows[0].email as string;
+const accEmails = (await db.query(`select p.email from public.profiles p join public.departments d on d.id = p.department_id
+                                     where d.slug = 'accounts' and p.status = 'ACTIVE' order by p.created_at, p.id`)).rows.map((x: any) => x.email as string);
+check(accEmails.length >= 2, 'there are two Accounts members configured', accEmails);
 r = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], name: 'Pay Request', company: 'Pay Request Co', phone: '9819900033' });
 const payReq = r.json.data.id as string;
 const mailsBefore = outbox.filter(o => o.path === '/emails').length;
 r = await api('a', 'POST', `/pipeline/customers/${payReq}/send-to-accounts`, { amount: 25000, note: 'Agreed on the call' });
 check(r.status === 200 || r.status === 201, 'Sales sends the customer for payment confirmation', r);
 await dispatch('dispatch-secret-0123456789');
-const accMail = outbox.filter(o => o.path === '/emails').slice(mailsBefore).find(o => o.body.to?.[0] === accEmail);
-check(accMail && accMail.body.subject === 'New payment confirmation request: Pay Request Co | Amuwa CRM' && accMail.body.html.includes('Sales sent a customer for payment confirmation')
-  && accMail.body.html.includes('Sent by') && accMail.body.html.includes(`href="https://crm.example.test/accounts/dashboard/${payReq}"`) && accMail.body.from === 'Amuwa Corporation <meta@amuwa.com>',
-  'the Accounts person gets an email about the payment request, with the sender and a link to it', accMail?.body);
-check(outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => o.body.subject.startsWith('New payment confirmation request')).length === 1,
-  'exactly one person is emailed (not every Accounts staff member)');
+const reqMails = outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => o.body.subject.startsWith('New payment confirmation request'));
+check(reqMails.length === accEmails.length && accEmails.every(e => reqMails.some(m => m.body.to?.[0] === e)), 'every active Accounts member gets the email, exactly once each', reqMails.map(m => m.body.to));
+const accMail = reqMails[0];
+check(accMail.body.subject === 'New payment confirmation request: Pay Request Co | Amuwa CRM' && accMail.body.html.includes('Sales sent a customer for payment confirmation')
+  && accMail.body.html.includes('Sent by') && accMail.body.html.includes('Reference:') && accMail.body.html.includes(`href="https://crm.example.test/accounts/dashboard/${payReq}"`) && accMail.body.from === 'Amuwa Corporation <meta@amuwa.com>',
+  'the email names the customer, its reference and the sender, tells what to do and links to the request', accMail?.body);
+check(reqMails.every(m => !/25,000|25000/.test(m.body.html) && !m.body.html.includes('9819900033')), 'and carries no amount and no customer phone');
 check(!outbox.some(o => o.path === '/wa' && o.body.name === 'Pay Request'), 'no WhatsApp goes out for a payment request');
 r = await api('a', 'GET', `/pipeline/customers/${payReq}/client-messages`);
-check(r.status === 200 && !JSON.stringify(r.json.data).includes(accEmail) && !r.json.data.messages.some((m: any) => m.stage === 'ACCOUNTS_PAYMENT'),
-  'Sales does not see the staff email or its address on the customer');
-const payJob = (await db.query(`select status, internal, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT'`, [payReq])).rows;
-check(payJob.length === 1 && payJob[0].status === 'SENT' && payJob[0].internal && payJob[0].recipient === accEmail, 'the job is recorded as sent to that person', payJob);
+check(r.status === 200 && !accEmails.some(e => JSON.stringify(r.json.data).includes(e)) && !r.json.data.messages.some((m: any) => m.stage === 'ACCOUNTS_PAYMENT'),
+  'Sales does not see the staff emails or their addresses on the customer');
+const payJob = (await db.query(`select status, internal, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT' order by recipient`, [payReq])).rows;
+check(payJob.length === accEmails.length && payJob.every((j: any) => j.status === 'SENT' && j.internal) && accEmails.every(e => payJob.some((j: any) => j.recipient === e)), 'each recipient has a job of their own, recorded as sent', payJob);
+// the provider fails for one of them: that one is retried, the other is not held back
+r = await api('a', 'POST', '/pipeline/leads', { leadSource: 'Walk-in', services: ['WHATSAPP_API_BLUE_TICK'], name: 'Pay Failing', company: 'Pay Failing Co', phone: '9819900034' });
+const payFail = r.json.data.id as string;
+failNext['/emails'] = [503];
+await api('a', 'POST', `/pipeline/customers/${payFail}/send-to-accounts`, { amount: 12000 });
+await dispatch('dispatch-secret-0123456789');
+const failJobs = (await db.query(`select status, recipient from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNTS_PAYMENT'`, [payFail])).rows;
+check(failJobs.length === accEmails.length && failJobs.filter((j: any) => j.status === 'SENT').length === accEmails.length - 1 && failJobs.filter((j: any) => j.status !== 'SENT').length === 1,
+  'a provider failure for one Accounts member is that member\'s retry; the others are sent', failJobs);
+
+// --- Accounts creates the dashboard login with a TEMPORARY password: the server makes it, one e-mail carries it, the client must replace it ---
+{
+  const modeBefore = process.env.AUTOMATION_MODE;
+  const go = async () => { process.env.AUTOMATION_MODE = 'live'; await dispatch('dispatch-secret-0123456789'); process.env.AUTOMATION_MODE = 'off'; };
+  process.env.AUTOMATION_MODE = 'off';
+  const recipientsBefore = process.env.AUTOMATION_TEST_RECIPIENTS;
+  delete process.env.AUTOMATION_TEST_RECIPIENTS; // these customers are real-looking addresses of this test only; nothing leaves the mock provider
+  const signIn = async (email: string, password: string) => {
+    const x = await fetch(`${process.env.GATEWAY_URL}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    return x.status;
+  };
+  const tempCustomer = async (tag: string) => {
+    const id = await autoCustomer({ name: `Temp ${tag}`, company: `Temp ${tag} Co`, email: `temp.${tag.toLowerCase()}@example.com`, whatsapp: `98199001${tag === 'One' ? '11' : tag === 'Two' ? '12' : '13'}`, phone: `98199002${tag === 'One' ? '11' : tag === 'Two' ? '12' : '13'}` }, null);
+    await db.query(`update public.customers set deal_amount = 1000, amount_received = 1000, amount_verified = 500 where id = $1`, [id]);
+    await db.query(`update public.customer_onboarding set accounts_confirmed_at = coalesce(accounts_confirmed_at, now()) where customer_id = $1`, [id]);
+    return id;
+  };
+  const temporaryOf = (mail: any) => /Temporary password:<\/b>\s*([^<\s]+)/.exec(mail.body.html)?.[1] as string;
+  const dashMails = (email: string, from: number) => outbox.filter(o => o.path === '/emails').slice(from).filter(o => o.body.to?.[0] === email && /client dashboard/i.test(o.body.subject));
+
+  const t1 = await tempCustomer('One');
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'SMS' });
+  check(r.status === 422, 'temporary login: an unknown method is refused', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY', password: 'Chosen#By-Browser1' });
+  check(r.status === 422, 'temporary login: the browser cannot send a password', r);
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY', email: 'other@example.com' });
+  check(r.status === 422, 'temporary login: nor an e-mail', r);
+  for (const who of ['a', 'tc', 'mv'] as const) {
+    r = await api(who, 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+    check(r.status === 403 || r.status === 404, `temporary login: ${who} cannot create a login`, r);
+  }
+  check((await db.query(`select count(*)::int n from public.customer_client_accounts where customer_id = $1`, [t1])).rows[0].n === 0, 'temporary login: the refusals created nothing');
+
+  // without the server key a temporary password cannot be handed over safely: refused before anything is made
+  const keyBefore = process.env.AUTOMATION_SECRET_KEY;
+  delete process.env.AUTOMATION_SECRET_KEY;
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+  process.env.AUTOMATION_SECRET_KEY = keyBefore;
+  check(r.status === 503 && /AUTOMATION_SECRET_KEY/.test(r.json.error.message), 'temporary login: refused when the server has no secret key', r);
+  check((await db.query(`select count(*)::int n from public.customer_client_accounts where customer_id = $1`, [t1])).rows[0].n === 0
+    && (await db.query(`select count(*)::int n from public.customer_client_provisioning where customer_id = $1`, [t1])).rows[0].n === 0, 'temporary login: and nothing was started');
+
+  const m0 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+  check(r.status === 201 && r.json.data.email === 'temp.one@example.com' && r.json.data.method === 'TEMPORARY' && !JSON.stringify(r.json).match(/pass/i), 'temporary login: created with the e-mail on the record; the response carries no password', r);
+  const acc1 = (await db.query(`select auth_user_id, must_change_password, access_method from public.customer_client_accounts where customer_id = $1`, [t1])).rows[0];
+  check(acc1.must_change_password === true && acc1.access_method === 'TEMPORARY', 'temporary login: the client must choose their own password', acc1);
+  const queued = (await db.query(`select channel, secret, context from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' order by channel`, [t1])).rows;
+  check(queued.length === 2 && /^v1:/.test(queued.find((j: any) => j.channel === 'EMAIL').secret) && queued.find((j: any) => j.channel === 'WHATSAPP').secret === null
+    && JSON.stringify(queued).indexOf('Temporary') === -1, 'temporary login: the password is on the e-mail job only, and encrypted', queued);
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/client-login`, { method: 'TEMPORARY' });
+  check(r.status === 409, 'temporary login: a second click makes no second login', r);
+  await go();
+  const sent1 = dashMails('temp.one@example.com', m0);
+  check(sent1.length === 1 && sent1[0].body.subject === 'Your Amuwa client dashboard - temporary sign-in details' && /Dear Temp One,/.test(sent1[0].body.html)
+    && sent1[0].body.html.includes('https://crm.example.test/client/login') && /choose your own password/i.test(sent1[0].body.html) && !/panel/i.test(sent1[0].body.html), 'temporary login: one e-mail to the customer, naming the dashboard, with the sign-in address', sent1.map(x => x.body.subject));
+  const tp1 = temporaryOf(sent1[0]);
+  check(tp1 && tp1.length >= 12 && /[A-Z]/.test(tp1) && /[a-z]/.test(tp1) && /\d/.test(tp1), 'temporary login: the password is strong and random', tp1?.length);
+  check((await db.query(`select status, secret, detail from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'`, [t1])).rows.every((j: any) => j.status === 'SENT' && j.secret === null && !String(j.detail).includes(tp1)), 'temporary login: sent, and the stored password is erased');
+  const wa1 = outbox.filter(o => o.path === '/wa').slice(-3).filter(o => o.body.name === 'Temp One');
+  check(!JSON.stringify(outbox.filter(o => o.path === '/wa')).includes(tp1), 'temporary login: the password never goes to WhatsApp', wa1.length);
+  const leak1 = (await db.query(`select (select count(*)::int from public.customer_activities where note like '%' || $1 || '%') + (select count(*)::int from public.audit_logs where metadata::text like '%' || $1 || '%') + (select count(*)::int from public.notifications where body like '%' || $1 || '%') as n`, [tp1])).rows[0].n;
+  check(leak1 === 0, 'temporary login: it is in no history, audit or notification');
+
+  check(await signIn('temp.one@example.com', tp1) === 200, 'temporary login: the client signs in with the emailed password');
+  tokens.set('tempone', tokenFor(acc1.auth_user_id));
+  r = await api('tempone', 'GET', '/client/me');
+  check(r.status === 200 && r.json.data.mustChangePassword === true && r.json.data.customerId === t1, 'temporary login: the dashboard knows the password must change', r);
+  for (const path of ['/client/overview', '/client/services', '/client/invoices', '/client/tickets', '/client/documents']) {
+    r = await api('tempone', 'GET', path);
+    check(r.status === 403 && /own password/i.test(r.json.error.message), `temporary login: ${path} is closed until the password is replaced`, r);
+  }
+  r = await api('tempone', 'POST', '/client/password', { password: tp1 });
+  check(r.status === 422, 'temporary login: the temporary password cannot be chosen again', r);
+  r = await api('tempone', 'POST', '/client/password', { password: 'short' });
+  check(r.status === 422, 'temporary login: too short is refused', r);
+  r = await api('tempone', 'POST', '/client/password', { password: 'Brand#New-Pass-2026', login: 'x' });
+  check(r.status === 422, 'temporary login: nothing but the password is accepted', r);
+  check(await signIn('temp.one@example.com', tp1) === 200, 'temporary login: refused attempts changed nothing');
+  r = await api('tempone', 'POST', '/client/password', { password: 'Brand#New-Pass-2026' });
+  check(r.status === 200 && r.json.data.changed === true, 'temporary login: the client chooses their own password', r);
+  check(await signIn('temp.one@example.com', tp1) === 400 && await signIn('temp.one@example.com', 'Brand#New-Pass-2026') === 200, 'temporary login: the temporary password stops working; the new one signs in');
+  r = await api('tempone', 'GET', '/client/me');
+  check(r.json.data.mustChangePassword === false, 'temporary login: the flag is cleared', r);
+  r = await api('tempone', 'GET', '/client/services');
+  check(r.status === 200, 'temporary login: the dashboard opens', r);
+  check((await db.query(`select count(*)::int n from public.customer_activities where customer_id = $1 and type = 'CLIENT_PASSWORD_CHANGED' and note not like '%Brand%'`, [t1])).rows[0].n === 1
+    && (await db.query(`select count(*)::int n from public.audit_logs where entity_id = $1 and metadata::text like '%Brand%'`, [t1])).rows[0].n === 0, 'temporary login: the change is in the history, without any password');
+  r = await api('accm', 'GET', '/pipeline/accounts/client-logins?status=CREATED&search=Temp%20One');
+  const row1 = r.json.data.items[0];
+  check(row1 && row1.accessMethod === 'TEMPORARY' && row1.mustChangePassword === false && row1.loginEmail === 'temp.one@example.com' && row1.notification.email.status === 'SENT' && !JSON.stringify(r.json).includes(tp1), 'temporary login: Accounts sees the method, that the client has chosen their own, and that the e-mail was sent', row1);
+  // sending again after the client chose their own password: the set-password link, never a new temporary password
+  await db.query(`update public.automation_jobs set sent_at = now() - interval '11 minutes' where customer_id = $1 and stage = 'ACCOUNT_CREATED'`, [t1]);
+  const m1 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t1}/accounts/account-email/resend`, {});
+  check(r.status === 200, 'temporary login: Accounts can send the e-mail again', r);
+  await go();
+  const again = dashMails('temp.one@example.com', m1);
+  check(again.length === 1 && again[0].body.subject === 'Your Amuwa client dashboard - set your password' && !/Temporary password/i.test(again[0].body.html), 'temporary login: a client who chose their own password gets the set-password link, not a new temporary password', again.map(x => x.body.subject));
+  check(await signIn('temp.one@example.com', 'Brand#New-Pass-2026') === 200, 'temporary login: and their password is untouched');
+
+  // a client who has not replaced the temporary password: Accounts resends and gets a NEW one; the old one stops working
+  const t2 = await tempCustomer('Two');
+  const m2 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t2}/accounts/client-login`, { method: 'TEMPORARY' });
+  check(r.status === 201, 'temporary login: second customer created', r);
+  await go();
+  const first2 = dashMails('temp.two@example.com', m2);
+  const tp2 = temporaryOf(first2[0]);
+  r = await api('accm', 'POST', `/pipeline/customers/${t2}/accounts/account-email/resend`, {});
+  check(r.status === 409, 'temporary login: a resend a moment after the first is refused, and the password still works', r);
+  check(await signIn('temp.two@example.com', tp2) === 200, 'temporary login: a refused resend did not invalidate the password the client holds');
+  await db.query(`update public.automation_jobs set sent_at = now() - interval '11 minutes' where customer_id = $1 and stage = 'ACCOUNT_CREATED'`, [t2]);
+  r = await api('accm', 'POST', `/pipeline/customers/${t2}/accounts/account-email/resend`, {});
+  check(r.status === 200, 'temporary login: Accounts sends the sign-in e-mail again', r);
+  await go();
+  const second2 = dashMails('temp.two@example.com', m2);
+  const tp2b = temporaryOf(second2[second2.length - 1]);
+  check(second2.length === 2 && tp2b && tp2b !== tp2, 'temporary login: the second e-mail carries a new temporary password', second2.length);
+  check(await signIn('temp.two@example.com', tp2) === 400 && await signIn('temp.two@example.com', tp2b) === 200, 'temporary login: the old temporary password no longer works');
+
+  // a provider failure: the login stays, the e-mail waits with its password, and the customer gets exactly one e-mail when it goes through
+  const t3 = await tempCustomer('Three');
+  await go(); // anything else waiting is sent first, so the failure below hits this customer's e-mail
+  const m3 = outbox.filter(o => o.path === '/emails').length;
+  r = await api('accm', 'POST', `/pipeline/customers/${t3}/accounts/client-login`, { method: 'TEMPORARY' });
+  failNext['/emails'] = [503];
+  check(r.status === 201, 'temporary login: created while the provider is failing', r);
+  await go();
+  const j3 = (await db.query(`select status, secret from public.automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'`, [t3])).rows[0];
+  check(j3.status === 'QUEUED' && j3.secret !== null, 'temporary login: a failed send is not reported as sent, and the retry still has the password', j3);
+  r = await api('accm', 'GET', '/pipeline/accounts/client-logins?status=CREATED&search=Temp%20Three');
+  check(r.json.data.items[0].notification.email.status !== 'SENT', 'temporary login: Accounts does not see "sent"', r.json.data.items[0]?.notification);
+  await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL'`, [t3]);
+  await go();
+  const mails3 = dashMails('temp.three@example.com', m3);
+  check(mails3.length === 2 && temporaryOf(mails3[1]) === temporaryOf(mails3[0]), 'temporary login: the retry carries the same password (the one that exists), not a second login', mails3.length);
+  check((await db.query(`select count(*)::int n from public.customer_client_accounts where customer_id = $1`, [t3])).rows[0].n === 1, 'temporary login: still one login');
+  if (recipientsBefore !== undefined) process.env.AUTOMATION_TEST_RECIPIENTS = recipientsBefore;
+  if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+}
 delete process.env.APP_URL;
 
 // --- Mobile numbers and websites must be real ---
@@ -2529,7 +2745,7 @@ provider.close();
   check(r.status === 401 || r.status === 403, 'a client cannot reach the staff API', r);
 
   r = await api('cl1', 'GET', '/client/me');
-  check(r.status === 200 && r.json.data.customerId === leadA && !JSON.stringify(r.json).toLowerCase().includes('password'), 'client API: /me is the customer linked to the login', r);
+  check(r.status === 200 && r.json.data.customerId === leadA && !JSON.stringify(r.json).toLowerCase().replace('mustchangepassword', '').includes('password'), 'client API: /me is the customer linked to the login (and carries no password, only the flag)', r);
   r = await api('cl2', 'GET', '/client/me');
   check(r.status === 200 && r.json.data.customerId === autoA, 'client API: another login gets their own customer', r);
 

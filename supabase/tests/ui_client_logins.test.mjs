@@ -92,9 +92,15 @@ const open = async (vp) => {
   check(!(await page.locator('input[type="password"]').count()), 'there is no password field anywhere');
   // create: the request carries no e-mail and no password
   await page.click('[data-testid="client-login-row"]:nth-child(1) >> text=Create login');
+  await page.waitForSelector('role=dialog[name=/Create the client dashboard login/]');
+  const choice = await page.locator('role=dialog >> input[type="radio"]').evaluateAll(rs => rs.map(r => r.checked));
+  check(choice.length === 2 && choice[0] && !choice[1], 'a choice is offered: the set-password link (default) or a temporary password');
+  check(/asha@rao\.example/.test(await page.locator('role=dialog').innerText()) && !(await page.locator('role=dialog').locator('input[type="password"], input[type="email"], input[type="text"]').count()), 'the dialog shows the e-mail on the record and has no field to type a password or an e-mail into');
+  await page.click('role=dialog >> text=Temporary password');
+  await page.click('role=dialog >> button:has-text("Create login")');
   await page.waitForSelector('[role="status"]:has-text("client login was created")');
   const created = await page.evaluate(() => window.__bodies.find(b => /client-login$/.test(b.path)));
-  check(created && JSON.stringify(created.body) === '{}', 'creating a login sends nothing but the customer in the address: no e-mail, no password', created);
+  check(created && JSON.stringify(created.body) === '{"method":"TEMPORARY"}', 'creating a login sends only the way in - no e-mail, no password', created);
   // fix the e-mail with a reason
   await page.click('[data-testid="client-login-row"]:nth-child(2) >> text=Correct e-mail');
   await page.waitForSelector('#fix-email');

@@ -654,8 +654,23 @@ export const conversationSchema = z.object({ note: trimmed(5000).min(1, 'Write w
 
 const wholeRupees = (message: string) => z.coerce.number().positive(message).int('Enter the amount in whole rupees (no paise).').max(1e12);
 
-/** Creating the login takes no input at all: the e-mail is the one on the customer record. */
-export const accountsClientLoginSchema = z.object({}).strict();
+/**
+ * Creating the login takes no e-mail: it is the one on the customer record. The only choice is HOW the client gets in:
+ * LINK (an e-mailed one-time set-password link, the default) or TEMPORARY (a server-made temporary password in the e-mail; the client
+ * must choose their own at the first sign-in). The password itself is never part of a request.
+ */
+export const accountsClientLoginSchema = z.object({ method: z.enum(['LINK', 'TEMPORARY']).default('LINK') }).strict();
+/** The client's own new password (forced change after a temporary one, or after the recovery link). The same rules as the set-password page. */
+export const clientNewPasswordSchema = z
+  .object({ password: z.string().min(10, 'Use at least 10 characters.').max(72, 'Use at most 72 characters.') })
+  .strict();
+/**
+ * Meta Verifier: the password they set on the customer's WhatsApp panel, to be e-mailed to the customer. `requestId` is made by the screen
+ * once per click-intent, so a retried request is not sent twice. The password is encrypted by the API before it reaches the database.
+ */
+export const panelCredentialsSchema = z
+  .object({ password: z.string().min(8, 'Use at least 8 characters.').max(128, 'Use at most 128 characters.'), requestId: uuidSchema })
+  .strict();
 /** Accounts' client-login queue. The login's e-mail is never part of a request: it is the one on the customer record. */
 export const provisioningQuerySchema = z.object({
   status: z.enum(['ALL', 'NOT_STARTED', 'PENDING', 'FAILED', 'CREATED']).default('ALL'),

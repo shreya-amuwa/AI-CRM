@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Mail, RefreshCw, Search } from 'lucide-react';
-import type { AccountNotificationState, ClientEmailProblem, ClientLoginStatus, ProvisioningFilter, ProvisioningQueue, ProvisioningRow } from '../../../shared/contracts';
+import type { AccountNotificationState, ClientAccessMethod, ClientEmailProblem, ClientLoginStatus, ProvisioningFilter, ProvisioningQueue, ProvisioningRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { useRealtime } from '../../lib/support';
@@ -87,6 +87,38 @@ const FixEmailDialog: React.FC<{ row: ProvisioningRow; onClose: () => void; onDo
 };
 
 /**
+ * How the client gets in. Nothing is typed here and no password is shown: with the temporary password the SERVER makes one and e-mails it
+ * to the address on the record, and the client must choose their own at the first sign-in.
+ */
+const CreateLoginDialog: React.FC<{ row: ProvisioningRow; busy: boolean; onClose: () => void; onCreate: (method: ClientAccessMethod) => void }> = ({ row, busy, onClose, onCreate }) => {
+  const [method, setMethod] = useState<ClientAccessMethod>('LINK');
+  return (
+    <Dialog title="Create the client dashboard login" description={`${row.company || row.name}: the login is made with the e-mail on the customer record.`} onClose={() => !busy && onClose()}>
+      <form onSubmit={e => { e.preventDefault(); onCreate(method); }} className="space-y-3">
+        <p className="text-xs text-slate-600">
+          Login e-mail: <span className="font-mono break-all text-slate-900">{row.email || 'none'}</span>
+        </p>
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold text-slate-700 mb-1">How should the client get in?</legend>
+          <label className="flex items-start gap-2 text-sm rounded-xl border border-slate-200 p-3 cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50/50">
+            <input type="radio" name="access-method" className="mt-1" checked={method === 'LINK'} onChange={() => setMethod('LINK')} disabled={busy} />
+            <span><b>Set-password link</b> (recommended)<br /><span className="text-xs text-slate-500">The client gets an e-mail with a one-time link and chooses their own password. No password is ever sent.</span></span>
+          </label>
+          <label className="flex items-start gap-2 text-sm rounded-xl border border-slate-200 p-3 cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50/50">
+            <input type="radio" name="access-method" className="mt-1" checked={method === 'TEMPORARY'} onChange={() => setMethod('TEMPORARY')} disabled={busy} />
+            <span><b>Temporary password</b><br /><span className="text-xs text-slate-500">A random password is made on the server and e-mailed to the client once; you never see it. The client must choose their own password the first time they sign in.</span></span>
+          </label>
+        </fieldset>
+        <div className="flex justify-end gap-2">
+          <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Working…' : 'Create login'}</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+};
+
+/**
  * Accounts: the client dashboard login of every customer with a verified payment, for every service. Each row shows the customer, its ID
  * and order, the e-mail on the record, the state of the login with its time and result (a failure keeps its reason), and what can be done:
  * create it, try again, correct the e-mail, or send the set-password e-mail again. Nobody types or sees a password.
@@ -102,6 +134,7 @@ export const ClientLogins: React.FC = () => {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [fixing, setFixing] = useState<ProvisioningRow | null>(null);
+  const [creating, setCreating] = useState<ProvisioningRow | null>(null);
 
   const load = useCallback(() => {
     pipelineApi.clientLogins({ status, search: debounced || undefined, page, pageSize }).then(
@@ -140,7 +173,7 @@ export const ClientLogins: React.FC = () => {
       <div>
         <h1 className="text-xl font-bold text-slate-900">Client Logins</h1>
         <p className="text-sm text-slate-500">
-          Accounts creates the dashboard login of every customer once a payment is verified. The customer gets an e-mail with a link to choose their own password.
+          Accounts creates the dashboard login of every customer once a payment is verified, with the e-mail on the customer record. The customer gets either a link to choose their own password or a temporary password they must replace at the first sign-in. This is the Client Dashboard login - the WhatsApp panel login is set by the Meta Verifier.
         </p>
       </div>
 
@@ -211,6 +244,13 @@ export const ClientLogins: React.FC = () => {
                       {r.createdBy && r.status === 'CREATED' ? ` · ${r.createdBy}` : ''}
                     </span>
                   </div>
+                  {r.status === 'CREATED' && (
+                    <p className="text-slate-600">
+                      {r.accessMethod === 'TEMPORARY'
+                        ? r.mustChangePassword ? 'Temporary password sent - the client has not chosen their own yet.' : `Temporary password replaced by the client${r.passwordChangedAt ? ` on ${when(r.passwordChangedAt)}` : ''}.`
+                        : 'Set-password link sent.'}
+                    </p>
+                  )}
                   {r.status === 'FAILED' && r.lastError && <p className="text-rose-700 break-words">{r.lastError} ({r.attempts} {r.attempts === 1 ? 'attempt' : 'attempts'})</p>}
                   {r.notification && (
                     <ul className="space-y-0.5" aria-label="Messages to the customer">
@@ -227,7 +267,7 @@ export const ClientLogins: React.FC = () => {
                       className={btn.primary}
                       disabled={busy || !r.can.create}
                       title={r.can.create ? undefined : problem ?? 'The login is being created.'}
-                      onClick={() => void act(r, () => pipelineApi.accountsCreateClientLogin(r.customerId), 'The client login was created. The set-password e-mail is on its way.')}
+                      onClick={() => setCreating(r)}
                     >
                       {r.status === 'FAILED' ? <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> : <KeyRound className="w-3.5 h-3.5" aria-hidden="true" />}
                       {busy ? 'Working…' : r.status === 'FAILED' ? 'Try again' : 'Create login'}
@@ -239,7 +279,7 @@ export const ClientLogins: React.FC = () => {
                     </button>
                   )}
                   {r.can.resend && (
-                    <button type="button" className={btn.secondary} disabled={busy} onClick={() => void act(r, () => pipelineApi.resendAccountEmail(r.customerId), 'The set-password e-mail was queued again.')}>
+                    <button type="button" className={btn.secondary} disabled={busy} onClick={() => void act(r, () => pipelineApi.resendAccountEmail(r.customerId), r.accessMethod === 'TEMPORARY' && r.mustChangePassword ? 'A new temporary password was made and the sign-in e-mail queued again. The earlier one no longer works.' : 'The set-password e-mail was queued again.')}>
                       <Mail className="w-3.5 h-3.5" aria-hidden="true" /> Send e-mail again
                     </button>
                   )}
@@ -252,6 +292,19 @@ export const ClientLogins: React.FC = () => {
 
       {data && data.total > 0 && <Pager page={data.page} pageSize={data.pageSize} total={data.total} noun="customers" onPage={setPage} onPageSize={n => { setPageSize(n); setPage(1); }} />}
 
+      {creating && (
+        <CreateLoginDialog
+          row={creating}
+          busy={busyId === creating.customerId}
+          onClose={() => setCreating(null)}
+          onCreate={method => {
+            const row = creating;
+            void act(row, () => pipelineApi.accountsCreateClientLogin(row.customerId, method),
+              method === 'TEMPORARY' ? 'The client login was created. The sign-in e-mail with the temporary password is on its way.' : 'The client login was created. The set-password e-mail is on its way.')
+              .then(() => setCreating(null));
+          }}
+        />
+      )}
       {fixing && (
         <FixEmailDialog
           row={fixing}

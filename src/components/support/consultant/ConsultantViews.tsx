@@ -36,6 +36,7 @@ import {
   ErrorBanner,
   inputCls,
   longDate,
+  longDateTime,
   money,
   notifyPipelineChanged,
   Pager,
@@ -362,6 +363,11 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
             <div className="min-w-0">
               <h1 className="text-xl sm:text-2xl font-bold text-slate-900 truncate">{c.company || c.name}</h1>
               <p className="text-sm text-slate-500">Onboarding since {longDate(c.onboarding?.startedAt)}</p>
+              {c.onboarding?.forwardedToSupportAt && (
+                <p className="text-sm text-slate-500" data-testid="handover-line">
+                  Handed over by Sales on <time dateTime={c.onboarding.forwardedToSupportAt}>{longDateTime(c.onboarding.forwardedToSupportAt)}</time>
+                </p>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

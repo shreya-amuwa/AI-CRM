@@ -82,6 +82,7 @@ import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
 import { randomBytes } from 'node:crypto';
+import { encryptSecret, temporaryPassword } from '../automations/secrets.js';
 import type { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { mapDocument } from '../repositories/PipelineRepository.js';
 import type { StorageProviderName, StorageRepository } from '../repositories/StorageRepository.js';
@@ -208,15 +209,24 @@ export class PipelineService {
   /**
    * Accounts creates the client's dashboard login, for every service. The database checks who may and when (a verified payment), refuses a
    * second click while one is running, and returns the e-mail ON THE CUSTOMER RECORD - the request carries none, so a screen can never
-   * substitute another address. The login gets a random password nobody knows (nothing is typed, stored, logged or sent); the client
-   * chooses their own from the one-time link in the "account created" e-mail, which is queued only after the login is saved.
-   * A failure is recorded on the customer with a safe reason and the attempt can be repeated; a half-made login (created, not saved)
-   * is removed - or, if that is not possible, finished by the retry - so no customer ever has two.
+   * substitute another address. Two ways in (the request's `method`):
+   *  - LINK (default): the login gets a random password nobody knows; the client chooses their own from the one-time link in the e-mail.
+   *  - TEMPORARY: the SERVER makes a random temporary password, creates the login with it and queues ONE e-mail carrying it (encrypted on
+   *    the job, erased by the database once the job is done). The browser never sees it. The client must choose their own at the first
+   *    sign-in; until then every client function is refused. Needs AUTOMATION_SECRET_KEY, otherwise it is refused before anything is made.
+   * The e-mail is queued only after the login is saved. A failure is recorded on the customer with a safe reason and the attempt can be
+   * repeated; a half-made login (created, not saved) is removed - or, if that is not possible, finished by the retry - so no customer ever
+   * has two.
    */
-  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string; status: 'CREATED' }> {
+  async accountsCreateClientLogin(actor: Actor, id: string, body: unknown): Promise<{ email: string; status: 'CREATED'; method: 'LINK' | 'TEMPORARY' }> {
     const customerId = parse(uuidSchema, id);
-    parse(accountsClientLoginSchema, body ?? {});
-    const target = await this.repo.accountsClientLoginBegin(customerId);
+    const { method } = parse(accountsClientLoginSchema, body ?? {});
+    const key = automationSettings().secretKey;
+    if (method === 'TEMPORARY' && !key) {
+      throw new AppError('SERVICE_UNAVAILABLE', 'Temporary passwords need AUTOMATION_SECRET_KEY on the server. Use the set-password link, or ask your administrator to set it.');
+    }
+    const target = await this.repo.accountsClientLoginBegin(customerId, method);
+    const temporary = method === 'TEMPORARY' ? temporaryPassword() : null;
     let userId: string | null = null;
     let created = false;
     try {
@@ -224,20 +234,23 @@ export class PipelineService {
       if (!userId) {
         userId = await this.authAdmin.createClientUser({
           email: target.email,
-          password: randomBytes(32).toString('base64url'),
+          password: temporary ?? randomBytes(32).toString('base64url'),
           customerId,
           provisionedBy: actor.id
         });
         created = true;
+      } else if (temporary) {
+        // an earlier, interrupted attempt made the sign-in; its temporary password is lost, so this attempt's replaces it
+        await this.authAdmin.setClientPassword(userId, temporary);
       }
-      await this.repo.recordClientAccount(customerId, userId, target.email);
+      await this.repo.recordClientAccount(customerId, userId, target.email, temporary ? encryptSecret(temporary, key!) : null);
     } catch (e) {
       if (userId && created) await this.authAdmin.deleteUser(userId).catch(() => undefined);
       const message = e instanceof AppError ? e.message : 'The login could not be created.';
       await this.repo.accountsClientLoginFailed(customerId, message).catch(() => undefined);
       throw e;
     }
-    return { email: target.email, status: 'CREATED' };
+    return { email: target.email, status: 'CREATED', method };
   }
 
   /** Accounts: customers with a verified payment and the state of their login (customer, ID, order, e-mail, status, time, result). */
@@ -252,9 +265,27 @@ export class PipelineService {
     await this.repo.accountsSetCustomerEmail(customerId, input.email, input.reason);
   }
 
-  /** Accounts: send the set-password e-mail again (a failed one is retried, a delivered one at most every 10 minutes). */
+  /**
+   * Accounts: send the account e-mail again (a failed one is retried, a delivered one at most every 10 minutes). If the client has not yet
+   * chosen their own password after a temporary one, a NEW temporary password is made and put on the login first (the old one is gone - it
+   * was never stored); otherwise the set-password link is sent. An existing password is never reset for a client who chose their own.
+   */
   async resendAccountEmail(id: string): Promise<void> {
-    await this.repo.accountsResendAccountEmail(parse(uuidSchema, id));
+    const customerId = parse(uuidSchema, id);
+    const state = await this.repo.accountsClientAccountState(customerId);
+    if (state.exists && state.accessMethod === 'TEMPORARY' && state.mustChangePassword && state.authUserId) {
+      const key = automationSettings().secretKey;
+      if (!key) {
+        throw new AppError('SERVICE_UNAVAILABLE', 'Temporary passwords need AUTOMATION_SECRET_KEY on the server.');
+      }
+      const temporary = temporaryPassword();
+      // the database refuses (and nothing changes) when an e-mail is on its way or was sent a moment ago: so ask it first with the new secret
+      // and only then change the password, in that order, so a refused resend never invalidates the password the client already holds
+      await this.repo.accountsResendAccountEmail(customerId, encryptSecret(temporary, key));
+      await this.authAdmin.setClientPassword(state.authUserId, temporary);
+      return;
+    }
+    await this.repo.accountsResendAccountEmail(customerId);
   }
 
   /** Meta has completed the verification: the "completed" message is queued, once. */

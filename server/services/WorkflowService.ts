@@ -3,6 +3,7 @@ import {
   followUpAssignSchema,
   followUpContactSchema,
   followUpListQuerySchema,
+  panelCredentialsSchema,
   panelDetailsSchema,
   rerouteVerificationSchema,
   serviceMetaVerificationSchema,
@@ -13,6 +14,9 @@ import {
 import { z } from 'zod';
 import { parse } from '../http/validate.js';
 import type { WorkflowRepository } from '../repositories/WorkflowRepository.js';
+import { automationSettings } from '../automations/config.js';
+import { encryptSecret } from '../automations/secrets.js';
+import { AppError } from '../http/errors.js';
 
 const codeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.');
 
@@ -35,6 +39,20 @@ export class WorkflowService {
     const id = parse(uuidSchema, customerId);
     const input = parse(panelDetailsSchema, body);
     await this.repo.setPanelDetails(id, parse(codeSchema, serviceCode), input.platform ?? null, input.account ?? null);
+    return this.repo.panelDetails(id);
+  }
+  /**
+   * The Meta Verifier set a password on the customer's WhatsApp panel: it is encrypted here, queued on ONE e-mail to the customer's address on
+   * the record and erased by the database once that e-mail is done. Nothing about the password is returned, logged or stored in any ordinary
+   * column; the response is the refreshed panel details (who set it, when, and the e-mail's state). The database decides who may do this.
+   * A repeated `requestId` is a no-op, so a retry or double click sends one e-mail.
+   */
+  async sendPanelCredentials(customerId: string, serviceCode: string, body: unknown): Promise<PanelDetails> {
+    const id = parse(uuidSchema, customerId);
+    const input = parse(panelCredentialsSchema, body);
+    const key = automationSettings().secretKey;
+    if (!key) throw new AppError('SERVICE_UNAVAILABLE', 'Panel passwords need AUTOMATION_SECRET_KEY on the server, so they can be handed over without being stored.');
+    await this.repo.sendPanelCredentials(id, parse(codeSchema, serviceCode), encryptSecret(input.password, key), input.requestId);
     return this.repo.panelDetails(id);
   }
   async reroute(customerId: string, body: unknown): Promise<void> {

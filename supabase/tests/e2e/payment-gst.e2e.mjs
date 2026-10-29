@@ -123,7 +123,22 @@ await expect(await acc.getByTestId('order-gst-rate').isDisabled(), 'the rate is 
 // a full payment: the whole outstanding amount including GST, filled in and read-only
 await acc.getByRole('button', { name: 'Record payment' }).first().click();
 const d2 = acc.getByRole('dialog', { name: 'Record payment' });
+// the optional installment helper (part payment only): 81,600 still to receive -> 40,800 + 40,800, a plan and not a payment
+await expect(/Still to receive\s*₹81,600/.test(await d2.innerText()), 'the second form shows 81,600 still to receive');
+await expect((await d2.getByTestId('pay-split').count()) === 1 && !(await d2.getByTestId('pay-split-toggle').isChecked()), 'a part payment offers the installment helper, off by default');
+await d2.getByTestId('pay-split-toggle').check();
+await expect((await d2.locator('#pay-amount').inputValue()) === '40800', 'the helper proposes 40,800 for this payment');
+await expect(/₹40,800/.test(await d2.getByTestId('pay-split-now').innerText()) && /₹40,800/.test(await d2.getByTestId('pay-split-later').innerText()), 'and 40,800 for the second installment');
+await expect(/not a payment/i.test(await d2.getByTestId('pay-split').innerText()), 'the form says the second installment is only a plan');
+await d2.screenshot({ path: `${OUT}/gst-3b-split-helper.png` });
+await d2.locator('#pay-amount').fill('50000');
+await expect(/₹31,600/.test(await d2.getByTestId('pay-split-later').innerText()), 'the plan follows an amount typed over: 50,000 now leaves 31,600');
+await d2.locator('#pay-amount').fill('81600');
+await expect(/Enter a whole-rupee amount below/.test(await d2.getByTestId('pay-split').innerText()), 'paying everything is not a part payment: no plan');
+const planned = (await q('select count(*)::int n from customer_payments where customer_id = $1', [lead]))[0].n;
+await expect(planned === 1, 'the helper created no payment (only the 60,000 exists)');
 await d2.getByLabel('Full payment').check();
+await expect((await d2.getByTestId('pay-split').count()) === 0, 'a full payment hides the helper');
 await expect((await d2.locator('#pay-amount').inputValue()) === '81600', 'a full payment fills what is outstanding including GST (81,600)');
 await expect(await d2.locator('#pay-amount').evaluate(e => e.readOnly), 'and the amount cannot be typed over');
 await d2.locator('#pay-ref').fill('GST-E2E-2');

@@ -5,6 +5,9 @@ import { enforce, userBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HandlerResult } from './http/types.js';
 import { extractBearerToken } from './auth/authenticate.js';
 import { createServices, type Services } from './services/index.js';
+import { AuthAdminRepository } from './repositories/AuthAdminRepository.js';
+import { clientNewPasswordSchema } from '../shared/validation.js';
+import { parse } from './http/validate.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -30,8 +33,28 @@ export interface ClientRouteDef {
 
 const ok = <T>(data: T, status = 200): HandlerResult => ({ status, data });
 
+/**
+ * The client chooses their own password. Works before anything else (the only route that does) while a temporary password is in force, and
+ * after the "Forgot password?" link. The new password is put on the sign-in by the server, so it cannot be skipped: it must differ from the
+ * password that signs in right now (the temporary one), and only then is the temporary password retired in the database. Never logged or returned.
+ */
+async function changeClientPassword(c: ClientContext): Promise<HandlerResult> {
+  await enforce([{ key: `pwchange:${c.me.customerId}`, limit: 10, window: 900 }], 'memory');
+  const { password } = parse(clientNewPasswordSchema, c.req.body);
+  const userId = c.me.loginId;
+  if (!userId) throw new AppError('INTERNAL', 'Could not find your sign-in.');
+  const admin = new AuthAdminRepository();
+  if (await admin.passwordSignsIn(c.me.loginEmail, password)) {
+    throw new AppError('VALIDATION_ERROR', 'Choose a different password from the one you were given.');
+  }
+  await admin.setClientPassword(userId, password);
+  await admin.clientPasswordChanged(userId);
+  return ok({ changed: true });
+}
+
 export const clientRoutes: ClientRouteDef[] = [
   { method: 'GET', path: '/me', handler: async c => ok(c.me) },
+  { method: 'POST', path: '/password', handler: changeClientPassword },
   { method: 'GET', path: '/overview', handler: async c => ok(await c.services.client.overview()) },
   { method: 'GET', path: '/services', handler: async c => ok(await c.services.client.services()) },
   { method: 'GET', path: '/billing', handler: async c => ok(await c.services.client.billing()) },

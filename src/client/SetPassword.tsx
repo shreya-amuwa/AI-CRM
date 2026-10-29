@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Lock } from 'lucide-react';
 import { getSupabase } from '../services/supabaseClient';
+import { ApiError } from '../lib/api/client';
+import { clientApi } from './api';
 import { Button, Field, LoadingBlock } from './ui';
 import { dashboardPath } from './shell';
 
@@ -8,8 +10,8 @@ import { dashboardPath } from './shell';
  * /client/set-password: opened from the "Set your password" e-mail (new login or "Forgot password?").
  * The link signs the client in for this one step; they choose their own password here.
  */
-export const SetPassword: React.FC = () => {
-  const [state, setState] = useState<'checking' | 'ready' | 'expired' | 'done'>('checking');
+export const SetPassword: React.FC<{ forced?: boolean; onChanged?: () => void }> = ({ forced = false, onChanged }) => {
+  const [state, setState] = useState<'checking' | 'ready' | 'expired' | 'done'>(forced ? 'ready' : 'checking');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [show, setShow] = useState(false);
@@ -17,6 +19,7 @@ export const SetPassword: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (forced) return;
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const supabase = getSupabase();
     if (hash.get('error') || !supabase) { setState('expired'); return; }
@@ -31,12 +34,17 @@ export const SetPassword: React.FC = () => {
     if (password.length > 72) { setError('Use at most 72 characters.'); return; }
     if (password !== confirm) { setError('The two passwords are not the same.'); return; }
     setBusy(true);
-    const { error: err } = await getSupabase()!.auth.updateUser({ password });
-    setBusy(false);
-    if (err) {
-      setError(/same|different/i.test(err.message) ? 'Choose a password you have not used before.' : /session|expired|jwt/i.test(err.message) ? 'The link has expired. Ask for a new one below.' : err.message);
+    // the server puts the password on the sign-in (so a temporary one cannot be kept) and records that the client has chosen their own
+    try {
+      await clientApi.changePassword(password);
+    } catch (e) {
+      setBusy(false);
+      const message = e instanceof Error ? e.message : '';
+      setError(e instanceof ApiError && e.status === 401 ? 'The link has expired. Ask for a new one with "Forgot password?" on the sign-in page.' : message || 'The password could not be saved. Please try again.');
       return;
     }
+    setBusy(false);
+    if (forced) { onChanged?.(); return; }
     window.history.replaceState(null, '', '/client/set-password');
     setState('done');
   };
@@ -57,8 +65,10 @@ export const SetPassword: React.FC = () => {
           {state === 'ready' && (
             <form onSubmit={submit} noValidate className="cd-stack" style={{ gap: 16 }}>
               <div>
-                <h2 style={{ fontSize: 26 }}>Set your password</h2>
-                <p className="cd-sub">Choose the password you will use to sign in to your Amuwa dashboard. Only you will know it.</p>
+                <h2 style={{ fontSize: 26 }}>{forced ? 'Choose your own password' : 'Set your password'}</h2>
+                <p className="cd-sub">{forced
+                  ? 'You signed in with a temporary password. Choose the password you will use from now on - the temporary one stops working. Only you will know it.'
+                  : 'Choose the password you will use to sign in to your Amuwa dashboard. Only you will know it.'}</p>
               </div>
               {error && <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>{error}</span></div>}
               <Field label="New password" htmlFor="cd-new-password" hint="At least 10 characters.">

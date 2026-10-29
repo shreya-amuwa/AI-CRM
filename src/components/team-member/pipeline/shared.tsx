@@ -39,6 +39,12 @@ export const shortDate = (iso: string | null | undefined) =>
 export const longDate = (iso: string | null | undefined) =>
   iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
 
+/** A moment (not just a day): "29 Oct 2026, 11:27 AM" in the browser's timezone, the way the rest of the application shows timestamps. */
+export const longDateTime = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\b(am|pm)\b/, m => m.toUpperCase())
+    : '-';
+
 export function relativeDays(iso: string): string {
   const diff = -dayDiff(iso);
   if (diff <= 0) return 'today';
