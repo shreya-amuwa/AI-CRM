@@ -11,7 +11,7 @@ related: [department-head/department-head-overview, technical-consultant/departm
 updated: 2026-10-29
 ---
 
-When the **Meta Verifier** has authorized every document and detail of a WhatsApp customer and clicks *Send to Department Head* (for customers that do not go through Meta verification, the **Technical Consultant** does this), the customer is transferred to your department (`handoverStage = 'DEPARTMENT_HEAD'`) and appears in **Client hand-overs** immediately. Nothing the Technical Consultant does afterwards holds the customer back: the consultation is a separate follow-up task. As Department Head, you use the **Onboarding**, **Handovers**, and **Teams & People** tabs in `DepartmentHeadDashboard.tsx` to inspect incoming accounts, organize squads, and assign each customer to a **Team Lead**.
+When the **Meta Verifier** has authorized every document and detail of a WhatsApp customer, Meta verification is complete, and they click *Send to Department Head* (for customers that do not go through Meta verification, the **Technical Consultant** does this), the customer is transferred to your department (`handoverStage = 'DEPARTMENT_HEAD'`) and appears in **Client hand-overs** immediately. Nothing the Technical Consultant does afterwards holds the customer back: the consultation is a separate follow-up task. As Department Head, you use the **Onboarding**, **Handovers**, and **Teams & People** tabs in `DepartmentHeadDashboard.tsx` to inspect incoming accounts, organize squads, and assign each customer to a **Team Lead**.
 
 ## Before you start
 

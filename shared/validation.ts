@@ -1861,6 +1861,23 @@ export const salesReportsQuerySchema = z
   .strict();
 export const salesIncomeQuerySchema = z.object({ from: isoDate.optional(), to: isoDate.optional() }).strict();
 
+// ---------------------------------------------------------------------------
+// Onboarding journey
+// ---------------------------------------------------------------------------
+/** The Meta verification status the Meta Verifier (or the Technical Consultant on the other route) sets (PENDING is only the starting state). */
+export const metaVerificationSchema = z
+  .object({
+    status: z.enum(['IN_PROGRESS', 'DOCUMENTS_REQUIRED', 'REJECTED', 'COMPLETED']),
+    feedback: z.string().trim().max(1000, 'The feedback can have at most 1000 characters.').nullish()
+  })
+  .strict();
+/** No verifier given: the signed-in verifier takes the verification. */
+export const journeyVerifierSchema = z.object({ verifierId: uuidSchema.nullish() }).strict();
+export const serviceSetupSchema = z
+  .object({ status: z.enum(['IN_PROGRESS', 'READY']), note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
+  .strict();
+export const chatChannelSchema = z.enum(['META', 'RM']);
+
 // ---- Meta Verifier workflow -----------------------------------------------------------------------------------------------------------
 export const verificationNoteSchema = z
   .object({ body: trimmed(2000).min(1, 'Write the note.'), outcome: z.enum(['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED']).default('NOTE') })

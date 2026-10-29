@@ -66,6 +66,8 @@ import type {
   ClientCalendarEvent,
   ClientDocumentQueueItem,
   CustomerJourneyInfo,
+  CustomerJourneyStatus,
+  ClientLoginOutcome,
   ProvisioningFilter,
   ProvisioningQueue,
   DeliveryQueueItem,
@@ -262,6 +264,14 @@ export const pipelineApi = {
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/payments`, body),
   /** Where the customer is on its journey, and what the signed-in person may do next. */
   customerJourney: (id: string) => api.get<CustomerJourneyInfo>(`/pipeline/customers/${id}/journey`),
+  /** Meta verification, the Meta Verifier, the Relationship Manager and each service's setup, as the team sees them. */
+  journeyStatus: (id: string) => api.get<CustomerJourneyStatus>(`/pipeline/customers/${id}/journey-status`),
+  setMetaVerification: (id: string, body: { status: 'IN_PROGRESS' | 'DOCUMENTS_REQUIRED' | 'REJECTED' | 'COMPLETED'; feedback?: string | null }) =>
+    api.post<CustomerJourneyStatus>(`/pipeline/customers/${id}/meta-verification`, body),
+  assignMetaVerifier: (id: string, verifierId?: string | null) => api.post<CustomerJourneyStatus>(`/pipeline/customers/${id}/meta-verifier`, { verifierId: verifierId ?? null }),
+  metaVerifierCandidates: (id: string) => api.get<{ id: string; fullName: string }[]>(`/pipeline/customers/${id}/meta-verifier/candidates`),
+  setServiceSetup: (id: string, service: string, body: { status: 'IN_PROGRESS' | 'READY'; note?: string | null }) =>
+    api.post<CustomerJourneyStatus>(`/pipeline/customers/${id}/services/${service}/setup`, body),
   /** Accounts: create the dashboard login (any service). The e-mail is the one on the customer record; no password is typed or sent. */
   accountsCreateClientLogin: (id: string, method: ClientAccessMethod = 'LINK') => api.post<{ email: string; status: 'CREATED'; method: ClientAccessMethod }>(`/pipeline/customers/${id}/accounts/client-login`, { method }),
   /** Accounts: the Client logins queue (customer, ID, order, e-mail, status, time, result). */
@@ -326,7 +336,8 @@ export const pipelineApi = {
     api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/reject`, { reason }),
   reverseAccountsPayment: (id: string, paymentId: string, reason: string) =>
     api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/payments/${paymentId}/reverse`, { reason }),
-  confirmPaymentAndReturn: (id: string, note?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/payment-confirmed`, { note: note || null }),
+  /** Confirms the payment; the answer says what happened to the client's dashboard login (made and e-mailed automatically). */
+  confirmPaymentAndReturn: (id: string, note?: string | null) => api.post<{ clientLogin: ClientLoginOutcome }>(`/pipeline/customers/${id}/accounts/payment-confirmed`, { note: note || null }),
   customerBackedOff: (id: string, reason?: string | null) => api.post<null>(`/pipeline/customers/${id}/accounts/back-off`, { reason: reason || null }),
   assignPaymentOwner: (id: string, ownerId: string | null) => api.post<PaymentOverview>(`/pipeline/customers/${id}/accounts/owner`, { ownerId }),
   addPaymentFollowUp: (id: string, body: { outcome: FollowUpOutcome; note: string; nextFollowUpAt?: string | null }) =>

@@ -159,9 +159,13 @@ const RequestDetail: React.FC<{
           required={false}
           onClose={() => setConfirmOpen(false)}
           onConfirm={async note => {
-            await pipelineApi.confirmPaymentAndReturn(item.id, note);
+            const { clientLogin } = await pipelineApi.confirmPaymentAndReturn(item.id, note);
             setConfirmOpen(false);
-            onResolved(`${name} confirmed and returned to Sales for onboarding.`);
+            // the login is made by the same flow as Client Logins; a failure never undoes the confirmation and can be retried there
+            const login = clientLogin.status === 'CREATED'
+              ? ` The client dashboard login (${clientLogin.email}) was created and the set-password e-mail is on its way.`
+              : clientLogin.status === 'EXISTS' ? '' : ` The client login was not created: ${clientLogin.detail ?? 'create it from Client Logins.'}`;
+            onResolved(`${name} confirmed and returned to Sales for onboarding.${login}`);
           }}
         />
       )}

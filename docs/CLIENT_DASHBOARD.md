@@ -8,6 +8,9 @@ Design: the Amuwa customer app (warm cream page, white rounded cards, brand teal
 and DM Sans body, pill status badges), adapted to a desktop dashboard with a slim sidebar. It is always light, spacious
 (few boxes per page, generous spacing) and works on desktop, tablet and phone (the sidebar becomes a menu).
 
+> **Onboarding journey.** New customers see an *Onboarding Journey* page first, and the sections below open stage by stage (locked
+> ones stay visible and disabled, and are refused by the API). See [CLIENT_ONBOARDING_JOURNEY.md](CLIENT_ONBOARDING_JOURNEY.md).
+
 ## Sidebar (in this order)
 
 1. **Overview** - the customer's name, business, phone, e-mail and "customer since", four counters (active services,

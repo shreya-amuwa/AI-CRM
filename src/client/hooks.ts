@@ -64,10 +64,11 @@ export function usePath(): [string, (to: string, replace?: boolean) => void] {
  * Live updates without a timer: calls onChange when a new notification for this client arrives (Supabase Realtime;
  * the database only lets a client read their own rows) and when the tab comes back into view.
  */
-export function useClientLive(onChange: () => void, entityId?: string) {
+export function useClientLive(onChange: () => void, entityId?: string, enabled = true) {
   const cb = useRef(onChange);
   cb.current = onChange;
   useEffect(() => {
+    if (!enabled) return undefined;
     const supabase = getSupabase();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const fire = () => {
@@ -88,5 +89,5 @@ export function useClientLive(onChange: () => void, entityId?: string) {
       document.removeEventListener('visibilitychange', onVisible);
       if (channel) void supabase?.removeChannel(channel);
     };
-  }, [entityId]);
+  }, [entityId, enabled]);
 }

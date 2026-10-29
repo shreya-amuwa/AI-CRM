@@ -1,5 +1,5 @@
 import type {
-  ClientAnnouncement, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
+  ClientAnnouncement, ClientJourney, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
   ClientBilling, ClientService, ClientServiceProgress, ClientServiceRequest, ClientTicket, ClientTicketDetail, TicketAttachment, TicketUploadTicket
 } from '../../shared/contracts';
 import { api } from '../lib/api/client';
@@ -10,6 +10,7 @@ export const clientApi = {
   /** Choose your own password (the server sets it, so a temporary password cannot be kept). */
   changePassword: (password: string) => api.post<{ changed: true }>('/client/password', { password }),
   overview: () => api.get<ClientOverview>('/client/overview'),
+  journey: () => api.get<ClientJourney>('/client/journey'),
   services: () => api.get<ClientService[]>('/client/services'),
   billing: () => api.get<ClientBilling>('/client/billing'),
   serviceProgress: () => api.get<ClientServiceProgress[]>('/client/service-progress'),

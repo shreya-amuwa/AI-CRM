@@ -6,6 +6,7 @@ import {
   chatGroupRenameSchema,
   chatMembersSchema,
   chatMessagesQuerySchema,
+  chatChannelSchema,
   chatKeyBackupSetSchema,
   chatKeyLookupQuerySchema,
   chatKeySetupSchema,
@@ -30,6 +31,15 @@ const FILE_URL_TTL_SECONDS = 120;
  * conversation). The database decides who may do what; this layer validates input, issues upload / download links
  * AFTER the database allowed them, and never accepts a sender, a customer for a client, or a storage path from a request.
  */
+/** The one thing a client may choose about a conversation: which channel (Meta verification or Relationship Manager). */
+function channelOf(raw: unknown): string | null {
+  return raw === undefined || raw === null || raw === '' ? null : parse(chatChannelSchema, String(raw).toUpperCase());
+}
+function splitChannel(input: unknown): { channel: string | null; rest: Record<string, unknown> } {
+  const { channel, ...rest } = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  return { channel: channelOf(channel), rest };
+}
+
 export class ChatService {
   constructor(
     private readonly repo: ChatRepository,
@@ -49,7 +59,9 @@ export class ChatService {
     return null;
   }
   unread() { return this.repo.unread(); }
-  customerConversation(customerId: string) { return this.repo.customerConversation(parse(uuidSchema, customerId)); }
+  customerConversation(customerId: string, query?: unknown) {
+    return this.repo.customerConversation(parse(uuidSchema, customerId), channelOf((query as Record<string, unknown> | undefined)?.channel));
+  }
   detail(id: string): Promise<ChatConversation> { return this.repo.detail(parse(uuidSchema, id)); }
   directory(query: unknown) {
     const { q, limit } = parse(chatSearchQuerySchema, query ?? {});
@@ -105,15 +117,30 @@ export class ChatService {
   markRead(id: string, body: unknown) { return this.repo.markRead(parse(uuidSchema, id), parse(chatReadSchema, body ?? {}).seq); }
 
   // ---------------------------------------------------------------- clients (the conversation always comes from the login)
+  // The client may name a channel (the Meta Verifier's or the Relationship Manager's) and nothing else: who is on the other side is decided
+  // by the database from the customer's assignment, and a channel that is not open at the client's stage is refused there.
   async clientView(query: unknown): Promise<ChatClientView> {
-    const conversation = await this.repo.clientConversation();
-    return { conversation, page: await this.repo.messages(conversation.id, parse(chatMessagesQuerySchema, query ?? {})) };
+    const { channel, rest } = splitChannel(query);
+    const conversation = await this.repo.clientConversation(channel);
+    return { conversation, page: await this.repo.messages(conversation.id, parse(chatMessagesQuerySchema, rest)) };
   }
-  private async clientConversationId() { return (await this.repo.clientConversation()).id; }
-  async clientMessages(query: unknown): Promise<ChatMessagePage> { return this.repo.messages(await this.clientConversationId(), parse(chatMessagesQuerySchema, query ?? {})); }
-  async clientSend(body: unknown): Promise<ChatMessage> { return this.repo.send(await this.clientConversationId(), parse(chatSendSchema, body)); }
-  async clientMarkRead(body: unknown) { return this.repo.markRead(await this.clientConversationId(), parse(chatReadSchema, body ?? {}).seq); }
-  async clientBeginUpload(body: unknown) { return this.beginUpload(await this.clientConversationId(), body); }
+  private async clientConversationId(channel: string | null) { return (await this.repo.clientConversation(channel)).id; }
+  async clientMessages(query: unknown): Promise<ChatMessagePage> {
+    const { channel, rest } = splitChannel(query);
+    return this.repo.messages(await this.clientConversationId(channel), parse(chatMessagesQuerySchema, rest));
+  }
+  async clientSend(body: unknown): Promise<ChatMessage> {
+    const { channel, rest } = splitChannel(body);
+    return this.repo.send(await this.clientConversationId(channel), parse(chatSendSchema, rest));
+  }
+  async clientMarkRead(body: unknown) {
+    const { channel, rest } = splitChannel(body);
+    return this.repo.markRead(await this.clientConversationId(channel), parse(chatReadSchema, rest).seq);
+  }
+  async clientBeginUpload(body: unknown) {
+    const { channel, rest } = splitChannel(body);
+    return this.beginUpload(await this.clientConversationId(channel), rest);
+  }
 
   // ---------------------------------------------------------------- attachments
   /** Books the upload in the database (it checks the person, the type and the size), then hands out the one signed upload for it. */

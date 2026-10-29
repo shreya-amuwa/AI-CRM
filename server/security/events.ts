@@ -48,6 +48,13 @@ function remember(key: string, now: number): boolean {
   return true;
 }
 
+/** Tests only: forget what was recorded and the anonymous count, so one test's traffic cannot use up another's allowance. */
+export function resetSecurityEventLimits(): void {
+  seen.clear();
+  anonymousWindowStart = 0;
+  anonymousInWindow = 0;
+}
+
 export async function recordSecurityEvent(e: SecurityEvent): Promise<void> {
   try {
     const now = Date.now();

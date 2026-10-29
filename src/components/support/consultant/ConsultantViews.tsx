@@ -47,6 +47,7 @@ import {
 } from '../../team-member/pipeline/shared';
 import { ClientLoginDetails } from './ClientLoginDetails';
 import { ClientLoginCard, HandoverBanner, SendToDepartmentHead } from './HandoverPanel';
+import { CustomerJourneyAdmin } from '../../journey/CustomerJourneyAdmin';
 import { VerificationNotes } from './VerificationNotes';
 import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
@@ -572,6 +573,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
         ) : (
           <ConsultationNotes customerId={c.id} canWrite services={c.services} />
         )}
+
+        <CustomerJourneyAdmin customerId={c.id} onChanged={changed} />
 
         {mode === 'verifier' ? <ClientLoginDetails customerId={c.id} /> : <ClientLoginCard account={c.handover?.clientAccount} />}
       </div>

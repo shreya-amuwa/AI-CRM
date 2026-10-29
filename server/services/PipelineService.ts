@@ -1,5 +1,7 @@
 import type {
+  ClientLoginOutcome,
   CustomerJourneyInfo,
+  CustomerJourneyStatus,
   DeliveryQueueItem,
   ServiceJourneySetting,
   DivisionLeadsOverview,
@@ -68,6 +70,9 @@ import {
   recordPaymentSchema,
   assignToMemberSchema,
   backOutSchema,
+  metaVerificationSchema,
+  journeyVerifierSchema,
+  serviceSetupSchema,
   consultantWebsiteSchema,
   handoverNoteSchema,
   passToTeamLeadSchema,
@@ -78,6 +83,7 @@ import {
 import { z } from 'zod';
 import type { Actor } from '../auth/authenticate.js';
 import { AppError } from '../http/errors.js';
+import { hasServiceClient } from '../db/supabase.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
@@ -715,9 +721,64 @@ export class PipelineService {
     return this.repo.paymentOverview(parse(uuidSchema, customerId));
   }
 
-  /** "Confirm payment & return to Sales": the customer moves to Customer onboarding. */
-  async confirmAndReturn(id: string, body: unknown): Promise<void> {
-    await this.repo.confirmAndReturn(parse(uuidSchema, id), parse(accountsConfirmReturnSchema, body ?? {}).note ?? null);
+  /**
+   * "Confirm payment & return to Sales": the customer moves to Customer onboarding and the client's dashboard login is made right away by
+   * the same secure flow Accounts uses from Client Logins (accountsCreateClientLogin: the e-mail on the customer record, a random password
+   * nobody knows, a one-time set-password link e-mailed through the outbox). Nothing is unlocked by it: the dashboard shows the onboarding
+   * journey and opens the other sections stage by stage (the database decides). Making the login never fails the confirmation: when it
+   * cannot be made the reason is returned and Accounts can create it from Client Logins. AUTO_CLIENT_LOGIN=off turns this off.
+   */
+  async confirmAndReturn(actor: Actor, id: string, body: unknown): Promise<ClientLoginOutcome> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.confirmAndReturn(customerId, parse(accountsConfirmReturnSchema, body ?? {}).note ?? null);
+    return this.provisionLoginAfterPayment(actor, customerId);
+  }
+
+  private async provisionLoginAfterPayment(actor: Actor, customerId: string): Promise<ClientLoginOutcome> {
+    if (!hasServiceClient() || process.env.AUTO_CLIENT_LOGIN === 'off') {
+      return { status: 'NOT_CREATED', detail: 'Client logins are not created automatically on this server. Create it from Client Logins.' };
+    }
+    try {
+      const r = await this.accountsCreateClientLogin(actor, customerId, {});
+      return { status: 'CREATED', email: r.email };
+    } catch (e) {
+      const message = e instanceof AppError ? e.message : 'The client login could not be created. Create it from Client Logins.';
+      // a login that already exists is not a problem; anything else is shown to Accounts, who can retry from Client Logins
+      return { status: /already has a login/i.test(message) ? 'EXISTS' : 'NOT_CREATED', ...(/already has a login/i.test(message) ? {} : { detail: message }) };
+    }
+  }
+
+  // ---- onboarding journey: Meta verification, the Meta Verifier, service setup ----
+  journeyStatus(id: string): Promise<CustomerJourneyStatus> {
+    return this.repo.journeyStatus(parse(uuidSchema, id));
+  }
+
+  /** The Technical Consultant sets the Meta verification status (the database checks who may and which moves are allowed). */
+  async setMetaVerification(id: string, body: unknown): Promise<CustomerJourneyStatus> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(metaVerificationSchema, body);
+    await this.repo.setMetaVerification(customerId, input.status, input.feedback ?? null);
+    return this.repo.journeyStatus(customerId);
+  }
+
+  /** A Technical Consultant takes the verification (no verifier given) or a head names one. */
+  async assignMetaVerifier(id: string, body: unknown): Promise<CustomerJourneyStatus> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.assignMetaVerifier(customerId, parse(journeyVerifierSchema, body ?? {}).verifierId ?? null);
+    return this.repo.journeyStatus(customerId);
+  }
+
+  metaVerifierCandidates(id: string): Promise<{ id: string; fullName: string }[]> {
+    return this.repo.metaVerifierCandidates(parse(uuidSchema, id));
+  }
+
+  /** The responsible team starts or finishes the setup of one purchased service (the database checks the prerequisites). */
+  async setServiceSetup(id: string, code: string, body: unknown): Promise<CustomerJourneyStatus> {
+    const customerId = parse(uuidSchema, id);
+    const service = parse(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.'), code);
+    const input = parse(serviceSetupSchema, body);
+    await this.repo.setServiceSetup(customerId, service, input.status, input.note ?? null);
+    return this.repo.journeyStatus(customerId);
   }
 
   /** "Customer backed off": the customer returns to My Leads → Leads. */

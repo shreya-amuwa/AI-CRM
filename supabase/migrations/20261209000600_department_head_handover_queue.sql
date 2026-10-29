@@ -20,7 +20,7 @@
 --   4. shows on the customer's hand-over detail which route verified it and the state of the consultation follow-up;
 --   5. adds a reconciliation report for customers caught in the old workflow and ONE explicit, audited action that creates the follow-ups that
 --      are missing. Nothing is changed by running this migration.
--- Safe to run again.
+-- It needs 20261209000100_client_onboarding_journey.sql (send_to_department_head below keeps that migration's "Meta verification first" check). Safe to run again.
 
 -- ---------------------------------------------------------------------------
 -- 1. Visibility
@@ -78,6 +78,10 @@ begin
     raise exception 'VALIDATION_ERROR: Authorize every document and detail first (including the WABA ID where it applies).' using errcode = 'P0001';
   end if;
   v_meta := private.onboarding_route(p_customer) = 'META';
+  -- the Relationship Manager takes over only after Meta verification (the onboarding journey, 20261209000100): that check is kept as it was
+  if private.meta_required(p_customer) and o.meta_status <> 'COMPLETED' and o.meta_completed_at is null then
+    raise exception 'VALIDATION_ERROR: Complete the Meta verification first. The Relationship Manager takes over only after it.' using errcode = 'P0001';
+  end if;
 
   -- the heads of the customer's own department (read from the customer record, never from the request)
   select count(*) into v_count from private.handover_head_recipients(v.department_id);
@@ -193,12 +197,13 @@ begin
     raise exception 'FORBIDDEN: Only the Super Admin and Department Heads can see this.' using errcode = '42501';
   end if;
   return jsonb_build_object(
-    -- everything is authorized but nobody sent it on: it waits in the Meta Verifier's queue (the verifier, the Department Head or the Super Admin sends it)
+    -- everything is authorized and Meta verification is complete, but nobody sent it on: it waits in the Meta Verifier's queue (the verifier, the Department Head or the Super Admin sends it)
     'verifiedNotSent', coalesce((
       select jsonb_agg(jsonb_build_object('customerId', c.id, 'customer', coalesce(c.company, c.name), 'department', d.name, 'sentForVerificationAt', o.forwarded_to_support_at) order by o.forwarded_to_support_at nulls last)
         from public.customers c join public.customer_onboarding o on o.customer_id = c.id join public.departments d on d.id = c.department_id
        where c.lifecycle_stage = 'ONBOARDING' and o.handover_stage = 'CONSULTANT' and o.forwarded_to_support_at is not null
          and o.review_state = 'VERIFIED' and o.returned_at is null and private.onboarding_route(c.id) = 'META'
+         and (o.meta_status = 'COMPLETED' or o.meta_completed_at is not null)
          and (private.is_super_admin() or c.department_id = private.my_department_id())), '[]'::jsonb),
     -- handed over by a Meta Verifier but no consultation follow-up was ever made for it
     'handedOverWithoutFollowUp', coalesce((

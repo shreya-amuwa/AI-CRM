@@ -24,8 +24,19 @@ select test.login('late_verifier');
 select save_consultant_entry((select id from hq where name = 'two'), 'WABA_ID', '109876543210111');
 select verify_all_onboarding_entries((select id from hq where name = 'two'));
 select test.login('dh_wab');
-select test.check((select count(*) = 0 from customers where id = (select id from hq where name = 'two')), 'verified but not sent: still not in the queue');
-select test.check((handover_reconciliation_report() -> 'verifiedNotSent' -> 0 ->> 'customer') = 'Hand Two Traders', 'the reconciliation report lists it as "verified, not yet sent"');
+select test.check((select count(*) = 0 from customers where id = (select id from hq where name = 'two')), 'documents authorized but not sent: still not in the queue');
+select test.check(not exists (select 1 from jsonb_array_elements(handover_reconciliation_report() -> 'verifiedNotSent') x where x ->> 'customer' = 'Hand Two Traders'), 'while Meta verification is still open it is not "stuck": the report does not list it');
+select test.login('late_verifier');
+select test.must_fail($$select send_to_department_head((select id from hq where name = 'two'), 'too early')$$, 'it cannot be sent before Meta verification is complete (the journey rule is kept)', 'Complete the Meta verification first');
+reset role;
+-- Accounts' part of the journey (the client's login) is not what this suite is about: it exists, as the journey requires before Meta can be completed
+select test.create_auth_user('hq_two_login', 'hq.two@example.com', '{}'::jsonb, jsonb_build_object('provider', 'email', 'client_customer_id', (select id from hq where name = 'two')));
+insert into customer_client_accounts (customer_id, auth_user_id, email) values ((select id from hq where name = 'two'), test.id('hq_two_login'), 'hq.two@example.com');
+set role authenticated;
+select test.login('late_verifier');
+select set_meta_verification((select id from hq where name = 'two'), 'COMPLETED', null);
+select test.login('dh_wab');
+select test.check((handover_reconciliation_report() -> 'verifiedNotSent' -> 0 ->> 'customer') = 'Hand Two Traders', 'once Meta verification is complete and nobody has sent it, the report lists it as "verified, not yet sent"');
 
 \echo '   the Meta Verifier sends it: the Department Head sees it at once, whatever the Technical Consultant does'
 select test.login('late_consultant');

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end API test against PostgreSQL + PostgREST (no Docker needed).
 # Requires: superuser access via PGHOST/PGPORT/PGUSER, and POSTGREST_BIN
-# pointing at a PostgREST v12 binary. Usage:
+# pointing at a PostgREST v12 binary (GW_PORT / PGRST_PORT change the two local ports, 54400 / 54401 by default). Usage:
 #   PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/postgrest supabase/tests/run-api.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -23,14 +23,14 @@ db-uri = "postgres://authenticator:authenticator@/${PGDATABASE}?host=${PGHOST}&p
 db-schemas = "public"
 db-anon-role = "anon"
 jwt-secret = "${JWT_SECRET}"
-server-port = 54401
+server-port = ${PGRST_PORT:-54401}
 CONF
 "$POSTGREST_BIN" "$WORK/postgrest.conf" > "$WORK/postgrest.log" 2>&1 &
-GATEWAY_PORT=54400 POSTGREST_URL=http://127.0.0.1:54401 node supabase/tests/local-gateway.mjs > "$WORK/gateway.log" 2>&1 &
+GATEWAY_PORT=${GW_PORT:-54400} POSTGREST_URL=http://127.0.0.1:${PGRST_PORT:-54401} node supabase/tests/local-gateway.mjs > "$WORK/gateway.log" 2>&1 &
 # wait until BOTH PostgREST (schema loaded) and the gateway answer; the first test must not race the startup
 ready=0
 for i in $(seq 1 100); do
-  if curl -sf http://127.0.0.1:54401/ >/dev/null 2>&1 && curl -s -o /dev/null http://127.0.0.1:54400/ 2>/dev/null; then ready=1; break; fi
+  if curl -sf http://127.0.0.1:${PGRST_PORT:-54401}/ >/dev/null 2>&1 && curl -s -o /dev/null http://127.0.0.1:${GW_PORT:-54400}/ 2>/dev/null; then ready=1; break; fi
   sleep 0.2
 done
 [ "$ready" = 1 ] || { echo "PostgREST / the gateway did not start" >&2; tail -20 "$WORK/postgrest.log" "$WORK/gateway.log" >&2; exit 1; }
@@ -38,5 +38,5 @@ done
 npx esbuild supabase/tests/api_integration.test.ts --bundle --platform=node --format=esm \
   --packages=external --outfile="$WORK/api_test.mjs" --log-level=warning
 cp "$WORK/api_test.mjs" ./.api_test.tmp.mjs
-GATEWAY_URL=http://127.0.0.1:54400 node ./.api_test.tmp.mjs || { rm -f ./.api_test.tmp.mjs; cat "$WORK/postgrest.log" | tail -5; exit 1; }
+GATEWAY_URL=http://127.0.0.1:${GW_PORT:-54400} node ./.api_test.tmp.mjs || { rm -f ./.api_test.tmp.mjs; cat "$WORK/postgrest.log" | tail -5; exit 1; }
 rm -f ./.api_test.tmp.mjs
