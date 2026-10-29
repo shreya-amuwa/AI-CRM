@@ -29,6 +29,7 @@ type Snapshot = GeneratedInvoice & { invoiceId: string; customerId: string; issu
 function toPdfInput(s: Snapshot): InvoicePdfInput {
   return {
     number: s.number,
+    invoiceType: s.invoiceType,
     invoiceDate: s.invoiceDate,
     orderNumber: s.orderNumber,
     customer: {

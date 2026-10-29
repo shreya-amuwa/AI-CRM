@@ -114,7 +114,7 @@ import type {
   ChecklistItem,
   ConsultantNote,
   ExpensesPage,
-  DepartmentFinance,
+  CustomerRevenuePage, DepartmentFinance, FinanceMailList,
   FinanceSummary,
   FinanceTrend,
   IncomePage,
@@ -459,6 +459,10 @@ export const financeApi = {
   departments: () => api.get<DepartmentFinance[]>('/accounts/finance/departments'),
   income: (q: { search?: string; departmentId?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
     api.get<IncomePage>('/accounts/finance/income', { ...q }),
+  financeMail: (q: { status?: string; limit?: number } = {}) => api.get<FinanceMailList>('/accounts/finance-mail', { ...q }),
+  retryFinanceMail: (id: string) => api.post<{ queued: number }>(`/accounts/finance-mail/${id}/retry`, {}),
+  customerRevenue: (q: { search?: string; from?: string; to?: string; serviceCode?: string; departmentId?: string; sort?: string; dir?: string; page?: number; pageSize?: number } = {}) =>
+    api.get<CustomerRevenuePage>('/accounts/finance/customer-revenue', { ...q }),
   expenses: (q: ExpenseParams = {}) => api.get<ExpensesPage>('/accounts/finance/expenses', { ...q }),
   addExpense: (body: ExpenseInput) => api.post<{ id: string }>('/accounts/finance/expenses', body),
   updateExpense: (id: string, body: ExpenseInput) => api.patch<null>(`/accounts/finance/expenses/${id}`, body),

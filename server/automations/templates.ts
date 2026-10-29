@@ -317,3 +317,55 @@ export function renderClientPasswordEmail(d: ClientPasswordMailData): RenderedEm
   ${signature('Support Team')}`);
   return { subject: welcome ? 'Your Amuwa client dashboard - set your password' : 'Set a new password for your Amuwa client dashboard', html, text: toText(html) };
 }
+
+
+export interface FinanceMailData {
+  kind: string;
+  toName: string;
+  payload: Record<string, any>;
+  link: string;
+}
+
+const money = (v: unknown) => `Rs.${Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+/**
+ * The e-mail to a Department Head about money recorded for THEIR department. Only what that head needs: the customer, the reference, the
+ * services, the department, the amount and its status - never a payment reference, bank detail, phone or customer e-mail. A pending payment
+ * says so plainly and is never described as collected; an expense carries only this department's allocated part.
+ */
+export function renderFinanceMail(d: FinanceMailData): RenderedEmail {
+  const p = d.payload ?? {};
+  const row = (label: string, value?: unknown) => (value !== undefined && value !== null && String(value) !== '' ? `<b>${label}:</b> ${esc(value)}<br>` : '');
+  let heading: string;
+  let lead: string;
+  let rows: string;
+  let subject: string;
+  if (d.kind === 'EXPENSE_ADDED') {
+    heading = 'An expense was allocated to your department';
+    lead = `Accounts recorded an expense and allocated ${money(p.allocated)} of it to ${esc(p.department || 'your department')}.${p.status === 'PENDING' ? ' It is recorded as <b>pending payment</b>.' : ''}`;
+    rows = row('Description', p.description) + row('Category', p.category) + row('Expense date', p.date) + row('Allocated to your department', money(p.allocated)) +
+      row('Payment status', p.status === 'PENDING' ? 'Pending' : 'Paid') + row('Recorded', p.at);
+    subject = `Expense allocated to ${p.department || 'your department'}: ${money(p.allocated)} | Amuwa CRM`;
+  } else if (d.kind === 'PAYMENT_VERIFIED') {
+    heading = 'A payment for your department was verified';
+    lead = `Accounts verified ${money(p.verifiedAmount ?? p.amount)} received from <b>${esc(p.customer)}</b>. This amount now counts as collected income for ${esc(p.department || 'your department')}.`;
+    rows = row('Customer', p.customer) + row('Reference', p.orderRef) + row('Services', p.services) + row('Department', p.department) +
+      row('Amount recorded', money(p.amount)) + row('Amount verified', money(p.verifiedAmount ?? p.amount)) + row('Status', 'Verified') + row('Time', p.at);
+    subject = `Payment verified: ${p.customer} ${money(p.verifiedAmount ?? p.amount)} | Amuwa CRM`;
+  } else {
+    heading = 'A payment for your department is waiting for verification';
+    lead = `Accounts recorded ${money(p.amount)} from <b>${esc(p.customer)}</b>. It is <b>pending verification</b> and is not yet counted as collected income.`;
+    rows = row('Customer', p.customer) + row('Reference', p.orderRef) + row('Services', p.services) + row('Department', p.department) +
+      row('Amount recorded', money(p.amount)) + row('Status', 'Pending verification') + row('Time', p.at);
+    subject = `Payment pending verification: ${p.customer} ${money(p.amount)} | Amuwa CRM`;
+  }
+  const html = wrap(`
+  <p>Hello ${esc(d.toName || 'team')},</p>
+  <p><b>${esc(heading)}.</b></p>
+  <p>${lead}</p>
+  <p>${rows}</p>
+  ${d.link ? `<p><a href="${esc(d.link)}">Open the Amuwa CRM</a></p>` : ''}
+  <p>You are receiving this because you are a Department Head of ${esc(p.department || 'this department')}.</p>
+  <p>Best Regards,<br><b>Amuwa CRM</b></p>`);
+  return { subject, html, text: toText(html) };
+}

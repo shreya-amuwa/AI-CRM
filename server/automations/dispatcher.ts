@@ -7,6 +7,7 @@ import { renderClientPasswordEmail, renderPanelCredentialsEmail, renderTemporary
 import { decryptSecret } from './secrets.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { renderAccountsEmail, renderEmail } from './templates.js';
+import { financeMailQuietly } from './financeDispatcher.js';
 
 /**
  * Sends the queued onboarding messages (automation_jobs). The database queues
@@ -264,4 +265,6 @@ export async function dispatchQuietly(budgetMs = 8_000): Promise<void> {
   } catch (err) {
     console.error(JSON.stringify({ level: 'error', msg: 'automation dispatch failed', error: (err as Error)?.message }));
   }
+  // payments recorded in the customer's Accounts work also queue the Department Head e-mails: send them in the same breath
+  await financeMailQuietly();
 }

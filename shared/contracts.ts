@@ -1180,7 +1180,12 @@ export interface ExpenseRow {
   description: string;
   /** null = company-wide */
   departmentId: string | null;
+  /** The department's name, or the names of the departments it is split across. */
   department: string | null;
+  /** Who bears how much; empty = company-wide. The amounts add up to `amount`. */
+  allocations: { departmentId: string; department: string; amount: number }[];
+  /** When the list is filtered by one department: that department's own part. */
+  allocatedToFilter: number | null;
   category: string;
   amount: number;
   status: ExpenseStatus;
@@ -1432,8 +1437,11 @@ export interface InvoicePaymentSummary {
   order?: OrderSummary | null;
 }
 
+export type InvoiceType = 'GST' | 'NON_GST';
 export interface GeneratedInvoice {
   number: string;
+  /** GST: numbered GST/26-27/001, titled Tax Invoice. NON_GST: numbered Amuwa/26-27/001. Set by the database from the tax on the invoice. */
+  invoiceType: InvoiceType;
   invoiceDate: string;
   orderNumber: string;
   purpose: InvoicePurpose;
@@ -1471,6 +1479,8 @@ export interface InvoicePrefill {
   taxTreatment: TaxTreatmentName | null;
   company: { name: string; stateCode: string; gstin: string };
   suggestedInvoiceNumber: string;
+  /** A preview of the next number of each series (nothing is reserved): the number is assigned when the invoice is issued. */
+  nextInvoiceNumbers?: { GST: string; NON_GST: string };
   invoiceDate: string;
   orderNumber: string;
   terms: string;
@@ -3915,4 +3925,69 @@ export interface WorkflowSettings {
   canEdit: boolean;
   /** Follow-ups waiting for the delay to be set (in the caller's scope). */
   awaiting: number;
+}
+
+
+// ---------------------------------------------------------------------------
+// Accounts: Customer-wise Revenue (migration 20261209000200). Purchased, invoiced, collected, pending and outstanding are different things.
+// ---------------------------------------------------------------------------
+export const CUSTOMER_REVENUE_SORTS = ['PURCHASED', 'INVOICED', 'COLLECTED', 'PENDING', 'OUTSTANDING', 'ORDERS', 'NAME'] as const;
+export type CustomerRevenueSort = (typeof CUSTOMER_REVENUE_SORTS)[number];
+export interface CustomerRevenueRow {
+  customerId: string;
+  code: string | null;
+  name: string;
+  company: string | null;
+  services: string[];
+  orders: number;
+  /** What was ordered (billed on the customer's orders). Not income. */
+  purchased: number;
+  /** What the customer's non-cancelled invoices add up to. Not income. */
+  invoiced: number;
+  invoiceCount: number;
+  /** GST on those invoices. */
+  gstInvoiced: number;
+  /** Verified money received: the only figure that is collected income. */
+  collected: number;
+  /** Recorded but not yet verified. */
+  pending: number;
+  refunded: number;
+  /** Per order: ordered - collected (never below zero), added up. */
+  outstanding: number;
+  /** Verified money in the ledger that sits on no known order (shown apart, never added to an order). */
+  receiptsWithoutOrder: number;
+  lastOrderAt: string | null;
+}
+export interface CustomerRevenuePage {
+  total: number;
+  page: number;
+  pageSize: number;
+  totals: { customers: number; orders: number; purchased: number; invoiced: number; collected: number; pending: number; refunded: number; outstanding: number; receiptsWithoutOrder: number };
+  top: { customerId: string; name: string; purchased: number; collected: number }[];
+  items: CustomerRevenueRow[];
+}
+
+// ---------------------------------------------------------------------------
+// Accounts: the e-mails to Department Heads about payments and expenses (migration 20261209000300)
+// ---------------------------------------------------------------------------
+export type FinanceMailStatus = 'QUEUED' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'NO_RECIPIENT' | 'CANCELLED';
+export interface FinanceMailItem {
+  id: string;
+  kind: 'PAYMENT_RECORDED' | 'PAYMENT_VERIFIED' | 'EXPENSE_ADDED';
+  status: FinanceMailStatus;
+  detail: string | null;
+  attempts: number;
+  department: string;
+  departmentId: string;
+  recipient: string | null;
+  to: string | null;
+  sentAt: string | null;
+  createdAt: string;
+  customer: string | null;
+  amount: number | null;
+  canRetry: boolean;
+}
+export interface FinanceMailList {
+  counts: Partial<Record<FinanceMailStatus, number>>;
+  items: FinanceMailItem[];
 }

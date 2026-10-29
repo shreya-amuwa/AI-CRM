@@ -17,6 +17,8 @@ import { INVOICE_IMAGES, type InvoiceImage } from './assets.js';
 // ---------------------------------------------------------------------------
 export interface InvoicePdfInput {
   number: string;
+  /** GST: titled "Tax Invoice" with the tax rows. NON_GST: titled "Invoice", no tax rows. Absent (older snapshots): decided by the tax on it. */
+  invoiceType?: 'GST' | 'NON_GST';
   invoiceDate: string;
   orderNumber: string;
   customer: { name: string; businessName: string | null; address: string; contactPerson: string | null; contactNumber: string | null; gstin: string | null; state: string; stateCode: string };
@@ -385,6 +387,9 @@ function drawWatermark(p: Painter) {
 // ---------------------------------------------------------------------------
 const PAD = 5;
 
+const typeOf = (inv: InvoicePdfInput): 'GST' | 'NON_GST' => inv.invoiceType ?? (inv.totals.totalGst > 0 ? 'GST' : 'NON_GST');
+const titleOf = (inv: InvoicePdfInput) => (typeOf(inv) === 'GST' ? 'Tax Invoice' : 'Invoice');
+
 function moneyCell(p: Painter, s: string, x: number, w: number, yBaseline: number, o: { bold?: boolean; size?: number } = {}) {
   const font = o.bold ? p.f.bold : p.f.regular;
   let size = o.size ?? 8;
@@ -553,7 +558,7 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
       p.box('bank', MX, y, LW, h);
     }
   };
-  const supplyText = inv.taxTreatment === 'INTRA_STATE' ? 'Intra-state supply: CGST + SGST' : 'Inter-state supply: IGST';
+  const supplyText = typeOf(inv) === 'NON_GST' ? 'Non-GST invoice: no GST is charged' : inv.taxTreatment === 'INTRA_STATE' ? 'Intra-state supply: CGST + SGST' : 'Inter-state supply: IGST';
   const stateLines = f.wrap(f.regular, `${supplyText}${inv.taxTreatmentOverridden ? ' (set by Accounts)' : ''}`, 7.6, LW - 14);
   const state: Block = {
     h: 24 + stateLines.length * 9.6,
@@ -643,8 +648,9 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
   // ---- right: the tax summary (only the components that apply; one row per rate when rates differ)
   type SumRow = { label: string; rate?: string; amount: string; bold?: boolean; fill?: RGB };
   const multi = inv.totals.breakdown.length > 1;
-  const sum: SumRow[] = [{ label: 'Total Amount Before Tax', amount: money(inv.totals.subtotal), bold: true }];
-  for (const g of inv.totals.breakdown) {
+  const nonGst = typeOf(inv) === 'NON_GST';
+  const sum: SumRow[] = [{ label: nonGst ? 'Total Amount' : 'Total Amount Before Tax', amount: money(inv.totals.subtotal), bold: true }];
+  for (const g of nonGst ? [] : inv.totals.breakdown) {
     const tag = multi ? ` @ ${pct(g.rate)}` : '';
     if (inv.taxTreatment === 'INTRA_STATE') {
       sum.push({ label: `Add: CGST${tag}`, rate: pct(g.rate / 2), amount: money(g.cgst) });
@@ -653,9 +659,9 @@ function layoutBottom(p: Painter, inv: InvoicePdfInput, stage: InvoiceStage): { 
       sum.push({ label: `Add: IGST${tag}`, rate: pct(g.rate), amount: money(g.igst) });
     }
   }
-  sum.push({ label: 'Tax Amount GST', amount: money(inv.totals.totalGst), bold: true });
-  sum.push({ label: 'Final Amount After Tax', amount: money(inv.totals.total), bold: true, fill: HEAD_FILL });
-  sum.push({ label: 'GST Payable on Reverse Charge', amount: inv.reverseCharge ? money(inv.totals.totalGst) : 'Nil' });
+  if (!nonGst) sum.push({ label: 'Tax Amount GST', amount: money(inv.totals.totalGst), bold: true });
+  sum.push({ label: nonGst ? 'Final Amount Payable' : 'Final Amount After Tax', amount: money(inv.totals.total), bold: true, fill: HEAD_FILL });
+  if (!nonGst) sum.push({ label: 'GST Payable on Reverse Charge', amount: inv.reverseCharge ? money(inv.totals.totalGst) : 'Nil' });
   const SUM_ROW = 17;
   const summary: Block = {
     h: 19 + sum.length * SUM_ROW,
@@ -736,9 +742,9 @@ async function build(inv: InvoicePdfInput, stage: InvoiceStage, lean: boolean): 
     await doc.embedFont(StandardFonts.CourierBold)
   );
   const at = new Date(inv.issuedAt || `${inv.invoiceDate}T00:00:00Z`);
-  doc.setTitle(`Invoice ${inv.number}${stage === 'PAID' ? ' (Paid)' : ''}`);
+  doc.setTitle(`${titleOf(inv)} ${inv.number}${stage === 'PAID' ? ' (Paid)' : ''}`);
   doc.setAuthor(COMPANY_DETAILS.name);
-  doc.setSubject(`Tax invoice ${inv.number}`);
+  doc.setSubject(`${titleOf(inv)} ${inv.number}`);
   doc.setKeywords(['invoice', inv.number]);
   doc.setCreator('Amuwa CRM');
   doc.setProducer('Amuwa CRM (pdf-lib)');
@@ -751,11 +757,11 @@ async function build(inv: InvoicePdfInput, stage: InvoiceStage, lean: boolean): 
     drawWatermark(p);
     await drawHeader(p);
     if (continued) {
-      p.text(`Invoice ${inv.number} (continued)`, PAGE_W / 2, BODY_TOP + 20, { font: fonts.serifBold, size: 14, align: 'center' });
+      p.text(`${titleOf(inv)} ${inv.number} (continued)`, PAGE_W / 2, BODY_TOP + 20, { font: fonts.serifBold, size: 14, align: 'center' });
       p.box('title', MX, BODY_TOP + 6, CW, 20);
       return BODY_TOP + 34;
     }
-    p.text('Invoice', PAGE_W / 2, BODY_TOP + 24, { font: fonts.serifBold, size: 22, align: 'center' });
+    p.text(titleOf(inv), PAGE_W / 2, BODY_TOP + 24, { font: fonts.serifBold, size: 22, align: 'center' });
     p.box('title', MX, BODY_TOP + 4, CW, 28);
     const gridTop = BODY_TOP + 38;
     const gh = drawInfoGrid(p, inv, gridTop);

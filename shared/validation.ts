@@ -771,17 +771,31 @@ export type PartPaymentsQuery = z.infer<typeof partPaymentsQuerySchema>;
 // ---------------------------------------------------------------------------
 const money2 = z.coerce.number().positive('Enter the amount.').max(1e12).refine(n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Use at most 2 decimal places.');
 
+export const expenseAllocationSchema = z.object({ departmentId: uuidSchema, amount: money2 }).strict();
 export const expenseSchema = z
   .object({
     date: isoDate,
     description: trimmed(300).min(1, 'Describe the expense.'),
+    /** The older way: one department (or none = company-wide). Ignored when `allocations` is sent. */
     departmentId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
     category: trimmed(80).min(1, 'Enter the category.'),
     amount: money2,
     status: z.enum(['PAID', 'PENDING']).default('PAID'),
-    notes: optionalText(1000)
+    notes: optionalText(1000),
+    /** One expense, several departments: who bears how much. The parts must add up to `amount` (checked here and again by the database). No rows = company-wide. */
+    allocations: z.array(expenseAllocationSchema).max(30, 'At most 30 department rows.').optional(),
+    /** One per click of "Add expense": a retry with the same id returns the same expense. */
+    requestId: uuidSchema.optional()
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.allocations || v.allocations.length === 0) return;
+    // exact: in paise, so 33.33 + 33.33 + 33.34 is 100.00 and nothing is lost to floating point
+    const sum = v.allocations.reduce((a, r) => a + Math.round(r.amount * 100), 0);
+    if (sum !== Math.round(v.amount * 100)) {
+      ctx.addIssue({ code: 'custom', path: ['allocations'], message: 'The department amounts must add up to the expense amount.' });
+    }
+  });
 export type ExpenseInput = z.infer<typeof expenseSchema>;
 
 export const financeSummaryQuerySchema = z.object({ departmentId: uuidSchema.optional(), from: isoDate.optional(), to: isoDate.optional() });
@@ -803,6 +817,21 @@ export const expensesQuerySchema = z.object({
   to: isoDate.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20)
+});
+export const customerRevenueQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  serviceCode: z.string().trim().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.').optional(),
+  departmentId: uuidSchema.optional(),
+  sort: z.enum(['PURCHASED', 'INVOICED', 'COLLECTED', 'PENDING', 'OUTSTANDING', 'ORDERS', 'NAME']).default('PURCHASED'),
+  dir: z.enum(['ASC', 'DESC']).default('DESC'),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25)
+});
+export const financeMailQuerySchema = z.object({
+  status: z.enum(['QUEUED', 'SENDING', 'SENT', 'FAILED', 'SKIPPED', 'NO_RECIPIENT', 'CANCELLED']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50)
 });
 export const trendQuerySchema = z.object({ months: z.coerce.number().int().min(1).max(36).default(12) });
 export const expenseImportSchema = z
@@ -978,10 +1007,10 @@ export const generatedInvoiceIssueSchema = z
     customerId: uuidSchema,
     purpose: z.enum(INVOICE_PURPOSES),
     addonRequestId: uuidSchema.nullable().optional(),
-    /** Blank: the next number is reserved automatically. */
+    /** Always empty: the number is assigned by the database when the invoice is issued (GST/26-27/001 or Amuwa/26-27/001). A typed number is refused there. */
     invoiceNumber: z.preprocess(
       v => (typeof v === 'string' && v.trim() === '' ? null : v),
-      z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9/-]{0,15}$/, 'The invoice number can use letters, numbers, / and - (up to 16 characters).').nullable().optional()
+      z.string().trim().max(60).nullable().optional()
     ),
     invoiceDate: isoDate,
     orderNumber: z.string().trim().min(1).max(60).default('Verbal'),

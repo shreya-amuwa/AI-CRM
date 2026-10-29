@@ -3500,7 +3500,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.status === 200 && r.json.data.customer.businessName === 'Auto Traders' && r.json.data.lines.length >= 1 && r.json.data.lines.every((l: any) => l.hsnSac === '998313' && l.taxRate === 18 && l.quantity === '1 Nos')
     // the customer's agreed 1,000 (with GST) less nothing invoiced yet: 847.46 + 18% (152.54) = 1,000.00
     && r.json.data.dealAmount === 1000 && r.json.data.lines.length === 1 && r.json.data.lines[0].baseAmount === 847.46
-    && r.json.data.orderNumber === 'Verbal' && /^INV-\d{4}-\d{5}$/.test(r.json.data.suggestedInvoiceNumber) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details, the purchase\'s services with the amount filled in from the agreed amount, defaults set', r);
+    && r.json.data.orderNumber === 'Verbal' && /^GST\/\d\d-\d\d\/\d{3}$/.test(r.json.data.suggestedInvoiceNumber) && /^Amuwa\/\d\d-\d\d\/\d{3}$/.test(r.json.data.nextInvoiceNumbers.NON_GST) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details, the purchase\'s services with the amount filled in from the agreed amount, defaults set', r);
 
   // ---- issue: validation first
   r = await api('accm', 'POST', '/accounts/generated-invoices', { ...payload(), totalAmount: 11000 });
@@ -3529,11 +3529,11 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 
   // ---- stage 1: issue, store the unpaid PDF in R2, e-mail it
   const m0 = mailsBefore();
-  const body1 = payload({ invoiceNumber: 'GST/26-27/135' });
+  const body1 = payload();
   r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
   const inv1 = r.json.data?.invoice;
-  check(r.status === 201 && inv1.kind === 'GENERATED' && inv1.number === 'GST/26-27/135' && inv1.status === 'Pending' && inv1.total === 18880 && inv1.tax === 2880 && inv1.subtotal === 16000,
-    'stage 1: the invoice is issued with the typed number and the server\'s own totals (Rs.16,000 + 18% = Rs.18,880)', r);
+  check(r.status === 201 && inv1.kind === 'GENERATED' && /^GST\/\d\d-\d\d\/\d{3}$/.test(inv1.number) && inv1.status === 'Pending' && inv1.total === 18880 && inv1.tax === 2880 && inv1.subtotal === 16000,
+    'stage 1: the invoice is issued with a GST-series number and the server\'s own totals (Rs.16,000 + 18% = Rs.18,880)', r);
   check(r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'ISSUE:DONE,PDF:DONE,EMAIL:DONE', 'stage 1: issued, PDF stored, e-mail sent', r.json.data.steps);
   const g1 = await row(inv1.id);
   const unpaidKey = objectKey(inv1.id, 'unpaid');
@@ -3547,10 +3547,10 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(smtpMail.length === m0 + 1 && g1.unpaid_email_status === 'SENT' && g1.unpaid_email_to === custEmail && g1.unpaid_email_sent_at && g1.unpaid_email_attempts === 1, 'stage 1: the e-mail is recorded as sent only after the mail server accepted it', g1);
   const mail1 = smtpMail.at(-1)!;
   const att1 = attachmentOf(mail1.data);
-  check(mail1.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(mail1.from) && mail1.to.some(t => t.includes(custEmail)) && /Subject: Invoice GST\/26-27\/135 from Amuwa Corporation/.test(mail1.data), 'stage 1: nodemailer sends it as meta@amuwa.com to the customer');
-  check(!!att1 && att1.equals(stored1!.body) && /filename="?GST-26-27-135-invoice\.pdf/.test(mail1.data), 'stage 1: the attachment is exactly the stored file');
+  check(mail1.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(mail1.from) && mail1.to.some(t => t.includes(custEmail)) && new RegExp(`Subject: Invoice ${inv1.number.replace(/\//g, '\\/')} from Amuwa Corporation`).test(mail1.data), 'stage 1: nodemailer sends it as meta@amuwa.com to the customer');
+  check(!!att1 && att1.equals(stored1!.body) && new RegExp(`filename="?${inv1.number.replace(/[^A-Za-z0-9._-]+/g, '-')}-invoice\\.pdf`).test(mail1.data), 'stage 1: the attachment is exactly the stored file');
   const txt1 = pdfText(stored1!.body);
-  if (txt1) check(!/\bPAID\b/.test(txt1) && /INVOICE No\. GST\/26-27\/135/.test(txt1) && /Rs\.18,880\.00/.test(txt1) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt1), 'stage 1: the unpaid PDF has no PAID stamp, and the right number, total and words');
+  if (txt1) check(!/\bPAID\b/.test(txt1) && txt1.includes(`INVOICE No. ${inv1.number}`) && /Tax Invoice/.test(txt1) && /Rs\.18,880\.00/.test(txt1) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt1), 'stage 1: the unpaid PDF has no PAID stamp, and the right number, total and words');
   check(r.json.data.invoice.generated.unpaid.pdfStatus === 'STORED' && !JSON.stringify(r.json).includes('r2://'), 'the API answer never carries a storage reference');
 
   // a repeated request (a double click, a retry): the same invoice, nothing done twice
@@ -3558,8 +3558,29 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
   check(r.status === 200 && r.json.data.invoice.id === inv1.id && r.json.data.steps.every((s: any) => s.status === 'DONE') && /already (issued|saved)/.test(r.json.data.steps[0].message), 'a repeated request returns the same invoice (200, not 201)', r);
   check(smtpMail.length === m0 + 1 && fake.objects.size === objectsBefore && (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n === 1, 'and sends no second e-mail, stores no second file, creates no second invoice');
-  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/135' }));
-  check(r.status === 409, 'a different request with the same invoice number is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: inv1.number }));
+  check(r.status === 422 && /assigned by the system/.test(r.json.error.message), 'a number typed in the request is refused - even one that exists: numbers come only from the series', r);
+  const fyNow = (() => { const d = new Date(Date.now() + 5.5 * 3600e3); const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1; const a = m >= 4 ? y : y - 1; return `${String(a).slice(2)}-${String(a + 1).slice(2)}`; })();
+  check(inv1.number.startsWith(`GST/${fyNow}/`), `the year part is the current financial year (${fyNow})`, inv1.number);
+  // a non-GST invoice (every line at 0%) is in its own series, titled "Invoice", with no tax rows
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ taxRate: 0, baseAmount: 2500 })] }));
+  const nonGst = r.json.data?.invoice;
+  check(r.status === 201 && new RegExp(`^Amuwa/${fyNow}/\\d{3}$`).test(nonGst.number) && nonGst.total === 2500 && nonGst.tax === 0 && nonGst.generated.invoiceType === 'NON_GST' && inv1.generated.invoiceType === 'GST',
+    'a non-GST invoice gets an Amuwa/<year>/<no> number and its own type; the GST one is GST', nonGst?.number);
+  const ngText = pdfText(fake.objects.get(objectKey(nonGst.id, 'unpaid'))!.body);
+  if (ngText) check(ngText.includes(`INVOICE No. ${nonGst.number}`) && !/Tax Invoice/.test(ngText) && !/CGST|SGST|IGST/.test(ngText) && /Non-GST invoice/.test(ngText), 'the non-GST PDF shows its number, is not a "Tax Invoice" and has no tax rows');
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ taxRate: 0, baseAmount: 900 })] }));
+  const seqA = Number(nonGst.number.split('/')[2]), seqB = Number(r.json.data.invoice.number.split('/')[2]);
+  check(r.status === 201 && seqB === seqA + 1, 'the next non-GST invoice is the next number of that series', [nonGst.number, r.json.data?.invoice?.number]);
+  // parallel requests (different invoices) never share a number, and the numbers are consecutive
+  {
+    const rs = await Promise.all(Array.from({ length: 8 }, (_, i) => api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 1000 + i })] }))));
+    const nums = rs.map(x => x.json.data?.invoice?.number as string);
+    const seq = nums.map(n => Number(n?.split('/')[2])).sort((a, b) => a - b);
+    check(rs.every(x => x.status === 201) && new Set(nums).size === 8 && seq.every((n, i) => i === 0 || n === seq[i - 1] + 1), 'eight simultaneous GST invoices get eight different, consecutive numbers', nums);
+    const dup = (await db.query(`select count(*)::int n from (select lower(invoice_number) from member_invoices where kind = 'GENERATED' group by 1 having count(*) > 1) x`)).rows[0].n;
+    check(dup === 0, 'no number is used twice in the database');
+  }
 
   // simultaneous double click: one invoice, one file, one e-mail
   {
@@ -3577,7 +3598,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   {
     const rs = await Promise.all(Array.from({ length: 10 }, (_, i) => api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 100 + i })] }))));
     const nums = rs.map(x => x.json.data?.invoice?.number);
-    check(rs.every(x => x.status === 201) && new Set(nums).size === 10 && nums.every(n => /^INV-\d{4}-\d{5}$/.test(n)), 'ten simultaneous invoices get ten different automatic numbers', rs.map(x => [x.status, x.json.error?.message ?? x.json.data?.invoice?.number]));
+    check(rs.every(x => x.status === 201) && new Set(nums).size === 10 && nums.every(n => /^GST\/\d\d-\d\d\/\d{3}$/.test(n)), 'ten simultaneous invoices get ten different automatic numbers', rs.map(x => [x.status, x.json.error?.message ?? x.json.data?.invoice?.number]));
   }
 
   // ---- the client dashboard
@@ -3635,9 +3656,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(true, 'stage 2: the issued snapshot (number, date, customer, tax, totals, words) is unchanged');
   check((await db.query(`select count(*)::int n from generated_invoice_items where invoice_id = $1`, [inv1.id])).rows[0].n === 2, 'stage 2: the lines are unchanged');
   const mail2 = smtpMail.at(-1)!;
-  check(smtpMail.length === m1 + 1 && /Subject: Payment received - paid invoice GST\/26-27\/135/.test(mail2.data) && attachmentOf(mail2.data)!.equals(stored2!.body), 'stage 2: the paid e-mail carries exactly the paid file');
+  check(smtpMail.length === m1 + 1 && mail2.data.includes(`Subject: Payment received - paid invoice ${inv1.number}`) && attachmentOf(mail2.data)!.equals(stored2!.body), 'stage 2: the paid e-mail carries exactly the paid file');
   const txt2 = pdfText(stored2!.body);
-  if (txt2) check(/\bPAID\b/.test(txt2) && /INVOICE No\. GST\/26-27\/135/.test(txt2) && /Rs\.18,880\.00/.test(txt2) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt2), 'stage 2: the paid PDF has the PAID stamp and the SAME number, total and words');
+  if (txt2) check(/\bPAID\b/.test(txt2) && txt2.includes(`INVOICE No. ${inv1.number}`) && /Rs\.18,880\.00/.test(txt2) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt2), 'stage 2: the paid PDF has the PAID stamp and the SAME number, total and words');
   // a repeated click
   const m2 = mailsBefore(), o2 = fake.objects.size;
   r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'CASH', reference: 'second click' });
@@ -3788,7 +3809,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   // ---- the balance: what was paid, what is left, part payments, one paid-invoice workflow
   {
     const m = mailsBefore();
-    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/901', lines: [line({ baseAmount: 10000 })] }));
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 10000 })] }));
     const bi = r.json.data?.invoice;
     check(r.status === 201 && bi.total === 11800 && bi.generated.paymentSummary.total === 11800 && bi.generated.paymentSummary.confirmed === 0 && bi.generated.paymentSummary.balance === 11800
       && bi.generated.paymentSummary.state === 'UNPAID' && bi.generated.paymentSummary.ledger === 'INVOICE', 'balance: a new invoice shows its full balance (total 11,800, nothing confirmed)', r);
