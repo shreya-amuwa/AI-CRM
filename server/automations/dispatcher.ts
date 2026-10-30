@@ -3,7 +3,7 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { automationSettings, liveChannels, PANEL_URLS, whatsappStatus, type AutomationSettings } from './config.js';
 import { postWhatsApp, sendEmail, type SendResult } from './providers.js';
 import { cleanPhone, EMAIL_RE, maskEmail, maskPhone, STAGE_LABEL, type ClientStage } from './rules.js';
-import { renderClientPasswordEmail, renderPanelCredentialsEmail, renderPanelLinkEmail, renderTemporaryAccessEmail } from './templates.js';
+import { renderClientPasswordEmail, renderPanelCredentialsEmail, renderPanelLinkEmail, renderSubscriptionActivatedEmail, renderTemporaryAccessEmail } from './templates.js';
 import { checkPanelUrl } from '../../shared/panelUrl.js';
 import { decryptSecret } from './secrets.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
@@ -162,11 +162,73 @@ async function processPanelLinkMail(s: AutomationSettings, job: ClaimedJob): Pro
   return fromResult(await sendEmail(s, { email, name }, mail), email, `${x.serviceName || 'Panel'} link e-mail sent to ${maskEmail(email)}`);
 }
 
+interface SubscriptionMailData {
+  serviceName: string;
+  plan: string | null;
+  durationLabel: string | null;
+  startedOn: string;
+  expiresOn: string;
+  messageCredits: number | null;
+  panel: string | null;
+  panelUrl: string | null;
+  panelAccount: string | null;
+  hasLogin: boolean;
+  mustSetPassword: boolean;
+}
+
+/**
+ * The panel activation e-mail: plan, duration, the CONFIRMED start date, the expiry date the database calculated, the message limit and a secure way
+ * in (a one-time set-password link while the customer has not chosen a password; never a password). The figures are read at the moment of sending, so
+ * a corrected date is what the customer gets. A failure or a dry run is recorded on the job and can be retried from the subscription.
+ */
+async function processSubscriptionActivatedMail(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+  const c = job.customer;
+  const email = (c.email || '').trim().toLowerCase();
+  if (job.channel !== 'EMAIL') return { outcome: 'SKIPPED', detail: 'The panel activation message is sent by e-mail only' };
+  if (!EMAIL_RE.test(email)) return { outcome: 'FAILED', detail: 'The customer has no valid e-mail address on the record - nothing sent. Ask Accounts to correct it, then send it again.' };
+  const name = c.name?.trim() || 'Customer';
+  const x = job.context;
+  const { data, error } = await getServiceClient().rpc('subscription_mail_data', { p_customer: c.id, p_service: x.service, p_cycle: Number(x.cycle) });
+  const m = (data ?? null) as SubscriptionMailData | null;
+  if (error || !m) return { outcome: 'FAILED', detail: 'The subscription could not be read - nothing sent. Send it again from the subscription.', recipient: email };
+  if (s.mode !== 'live') return { outcome: 'SKIPPED', detail: `Dry run - not sent: ${m.serviceName} activation e-mail to ${maskEmail(email)}`, recipient: email };
+  if (s.testRecipients && !s.testRecipients.emails.has(email)) {
+    return { outcome: 'SKIPPED', detail: `Test mode - ${maskEmail(email)} is not a test recipient`, recipient: email };
+  }
+  let link: string | null = null;
+  if (m.hasLogin && m.mustSetPassword) {
+    try {
+      link = await new AuthAdminRepository().passwordLink(email, `${s.appUrl}/client/set-password`);
+    } catch {
+      return { outcome: 'RETRY', detail: 'Could not make the set-password link.', recipient: email };
+    }
+  }
+  const panelUrl = m.panelUrl && checkPanelUrl(m.panelUrl).ok ? m.panelUrl : null;
+  const mail = renderSubscriptionActivatedEmail({
+    name,
+    businessName: c.company?.trim() || name,
+    serviceName: m.serviceName,
+    plan: m.plan,
+    durationLabel: m.durationLabel,
+    startedOn: m.startedOn,
+    expiresOn: m.expiresOn,
+    messageCredits: m.messageCredits,
+    panel: m.panel,
+    panelUrl,
+    panelAccount: m.panelAccount,
+    loginEmail: c.loginEmail || email,
+    loginUrl: `${s.appUrl}/client/login`,
+    setPasswordLink: link
+  });
+  return fromResult(await sendEmail(s, { email, name }, mail), email, `${m.serviceName} activation e-mail sent to ${maskEmail(email)}`);
+}
+
 /** Decide and (in live mode) send one job. Never throws. */
 export async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
   if (job.stage === 'ACCOUNTS_PAYMENT') return processAccountsMail(s, job);
   if (job.stage === 'PANEL_CREDENTIALS') return processPanelCredentialsMail(s, job);
   if (job.stage === 'PANEL_LINK') return processPanelLinkMail(s, job);
+  if (job.stage === 'SUBSCRIPTION_ACTIVATED') return processSubscriptionActivatedMail(s, job);
   const c = job.customer;
   const name = c.name?.trim() || 'Customer';
   const phone10 = cleanPhone(c.whatsapp);

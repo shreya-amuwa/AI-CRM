@@ -12,6 +12,7 @@ import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
   CUSTOMER_DOCUMENT_MAX_BYTES,
+  SUBSCRIPTION_DURATIONS,
   CUSTOMER_DOCUMENT_MAX_LABEL,
   INVOICE_PDF_MAX_BYTES,
   INVOICE_PDF_MAX_LABEL,
@@ -469,6 +470,36 @@ export const auditListQuerySchema = z.object({
 const serviceCodes = z.array(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/)).max(40);
 const datetime = z.string().datetime({ offset: true });
 
+// ---- Subscription terms: Sales names the plan, the duration, the amount and the credits. There is no field for a start or an expiry date. ----
+const blankToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
+const subscriptionTermsBase = z
+  .object({
+    plan: trimmed(120).min(1, 'Enter the subscription plan.'),
+    durationCode: z.enum(SUBSCRIPTION_DURATIONS, { errorMap: () => ({ message: 'Choose the subscription duration.' }) }),
+    customMonths: z.preprocess(blankToUndefined, z.coerce.number({ invalid_type_error: 'Enter a whole number of months.' }).int('Enter a whole number of months.').min(1, 'At least 1 month.').max(120, 'At most 120 months.').optional()),
+    customDays: z.preprocess(blankToUndefined, z.coerce.number({ invalid_type_error: 'Enter a whole number of days.' }).int('Enter a whole number of days.').min(1, 'At least 1 day.').max(3650, 'At most 3650 days.').optional()),
+    amount: z.preprocess(blankToUndefined, z.coerce.number({ required_error: 'Enter the subscription amount.', invalid_type_error: 'Enter the subscription amount.' }).min(0, 'The amount cannot be negative.').max(99999999, 'That amount is too large.')),
+    messageCredits: z.preprocess(blankToUndefined, z.coerce.number({ invalid_type_error: 'Enter the message credits as a whole number.' }).int('Enter the message credits as a whole number.').min(0, 'The credits cannot be negative.').max(2000000000, 'That is too many credits.').optional()),
+    panel: optionalText(120)
+  })
+  .strict();
+const refineTerms = (v: { durationCode: string; customMonths?: number; customDays?: number }, ctx: z.RefinementCtx) => {
+  if (v.durationCode === 'CUSTOM') {
+    if ((v.customMonths === undefined) === (v.customDays === undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['customMonths'], message: 'Enter the custom duration in months or in days (one of them).' });
+    }
+  } else if (v.customMonths !== undefined || v.customDays !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['customMonths'], message: 'Custom months or days are for the Custom duration only.' });
+  }
+};
+export const subscriptionTermsSchema = subscriptionTermsBase.superRefine(refineTerms);
+export type SubscriptionTermsInput = z.infer<typeof subscriptionTermsSchema>;
+const serviceCodeOne = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.');
+export const leadSubscriptionsSchema = z
+  .array(subscriptionTermsBase.extend({ service: serviceCodeOne }).superRefine(refineTerms))
+  .max(40)
+  .refine(a => new Set(a.map(x => x.service)).size === a.length, { message: 'Each service can have only one subscription.' });
+
 const leadFields = {
   name: trimmed(200).min(1, 'Customer name is required.'),
   company: trimmed(200).min(1, 'Business name is required.'),
@@ -486,7 +517,7 @@ const leadFields = {
 };
 
 export const leadCreateSchema = z
-  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional() })
+  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional(), subscriptions: leadSubscriptionsSchema.optional() })
   .strict();
 export type LeadCreateInput = z.infer<typeof leadCreateSchema>;
 
@@ -495,6 +526,7 @@ export const leadUpdateSchema = z
   .partial()
   .extend({
     services: serviceCodes.min(1, 'Select at least one service.').optional(),
+    subscriptions: leadSubscriptionsSchema.optional(),
     activityNote: optionalText(500)
   })
   .strict()
@@ -1907,3 +1939,28 @@ export const followUpContactSchema = z
   .refine(b => !['NO_ANSWER', 'CALL_BACK'].includes(b.outcome) || !!b.nextFollowUpAt, { message: 'Give the date of the next follow-up.', path: ['nextFollowUpAt'] });
 export const followUpAssignSchema = z.object({ profileId: uuidSchema }).strict();
 export const tcFollowupDelaySchema = z.object({ days: z.number().int().min(1, 'Enter 1 to 365 days.').max(365, 'Enter 1 to 365 days.').nullable() }).strict();
+
+// ---------------------------------------------------------------------------
+// Subscription activation, correction and renewal (the team; never Sales)
+// ---------------------------------------------------------------------------
+export const subscriptionActivationSchema = z
+  .object({ activationDate: isoDate, panelCreatedOn: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()), note: optionalText(500) })
+  .strict();
+export const subscriptionCorrectionSchema = z
+  .object({
+    activationDate: isoDate,
+    panelCreatedOn: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    reason: trimmed(500).min(5, 'Give the reason for the correction.')
+  })
+  .strict();
+export const subscriptionRenewalSchema = z
+  .object({
+    paymentId: uuidSchema,
+    startDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    terms: subscriptionTermsBase.partial().nullish(),
+    note: optionalText(500)
+  })
+  .strict();
+export const usageAlertSettingsSchema = z
+  .object({ enabled: z.boolean(), thresholds: z.array(z.number().int().min(1).max(100)).min(1).max(8) })
+  .strict();

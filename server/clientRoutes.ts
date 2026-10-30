@@ -57,6 +57,7 @@ export const clientRoutes: ClientRouteDef[] = [
   { method: 'POST', path: '/password', handler: changeClientPassword },
   { method: 'GET', path: '/overview', handler: async c => ok(await c.services.client.overview()) },
   { method: 'GET', path: '/journey', handler: async c => ok(await c.services.client.journey()) },
+  { method: 'GET', path: '/subscription', handler: async c => ok(await c.services.client.subscriptions()) },
   { method: 'GET', path: '/services', handler: async c => ok(await c.services.client.services()) },
   { method: 'GET', path: '/billing', handler: async c => ok(await c.services.client.billing()) },
   { method: 'GET', path: '/service-progress', handler: async c => ok(await c.services.client.serviceProgress()) },

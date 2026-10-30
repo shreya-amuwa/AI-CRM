@@ -11,6 +11,7 @@ import type {
   ClientDocuments,
   ClientInvoice,
   ClientJourney,
+  ClientSubscription,
   ClientNotifications,
   ClientOverview,
   ClientPlans,
@@ -41,6 +42,9 @@ export class ClientRepository {
   overview() { return this.rpc<ClientOverview>('client_overview'); }
   /** Where the client is in the onboarding journey, and which sections are open (worked out by the database from the stored records). */
   journey() { return this.rpc<ClientJourney>('client_onboarding_journey'); }
+
+  /** The subscription of each service: plan, duration, status, panel and start / expiry dates (empty until the panel is activated) and message usage. */
+  subscriptions() { return this.rpc<ClientSubscription[]>('client_subscriptions'); }
   services() { return this.rpc<ClientService[]>('client_services'); }
   billing() { return this.rpc<ClientBilling>('client_billing'); }
   serviceProgress() { return this.rpc<ClientServiceProgress[]>('client_service_progress'); }

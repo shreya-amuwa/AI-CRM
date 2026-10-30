@@ -45,7 +45,7 @@ const server = (scenario) => {
   const open = done;
   const sec = (enabled, reason) => ({ enabled, reason: enabled ? null : reason });
   const access = {
-    overview: sec(true), journey: sec(true), documents: sec(true), invoices: sec(true), chat: sec(true), notifications: sec(true), docs: sec(true),
+    overview: sec(true), journey: sec(true), subscription: sec(true), documents: sec(true), invoices: sec(true), chat: sec(true), notifications: sec(true), docs: sec(true),
     services: sec(open, closedReason), campaigns: sec(open, closedReason), calendar: sec(open, closedReason),
     tickets: sec(done, !metaDone ? 'Available after Meta verification is completed.' : 'Available after your Relationship Manager is assigned.'),
     explore: sec(done, 'Available after onboarding is completed.'), plans: sec(done, 'Available after onboarding is completed.')
@@ -88,6 +88,11 @@ const server = (scenario) => {
     window.__calls.push(`${(init.method || 'GET').toUpperCase()} ${p}${u.search}`);
     if (p === '/client/me') return json(me);
     if (p === '/client/journey') return json(journey);
+    if (p === '/client/subscription') return json([done
+      ? { service: 'AI_CALLING', serviceName: 'AI Calling', plan: 'Growth', durationLabel: '6 months', status: 'ACTIVE', panelCreated: true, panelCreatedOn: '2026-10-09', startedOn: '2026-10-10', expiresOn: '2027-04-10', daysLeft: 163,
+          messages: { total: 20000, used: 5000, remaining: 15000, percent: 25, asOf: '2026-10-29', reported: true }, messageCredits: 20000 }
+      : { service: 'AI_CALLING', serviceName: 'AI Calling', plan: 'Growth', durationLabel: '6 months', status: 'NOT_STARTED', panelCreated: false, panelCreatedOn: null, startedOn: null, expiresOn: null, daysLeft: null,
+          messages: { total: 20000, used: 0, remaining: 20000, percent: 0, asOf: null, reported: false }, messageCredits: 20000 }]);
     if (GATED.includes(p) || p.startsWith('/client/tickets')) {
       // the server refuses a closed section
       const key = p.includes('ticket') ? 'tickets' : p.includes('plan') ? 'plans' : p.includes('catalog') || p.includes('service-requests') ? 'explore' : p.includes('calendar') ? 'calendar' : p.includes('campaign') ? 'campaigns' : 'services';
@@ -208,6 +213,18 @@ for (const [scenario, label, status] of [['rejected', 'Rejected', 'REJECTED'], [
   await page.close();
 }
 
+// ---- My Subscription before the panel is active
+{
+  const page = await open('pending', { width: 1280, height: 900 }, '/client/dashboard/subscription');
+  await page.waitForSelector('text=Subscription Not Started');
+  const t = (await page.textContent('.cd-main')).replace(/\s+/g, ' ');
+  check(/Your subscription will begin once document verification is completed and your panel has been successfully created and activated\./.test(t), 'My Subscription: the "not started" message is shown before the panel is active');
+  check(/Subscription duration6 months/.test(t) && /Subscription start dateNot started/.test(t) && /Subscription expiry dateCalculated once it starts/.test(t) && /Panel creation statusPending/.test(t), 'with the duration, and no start or expiry date', t);
+  check(/Total message credits20,000/.test(t) && /Usage percentage0%/.test(t), 'and the message credits');
+  check((await page.$$eval('.cd-nav-item', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()))).some(x => /My Subscription/.test(x)), 'the sidebar lists My Subscription, and it is not locked');
+  await page.close();
+}
+
 // ---- completed: nothing is closed
 {
   const page = await open('done', { width: 1280, height: 900 });
@@ -218,6 +235,11 @@ for (const [scenario, label, status] of [['rejected', 'Rejected', 'REJECTED'], [
   await page.waitForSelector('.cd-jr');
   check(/Your onboarding is complete/.test(await page.textContent('.cd-jr-summary')) && await page.getAttribute('.cd-jr-bar', 'aria-valuenow') === '100', 'the journey page shows the completion');
   check(/Ravi Manager/.test(await page.textContent('.cd-jr')) && /Ready since/.test(await page.textContent('.cd-jr')), 'with the Relationship Manager and the ready service');
+  await page.evaluate(() => { history.pushState({}, '', '/client/dashboard/subscription'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  await page.waitForSelector('text=Subscription Active');
+  const t = (await page.textContent('.cd-main')).replace(/\s+/g, ' ');
+  check(/started on 10 Oct 2026 and runs until 10 Apr 2027 \(163 days left\)/.test(t), 'My Subscription: active, with the actual start date, the calculated expiry and the days left', t);
+  check(/Panel creation date9 Oct 2026/.test(t) && /Messages used5,000/.test(t) && /Remaining messages15,000/.test(t) && /Usage percentage25%/.test(t), 'with the panel date and the message usage');
   await page.close();
 }
 

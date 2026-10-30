@@ -1,3 +1,4 @@
+import { SubscriptionPanel } from '../journey/SubscriptionPanel';
 import { CustomerJourneyAdmin } from '../journey/CustomerJourneyAdmin';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { displayTicketNo } from '../../lib/ticketFormat';
@@ -242,6 +243,7 @@ const CustomerDialog: React.FC<{ customer: DirectoryItem; onClose: () => void; o
       </div>
 
       <CustomerJourneyAdmin customerId={c.id} />
+      <SubscriptionPanel customerId={c.id} />
 
       <div>
         <h3 className="text-sm font-bold text-slate-900 mb-2">Tickets</h3>

@@ -3003,6 +3003,186 @@ provider.close();
   r = await api('cl2', 'GET', '/client/journey');
   check(r.json.data.completed && r.json.data.stage === 'COMPLETED' && Object.values(r.json.data.access).every((a: any) => a.enabled), 'journey: completed onboarding opens every section', r);
 
+  // ---- subscriptions over the API: Sales picks the duration, the team confirms the panel activation, the expiry is calculated ----
+  console.log('--- subscription duration, activation and expiry over the API');
+  {
+    const modeBefore = process.env.AUTOMATION_MODE;
+    const recipientsBefore = process.env.AUTOMATION_TEST_RECIPIENTS;
+    delete process.env.AUTOMATION_TEST_RECIPIENTS;
+    // a mail provider of this block's own (the suite's earlier one is closed by now)
+    const mailbox: { path: string; body: any }[] = [];
+    const mailMock = http.createServer((req, res) => {
+      let raw = '';
+      req.on('data', c => (raw += c));
+      req.on('end', () => { mailbox.push({ path: (req.url || '').split('?')[0], body: raw ? JSON.parse(raw) : null }); res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ id: `m-${mailbox.length}` })); });
+    });
+    await new Promise<void>(rs => mailMock.listen(0, rs));
+    const MP = `http://127.0.0.1:${(mailMock.address() as any).port}`;
+    const envKeys = ['AUTOMATION_DISPATCH_SECRET', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'APP_URL'];
+    const envBefore = Object.fromEntries(envKeys.map(k => [k, process.env[k]]));
+    Object.assign(process.env, { AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789', EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_test_key', EMAIL_API_BASE_URL: MP,
+      EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>', APP_URL: 'https://crm.example.test' });
+    const addMonths = async (d: string, m: number) => (await db.query(`select (($1::date) + make_interval(months => $2))::date::text d`, [d, m])).rows[0].d as string;
+    const dayOffset = async (n: number) => (await db.query(`select ((now() at time zone 'Asia/Kolkata')::date + $1::int)::text d`, [n])).rows[0].d as string;
+
+    // 1. Sales creates a customer with a 6-month subscription (and no date field exists)
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Sub Owner', company: 'Sub Six Co', phone: '9811100111', email: 'sub.six@example.com', leadSource: 'Walk-in', services: ['AI_CALLING'],
+      subscriptions: [{ service: 'AI_CALLING', plan: 'Growth', durationCode: '6M', amount: 12000, messageCredits: 20000, panel: 'Calling panel' }] });
+    check(r.status === 201, 'subscription: Sales creates a customer with a 6-month subscription', r);
+    const subC = r.json.data.id as string;
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Sub Bad', phone: '9811100112', leadSource: 'Walk-in', services: ['AI_CALLING'],
+      subscriptions: [{ service: 'AI_CALLING', plan: 'Growth', durationCode: '6M', amount: 1, startedOn: '2026-11-01' }] });
+    check(r.status === 422, 'subscription: a start date in the request is refused (there is no such field)', r);
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Sub Bad', phone: '9811100113', leadSource: 'Walk-in', services: ['AI_CALLING'],
+      subscriptions: [{ service: 'AI_CALLING', plan: 'Growth', durationCode: 'CUSTOM', amount: 1 }] });
+    check(r.status === 422, 'subscription: a custom duration needs months or days', r);
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Sub Bad', phone: '9811100114', leadSource: 'Walk-in', services: ['AI_CALLING'],
+      subscriptions: [{ service: 'AI_CALLING', plan: 'Growth', amount: 1 }] });
+    check(r.status === 422, 'subscription: the duration is required', r);
+    const row0 = (await db.query(`select duration_code, duration_months, plan_name, price, message_credits, started_on, renews_on, activated_by, subscription_cycle from public.customer_services where customer_id = $1`, [subC])).rows[0];
+    check(row0.duration_code === '6M' && row0.duration_months === 6 && row0.plan_name === 'Growth' && Number(row0.price) === 12000 && Number(row0.message_credits) === 20000
+      && row0.started_on === null && row0.renews_on === null && row0.activated_by === null && row0.subscription_cycle === 0, 'subscription: the duration is stored; the start and expiry dates are empty', row0);
+    r = await api('a', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/terms`, { plan: 'Growth', durationCode: 'CUSTOM', customDays: 45, amount: 9000, expiresOn: '2027-01-01' });
+    check(r.status === 422, 'subscription: Sales cannot send an expiry date with the terms', r);
+    r = await api('a', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/terms`, { plan: 'Growth', durationCode: '6M', amount: 12000, messageCredits: 20000, panel: 'Calling panel' });
+    check(r.status === 200 && r.json.data.services[0].durationLabel === '6 months' && r.json.data.services[0].startedOn === null && r.json.data.services[0].canSetTerms, 'subscription: Sales can still edit the terms before the start', r);
+    r = await api('b', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/terms`, { plan: 'X', durationCode: '1M', amount: 1 });
+    check(r.status === 404, 'subscription: another salesperson cannot change them', r);
+
+    // 2. payment, login (made by the Accounts flow at confirmation), documents
+    r = await api('a', 'POST', `/pipeline/customers/${subC}/send-to-accounts`, { amount: 12000 });
+    check(r.status === 200, 'subscription: sent to Accounts', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${subC}/accounts/order-gst`, { rate: 0 });
+    r = await api('accm', 'POST', `/pipeline/customers/${subC}/accounts/payments`, { type: 'FULL', amount: 12000, method: 'CASH', verify: true });
+    check(r.status === 201, 'subscription: the payment is recorded and verified', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${subC}/accounts/payment-confirmed`, {});
+    check(r.status === 200 && r.json.data.clientLogin.status === 'CREATED', 'subscription: payment confirmed, the client login is created', r.json.data);
+    const subAcct = (await db.query(`select auth_user_id from public.customer_client_accounts where customer_id = $1`, [subC])).rows[0].auth_user_id as string;
+    tokens.set('subc', tokenFor(subAcct));
+    r = await api('subc', 'GET', '/client/subscription');
+    check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].status === 'NOT_STARTED' && r.json.data[0].startedOn === null && r.json.data[0].expiresOn === null
+      && r.json.data[0].durationLabel === '6 months' && r.json.data[0].panelCreated === false, 'subscription: before the activation the client sees "not started" and no dates', r.json.data);
+    r = await api('subc', 'GET', '/client/journey');
+    check(r.status === 200 && r.json.data.access.subscription.enabled === true, 'subscription: My Subscription is open from the start', r.json.data?.access);
+    r = await api('subc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: await dayOffset(-1) });
+    check(r.status === 401 || r.status === 403, 'subscription: a client cannot use the staff endpoints', r);
+
+    // the onboarding steps that precede the panel (Meta verification, hand-over) are covered by the journey tests above: here the journey is finished
+    await db.query(`update public.customer_onboarding set onboarding_completed_at = now(), meta_status = 'COMPLETED', meta_completed_at = coalesce(meta_completed_at, now()) where customer_id = $1`, [subC]);
+
+    // 3. the activation
+    const start = await dayOffset(-20);
+    const panelDay = await dayOffset(-21);
+    r = await api('a', 'GET', `/pipeline/customers/${subC}/subscriptions`);
+    check(r.status === 200 && r.json.data.services[0].canActivate === false && r.json.data.services[0].canCorrect === false && r.json.data.services[0].blocker, 'subscription: Sales sees that it cannot activate and why', r.json.data?.services?.[0]);
+    r = await api('a', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: start });
+    check(r.status === 404, 'subscription: Sales cannot confirm the activation', r);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: start, panelCreatedOn: panelDay });
+    check(r.status === 422 && /Authorize these first/.test(r.json.error.message), 'subscription: not before the documents are authorized', r);
+    await db.query(`insert into public.customer_onboarding_entries (customer_id, item_code, value, status, saved_by, reviewed_at)
+      select $1, i.code, 'saved', 'VERIFIED', (select id from public.profiles where email = 'a@amuwa.com'), now() from private.customer_items($1) i
+      on conflict (customer_id, item_code) do update set status = 'VERIFIED'`, [subC]);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: await dayOffset(2) });
+    check(r.status === 422 && /future/.test(r.json.error.message), 'subscription: the activation date cannot be in the future', r);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: start, panelCreatedOn: panelDay, note: 'Panel live' });
+    const expiry = await addMonths(start, 6);
+    check(r.status === 200 && r.json.data.services[0].startedOn === start && r.json.data.services[0].expiresOn === expiry && r.json.data.services[0].panelCreatedOn === panelDay
+      && r.json.data.services[0].status === 'ACTIVE' && r.json.data.services[0].activatedBy, 'subscription: the team confirms the activation; the expiry is six calendar months later', r.json.data?.services?.[0]);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: await dayOffset(-3) });
+    check(r.status === 200 && r.json.data.services[0].startedOn === start && r.json.data.services[0].expiresOn === expiry, 'subscription: a repeated activation request does not reset the dates', r.json.data?.services?.[0]);
+    r = await api('sa', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation`, { activationDate: await dayOffset(-5) });
+    check(r.status === 200 && r.json.data.services[0].startedOn === start, 'subscription: nor from another employee', r.json.data?.services?.[0]);
+    check((await db.query(`select count(*)::int n from public.subscription_cycles where customer_id = $1`, [subC])).rows[0].n === 1, 'subscription: still one cycle');
+
+    // 4. what the client sees
+    r = await api('subc', 'GET', '/client/subscription');
+    const left = (await db.query(`select ($1::date - (now() at time zone 'Asia/Kolkata')::date)::int d`, [expiry])).rows[0].d as number;
+    check(r.status === 200 && r.json.data[0].status === 'ACTIVE' && r.json.data[0].startedOn === start && r.json.data[0].expiresOn === expiry && r.json.data[0].daysLeft === left
+      && r.json.data[0].panelCreatedOn === panelDay && r.json.data[0].messages.total === 20000, 'subscription: the client dashboard shows the actual start, the calculated expiry, the days left and the credits', r.json.data[0]);
+    check(!JSON.stringify(r.json).match(/activated_by|activatedBy|history|reason/i), 'subscription: nothing internal in the client answer', r.json.data);
+
+    // 5. the panel activation e-mail: sent only now, with the real dates
+    const subJobs = (await db.query(`select status, channel, context from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC])).rows;
+    check(subJobs.length === 1 && subJobs[0].channel === 'EMAIL' && ['QUEUED', 'SENT', 'SKIPPED'].includes(subJobs[0].status), 'subscription: one activation e-mail was queued, only after the activation', subJobs);
+    mailbox.length = 0;
+    await db.query(`update public.automation_jobs set status = 'QUEUED', attempts = 0, detail = null, next_attempt_at = '2000-01-01' where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
+    process.env.AUTOMATION_MODE = 'live';
+    await dispatch('dispatch-secret-0123456789');
+    process.env.AUTOMATION_MODE = 'off';
+    const act = mailbox.find(o => o.path === '/emails' && /panel is active/.test(o.body.subject ?? '') && o.body.to?.[0] === 'sub.six@example.com');
+    const longD = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+    check(!!act && act.body.html.includes(longD(start)) && act.body.html.includes(longD(expiry)) && act.body.html.includes('6 months') && act.body.html.includes('Growth')
+      && act.body.html.includes('20,000') && /set-password|Set your password|Sign in to your client dashboard/.test(act.body.html) && !/<b>Password:/i.test(act.body.html),
+      'subscription: the e-mail has the plan, the duration, the real start and expiry dates, the message limit and a secure way in (no password)', act?.body?.html);
+    check((await db.query(`select status from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC])).rows[0].status === 'SENT', 'subscription: its delivery status is recorded');
+
+    // a failure is recorded and can be retried
+    await db.query(`update public.automation_jobs set status = 'FAILED', detail = 'Provider refused' where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
+    r = await api('tc', 'GET', `/pipeline/customers/${subC}/subscriptions`);
+    check(r.json.data.services[0].email.status === 'FAILED' && r.json.data.services[0].canResendEmail, 'subscription: the team sees the failure and may retry', r.json.data?.services?.[0]?.email);
+    r = await api('a', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation-email/resend`, {});
+    check(r.status === 404, 'subscription: Sales cannot retry it', r);
+    mailbox.length = 0;
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/activation-email/resend`, {});
+    check(r.status === 200, 'subscription: the retry is accepted', r);
+    await db.query(`update public.automation_jobs set next_attempt_at = '2000-01-01' where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED' and status = 'QUEUED'`, [subC]);
+    process.env.AUTOMATION_MODE = 'live';
+    await dispatch('dispatch-secret-0123456789');
+    process.env.AUTOMATION_MODE = 'off';
+    check(mailbox.filter(o => o.path === '/emails' && /panel is active/.test(o.body.subject ?? '')).length === 1
+      && (await db.query(`select count(*)::int n, bool_and(status = 'SENT') s from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC])).rows[0].s === true, 'subscription: the retried e-mail was sent once', mailbox.map(o => o.path));
+
+    // 6. corrections: the heads only, with a reason
+    const fixed = await dayOffset(-22);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/dates`, { activationDate: fixed, reason: 'Panel was activated earlier' });
+    check(r.status === 404, 'subscription: the team member who confirmed cannot correct', r);
+    r = await api('a', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/dates`, { activationDate: fixed, reason: 'Panel was activated earlier' });
+    check(r.status === 404, 'subscription: Sales cannot correct', r);
+    r = await api('sa', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/dates`, { activationDate: fixed });
+    check(r.status === 422, 'subscription: a correction needs a reason', r);
+    r = await api('sa', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/dates`, { activationDate: fixed, panelCreatedOn: await dayOffset(-23), reason: 'Panel was activated earlier' });
+    check(r.status === 200 && r.json.data.services[0].startedOn === fixed && r.json.data.services[0].expiresOn === await addMonths(fixed, 6)
+      && r.json.data.history.some((h: any) => h.action === 'DATES_CORRECTED' && h.old.startedOn === start && h.new.startedOn === fixed && h.reason), 'subscription: the Super Admin corrects it with a reason; the expiry follows and the old dates are in the history', r.json.data?.services?.[0]);
+    check((await db.query(`select count(*)::int n from public.audit_logs where action = 'SUBSCRIPTION_DATES_CORRECTED' and entity_id = $1`, [subC])).rows[0].n === 1, 'subscription: the correction is audited');
+
+    // 7. reminders follow the calculated expiry
+    const exp2 = await addMonths(fixed, 6);
+    await db.query(`update public.customers set lifecycle_stage = 'CUSTOMER' where id = $1`, [subC]);
+    for (const n of [15, 7, 3, 1, 0]) await db.query(`select public.sub_reminder_schedule(($1::date - $2::int), array['EMAIL', 'WHATSAPP'])`, [exp2, n]);
+    const rem = (await db.query(`select stage, expiry_date::text d, channel from public.subscription_reminders where customer_id = $1 and channel in ('EMAIL', 'WHATSAPP')`, [subC])).rows;
+    check(rem.length === 10 && rem.every((x: any) => x.d === exp2) && [15, 7, 3, 1, 0].every(n => rem.some((x: any) => x.stage === n)), 'subscription: the reminders (15, 7, 3, 1 days and the expiry day) use the calculated expiry date', rem);
+
+    // 8. a renewal needs a verified payment and keeps the history
+    const payId = (await db.query(`select id from public.customer_payments where customer_id = $1 and status = 'VERIFIED' limit 1`, [subC])).rows[0].id as string;
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/renewal`, { paymentId: crypto.randomUUID() });
+    check(r.status === 422, 'subscription: a renewal needs a verified payment of this customer', r);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/renewal`, { paymentId: payId, terms: { durationCode: '1Y' } });
+    check(r.status === 200 && r.json.data.services[0].cycle === 2 && r.json.data.services[0].startedOn === exp2 && r.json.data.services[0].expiresOn === await addMonths(exp2, 12)
+      && r.json.data.cycles.length === 2 && r.json.data.cycles.filter((c: any) => c.status === 'ENDED').length === 1, 'subscription: the renewal continues from the old expiry; the previous cycle is kept', r.json.data?.cycles);
+    r = await api('tc', 'POST', `/pipeline/customers/${subC}/subscriptions/AI_CALLING/renewal`, { paymentId: payId, terms: { durationCode: '1Y' } });
+    check(r.status === 200 && r.json.data.cycles.length === 2, 'subscription: the same payment cannot renew twice', r.json.data?.cycles);
+    r = await api('subc', 'GET', '/client/subscription');
+    check(r.json.data[0].expiresOn === await addMonths(exp2, 12) && r.json.data[0].durationLabel === '1 year', 'subscription: the client sees the renewed dates', r.json.data[0]);
+
+    // 9. usage alerts and their settings
+    r = await api('sa', 'GET', '/workflow/usage-alerts');
+    check(r.status === 200 && JSON.stringify(r.json.data.thresholds) === '[70,80,90,100]' && r.json.data.canEdit, 'subscription: the usage alert thresholds default to 70, 80, 90 and 100 %', r.json.data);
+    r = await api('a', 'POST', '/workflow/usage-alerts', { enabled: true, thresholds: [50] });
+    check(r.status === 403, 'subscription: Sales cannot change them', r);
+    r = await api('sa', 'POST', '/workflow/usage-alerts', { enabled: true, thresholds: [0, 200] });
+    check(r.status === 422, 'subscription: invalid percentages are refused', r);
+
+    // 10. the lead schema rejects a stray date field on an edit too
+    r = await api('a', 'PATCH', `/pipeline/leads/${subC}`, { subscriptions: [{ service: 'AI_CALLING', plan: 'Growth', durationCode: '6M', amount: 1, renewsOn: '2027-01-01' }] });
+    check(r.status === 422, 'subscription: an edit cannot carry a date either', r);
+
+    process.env.AUTOMATION_MODE = modeBefore;
+    if (modeBefore === undefined) delete process.env.AUTOMATION_MODE;
+    if (recipientsBefore !== undefined) process.env.AUTOMATION_TEST_RECIPIENTS = recipientsBefore;
+    for (const k of envKeys) { if (envBefore[k] === undefined) delete process.env[k]; else process.env[k] = envBefore[k]; }
+    mailMock.close();
+  }
+
   // (from here the clients are fully set up: the per-service steps and the balance are sections of a finished onboarding)
   // service progress: each client reads the steps of their own services only
   r = await api('cl2', 'GET', '/client/service-progress');

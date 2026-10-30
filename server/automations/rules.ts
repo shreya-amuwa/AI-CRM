@@ -23,7 +23,9 @@ export const STAGE_LABEL = {
   /** The password the Meta Verifier set on the customer's WhatsApp panel, e-mailed to the customer once (never a WhatsApp message, never kept). */
   PANEL_CREDENTIALS: 'WhatsApp panel login',
   /** The Client Panel URL of one service, e-mailed to the customer on the Meta Verifier's request (e-mail only; no password, no token). */
-  PANEL_LINK: 'Client panel link'
+  PANEL_LINK: 'Client panel link',
+  /** Sent once when the panel is created and activated and the subscription starts: plan, duration, the real start and expiry dates, the message limit and a secure sign-in link. */
+  SUBSCRIPTION_ACTIVATED: 'Panel activation'
 } as const;
 export type ClientStage = keyof typeof STAGE_LABEL;
 

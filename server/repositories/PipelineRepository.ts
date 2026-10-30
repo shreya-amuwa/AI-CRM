@@ -27,7 +27,9 @@ import type {
   PipelineCounts,
   PipelineCustomer,
   ServiceCatalogItem,
-  ServiceRequirement
+  ServiceRequirement,
+  SubscriptionInfo,
+  SubscriptionOverview
 } from '../../shared/contracts.js';
 import type { LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
 import { likePattern, pageRange, unwrap, unwrapOne } from './base.js';
@@ -153,7 +155,7 @@ export function mapDocument(r: any): CustomerDocument {
 function leadPayload(input: Partial<LeadCreateInput> & { activityNote?: string | null }) {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
-    if (v !== undefined && k !== 'services') out[k] = v;
+    if (v !== undefined && k !== 'services' && k !== 'subscriptions') out[k] = v;
   }
   return out;
 }
@@ -366,6 +368,37 @@ export class PipelineRepository {
 
   async createLead(input: LeadCreateInput): Promise<string> {
     return unwrap(await this.db.rpc('create_lead', { p_fields: leadPayload(input), p_services: input.services })) as string;
+  }
+
+  // ---- subscriptions: terms (Sales), activation / correction / renewal (the team) ----
+  async subscriptionOverview(customerId: string): Promise<SubscriptionOverview> {
+    return unwrap(await this.db.rpc('subscription_overview', { p_customer: customerId })) as SubscriptionOverview;
+  }
+
+  async setSubscriptionTerms(customerId: string, service: string, terms: Record<string, unknown>): Promise<SubscriptionInfo> {
+    return unwrap(await this.db.rpc('set_subscription_terms', { p_customer: customerId, p_service: service, p_terms: terms })) as SubscriptionInfo;
+  }
+
+  async confirmSubscriptionActivation(customerId: string, service: string, activationDate: string, panelCreatedOn: string | null, note: string | null) {
+    return unwrap(await this.db.rpc('confirm_subscription_activation', {
+      p_customer: customerId, p_service: service, p_activation_date: activationDate, p_panel_created_on: panelCreatedOn, p_note: note
+    })) as { alreadyActive: boolean; subscription: SubscriptionInfo };
+  }
+
+  async correctSubscriptionDates(customerId: string, service: string, activationDate: string, panelCreatedOn: string | null, reason: string) {
+    return unwrap(await this.db.rpc('correct_subscription_dates', {
+      p_customer: customerId, p_service: service, p_activation_date: activationDate, p_panel_created_on: panelCreatedOn, p_reason: reason
+    })) as SubscriptionInfo;
+  }
+
+  async confirmSubscriptionRenewal(customerId: string, service: string, paymentId: string, startDate: string | null, terms: Record<string, unknown> | null, note: string | null) {
+    return unwrap(await this.db.rpc('confirm_subscription_renewal', {
+      p_customer: customerId, p_service: service, p_payment: paymentId, p_start: startDate, p_terms: terms, p_note: note
+    })) as { alreadyRenewed: boolean; subscription: SubscriptionInfo };
+  }
+
+  async resendActivationEmail(customerId: string, service: string): Promise<void> {
+    unwrap(await this.db.rpc('resend_activation_email', { p_customer: customerId, p_service: service }));
   }
 
   async updateLead(id: string, input: LeadUpdateInput): Promise<void> {

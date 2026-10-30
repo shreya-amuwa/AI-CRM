@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMenu } from '../components/layout/menuState';
-import { BookOpen, Bell, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, Lock, LogOut, Megaphone, Menu, MessageCircle, Milestone, Package, Search, Sparkles, X } from 'lucide-react';
+import { BookOpen, Bell, CalendarClock, CalendarDays, CreditCard, FileText, FolderUp, LayoutDashboard, LifeBuoy, Lock, LogOut, Megaphone, Menu, MessageCircle, Milestone, Package, Search, Sparkles, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../lib/documentation';
 import './client.css';
 import { clientApi } from './api';
@@ -22,6 +22,7 @@ import { Documents } from './Documents';
 import { Tickets } from './Tickets';
 import { Chat } from './Chat';
 import { Journey } from './Journey';
+import { MySubscription } from './MySubscription';
 import { Notifications } from './Notifications';
 import { Docs } from './Docs';
 import { Button, Card, EmptyState, LoadingBlock, initials } from './ui';
@@ -32,6 +33,7 @@ export const SECTIONS = [
   { slug: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { slug: 'journey', label: 'Onboarding Journey', Icon: Milestone },
   { slug: 'services', label: 'My Services', Icon: Package },
+  { slug: 'subscription', label: 'My Subscription', Icon: CalendarClock },
   { slug: 'campaigns', label: 'Campaigns', Icon: Megaphone },
   { slug: 'explore', label: 'Explore Services', Icon: Search },
   { slug: 'plans', label: 'Monthly Plans', Icon: Sparkles },
@@ -47,7 +49,7 @@ export const SECTIONS = [
 /** The sidebar groups from the Amuwa Connect design; every section appears exactly once. */
 const NAV_GROUPS: { label?: string; slugs: SectionSlug[] }[] = [
   { slugs: ['overview', 'journey'] },
-  { label: 'Your account', slugs: ['services', 'plans', 'invoices', 'documents'] },
+  { label: 'Your account', slugs: ['services', 'subscription', 'plans', 'invoices', 'documents'] },
   { label: 'Activity', slugs: ['campaigns', 'calendar', 'tickets', 'chat', 'notifications'] },
   { label: 'Discover & Help', slugs: ['explore', 'docs'] }
 ];
@@ -143,6 +145,7 @@ const Inner: React.FC = () => {
     switch (slug) {
       case 'journey': return <Journey />;
       case 'services': return <MyServices />;
+      case 'subscription': return <MySubscription />;
       case 'campaigns': return <Campaigns />;
       case 'explore': return <ExploreServices />;
       case 'plans': return <MonthlyPlans />;

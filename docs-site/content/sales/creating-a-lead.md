@@ -102,3 +102,7 @@ As soon as you select services in the **Add lead** form, a **What onboarding wil
 - **"No readable text found" during OCR scan**: Retake the photo closer to the sign board or visiting card, straight on and in even lighting.
 - **"Invalid phone number"**: Ensure the mobile number contains exactly 10 digits (starting with 6, 7, 8, or 9) without spaces or a `+91` prefix.
 - **"Type the lead source"**: If you selected *Other* as the lead source, fill in the custom source description field.
+
+## Choose the subscription (plan and duration)
+
+After you pick the services, a **Subscription** card asks, for each service, for the **plan**, the agreed **duration** (1, 2, 3 or 6 months, 1 or 2 years, or custom months or days), the **amount** and the **message credits**. You never enter a start or an expiry date: the subscription starts when the technical team confirms that the panel is created and activated, and the system calculates the expiry from your duration. You can change the plan and duration on the lead until the subscription has started.
