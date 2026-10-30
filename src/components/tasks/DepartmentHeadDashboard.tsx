@@ -64,7 +64,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const isAccounts = profile?.department?.slug === 'accounts';
   const supportSide = profile?.headDivision === 'SUPPORT';
   const operationsHead = !!profile?.isOperationsHead;
-  const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : 'overview'));
+  const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview'));
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
   const data = useWorkTasks();
@@ -133,14 +133,14 @@ export const DepartmentHeadDashboard: React.FC = () => {
   };
   // a page this department does not have (for example Accounts' Payment confirmations): its own first page, never a blank or stale one
   React.useEffect(() => {
-    if (!pages.some(p => p.id === nav)) setNav(isAccounts ? 'payments' : 'overview');
-  }, [pages, nav, isAccounts]);
+    if (!pages.some(p => p.id === nav)) setNav(isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview');
+  }, [pages, nav, isAccounts, operationsHead]);
 
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle={profile?.department?.name || 'Department'}
-      ariaLabel="Department Head navigation"
+      subtitle={operationsHead ? `Operations Head · ${profile?.department?.name || 'Departments'}` : profile?.department?.name || 'Department'}
+      ariaLabel={operationsHead ? 'Operations Head navigation' : 'Department Head navigation'}
       groups={groups}
       active={nav}
       onSelect={id => go(id as HeadPage)}

@@ -19,7 +19,7 @@ add-on requests and payments, support tickets, invoice requests, work tasks, the
 client's app login. With `purge_history` (default on) it also removes the bell notifications and audit-log rows about them.
 `reset_invoice_numbers = true` starts INV-YYYY-00001 again when no invoice is left.
 
-It never touches staff, teams, departments or expenses. Finance totals shrink because they are calculated from the
+Issued invoices and their lines, which the CRM never lets anyone delete, are removed too: this script is for test / demo data, so for the length of its one transaction it switches that protection off for the selected customers and switches it back on. **Do not run it on a database with real invoices you must keep.** It never touches staff, teams, departments or expenses. Finance totals shrink because they are calculated from the
 payments. It was tested on a copy of the test database: all customer-linked tables ended empty, staff data was intact,
 and a "keep one customer" run left that customer complete.
 

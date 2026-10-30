@@ -420,7 +420,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setCreated({
         profile: newProfile,
         password: newProfile.department?.slug === 'hr' ? password : undefined,
-        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision, isMetaVerifier(newProfile))
+        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision, isMetaVerifier(newProfile), isOperationsHead(newProfile))
       });
       resetForm();
       onCreated?.(newProfile);
@@ -778,7 +778,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' ? headDivision || null : null, metaVerifier)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' ? headDivision || null : null, metaVerifier, operationsHead)}</strong>
           </div>
 
           {role === 'DEPARTMENT_HEAD' && existingHead && (
@@ -884,7 +884,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       </td>
                       <td className="py-2.5 pr-3 text-slate-700">
                         {staffRoleLabel(m)}
-                        {m.role === 'DEPARTMENT_HEAD' && m.headDivision && <div className="text-slate-400">{HEAD_DIVISION_LABELS[m.headDivision]}</div>}
+                        {m.role === 'DEPARTMENT_HEAD' && m.headDivision && <div className="text-slate-400">{HEAD_DIVISION_LABELS[m.headDivision]}{isOperationsHead(m) ? ' (Operations)' : ''}</div>}
                         {m.role === 'DEPARTMENT_HEAD' && (accessOf.get(m.id)?.length ?? 0) > 0 && (
                           <div className="mt-0.5 text-[11px] text-indigo-700" data-testid={`head-access-${m.id}`}>
                             Home: {m.department?.name || '-'} · Works in: {accessOf.get(m.id)!.map(a => `${a.department}${a.division ? ` (${HEAD_DIVISION_LABELS[a.division]})` : ''}`).join(', ')}
@@ -995,7 +995,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           {new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
                       )}
-                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision, isMetaVerifier(m))}</td>}
+                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision, isMetaVerifier(m), isOperationsHead(m))}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>

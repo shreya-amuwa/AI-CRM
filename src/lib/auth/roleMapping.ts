@@ -166,9 +166,14 @@ export function defaultDashboardLabel(
   departmentSlug?: string,
   salesSubRole?: SalesSubRole | null,
   headDivision?: HeadDivision | null,
-  metaVerifier = false
+  metaVerifier = false,
+  operationsHead = false
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
+  // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
+  if (role === 'DEPARTMENT_HEAD' && operationsHead) {
+    return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;
+  }
   // HR and Accounts staff open their department's own dashboard.
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   switch (role) {

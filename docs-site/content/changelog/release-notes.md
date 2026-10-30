@@ -32,6 +32,8 @@ This changelog documents verified product releases, architectural updates, and w
 - **Client Panel URL** per customer and service (Client login details): HTTPS only, no credentials in the link, audited; the link is e-mailed on request, once per link.
 - The Status Completed e-mail and WhatsApp use the customer's own panel URL.
 
+- **Operations Head options and dashboard:** when the role is *Operations Head*, the form offers *Sales Operations Head*, *Support Operations Head* or *Sales & Support Operations Head*, and the person opens the **Operations Head Dashboard** on the *Operations Dashboard* page by default (Sales side included) instead of the Department Head dashboard. Nothing in the database changes.
+
 ### Fixed
 - **Department Head "Client hand-overs" was empty** for Support-side heads: they could not read customers owned by Sales teams once handed over. Fixed, and the page text no longer says that only Technical Consultant-verified customers appear. The Technical Consultant's consultation is a separate follow-up. A reconciliation report and one audited action cover customers handed over before the follow-up existed.
 - A paid add-on or invoice payment could miss its Department Head e-mail (caught by a new test).

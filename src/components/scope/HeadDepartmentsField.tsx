@@ -12,6 +12,12 @@ const FUNCTIONS: { value: HeadFunction; label: string }[] = [
   { value: 'SUPPORT', label: 'Support Department Head' },
   { value: 'BOTH', label: 'Sales & Support (one person handles both)' }
 ];
+// the same three choices for an Operations Head (who oversees several departments)
+const OPERATIONS_FUNCTIONS: { value: HeadFunction; label: string }[] = [
+  { value: 'SALES', label: 'Sales Operations Head' },
+  { value: 'SUPPORT', label: 'Support Operations Head' },
+  { value: 'BOTH', label: 'Sales & Support Operations Head (one person handles both)' }
+];
 
 export const HeadDepartmentsField: React.FC<{
   fn: HeadFunction | '';
@@ -38,7 +44,7 @@ export const HeadDepartmentsField: React.FC<{
   return (
     <div className="space-y-3" data-testid="head-departments">
       <label className="block text-xs font-semibold text-slate-700">
-        Department Head of *
+        {multi ? 'Operations Head of *' : 'Department Head of *'}
         <select
           id="staff-head-division"
           className={`${inputClass} mt-1 cursor-pointer`}
@@ -46,8 +52,8 @@ export const HeadDepartmentsField: React.FC<{
           onChange={e => onFn(e.target.value as HeadFunction | '')}
           required
         >
-          <option value="">Select Sales, Support or both…</option>
-          {FUNCTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+          <option value="">{multi ? 'Select Sales Operations Head, Support Operations Head or both…' : 'Select Sales, Support or both…'}</option>
+          {(multi ? OPERATIONS_FUNCTIONS : FUNCTIONS).map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
       </label>
 
