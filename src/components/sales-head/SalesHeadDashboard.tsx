@@ -10,6 +10,8 @@ import { ClientNotices } from '../notices/ClientNotices';
 import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { SalesOverview } from './SalesOverview';
 import { LeadList } from './LeadList';
 import { LeadAssign } from './LeadAssign';
@@ -21,7 +23,7 @@ import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 
 export type SalesHeadPage =
-  | 'overview' | 'leads-list' | 'leads-assign' | 'tasks' | 'performance' | 'income' | 'reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'notifications';
+  | 'overview' | 'leads-list' | 'leads-assign' | 'tasks' | 'performance' | 'income' | 'reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -41,6 +43,7 @@ const PATHS: Record<SalesHeadPage, string> = {
   notices: 'notices',
   team: 'team',
   chat: 'chat',
+  'raise-issue': 'raise-issue',
   notifications: 'notifications'
 };
 export const SALES_HEAD_BASE = (userId: string) => `/sales-head/dashboard/${userId}`;
@@ -75,6 +78,7 @@ export const SalesHeadDashboard: React.FC = () => {
     navigateTo(seg ? `${SALES_HEAD_BASE(userId)}/${seg}` : SALES_HEAD_BASE(userId));
   };
   useOpenChatRequest(React.useCallback(() => go('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -90,6 +94,7 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee },
           { id: 'notices', label: 'Client Notices', icon: Megaphone },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+          { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell }
         ]
@@ -137,6 +142,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}
+      {page === 'raise-issue' && <IssuesRoute />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>
   );

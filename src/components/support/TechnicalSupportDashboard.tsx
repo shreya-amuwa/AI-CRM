@@ -6,6 +6,8 @@ import { pipelineApi, workflowApi } from '../../lib/api/endpoints';
 import { useRealtime } from '../../lib/support';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { ChatRoute } from '../chat/ChatRoute';
+import { IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { ConsultantLayout, type ConsultantPage } from './consultant/ConsultantLayout';
 import { ConsultantIntake } from './consultant/ConsultantIntake';
@@ -50,6 +52,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
   useEffect(loadFollowUps, [loadFollowUps]);
   useRealtime('tc_followups', loadFollowUps);
   useOpenChatRequest(useCallback(() => { setPage('chat'); setOpenId(null); }, []));
+  useOpenIssuesRequest(useCallback(() => { setPage('raise-issue'); setOpenId(null); }, []));
 
   return (
     <ConsultantLayout
@@ -85,6 +88,8 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
         <ClientActivityManager />
       ) : page === 'chat' ? (
         <ChatRoute />
+      ) : page === 'raise-issue' ? (
+        <IssuesRoute />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : openId ? (

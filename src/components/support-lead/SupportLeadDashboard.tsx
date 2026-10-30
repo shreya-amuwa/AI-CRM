@@ -6,6 +6,8 @@ import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/she
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
@@ -34,7 +36,7 @@ const SupportTeamLeads: React.FC = () => {
   return <PipelineWorkspace section="leads" counts={counts} ownOnly onNavigate={() => undefined} />;
 };
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'performance' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'chat' | 'notifications';
+export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'performance' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'chat' | 'raise-issue' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -55,6 +57,7 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'handovers', label: 'Client Hand-overs', icon: UserCheck },
   { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+  { id: 'raise-issue', label: ISSUES_NAV.label, icon: ISSUES_NAV.icon },
   { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
 ];
@@ -123,13 +126,14 @@ export const SupportLeadDashboard: React.FC = () => {
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
+  useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
   const groups: ShellNavGroup[] = groupNavItems(
     NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n)),
     [
       { ids: ['dashboard'] },
       { label: 'Work', ids: ['tasks', 'performance', 'tickets', 'delivery', 'invoices'] },
       { label: 'Customers', ids: ['customers', 'handovers', 'import', 'leads', 'client-documents', 'client-calendar'] },
-      { label: 'Team', ids: ['team', 'chat', 'notifications'] }
+      { label: 'Team', ids: ['team', 'raise-issue', 'chat', 'notifications'] }
     ]
   );
 
@@ -171,6 +175,7 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'invoices' && <LeadInvoices />}
       {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}
       {page === 'chat' && <ChatRoute />}
+      {page === 'raise-issue' && <IssuesRoute />}
       {page === 'notifications' && <NotificationsPage />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="support" />}
     </DashboardShell>

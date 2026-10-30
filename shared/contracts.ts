@@ -4099,3 +4099,128 @@ export interface FinanceMailList {
   counts: Partial<Record<FinanceMailStatus, number>>;
   items: FinanceMailItem[];
 }
+
+// ---------------------------------------------------------------------------
+// Employee issues and HR meeting requests (one page for Team Members, Team Leads and Department Heads; two sections for HR)
+// ---------------------------------------------------------------------------
+export const ISSUE_CATEGORIES = ['WORKPLACE', 'HR_POLICY', 'ATTENDANCE_LEAVE', 'SALARY_PAYROLL', 'TEAM_MANAGEMENT', 'TECHNICAL_SYSTEM', 'FACILITIES', 'OTHER'] as const;
+export type IssueCategory = (typeof ISSUE_CATEGORIES)[number];
+export const ISSUE_CATEGORY_LABELS: Record<IssueCategory, string> = {
+  WORKPLACE: 'Workplace Issue', HR_POLICY: 'HR or Policy Concern', ATTENDANCE_LEAVE: 'Attendance or Leave', SALARY_PAYROLL: 'Salary or Payroll',
+  TEAM_MANAGEMENT: 'Team or Management Concern', TECHNICAL_SYSTEM: 'Technical or System Issue', FACILITIES: 'Workplace Facilities', OTHER: 'Other'
+};
+export const ISSUE_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
+export const ISSUE_PRIORITY_LABELS: Record<IssuePriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
+export const ISSUE_STATUSES = ['NEW', 'IN_PROGRESS', 'AWAITING_EMPLOYEE', 'RESOLVED', 'CLOSED'] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+/** HR's wording; the employee's own page says "Waiting for your reply" for AWAITING_EMPLOYEE. */
+export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
+  NEW: 'New', IN_PROGRESS: 'In Progress', AWAITING_EMPLOYEE: 'Awaiting Employee Response', RESOLVED: 'Resolved', CLOSED: 'Closed'
+};
+export const MEETING_CATEGORIES = ['HR_CONCERN', 'WORKPLACE_ISSUE', 'ATTENDANCE_LEAVE', 'SALARY_PAYROLL', 'MANAGEMENT', 'PERSONAL_CONFIDENTIAL', 'OTHER'] as const;
+export type MeetingCategory = (typeof MEETING_CATEGORIES)[number];
+export const MEETING_CATEGORY_LABELS: Record<MeetingCategory, string> = {
+  HR_CONCERN: 'HR Concern', WORKPLACE_ISSUE: 'Workplace Issue', ATTENDANCE_LEAVE: 'Attendance or Leave', SALARY_PAYROLL: 'Salary or Payroll',
+  MANAGEMENT: 'Management Discussion', PERSONAL_CONFIDENTIAL: 'Personal or Confidential Concern', OTHER: 'Other'
+};
+export const MEETING_STATUSES = ['PENDING', 'SCHEDULED', 'ALTERNATIVE_PROPOSED', 'DECLINED', 'CANCELLED', 'COMPLETED'] as const;
+export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
+  PENDING: 'Pending', SCHEDULED: 'Scheduled', ALTERNATIVE_PROPOSED: 'Another time proposed', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Completed'
+};
+export const MEETING_MODES = ['IN_PERSON', 'ONLINE'] as const;
+export type MeetingMode = (typeof MEETING_MODES)[number];
+export const MEETING_MODE_LABELS: Record<MeetingMode, string> = { IN_PERSON: 'In Person', ONLINE: 'Online' };
+/** What HR can do with a meeting request (the database checks each against the request's current status). */
+export const MEETING_ACTIONS = ['APPROVE', 'DECLINE', 'PROPOSE', 'RESCHEDULE', 'CANCEL', 'COMPLETE'] as const;
+export type MeetingAction = (typeof MEETING_ACTIONS)[number];
+
+export interface CaseEmployee { id: string; name: string; employeeCode: string; departmentId: string | null; department: string | null; designation: string | null }
+export interface CaseHr { id: string; name: string }
+/** The employee details a form shows (read from the signed-in employee's own profile). */
+export interface CaseMyDetails { id: string; name: string; code: string; departmentId: string | null; department: string | null; designation: string | null }
+export interface EmployeeIssue {
+  id: string;
+  reference: string;
+  title: string;
+  category: IssueCategory;
+  priority: IssuePriority;
+  status: IssueStatus;
+  /** Only in the detail (the lists never carry the text). */
+  description: string | null;
+  preferredResolution: string | null;
+  hrResponse: string | null;
+  hrResponseAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  assignedHr: CaseHr | null;
+  employee: CaseEmployee;
+  /** Set when a submission was recognised as one that already exists. */
+  duplicate?: boolean;
+}
+export interface CaseEvent {
+  id: number;
+  kind: string;
+  /** EMPLOYEE: the employee reads it; HR: an internal note, only HR ever gets it. */
+  visibility: 'EMPLOYEE' | 'HR';
+  side: 'EMPLOYEE' | 'HR';
+  actorName: string | null;
+  body: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+  createdAt: string;
+}
+export interface IssueAttachment { id: string; name: string; mime: string; size: number; eventId: number | null; createdAt: string }
+export interface EmployeeIssueDetail { issue: EmployeeIssue; events: CaseEvent[]; attachments: IssueAttachment[] }
+export interface EmployeeIssueList { items: EmployeeIssue[]; total: number; limit: number; offset: number }
+export interface EmployeeIssueOverview { total: number; new: number; inProgress: number; awaiting: number; resolved: number; closed: number; urgent: number }
+export interface HrAssignee { id: string; name: string; designation: string }
+export interface CaseDepartment { id: string; name: string }
+export interface IssueUploadTicket {
+  attachment: { id: string; name: string; mime: string; size: number };
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
+}
+
+export interface EmployeeMeeting {
+  id: string;
+  reference: string;
+  subject: string;
+  category: MeetingCategory;
+  status: MeetingStatus;
+  description: string | null;
+  notes: string | null;
+  preferredDate: string;
+  preferredTime: string;
+  mode: MeetingMode;
+  confirmedDate: string | null;
+  confirmedTime: string | null;
+  confirmedMode: MeetingMode | null;
+  location: string | null;
+  link: string | null;
+  instructions: string | null;
+  proposedDate: string | null;
+  proposedTime: string | null;
+  hrResponse: string | null;
+  hrResponseAt: string | null;
+  /** Why it was declined, cancelled or rescheduled. */
+  reason: string | null;
+  /** HR only: what was discussed and what happens next (null for the employee). */
+  outcome: string | null;
+  followUp: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  assignedHr: CaseHr | null;
+  employee: CaseEmployee;
+  duplicate?: boolean;
+}
+export interface EmployeeMeetingDetail { meeting: EmployeeMeeting; events: CaseEvent[] }
+export interface EmployeeMeetingList { items: EmployeeMeeting[]; total: number; limit: number; offset: number }
+export interface EmployeeMeetingOverview { total: number; pending: number; scheduled: number; completed: number; declinedOrCancelled: number }

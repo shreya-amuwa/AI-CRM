@@ -35,6 +35,8 @@ import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
@@ -69,6 +71,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const waiting = useWaitingForLead();
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
+  useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
 
   const groups: ShellNavGroup[] = useMemo(() => {
     const work = [
@@ -115,6 +118,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         label: 'Team',
         items: [
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+          { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell }
         ]
@@ -189,6 +193,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'telecaller-sheets' && !supportSide && <ContactSheets />}
       {nav === 'service-prices' && !supportSide && <ServicePrices />}
       {nav === 'chat' && <ChatRoute />}
+      {nav === 'raise-issue' && <IssuesRoute />}
       {nav === 'notifications' && <NotificationsPage />}
       {nav === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} />}
     </DashboardShell>
