@@ -31,6 +31,7 @@ export class ApprovalRepository {
       .from('approval_requests')
       .select(COLUMNS, { count: 'exact' })
       .eq('status', status)
+      .eq('source', 'REGISTRATION')   // employee requests have their own approval (employee-requests)
       .order('created_at', { ascending: false })
       .range(...pageRange(page));
     const rows = unwrap({ data, error });

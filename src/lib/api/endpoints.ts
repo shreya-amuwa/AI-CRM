@@ -4,6 +4,7 @@
  */
 import type {
   OperationsHeadReviewItem, OperationsOverviewRow,
+  DepartmentEmployeeDirectory, EmployeeRequest, OperationsActivityEntry, OperationsDashboard, OperationsDepartmentDetail, OperationsHeadAdmin, OperationsHeadsAdmin, TeamAssignmentRecord,
   ClientAccessMethod, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
   SalesSubRole,
@@ -912,4 +913,22 @@ export const workflowApi = {
   assignFollowUp: (id: string, profileId: string) => api.post<null>(`/consultant/followups/${id}/assign`, { profileId }),
   settings: () => api.get<WorkflowSettings>('/workflow/settings'),
   setFollowUpDelay: (days: number | null) => api.post<WorkflowSettings>('/workflow/tc-followup-delay', { days })
+};
+
+/** Employee approval: HR submits, the right approver decides, the Operations Head's departments, and the Department Head's team assignment. */
+export const employeesApi = {
+  submit: (body: unknown) => api.post<EmployeeRequest>('/employee-requests', body),
+  list: (q: { status?: string; toDecide?: boolean } = {}) => api.get<EmployeeRequest[]>('/employee-requests', { status: q.status, toDecide: q.toDecide === undefined ? undefined : String(q.toDecide) }),
+  get: (id: string) => api.get<EmployeeRequest>(`/employee-requests/${id}`),
+  decide: (id: string, body: { approve: boolean; note?: string; departmentIds?: string[]; primaryDepartmentIds?: string[] }) => api.post<EmployeeRequest>(`/employee-requests/${id}/decide`, body),
+  resubmit: (id: string, body: { role: string; departmentId: string; division?: string; position?: string; employeeCode?: string }) => api.post<EmployeeRequest>(`/employee-requests/${id}/resubmit`, body),
+  operationsHeads: () => api.get<OperationsHeadsAdmin>('/operations/heads'),
+  setScope: (id: string, body: { departmentIds: string[]; primaryDepartmentIds?: string[] }) => api.post<OperationsHeadAdmin>(`/operations/heads/${id}/scope`, body),
+  headActivity: (id: string) => api.get<OperationsActivityEntry[]>(`/operations/heads/${id}/activity`),
+  dashboard: () => api.get<OperationsDashboard>('/operations/dashboard'),
+  departmentActivity: (id: string) => api.get<OperationsActivityEntry[]>(`/operations/departments/${id}/activity`),
+  departmentDetail: (id: string) => api.get<OperationsDepartmentDetail>(`/operations/departments/${id}`),
+  directory: (departmentId?: string) => api.get<DepartmentEmployeeDirectory>('/department/employees', { departmentId }),
+  assignToLead: (memberId: string, body: { leadId: string; note?: string }) => api.post<null>(`/department/employees/${memberId}/assign-lead`, body),
+  assignments: (memberId: string) => api.get<TeamAssignmentRecord[]>(`/department/employees/${memberId}/assignments`)
 };
