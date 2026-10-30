@@ -141,7 +141,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
         )}
       </div>
 
-      <div role="tablist" aria-label="Team Member Management" className="flex gap-1 p-1 rounded-2xl bg-slate-100 border border-slate-200 w-full sm:w-fit overflow-x-auto">
+      <div role="tablist" aria-label="Team Member Management" className="flex flex-wrap gap-1 p-1 rounded-2xl bg-slate-100 border border-slate-200 w-full sm:w-fit sm:max-w-full">
         {tabs.map(id => {
           const { label, icon: Icon } = meta[id];
           const on = tab === id;
