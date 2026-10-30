@@ -45,7 +45,14 @@ import {
   DEMO_STATUSES,
   CALL_STATUSES,
   LEAD_TEMPERATURES,
-  TEAM_DIVISIONS
+  TEAM_DIVISIONS,
+  ISSUE_CATEGORIES,
+  ISSUE_PRIORITIES,
+  ISSUE_STATUSES,
+  MEETING_ACTIONS,
+  MEETING_CATEGORIES,
+  MEETING_MODES,
+  MEETING_STATUSES
 } from './contracts.js';
 
 const trimmed = (max: number) => z.string().trim().max(max);
@@ -1907,3 +1914,120 @@ export const followUpContactSchema = z
   .refine(b => !['NO_ANSWER', 'CALL_BACK'].includes(b.outcome) || !!b.nextFollowUpAt, { message: 'Give the date of the next follow-up.', path: ['nextFollowUpAt'] });
 export const followUpAssignSchema = z.object({ profileId: uuidSchema }).strict();
 export const tcFollowupDelaySchema = z.object({ days: z.number().int().min(1, 'Enter 1 to 365 days.').max(365, 'Enter 1 to 365 days.').nullable() }).strict();
+
+// ---------------------------------------------------------------------------
+// Employee issues and HR meeting requests
+// ---------------------------------------------------------------------------
+const caseAttachmentIds = z.array(uuidSchema).max(5, 'You can attach up to 5 files at a time.').default([]);
+const caseTime = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'Choose a time (HH:MM).');
+const casePaging = {
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).max(100000).default(0)
+};
+/** The employee's own form: nothing about the employee is sent, it is read from their profile. */
+export const issueSubmitSchema = z
+  .object({
+    clientRequestId: uuidSchema,
+    title: trimmed(200).min(3, 'Enter an issue title (at least 3 characters).'),
+    category: z.enum(ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose an issue category.' }) }),
+    description: trimmed(5000).min(10, 'Describe the issue (at least 10 characters).'),
+    priority: z.enum(ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }),
+    preferredResolution: optionalText(2000),
+    attachmentIds: caseAttachmentIds
+  })
+  .strict();
+export const issueReplySchema = z
+  .object({ message: trimmed(4000).min(2, 'Write your reply.'), attachmentIds: caseAttachmentIds })
+  .strict();
+export const caseMyListQuerySchema = z
+  .object({ status: z.enum(['ALL', ...ISSUE_STATUSES, ...MEETING_STATUSES]).optional(), ...casePaging })
+  .strict();
+const caseDateTime = z.string().datetime({ offset: true });
+export const issueHrListQuerySchema = z
+  .object({
+    status: z.enum(['ALL', ...ISSUE_STATUSES]).optional(),
+    departmentId: uuidSchema.optional(),
+    priority: z.enum(['ALL', ...ISSUE_PRIORITIES]).optional(),
+    category: z.enum(['ALL', ...ISSUE_CATEGORIES]).optional(),
+    assigneeId: uuidSchema.optional(),
+    unassigned: booleanParam.optional(),
+    from: caseDateTime.optional(),
+    to: caseDateTime.optional(),
+    search: trimmed(120).optional(),
+    ...casePaging
+  })
+  .strict();
+export const issueAssignSchema = z.object({ hrId: uuidSchema.nullable() }).strict();
+export const issueStatusSchema = z
+  .object({
+    status: z.enum(ISSUE_STATUSES, { errorMap: () => ({ message: 'Choose a status.' }) }),
+    message: optionalText(4000)
+  })
+  .strict();
+export const issueRespondSchema = z
+  .object({ message: trimmed(4000).min(2, 'Write the response.'), requestInfo: z.boolean().default(false) })
+  .strict();
+export const caseNoteSchema = z.object({ note: trimmed(4000).min(2, 'Write the note.') }).strict();
+export const issueUploadSchema = z
+  .object({
+    fileName: trimmed(200).min(1, 'The file needs a name.'),
+    mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be attached. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+  })
+  .strict();
+
+export const meetingSubmitSchema = z
+  .object({
+    clientRequestId: uuidSchema,
+    subject: trimmed(200).min(3, 'Enter a meeting subject (at least 3 characters).'),
+    category: z.enum(MEETING_CATEGORIES, { errorMap: () => ({ message: 'Choose a meeting category.' }) }),
+    description: trimmed(5000).min(10, 'Describe the purpose of the meeting (at least 10 characters).'),
+    preferredDate: isoDate,
+    preferredTime: caseTime,
+    mode: z.enum(MEETING_MODES, { errorMap: () => ({ message: 'Choose In Person or Online.' }) }),
+    notes: optionalText(2000)
+  })
+  .strict();
+export const meetingHrListQuerySchema = z
+  .object({
+    status: z.enum(['ALL', ...MEETING_STATUSES]).optional(),
+    departmentId: uuidSchema.optional(),
+    category: z.enum(['ALL', ...MEETING_CATEGORIES]).optional(),
+    assigneeId: uuidSchema.optional(),
+    unassigned: booleanParam.optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    search: trimmed(120).optional(),
+    ...casePaging
+  })
+  .strict();
+const httpsLink = z.preprocess(
+  v => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'The meeting link must start with https://').nullable().optional()
+);
+/** HR's decision on a meeting request. The database checks the request's current status for each action. */
+export const meetingDecideSchema = z
+  .object({
+    action: z.enum(MEETING_ACTIONS, { errorMap: () => ({ message: 'Choose what to do with this request.' }) }),
+    date: isoDate.nullable().optional(),
+    time: caseTime.nullable().optional(),
+    mode: z.enum(MEETING_MODES).nullable().optional(),
+    location: optionalText(300),
+    link: httpsLink,
+    instructions: optionalText(2000),
+    message: optionalText(4000),
+    reason: optionalText(2000),
+    outcome: optionalText(4000),
+    followUp: optionalText(4000)
+  })
+  .strict()
+  .superRefine((b, ctx) => {
+    if (['APPROVE', 'PROPOSE', 'RESCHEDULE'].includes(b.action) && (!b.date || !b.time)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose the meeting date and time.', path: ['date'] });
+    }
+    if (['DECLINE', 'CANCEL', 'RESCHEDULE'].includes(b.action) && (!b.reason || b.reason.length < 3)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Give a reason (the employee will read it).', path: ['reason'] });
+    }
+  });
+export const meetingCancelSchema = z.object({ reason: optionalText(2000) }).strict();
+export const meetingAlternativeSchema = z.object({ accept: z.boolean(), message: optionalText(2000) }).strict();

@@ -8,6 +8,7 @@ import { useNotifications, AppNotification } from '../../context/NotificationCon
 import { useAuth } from '../../context/AuthContext';
 import { Pager } from '../support-member/SupportParts';
 import { openChat } from '../chat/chatEvents';
+import { openFromNotification } from '../issues/issueEvents';
 
 const PAGE_SIZE = 10;
 
@@ -201,7 +202,7 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
           pageItems.map(n => (
             <div
               key={n.id}
-              onClick={() => { markAsRead(n.id); if (n.entityType === 'chat' && n.entityId) openChat({ clientConversationId: n.entityId }); }}
+              onClick={() => { markAsRead(n.id); if (n.entityType === 'chat' && n.entityId) openChat({ clientConversationId: n.entityId }); else openFromNotification(n); }}
               className={`p-5 rounded-3xl border transition-all cursor-pointer space-y-3 ${
                 !n.isRead
                   ? 'bg-white border-amber-300 shadow-md ring-2 ring-amber-400/20'

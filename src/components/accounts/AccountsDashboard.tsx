@@ -8,6 +8,8 @@ import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { AccountsConfirmations } from './AccountsConfirmations';
 import { ClientLogins } from './ClientLogins';
@@ -26,7 +28,7 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'client-logins' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'customer-revenue' | 'finance-mails' | 'business-reports' | 'expenses' | 'chat' | 'notifications';
+type Page = 'overview' | 'income' | 'confirmations' | 'client-logins' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'customer-revenue' | 'finance-mails' | 'business-reports' | 'expenses' | 'chat' | 'raise-issue' | 'notifications';
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -52,6 +54,7 @@ export const AccountsDashboard: React.FC = () => {
   };
   useEffect(refreshCounts, []);
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
+  useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
   usePipelineRealtime(refreshCounts);
 
   const displayName = profile?.fullName || user?.name || 'Accounts';
@@ -83,6 +86,7 @@ export const AccountsDashboard: React.FC = () => {
     {
       label: 'Team',
       items: [
+        { ...ISSUES_NAV },
         { ...CHAT_NAV, badge: chatUnread },
         { id: 'notifications', label: 'Notification Center', icon: Bell, badge: unreadCount }
       ]
@@ -127,6 +131,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
       {page === 'chat' && <ChatRoute />}
+      {page === 'raise-issue' && <IssuesRoute />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>
   );
