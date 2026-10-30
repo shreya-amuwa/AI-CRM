@@ -104,17 +104,30 @@ begin
   end if;
 
   -- 1. rows that block the customer from being deleted ("restrict" links), in dependency order
+  -- Issued invoices are protected records (nobody can delete one from the CRM). This script is for test / demo data, so for the length of this one
+  -- transaction the protection is switched off, the invoices of the selected customers are deleted, and the protection is switched on again.
+  alter table public.generated_invoice_items disable trigger generated_invoice_items_immutable;
+  alter table public.generated_invoices disable trigger generated_invoices_immutable;
+  alter table public.member_invoices disable trigger member_invoices_generated_guard;
+  delete from public.invoice_whatsapp_dispatches where customer_id in (select id from pg_temp.doomed);
+  delete from public.invoice_payments   where customer_id in (select id from pg_temp.doomed);
+  delete from public.payment_invoices   where customer_id in (select id from pg_temp.doomed);
+  delete from public.generated_invoice_items where invoice_id in (select invoice_id from public.generated_invoices where customer_id in (select id from pg_temp.doomed));
+  delete from public.generated_invoices where customer_id in (select id from pg_temp.doomed);
   delete from public.customer_payments  where customer_id in (select id from pg_temp.doomed);
   delete from public.payment_followups  where customer_id in (select id from pg_temp.doomed);
   delete from public.payment_requests   where customer_id in (select id from pg_temp.doomed);
   delete from public.addon_payments     where customer_id in (select id from pg_temp.doomed);
   delete from public.customer_documents where customer_id in (select id from pg_temp.doomed);
-  delete from public.addon_requests     where customer_id in (select id from pg_temp.doomed);
   delete from public.member_invoices    where customer_id in (select id from pg_temp.doomed);
+  delete from public.addon_requests     where customer_id in (select id from pg_temp.doomed);
   delete from public.work_tasks         where customer_id in (select id from pg_temp.doomed);
 
   -- 2. the customers (everything else linked with "cascade" goes with them)
   delete from public.customers where id in (select id from pg_temp.doomed);
+  alter table public.generated_invoice_items enable trigger generated_invoice_items_immutable;
+  alter table public.generated_invoices enable trigger generated_invoices_immutable;
+  alter table public.member_invoices enable trigger member_invoices_generated_guard;
 
   -- 3. the client's app login
   delete from auth.users where id in (select id from _d_auth);
