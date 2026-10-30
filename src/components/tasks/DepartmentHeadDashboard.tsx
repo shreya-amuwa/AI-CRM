@@ -46,7 +46,7 @@ import { HeadSearch } from './head/HeadSearch';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
-import { OperationsOverview } from '../operations/OperationsOverview';
+import { OperationsDashboard } from '../operations/OperationsDashboard';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -100,7 +100,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         items: [
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           // an Operations Head also sees the departments they oversee side by side
-          ...(operationsHead ? [{ id: 'operations', label: 'Operations Overview', icon: Building2 }] : [])
+          ...(operationsHead ? [{ id: 'operations', label: 'Operations Dashboard', icon: Building2 }] : [])
         ]
       },
       { label: 'Work', items: work },
@@ -176,7 +176,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         </div>
       )}
       {nav === 'overview' && <HeadOverview data={data} go={go} />}
-      {nav === 'operations' && operationsHead && <OperationsOverview />}
+      {nav === 'operations' && operationsHead && <OperationsDashboard />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'reports' && <HeadReports data={data} />}
       {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}

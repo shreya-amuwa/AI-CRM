@@ -96,13 +96,15 @@ r = await api('th', 'GET', '/me');
 check(r.status === 200 && r.json.data.defaultDashboard === 'sales-lead', 'a Sales team lead resolves to the Sales Team Lead dashboard', r);
 
 r = await api('th', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Member A', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
-check(r.status === 201, 'team head creates team member', r);
+check(r.status === 403 && /Department Head/.test(r.json.error.message), 'a team lead cannot create an active team member: the Department Head approves (an employee request)', r);
+r = await api('dh', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Member A', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+check(r.status === 201, 'department head creates team member', r);
 const memberA = r.json.data.id;
 tokens.set('a', tokenFor(memberA));
 
 // Promotion chain: DH makes a member a Team Lead; a Team Lead cannot; only the Super Admin makes a Department Head.
-r = await api('th', 'POST', '/users', { email: 'promo@amuwa.com', fullName: 'Promo', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
-check(r.status === 201, 'team head creates a member to promote', r);
+r = await api('dh', 'POST', '/users', { email: 'promo@amuwa.com', fullName: 'Promo', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+check(r.status === 201, 'department head creates a member to promote', r);
 const promoId = r.json.data.id;
 r = await api('th', 'PATCH', `/users/${promoId}`, { role: 'TEAM_HEAD', teamId: sales.id });
 check(r.status === 403, 'a team lead cannot make a team lead', r);
@@ -142,11 +144,11 @@ r = await api('dh', 'POST', '/users', { email: 'x@amuwa.com', fullName: 'X', pas
 check(r.status === 403, 'department head cannot create department heads');
 r = await api('dh', 'POST', '/users', { email: 'x@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: (await api('sa', 'GET', `/teams?departmentId=${wbx.id}`)).json.data[0].id });
 check(r.status === 403, 'department head cannot create users in another department', r);
-r = await api('th', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Dup', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+r = await api('dh', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Dup', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
 check(r.status === 409 && r.json.error.code === 'CONFLICT', 'duplicate e-mail → 409', r);
-r = await api('th', 'POST', '/users', { email: 'not-an-email', fullName: '', password: 'short', role: 'TEAM_MEMBER' });
+r = await api('dh', 'POST', '/users', { email: 'not-an-email', fullName: '', password: 'short', role: 'TEAM_MEMBER' });
 check(r.status === 422 && r.json.error.code === 'VALIDATION_ERROR' && Array.isArray(r.json.error.details), 'invalid input → 422 with details', r);
-r = await api('th', 'POST', '/users', undefined, '{not json');
+r = await api('dh', 'POST', '/users', undefined, '{not json');
 check(r.status === 422, 'malformed JSON → 422');
 
 // --- self-registration + approval -------------------------------------------
@@ -1243,8 +1245,8 @@ const deliveryLead = r.json.data.id;
 tokens.set('tl2', tokenFor(deliveryLead));
 r = await api('tl2', 'GET', '/me');
 check(r.status === 200 && r.json.data.defaultDashboard === 'support-lead', 'a Support team lead resolves to the Support Team Lead dashboard', r);
-r = await api('tl2', 'POST', '/users', { email: 'tm.delivery@amuwa.com', fullName: 'Delivery Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: delivery });
-check(r.status === 201, 'delivery team lead creates a team member', r);
+r = await api('dh', 'POST', '/users', { email: 'tm.delivery@amuwa.com', fullName: 'Delivery Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: delivery });
+check(r.status === 201, 'the department head creates a delivery team member', r);
 const deliveryMember = r.json.data.id;
 tokens.set('tm2', tokenFor(deliveryMember));
 r = await api('tl2', 'GET', `/pipeline/customers?stage=ONBOARDING&handover=TEAM_LEAD`);
@@ -3767,6 +3769,100 @@ provider.close();
   check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.contactNumber === '+919123456789' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
   r = await api('a', 'GET', '/hr/personal-details');
   check(r.status === 403, 'an ordinary employee cannot read employee details', r);
+  // --- employee approval hierarchy: HR submits, the right approver decides, the Department Head assigns the team ---
+  {
+    const body = (extra: Record<string, unknown>, designation: string) => ({ password: 'Sup3rSecret!', departmentId: wab.id, division: 'SALES', details: { ...details, designation }, ...extra });
+    r = await api('a', 'POST', '/employee-requests', body({ email: 'req.nobody@amuwa.com', fullName: 'Nobody', role: 'TEAM_MEMBER' }, 'Team Member'));
+    check(r.status === 403, 'employee requests: a Sales member cannot submit one', r);
+    r = await api('hrmember', 'POST', '/employee-requests', { email: 'bad', fullName: '' });
+    check(r.status === 422, 'employee requests: invalid input is refused', r);
+    r = await api('hrmember', 'POST', '/employee-requests', body({ email: 'req.tm1@amuwa.com', fullName: 'Request Member One', role: 'TEAM_MEMBER', approver: 'sa' }, 'Team Member'));
+    check(r.status === 422, 'employee requests: an approver cannot be chosen by the caller (unknown field)', r);
+    r = await api('hrmember', 'POST', '/employee-requests', body({ email: 'req.tm1@amuwa.com', fullName: 'Request Member One', role: 'TEAM_MEMBER' }, 'Team Lead'));
+    check(r.status === 422, 'employee requests: the designation must match the role', r);
+    r = await api('hrmember', 'POST', '/employee-requests', body({ email: 'req.tm1@amuwa.com', fullName: 'Request Member One', role: 'TEAM_MEMBER' }, 'Team Member'));
+    check(r.status === 201 && r.json.data.status === 'PENDING' && r.json.data.approverKind === 'DEPARTMENT_HEAD' && r.json.data.employee.status === 'PENDING' && r.json.data.approver?.name === 'Sales Head', 'employee requests: HR submits a Team Member; it goes to the Department Head and the account is pending', r);
+    tokens.set('shd', tokenFor(salesHeadId));
+    const tmReq = r.json.data.id as string; const tmId = r.json.data.employee.id as string;
+    tokens.set('reqtm', tokenFor(tmId));
+    r = await api('reqtm', 'GET', '/customers');
+    check(r.status === 403 || r.status === 401, 'employee requests: the pending employee has no access to anything', r);
+    r = await api('hrmember', 'POST', '/employee-requests', body({ email: 'req.tm1@amuwa.com', fullName: 'Dup', role: 'TEAM_MEMBER' }, 'Team Member'));
+    check(r.status === 409, 'employee requests: the same e-mail is never added twice', r);
+    check((await db.query(`select count(*)::int as n from public.profiles where email = 'req.tm1@amuwa.com'`)).rows[0].n === 1, 'employee requests: one employee record');
+    r = await api('hrmember', 'POST', `/employee-requests/${tmReq}/decide`, { approve: true });
+    check(r.status === 403 || r.status === 404, 'employee requests: HR cannot approve', r);
+    r = await api('hrmember', 'GET', '/employee-requests');
+    check(r.status === 200 && r.json.data.some((x: any) => x.id === tmReq && x.status === 'PENDING'), 'employee requests: HR sees the request and its status', r);
+    r = await api('a', 'GET', '/employee-requests');
+    check(r.status === 200 && r.json.data.length === 0, 'employee requests: an ordinary employee sees none', r);
+    r = await api('dh', 'POST', `/employee-requests/${tmReq}/decide`, { approve: true });
+    check(r.status === 403 || r.status === 404, 'employee requests: another Department Head of the department is not the respective head for this side', r);
+    r = await api('dh', 'POST', `/users/${tmId}/status`, { status: 'ACTIVE' });
+    check(r.status >= 400, 'employee requests: the generic status change cannot activate a pending employee', r);
+    r = await api('shd', 'POST', `/employee-requests/${tmReq}/decide`, { approve: false });
+    check(r.status === 422, 'employee requests: a rejection needs a reason', r);
+    r = await api('shd', 'GET', '/employee-requests?toDecide=true');
+    check(r.status === 200 && r.json.data.some((x: any) => x.id === tmReq && x.canDecide === true), 'employee requests: the Department Head sees it to decide', r);
+    r = await api('shd', 'POST', `/employee-requests/${tmReq}/decide`, { approve: true });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.decidedBy.name === 'Sales Head', 'employee requests: the Department Head approves', r);
+    r = await api('sa', 'GET', `/users/${tmId}`);
+    check(r.status === 200 && r.json.data.status === 'ACTIVE', 'employee requests: the employee is active only after the approval', r);
+    r = await api('shd', 'POST', `/employee-requests/${tmReq}/decide`, { approve: true });
+    check(r.status === 409, 'employee requests: a request is decided once', r);
+    // team assignment is a separate step
+    r = await api('shd', 'GET', '/department/employees');
+    check(r.status === 200 && r.json.data.members.some((m: any) => m.id === tmId && m.state === 'AWAITING_ASSIGNMENT') && r.json.data.leads.some((l: any) => l.id === salesTeamLeadId), 'assignment: the approved member awaits a Team Lead; the Team Leads are offered', r);
+    const beforeRequests = (await db.query(`select count(*)::int as n from public.approval_requests where source <> 'REGISTRATION'`)).rows[0].n;
+    r = await api('th', 'POST', `/department/employees/${tmId}/assign-lead`, { leadId: salesTeamLeadId });
+    check(r.status === 403, 'assignment: a Team Lead cannot pull a member into their team', r);
+    r = await api('shd', 'POST', `/department/employees/${tmId}/assign-lead`, { leadId: salesTeamLeadId, note: 'first team' });
+    check(r.status === 200, 'assignment: the Department Head assigns the member under a Team Lead', r);
+    r = await api('shd', 'GET', '/department/employees');
+    check(r.json.data.members.some((m: any) => m.id === tmId && m.state === 'ASSIGNED' && m.lead?.id === salesTeamLeadId), 'assignment: the directory shows who leads them now', r);
+    r = await api('shd', 'GET', `/department/employees/${tmId}/assignments`);
+    check(r.status === 200 && r.json.data.length === 2 && r.json.data[0].kind === 'ASSIGNMENT' && r.json.data[0].assignedBy === 'Sales Head', 'assignment: the history records who and when', r);
+    check((await db.query(`select count(*)::int as n from public.approval_requests where source <> 'REGISTRATION'`)).rows[0].n === beforeRequests, 'assignment: it created no employee request');
+    r = await api('shd', 'POST', `/department/employees/${tmId}/assign-lead`, { leadId: salesTeamLeadId });
+    check(r.status === 409, 'assignment: the same Team Lead again is refused', r);
+    r = await api('hrmember', 'GET', '/department/employees');
+    check(r.status === 403, 'assignment: HR has no team directory', r);
+
+    // reject, then resubmit
+    r = await api('hrmember', 'POST', '/employee-requests', body({ email: 'req.tm2@amuwa.com', fullName: 'Request Member Two', role: 'TEAM_MEMBER' }, 'Team Member'));
+    const tm2Req = r.json.data.id as string;
+    r = await api('shd', 'POST', `/employee-requests/${tm2Req}/decide`, { approve: false, note: 'Wrong team - ask for Support' });
+    check(r.status === 200 && r.json.data.status === 'REJECTED' && r.json.data.decisionNote.startsWith('Wrong team') && r.json.data.employee.status === 'REJECTED', 'employee requests: a rejection keeps the employee inactive and records the reason', r);
+    r = await api('hrmember', 'POST', `/employee-requests/${tm2Req}/resubmit`, { role: 'TEAM_MEMBER', departmentId: wab.id, division: 'SUPPORT' });
+    check(r.status === 200 && r.json.data.status === 'PENDING' && r.json.data.attempt === 2 && r.json.data.resubmissionOf === tm2Req, 'employee requests: HR resubmits a corrected request', r);
+    r = await api('hrmember', 'GET', `/employee-requests/${r.json.data.id}`);
+    check(r.status === 200 && r.json.data.history.length === 2 && r.json.data.history[0].status === 'REJECTED', 'employee requests: the earlier attempt stays in the history', r);
+
+    // an Operations Head goes to the Super Admin only
+    r = await api('hrmember', 'POST', '/employee-requests', body({ email: 'req.oh@amuwa.com', fullName: 'Request Ops', role: 'OPERATIONS_HEAD', departmentId: wbx.id, division: undefined }, 'Operations Head'));
+    check(r.status === 201 && r.json.data.approverKind === 'SUPER_ADMIN' && r.json.data.requestedRole === 'OPERATIONS_HEAD', 'employee requests: an Operations Head request goes to the Super Admin', r);
+    const ohReq = r.json.data.id as string; const ohId = r.json.data.employee.id as string;
+    r = await api('dh', 'POST', `/employee-requests/${ohReq}/decide`, { approve: true });
+    check(r.status === 403 || r.status === 404, 'employee requests: a Department Head cannot approve an Operations Head', r);
+    r = await api('dh', 'GET', '/operations/heads');
+    check(r.status === 403, 'operations: only the Super Admin sees the Operations Head administration', r);
+    r = await api('sa', 'POST', `/employee-requests/${ohReq}/decide`, { approve: true, departmentIds: [wab.id], primaryDepartmentIds: [wab.id] });
+    check(r.status === 200 && r.json.data.status === 'APPROVED', 'employee requests: the Super Admin approves and assigns the departments', r);
+    r = await api('sa', 'GET', '/operations/heads');
+    const head = r.json.data.heads.find((h: any) => h.id === ohId);
+    check(r.status === 200 && head && head.departments.some((d: any) => d.id === wab.id && d.primary === true), 'operations: the Operations Head and the departments they manage (one accountable owner)', r.json.data);
+    tokens.set('reqoh', tokenFor(ohId));
+    r = await api('reqoh', 'GET', '/operations/dashboard');
+    check(r.status === 200 && r.json.data.departments.length >= 1 && r.json.data.departments.every((d: any) => d.id === wab.id || d.id), 'operations: the dashboard answers for the Operations Head', r);
+    r = await api('reqoh', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [wab.id, wbx.id] });
+    check(r.status === 403, 'operations: an Operations Head cannot change their own scope', r);
+    r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [wab.id], primaryDepartmentIds: [wbx.id] });
+    check(r.status === 422, 'operations: a department you approve for must be one of the departments managed', r);
+    r = await api('reqoh', 'GET', `/operations/departments/${hrDept.id}/activity`);
+    check(r.status === 404 || r.status === 403, 'operations: no activity of a department that is not assigned', r);
+    r = await api('reqoh', 'GET', `/operations/departments/${wab.id}/activity`);
+    check(r.status === 200 && Array.isArray(r.json.data), 'operations: activity of an assigned department', r);
+  }
   // international and 10-digit numbers
   for (const [label, input, stored] of [['an international number', '+44 7911 123456', '+447911123456'], ['a 10-digit Indian number', '98765 11111', '+919876511111'], ['a number with a leading 0', '098765 22222', '+919876522222'], ['a +1 number', '+1 (415) 555-2671', '+14155552671']] as const) {
     r = await api('sa', 'POST', '/users', { ...hrBody, email: `intl.${stored.slice(-6)}@amuwa.com`, details: { ...details, designation: 'Team Member', contactNumber: input }, role: 'TEAM_MEMBER', departmentId: undefined, teamId: (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id])).rows[0].id });
