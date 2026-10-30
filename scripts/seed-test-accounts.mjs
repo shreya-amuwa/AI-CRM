@@ -15,7 +15,8 @@
  *   API_URL=https://your-app.example/api/v1 \
  *   SUPABASE_URL=https://xxxx.supabase.co SUPABASE_ANON_KEY=... \
  *   SA_EMAIL=you@yourcompany.com   [SA_PASSWORD=...  (otherwise asked, without echo)] \
- *   npm run seed:test-accounts -- [--domain example.com] [--prefix qa] [--sep .] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
+ *   npm run seed:test-accounts -- [--all-departments [--only wabastore,whatsbox] [--skip dtalk]] [--domain example.com] [--prefix qa] [--sep .] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
+ *     --all-departments   also one login per role in EVERY real department: wabastore-sales-head@, whatsbox-support-member@, ... (real teams, see below)
  *     --prefix wabastore --sep -   makes wabastore-sales-head@example.com, wabastore-support-member@example.com, ...
  *
  * Passwords are made up on every run, written ONLY to the --out file (mode 600, git-ignored: qa-accounts.local.*) and never printed or logged.
@@ -39,6 +40,9 @@ const PREFIX = (opt('prefix') || 'qa').trim().toLowerCase();
 const SEP = opt('sep') || '.';
 const OUT = opt('out') || 'qa-accounts.local.md';
 const DRY = flag('dry-run');
+const ALL = flag('all-departments');
+const ONLY = (opt('only') || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+const SKIP = (opt('skip') || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 const API_URL = (process.env.API_URL || '').replace(/\/+$/, '');
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const ANON = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -63,6 +67,7 @@ const password = () => {
   return `${Array.from(bytes, b => chars[b % chars.length]).join('')}-Aa7`;
 };
 const mail = local => `${PREFIX}${SEP}${local.split('.').join(SEP)}@${DOMAIN}`;
+const mailIn = (slug, local) => `${slug}${SEP}${local.split('.').join(SEP)}@${DOMAIN}`; // <department>-<role>@<domain>
 
 async function ask(prompt) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
@@ -132,8 +137,8 @@ const firstTeam = async dept => (dept ? (await must(saToken, 'GET', `/teams?depa
 
 // ---- users ----------------------------------------------------------------------------------------------------------------------------
 const made = {}; // email -> { password, id }
-async function user(who, dashboard, local, fullName, body, { optional = false } = {}) {
-  const email = mail(local);
+async function user(who, dashboard, local, fullName, body, { optional = false, email: given } = {}) {
+  const email = given ?? mail(local);
   const pw = password();
   if (DRY) {
     rows.push({ who, dashboard, email, password: '(dry run)', note: '' });
@@ -177,6 +182,53 @@ await user('Support Operations Head', 'Support Operations Head dashboard', 'ops.
   { role: 'DEPARTMENT_HEAD', departmentId: B.id, headDivision: 'SUPPORT', operationsHead: true, additionalAccess: [{ departmentId: A.id, division: 'SUPPORT' }] });
 await user('Sales & Support Operations Head', 'Operations Head dashboard', 'ops.both', 'QA Operations Head',
   { role: 'DEPARTMENT_HEAD', departmentId: B.id, operationsHead: true, additionalAccess: [...both(B.id), ...both(A.id)] });
+
+// Every real department (--all-departments): one login per role it has teams for, named <department-slug>-<role>@<domain>.
+// These are the REAL departments and teams: the test users sit next to real staff, and a head slot that a real head already holds is refused
+// (reported in the file as "not created"). One Operations Head oversees all of them.
+if (ALL) {
+  // a side that is its own department (Wabatalk = the Support side of D Talk) is not a department of its own here: its side is given as that department
+  const sideOf = (d, division) => departments.find(x => x.facetOf === d.id && x.facetDivision === division)?.id ?? d.id;
+  const real = departments.filter(d => !d.is_locked && !d.isLocked && !d.facetOf && !/^(qa-|.*-sandbox)/.test(d.slug) && !['accounts', 'hr'].includes(d.slug)
+    && (!ONLY.length || ONLY.includes(d.slug)) && !SKIP.includes(d.slug));
+  const access = [];
+  for (const d of real) {
+    const teams = await must(saToken, 'GET', `/teams?departmentId=${d.id}`);
+    const sales = teams.find(t => t.division === 'SALES');
+    const support = teams.find(t => t.division === 'SUPPORT');
+    const lab = text => `${d.name}: ${text}`;
+    const o = { optional: true };
+    if (sales) {
+      access.push({ departmentId: sideOf(d, 'SALES'), division: 'SALES' });
+      await user(lab('Sales Department Head'), 'Sales Department Head dashboard', 'sales.head', `${d.name} Sales Head`, { role: 'DEPARTMENT_HEAD', departmentId: d.id, headDivision: 'SALES' }, { ...o, email: mailIn(d.slug, 'sales.head') });
+      await user(lab('Sales Team Lead'), 'Sales Team Lead dashboard', 'sales.lead', `${d.name} Sales Lead`, { role: 'TEAM_HEAD', teamId: sales.id }, { ...o, email: mailIn(d.slug, 'sales.lead') });
+      await user(lab('Sales Team Member'), 'Sales Team Member dashboard', 'sales.member', `${d.name} Sales Member`, { role: 'TEAM_MEMBER', teamId: sales.id }, { ...o, email: mailIn(d.slug, 'sales.member') });
+      await user(lab('Telecaller'), 'Telecaller dashboard', 'telecaller', `${d.name} Telecaller`, { role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' }, { ...o, email: mailIn(d.slug, 'telecaller') });
+      await user(lab('Business Associate'), 'Business Associate dashboard', 'business.associate', `${d.name} Business Associate`, { role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'BUSINESS_ASSOCIATE' }, { ...o, email: mailIn(d.slug, 'business.associate') });
+    }
+    if (support) {
+      access.push({ departmentId: sideOf(d, 'SUPPORT'), division: 'SUPPORT' });
+      await user(lab('Support Department Head'), 'Department Head dashboard (Support side)', 'support.head', `${d.name} Support Head`, { role: 'DEPARTMENT_HEAD', departmentId: d.id, headDivision: 'SUPPORT' }, { ...o, email: mailIn(d.slug, 'support.head') });
+      await user(lab('Support Team Lead'), 'Support Team Lead dashboard', 'support.lead', `${d.name} Support Lead`, { role: 'TEAM_HEAD', teamId: support.id }, { ...o, email: mailIn(d.slug, 'support.lead') });
+      await user(lab('Support Team Member'), 'Support Team Member dashboard', 'support.member', `${d.name} Support Member`, { role: 'TEAM_MEMBER', teamId: support.id }, { ...o, email: mailIn(d.slug, 'support.member') });
+      await user(lab('Technical Consultant'), 'Technical Consultant dashboard', 'technical.consultant', `${d.name} Technical Consultant`, { role: 'TEAM_MEMBER', teamId: support.id, technicalConsultant: true }, { ...o, email: mailIn(d.slug, 'technical.consultant') });
+      await user(lab('Meta Verifier'), 'Meta Verifier dashboard', 'meta.verifier', `${d.name} Meta Verifier`, { role: 'TEAM_MEMBER', teamId: support.id, metaVerifier: true }, { ...o, email: mailIn(d.slug, 'meta.verifier') });
+    }
+    const general = teams.find(t => t.division === 'GENERAL');
+    if (!sales && !support && general) {
+      // a department with one general team (for example Education & Training): its head, a lead and a member
+      await user(lab('Department Head'), 'Department Head dashboard', 'head', `${d.name} Head`, { role: 'DEPARTMENT_HEAD', departmentId: d.id }, { ...o, email: mailIn(d.slug, 'head') });
+      await user(lab('Team Lead'), 'Team Lead dashboard', 'lead', `${d.name} Lead`, { role: 'TEAM_HEAD', teamId: general.id }, { ...o, email: mailIn(d.slug, 'lead') });
+      await user(lab('Team Member'), 'Team Member dashboard', 'member', `${d.name} Member`, { role: 'TEAM_MEMBER', teamId: general.id }, { ...o, email: mailIn(d.slug, 'member') });
+    } else if (!sales && !support) rows.push({ who: lab('(no team)'), dashboard: '', email: '-', password: null, note: 'nothing created: this department has no team' });
+  }
+  if (access.length) {
+    // its own home sandbox: the "both functions" slot of QA Sandbox Two is taken by ops.both
+    const C = await sandbox(`${SB} Three`, `${PREFIX}-sandbox-three`);
+    await user('Operations Head over every department', 'Operations Head dashboard', 'ops.all', 'QA Operations Head (all departments)',
+      { role: 'DEPARTMENT_HEAD', departmentId: C.id, operationsHead: true, additionalAccess: [...both(C.id), ...access] }, { optional: true });
+  }
+}
 
 // Accounts and HR are the real departments: members and leads, the head only when there is none
 const accTeam = await firstTeam(accounts);

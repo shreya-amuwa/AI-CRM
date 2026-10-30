@@ -37,6 +37,22 @@ The login is `<prefix><sep><name>@<domain>`. By default `qa.sales.head@example.c
 sandbox departments ("Wabastore Sandbox", "Wabastore Sandbox Two"), so several sets can exist side by side (a department has one head per side).
 `--domain amuwa.com` changes the domain (only use one where every `<prefix>...@` address is yours).
 
+## Every real department (`--all-departments`)
+
+```
+npm run seed:test-accounts -- --all-departments --sep -
+```
+
+For each real department it makes one login per role it has teams for, named `<department-slug>-<role>@<domain>`:
+`wabastore-sales-head`, `wabastore-sales-lead`, `wabastore-sales-member`, `wabastore-telecaller`, `wabastore-business-associate`,
+`wabastore-support-head`, `wabastore-support-lead`, `wabastore-support-member`, `wabastore-technical-consultant`, `wabastore-meta-verifier`
+(and the same for whatsbox, dtalk, digitree, mpillar, designstudio, wabastar, ...). A department with a single general team (for example Education & Training)
+gets a head, a lead and a member. Accounts and HR get their members, leads and (if free) head. One extra **Operations Head** (`qa-ops-all`, home in a
+sandbox) oversees every department. `--only wabastore,whatsbox` and `--skip dtalk` limit the list; try `--dry-run` first.
+
+These are the **real** departments and teams: the test users sit next to real staff, and a head slot already held by a real Sales or Support head is
+refused (the file lists it as "not created"). Run it on a staging project, or suspend the logins afterwards.
+
 ## What it touches
 
 - Two sandbox departments (**QA Sandbox** and **QA Sandbox Two** by default), each with a Sales and a Support team. All sandbox staff and the Operations Heads

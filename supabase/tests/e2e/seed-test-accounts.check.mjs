@@ -67,15 +67,35 @@ for (const r of table.filter(x => x.who.startsWith('Client'))) {
   const res = await fetch(`${API.replace('/api/v1', '')}/api/v1/client/me`, { headers: { authorization: `Bearer ${data.session.access_token}` } });
   check(res.status === 200, `${r.email} reaches the client dashboard API`, res.status);
 }
-// custom names: --prefix wabastore --sep -
+// custom names: --prefix acme --sep -
 const custom = fs.readFileSync(process.env.CUSTOM, 'utf8').split('\n').filter(l => l.startsWith('| ') && !l.startsWith('| Who') && !l.startsWith('|---')).map(l => l.split('|').slice(1, -1).map(c => c.trim())).map(([who, , email, password]) => ({ who, email, password }));
-for (const [who, email] of [['Sales Department Head', 'wabastore-sales-head@example.com'], ['Support Team Member', 'wabastore-support-member@example.com'], ['Sales Operations Head', 'wabastore-ops-sales@example.com'], ['Client (AI Calling)', 'wabastore-client-calls@example.com']]) {
+for (const [who, email] of [['Sales Department Head', 'acme-sales-head@example.com'], ['Support Team Member', 'acme-support-member@example.com'], ['Sales Operations Head', 'acme-ops-sales@example.com'], ['Client (AI Calling)', 'acme-client-calls@example.com']]) {
   const row = custom.find(r => r.email === email);
   check(row && row.password && row.password !== '-', `${who}: ${email} was made`, custom.map(r => r.email));
   const { data, error } = await sb().auth.signInWithPassword({ email, password: row.password });
   check(!error && data.session, `${email} signs in`, error?.message);
 }
-check(custom.every(r => /^wabastore-[a-z-]+@example\.com$/.test(r.email) || r.email === '-'), 'every custom address follows wabastore-<role>@example.com');
+check(custom.every(r => /^acme-[a-z-]+@example\.com$/.test(r.email) || r.email === '-'), 'every custom address follows acme-<role>@example.com');
+// every department
+const all = fs.readFileSync(process.env.ALL, 'utf8').split('\n').filter(l => l.startsWith('| ') && !l.startsWith('| Who') && !l.startsWith('|---')).map(l => l.split('|').slice(1, -1).map(c => c.trim())).map(([who, opens, email, password, note]) => ({ who, opens, email, password, note }));
+const deptRows = all.filter(r => /^[a-z0-9-]+-(sales|support)-/.test(r.email.split('@')[0]) && !r.email.startsWith('all-') && !r.email.startsWith('qa-'));
+const slugs = new Set(deptRows.map(r => r.email.split('@')[0].replace(/-(sales|support)-.*$/, '')));
+check(slugs.size >= 6, `logins were made for ${slugs.size} departments`, [...slugs]);
+check(['wabastore', 'whatsbox'].every(s => slugs.has(s)), 'including Wabastore and Whatsbox');
+const made2 = deptRows.filter(r => r.password && r.password !== '-');
+check(made2.length >= 40, `${made2.length} department logins have a password`, deptRows.filter(r => !r.password || r.password === '-').map(r => `${r.email}: ${r.note}`).slice(0, 5));
+for (const r of made2.filter(r => /^(wabastore-sales-head|whatsbox-support-member|wabastore-technical-consultant|whatsbox-telecaller)@/.test(r.email))) {
+  const { data, error } = await sb().auth.signInWithPassword({ email: r.email, password: r.password });
+  check(!error && data.session, `${r.email} signs in`, error?.message);
+}
+const opsAll = all.find(r => r.who.startsWith('Operations Head over every department'));
+check(opsAll && opsAll.password && opsAll.password !== '-', 'one Operations Head over every department was made', opsAll);
+{
+  const { data } = await sb().auth.signInWithPassword({ email: opsAll.email, password: opsAll.password });
+  const res = await fetch(`${API}/operations/overview`, { headers: { authorization: `Bearer ${data.session.access_token}` } });
+  const rows = (await res.json()).data ?? [];
+  check(rows.length >= slugs.size, `it oversees ${rows.length} departments`, rows.length);
+}
 check(!/[A-Za-z0-9]{14}-Aa7/.test(second), 'a second run writes no password (everything already existed)');
 check(table.filter(r => r.password && r.password !== '-').every(r => !second.includes(r.password)), 'and does not repeat the first run\'s passwords');
 console.log(`=== SEED TEST ACCOUNTS CHECKS PASSED (${passed}) ===`);
