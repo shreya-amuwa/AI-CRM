@@ -2087,6 +2087,12 @@ export const subscriptionRenewalSchema = z
 export const usageAlertSettingsSchema = z
   .object({ enabled: z.boolean(), thresholds: z.array(z.number().int().min(1).max(100)).min(1).max(8) })
   .strict();
+// Accounts profile corrections deliberately exclude all financial and assignment fields.
+export const accountsCustomerDetailsSchema = z.object({
+  name: leadFields.name, company: leadFields.company, phone: leadFields.phone,
+  whatsapp: leadFields.whatsapp, email: leadFields.email, city: leadFields.city,
+  address: leadFields.address, businessCategory: leadFields.businessCategory
+}).strict();
 
 // ---- Employee approval hierarchy ---------------------------------------------------------------------------------------------------------
 export const EMPLOYEE_REQUEST_ROLES = ['OPERATIONS_HEAD', 'DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER'] as const;

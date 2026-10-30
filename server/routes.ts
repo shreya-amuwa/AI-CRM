@@ -139,6 +139,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/back-out', handler: pipeline.backOut },
   { method: 'POST', path: '/pipeline/customers/:id/accounts/client-login', handler: pipeline.accountsCreateClientLogin, options: S },
   { method: 'GET', path: '/pipeline/accounts/client-logins', handler: pipeline.provisioningQueue },
+  { method: 'GET', path: '/pipeline/customers/:id/accounts/customer-details', handler: pipeline.accountsCustomerDetails, options: S },
+  { method: 'PATCH', path: '/pipeline/customers/:id/accounts/customer-details', handler: pipeline.updateAccountsCustomerDetails, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/accounts/customer-email', handler: pipeline.correctCustomerEmail, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/accounts/account-email/resend', handler: pipeline.resendAccountEmail, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/meta-verification-completed', handler: pipeline.markMetaVerificationCompleted, options: S },

@@ -105,3 +105,17 @@ Apply `supabase/migrations/20261012000100_accounts_finance.sql` (safe to re-run)
 
 ## GST (order level)
 GST is chosen once per order by Accounts and a payment is only the money received (whole rupees, GST included). See `docs/PAYMENT_GST.md`.
+
+## Record payment: no installment split; Accounts can correct customer details
+
+* The **Record payment** form has no "split into two installments" option any more. A **part payment** is the amount actually
+  received (typed by the accountant); a **full payment** is always the whole outstanding balance including GST and cannot be
+  typed over. No installment is planned, scheduled or stored.
+* **Edit Details** (Accounts -> customer -> Payments) lets an authorised Accounts employee complete or correct the customer's
+  profile: business name, contact name, mobile, WhatsApp, e-mail, business address, city and business category. It is one
+  database function, `accounts_customer_details(customer, patch)` (migration `20261209000700_accounts_customer_details.sql`):
+  Accounts staff only and only for customers they may see; only those profile fields are accepted (amounts, services, GST,
+  invoices, payments, owner and department are refused); name, business name and mobile are required and mobile numbers are
+  checked; the change is audited with the before / after values by the existing customer audit trigger. An e-mail that is linked
+  to a Client Dashboard login is not edited here (the field is locked): it goes through the existing secure e-mail correction.
+  The API is `GET|PATCH /api/v1/pipeline/customers/:id/accounts/customer-details`.
