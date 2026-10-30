@@ -21,7 +21,7 @@ interface DepartmentContextType {
   refreshDepartments: () => Promise<void>;
 }
 
-const DepartmentContext = createContext<DepartmentContextType | undefined>(undefined);
+export const DepartmentContext = createContext<DepartmentContextType | undefined>(undefined);
 
 function toDepartment(d: DepartmentDto): Department {
   return {

@@ -12,6 +12,7 @@ import { ClientNotices } from './components/notices/ClientNotices';
 import { EmailAutomation } from './components/hr/EmailAutomation';
 import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
 import { EmployeeIssuesManagement } from './components/hr/EmployeeIssuesManagement';
+import { HrEmployeeRequestsPage } from './components/employees/HrEmployeeRequestsPage';
 import { MeetingRequestsManagement } from './components/hr/MeetingRequestsManagement';
 import { TrainingWorkspace } from './components/hr/TrainingWorkspace';
 import { BusinessReports } from './components/reports/BusinessReports';
@@ -480,6 +481,8 @@ const MainAppContent: React.FC = () => {
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
+            ) : currentActiveTab === 'hr_requests' && currentDeptId === 'hr' ? (
+              <HrEmployeeRequestsPage />
             ) : currentActiveTab === 'hr_recruitment' && currentDeptId === 'hr' ? (
               <RecruitmentManagement />
             ) : currentActiveTab === 'hr_training' && currentDeptId === 'hr' ? (

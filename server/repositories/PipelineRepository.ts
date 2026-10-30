@@ -165,6 +165,9 @@ const DOCUMENT_COLUMNS = `id, customer_id, document_type, version, status, origi
 
 /** Data access for the sales pipeline. All queries run as the caller (RLS). */
 export class PipelineRepository {
+  async accountsCustomerDetails(id: string, patch: unknown) {
+    return unwrap(await this.db.rpc('accounts_customer_details', { p_customer: id, p_patch: patch }));
+  }
   constructor(private readonly db: SupabaseClient) {}
 
   async services(): Promise<ServiceCatalogItem[]> {

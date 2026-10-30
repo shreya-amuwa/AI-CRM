@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, GitBranch, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { Building2, CheckCircle2, ClipboardCheck, GitBranch, ShieldCheck, UserCheck, UserPlus, Users } from 'lucide-react';
 import type { Profile } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
@@ -7,6 +7,10 @@ import { creatableRoles } from '../../lib/auth/roleMapping';
 import { AccessControlTab } from '../scope/AccessControlTab';
 import { WorkflowSettings } from '../workflow/WorkflowSettings';
 import { StaffManagementPanel } from './StaffManagementPanel';
+import { DepartmentEmployeeDirectoryPanel } from '../employees/DepartmentEmployeeDirectory';
+import { EmployeeRequestForm } from '../employees/EmployeeRequestForm';
+import { EmployeeRequestsPanel } from '../employees/EmployeeRequestsPanel';
+import { OperationsHeadsAdminPanel } from '../employees/OperationsHeadsAdmin';
 
 /**
  * Team Member Management: one full-screen page with three tabs, used by the Super Admin, Department Head and Team Lead dashboards.
@@ -21,7 +25,7 @@ import { StaffManagementPanel } from './StaffManagementPanel';
  * the member list: Row Level Security on profiles; Access Control: department_access_get / department_access_apply refuse anyone but the
  * Super Admin), so a hand-typed URL or a direct API call gets nothing more.
  */
-export type TeamMemberTab = 'add' | 'members' | 'access' | 'workflow';
+export type TeamMemberTab = 'add' | 'members' | 'access' | 'workflow' | 'approvals' | 'directory' | 'operations';
 
 interface Props {
   /** The department whose people are managed. The Super Admin chooses it on the page; everybody else works in their own. */
@@ -39,7 +43,16 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
   const { departments } = useDepartments();
   const isSuperAdmin = profile?.role === 'SUPER_ADMIN';
   const canAdd = creatableRoles(profile?.role).length > 0;
-  const tabs: TeamMemberTab[] = [...(canAdd ? (['add'] as const) : []), 'members', ...(isSuperAdmin ? (['access', 'workflow'] as const) : [])];
+  const isDepartmentHead = profile?.role === 'DEPARTMENT_HEAD';
+  const isTeamLead = profile?.role === 'TEAM_HEAD';
+  // Employee approvals: the Super Admin decides Operations Heads, a Department Head decides Team Leads and Team Members of their department.
+  // The Department Head also puts approved Team Members under a Team Lead (a separate step from the approval).
+  const tabs: TeamMemberTab[] = [
+    ...(canAdd ? (['add'] as const) : []), 'members',
+    ...(isSuperAdmin || isDepartmentHead ? (['approvals'] as const) : []),
+    ...(isDepartmentHead ? (['directory'] as const) : []),
+    ...(isSuperAdmin ? (['operations', 'access', 'workflow'] as const) : [])
+  ];
 
   const firstTab = (wanted?: TeamMemberTab): TeamMemberTab => (wanted && tabs.includes(wanted) ? wanted : 'members');
   const [tab, setTab] = useState<TeamMemberTab>(() => firstTab(initialTab));
@@ -85,7 +98,10 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
   if (!profile) return null;
 
   const meta: Record<TeamMemberTab, { label: string; icon: typeof Users; hint: string }> = {
-    add: { label: 'Add Team Member', icon: UserPlus, hint: 'Create an account. Only the roles you may create are offered.' },
+    add: { label: isTeamLead ? 'Ask for a Team Member' : 'Add Team Member', icon: UserPlus, hint: isTeamLead ? 'Ask for a new team member. The Department Head approves before the account is active.' : 'Create an account. Only the roles you may create are offered.' },
+    approvals: { label: 'Employee Approvals', icon: ClipboardCheck, hint: isSuperAdmin ? 'Operations Heads HR asked for. You decide them and choose the departments they manage.' : 'Team Leads and Team Members HR asked for in your department.' },
+    directory: { label: 'Approved Employees', icon: UserCheck, hint: 'Put approved Team Members under a Team Lead.' },
+    operations: { label: 'Operations Heads', icon: Building2, hint: 'The departments each Operations Head manages, and who approves the Department Heads of each.' },
     members: {
       label: 'Team Members',
       icon: Users,
@@ -106,7 +122,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
           <h1 className="text-2xl font-bold font-heading text-slate-900">Team Member Management</h1>
           <p className="text-sm text-slate-500 mt-0.5">{meta[tab].hint}</p>
         </div>
-        {isSuperAdmin && tab !== 'access' && tab !== 'workflow' && (
+        {isSuperAdmin && tab !== 'access' && tab !== 'workflow' && tab !== 'approvals' && tab !== 'operations' && (
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-700" htmlFor="add-staff-department">
             <span className="shrink-0">Department</span>
             <select
@@ -161,7 +177,12 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
       )}
 
       {/* Add and Team Members stay mounted, so a half-filled form or a search is not lost when switching tabs. */}
-      {canAdd && (
+      {canAdd && isTeamLead && (
+        <div role="tabpanel" id="staff-panel-add" aria-labelledby="staff-tab-add" hidden={tab !== 'add'}>
+          <EmployeeRequestForm mode="lead" />
+        </div>
+      )}
+      {canAdd && !isTeamLead && (
         <div role="tabpanel" id="staff-panel-add" aria-labelledby="staff-tab-add" hidden={tab !== 'add'}>
           {slug && (
             <StaffManagementPanel
@@ -196,6 +217,21 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
           />
         )}
       </div>
+      {tabs.includes('approvals') && (
+        <div role="tabpanel" id="staff-panel-approvals" aria-labelledby="staff-tab-approvals" hidden={tab !== 'approvals'}>
+          {tab === 'approvals' && <EmployeeRequestsPanel view="approver" />}
+        </div>
+      )}
+      {isDepartmentHead && (
+        <div role="tabpanel" id="staff-panel-directory" aria-labelledby="staff-tab-directory" hidden={tab !== 'directory'}>
+          {tab === 'directory' && <DepartmentEmployeeDirectoryPanel />}
+        </div>
+      )}
+      {isSuperAdmin && (
+        <div role="tabpanel" id="staff-panel-operations" aria-labelledby="staff-tab-operations" hidden={tab !== 'operations'}>
+          {tab === 'operations' && <OperationsHeadsAdminPanel />}
+        </div>
+      )}
       {isSuperAdmin && (
         <div role="tabpanel" id="staff-panel-workflow" aria-labelledby="staff-tab-workflow" hidden={tab !== 'workflow'}>
           {tab === 'workflow' && <WorkflowSettings />}

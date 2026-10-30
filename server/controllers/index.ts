@@ -54,6 +54,23 @@ export const usersController = {
   }) as Handler
 };
 
+export const employeesController = {
+  submit: (async ctx => ok(await svc(ctx).employees.submit(ctx.actor, ctx.req.body), 201)) as Handler,
+  list: (async ctx => ok(await svc(ctx).employees.list(ctx.actor, ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).employees.get(ctx.params.id))) as Handler,
+  decide: (async ctx => ok(await svc(ctx).employees.decide(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  resubmit: (async ctx => ok(await svc(ctx).employees.resubmit(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  operationsHeads: (async ctx => ok(await svc(ctx).employees.operationsHeads(ctx.actor))) as Handler,
+  setScope: (async ctx => ok(await svc(ctx).employees.setScope(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  headActivity: (async ctx => ok(await svc(ctx).employees.headActivity(ctx.actor, ctx.params.id))) as Handler,
+  dashboard: (async ctx => ok(await svc(ctx).employees.dashboard())) as Handler,
+  departmentActivity: (async ctx => ok(await svc(ctx).employees.departmentActivity(ctx.params.id))) as Handler,
+  departmentDetail: (async ctx => ok(await svc(ctx).employees.departmentDetail(ctx.params.id))) as Handler,
+  directory: (async ctx => ok(await svc(ctx).employees.directory(ctx.req.query))) as Handler,
+  assignToLead: (async ctx => ok(await svc(ctx).employees.assignToLead(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  assignments: (async ctx => ok(await svc(ctx).employees.assignments(ctx.params.id))) as Handler
+};
+
 export const approvalsController = {
   list: (async ctx => ok(await svc(ctx).approvals.list(ctx.actor, ctx.req.query))) as Handler,
   approve: (async ctx => ok(await svc(ctx).approvals.approve(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
@@ -281,6 +298,8 @@ export const pipelineController = {
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
   accountsCreateClientLogin: (async ctx => ok(await svc(ctx).pipeline.accountsCreateClientLogin(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
   provisioningQueue: (async ctx => ok(await svc(ctx).pipeline.provisioningQueue(ctx.req.query))) as Handler,
+  accountsCustomerDetails: (async ctx => ok(await svc(ctx).pipeline.accountsCustomerDetails(ctx.params.id))) as Handler,
+  updateAccountsCustomerDetails: (async ctx => ok(await svc(ctx).pipeline.accountsCustomerDetails(ctx.params.id, ctx.req.body))) as Handler,
   correctCustomerEmail: (async ctx => ok(await svc(ctx).pipeline.correctCustomerEmail(ctx.params.id, ctx.req.body))) as Handler,
   resendAccountEmail: (async ctx => ok(await svc(ctx).pipeline.resendAccountEmail(ctx.params.id))) as Handler,
   markMetaVerificationCompleted: (async ctx => ok(await svc(ctx).pipeline.markMetaVerificationCompleted(ctx.params.id))) as Handler,

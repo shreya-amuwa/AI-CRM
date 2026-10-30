@@ -1,9 +1,9 @@
+import { AccountsCustomerDetails } from './AccountsCustomerDetails';
 import { AccountsCustomerInvoices } from '../invoices/AccountsCustomerInvoices';
 import { StepList } from '../invoices/GeneratedInvoicePanel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FilePlus2, Plus } from 'lucide-react';
 import type { FollowUpOutcome, LedgerPayment, PaymentInvoiceBilling, PaymentInvoiceOutcome, PaymentOverview, PaymentType } from '../../../shared/contracts';
-import { installmentPlan, splitIntoInstallments } from '../../../shared/installments';
 import { GST_STATES, inferStateFromAddress, isValidGstinFormat, normalizeGstin } from '../../../shared/gst';
 import { FOLLOWUP_OUTCOMES, PAYMENT_METHODS } from '../../../shared/contracts';
 import { accountsRecordPaymentSchema, accountsUpdatePaymentSchema, paymentFollowUpSchema } from '../../../shared/validation';
@@ -61,25 +61,12 @@ const PaymentFormDialog: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [split, setSplit] = useState(false);
 
   // A full payment is always the whole outstanding amount, GST included: it is filled in and cannot be typed over.
   const full = type === 'FULL';
   const shownAmount = full ? String(open) : amount;
-  // The installment helper is for a NEW part payment only; it can be switched off, and a full payment never shows it.
-  const canSplit = !editing && type === 'PART' && splitIntoInstallments(open).length === 2;
-  const splitting = canSplit && split;
-  const plan = splitting ? installmentPlan(open, Number(amount)) : null;
-  const toggleSplit = (on: boolean) => {
-    setSplit(on);
-    if (on) {
-      setAmount(String(splitIntoInstallments(open)[0]));
-      setFieldErrors(f => ({ ...f, amount: '' }));
-    }
-  };
   const pickType = (t: PaymentType) => {
     setType(t);
-    if (t === 'FULL') setSplit(false);
     setFieldErrors(f => ({ ...f, amount: '' }));
     setError(null);
   };
@@ -176,34 +163,6 @@ const PaymentFormDialog: React.FC<{
         <FormField label="Note (optional)" htmlFor="pay-note" error={fieldErrors.note}>
           <textarea id="pay-note" rows={2} maxLength={1000} className={inputClass} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Seen in the HDFC account" />
         </FormField>
-        {canSplit && (
-          <div className="rounded-xl border border-slate-200 p-3 text-xs text-slate-700 space-y-2" data-testid="pay-split">
-            <label className="flex items-start gap-2">
-              <input type="checkbox" className="mt-0.5 accent-blue-600" checked={split} onChange={e => toggleSplit(e.target.checked)} data-testid="pay-split-toggle" />
-              <span>
-                <strong className="text-slate-900">Split what is still to receive into two installments (optional).</strong>
-                <span className="block text-[11px] text-slate-500">Fills in the first installment as this payment. Only a suggestion: you can change the amount.</span>
-              </span>
-            </label>
-            {splitting && (
-              plan ? (
-                <>
-                  <dl className="grid grid-cols-2 gap-y-1 rounded-lg bg-slate-50 px-3 py-2" aria-label="Proposed installments">
-                    <dt>Installment 1 · this payment</dt>
-                    <dd className="text-right font-semibold" data-testid="pay-split-now">{rupees(plan.now)}</dd>
-                    <dt>Installment 2 · planned, not received</dt>
-                    <dd className="text-right font-semibold" data-testid="pay-split-later">{rupees(plan.later)}</dd>
-                  </dl>
-                  <p className="text-[11px] text-slate-500">
-                    The second installment is only a plan. It is not a payment and is not recorded: when the money arrives, record it then. The order stays unsettled until the payments received cover the total, and GST, invoice totals and balances are not changed by this.
-                  </p>
-                </>
-              ) : (
-                <p className="text-[11px] text-amber-700">Enter a whole-rupee amount below {rupees(open)} to see the two installments.</p>
-              )
-            )}
-          </div>
-        )}
         {!editing && (
           <label className="flex items-start gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
             <input type="checkbox" className="mt-0.5 accent-emerald-600" checked={verify} onChange={e => setVerify(e.target.checked)} />
@@ -560,6 +519,7 @@ export const AccountsPaymentPanel: React.FC<{
         <div className="flex items-center gap-2">
           <h3 className="text-xs font-bold text-slate-800">Payments</h3>
           <PaymentStatusBadge status={o.paymentStatus} />
+          {!readOnly && <AccountsCustomerDetails customerId={customerId} onSaved={() => { void load(); onChanged?.(o); }} />}
         </div>
         {!readOnly && (
           <button type="button" className={primaryBtn} onClick={() => setForm({ editing: null })} disabled={(o.dealAmount ?? 0) <= 0 || !!o.order?.gstRequired} title={o.order?.gstRequired ? 'Choose the GST rate of the order first.' : undefined}>

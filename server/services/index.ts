@@ -31,6 +31,8 @@ import { WorkflowService } from './WorkflowService.js';
 import { WorkflowRepository } from '../repositories/WorkflowRepository.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
+import { EmployeeApprovalService } from './EmployeeApprovalService.js';
+import { EmployeeApprovalRepository } from '../repositories/EmployeeApprovalRepository.js';
 import { CustomerImportService } from './CustomerImportService.js';
 import { ChatService } from './ChatService.js';
 import { TicketAttachmentService } from './TicketAttachmentService.js';
@@ -59,6 +61,7 @@ import { PerformanceRepository } from '../repositories/PerformanceRepository.js'
 export function createServices(db: SupabaseClient) {
   return {
     users: new UserService(new ProfileRepository(db), undefined, new HrRepository(db)),
+    employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
     performance: new PerformanceService(new PerformanceRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
