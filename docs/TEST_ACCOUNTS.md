@@ -6,7 +6,7 @@ head and one Support head per department, Operations Heads and the departments t
 
 ```
 API_URL=https://<your-app>/api/v1  SUPABASE_URL=https://<project>.supabase.co  SUPABASE_ANON_KEY=<anon key> \
-SA_EMAIL=<your Super Admin e-mail>  npm run seed:test-accounts -- [--domain example.com] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
+SA_EMAIL=<your Super Admin e-mail>  npm run seed:test-accounts -- [--domain example.com] [--prefix qa] [--sep .] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
 ```
 
 The Super Admin password is asked for without echo (or `SA_PASSWORD`). Passwords are made up on every run and written **only** to the `--out` file
@@ -30,9 +30,16 @@ alone and the file says so. `--dry-run` creates nothing.
 
 Your own Super Admin account opens the Super Admin dashboard.
 
+## Choosing the e-mail names
+
+The login is `<prefix><sep><name>@<domain>`. By default `qa.sales.head@example.com`. With `--prefix wabastore --sep -` it becomes
+`wabastore-sales-head@example.com`, `wabastore-support-member@example.com`, `wabastore-client-calls@example.com`, and so on. Each prefix gets its own pair of
+sandbox departments ("Wabastore Sandbox", "Wabastore Sandbox Two"), so several sets can exist side by side (a department has one head per side).
+`--domain amuwa.com` changes the domain (only use one where every `<prefix>...@` address is yours).
+
 ## What it touches
 
-- Two sandbox departments, **QA Sandbox** and **QA Sandbox Two**, each with a Sales and a Support team. All sandbox staff and the Operations Heads
+- Two sandbox departments (**QA Sandbox** and **QA Sandbox Two** by default), each with a Sales and a Support team. All sandbox staff and the Operations Heads
   (home: QA Sandbox Two) live there, so they never mix with real teams. Accounts and HR are the real departments: only members and leads are added.
 - The default e-mail domain is `example.com`, so no real person is mailed. The clients' sign-in e-mail goes to `qa.client.*@example.com`
   (it bounces or is dropped; the passwords in the file work regardless).

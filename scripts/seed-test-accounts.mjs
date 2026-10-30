@@ -8,18 +8,19 @@
  *
  * Everything is kept apart from real data:
  *   - two sandbox departments, "QA Sandbox" and "QA Sandbox Two", each with a Sales and a Support team;
- *   - every login e-mail is qa.<role>@<domain> (default example.com, so no real person is ever mailed);
+ *   - every login e-mail is <prefix><sep><role>@<domain> (default qa.<role>@example.com, so no real person is ever mailed);
  *   - the Accounts and HR departments are the real ones (their dashboards belong to them): only members / leads are added there, and the
  *     department head only when the department has none yet.
  *
  *   API_URL=https://your-app.example/api/v1 \
  *   SUPABASE_URL=https://xxxx.supabase.co SUPABASE_ANON_KEY=... \
  *   SA_EMAIL=you@yourcompany.com   [SA_PASSWORD=...  (otherwise asked, without echo)] \
- *   npm run seed:test-accounts -- [--domain example.com] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
+ *   npm run seed:test-accounts -- [--domain example.com] [--prefix qa] [--sep .] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
+ *     --prefix wabastore --sep -   makes wabastore-sales-head@example.com, wabastore-support-member@example.com, ...
  *
  * Passwords are made up on every run, written ONLY to the --out file (mode 600, git-ignored: qa-accounts.local.*) and never printed or logged.
  * An account that already exists is left as it is (its password is not changed and is not in the file): the file says so.
- * Rerunning is safe. Remove the accounts afterwards by suspending or deleting the qa.* users in Team Members.
+ * Rerunning is safe. Remove the accounts afterwards by suspending or deleting these users in Team Members.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -33,6 +34,9 @@ const opt = name => {
 };
 const flag = name => args.includes(`--${name}`);
 const DOMAIN = (opt('domain') || 'example.com').trim().toLowerCase();
+// the login name is <prefix><sep><role>: qa.sales.head@... by default; --prefix wabastore --sep - gives wabastore-sales-head@...
+const PREFIX = (opt('prefix') || 'qa').trim().toLowerCase();
+const SEP = opt('sep') || '.';
 const OUT = opt('out') || 'qa-accounts.local.md';
 const DRY = flag('dry-run');
 const API_URL = (process.env.API_URL || '').replace(/\/+$/, '');
@@ -41,7 +45,11 @@ const ANON = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
 const SA_EMAIL = (process.env.SA_EMAIL || '').trim().toLowerCase();
 
 if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(DOMAIN) || !API_URL || (!process.env.SA_TOKEN && (!SUPABASE_URL || !ANON || !SA_EMAIL))) {
-  console.error('Usage: API_URL=https://<app>/api/v1 SUPABASE_URL=... SUPABASE_ANON_KEY=... SA_EMAIL=<super admin e-mail> [SA_PASSWORD=...] npm run seed:test-accounts -- [--domain example.com] [--out file] [--no-clients] [--dry-run]');
+  console.error('Usage: API_URL=https://<app>/api/v1 SUPABASE_URL=... SUPABASE_ANON_KEY=... SA_EMAIL=<super admin e-mail> [SA_PASSWORD=...] npm run seed:test-accounts -- [--domain example.com] [--prefix qa] [--sep .] [--out file] [--no-clients] [--dry-run]');
+  process.exit(1);
+}
+if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(PREFIX) || !['.', '-', '_'].includes(SEP)) {
+  console.error('--prefix may have lower-case letters, digits and hyphens (for example wabastore); --sep must be one of  .  -  _');
   process.exit(1);
 }
 if (!OUT.includes('.local.')) {
@@ -54,7 +62,7 @@ const password = () => {
   const bytes = crypto.randomBytes(14);
   return `${Array.from(bytes, b => chars[b % chars.length]).join('')}-Aa7`;
 };
-const mail = local => `qa.${local}@${DOMAIN}`;
+const mail = local => `${PREFIX}${SEP}${local.split('.').join(SEP)}@${DOMAIN}`;
 
 async function ask(prompt) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
@@ -113,8 +121,11 @@ async function sandbox(name, slug) {
   }
   return { id: d.id, slug, teams: out };
 }
-const A = await sandbox('QA Sandbox', 'qa-sandbox');
-const B = await sandbox('QA Sandbox Two', 'qa-sandbox-two');
+// one pair of sandbox departments per --prefix, so a second set of accounts never collides with the first (a department has one head per side)
+const title = PREFIX.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+const SB = PREFIX === 'qa' ? 'QA Sandbox' : `${title} Sandbox`;
+const A = await sandbox(SB, `${PREFIX}-sandbox`);
+const B = await sandbox(`${SB} Two`, `${PREFIX}-sandbox-two`);
 const accounts = departments.find(d => d.slug === 'accounts');
 const hr = departments.find(d => d.slug === 'hr');
 const firstTeam = async dept => (dept ? (await must(saToken, 'GET', `/teams?departmentId=${dept.id}`))[0]?.id : undefined);
@@ -133,8 +144,9 @@ async function user(who, dashboard, local, fullName, body, { optional = false } 
     made[email] = { password: pw, id: r.json.data.id };
     rows.push({ who, dashboard, email, password: pw, note: '' });
     log(`created ${email}`);
-  } else if (r.status === 409 || /already/i.test(r.json.error?.message || '')) {
-    rows.push({ who, dashboard, email, password: null, note: optional && !/e-mail already exists/i.test(r.json.error?.message || '') ? `not created: ${r.json.error?.message}` : 'already existed: password unchanged (reset it in Team Members)' });
+  } else if (/e-mail already exists|already (been )?registered/i.test(r.json.error?.message || '') || (r.status === 409 && (r.json.error?.message || '').includes(`(${fullName})`))) {
+    // (a head slot taken by this very account from an earlier run is reported by the slot rule before the e-mail rule)
+    rows.push({ who, dashboard, email, password: null, note: 'already existed: password unchanged (reset it in Team Members)' });
     log(`kept ${email} (already exists)`);
   } else if (optional) {
     rows.push({ who, dashboard, email, password: null, note: `not created: ${r.json.error?.message ?? r.status}` });
@@ -222,7 +234,7 @@ const lines = [
   '',
   `Made ${new Date().toISOString()} on ${API_URL}. **Passwords are in this file only. Do not commit or share it.**`,
   '',
-  'Staff sign in at the normal login page; clients at `/client/login`. The sandbox departments are "QA Sandbox" and "QA Sandbox Two".',
+  `Staff sign in at the normal login page; clients at \`/client/login\`. The sandbox departments are "${SB}" and "${SB} Two".`,
   '',
   '| Who | Opens | Login e-mail | Password | Note |',
   '|---|---|---|---|---|',

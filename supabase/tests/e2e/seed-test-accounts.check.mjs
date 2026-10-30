@@ -67,6 +67,15 @@ for (const r of table.filter(x => x.who.startsWith('Client'))) {
   const res = await fetch(`${API.replace('/api/v1', '')}/api/v1/client/me`, { headers: { authorization: `Bearer ${data.session.access_token}` } });
   check(res.status === 200, `${r.email} reaches the client dashboard API`, res.status);
 }
+// custom names: --prefix wabastore --sep -
+const custom = fs.readFileSync(process.env.CUSTOM, 'utf8').split('\n').filter(l => l.startsWith('| ') && !l.startsWith('| Who') && !l.startsWith('|---')).map(l => l.split('|').slice(1, -1).map(c => c.trim())).map(([who, , email, password]) => ({ who, email, password }));
+for (const [who, email] of [['Sales Department Head', 'wabastore-sales-head@example.com'], ['Support Team Member', 'wabastore-support-member@example.com'], ['Sales Operations Head', 'wabastore-ops-sales@example.com'], ['Client (AI Calling)', 'wabastore-client-calls@example.com']]) {
+  const row = custom.find(r => r.email === email);
+  check(row && row.password && row.password !== '-', `${who}: ${email} was made`, custom.map(r => r.email));
+  const { data, error } = await sb().auth.signInWithPassword({ email, password: row.password });
+  check(!error && data.session, `${email} signs in`, error?.message);
+}
+check(custom.every(r => /^wabastore-[a-z-]+@example\.com$/.test(r.email) || r.email === '-'), 'every custom address follows wabastore-<role>@example.com');
 check(!/[A-Za-z0-9]{14}-Aa7/.test(second), 'a second run writes no password (everything already existed)');
 check(table.filter(r => r.password && r.password !== '-').every(r => !second.includes(r.password)), 'and does not repeat the first run\'s passwords');
 console.log(`=== SEED TEST ACCOUNTS CHECKS PASSED (${passed}) ===`);

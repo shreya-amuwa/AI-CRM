@@ -56,5 +56,8 @@ API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABAS
 echo "--- second run (must change nothing and never fail)"
 API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABASE_ANON_KEY="$ANON" SA_EMAIL=root@amuwa.com SA_PASSWORD="$SA_PASSWORD" \
   node scripts/seed-test-accounts.mjs --out "$WORK/second.local.md"
-API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABASE_ANON_KEY="$ANON" LIST="$LIST" SECOND="$WORK/second.local.md" \
+echo "--- custom names (--prefix wabastore --sep -)"
+API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABASE_ANON_KEY="$ANON" SA_EMAIL=root@amuwa.com SA_PASSWORD="$SA_PASSWORD" \
+  node scripts/seed-test-accounts.mjs --out "$WORK/custom.local.md" --prefix wabastore --sep - --domain example.com
+API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABASE_ANON_KEY="$ANON" LIST="$LIST" SECOND="$WORK/second.local.md" CUSTOM="$WORK/custom.local.md" \
   node supabase/tests/e2e/seed-test-accounts.check.mjs
