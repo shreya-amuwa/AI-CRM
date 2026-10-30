@@ -7879,6 +7879,26 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(Number((await db.query(`select count(*) c from pg_policies where tablename in ('employee_issues', 'employee_meeting_requests', 'employee_case_events')`)).rows[0].c) === 3, 'employee issues: one read policy per table (owner or HR)');
 }
 
+// Accounts corrections traverse the real Hono handler, validation, PostgREST and scoped RPC.
+{
+  const created = await api('a', 'POST', '/pipeline/leads', { name: 'Correction Contact', company: 'Correction Business', phone: '9847650321', email: 'correction.api@example.com', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+  check(created.status === 201 || created.status === 200, 'profile correction: create fixture', created);
+  const id = created.json.data.id;
+  await api('a', 'POST', `/pipeline/customers/${id}/send-to-accounts`, { amount: 40000 });
+  const path = `/pipeline/customers/${id}/accounts/customer-details`;
+  let response = await api('accm', 'GET', path);
+  check(response.status === 200 && response.json.data.name === 'Correction Contact', 'profile correction: Accounts reads current details', response);
+  const { hasClientLogin, ...profile } = response.json.data;
+  response = await api('accm', 'PATCH', path, { ...profile, city: 'Pune', address: 'Pune, Maharashtra', name: 'Corrected Contact' });
+  check(response.status === 200 && response.json.data.city === 'Pune', 'profile correction: Accounts saves missing details', response);
+  response = await api('accm', 'GET', path);
+  check(response.json.data.name === 'Corrected Contact', 'profile correction: reopening reads persisted details');
+  check((await api('a', 'PATCH', path, profile)).status === 403, 'profile correction: Sales is refused');
+  check((await api(null, 'PATCH', path, profile)).status === 401, 'profile correction: anonymous is refused');
+  check((await api('accm', 'PATCH', path, { ...profile, dealAmount: 1 })).status === 422, 'profile correction: financial fields rejected');
+  check((await api('accm', 'PATCH', path, { ...profile, email: 'invalid' })).status === 422, 'profile correction: invalid email rejected');
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
