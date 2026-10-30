@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { HandoverReconciliation, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Meta Verifier workflow: verification notes, re-routing, the Technical Consultant's follow-ups and the delay setting. The database decides who may do what. */
@@ -56,6 +56,12 @@ export class WorkflowRepository {
 
   async settings(): Promise<WorkflowSettings> {
     return unwrap(await this.db.rpc('workflow_settings_get')) as WorkflowSettings;
+  }
+  async usageAlertSettings(): Promise<UsageAlertSettings> {
+    return unwrap(await this.db.rpc('usage_alert_settings_get')) as UsageAlertSettings;
+  }
+  async setUsageAlertSettings(enabled: boolean, thresholds: number[]): Promise<UsageAlertSettings> {
+    return unwrap(await this.db.rpc('set_usage_alert_settings', { p_enabled: enabled, p_thresholds: thresholds })) as UsageAlertSettings;
   }
   async setFollowUpDelay(days: number | null): Promise<WorkflowSettings> {
     return unwrap(await this.db.rpc('set_tc_followup_delay', { p_days: days })) as WorkflowSettings;

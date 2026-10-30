@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 import type { ClientJourney } from '../../shared/contracts';
 import type { Loaded } from './hooks';
 
-export type SectionSlug = 'overview' | 'journey' | 'services' | 'campaigns' | 'explore' | 'plans' | 'calendar' | 'documents' | 'invoices' | 'tickets' | 'chat' | 'notifications' | 'docs';
+export type SectionSlug = 'overview' | 'journey' | 'services' | 'subscription' | 'campaigns' | 'explore' | 'plans' | 'calendar' | 'documents' | 'invoices' | 'tickets' | 'chat' | 'notifications' | 'docs';
 
 export interface Shell {
   go: (to: string) => void; unread: number; refreshUnread: () => void; chatUnread: number; refreshChatUnread: () => void; sub: string;

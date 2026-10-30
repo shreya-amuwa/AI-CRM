@@ -1973,7 +1973,7 @@ export const META_STATUSES = ['PENDING', 'IN_PROGRESS', 'DOCUMENTS_REQUIRED', 'R
 export type MetaStatus = (typeof META_STATUSES)[number];
 export type ServiceSetupStatus = 'PENDING' | 'IN_PROGRESS' | 'READY';
 /** The dashboard sections the database opens and closes by stage. */
-export const CLIENT_SECTIONS = ['overview', 'journey', 'services', 'campaigns', 'explore', 'plans', 'calendar', 'documents', 'invoices', 'tickets', 'chat', 'notifications', 'docs'] as const;
+export const CLIENT_SECTIONS = ['overview', 'journey', 'services', 'subscription', 'campaigns', 'explore', 'plans', 'calendar', 'documents', 'invoices', 'tickets', 'chat', 'notifications', 'docs'] as const;
 export type ClientSectionKey = (typeof CLIENT_SECTIONS)[number];
 export interface JourneyPerson { name: string; position: string | null }
 export interface JourneyOutstandingItem { code: string; label: string; status: 'MISSING' | 'REJECTED'; note: string | null }
@@ -2033,6 +2033,93 @@ export interface CustomerJourneyStatus {
   completedAt: string | null;
   services: { code: string; name: string; status: ServiceSetupStatus; note: string | null; updatedAt: string | null; readyAt: string | null; canChange: boolean }[];
 }
+// ---- Subscriptions: duration chosen by Sales, dates confirmed when the panel is activated, expiry calculated by the database ----
+export const SUBSCRIPTION_DURATIONS = ['1M', '2M', '3M', '6M', '1Y', '2Y', 'CUSTOM'] as const;
+export type SubscriptionDurationCode = (typeof SUBSCRIPTION_DURATIONS)[number];
+export const SUBSCRIPTION_DURATION_LABEL: Record<SubscriptionDurationCode, string> = {
+  '1M': '1 Month', '2M': '2 Months', '3M': '3 Months', '6M': '6 Months', '1Y': '1 Year', '2Y': '2 Years', CUSTOM: 'Custom'
+};
+export type SubscriptionStatus = 'NOT_STARTED' | 'ACTIVE' | 'EXPIRED' | 'PAUSED' | 'CANCELLED';
+export interface SubscriptionMessages {
+  total: number;
+  used: number;
+  remaining: number;
+  percent: number;
+  asOf: string | null;
+  /** false: no usage figures have been reported yet (the total is the credits Sales entered). */
+  reported: boolean;
+}
+/** One service's subscription as the team sees it. Dates are empty until the panel activation is confirmed. */
+export interface SubscriptionInfo {
+  service: string;
+  serviceName: string;
+  category: string;
+  plan: string | null;
+  amount: number | null;
+  panel: string | null;
+  durationCode: SubscriptionDurationCode | null;
+  durationMonths: number | null;
+  durationDays: number | null;
+  durationLabel: string | null;
+  messageCredits: number | null;
+  status: SubscriptionStatus;
+  termsComplete: boolean;
+  panelCreatedOn: string | null;
+  startedOn: string | null;
+  expiresOn: string | null;
+  daysLeft: number | null;
+  activatedAt: string | null;
+  activatedBy: string | null;
+  cycle: number;
+  canSetTerms: boolean;
+  canActivate: boolean;
+  /** What is still missing before the subscription can start (null when nothing). */
+  blocker: string | null;
+  canCorrect: boolean;
+  canRenew: boolean;
+  canResendEmail: boolean;
+  messages: SubscriptionMessages | null;
+  email: { status: string; detail: string | null; sentAt: string | null; attempts: number; recipient: string | null } | null;
+}
+export interface SubscriptionHistoryItem {
+  id: string;
+  service: string;
+  cycle: number | null;
+  action: 'TERMS_SET' | 'ACTIVATED' | 'DATES_CORRECTED' | 'RENEWED' | 'EMAIL_RESENT';
+  old: Record<string, unknown> | null;
+  new: Record<string, unknown> | null;
+  reason: string | null;
+  by: string | null;
+  at: string;
+}
+export interface SubscriptionOverview {
+  services: SubscriptionInfo[];
+  history: SubscriptionHistoryItem[];
+  cycles: { service: string; cycle: number; kind: 'INITIAL' | 'RENEWAL'; status: 'ACTIVE' | 'ENDED'; plan: string | null; durationLabel: string | null; startedOn: string; expiresOn: string }[];
+  /** The customer's verified payments, for choosing the one that pays for a renewal. */
+  payments: { id: string; amount: number; paidAt: string; method: string | null; used: boolean }[];
+}
+/** What the client sees under My Subscription. */
+export interface ClientSubscription {
+  service: string;
+  serviceName: string;
+  plan: string | null;
+  durationLabel: string | null;
+  status: SubscriptionStatus;
+  panelCreated: boolean;
+  panelCreatedOn: string | null;
+  startedOn: string | null;
+  expiresOn: string | null;
+  daysLeft: number | null;
+  messages: SubscriptionMessages | null;
+  messageCredits: number | null;
+}
+export interface UsageAlertSettings {
+  enabled: boolean;
+  thresholds: number[];
+  canEdit: boolean;
+}
+
 /** What happened to the client's login when Accounts confirmed the payment. */
 export interface ClientLoginOutcome {
   status: 'CREATED' | 'EXISTS' | 'NOT_CREATED';

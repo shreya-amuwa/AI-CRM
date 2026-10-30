@@ -154,7 +154,7 @@ function mailCompleted(d: TemplateData) {
 }
 
 /** The onboarding stages with a template here (the Accounts payment e-mail and the account e-mail, which carries a link, have their own). */
-type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS' | 'PANEL_LINK'>;
+type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS' | 'PANEL_LINK' | 'SUBSCRIPTION_ACTIVATED'>;
 
 const TEMPLATES: Record<CustomerStage, { subject: string; html: (d: TemplateData) => string }> = {
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },
@@ -284,6 +284,61 @@ export function renderPanelLinkEmail(d: PanelLinkMailData): RenderedEmail {
   ${teamContact()}
   ${signature('Support Team')}`);
   return { subject: `Your ${d.serviceName} panel link | Amuwa Corporation`, html, text: toText(html) };
+}
+
+export interface SubscriptionActivatedMailData {
+  name: string;
+  businessName?: string | null;
+  serviceName: string;
+  plan?: string | null;
+  durationLabel?: string | null;
+  /** ISO dates (YYYY-MM-DD): the confirmed activation date and the expiry date the database calculated from it. */
+  startedOn: string;
+  expiresOn: string;
+  messageCredits?: number | null;
+  panel?: string | null;
+  panelUrl?: string | null;
+  panelAccount?: string | null;
+  loginEmail?: string | null;
+  loginUrl: string;
+  /** A one-time set-password link, only while the customer has not chosen a password yet. Never a password. */
+  setPasswordLink?: string | null;
+}
+
+/** "10 Nov 2026" from an ISO date, whatever the server's time zone is. */
+export function longDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** Sent once the panel has been created AND activated: the subscription terms with the real dates, and the secure way in (no password in it). */
+export function renderSubscriptionActivatedEmail(d: SubscriptionActivatedMailData): RenderedEmail {
+  const row = (label: string, value?: unknown) => (value !== undefined && value !== null && String(value) !== '' ? `<b>${label}:</b> ${esc(value)}<br>` : '');
+  const html = wrap(`
+  <p>Dear ${esc(d.name)},</p>
+  <p>Your <b>${esc(d.serviceName)}</b> panel${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''} has been <b>created and activated</b>. Your subscription has started.</p>
+  <p>
+    ${row('Subscription plan', d.plan)}
+    ${row('Subscription duration', d.durationLabel)}
+    <b>Subscription start date:</b> ${esc(longDate(d.startedOn))}<br>
+    <b>Subscription expiry date:</b> ${esc(longDate(d.expiresOn))}<br>
+    ${d.messageCredits !== null && d.messageCredits !== undefined ? `<b>Message limit:</b> ${esc(Number(d.messageCredits).toLocaleString('en-IN'))} messages<br>` : ''}
+  </p>
+  <p>
+    ${row('Panel', d.panel)}
+    ${d.panelUrl ? `<b>Panel website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a><br>` : ''}
+    ${row('Account / user ID', d.panelAccount)}
+  </p>
+  ${d.setPasswordLink
+    ? `<p>To sign in securely, first choose your own password:</p>
+  <p><a href="${esc(d.setPasswordLink)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Set your password</a></p>
+  <p>The link works once and expires soon. If it has expired, use "Forgot password?" on the sign-in page${d.loginEmail ? ` (your login e-mail is ${esc(d.loginEmail)})` : ''}.</p>`
+    : `<p>Sign in to your client dashboard${d.loginEmail ? ` with <b>${esc(d.loginEmail)}</b>` : ''}: <a href="${esc(d.loginUrl)}">${esc(d.loginUrl)}</a>. If you have forgotten your password, use "Forgot password?" on the sign-in page.</p>`}
+  <p>You can follow your subscription, remaining days and message usage under <b>My Subscription</b> in your dashboard. We will remind you before it expires.</p>
+  <p>We never ask for your password by e-mail or message.</p>
+  ${teamContact()}
+  ${signature('Support Team')}`);
+  return { subject: `Your ${d.serviceName} panel is active | Amuwa Corporation`, html, text: toText(html) };
 }
 
 const ACCOUNTS_HEADING: Record<string, string> = {

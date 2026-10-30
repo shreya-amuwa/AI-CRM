@@ -1,5 +1,6 @@
-import type { HandoverReconciliation, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import {
+  usageAlertSettingsSchema,
   followUpAssignSchema,
   followUpContactSchema,
   followUpListQuerySchema,
@@ -102,6 +103,13 @@ export class WorkflowService {
 
   settings(): Promise<WorkflowSettings> {
     return this.repo.settings();
+  }
+  usageAlertSettings(): Promise<UsageAlertSettings> {
+    return this.repo.usageAlertSettings();
+  }
+  setUsageAlertSettings(body: unknown): Promise<UsageAlertSettings> {
+    const input = parse(usageAlertSettingsSchema, body);
+    return this.repo.setUsageAlertSettings(input.enabled, input.thresholds);
   }
   setFollowUpDelay(body: unknown): Promise<WorkflowSettings> {
     return this.repo.setFollowUpDelay(parse(tcFollowupDelaySchema, body).days);

@@ -1,3 +1,4 @@
+import { SubscriptionPanel } from '../journey/SubscriptionPanel';
 import { CustomerJourneyAdmin } from '../journey/CustomerJourneyAdmin';
 import React, { useEffect, useState } from 'react';
 import { displayTicketNo } from '../../lib/ticketFormat';
@@ -439,6 +440,7 @@ export const CustomerProfile: React.FC<{
                 </dl>
               </div>
               <div className="md:col-span-2"><CustomerJourneyAdmin customerId={customerId} /></div>
+              <div className="md:col-span-2"><SubscriptionPanel customerId={customerId} /></div>
               {customer.services.filter(x => isWhatsAppService(x.serviceCode)).map(x => (
                 <div key={x.serviceCode} className="bg-white rounded-2xl border border-emerald-200 p-5 md:col-span-2">
                   <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-1.5">

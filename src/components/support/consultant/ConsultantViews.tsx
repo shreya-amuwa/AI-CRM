@@ -1,3 +1,4 @@
+import { SubscriptionPanel } from '../../journey/SubscriptionPanel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -575,6 +576,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
         )}
 
         <CustomerJourneyAdmin customerId={c.id} onChanged={changed} />
+        <SubscriptionPanel customerId={c.id} onChanged={changed} />
 
         {mode === 'verifier' ? <ClientLoginDetails customerId={c.id} /> : <ClientLoginCard account={c.handover?.clientAccount} />}
       </div>
