@@ -21,6 +21,26 @@ This changelog documents verified product releases, architectural updates, and w
 
 ---
 
+## Release: Invoice series, customer revenue, split expenses, Department Head e-mails, Client Panel URL, hand-over queue
+**Area:** Accounts, Meta Verifier, Department Head
+
+### Added
+- **Two invoice series per financial year**, assigned by the database: `GST/26-27/001` and `Amuwa/26-27/001`. Typing a number is no longer possible; the number on the PDF, e-mail and WhatsApp is the saved one.
+- **Accounts > Customer Revenue**: purchased, invoiced, collected, pending and outstanding kept apart, per customer, with filters.
+- **One expense, several departments**: department rows with a running total; stored once, reported per department, counted once in the company total.
+- **Department Head e-mails** when a payment is recorded, a payment is verified, or an expense is allocated (only that department's amount), with per-recipient status, retries and a no-head escalation (**Accounts > Finance e-mails**).
+- **Client Panel URL** per customer and service (Client login details): HTTPS only, no credentials in the link, audited; the link is e-mailed on request, once per link.
+- The Status Completed e-mail and WhatsApp use the customer's own panel URL.
+
+### Fixed
+- **Department Head "Client hand-overs" was empty** for Support-side heads: they could not read customers owned by Sales teams once handed over. Fixed, and the page text no longer says that only Technical Consultant-verified customers appear. The Technical Consultant's consultation is a separate follow-up. A reconciliation report and one audited action cover customers handed over before the follow-up existed.
+- A paid add-on or invoice payment could miss its Department Head e-mail (caught by a new test).
+
+### Needs manual configuration outside the repository
+- The WhatsApp Automation Builder needs a branch for `status = "Website Ready"` (`stage_code = WEBSITE_READY`) and the condition for `Meta Verification` (pending) must be separate from `Status Completed`. See `docs/ACCOUNTS_FINANCE_AND_WORKFLOW.md`.
+
+---
+
 ## Release: Handover date, client credentials, Accounts e-mails, installments, invoice layout
 **Area:** Accounts, Meta Verifier, Sales, invoices
 

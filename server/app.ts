@@ -20,6 +20,7 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
+import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
 import { runPerformanceAutomation } from './performance/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
@@ -99,6 +100,16 @@ app.use('/pipeline/customers/*', async (c, next) => {
   if (c.req.method !== 'GET' && c.res.status < 300) await dispatchQuietly();
 });
 
+// An expense (or a retry of a Department Head e-mail) in Accounts' finance pages: its e-mails go out right away.
+app.use('/accounts/finance/*', async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET' && c.res.status < 300) await financeMailQuietly();
+});
+app.use('/accounts/finance-mail/*', async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET' && c.res.status < 300) await financeMailQuietly();
+});
+
 // An approval or a retry in the HR dashboard sends its e-mails right away (the scheduler would do it at its next run).
 app.use('/hr/email-automation/*', async (c, next) => {
   await next();
@@ -151,6 +162,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
   const hr = await runHrAutomation();
+  // Department Head e-mails about payments and expenses: the retries (and anything left waiting).
+  const financeMail = await runFinanceMailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
   // calls through BolifyAI when BOLIFY_WEBHOOK_URL is set.
   const subscriptionReminders = await runSubscriptionReminders({ sender: bolifySender() });
@@ -162,7 +175,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

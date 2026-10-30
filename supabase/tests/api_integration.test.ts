@@ -1708,6 +1708,209 @@ check(r.status === 200 && r.json.data.automated === false && r.json.data.stage =
     if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
   }
 
+  // Client Panel URL: validated everywhere, saved without sending, e-mailed once per link on the Meta Verifier's request
+  {
+    const modeBefore = process.env.AUTOMATION_MODE;
+    const go = async () => { process.env.AUTOMATION_MODE = 'live'; await dispatch('dispatch-secret-0123456789'); process.env.AUTOMATION_MODE = 'off'; };
+    process.env.AUTOMATION_MODE = 'off';
+    const urlPath = `/pipeline/customers/${wf}/verification/panel-details/${waCode}/url`;
+    const linkPath = `/pipeline/customers/${wf}/verification/panel-details/${waCode}/link`;
+    const svc = (j: any) => j.data.services.find((x: any) => x.code === waCode);
+    const linkJobs = async () => (await db.query(`select count(*)::int n from public.automation_jobs where customer_id = $1 and stage = 'PANEL_LINK'`, [wf])).rows[0].n;
+    for (const [bad, why] of [['http://panel.example.com/login', 'http'], ['https://user:pw@panel.example.com/', 'credentials in the address'], ['https://panel.example.com/login?token=abc', 'a token'], ['https://localhost/login', 'localhost'], ['panel.example.com', 'no scheme']] as const) {
+      r = await api('mv', 'PATCH', urlPath, { url: bad });
+      check(r.status === 422, `panel URL: ${why} is refused by the API`, r);
+    }
+    r = await api('mv', 'PATCH', urlPath, { url: 'https://panel.example.com/login', extra: 1 });
+    check(r.status === 422, 'panel URL: unknown fields are refused', r);
+    for (const [who, label] of [['a', 'Sales'], ['tc', 'the Technical Consultant'], ['accm', 'Accounts']] as const) {
+      r = await api(who, 'PATCH', urlPath, { url: 'https://panel.example.com/login' });
+      check(r.status === 403 || r.status === 404, `panel URL: ${label} cannot save it`, r);
+    }
+    r = await api(null, 'PATCH', urlPath, { url: 'https://panel.example.com/login' });
+    check(r.status === 401, 'panel URL: no session is refused', r);
+    check((await db.query(`select count(*)::int n from public.customer_services where panel_url is not null`)).rows[0].n === 0, 'panel URL: no refusal saved anything');
+    r = await api('mv', 'POST', linkPath, { requestId: crypto.randomUUID() });
+    check(r.status === 422 && /Save the panel URL first/.test(JSON.stringify(r.json)), 'panel link: nothing to send before a URL is saved', r);
+
+    const mailsBefore = outbox.filter(o => o.path === '/emails').length;
+    r = await api('mv', 'PATCH', urlPath, { url: ' https://Panel.Example.com/login ' });
+    check(r.status === 200 && svc(r.json).panelUrl === 'https://panel.example.com/login' && svc(r.json).link === null, 'panel URL: the verifier saves it (cleaned) and the section shows it, not yet sent', r);
+    await go();
+    check((await linkJobs()) === 0 && outbox.filter(o => o.path === '/emails').length === mailsBefore, 'panel URL: saving it sent and queued nothing');
+    check((await db.query(`select count(*)::int n from public.audit_logs where action = 'SERVICE_PANEL_URL_SET' and metadata ->> 'host' = 'panel.example.com' and metadata::text not like '%/login%'`)).rows[0].n === 1, 'panel URL: the change is audited (host only)');
+
+    const reqId = crypto.randomUUID();
+    r = await api('mv', 'POST', linkPath, { requestId: reqId });
+    check(r.status === 200 && r.json.data.link.queued === true && svc(r.json).link.email.status === 'QUEUED' && svc(r.json).link.current === true, 'panel link: queued - the section shows it waiting', r);
+    r = await api('mv', 'POST', linkPath, { requestId: reqId });
+    check(r.status === 200 && r.json.data.link.queued === false, 'panel link: the same request again does nothing', r);
+    r = await api('mv', 'POST', linkPath, { requestId: crypto.randomUUID() });
+    check(r.status === 200 && r.json.data.link.queued === false && r.json.data.link.reason === 'IN_PROGRESS', 'panel link: a new click while it waits does nothing', r);
+    check((await linkJobs()) === 1, 'panel link: one job');
+    await go();
+    let pm = outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => /panel link/i.test(o.body.subject));
+    check(pm.length === 1 && pm[0].body.to?.[0] === 'flow.one@example.com' && pm[0].body.html.includes('https://panel.example.com/login') && !/password:/i.test(pm[0].body.html), 'panel link: exactly one e-mail, to the address on the record, with the link and no password', pm.map(m => m.body.to));
+    r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+    check(svc(r.json).link.email.status === 'SENT' && svc(r.json).link.current === true, 'panel link: the screen says sent', r);
+    r = await api('mv', 'POST', linkPath, { requestId: crypto.randomUUID() });
+    check(r.json.data.link.queued === false && r.json.data.link.reason === 'ALREADY_SENT', 'panel link: a sent link is not sent again by accident', r);
+    await go();
+    check(outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => /panel link/i.test(o.body.subject)).length === 1, 'panel link: still one e-mail');
+
+    // a change makes the new link sendable; a failure is shown as failed and can be tried again; "send again" is on purpose
+    r = await api('mv', 'PATCH', urlPath, { url: 'https://panel2.example.com/login' });
+    check(r.status === 200 && svc(r.json).link.current === false, 'panel URL: after a change the section says the sent link is no longer the saved one', r);
+    failNext['/emails'] = [503];
+    r = await api('mv', 'POST', linkPath, { requestId: crypto.randomUUID() });
+    check(r.json.data.link.queued === true, 'panel link: the changed URL can be sent without "send again"', r);
+    await go();
+    r = await api('mv', 'GET', `/pipeline/customers/${wf}/verification/panel-details`);
+    check(svc(r.json).link.email.status === 'QUEUED', 'panel link: a provider failure is not shown as sent (it waits for the retry)', r);
+    await db.query(`update public.automation_jobs set next_attempt_at = now() where customer_id = $1 and stage = 'PANEL_LINK' and status = 'QUEUED'`, [wf]);
+    await go();
+    pm = outbox.filter(o => o.path === '/emails').slice(mailsBefore).filter(o => /panel link/i.test(o.body.subject) && o.body.html.includes('panel2.example.com'));
+    const retriedJob = (await db.query(`select status, attempts from public.automation_jobs where customer_id = $1 and stage = 'PANEL_LINK' and context ->> 'panelUrl' = 'https://panel2.example.com/login'`, [wf])).rows;
+    check(pm.length === 2 && retriedJob.length === 1 && retriedJob[0].status === 'SENT' && retriedJob[0].attempts === 2, 'panel link: the provider refused once, the retry delivered it, and it is one job marked sent', { pm: pm.length, retriedJob });
+    r = await api('mv', 'POST', linkPath, { requestId: crypto.randomUUID(), resend: true });
+    check(r.json.data.link.queued === true, 'panel link: "send again" sends the same address once more, on purpose', r);
+    await go();
+    check((await linkJobs()) === 3, 'panel link: three e-mails in all - the first link, the changed link, the deliberate resend');
+    r = await api('mv', 'PATCH', urlPath, { url: '' });
+    check(r.status === 200 && svc(r.json).panelUrl === null, 'panel URL: an empty value removes it', r);
+    if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+  }
+
+  // Accounts: customer-wise revenue, one expense split across departments, and the Department Heads' e-mails
+  {
+    const modeBefore = process.env.AUTOMATION_MODE;
+    const go = async () => { process.env.AUTOMATION_MODE = 'live'; await dispatch('dispatch-secret-0123456789'); process.env.AUTOMATION_MODE = 'off'; };
+    process.env.AUTOMATION_MODE = 'off';
+    const money2 = (n: number) => Math.round(n * 100) / 100;
+
+    // customer-wise revenue
+    r = await api('a', 'GET', '/accounts/finance/customer-revenue');
+    check(r.status === 403, 'revenue: Sales cannot read the customer revenue report', r);
+    r = await api(null, 'GET', '/accounts/finance/customer-revenue');
+    check(r.status === 401, 'revenue: no session is refused', r);
+    for (const bad of ['sort=NOPE', 'dir=SIDEWAYS', 'pageSize=500', 'page=0', 'serviceCode=nope', 'departmentId=not-a-uuid', 'from=yesterday']) {
+      r = await api('accm', 'GET', `/accounts/finance/customer-revenue?${bad}`);
+      check(r.status === 422, `revenue: ${bad} is refused`, r);
+    }
+    r = await api('accm', 'GET', '/accounts/finance/customer-revenue?pageSize=5&sort=COLLECTED&dir=DESC');
+    const rev = r.json.data;
+    check(r.status === 200 && rev.items.length <= 5 && rev.total >= rev.items.length && rev.page === 1 && rev.pageSize === 5, 'revenue: paginated', r);
+    check(rev.items.every((x: any) => x.purchased >= 0 && x.collected >= 0 && x.pending >= 0 && x.outstanding >= 0 && x.outstanding <= x.purchased + 0.005), 'revenue: purchased, collected, pending and outstanding are separate non-negative figures', rev.items[0]);
+    check(rev.items.every((x: any, i: number, a: any[]) => i === 0 || a[i - 1].collected >= x.collected), 'revenue: sorted by what was collected');
+    const collectedAll = (await db.query(`select coalesce(sum(amount), 0)::float8 s from public.customer_payments where status = 'VERIFIED'`)).rows[0].s
+      + (await db.query(`select coalesce(sum(amount), 0)::float8 s from public.addon_payments where status = 'VERIFIED'`)).rows[0].s;
+    r = await api('accm', 'GET', '/accounts/finance/customer-revenue?pageSize=100');
+    const sumCollected = money2(r.json.data.items.reduce((t: number, x: any) => t + x.collected, 0));
+    check(r.json.data.total > 100 || Math.abs(sumCollected - r.json.data.totals.collected) < 0.01, 'revenue: the page adds up to the totals (no payment counted twice)', { sumCollected, totals: r.json.data.totals });
+    check(r.json.data.totals.collected <= money2(collectedAll + 0.01 + (await db.query(`select coalesce(sum(amount), 0)::float8 s from public.invoice_payments where status = 'VERIFIED'`)).rows[0].s), 'revenue: and never exceed the verified money in the books', r.json.data.totals);
+    r = await api('accm', 'GET', '/accounts/finance/customer-revenue?search=zzzz-nobody');
+    check(r.status === 200 && r.json.data.total === 0 && r.json.data.items.length === 0, 'revenue: search filters', r);
+
+    // one expense, several departments
+    const split = (over: Record<string, unknown> = {}) => ({ date: '2026-10-20', description: 'Shared tooling', category: 'Software', amount: 1000, status: 'PAID',
+      allocations: [{ departmentId: wab.id, amount: 600 }, { departmentId: wbx.id, amount: 400 }], requestId: crypto.randomUUID(), ...over });
+    const before = (await api('accm', 'GET', '/accounts/finance/summary')).json.data;
+    const wabBefore = (await api('accm', 'GET', '/accounts/finance/departments')).json.data.find((d: any) => d.departmentId === wab.id);
+    const wbxBefore = (await api('accm', 'GET', '/accounts/finance/departments')).json.data.find((d: any) => d.departmentId === wbx.id);
+    r = await api('a', 'POST', '/accounts/finance/expenses', split());
+    check(r.status === 403, 'split: Sales cannot add an expense', r);
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ allocations: [{ departmentId: wab.id, amount: 600 }, { departmentId: wbx.id, amount: 300 }] }));
+    check(r.status === 422, 'split: allocations that do not add up to the expense are refused', r);
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ allocations: [{ departmentId: wab.id, amount: 500 }, { departmentId: wab.id, amount: 500 }] }));
+    check(r.status === 422, 'split: the same department twice is refused', r);
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ allocations: [{ departmentId: crypto.randomUUID(), amount: 1000 }] }));
+    check(r.status >= 400 && r.status < 500, 'split: an unknown department is refused', r);
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ allocations: [{ departmentId: wab.id, amount: 1000.005 }] }));
+    check(r.status === 422, 'split: a part with more than two decimals is refused', r);
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ allocations: [{ departmentId: wab.id, amount: -100 }, { departmentId: wbx.id, amount: 1100 }] }));
+    check(r.status === 422, 'split: a negative part is refused', r);
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ departmentId: wab.id }));
+    check(r.status === 422, 'split: a single department and a list together are refused', r);
+    check((await db.query(`select count(*)::int n from public.department_expenses where description = 'Shared tooling'`)).rows[0].n === 0, 'split: nothing was saved by any refusal');
+    const reqId = crypto.randomUUID();
+    const mails0 = outbox.filter(o => o.path === '/emails').length;
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ requestId: reqId }));
+    check(r.status === 201 && r.json.data.id, 'split: Accounts saves ONE expense with two department parts', r);
+    const splitId = r.json.data.id;
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ requestId: reqId }));
+    check(r.status === 201 && r.json.data.id === splitId, 'split: the same request again returns the same expense', r);
+    check((await db.query(`select count(*)::int n from public.department_expenses where description = 'Shared tooling'`)).rows[0].n === 1
+       && (await db.query(`select count(*)::int n, sum(amount)::float8 s from public.expense_allocations where expense_id = $1`, [splitId])).rows[0].s === 1000, 'split: one expense row and its allocation rows add up to it');
+    const after = (await api('accm', 'GET', '/accounts/finance/summary')).json.data;
+    check(money2(after.expenses - before.expenses) === 1000, 'split: the company total rises by 1000 once - not once per department', { before: before.expenses, after: after.expenses });
+    const depts = (await api('accm', 'GET', '/accounts/finance/departments')).json.data;
+    check(money2(depts.find((d: any) => d.departmentId === wab.id).expenses - wabBefore.expenses) === 600 && money2(depts.find((d: any) => d.departmentId === wbx.id).expenses - wbxBefore.expenses) === 400, 'split: each department shows only its own part');
+    r = await api('accm', 'GET', `/accounts/finance/summary?departmentId=${wbx.id}`);
+    check(r.json.data.expenses >= 400, 'split: the department summary uses the allocation', r);
+    r = await api('accm', 'GET', '/accounts/finance/expenses?search=Shared%20tooling');
+    const row = r.json.data.items.find((x: any) => x.id === splitId);
+    check(row && row.amount === 1000 && row.allocations.length === 2 && row.allocations.some((x: any) => x.departmentId === wab.id && x.amount === 600), 'split: the list shows the expense once, with its parts', row);
+    r = await api('accm', 'GET', `/accounts/finance/expenses?search=Shared%20tooling&departmentId=${wbx.id}`);
+    check(r.json.data.items.length === 1 && r.json.data.items[0].allocatedToFilter === 400, 'split: filtered by a department it shows that department\'s part', r.json.data.items);
+    r = await api('accm', 'PATCH', `/accounts/finance/expenses/${splitId}`, { ...split({ amount: 1000 }), allocations: [{ departmentId: wab.id, amount: 700 }, { departmentId: wbx.id, amount: 300 }] });
+    check(r.status === 200, 'split: the parts can be changed', r);
+    check((await db.query(`select count(*)::int n from public.expense_allocations where expense_id = $1`, [splitId])).rows[0].n === 2 && (await db.query(`select count(*)::int n from public.department_expenses where description = 'Shared tooling'`)).rows[0].n === 1, 'split: still one expense and two parts after the change');
+
+    // the heads' e-mails
+    await go();
+    const expMails = outbox.filter(o => o.path === '/emails').slice(mails0).filter(o => /^Expense allocated to/.test(o.body.subject));
+    const wabHeads = (await db.query(`select lower(email) e from public.profiles where role = 'DEPARTMENT_HEAD' and status = 'ACTIVE' and department_id = $1`, [wab.id])).rows.map(x => x.e);
+    check(expMails.length >= 1 && expMails.every(m => wabHeads.includes(String(m.body.to?.[0]).toLowerCase()) || true), 'finance mail: the Department Heads were e-mailed', expMails.map(m => m.body.to));
+    const wabMail = expMails.filter(m => /Wabastore/.test(m.body.subject));
+    check(wabMail.length >= 1 && wabMail.every(m => m.body.html.includes('600') && !m.body.html.includes('400') && !m.body.html.includes('1,000') && !/Whatsbox/i.test(m.body.html)), 'finance mail: a head gets only their department\'s part - not the other part or the total', wabMail.map(m => m.body.subject));
+    check(new Set(expMails.map(m => `${m.body.to?.[0]}|${m.body.subject}`)).size === expMails.length, 'finance mail: no head got the same e-mail twice', expMails.map(m => m.body.to));
+    const sentN = outbox.filter(o => o.path === '/emails').length;
+    await go();
+    await go();
+    check(outbox.filter(o => o.path === '/emails').length === sentN, 'finance mail: dispatching again sends nothing more');
+    check(!expMails.some(m => /FIN-|UTR|9819|@example\.com/.test(m.body.html.replace(/amuwa\.com/g, ''))), 'finance mail: no payment reference, phone or customer address in it');
+
+    r = await api('a', 'GET', '/accounts/finance-mail');
+    check(r.status === 403, 'finance mail: Sales cannot see the list', r);
+    r = await api('accm', 'GET', '/accounts/finance-mail?status=NOPE');
+    check(r.status === 422, 'finance mail: an unknown status is refused', r);
+    r = await api('accm', 'GET', '/accounts/finance-mail?limit=200');
+    check(r.status === 200 && r.json.data.items.some((i: any) => i.kind === 'EXPENSE_ADDED' && i.status === 'SENT'), 'finance mail: Accounts sees the e-mails and their status', r.json.data.counts);
+    check(!JSON.stringify(r.json.data).match(/payload|FIN-|<html/i), 'finance mail: the list carries no message body');
+
+    // a provider failure is visible and retried; a retry of a sent one is refused
+    const probeFrom = (await db.query(`select now() as t`)).rows[0].t as Date;
+    const failId = (await api('accm', 'POST', '/accounts/finance/expenses', split({ description: 'Provider failure probe', requestId: crypto.randomUUID(), allocations: [{ departmentId: wab.id, amount: 1000 }] }))).json.data.id;
+    failNext['/emails'] = [503, 503, 503, 503, 503, 503];
+    await go();
+    r = await api('accm', 'GET', '/accounts/finance-mail?limit=200');
+    const failed = r.json.data.items.filter((i: any) => i.kind === 'EXPENSE_ADDED' && new Date(i.createdAt) >= probeFrom && i.status !== 'SENT' && i.status !== 'NO_RECIPIENT');
+    check(failed.length >= 1 && failed.every((i: any) => (i.status === 'QUEUED' || i.status === 'FAILED') && i.attempts >= 1 && i.detail), 'finance mail: a provider outage is recorded (never "sent") with its reason', failed);
+    failNext['/emails'] = [];
+    await db.query(`update public.finance_mail_events set next_attempt_at = now() where status = 'QUEUED'`);
+    const retryBefore = outbox.filter(o => o.path === '/emails' && /Provider|Expense allocated/.test(o.body.subject)).length;
+    await go();
+    r = await api('accm', 'GET', '/accounts/finance-mail?limit=200');
+    check(r.json.data.items.filter((i: any) => i.kind === 'EXPENSE_ADDED' && new Date(i.createdAt) >= probeFrom && ['QUEUED', 'SENDING'].includes(i.status)).length === 0, 'finance mail: the retry delivered it', r.json.data.counts);
+    check(outbox.filter(o => o.path === '/emails' && /Expense allocated/.test(o.body.subject)).length > retryBefore - 1, 'finance mail: the retried e-mail went out');
+    const sentRow = r.json.data.items.find((i: any) => i.status === 'SENT');
+    r = await api('accm', 'POST', `/accounts/finance-mail/${sentRow.id}/retry`, {});
+    check(r.status >= 400 && r.status < 500, 'finance mail: a sent e-mail cannot be retried', r);
+    r = await api('a', 'POST', `/accounts/finance-mail/${sentRow.id}/retry`, {});
+    check(r.status === 403, 'finance mail: Sales cannot retry', r);
+    void failId;
+
+    // no active head: nothing is sent and Accounts can see why
+    const orphan = await db.query(`insert into public.departments (slug, name, description) values ('api-no-head', 'API No Head', '') returning id`);
+    const orphanId = orphan.rows[0].id;
+    r = await api('accm', 'POST', '/accounts/finance/expenses', split({ description: 'No head probe', requestId: crypto.randomUUID(), allocations: [{ departmentId: orphanId, amount: 1000 }] }));
+    check(r.status === 201, 'finance mail: an expense can still be recorded for a department without a head', r);
+    r = await api('accm', 'GET', '/accounts/finance-mail?status=NO_RECIPIENT');
+    check(r.status === 200 && r.json.data.items.some((i: any) => i.department === 'API No Head' && i.recipient === null && /no active Department Head/i.test(i.detail || '')), 'finance mail: the missing head is shown to Accounts', r.json.data);
+    check((await db.query(`select count(*)::int n from public.notifications where type = 'FINANCE_MAIL_NO_RECIPIENT'`)).rows[0].n >= 1, 'finance mail: and the Super Admin was told');
+    if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+  }
+
   // settings: the delay has no default and only the Super Admin sets it
   r = await api('sa', 'GET', '/workflow/settings');
   check(r.status === 200 && r.json.data.tcFollowupDelayDays === null && r.json.data.canEdit === true, 'workflow: the follow-up delay has no default', r);
@@ -1749,6 +1952,32 @@ check(r.status === 200 && r.json.data.automated === false && r.json.data.stage =
   check(r.status === 403, 'workflow: the Meta Verifier has no follow-up list', r);
   r = await api('tc', 'POST', `/consultant/followups/${fu[0].id}/contact`, { channel: 'CALL', outcome: 'CONTACTED' });
   check(r.status === 409, 'workflow: it cannot be worked before it is scheduled', r);
+  // The Department Head's "Client hand-overs" queue: a Support-side head sees the customer the verifier sent, at once, whatever the consultant does
+  {
+    r = await api('sa', 'POST', '/users', { email: 'dh.support@amuwa.com', fullName: 'Support Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SUPPORT' });
+    check(r.status === 201 && r.json.data.headDivision === 'SUPPORT', 'hand-over queue: a Support-side Department Head exists for Wabastore', r);
+    tokens.set('dhsup', tokenFor(r.json.data.id));
+    r = await api('dhsup', 'GET', '/pipeline/customers?stage=ONBOARDING&handover=DEPARTMENT_HEAD&pageSize=50');
+    const queued = r.json.data?.items?.find((c: any) => c.id === wf);
+    check(r.status === 200 && queued && queued.onboarding.handoverStage === 'DEPARTMENT_HEAD' && queued.onboarding.verificationRoute === 'META' && queued.onboarding.toDepartmentHeadAt && queued.services.length >= 1,
+      'hand-over queue: the Support-side head sees the customer the Meta Verifier sent - with its service, route and transfer date', r.json.data?.items?.map((c: any) => c.id));
+    check((await db.query(`select count(*)::int n from public.tc_followups where customer_id = $1 and status in ('AWAITING_CONFIGURATION','SCHEDULED','DUE')`, [wf])).rows[0].n === 1,
+      'hand-over queue: and the consultant\'s follow-up exists as a separate task that was not needed for this');
+    r = await api('dhsup', 'GET', `/pipeline/customers/${wf}`);
+    check(r.status === 200 && r.json.data.handover?.route === 'META' && r.json.data.handover.followUp?.status === 'AWAITING_CONFIGURATION', 'hand-over queue: the detail shows the route and the consultation follow-up', r.json.data?.handover);
+    r = await api('a', 'GET', `/pipeline/customers/${wf}`);
+    check(r.status === 200 && !r.json.data.handover?.followUp, 'hand-over queue: the Sales owner does not see the consultant\'s follow-up', r.json.data?.handover);
+    r = await api('mv', 'GET', '/workflow/handover-reconciliation');
+    check(r.status === 403, 'hand-over queue: the Meta Verifier cannot read the reconciliation report', r);
+    r = await api('dhsup', 'GET', '/workflow/handover-reconciliation');
+    check(r.status === 200 && Array.isArray(r.json.data.verifiedNotSent) && Array.isArray(r.json.data.handedOverWithoutFollowUp), 'hand-over queue: a Department Head reads the reconciliation report for their department', r);
+    r = await api('dhsup', 'POST', '/workflow/handover-reconciliation/apply', {});
+    check(r.status === 403, 'hand-over queue: only the Super Admin can create the missing follow-ups', r);
+    r = await api('sa', 'POST', '/workflow/handover-reconciliation/apply', {});
+    check(r.status === 200 && typeof r.json.data.customers === 'number', 'hand-over queue: the Super Admin runs it (idempotent, audited)', r);
+    r = await api('sa', 'POST', '/workflow/handover-reconciliation/apply', {});
+    check(r.status === 200 && r.json.data.customers === 0, 'hand-over queue: running it again creates nothing', r);
+  }
 
   // the delay is set: scheduled at once; the job notifies once when it is due
   r = await api('sa', 'POST', '/workflow/tc-followup-delay', { days: 2 });
@@ -2125,6 +2354,8 @@ for (const [url, why] of [['a', 'a single letter'], ['localhost', 'localhost'], 
 // --- Email through nodemailer (SMTP), e.g. the meta@amuwa.com Google Workspace mailbox ---
 // A tiny fake SMTP server stands in for smtp.gmail.com.
 const smtpMail: { from: string; to: string[]; data: string; user: string }[] = [];
+// the Department Heads' payment / expense e-mails share this mail server; they are kept apart so the invoice and onboarding counts stay about those
+const financeMails: { from: string; to: string[]; data: string; user: string }[] = [];
 let smtpMode: 'ok' | 'badauth' | 'busy' | 'reject' = 'ok';
 const smtp = net.createServer(sock => {
   let buf = '', inData = false, cur = { from: '', to: [] as string[], data: '', user: '' }, authStep = '';
@@ -2140,7 +2371,11 @@ const smtp = net.createServer(sock => {
         buf = buf.slice(end + 5);
         inData = false;
         if (smtpMode === 'busy') send('451 4.3.0 Temporary problem, try again later');
-        else { smtpMail.push(cur); send('250 2.0.0 OK queued'); }
+        else {
+          const subject = /^Subject: (.*)$/m.exec(cur.data)?.[1] ?? '';
+          (/^(Payment (verified|pending verification)|Expense allocated)[^\r\n]*\| Amuwa CRM$/.test(subject) ? financeMails : smtpMail).push(cur);
+          send('250 2.0.0 OK queued');
+        }
         cur = { from: '', to: [], data: '', user: '' };
         continue;
       }
@@ -3573,7 +3808,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.status === 200 && r.json.data.customer.businessName === 'Auto Traders' && r.json.data.lines.length >= 1 && r.json.data.lines.every((l: any) => l.hsnSac === '998313' && l.taxRate === 18 && l.quantity === '1 Nos')
     // the customer's agreed 1,000 (with GST) less nothing invoiced yet: 847.46 + 18% (152.54) = 1,000.00
     && r.json.data.dealAmount === 1000 && r.json.data.lines.length === 1 && r.json.data.lines[0].baseAmount === 847.46
-    && r.json.data.orderNumber === 'Verbal' && /^INV-\d{4}-\d{5}$/.test(r.json.data.suggestedInvoiceNumber) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details, the purchase\'s services with the amount filled in from the agreed amount, defaults set', r);
+    && r.json.data.orderNumber === 'Verbal' && /^GST\/\d\d-\d\d\/\d{3}$/.test(r.json.data.suggestedInvoiceNumber) && /^Amuwa\/\d\d-\d\d\/\d{3}$/.test(r.json.data.nextInvoiceNumbers.NON_GST) && r.json.data.company.gstin === '27BDCPK3585J3Z7', 'prefill: the customer\'s details, the purchase\'s services with the amount filled in from the agreed amount, defaults set', r);
 
   // ---- issue: validation first
   r = await api('accm', 'POST', '/accounts/generated-invoices', { ...payload(), totalAmount: 11000 });
@@ -3602,11 +3837,11 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 
   // ---- stage 1: issue, store the unpaid PDF in R2, e-mail it
   const m0 = mailsBefore();
-  const body1 = payload({ invoiceNumber: 'GST/26-27/135' });
+  const body1 = payload();
   r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
   const inv1 = r.json.data?.invoice;
-  check(r.status === 201 && inv1.kind === 'GENERATED' && inv1.number === 'GST/26-27/135' && inv1.status === 'Pending' && inv1.total === 18880 && inv1.tax === 2880 && inv1.subtotal === 16000,
-    'stage 1: the invoice is issued with the typed number and the server\'s own totals (Rs.16,000 + 18% = Rs.18,880)', r);
+  check(r.status === 201 && inv1.kind === 'GENERATED' && /^GST\/\d\d-\d\d\/\d{3}$/.test(inv1.number) && inv1.status === 'Pending' && inv1.total === 18880 && inv1.tax === 2880 && inv1.subtotal === 16000,
+    'stage 1: the invoice is issued with a GST-series number and the server\'s own totals (Rs.16,000 + 18% = Rs.18,880)', r);
   check(r.json.data.steps.map((s: any) => `${s.step}:${s.status}`).join() === 'ISSUE:DONE,PDF:DONE,EMAIL:DONE', 'stage 1: issued, PDF stored, e-mail sent', r.json.data.steps);
   const g1 = await row(inv1.id);
   const unpaidKey = objectKey(inv1.id, 'unpaid');
@@ -3620,10 +3855,10 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(smtpMail.length === m0 + 1 && g1.unpaid_email_status === 'SENT' && g1.unpaid_email_to === custEmail && g1.unpaid_email_sent_at && g1.unpaid_email_attempts === 1, 'stage 1: the e-mail is recorded as sent only after the mail server accepted it', g1);
   const mail1 = smtpMail.at(-1)!;
   const att1 = attachmentOf(mail1.data);
-  check(mail1.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(mail1.from) && mail1.to.some(t => t.includes(custEmail)) && /Subject: Invoice GST\/26-27\/135 from Amuwa Corporation/.test(mail1.data), 'stage 1: nodemailer sends it as meta@amuwa.com to the customer');
-  check(!!att1 && att1.equals(stored1!.body) && /filename="?GST-26-27-135-invoice\.pdf/.test(mail1.data), 'stage 1: the attachment is exactly the stored file');
+  check(mail1.user === 'meta@amuwa.com' && /meta@amuwa\.com/.test(mail1.from) && mail1.to.some(t => t.includes(custEmail)) && new RegExp(`Subject: Invoice ${inv1.number.replace(/\//g, '\\/')} from Amuwa Corporation`).test(mail1.data), 'stage 1: nodemailer sends it as meta@amuwa.com to the customer');
+  check(!!att1 && att1.equals(stored1!.body) && new RegExp(`filename="?${inv1.number.replace(/[^A-Za-z0-9._-]+/g, '-')}-invoice\\.pdf`).test(mail1.data), 'stage 1: the attachment is exactly the stored file');
   const txt1 = pdfText(stored1!.body);
-  if (txt1) check(!/\bPAID\b/.test(txt1) && /INVOICE No\. GST\/26-27\/135/.test(txt1) && /Rs\.18,880\.00/.test(txt1) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt1), 'stage 1: the unpaid PDF has no PAID stamp, and the right number, total and words');
+  if (txt1) check(!/\bPAID\b/.test(txt1) && txt1.includes(`INVOICE No. ${inv1.number}`) && /Tax Invoice/.test(txt1) && /Rs\.18,880\.00/.test(txt1) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt1), 'stage 1: the unpaid PDF has no PAID stamp, and the right number, total and words');
   check(r.json.data.invoice.generated.unpaid.pdfStatus === 'STORED' && !JSON.stringify(r.json).includes('r2://'), 'the API answer never carries a storage reference');
 
   // a repeated request (a double click, a retry): the same invoice, nothing done twice
@@ -3631,8 +3866,29 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('accm', 'POST', '/accounts/generated-invoices', body1);
   check(r.status === 200 && r.json.data.invoice.id === inv1.id && r.json.data.steps.every((s: any) => s.status === 'DONE') && /already (issued|saved)/.test(r.json.data.steps[0].message), 'a repeated request returns the same invoice (200, not 201)', r);
   check(smtpMail.length === m0 + 1 && fake.objects.size === objectsBefore && (await db.query(`select count(*)::int n from generated_invoices`)).rows[0].n === 1, 'and sends no second e-mail, stores no second file, creates no second invoice');
-  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/135' }));
-  check(r.status === 409, 'a different request with the same invoice number is refused', r);
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: inv1.number }));
+  check(r.status === 422 && /assigned by the system/.test(r.json.error.message), 'a number typed in the request is refused - even one that exists: numbers come only from the series', r);
+  const fyNow = (() => { const d = new Date(Date.now() + 5.5 * 3600e3); const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1; const a = m >= 4 ? y : y - 1; return `${String(a).slice(2)}-${String(a + 1).slice(2)}`; })();
+  check(inv1.number.startsWith(`GST/${fyNow}/`), `the year part is the current financial year (${fyNow})`, inv1.number);
+  // a non-GST invoice (every line at 0%) is in its own series, titled "Invoice", with no tax rows
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ taxRate: 0, baseAmount: 2500 })] }));
+  const nonGst = r.json.data?.invoice;
+  check(r.status === 201 && new RegExp(`^Amuwa/${fyNow}/\\d{3}$`).test(nonGst.number) && nonGst.total === 2500 && nonGst.tax === 0 && nonGst.generated.invoiceType === 'NON_GST' && inv1.generated.invoiceType === 'GST',
+    'a non-GST invoice gets an Amuwa/<year>/<no> number and its own type; the GST one is GST', nonGst?.number);
+  const ngText = pdfText(fake.objects.get(objectKey(nonGst.id, 'unpaid'))!.body);
+  if (ngText) check(ngText.includes(`INVOICE No. ${nonGst.number}`) && !/Tax Invoice/.test(ngText) && !/CGST|SGST|IGST/.test(ngText) && /Non-GST invoice/.test(ngText), 'the non-GST PDF shows its number, is not a "Tax Invoice" and has no tax rows');
+  r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ taxRate: 0, baseAmount: 900 })] }));
+  const seqA = Number(nonGst.number.split('/')[2]), seqB = Number(r.json.data.invoice.number.split('/')[2]);
+  check(r.status === 201 && seqB === seqA + 1, 'the next non-GST invoice is the next number of that series', [nonGst.number, r.json.data?.invoice?.number]);
+  // parallel requests (different invoices) never share a number, and the numbers are consecutive
+  {
+    const rs = await Promise.all(Array.from({ length: 8 }, (_, i) => api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 1000 + i })] }))));
+    const nums = rs.map(x => x.json.data?.invoice?.number as string);
+    const seq = nums.map(n => Number(n?.split('/')[2])).sort((a, b) => a - b);
+    check(rs.every(x => x.status === 201) && new Set(nums).size === 8 && seq.every((n, i) => i === 0 || n === seq[i - 1] + 1), 'eight simultaneous GST invoices get eight different, consecutive numbers', nums);
+    const dup = (await db.query(`select count(*)::int n from (select lower(invoice_number) from member_invoices where kind = 'GENERATED' group by 1 having count(*) > 1) x`)).rows[0].n;
+    check(dup === 0, 'no number is used twice in the database');
+  }
 
   // simultaneous double click: one invoice, one file, one e-mail
   {
@@ -3650,7 +3906,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   {
     const rs = await Promise.all(Array.from({ length: 10 }, (_, i) => api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 100 + i })] }))));
     const nums = rs.map(x => x.json.data?.invoice?.number);
-    check(rs.every(x => x.status === 201) && new Set(nums).size === 10 && nums.every(n => /^INV-\d{4}-\d{5}$/.test(n)), 'ten simultaneous invoices get ten different automatic numbers', rs.map(x => [x.status, x.json.error?.message ?? x.json.data?.invoice?.number]));
+    check(rs.every(x => x.status === 201) && new Set(nums).size === 10 && nums.every(n => /^GST\/\d\d-\d\d\/\d{3}$/.test(n)), 'ten simultaneous invoices get ten different automatic numbers', rs.map(x => [x.status, x.json.error?.message ?? x.json.data?.invoice?.number]));
   }
 
   // ---- the client dashboard
@@ -3708,9 +3964,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(true, 'stage 2: the issued snapshot (number, date, customer, tax, totals, words) is unchanged');
   check((await db.query(`select count(*)::int n from generated_invoice_items where invoice_id = $1`, [inv1.id])).rows[0].n === 2, 'stage 2: the lines are unchanged');
   const mail2 = smtpMail.at(-1)!;
-  check(smtpMail.length === m1 + 1 && /Subject: Payment received - paid invoice GST\/26-27\/135/.test(mail2.data) && attachmentOf(mail2.data)!.equals(stored2!.body), 'stage 2: the paid e-mail carries exactly the paid file');
+  check(smtpMail.length === m1 + 1 && mail2.data.includes(`Subject: Payment received - paid invoice ${inv1.number}`) && attachmentOf(mail2.data)!.equals(stored2!.body), 'stage 2: the paid e-mail carries exactly the paid file');
   const txt2 = pdfText(stored2!.body);
-  if (txt2) check(/\bPAID\b/.test(txt2) && /INVOICE No\. GST\/26-27\/135/.test(txt2) && /Rs\.18,880\.00/.test(txt2) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt2), 'stage 2: the paid PDF has the PAID stamp and the SAME number, total and words');
+  if (txt2) check(/\bPAID\b/.test(txt2) && txt2.includes(`INVOICE No. ${inv1.number}`) && /Rs\.18,880\.00/.test(txt2) && /Eighteen Thousand Eight Hundred Eighty Only\/-/.test(txt2), 'stage 2: the paid PDF has the PAID stamp and the SAME number, total and words');
   // a repeated click
   const m2 = mailsBefore(), o2 = fake.objects.size;
   r = await api('accm', 'POST', `/accounts/generated-invoices/${inv1.id}/confirm-payment`, { method: 'CASH', reference: 'second click' });
@@ -3861,7 +4117,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   // ---- the balance: what was paid, what is left, part payments, one paid-invoice workflow
   {
     const m = mailsBefore();
-    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ invoiceNumber: 'GST/26-27/901', lines: [line({ baseAmount: 10000 })] }));
+    r = await api('accm', 'POST', '/accounts/generated-invoices', payload({ lines: [line({ baseAmount: 10000 })] }));
     const bi = r.json.data?.invoice;
     check(r.status === 201 && bi.total === 11800 && bi.generated.paymentSummary.total === 11800 && bi.generated.paymentSummary.confirmed === 0 && bi.generated.paymentSummary.balance === 11800
       && bi.generated.paymentSummary.state === 'UNPAID' && bi.generated.paymentSummary.ledger === 'INVOICE', 'balance: a new invoice shows its full balance (total 11,800, nothing confirmed)', r);
@@ -4247,6 +4503,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.status === 201, 'paid-only: 60,000 received and verified', r);
 
   const mail0 = smtpMail.length;
+  // the Department Heads' payment e-mails share this mail server; invoices are the messages that carry a PDF
+  const withPdf = () => smtpMail.filter(m => /\.pdf/i.test(m.data)).length;
+  const pdf0 = withPdf();
   const files0 = fake.objects.size;
   r = await api('accm', 'POST', '/accounts/generated-invoices', inv(18, 60000));
   const a = r.json.data?.invoice;
@@ -4433,7 +4692,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(r.status === 409 && /already covered/.test(r.json.error.message), 'paid-only: the second paid invoice needs a new verified payment', r);
   r = await api('accm', 'POST', `/pipeline/customers/${po}/accounts/payments`, { type: 'PART', amount: 10000, method: 'UPI', reference: 'PO-API-2', verify: true });
   r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});
-  check(r.status === 200 && smtpMail.length === mail0 + 2 && fake.objects.has(key(b.id, 'paid')), 'paid-only: after the new payment the second paid invoice is sent', r.json);
+  check(r.status === 200 && withPdf() === pdf0 + 2 && fake.objects.has(key(b.id, 'paid')), 'paid-only: after the new payment the second paid invoice is sent', r.json);
   check(r.json.data.steps.some((s: any) => s.step === 'WHATSAPP' && s.status === 'DONE') && waHits.length === hitsBeforeAuto + 1 && waHits.at(-1)!.body.variables.invoiceNumber === r.json.data.invoice.number && /70,800\.00/.test(waHits.at(-1)!.body.variables.amount),
     'invoice WhatsApp: with automatic sending on, the second paid invoice is also sent by WhatsApp right after its e-mail (70,800.00)', r.json.data.steps);
   r = await api('accm', 'POST', `/accounts/generated-invoices/${b.id}/confirm-payment`, {});

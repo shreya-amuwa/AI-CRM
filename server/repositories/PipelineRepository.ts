@@ -40,7 +40,7 @@ const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, wh
   services:customer_services(service_code),
   onboarding:customer_onboarding(stage, consultant_started_at, contract_signed, addons, addons_required, addons_submitted_at, addons_submitted_by, addons_by:profiles!addons_submitted_by(full_name), addon_items_total, addon_items_saved, addon_items_verified, addon_items_rejected, addon_request_status, sent_to_accounts_at, accounts_confirmed_at, payment_method, payment_verified, get_started, started_at, target_handover_date, forwarded_to_support_at, first_handed_over_at, returned_at, return_note, mandatory_saved,
     items_total, items_saved, items_verified, items_rejected, consultant_items_total, consultant_items_done,
-    handover_stage, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
+    handover_stage, verification_route, team_lead_id, team_member_id, to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)`;
 
 const SORTS: Record<PipelineListQuery['sort'], { column: string; ascending: boolean }> = {
   newest: { column: 'stage_changed_at', ascending: false },
@@ -121,6 +121,7 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
           consultantItemsTotal: o.consultant_items_total ?? 0,
           consultantItemsDone: o.consultant_items_done ?? 0,
           handoverStage: o.handover_stage ?? 'CONSULTANT',
+          verificationRoute: o.verification_route ?? null,
           teamLeadId: o.team_lead_id ?? null,
           teamMemberId: o.team_member_id ?? null,
           toDepartmentHeadAt: o.to_department_head_at ?? null,

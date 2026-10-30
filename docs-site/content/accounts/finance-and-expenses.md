@@ -6,9 +6,9 @@ group: Finance & Reports
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/finance/AccountsOverview.tsx, src/components/accounts/finance/AccountsIncome.tsx, src/components/accounts/finance/AccountsDepartmentIncome.tsx, src/components/accounts/finance/AccountsExpenses.tsx, src/components/accounts/AccountsPlans.tsx]
+sources: [docs/ACCOUNTS_FINANCE_AND_WORKFLOW.md, supabase/migrations/20261209000200_customer_revenue_report.sql, supabase/migrations/20261209000300_finance_department_mail.sql, supabase/migrations/20261209000400_expense_allocations.sql, src/components/accounts/finance/CustomerRevenue.tsx, src/components/accounts/finance/FinanceMails.tsx, docs/PAYMENTS_ACCOUNTS.md, shared/contracts.ts, src/components/accounts/finance/AccountsOverview.tsx, src/components/accounts/finance/AccountsIncome.tsx, src/components/accounts/finance/AccountsDepartmentIncome.tsx, src/components/accounts/finance/AccountsExpenses.tsx, src/components/accounts/AccountsPlans.tsx]
 related: [accounts/recording-payments, accounts/business-reports-attribution]
-updated: 2026-10-27
+updated: 2026-10-29
 ---
 
 The Accounts Dashboard provides complete visibility into company cash flow, itemized income ledgers, operational expenses, department earnings, and recurring **Monthly Plans**.
@@ -54,17 +54,35 @@ Displays visual financial performance cards for each revenue-generating business
 
 Tracks both company-wide overheads (such as cloud hosting, rent, and utilities) and department-specific expenses (such as ad spend or software licenses).
 
+### 5. Customer Revenue (`Accounts > Customer Revenue`)
+
+One row per customer, searchable, sortable and paginated, with date, service and department filters. The columns are kept apart on purpose:
+
+- **Purchased**: what the customer ordered. Not income.
+- **Invoiced**: what their non-cancelled invoices add up to (with the GST on them). Not income.
+- **Collected**: verified money only. A payment is counted once, on its own order.
+- **Pending**: recorded but not yet verified.
+- **Outstanding**: per order, purchased minus collected (never below zero), added up. Money that sits on no known order is shown separately as *receipts without an order* and is never added to an order.
+
+Only Accounts and the Super Admin can open this page.
+
+### 6. Finance e-mails (`Accounts > Finance e-mails`)
+
+Shows the e-mails the system sent to Department Heads about money (payment recorded, payment verified, expense allocated): each one with its recipient, status (*waiting*, *sent*, *could not be sent*, *no recipient*) and reason. A failed e-mail is retried automatically (1, 5, 15, 60 minutes); *Retry* re-queues one by hand. When a department has no active head, the e-mail is not sent, the row says so and the Super Admin gets a notification; once a head exists, *Retry* sends it.
+
 ## Steps to record an operational expense
 
 1. In the sidebar, open **Accounts > Expenses** and click **+ Add Expense**.
 2. Fill in the expenditure details:
    - **Date**: Date the expense was incurred.
-   - **Department**: Select a specific business unit or choose **Company-wide**.
+   - **Departments**: leave empty for a **company-wide** expense, or click **Allocate to departments** and add one row per department (a department can appear once). The form shows a running total (*Allocated ₹600 of ₹1,000 · still to allocate ₹400*) and **Add expense** stays off until the rows add up exactly to the amount. The same expense is saved **once**; each department sees only its own part, and the company total counts it once.
    - **Category**: Choose `Software`, `Infrastructure`, `Marketing`, `Office`, `Travel`, `Utilities`, or `Other`.
    - **Amount (₹)**: Enter the expenditure amount in Rupees.
    - **Status**: Select `PAID` or `PENDING`.
    - **Notes**: Enter the vendor name, invoice/bill reference, and purpose.
 3. Click **Save Expense**.
+
+Each Department Head of an affected department gets one e-mail with **only their department's part** (not the other departments' parts and not the total). A repeated click on *Add expense* saves one expense (the form sends a request id).
 
 ## Managing recurring subscriptions in Monthly Plans (`Accounts > Monthly Plans`)
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import type { ExpenseRow, ExpensesPage } from '../../../../shared/contracts';
 import { expenseSchema } from '../../../../shared/validation';
 import { errorMessage } from '../../../lib/api/client';
@@ -15,7 +15,12 @@ const ExpenseForm: React.FC<{ editing: ExpenseRow | null; categories: string[]; 
   const departments = useDepartments();
   const [date, setDate] = useState(editing?.date ?? todayIso());
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [department, setDepartment] = useState(editing?.departmentId ?? '');
+  // who bears how much: no rows = company-wide; the rows must add up to the amount
+  const [rows, setRows] = useState<{ key: number; departmentId: string; amount: string }[]>(
+    (editing?.allocations ?? []).map((a, i) => ({ key: i, departmentId: a.departmentId, amount: String(a.amount) }))
+  );
+  const nextKey = useRef(rows.length);
+  const requestId = useRef(typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined);
   const [category, setCategory] = useState(editing?.category ?? '');
   const [amount, setAmount] = useState(editing ? String(editing.amount) : '');
   const [status, setStatus] = useState<'PAID' | 'PENDING'>(editing?.status ?? 'PAID');
@@ -24,9 +29,29 @@ const ExpenseForm: React.FC<{ editing: ExpenseRow | null; categories: string[]; 
   const [error, setError] = useState<string | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
 
+  const paise = (v: string) => Math.round(Number(v || 0) * 100);
+  const allocated = rows.reduce((a, r) => a + (Number.isFinite(paise(r.amount)) ? paise(r.amount) : 0), 0);
+  const remaining = paise(amount) - allocated;
+  const used = new Set(rows.map(r => r.departmentId).filter(Boolean));
+  const setRow = (key: number, patch: Partial<{ departmentId: string; amount: string }>) => setRows(rs => rs.map(r => (r.key === key ? { ...r, ...patch } : r)));
+  const addRow = () => setRows(rs => [...rs, { key: nextKey.current++, departmentId: '', amount: remaining > 0 ? (remaining / 100).toFixed(2).replace(/\.00$/, '') : '' }]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const body = { date, description: description.trim(), departmentId: department || null, category: category.trim(), amount: Number(amount), status, notes: notes.trim() || null };
+    const body = {
+      date,
+      description: description.trim(),
+      category: category.trim(),
+      amount: Number(amount),
+      status,
+      notes: notes.trim() || null,
+      allocations: rows.map(r => ({ departmentId: r.departmentId, amount: Number(r.amount) })),
+      requestId: editing ? undefined : requestId.current
+    };
+    if (rows.some(r => !r.departmentId)) {
+      setFields({ allocations: 'Choose a department in every row, or remove the row.' });
+      return setError('Please fix the highlighted fields.');
+    }
     const parsed = expenseSchema.safeParse(body);
     if (!parsed.success) {
       const next: Record<string, string> = {};
@@ -62,26 +87,48 @@ const ExpenseForm: React.FC<{ editing: ExpenseRow | null; categories: string[]; 
         <FormField label="Description" htmlFor="exp-desc" required error={fields.description}>
           <input id="exp-desc" className={inputClass} maxLength={300} value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g. Office rent for October" />
         </FormField>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormField label="Department" htmlFor="exp-dept" hint="Leave as company-wide if it belongs to no single department." error={fields.departmentId}>
-            <select id="exp-dept" className={inputClass} value={department} onChange={e => setDepartment(e.target.value)}>
-              <option value="">Company-wide</option>
-              {departments.map(d => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Category" htmlFor="exp-cat" required error={fields.category}>
-            <input id="exp-cat" list="exp-categories" className={inputClass} maxLength={80} value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Rent, Salaries, Software" />
-            <datalist id="exp-categories">
-              {categories.map(c => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
-          </FormField>
-        </div>
+        <FormField label="Category" htmlFor="exp-cat" required error={fields.category}>
+          <input id="exp-cat" list="exp-categories" className={inputClass} maxLength={80} value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g. Rent, Salaries, Software" />
+          <datalist id="exp-categories">
+            {categories.map(c => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </FormField>
+        <fieldset className="rounded-xl border border-slate-200 p-3 space-y-2" aria-describedby="exp-alloc-note" data-testid="expense-allocations">
+          <legend className="px-1 text-xs font-semibold text-slate-700">Departments</legend>
+          <p id="exp-alloc-note" className="text-[11px] text-slate-500">
+            Who bears this expense. Add one row per department (the same expense can be shared by several); with no rows it is company-wide. The amounts must add up to the expense amount.
+          </p>
+          {rows.map((r, i) => (
+            <div key={r.key} className="grid grid-cols-[minmax(0,1fr)_7.5rem_2rem] gap-2 items-center" data-testid="expense-allocation-row">
+              <select aria-label={`Department for row ${i + 1}`} className={inputClass} value={r.departmentId} onChange={e => setRow(r.key, { departmentId: e.target.value })}>
+                <option value="">Choose a department</option>
+                {departments.map(d => (
+                  <option key={d.id} value={d.id} disabled={used.has(d.id) && d.id !== r.departmentId}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+              <input aria-label={`Amount for row ${i + 1} (₹)`} type="number" min={0} step="0.01" inputMode="decimal" className={inputClass} value={r.amount} onChange={e => setRow(r.key, { amount: e.target.value })} />
+              <button type="button" onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100" aria-label={`Remove row ${i + 1}`}>
+                <X className="w-4 h-4" aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={addRow} disabled={rows.length >= used.size && used.size >= departments.length} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline disabled:opacity-50">
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> {rows.length ? 'Add another department' : 'Allocate to departments'}
+            </button>
+            {rows.length > 0 && (
+              <span className={`text-xs font-semibold ${remaining === 0 ? 'text-emerald-700' : 'text-amber-700'}`} role="status" data-testid="expense-allocation-total">
+                Allocated {money(allocated / 100)} of {money(paise(amount) / 100)}
+                {remaining !== 0 ? ` · ${remaining > 0 ? 'still to allocate' : 'over by'} ${money(Math.abs(remaining) / 100)}` : ' · fully allocated'}
+              </span>
+            )}
+          </div>
+          {fields.allocations && <p className="text-[11px] text-rose-600">{fields.allocations}</p>}
+        </fieldset>
         <FormField label="Payment status" htmlFor="exp-status">
           <select id="exp-status" className={inputClass} value={status} onChange={e => setStatus(e.target.value as 'PAID' | 'PENDING')}>
             <option value="PAID">Paid</option>
@@ -96,7 +143,7 @@ const ExpenseForm: React.FC<{ editing: ExpenseRow | null; categories: string[]; 
           <button type="button" onClick={onClose} disabled={busy} className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700">
             Cancel
           </button>
-          <button type="submit" disabled={busy} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50">
+          <button type="submit" disabled={busy || (rows.length > 0 && remaining !== 0)} className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50">
             {busy ? 'Saving...' : editing ? 'Save changes' : 'Add expense'}
           </button>
         </div>
@@ -281,9 +328,15 @@ export const AccountsExpenses: React.FC = () => {
                       </span>
                     )}
                   </span>
-                  <span className="text-xs text-slate-700 truncate">{x.department ?? 'Company-wide'}</span>
+                  <span className="text-xs text-slate-700 min-w-0">
+                    <span className="block truncate" title={x.allocations.map(a => `${a.department}: ${money(a.amount)}`).join(', ')}>{x.department ?? 'Company-wide'}</span>
+                    {x.allocations.length > 1 && <span className="block text-[11px] text-slate-500 truncate">{x.allocations.map(a => `${a.department} ${money(a.amount)}`).join(' · ')}</span>}
+                  </span>
                   <span className="text-xs text-slate-700 truncate">{x.category}</span>
-                  <span className="text-sm font-bold text-rose-700 lg:text-right">{money(x.amount)}</span>
+                  <span className="text-sm font-bold text-rose-700 lg:text-right">
+                    {money(x.allocatedToFilter ?? x.amount)}
+                    {x.allocatedToFilter != null && x.allocatedToFilter !== x.amount && <span className="block text-[11px] font-normal text-slate-500">of {money(x.amount)}</span>}
+                  </span>
                   <span>
                     <Badge tone={x.status === 'PAID' ? 'green' : 'amber'}>{x.status === 'PAID' ? 'Paid' : 'Pending'}</Badge>
                   </span>

@@ -242,6 +242,9 @@ export const InvoiceBuilder: React.FC<{
   const effLines = useMemo(() => (form ? form.lines.map(l => (lockedRate !== null ? { ...l, taxRate: lockedRate } : l)) : []), [form, lockedRate]);
   const calc = useMemo(() => (form && treatment ? calculateInvoice(effLines, treatment) : null), [form, treatment, effLines]);
 
+  // a preview of the number the invoice will get: GST when any line is taxed, otherwise the non-GST series (final only when it is issued)
+  const previewNumber = prefill?.nextInvoiceNumbers ? (calc && calc.ok && calc.totalGstPaise > 0 ? prefill.nextInvoiceNumbers.GST : calc && calc.ok ? prefill.nextInvoiceNumbers.NON_GST : prefill.suggestedInvoiceNumber) : prefill?.suggestedInvoiceNumber ?? null;
+
   const onAddressBlur = () => {
     if (!form || form.stateCode) return;
     const s = inferStateFromAddress(form.address);
@@ -297,7 +300,7 @@ export const InvoiceBuilder: React.FC<{
         customerId: picked.id,
         purpose,
         addonRequestId: purpose === 'ADDON' ? addon?.requestId ?? prefill?.addonRequestId ?? null : null,
-        invoiceNumber: form.invoiceNumber.trim() || null,
+        invoiceNumber: null, // assigned by the database when the invoice is issued
         invoiceDate: form.invoiceDate,
         orderNumber: form.orderNumber.trim() || 'Verbal',
         customer: {
@@ -436,7 +439,8 @@ export const InvoiceBuilder: React.FC<{
           <fieldset className="grid sm:grid-cols-3 gap-4">
             <legend className="text-xs font-bold text-slate-800 mb-3">Invoice</legend>
             <Field label="Invoice number" htmlFor="inv-number">
-              <input id="inv-number" className={inputCls} value={form.invoiceNumber} maxLength={16} placeholder={prefill.suggestedInvoiceNumber ? `Automatic (next: ${prefill.suggestedInvoiceNumber})` : 'Automatic'} onChange={e => set('invoiceNumber', e.target.value)} />
+              <input id="inv-number" className={`${inputCls} !bg-slate-100 text-slate-700`} value={previewNumber ?? ''} readOnly placeholder="Automatic" aria-describedby="inv-number-note" />
+              <span id="inv-number-note" className="block text-[11px] text-slate-500 mt-1">Assigned automatically when the invoice is issued.</span>
             </Field>
             <Field label="Invoice date" htmlFor="inv-date" required>
               <input id="inv-date" type="date" className={inputCls} value={form.invoiceDate} onChange={e => set('invoiceDate', e.target.value)} />

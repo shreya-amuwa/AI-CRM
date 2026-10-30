@@ -40,6 +40,14 @@ check(p.variables.invoiceNumber === 'INV/2026/0042' && p.variables.customerName 
 check(p.document.url === 'https://files.example.test/signed?x=1' && p.document.mimeType === 'application/pdf' && p.document.filename === 'INV-2026-0042-paid-invoice.pdf', 'the invoice is a PDF document behind the short-lived link');
 check(!JSON.stringify(p).includes('customer-documents') && !JSON.stringify(p).includes('customers/c-1'), 'the permanent storage path is never in the request');
 
+// the two invoice series: the message carries the persisted number of whichever series issued the invoice, and a safe file name
+for (const [n, file] of [['GST/26-27/001', 'GST-26-27-001-paid-invoice.pdf'], ['Amuwa/26-27/001', 'Amuwa-26-27-001-paid-invoice.pdf'], ['GST/27-28/1000', 'GST-27-28-1000-paid-invoice.pdf']] as const) {
+  const q = invoiceWhatsAppPayload(job({ number: n, total: 5000 }), 'https://l.example.test/x') as any;
+  const b = builderInvoicePayload(job({ number: n, total: 5000 }), 'https://l.example.test/x') as any;
+  check(q.variables.invoiceNumber === n && q.document.filename === file && b.invoice_number === n && b.invoice_filename === file && b.stage_code === 'INVOICE_PAID', `${n}: the WhatsApp request carries that exact number and a safe file name`, { q, b });
+  check(/^Rs\.\s?5,000(\.00)?$/.test(q.variables.amount) && b.invoice_amount === q.variables.amount, `${n}: and the persisted total`, q.variables.amount);
+}
+
 // the sender (Wabastore)
 let hit: any = null;
 const okFetch = async (_u: string, init: any) => ((hit = JSON.parse(init.body)), { status: 200, text: async () => '{"id":"wamid.INV1"}' });

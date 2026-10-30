@@ -135,7 +135,7 @@ select test.check((select p -> 'customer' ->> 'businessName' = 'Sharma Opticals'
                           and p -> 'customer' -> 'gstin' = 'null'::jsonb and p ->> 'recipientEmail' = 'priya@sharmaopticals.example'
                           and p -> 'sources' ->> 'businessName' = 'CUSTOMER' and p -> 'sources' ->> 'state' = 'ADDRESS'
                           and p ->> 'orderNumber' = 'Verbal' and p ->> 'terms' = '100% Payment Against supply.'
-                          and p ->> 'suggestedInvoiceNumber' ~ '^INV-[0-9]{4}-[0-9]{5}$' and p ->> 'invoiceDate' = (now() at time zone 'Asia/Kolkata')::date::text
+                          and p ->> 'suggestedInvoiceNumber' ~ '^GST/[0-9]{2}-[0-9]{2}/[0-9]{3}$' and p -> 'nextInvoiceNumbers' ->> 'NON_GST' ~ '^Amuwa/[0-9]{2}-[0-9]{2}/[0-9]{3}$' and p ->> 'invoiceDate' = (now() at time zone 'Asia/Kolkata')::date::text
                           and p -> 'company' ->> 'gstin' = '27BDCPK3585J3Z7' and p -> 'company' ->> 'stateCode' = '27'
                           and jsonb_array_length(p -> 'catalog') > 5
                      from (select accounts_invoice_prefill((select id from iv where name = 'P')) p) x),
@@ -227,8 +227,8 @@ select test.must_fail($$select accounts_issue_invoice((select id from rq where n
 select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select body from pl where name = 'no_lines'))$$, 'at least one line is required', 'at least one');
 select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select body from pl where name = 'many_lines'))$$, 'more than 50 lines is refused', 'at most 50');
 select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select body from pl where name = 'bad_mobile'))$$, 'a contact number must look like one', 'contact number');
-select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select jsonb_set(body, '{invoiceNumber}', '"INV 1!"') from pl where name = 'base'))$$, 'an invoice number with odd characters is refused', 'letters, numbers');
-select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select jsonb_set(body, '{invoiceNumber}', '"ABCDEFGHIJKLMNOPQ"') from pl where name = 'base'))$$, 'an invoice number over 16 characters is refused', 'up to 16');
+select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select jsonb_set(body, '{invoiceNumber}', '"INV 1!"') from pl where name = 'base'))$$, 'a typed invoice number is refused (odd characters)', 'assigned by the system');
+select test.must_fail($$select accounts_issue_invoice((select id from rq where name = 'bad'), (select jsonb_set(body, '{invoiceNumber}', '"ABCDEFGHIJKLMNOPQ"') from pl where name = 'base'))$$, 'a typed invoice number is refused (too long)', 'assigned by the system');
 reset role;
 select test.check((select count(*) = 0 from generated_invoices) and (select count(*) = 0 from member_invoices where kind = 'GENERATED'), 'none of the refused requests left anything behind');
 set role authenticated;
@@ -236,7 +236,7 @@ select test.login('acc_m');
 
 -- issue the invoice for the original services
 insert into res select 'P1', accounts_issue_invoice((select id from rq where name = 'P1'), (select body from pl where name = 'base'));
-select test.check((select data ->> 'number' ~ '^INV-[0-9]{4}-[0-9]{5}$' and data ->> 'kind' = 'GENERATED' and data ->> 'status' = 'Pending'
+select test.check((select data ->> 'number' ~ '^GST/[0-9]{2}-[0-9]{2}/[0-9]{3}$' and data ->> 'kind' = 'GENERATED' and data ->> 'status' = 'Pending'
                           and (data ->> 'total')::numeric = 18880 and (data ->> 'subtotal')::numeric = 16000 and (data ->> 'tax')::numeric = 2880
                           and (data ->> 'replayed')::boolean = false and data -> 'generated' ->> 'lifecycle' = 'ISSUED'
                      from res where name = 'P1'), 'the invoice is issued: Rs.16,000 + Rs.2,880 GST = Rs.18,880, unpaid, with an automatic number');
@@ -301,7 +301,7 @@ select test.check((select data -> 'generated' -> 'customer' ->> 'gstin' = '24AAA
                      from res where name = 'R1'), 'a GSTIN of another state is accepted once Accounts confirms it, and the state on the invoice is the one chosen');
 
 -- a typed number is kept as typed, checked for duplicates, and six rows with four rates add up
-insert into pl select 'p_additional', jsonb_set(jsonb_set(jsonb_set(body, '{purpose}', '"ADDITIONAL"'), '{invoiceNumber}', '"GST/26-27/135"'),
+insert into pl select 'p_additional', jsonb_set(jsonb_set(jsonb_set(body, '{purpose}', '"ADDITIONAL"'), '{invoiceNumber}', 'null'::jsonb),
     '{lines}', jsonb_build_array(
       jsonb_build_object('particulars', 'WhatsApp API setup', 'hsnSac', '998313', 'taxRate', 18, 'quantity', '1 Year', 'baseAmount', 10000),
       jsonb_build_object('particulars', 'Campaign messages', 'hsnSac', '998313', 'taxRate', 18, 'quantity', '30K Msg', 'baseAmount', 6000),
@@ -310,14 +310,13 @@ insert into pl select 'p_additional', jsonb_set(jsonb_set(jsonb_set(body, '{purp
       jsonb_build_object('particulars', 'Books', 'hsnSac', '4901', 'taxRate', 5, 'quantity', '3 Nos', 'baseAmount', 999),
       jsonb_build_object('particulars', 'Exempt item', 'hsnSac', '998313', 'taxRate', 0, 'quantity', '1 Nos', 'baseAmount', 1))) from pl where name = 'base';
 insert into res select 'P3', accounts_issue_invoice((select id from rq where name = 'P3'), (select body from pl where name = 'p_additional'));
-select test.check((select data ->> 'number' = 'GST/26-27/135' and (data ->> 'subtotal')::numeric = 34500.49 and (data ->> 'tax')::numeric = 5180.01 and (data ->> 'total')::numeric = 39680.50
+select test.check((select data ->> 'number' ~ '^GST/[0-9]{2}-[0-9]{2}/[0-9]{3}$' and (data ->> 'subtotal')::numeric = 34500.49 and (data ->> 'tax')::numeric = 5180.01 and (data ->> 'total')::numeric = 39680.50
                           and jsonb_array_length(data -> 'generated' -> 'lines') = 6 and (data -> 'generated' -> 'totals' ->> 'cgstAmount')::numeric = 2590.01
                           and (data -> 'generated' -> 'totals' ->> 'sgstAmount')::numeric = 2590.00 and data -> 'generated' -> 'totals' -> 'cgstRate' = 'null'::jsonb
                           and jsonb_array_length(data -> 'generated' -> 'totals' -> 'breakdown') = 4
                           and data -> 'generated' -> 'totals' ->> 'inWords' = 'Thirty Nine Thousand Six Hundred Eighty and Fifty Paise Only/-'
                      from res where name = 'P3'), 'six rows at 18% / 12% / 5% / 0%: every row, the CGST + SGST split, no misleading single rate, words with paise');
-select test.must_fail($$select accounts_issue_invoice(gen_random_uuid(), (select body from pl where name = 'p_additional'))$$, 'the same invoice number cannot be used twice', 'already exists');
-select test.must_fail($$select accounts_issue_invoice(gen_random_uuid(), (select jsonb_set(body, '{invoiceNumber}', '"gst/26-27/135"') from pl where name = 'p_additional'))$$, 'not even in another letter case', 'already exists');
+select test.must_fail($$select accounts_issue_invoice(gen_random_uuid(), (select jsonb_set(body, '{invoiceNumber}', to_jsonb((select data ->> 'number' from res where name = 'P3'))) from pl where name = 'p_additional'))$$, 'a number cannot be typed, not even one that already exists', 'assigned by the system');
 
 -- ---------------------------------------------------------------------------
 \echo '--- 33. Dynamic invoices: the issued snapshot cannot change'
@@ -616,7 +615,7 @@ select test.check((select count(*) = 37 from gst_states), 'and the state list is
 set role authenticated;
 select test.login('acc_m');
 select test.check((select jsonb_array_length(accounts_invoices(p_kind => 'GENERATED') -> 'items') >= 5), 'generated invoices appear in the Accounts invoice list');
-select test.check((select (accounts_invoices(p_search => 'GST/26-27/135') ->> 'total')::int = 1), 'and can be found by number');
+select test.check((select (accounts_invoices(p_search => (select data ->> 'number' from res where name = 'P3')) ->> 'total')::int = 1), 'and can be found by number');
 select test.login('tm_a');
 select test.check((select count(*) >= 3 from jsonb_array_elements(visible_invoices() -> 'items') i where i ->> 'kind' = 'GENERATED' and i -> 'generated' ->> 'number' is not null), 'the salesperson sees the generated invoices of their customers');
 select test.login('tm_c');

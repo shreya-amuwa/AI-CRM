@@ -1,6 +1,8 @@
-import type { DepartmentFinance, ExpensesPage, FinanceSummary, FinanceTrend, IncomePage } from '../../shared/contracts.js';
+import type { CustomerRevenuePage, FinanceMailList, DepartmentFinance, ExpensesPage, FinanceSummary, FinanceTrend, IncomePage } from '../../shared/contracts.js';
 import {
+  customerRevenueQuerySchema,
   expenseImportSchema,
+  financeMailQuerySchema,
   expenseSchema,
   expensesQuerySchema,
   financeSummaryQuerySchema,
@@ -26,6 +28,21 @@ export class AccountsFinanceService {
 
   income(query: unknown): Promise<IncomePage> {
     return this.repo.income(parse(incomeQuerySchema, query ?? {}));
+  }
+
+  /** Customer-wise revenue: what each customer ordered, was invoiced, paid (verified), has pending and still owes. */
+  customerRevenue(query: unknown): Promise<CustomerRevenuePage> {
+    return this.repo.customerRevenue(parse(customerRevenueQuerySchema, query ?? {}));
+  }
+
+  /** The Department Head e-mails about payments and expenses, with the status of each recipient. */
+  financeMail(query: unknown): Promise<FinanceMailList> {
+    const q = parse(financeMailQuerySchema, query ?? {});
+    return this.repo.financeMail(q.status, q.limit);
+  }
+
+  retryFinanceMail(id: string): Promise<{ queued: number }> {
+    return this.repo.retryFinanceMail(parse(uuidSchema, id));
   }
 
   expenses(query: unknown): Promise<ExpensesPage> {

@@ -154,7 +154,7 @@ function mailCompleted(d: TemplateData) {
 }
 
 /** The onboarding stages with a template here (the Accounts payment e-mail and the account e-mail, which carries a link, have their own). */
-type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS'>;
+type CustomerStage = Exclude<ClientStage, 'ACCOUNTS_PAYMENT' | 'ACCOUNT_CREATED' | 'PANEL_CREDENTIALS' | 'PANEL_LINK'>;
 
 const TEMPLATES: Record<CustomerStage, { subject: string; html: (d: TemplateData) => string }> = {
   WEBSITE_PENDING: { subject: 'Mini Website for Your Business | Amuwa Corporation', html: mailNoWebsite },
@@ -259,6 +259,33 @@ export function renderPanelCredentialsEmail(d: PanelCredentialsMailData): Render
   return { subject: `Your ${d.serviceName} panel login - sign-in details`, html, text: toText(html) };
 }
 
+export interface PanelLinkMailData {
+  name: string;
+  businessName?: string | null;
+  serviceName: string;
+  panel?: string | null;
+  /** The saved Client Panel URL (HTTPS, no credentials in it). */
+  panelUrl: string;
+  /** The panel account / user ID (not a secret); the password is never in this e-mail. */
+  account?: string | null;
+}
+
+/** The sign-in address of the customer's service panel. No password, no token: the customer signs in with the password already shared with them. */
+export function renderPanelLinkEmail(d: PanelLinkMailData): RenderedEmail {
+  const html = wrap(`
+  <p>Dear ${esc(d.name)},</p>
+  <p>Here is the sign-in address of your <b>${esc(d.serviceName)}</b> panel${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''}.</p>
+  <p>
+    ${d.panel ? `<b>Panel:</b> ${esc(d.panel)}<br>` : ''}
+    <b>Panel website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a>
+    ${d.account ? `<br><b>Account / user ID:</b> ${esc(d.account)}` : ''}
+  </p>
+  <p>Sign in with the password we shared with you. If you do not have it or have forgotten it, ask your Amuwa consultant. We never ask for your password by e-mail or message.</p>
+  ${teamContact()}
+  ${signature('Support Team')}`);
+  return { subject: `Your ${d.serviceName} panel link | Amuwa Corporation`, html, text: toText(html) };
+}
+
 const ACCOUNTS_HEADING: Record<string, string> = {
   PAYMENT_CONFIRMATION_REQUESTED: 'New payment confirmation request',
   PAYMENT_TO_VERIFY: 'A payment is waiting for verification',
@@ -322,5 +349,57 @@ export function renderClientPasswordEmail(d: ClientPasswordMailData): RenderedEm
   const subject = onboarding
     ? 'Payment confirmed - your Amuwa client dashboard login'
     : welcome ? 'Your Amuwa client dashboard - set your password' : 'Set a new password for your Amuwa client dashboard';
+  return { subject, html, text: toText(html) };
+}
+
+
+export interface FinanceMailData {
+  kind: string;
+  toName: string;
+  payload: Record<string, any>;
+  link: string;
+}
+
+const money = (v: unknown) => `Rs.${Number(v ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+/**
+ * The e-mail to a Department Head about money recorded for THEIR department. Only what that head needs: the customer, the reference, the
+ * services, the department, the amount and its status - never a payment reference, bank detail, phone or customer e-mail. A pending payment
+ * says so plainly and is never described as collected; an expense carries only this department's allocated part.
+ */
+export function renderFinanceMail(d: FinanceMailData): RenderedEmail {
+  const p = d.payload ?? {};
+  const row = (label: string, value?: unknown) => (value !== undefined && value !== null && String(value) !== '' ? `<b>${label}:</b> ${esc(value)}<br>` : '');
+  let heading: string;
+  let lead: string;
+  let rows: string;
+  let subject: string;
+  if (d.kind === 'EXPENSE_ADDED') {
+    heading = 'An expense was allocated to your department';
+    lead = `Accounts recorded an expense and allocated ${money(p.allocated)} of it to ${esc(p.department || 'your department')}.${p.status === 'PENDING' ? ' It is recorded as <b>pending payment</b>.' : ''}`;
+    rows = row('Description', p.description) + row('Category', p.category) + row('Expense date', p.date) + row('Allocated to your department', money(p.allocated)) +
+      row('Payment status', p.status === 'PENDING' ? 'Pending' : 'Paid') + row('Recorded', p.at);
+    subject = `Expense allocated to ${p.department || 'your department'}: ${money(p.allocated)} | Amuwa CRM`;
+  } else if (d.kind === 'PAYMENT_VERIFIED') {
+    heading = 'A payment for your department was verified';
+    lead = `Accounts verified ${money(p.verifiedAmount ?? p.amount)} received from <b>${esc(p.customer)}</b>. This amount now counts as collected income for ${esc(p.department || 'your department')}.`;
+    rows = row('Customer', p.customer) + row('Reference', p.orderRef) + row('Services', p.services) + row('Department', p.department) +
+      row('Amount recorded', money(p.amount)) + row('Amount verified', money(p.verifiedAmount ?? p.amount)) + row('Status', 'Verified') + row('Time', p.at);
+    subject = `Payment verified: ${p.customer} ${money(p.verifiedAmount ?? p.amount)} | Amuwa CRM`;
+  } else {
+    heading = 'A payment for your department is waiting for verification';
+    lead = `Accounts recorded ${money(p.amount)} from <b>${esc(p.customer)}</b>. It is <b>pending verification</b> and is not yet counted as collected income.`;
+    rows = row('Customer', p.customer) + row('Reference', p.orderRef) + row('Services', p.services) + row('Department', p.department) +
+      row('Amount recorded', money(p.amount)) + row('Status', 'Pending verification') + row('Time', p.at);
+    subject = `Payment pending verification: ${p.customer} ${money(p.amount)} | Amuwa CRM`;
+  }
+  const html = wrap(`
+  <p>Hello ${esc(d.toName || 'team')},</p>
+  <p><b>${esc(heading)}.</b></p>
+  <p>${lead}</p>
+  <p>${rows}</p>
+  ${d.link ? `<p><a href="${esc(d.link)}">Open the Amuwa CRM</a></p>` : ''}
+  <p>You are receiving this because you are a Department Head of ${esc(p.department || 'this department')}.</p>
+  <p>Best Regards,<br><b>Amuwa CRM</b></p>`);
   return { subject, html, text: toText(html) };
 }
