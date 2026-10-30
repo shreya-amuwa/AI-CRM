@@ -6,6 +6,8 @@ import { ScopeOverviewPanel } from '../common/ScopeOverviewPanel';
 import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { DashboardShell, PageTitle, type ShellNavGroup } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
@@ -14,7 +16,7 @@ import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { TeamCustomers } from './TeamCustomers';
 
-export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'notifications';
+export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'notifications';
 
 interface TeamLeadDashboardProps {
   currentUserId: string;
@@ -31,6 +33,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
   const [nav, setNav] = useState<TeamLeadNav>('overview');
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
+  useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -48,6 +51,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         label: 'People',
         items: [
           { id: 'team-members', label: 'Team Members & Access', icon: UserPlus },
+          { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell }
         ]
@@ -89,6 +93,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept={profile?.team?.division === 'SALES' ? 'sales' : profile?.team?.division === 'SUPPORT' ? 'support' : null} />
       )}
       {nav === 'chat' && <ChatRoute />}
+      {nav === 'raise-issue' && <IssuesRoute />}
       {nav === 'notifications' && <NotificationsPage />}
     </DashboardShell>
   );

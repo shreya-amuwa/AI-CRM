@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Subscription duration, activation and expiry (see docs/SUBSCRIPTION_ACTIVATION.md). Paste the whole file into the Supabase SQL editor and run it once.
--- Safe to run again; nothing is deleted and nothing is sent. Needs the earlier migrations (up to 20261209000600).
+-- Safe to run again; nothing is deleted and nothing is sent. Needs the earlier migrations (up to 20261210000100).
 -- =============================================================================
 
 -- =============================================================================

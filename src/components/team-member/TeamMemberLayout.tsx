@@ -21,6 +21,8 @@ import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { BA_WORKSPACE_NAV, isBaNav } from '../business-associate/BusinessAssociateWorkspace';
 import { FIELD_VISIT_NAV, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
@@ -47,6 +49,7 @@ export type TeamMemberNav =
   | FieldVisitPage
   | 'settings'
   | 'chat'
+  | 'raise-issue'
   | 'notifications';
 
 interface TeamMemberLayoutProps {
@@ -89,6 +92,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
+    { id: ISSUES_NAV.id as TeamMemberNav, label: ISSUES_NAV.label, icon: ISSUES_NAV.icon },
     { id: CHAT_NAV.id as TeamMemberNav, label: CHAT_NAV.label, icon: CHAT_NAV.icon },
     { id: 'notifications' as TeamMemberNav, label: 'Notification Center', icon: Bell }
   ];
@@ -119,6 +123,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
 
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => handleNavClick('chat'), []));
+  useOpenIssuesRequest(React.useCallback(() => handleNavClick('raise-issue'), []));
   const displayName = user?.name || 'Team Member';
   const displayRole = memberTitle(user);
 
@@ -313,7 +318,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
         />
         <main className={currentNav === 'chat' ? 'flex-1 min-w-0' : 'flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-y-auto'}>
           {currentNav === 'chat' && <ChatRoute />}
-          <div hidden={currentNav === 'chat'}>{children}</div>
+          {currentNav === 'raise-issue' && <IssuesRoute />}
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue'}>{children}</div>
         </main>
       </div>
     </div>

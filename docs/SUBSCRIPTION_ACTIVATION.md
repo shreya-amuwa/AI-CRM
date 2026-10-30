@@ -4,7 +4,7 @@
 activation confirmation sets the subscription start date → the system calculates the expiry date → the customer sees it in the Client Dashboard →
 the renewal reminders follow that expiry date.**
 
-This replaces the earlier way of typing dates by hand for a new subscription. Migration: `supabase/migrations/20261210000100_subscription_activation.sql`
+This replaces the earlier way of typing dates by hand for a new subscription. Migration: `supabase/migrations/20261210000200_subscription_activation.sql`
 (also in `supabase/run_these_1_migration_subscription_activation.sql`). It is built into the existing model; nothing is duplicated.
 
 ## What is stored where

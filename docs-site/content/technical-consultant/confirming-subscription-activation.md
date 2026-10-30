@@ -6,7 +6,7 @@ group: Client Setup
 roles: [Meta Verifier, Technical Consultant, Support Team Member, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [src/components/journey/SubscriptionPanel.tsx, src/components/journey/SubscriptionTerms.tsx, supabase/migrations/20261210000100_subscription_activation.sql]
+sources: [src/components/journey/SubscriptionPanel.tsx, src/components/journey/SubscriptionTerms.tsx, supabase/migrations/20261210000200_subscription_activation.sql]
 related:
   - /technical-consultant/provisioning-client-login
   - /sales/creating-a-lead

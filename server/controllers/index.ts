@@ -110,6 +110,40 @@ export const chatController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+export const employeeCasesController = {
+  // the employee
+  submitIssue: (async ctx => ok(await svc(ctx).employeeCases.submitIssue(ctx.req.body), 201)) as Handler,
+  myDetails: (async ctx => ok(await svc(ctx).employeeCases.myDetails())) as Handler,
+  myIssues: (async ctx => ok(await svc(ctx).employeeCases.myIssues(ctx.req.query))) as Handler,
+  myIssue: (async ctx => ok(await svc(ctx).employeeCases.myIssue(ctx.params.id))) as Handler,
+  replyToIssue: (async ctx => ok(await svc(ctx).employeeCases.replyToIssue(ctx.params.id, ctx.req.body))) as Handler,
+  submitMeeting: (async ctx => ok(await svc(ctx).employeeCases.submitMeeting(ctx.req.body), 201)) as Handler,
+  myMeetings: (async ctx => ok(await svc(ctx).employeeCases.myMeetings(ctx.req.query))) as Handler,
+  myMeeting: (async ctx => ok(await svc(ctx).employeeCases.myMeeting(ctx.params.id))) as Handler,
+  cancelMyMeeting: (async ctx => ok(await svc(ctx).employeeCases.cancelMyMeeting(ctx.params.id, ctx.req.body))) as Handler,
+  answerAlternative: (async ctx => ok(await svc(ctx).employeeCases.answerAlternative(ctx.params.id, ctx.req.body))) as Handler,
+  beginUpload: (async ctx => ok(await svc(ctx).employeeCases.beginUpload(ctx.req.body), 201)) as Handler,
+  completeUpload: (async ctx => ok(await svc(ctx).employeeCases.completeUpload(ctx.params.id))) as Handler,
+  abortUpload: (async ctx => ok(await svc(ctx).employeeCases.abortUpload(ctx.params.id))) as Handler,
+  attachmentUrl: (async ctx => ok(await svc(ctx).employeeCases.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler,
+  // HR
+  assignees: (async ctx => ok(await svc(ctx).employeeCases.assignees())) as Handler,
+  departments: (async ctx => ok(await svc(ctx).employeeCases.departments())) as Handler,
+  issueOverview: (async ctx => ok(await svc(ctx).employeeCases.issueOverview())) as Handler,
+  hrIssues: (async ctx => ok(await svc(ctx).employeeCases.hrIssues(ctx.req.query))) as Handler,
+  hrIssue: (async ctx => ok(await svc(ctx).employeeCases.hrIssue(ctx.params.id))) as Handler,
+  assignIssue: (async ctx => ok(await svc(ctx).employeeCases.assignIssue(ctx.params.id, ctx.req.body))) as Handler,
+  setIssueStatus: (async ctx => ok(await svc(ctx).employeeCases.setIssueStatus(ctx.params.id, ctx.req.body))) as Handler,
+  respondToIssue: (async ctx => ok(await svc(ctx).employeeCases.respondToIssue(ctx.params.id, ctx.req.body))) as Handler,
+  noteOnIssue: (async ctx => ok(await svc(ctx).employeeCases.noteOnIssue(ctx.params.id, ctx.req.body))) as Handler,
+  meetingOverview: (async ctx => ok(await svc(ctx).employeeCases.meetingOverview())) as Handler,
+  hrMeetings: (async ctx => ok(await svc(ctx).employeeCases.hrMeetings(ctx.req.query))) as Handler,
+  hrMeeting: (async ctx => ok(await svc(ctx).employeeCases.hrMeeting(ctx.params.id))) as Handler,
+  assignMeeting: (async ctx => ok(await svc(ctx).employeeCases.assignMeeting(ctx.params.id, ctx.req.body))) as Handler,
+  noteOnMeeting: (async ctx => ok(await svc(ctx).employeeCases.noteOnMeeting(ctx.params.id, ctx.req.body))) as Handler,
+  decideMeeting: (async ctx => ok(await svc(ctx).employeeCases.decideMeeting(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const ticketFilesController = {
   forTicket: (async ctx => ok(await svc(ctx).ticketFiles.forTicket(ctx.params.id))) as Handler,
   beginUpload: (async ctx => ok(await svc(ctx).ticketFiles.beginUpload(ctx.req.body), 201)) as Handler,

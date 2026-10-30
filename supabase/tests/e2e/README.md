@@ -79,3 +79,8 @@ that a Support Department Head has neither in the menu, is not let in by a typed
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-sales-only-need-help.sh ./screenshots
 ```
+
+`run-employee-issues.sh` drives Raise an Issue (a Team Member, a Team Lead and a Department Head: the same page and selector) and HR's two sections
+(Employee Issues, Meeting Requests): submitting with validation and an attachment, the reference number, HR's cards, filters, search, assigning, responding,
+requesting information, resolving / closing with confirmations, scheduling, declining, proposing another time, what the employee sees (and never the
+internal notes), and phone / tablet layouts (83 checks).

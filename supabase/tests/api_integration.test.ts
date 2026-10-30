@@ -7550,6 +7550,335 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await new Promise(res => fake.server.close(res));
 }
 
+// --- Employee issues and HR meeting requests (Raise an Issue for employees; Employee Issues and Meeting Requests for HR) ---
+{
+  const mid = () => crypto.randomUUID();
+  const idOfEmail = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
+  const hrMemberId = (await api('hrmember', 'GET', '/me')).json.data.id as string;
+  const issueBody = (o: Record<string, unknown> = {}) => ({ clientRequestId: mid(), title: 'The air conditioning is broken', category: 'FACILITIES', description: 'The air conditioning on our floor has not worked for a week.', priority: 'MEDIUM', ...o });
+  const meetBody = (o: Record<string, unknown> = {}) => ({ clientRequestId: mid(), subject: 'Discuss my leave balance', category: 'ATTENDANCE_LEAVE', description: 'I would like to understand my leave balance for this year.', preferredDate: new Date(Date.now() + 3 * 86400e3).toISOString().slice(0, 10), preferredTime: '10:30', mode: 'IN_PERSON', ...o });
+  const day = (n: number) => new Date(Date.now() + n * 86400e3).toISOString().slice(0, 10);
+
+  // ---- who can reach the employee routes at all
+  r = await api(null, 'GET', '/employee/issues');
+  check(r.status === 401, 'employee issues: no token, no access', r);
+  r = await api('cl1', 'POST', '/employee/issues', issueBody());
+  check(r.status === 401 || r.status === 403, 'employee issues: a client login cannot raise an employee issue', r);
+  r = await api('sa', 'POST', '/employee/issues', issueBody());
+  check(r.status === 403, 'employee issues: the Super Admin does not raise employee issues', r);
+
+  // ---- raising an issue: Team Member, Team Lead, Department Head
+  const issues: Record<string, any> = {};
+  for (const who of ['a', 'th', 'dh']) {
+    r = await api(who, 'POST', '/employee/issues', issueBody({ title: `Issue from ${who}`, priority: who === 'th' ? 'URGENT' : 'HIGH' }));
+    check(r.status === 201 && /^ISS-\d{4}-\d{5}$/.test(r.json.data.reference) && r.json.data.status === 'NEW' && r.json.data.duplicate === false, `employee issues: ${who} raises an issue and gets a reference number`, r);
+    issues[who] = r.json.data;
+  }
+  const me = (await api('a', 'GET', '/me')).json.data;
+  check(issues.a.employee.name === me.fullName && issues.a.employee.id === me.id && /^EMP-/.test(issues.a.employee.employeeCode) && !!issues.a.employee.department, 'employee issues: the employee\'s details come from the profile (name, employee id, department)', issues.a.employee);
+  r = await api('a', 'GET', '/employee/case-details');
+  check(r.status === 200 && r.json.data.name === me.fullName && r.json.data.id === me.id && r.json.data.code === issues.a.employee.employeeCode, 'employee issues: the form\'s employee details come from the profile (GET /employee/case-details)', r);
+  r = await api('hr', 'GET', '/employee/case-details');
+  check(r.status === 200, 'employee issues: (HR staff are employees too)', r);
+  r = await api('sa', 'GET', '/employee/case-details');
+  check(r.status === 403, 'employee issues: the Super Admin has no employee details here', r);
+  check(issues.th.employee.designation === 'Team Lead' && issues.dh.employee.designation === 'Department Head', 'employee issues: designation shows the role for a Team Lead and a Department Head', [issues.th.employee, issues.dh.employee]);
+  r = await api('a', 'POST', '/employee/issues', { ...issueBody(), clientRequestId: issues.a.id });
+  check(r.status === 201 && r.json.data.duplicate === false && r.json.data.id !== issues.a.id, 'employee issues: (a different form is a different issue)', r);
+  const dupKey = mid();
+  r = await api('a', 'POST', '/employee/issues', issueBody({ clientRequestId: dupKey, title: 'Duplicate probe' }));
+  const first = r.json.data;
+  r = await api('a', 'POST', '/employee/issues', issueBody({ clientRequestId: dupKey, title: 'Duplicate probe' }));
+  check(r.status === 201 && r.json.data.id === first.id && r.json.data.duplicate === true, 'employee issues: submitting the same form twice returns the first issue (no duplicate)', r);
+  check(Number((await db.query(`select count(*) c from public.employee_issues where client_request_id = $1`, [dupKey])).rows[0].c) === 1, 'employee issues: and only one row exists');
+  r = await api('hr', 'GET', '/notifications?unreadOnly=true');
+  check(r.status === 200 && (r.json.data.items as any[]).filter(n => n.entityId === first.id && n.type === 'EMPLOYEE_ISSUE_SUBMITTED').length === 1, 'employee issues: HR got one notification for it (not one per submit)', r.json.data.items?.length);
+  check(!(r.json.data.items as any[]).some(n => /air conditioning|Duplicate probe/i.test(`${n.title} ${n.body}`)), 'employee issues: a notification never carries the issue text');
+
+  // ---- validation: nothing about the employee, owner or status can be sent
+  for (const [label, body] of [
+    ['an employee id', issueBody({ employeeId: me.id })], ['a status', issueBody({ status: 'RESOLVED' })], ['an HR assignee', issueBody({ assignedHrId: me.id })],
+    ['a short title', issueBody({ title: 'x' })], ['an unknown category', issueBody({ category: 'NOPE' })], ['a short description', issueBody({ description: 'short' })],
+    ['an unknown priority', issueBody({ priority: 'ASAP' })], ['no request id', issueBody({ clientRequestId: undefined })], ['too many files', issueBody({ attachmentIds: Array.from({ length: 6 }, mid) })]
+  ] as [string, any][]) {
+    r = await api('a', 'POST', '/employee/issues', body);
+    check(r.status === 422, `employee issues: ${label} is refused`, r);
+  }
+  r = await api('a', 'POST', '/employee/issues', issueBody({ attachmentIds: [mid()] }));
+  check(r.status === 422, 'employee issues: a file that was never uploaded cannot be attached', r);
+
+  // ---- the employee sees only their own
+  r = await api('a', 'GET', '/employee/issues');
+  check(r.status === 200 && r.json.data.items.length === r.json.data.total && r.json.data.items.every((i: any) => i.employee.id === me.id) && r.json.data.items.some((i: any) => i.id === issues.a.id), 'employee issues: an employee\'s history holds only their own issues', r.json.data.total);
+  check(r.json.data.items.every((i: any) => i.description === null), 'employee issues: the list does not carry the text');
+  r = await api('b', 'GET', `/employee/issues/${issues.a.id}`);
+  check(r.status === 404, 'employee issues: a colleague cannot open an issue by changing the id in the URL', r);
+  r = await api('b', 'POST', `/employee/issues/${issues.a.id}/reply`, { message: 'trying somebody else' });
+  check(r.status === 404, 'employee issues: nor reply to it', r);
+  r = await api('b', 'GET', `/hr/issues/${issues.a.id}`);
+  check(r.status === 403, 'employee issues: nor read it through the HR route', r);
+  r = await api('a', 'GET', `/employee/issues/${issues.a.id}`);
+  check(r.status === 200 && r.json.data.issue.description.startsWith('The air conditioning') && Array.isArray(r.json.data.events), 'employee issues: the owner opens the full issue and its history', r);
+  r = await api('a', 'GET', '/employee/issues/not-a-uuid');
+  check(r.status === 422, 'employee issues: a malformed id is refused', r);
+
+  // ---- HR-only operations are refused for everybody else
+  for (const [method, path, body] of [
+    ['GET', '/hr/issues', undefined], ['GET', '/hr/issues/overview', undefined], ['GET', `/hr/issues/${issues.a.id}`, undefined], ['GET', '/hr/case-assignees', undefined],
+    ['POST', `/hr/issues/${issues.a.id}/assign`, { hrId: hrMemberId }], ['POST', `/hr/issues/${issues.a.id}/status`, { status: 'RESOLVED' }], ['POST', `/hr/issues/${issues.a.id}/respond`, { message: 'As HR' }],
+    ['POST', `/hr/issues/${issues.a.id}/note`, { note: 'As HR' }], ['GET', '/hr/meetings', undefined], ['GET', '/hr/meetings/overview', undefined]
+  ] as [string, string, any][]) {
+    for (const who of ['a', 'th', 'dh']) {
+      r = await api(who, method, path, body);
+      if (r.status !== 403) check(false, `employee issues: ${who} must not ${method} ${path} (HR only)`, r);
+    }
+  }
+  check(true, 'employee issues: a Team Member, a Team Lead and a Department Head of another department are refused every HR route');
+  r = await api(null, 'GET', '/hr/issues');
+  check(r.status === 401, 'employee issues: signed-out visitors are refused the HR route', r);
+
+  // ---- HR: sees every department, filters, search, pagination, totals from the records
+  r = await api('hr', 'GET', '/hr/issues/overview');
+  const ov = r.json.data;
+  check(r.status === 200 && ov.total >= 5 && ov.new === ov.total && ov.urgent >= 1 && ov.inProgress === 0, 'employee issues: HR\'s totals are counted from the database', ov);
+  r = await api('hr', 'GET', '/hr/issues?search=Issue%20from%20th');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === issues.th.id && r.json.data.items[0].description === null, 'employee issues: HR finds an issue by title (the list carries no text)', r);
+  r = await api('hr', 'GET', `/hr/issues?search=${encodeURIComponent(issues.dh.reference)}`);
+  check(r.json.data.total === 1 && r.json.data.items[0].id === issues.dh.id, 'employee issues: and by reference', r);
+  r = await api('hr', 'GET', `/hr/issues?search=${encodeURIComponent(me.fullName.split(' ')[0])}`);
+  check(r.json.data.items.some((i: any) => i.id === issues.a.id), 'employee issues: and by employee name', r);
+  r = await api('hr', 'GET', '/hr/issues?priority=URGENT&status=NEW&category=FACILITIES');
+  check(r.json.data.items.some((i: any) => i.id === issues.th.id) && r.json.data.items.every((i: any) => i.priority === 'URGENT' && i.status === 'NEW'), 'employee issues: priority, status and category filters work', r);
+  r = await api('hr', 'GET', `/hr/issues?departmentId=${issues.a.employee.departmentId}`);
+  check(r.json.data.items.length > 0 && r.json.data.items.every((i: any) => i.employee.departmentId === issues.a.employee.departmentId), 'employee issues: the department filter works', r);
+  r = await api('hr', 'GET', `/hr/issues?from=${encodeURIComponent(new Date(Date.now() - 3600e3).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 3600e3).toISOString())}`);
+  check(r.json.data.total >= 5, 'employee issues: the date range filter works', r.json.data.total);
+  r = await api('hr', 'GET', `/hr/issues?from=${encodeURIComponent(new Date(Date.now() + 86400e3).toISOString())}`);
+  check(r.json.data.total === 0, 'employee issues: and excludes issues before the range', r);
+  r = await api('hr', 'GET', '/hr/issues?limit=2&offset=0');
+  const total = r.json.data.total;
+  const r2 = await api('hr', 'GET', '/hr/issues?limit=2&offset=2');
+  check(r.json.data.items.length === 2 && r2.json.data.total === total && r2.json.data.items.every((i: any) => !r.json.data.items.some((x: any) => x.id === i.id)), 'employee issues: pagination returns distinct pages and the total', [total, r2.json.data.items.length]);
+  for (const q of ['status=BOGUS', 'priority=ASAP', 'limit=1000', 'unexpected=1', 'from=yesterday']) {
+    r = await api('hr', 'GET', `/hr/issues?${q}`);
+    check(r.status === 422, `employee issues: the query "${q}" is refused`, r);
+  }
+  r = await api('hrmember', 'GET', '/hr/issues');
+  check(r.status === 200 && r.json.data.total >= 5, 'employee issues: an HR Team Member also works the issues', r.status);
+  r = await api('hr', 'GET', '/hr/case-assignees');
+  check(r.status === 200 && r.json.data.some((x: any) => x.id === hrMemberId), 'employee issues: HR can pick an HR team member to assign', r);
+
+  // ---- HR works an issue; the employee sees the update; internal notes stay with HR
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/assign`, { hrId: await idOfEmail('a@amuwa.com') });
+  check(r.status === 422, 'employee issues: an issue cannot be assigned to somebody outside HR', r);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/assign`, { hrId: hrMemberId });
+  check(r.status === 200 && r.json.data.issue.status === 'IN_PROGRESS' && r.json.data.issue.assignedHr.id === hrMemberId, 'employee issues: HR assigns an issue to an HR team member', r);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/note`, { note: 'INTERNAL: check the maintenance contract first.' });
+  check(r.status === 200 && r.json.data.events.some((e: any) => e.kind === 'NOTE' && e.visibility === 'HR'), 'employee issues: HR adds an internal note', r);
+  r = await api('hrmember', 'POST', `/hr/issues/${issues.a.id}/respond`, { message: 'Which floor are you on, and since when?', requestInfo: true });
+  check(r.status === 200 && r.json.data.issue.status === 'AWAITING_EMPLOYEE', 'employee issues: HR asks the employee for more information', r);
+  r = await api('a', 'GET', `/employee/issues/${issues.a.id}`);
+  check(r.json.data.issue.status === 'AWAITING_EMPLOYEE' && r.json.data.issue.hrResponse.startsWith('Which floor') && r.json.data.issue.assignedHr.id === hrMemberId, 'employee issues: the employee sees the status and HR\'s response', r);
+  check(!JSON.stringify(r.json.data).includes('INTERNAL') && r.json.data.events.every((e: any) => e.visibility === 'EMPLOYEE' && e.kind !== 'NOTE'), 'employee issues: the internal note is not in anything the employee receives');
+  r = await api('a', 'GET', '/notifications?unreadOnly=true');
+  check((r.json.data.items as any[]).some(n => n.type === 'EMPLOYEE_ISSUE_UPDATED' && n.entityId === issues.a.id && /more information/.test(n.body)), 'employee issues: the employee was notified of HR\'s request', r.json.data.items?.length);
+  r = await api('b', 'GET', '/notifications?unreadOnly=true');
+  check(!(r.json.data.items as any[]).some(n => n.entityId === issues.a.id), 'employee issues: and a colleague was not');
+  r = await api('a', 'POST', `/employee/issues/${issues.a.id}/reply`, { message: 'Third floor, since Monday.' });
+  check(r.status === 200 && r.json.data.issue.status === 'IN_PROGRESS' && r.json.data.events.some((e: any) => e.kind === 'EMPLOYEE_REPLY'), 'employee issues: the employee replies and the issue is back In Progress', r);
+  r = await api('hrmember', 'GET', '/notifications?unreadOnly=true');
+  check((r.json.data.items as any[]).some(n => n.type === 'EMPLOYEE_ISSUE_REPLY' && n.entityId === issues.a.id), 'employee issues: the assigned HR person was told about the reply', r.json.data.items?.length);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/status`, { status: 'RESOLVED', message: 'Maintenance fixed it today.' });
+  check(r.status === 200 && r.json.data.issue.status === 'RESOLVED' && r.json.data.issue.resolvedAt, 'employee issues: HR resolves it', r);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/status`, { status: 'NEW' });
+  check(r.status === 422, 'employee issues: an opened issue cannot go back to New', r);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/status`, { status: 'BOGUS' });
+  check(r.status === 422, 'employee issues: an unknown status is refused', r);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/status`, { status: 'CLOSED' });
+  check(r.status === 200 && r.json.data.issue.status === 'CLOSED', 'employee issues: HR closes it', r);
+  r = await api('hr', 'POST', `/hr/issues/${issues.a.id}/respond`, { message: 'One more thing' });
+  check(r.status === 409, 'employee issues: a closed issue cannot be answered', r);
+  r = await api('a', 'POST', `/employee/issues/${issues.a.id}/reply`, { message: 'Thanks, one more thing' });
+  check(r.status === 409, 'employee issues: nor replied to by the employee', r);
+  r = await api('a', 'GET', `/employee/issues?status=CLOSED`);
+  check(r.json.data.items.length === 1 && r.json.data.items[0].id === issues.a.id && r.json.data.items[0].hrResponse === 'Maintenance fixed it today.', 'employee issues: the employee filters their history and sees HR\'s last response', r);
+  r = await api('hr', 'GET', '/hr/issues/overview');
+  check(r.json.data.closed === 1 && r.json.data.new >= 3, 'employee issues: HR\'s totals follow the status changes', r.json.data);
+  check(Number((await db.query(`select count(*) c from public.audit_logs where action like 'EMPLOYEE_ISSUE_%'`)).rows[0].c) >= 7, 'employee issues: the activity is in the audit log');
+
+  // ---- direct table access: the owner reads their own rows, nobody writes
+  r = await api('b', 'GET', '/employee/issues');
+  check(r.status === 200 && r.json.data.items.every((i: any) => i.employee.id !== me.id), 'employee issues: another employee\'s history never holds somebody else\'s issues', r.json.data.total);
+
+  // ---- attachments (private bucket, checked type, size and content)
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n% issue file\n'), Buffer.alloc(1500, 0x20), Buffer.from('\n%%EOF\n')]);
+  const put = (t: any, body: Buffer, type = 'application/pdf') => fetch(`${GW}/storage/v1/object/upload/sign/${t.bucket}/${t.path}?token=${t.token}`, { method: 'PUT', headers: { 'content-type': type, 'x-upsert': 'false' }, body });
+  r = await api('a', 'POST', '/employee/issues/uploads', { fileName: 'virus.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
+  check(r.status === 422, 'employee issues: a file type that is not allowed is refused', r);
+  r = await api('a', 'POST', '/employee/issues/uploads', { fileName: 'big.pdf', mimeType: 'application/pdf', sizeBytes: 5 * 1024 * 1024 + 1 });
+  check(r.status === 422, 'employee issues: a file over 5 MB is refused', r);
+  r = await api('a', 'POST', '/employee/issues/uploads', { fileName: 'slip.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length, ownerId: me.id });
+  check(r.status === 422, 'employee issues: an owner named in the upload request is refused', r);
+  r = await api('cl1', 'POST', '/employee/issues/uploads', { fileName: 'slip.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  check(r.status === 401 || r.status === 403, 'employee issues: a client cannot upload here', r);
+  r = await api('a', 'POST', '/employee/issues/uploads', { fileName: 'Salary-slip.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  check(r.status === 201 && r.json.data.bucket === 'employee-issue-attachments' && r.json.data.path.startsWith(`${me.id}/`) && !r.json.data.path.includes('..'), 'employee issues: an upload is booked in the private bucket, in the employee\'s own folder', r);
+  const up1 = r.json.data;
+  r = await api('a', 'POST', `/employee/issues/uploads/${up1.attachment.id}/complete`);
+  check(r.status === 422, 'employee issues: completing an upload that never arrived is refused', r);
+  r = await api('a', 'POST', '/employee/issues/uploads', { fileName: 'Salary-slip.pdf', mimeType: 'application/pdf', sizeBytes: pdf.length });
+  const up2 = r.json.data;
+  check((await put(up2, pdf)).status < 300, 'employee issues: the file is uploaded with the single-use link');
+  r = await api('b', 'POST', `/employee/issues/uploads/${up2.attachment.id}/complete`);
+  check(r.status === 404, 'employee issues: someone else cannot confirm my upload', r);
+  r = await api('a', 'POST', `/employee/issues/uploads/${up2.attachment.id}/complete`);
+  check(r.status === 200 && r.json.data.name === 'Salary-slip.pdf', 'employee issues: the uploader confirms it', r);
+  r = await api('a', 'POST', '/employee/issues/uploads', { fileName: 'Fake.png', mimeType: 'image/png', sizeBytes: pdf.length });
+  const up3 = r.json.data;
+  await put(up3, pdf, 'image/png');
+  r = await api('a', 'POST', `/employee/issues/uploads/${up3.attachment.id}/complete`);
+  check(r.status === 422, 'employee issues: a PDF renamed to .png is refused by looking at its content', r);
+  r = await api('b', 'POST', '/employee/issues', issueBody({ attachmentIds: [up2.attachment.id] }));
+  check(r.status === 422, 'employee issues: a colleague cannot attach my file to their issue', r);
+  r = await api('a', 'POST', '/employee/issues', issueBody({ title: 'Wrong deduction', category: 'SALARY_PAYROLL', attachmentIds: [up2.attachment.id] }));
+  check(r.status === 201, 'employee issues: an issue with a file is stored', r);
+  const withFile = r.json.data;
+  r = await api('a', 'POST', '/employee/issues', issueBody({ attachmentIds: [up2.attachment.id] }));
+  check(r.status === 422, 'employee issues: a file cannot be attached twice', r);
+  r = await api('a', 'GET', `/employee/issues/${withFile.id}`);
+  check(r.json.data.attachments.length === 1 && r.json.data.attachments[0].name === 'Salary-slip.pdf', 'employee issues: the issue lists its file', r);
+  r = await api('a', 'GET', `/employee/issue-attachments/${up2.attachment.id}/url?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'employee issues: the owner gets a short-lived download link', r);
+  const dl = await fetch(r.json.data.url);
+  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(pdf), 'employee issues: and the file is the one that was uploaded');
+  r = await api('b', 'GET', `/employee/issue-attachments/${up2.attachment.id}/url`);
+  check(r.status === 404, 'employee issues: another employee cannot open it even with the id', r);
+  r = await api('dh', 'GET', `/employee/issue-attachments/${up2.attachment.id}/url`);
+  check(r.status === 404, 'employee issues: nor a Department Head', r);
+  r = await api('hr', 'GET', `/hr/issues/${withFile.id}`);
+  check(r.status === 200 && r.json.data.attachments.length === 1, 'employee issues: HR sees the file on the issue', r);
+  r = await api('hr', 'GET', `/employee/issue-attachments/${up2.attachment.id}/url`);
+  check(r.status === 200 && r.json.data.fileName === 'Salary-slip.pdf', 'employee issues: and can open it', r);
+  r = await api(null, 'GET', `/employee/issue-attachments/${up2.attachment.id}/url`);
+  check(r.status === 401, 'employee issues: signed-out visitors cannot', r);
+
+  // ---- meeting requests: Team Member, Team Lead, Department Head
+  const meets: Record<string, any> = {};
+  for (const who of ['a', 'th', 'dh']) {
+    r = await api(who, 'POST', '/employee/meetings', meetBody({ subject: `Meeting from ${who}`, category: who === 'dh' ? 'PERSONAL_CONFIDENTIAL' : 'MANAGEMENT' }));
+    check(r.status === 201 && /^MTG-\d{4}-\d{5}$/.test(r.json.data.reference) && r.json.data.status === 'PENDING', `meeting requests: ${who} requests a meeting and gets a reference number (still a request, not a meeting)`, r);
+    meets[who] = r.json.data;
+  }
+  check(meets.a.confirmedDate === null && meets.a.employee.id === me.id && !!meets.a.employee.department, 'meeting requests: nothing is confirmed, the employee\'s details come from the profile', meets.a);
+  r = await api('a', 'POST', '/employee/meetings', meetBody({ clientRequestId: (await db.query(`select client_request_id from public.employee_meeting_requests where id = $1`, [meets.a.id])).rows[0].client_request_id }));
+  check(r.status === 201 && r.json.data.id === meets.a.id && r.json.data.duplicate === true, 'meeting requests: submitting the same form twice returns the first request', r);
+  for (const [label, body] of [
+    ['an employee id', meetBody({ employeeId: me.id })], ['a status', meetBody({ status: 'SCHEDULED' })], ['a confirmed date', meetBody({ confirmedDate: day(2) })],
+    ['a short subject', meetBody({ subject: 'x' })], ['an unknown category', meetBody({ category: 'NOPE' })], ['a past date', meetBody({ preferredDate: day(-10) })],
+    ['a date far ahead', meetBody({ preferredDate: day(900) })], ['a bad time', meetBody({ preferredTime: '25:99' })], ['an unknown mode', meetBody({ mode: 'PHONE' })],
+    ['a bad date format', meetBody({ preferredDate: '12/11/2026' })]
+  ] as [string, any][]) {
+    r = await api('a', 'POST', '/employee/meetings', body);
+    check(r.status === 422, `meeting requests: ${label} is refused`, r);
+  }
+  r = await api('b', 'GET', `/employee/meetings/${meets.a.id}`);
+  check(r.status === 404, 'meeting requests: a colleague cannot open it by changing the id', r);
+  r = await api('b', 'POST', `/employee/meetings/${meets.a.id}/cancel`, {});
+  check(r.status === 404, 'meeting requests: nor cancel it', r);
+  r = await api('b', 'POST', `/employee/meetings/${meets.a.id}/alternative`, { accept: true });
+  check(r.status === 404, 'meeting requests: nor answer it', r);
+  r = await api('a', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'APPROVE', date: day(4), time: '14:00' });
+  check(r.status === 403, 'meeting requests: an employee cannot approve their own request', r);
+  r = await api('hr', 'GET', '/hr/meetings/overview');
+  check(r.status === 200 && r.json.data.total >= 3 && r.json.data.pending === r.json.data.total && r.json.data.scheduled === 0, 'meeting requests: HR\'s totals are counted from the database', r.json.data);
+  r = await api('hr', 'GET', '/hr/meetings?search=Meeting%20from%20th');
+  check(r.json.data.total === 1 && r.json.data.items[0].id === meets.th.id && r.json.data.items[0].description === null, 'meeting requests: HR finds a request by subject', r);
+  r = await api('hr', 'GET', `/hr/meetings?category=PERSONAL_CONFIDENTIAL&status=PENDING`);
+  check(r.json.data.items.some((m: any) => m.id === meets.dh.id), 'meeting requests: category and status filters work', r);
+  r = await api('hr', 'GET', `/hr/meetings?from=${day(2)}&to=${day(4)}`);
+  check(r.json.data.items.some((m: any) => m.id === meets.a.id), 'meeting requests: the date range filter works', r);
+  for (const q of ['status=BOGUS', 'from=tomorrow', 'category=NOPE', 'limit=0']) {
+    r = await api('hr', 'GET', `/hr/meetings?${q}`);
+    check(r.status === 422, `meeting requests: the query "${q}" is refused`, r);
+  }
+  r = await api('hr', 'GET', `/hr/meetings/${meets.a.id}`);
+  check(r.status === 200 && r.json.data.meeting.description.startsWith('I would like') && r.json.data.meeting.employee.id === me.id, 'meeting requests: HR opens the full request', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'APPROVE' });
+  check(r.status === 422, 'meeting requests: approving needs a date and time', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'DECLINE' });
+  check(r.status === 422, 'meeting requests: declining needs a reason', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'APPROVE', date: day(4), time: '14:00', mode: 'ONLINE', link: 'http://insecure.example.com' });
+  check(r.status === 422, 'meeting requests: a meeting link must be https', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'RESCHEDULE', date: day(5), time: '10:00', reason: 'not scheduled yet' });
+  check(r.status === 409, 'meeting requests: only a scheduled meeting can be rescheduled', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'COMPLETE' });
+  check(r.status === 409, 'meeting requests: only a scheduled meeting can be completed', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/assign`, { hrId: hrMemberId });
+  check(r.status === 200 && r.json.data.meeting.assignedHr.id === hrMemberId, 'meeting requests: HR assigns the responsible HR representative', r);
+  r = await api('hrmember', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'APPROVE', date: day(4), time: '14:00', mode: 'ONLINE', link: 'https://meet.example.com/room-7', instructions: 'Join five minutes early.', message: 'See you then.' });
+  check(r.status === 200 && r.json.data.meeting.status === 'SCHEDULED' && r.json.data.meeting.confirmedDate === day(4) && r.json.data.meeting.confirmedTime === '14:00', 'meeting requests: HR approves and schedules it with a link and instructions', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/note`, { note: 'INTERNAL: prepare the leave ledger.' });
+  check(r.status === 200, 'meeting requests: HR adds an internal note', r);
+  r = await api('a', 'GET', `/employee/meetings/${meets.a.id}`);
+  const mine = r.json.data.meeting;
+  check(mine.status === 'SCHEDULED' && mine.confirmedDate === day(4) && mine.confirmedTime === '14:00' && mine.confirmedMode === 'ONLINE' && mine.link === 'https://meet.example.com/room-7' && mine.instructions === 'Join five minutes early.' && mine.hrResponse === 'See you then.',
+    'meeting requests: the employee sees the confirmed date, time, mode, link, instructions and HR\'s response', mine);
+  check(!JSON.stringify(r.json.data).includes('INTERNAL') && mine.outcome === null, 'meeting requests: the internal note is not shown to the employee');
+  r = await api('a', 'GET', '/notifications?unreadOnly=true');
+  check((r.json.data.items as any[]).filter(n => n.type === 'EMPLOYEE_MEETING_UPDATED' && n.entityId === meets.a.id && /scheduled/i.test(n.title)).length === 1, 'meeting requests: the employee was notified of the schedule once', r.json.data.items?.length);
+  r = await api('hr', 'GET', '/hr/meetings/overview');
+  check(r.json.data.scheduled === 1 && r.json.data.pending >= 2, 'meeting requests: the totals follow', r.json.data);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.th.id}/decide`, { action: 'DECLINE', reason: 'Please talk to your Department Head first.' });
+  check(r.status === 200 && r.json.data.meeting.status === 'DECLINED', 'meeting requests: HR declines with a reason', r);
+  r = await api('th', 'GET', `/employee/meetings/${meets.th.id}`);
+  check(r.json.data.meeting.status === 'DECLINED' && r.json.data.meeting.reason.startsWith('Please talk'), 'meeting requests: the employee sees the reason', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.dh.id}/decide`, { action: 'PROPOSE', date: day(6), time: '16:00', mode: 'IN_PERSON', location: 'Room 2', message: 'Could we meet later that week?' });
+  check(r.status === 200 && r.json.data.meeting.status === 'ALTERNATIVE_PROPOSED', 'meeting requests: HR proposes another time', r);
+  r = await api('dh', 'GET', `/employee/meetings/${meets.dh.id}`);
+  check(r.json.data.meeting.proposedDate === day(6) && r.json.data.meeting.proposedTime === '16:00' && r.json.data.meeting.location === 'Room 2', 'meeting requests: the employee sees the proposal', r);
+  r = await api('dh', 'POST', `/employee/meetings/${meets.dh.id}/alternative`, { accept: true, message: 'That works.' });
+  check(r.status === 200 && r.json.data.meeting.status === 'SCHEDULED' && r.json.data.meeting.confirmedDate === day(6) && r.json.data.meeting.confirmedTime === '16:00', 'meeting requests: accepting it schedules the meeting', r);
+  r = await api('dh', 'POST', `/employee/meetings/${meets.dh.id}/alternative`, { accept: true });
+  check(r.status === 409, 'meeting requests: there is nothing left to answer', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'RESCHEDULE', date: day(7), time: '09:30', reason: 'The HR representative is on leave that day.' });
+  check(r.status === 200 && r.json.data.meeting.confirmedDate === day(7) && r.json.data.meeting.link === 'https://meet.example.com/room-7', 'meeting requests: HR reschedules a scheduled meeting with a reason (the link is kept)', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'RESCHEDULE', date: day(8), time: '09:30' });
+  check(r.status === 422, 'meeting requests: rescheduling needs a reason', r);
+  r = await api('a', 'GET', `/employee/meetings/${meets.a.id}`);
+  check(r.json.data.meeting.reason.startsWith('The HR representative') && r.json.data.meeting.confirmedDate === day(7), 'meeting requests: the employee sees the new time and the reason', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'COMPLETE', outcome: 'Explained the leave policy.', followUp: 'Send the leave ledger by e-mail.' });
+  check(r.status === 200 && r.json.data.meeting.status === 'COMPLETED' && r.json.data.meeting.outcome === 'Explained the leave policy.' && r.json.data.meeting.followUp === 'Send the leave ledger by e-mail.', 'meeting requests: HR completes it and records the outcome and follow-up', r);
+  r = await api('a', 'GET', `/employee/meetings/${meets.a.id}`);
+  check(r.json.data.meeting.status === 'COMPLETED' && r.json.data.meeting.outcome === null && r.json.data.meeting.followUp === null && !JSON.stringify(r.json.data).includes('leave policy'), 'meeting requests: the employee does not see the outcome or the follow-up', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.a.id}/decide`, { action: 'CANCEL', reason: 'too late' });
+  check(r.status === 409, 'meeting requests: a completed meeting cannot be changed', r);
+  r = await api('hr', 'POST', `/hr/meetings/${meets.dh.id}/decide`, { action: 'CANCEL', reason: 'The meeting room is unavailable.' });
+  check(r.status === 200 && r.json.data.meeting.status === 'CANCELLED', 'meeting requests: HR cancels a scheduled meeting with a reason', r);
+  r = await api('hr', 'GET', '/hr/meetings/overview');
+  check(r.json.data.completed === 1 && r.json.data.declinedOrCancelled === 2 && r.json.data.total === r.json.data.pending + r.json.data.scheduled + r.json.data.completed + r.json.data.declinedOrCancelled, 'meeting requests: the totals add up', r.json.data);
+  r = await api('a', 'POST', '/employee/meetings', meetBody({ subject: 'Withdraw me' }));
+  const withdraw = r.json.data;
+  r = await api('a', 'POST', `/employee/meetings/${withdraw.id}/cancel`, { reason: 'No longer needed' });
+  check(r.status === 200 && r.json.data.meeting.status === 'CANCELLED', 'meeting requests: an employee withdraws their own pending request', r);
+  r = await api('a', 'POST', `/employee/meetings/${withdraw.id}/cancel`, {});
+  check(r.status === 409, 'meeting requests: and cannot cancel it twice', r);
+  r = await api('a', 'GET', '/employee/meetings');
+  check(r.status === 200 && r.json.data.items.every((m: any) => m.employee.id === me.id) && r.json.data.items.length >= 2, 'meeting requests: an employee\'s history holds only their own requests', r.json.data.total);
+  check(Number((await db.query(`select count(*) c from public.audit_logs where action like 'EMPLOYEE_MEETING_%'`)).rows[0].c) >= 8, 'meeting requests: the activity is in the audit log');
+
+  // ---- an HR employee's own issue is not worked by HR, and HR may not work it as HR
+  r = await api('hrmember', 'POST', '/employee/issues', issueBody({ title: 'HR laptop is slow' }));
+  const hrOwn = r.json.data;
+  check(r.status === 201, 'employee issues: an HR team member can raise their own issue', r);
+  r = await api('hrmember', 'GET', `/hr/issues/${hrOwn.id}`);
+  check(r.status === 404, 'employee issues: but cannot open or work it as HR', r);
+  r = await api('hr', 'GET', `/hr/issues/${hrOwn.id}`);
+  check(r.status === 200, 'employee issues: another HR person does see it', r);
+
+  // ---- the migration is applied twice without trouble (a production database already has it)
+  check(Number((await db.query(`select count(*) c from pg_policies where tablename in ('employee_issues', 'employee_meeting_requests', 'employee_case_events')`)).rows[0].c) === 3, 'employee issues: one read policy per table (owner or HR)');
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

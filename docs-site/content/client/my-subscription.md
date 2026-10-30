@@ -6,7 +6,7 @@ group: Services & Plans
 roles: [Client]
 audience: client
 status: verified
-sources: [src/client/MySubscription.tsx, supabase/migrations/20261210000100_subscription_activation.sql]
+sources: [src/client/MySubscription.tsx, supabase/migrations/20261210000200_subscription_activation.sql]
 related:
   - /client/viewing-services-usage
   - /client/managing-monthly-plans

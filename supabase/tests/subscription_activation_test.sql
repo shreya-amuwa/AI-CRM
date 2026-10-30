@@ -1,5 +1,5 @@
 -- =============================================================================
--- Subscription duration, activation and expiry (migration 20261210000100): Sales picks the duration, the team confirms the panel activation, the
+-- Subscription duration, activation and expiry (migration 20261210000200): Sales picks the duration, the team confirms the panel activation, the
 -- database calculates the expiry; the client sees it, the reminders follow it, a repeated request changes nothing, nobody else can touch the dates.
 -- Runs after the other suites on the same database and reuses their staff.
 -- =============================================================================
@@ -8,7 +8,7 @@
 
 reset role;
 -- earlier suites re-apply older migrations (to prove they are re-runnable): put this one back on top, which also proves it re-runs
-\i supabase/migrations/20261210000100_subscription_activation.sql
+\i supabase/migrations/20261210000200_subscription_activation.sql
 
 \echo '--- 90. Subscription: the date arithmetic'
 select test.check(private.subscription_expiry(date '2026-11-10', 1, null) = date '2026-12-10', '1 month: 10 Nov 2026 -> 10 Dec 2026');
