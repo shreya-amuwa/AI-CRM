@@ -79,9 +79,8 @@ export const Detail: React.FC<{ label: string; children: React.ReactNode }> = ({
 );
 
 export const EmployeeBlock: React.FC<{ employee: EmployeeIssue['employee'] | EmployeeMeeting['employee'] }> = ({ employee }) => (
-  <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 p-3" aria-label="Employee details">
+  <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-xl bg-slate-50 p-3" aria-label="Employee details">
     <Detail label="Employee">{employee.name}</Detail>
-    <Detail label="Employee ID">{employee.employeeCode}</Detail>
     <Detail label="Department">{employee.department}</Detail>
     <Detail label="Designation">{employee.designation}</Detail>
   </dl>

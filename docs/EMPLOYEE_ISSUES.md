@@ -14,8 +14,7 @@ One employee page (**Raise an Issue**, with a selector for *Raise an Issue* / *M
 
 Authorization is checked **in the database** by every function (`private.require_employee()`, `private.require_hr()`); the API only validates
 input and signs file links. The four tables have row level security with a read policy (the owner, or HR; an event only if it is visible to the
-employee) and **no insert/update/delete grant**: only the SECURITY DEFINER functions write. The employee's name, employee id (the HR record id,
-else `EMP-` + 8 characters of the account id), department and designation are copied from the profile at submission, never sent by the client.
+employee) and **no insert/update/delete grant**: only the SECURITY DEFINER functions write. The employee's name, department and designation are copied from the profile at submission, never sent by the client (an internal employee code is kept on the row but is not shown; the reference number is the only identifier on screen).
 A request that names an employee, a status or an assignee is refused (strict schemas).
 
 ## Data

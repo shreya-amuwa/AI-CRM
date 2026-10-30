@@ -22,7 +22,7 @@ related:
 
 :::prereq
 - **Raise an Issue** is in the **Team** section of the menu, next to **Chat** (on a phone, open the menu with the menu button first).
-- You do not type who you are. Your **name, employee ID, department and designation** are read from your profile and shown at the top of the page. The date and time are recorded when you submit.
+- You do not type who you are. Your **name, department and designation** are read from your profile and shown at the top of the page. The date and time are recorded when you submit.
 :::
 
 ## Steps

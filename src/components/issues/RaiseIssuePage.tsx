@@ -30,9 +30,8 @@ const Summary: React.FC<{ employee: CaseMyDetails | null; error: string }> = ({ 
     <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">Your details</h2>
     <p className="text-[11px] text-slate-500 mt-0.5">Taken from your profile. The date and time are recorded when you submit.</p>
     {error ? <p className="mt-2 text-xs text-rose-700" role="alert">{error}</p> : null}
-    <dl className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="my-details">
+    <dl className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="my-details">
       <Detail label="Name">{employee?.name}</Detail>
-      <Detail label="Employee ID">{employee?.code}</Detail>
       <Detail label="Department">{employee?.department}</Detail>
       <Detail label="Designation">{employee?.designation}</Detail>
     </dl>
