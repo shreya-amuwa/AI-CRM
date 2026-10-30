@@ -27,9 +27,9 @@ server-port = ${PGRST_PORT:-54401}
 CONF
 "$POSTGREST_BIN" "$WORK/postgrest.conf" > "$WORK/postgrest.log" 2>&1 &
 GATEWAY_PORT=${GW_PORT:-54400} POSTGREST_URL=http://127.0.0.1:${PGRST_PORT:-54401} node supabase/tests/local-gateway.mjs > "$WORK/gateway.log" 2>&1 &
-# wait until BOTH PostgREST (schema loaded) and the gateway answer; the first test must not race the startup
+# wait until BOTH PostgREST (schema loaded) and the gateway answer; the first test must not race the startup (up to 60 s: a loaded CI runner can take longer than 20 s)
 ready=0
-for i in $(seq 1 100); do
+for i in $(seq 1 300); do
   if curl -sf http://127.0.0.1:${PGRST_PORT:-54401}/ >/dev/null 2>&1 && curl -s -o /dev/null http://127.0.0.1:${GW_PORT:-54400}/ 2>/dev/null; then ready=1; break; fi
   sleep 0.2
 done
