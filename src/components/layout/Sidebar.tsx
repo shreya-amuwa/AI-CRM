@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, Mail } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, Mail, MessageSquareWarning, CalendarClock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -68,10 +68,13 @@ export type ActiveTab =
   | 'support_flow'
   | 'staff_access'
   | 'staff_add'
+  | 'hr_requests'
   | 'client_notices'
   | 'hr_email'
   | 'hr_recruitment'
   | 'hr_training'
+  | 'hr_issues'
+  | 'hr_meetings'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -311,12 +314,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canSendClientNotices = user?.role === 'superadmin' || (user?.role === 'hr' && profileRole === 'DEPARTMENT_HEAD');
   const hrNav: typeof baseNavItems = [
     baseNavItems[0],
-    { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
+    { id: 'hr_requests' as ActiveTab, label: 'Employee Requests', icon: UserPlus },
+    ...(user?.role === 'superadmin' ? [{ id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus }] : []),
     { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
     ...baseNavItems.slice(1, -1),
     { id: 'hr_recruitment' as ActiveTab, label: 'Recruitment Management', icon: Briefcase },
     { id: 'hr_training' as ActiveTab, label: 'Training', icon: GraduationCap },
     { id: 'hr_email' as ActiveTab, label: 'Email Automation', icon: Mail },
+    { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },
+    { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
     baseNavItems[baseNavItems.length - 1]
   ];

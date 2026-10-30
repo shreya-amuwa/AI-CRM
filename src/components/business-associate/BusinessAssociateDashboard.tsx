@@ -5,6 +5,8 @@ import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { FIELD_VISIT_GROUP_ID, FIELD_VISIT_NAV, FIELD_VISIT_SEGMENT, FieldVisitWorkspace, fieldVisitPageFromSegment, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
 import { AddLeadView } from '../team-member/pipeline/LeadForms';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
@@ -17,7 +19,7 @@ import { ScopePage } from './ScopePage';
 
 export type BaPage = 'home' | 'tasks' | 'leads' | 'quotation' | 'demos' | 'scope';
 /** The pages of this dashboard: the Business Associate pages plus the rest of the Leads group (Leads is the first of its four). */
-type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage;
+type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage | 'raise-issue';
 /** Where a button sends the Business Associate: a page, and optionally the client (and document) to open there. */
 export interface BaTarget { contactId?: string; quotationId?: string; scopeId?: string; stage?: string; addLead?: boolean; newDemo?: boolean }
 export type BaNavigate = (page: BaPage, target?: BaTarget) => void;
@@ -41,12 +43,13 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV },
   { id: 'quotation', label: 'Quotation', icon: FileText },
   { id: 'demos', label: 'Demo Schedule', icon: CalendarClock },
-  { id: 'scope', label: 'Scope of Project', icon: FileSignature }
+  { id: 'scope', label: 'Scope of Project', icon: FileSignature },
+  { ...ISSUES_NAV }
 ];
 const SEGMENT: Record<Section, string> = {
   ...FIELD_VISIT_SEGMENT,
   home: '', tasks: 'tasks', leads: 'leads', potential: 'potential', onboarding: 'customer-onboarding', 'part-payments': 'part-payments',
-  quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project'
+  quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project', 'raise-issue': 'raise-issue'
 };
 
 export const BA_BASE = (userId: string) => `/business-associate/dashboard/${userId}`;
@@ -81,9 +84,10 @@ export const BusinessAssociateDashboard: React.FC = () => {
     navigateTo(next === 'home' ? BA_BASE(userId) : `${BA_BASE(userId)}/${SEGMENT[next]}`);
   };
   const go: BaNavigate = (next, t) => open(next, t);
+  useOpenIssuesRequest(React.useCallback(() => open('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
 
   const displayName = profile?.fullName || user?.name || 'Business Associate';
-  const groups = groupNavItems(NAV, [{ ids: ['home'] }, { ids: ['tasks', 'leads-group', FIELD_VISIT_GROUP_ID, 'quotation', 'demos', 'scope'] }]);
+  const groups = groupNavItems(NAV, [{ ids: ['home'] }, { ids: ['tasks', 'leads-group', FIELD_VISIT_GROUP_ID, 'quotation', 'demos', 'scope', ISSUES_NAV.id] }]);
   const key = `${page}-${target.n}`;
 
   return (
@@ -126,6 +130,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
         {page === 'quotation' && <QuotationPage key={key} go={go} initialContactId={target.contactId} initialQuotationId={target.quotationId} />}
         {page === 'demos' && <DemoSchedulePage key={key} go={go} initialContactId={target.contactId} openNew={!!target.newDemo} />}
         {page === 'scope' && <ScopePage key={key} go={go} initialContactId={target.contactId} initialScopeId={target.scopeId} />}
+        {page === 'raise-issue' && <IssuesRoute />}
       </div>
     </DashboardShell>
   );

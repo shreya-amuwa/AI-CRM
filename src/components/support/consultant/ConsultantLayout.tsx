@@ -4,8 +4,9 @@ import { useNotifications } from '../../../context/NotificationContext';
 import { DashboardShell, type ShellNavGroup } from '../../layout/shell';
 import { LeaveCenter } from '../../leave/LeaveCenter';
 import { CHAT_NAV, useChatNavBadge } from '../../chat/ChatRoute';
+import { ISSUES_NAV } from '../../issues/IssuesRoute';
 
-export type ConsultantPage = 'customers' | 'addons' | 'followups' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'notifications';
+export type ConsultantPage = 'customers' | 'addons' | 'followups' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'raise-issue' | 'notifications';
 
 /** Shell of the Technical Consultant / Meta Verifier dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{
@@ -51,6 +52,7 @@ export const ConsultantLayout: React.FC<{
     {
       label: 'Team',
       items: [
+        { ...ISSUES_NAV },
         { ...CHAT_NAV, count: chatUnread > 0 ? chatUnread : undefined },
         { id: 'notifications', label: 'Notification Center', icon: Bell, count: unreadCount > 0 ? unreadCount : undefined }
       ]

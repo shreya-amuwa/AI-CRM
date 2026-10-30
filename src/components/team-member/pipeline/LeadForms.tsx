@@ -31,6 +31,8 @@ import {
 } from './shared';
 import { WhatsAppField } from './WhatsAppField';
 import { JourneyStrip, useJourney } from '../../journey/JourneyPanel';
+import { SubscriptionPanel } from '../../journey/SubscriptionPanel';
+import { checkTerms, emptyTerms, TermsFields, type TermsDraft, type TermsErrors } from '../../journey/SubscriptionTerms';
 import { startsSameAsMobile, whatsappValue } from '../../../../shared/whatsapp';
 
 type Errors = Record<string, string>;
@@ -242,6 +244,9 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
   const [otherCategory, setOtherCategory] = useState('');
   const [otherSource, setOtherSource] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  // the plan, duration, amount and message credits of each selected service (Sales never enters a start or an expiry date)
+  const [terms, setTerms] = useState<Record<string, TermsDraft>>({});
+  const [termErrors, setTermErrors] = useState<Record<string, TermsErrors>>({});
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -268,10 +273,18 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
       notes: form.notes || null,
       services: selected
     };
-    const parsed = leadCreateSchema.safeParse(payload);
-    if (!parsed.success) {
-      setErrors(fieldErrors(parsed.error.issues));
-      setError('Please fix the highlighted fields.');
+    const subscriptions: Record<string, unknown>[] = [];
+    const subErrors: Record<string, TermsErrors> = {};
+    for (const code of selected) {
+      const c = checkTerms(terms[code] ?? emptyTerms());
+      if (c.ok) subscriptions.push({ service: code, ...c.body });
+      else subErrors[code] = c.errors;
+    }
+    setTermErrors(subErrors);
+    const parsed = leadCreateSchema.safeParse({ ...payload, subscriptions });
+    if (!parsed.success || Object.keys(subErrors).length > 0) {
+      setErrors(parsed.success ? {} : fieldErrors(parsed.error.issues));
+      setError(Object.keys(subErrors).length > 0 ? 'Choose the plan, duration and amount of every selected service.' : 'Please fix the highlighted fields.');
       return;
     }
     setErrors({});
@@ -401,6 +414,23 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
           <ServicePicker services={services} value={selected} onChange={setSelected} variant="grid" error={errors.services} />
         )}
       </Card>
+
+      {selected.length > 0 && (
+        <Card className="p-5">
+          <h2 className="text-sm font-bold text-slate-900">Subscription</h2>
+          <p className="text-[11px] text-slate-500 mt-0.5 mb-3">
+            Choose the plan, the agreed duration, the amount and the message credits for each service. There is no start or expiry date to enter: the subscription starts when the panel is created and activated, and the expiry is calculated automatically.
+          </p>
+          <div className="space-y-4">
+            {selected.map(code => (
+              <div key={code} className="border border-slate-200 rounded-xl p-3" data-testid={`terms-${code}`}>
+                <h3 className="text-xs font-bold text-slate-800 mb-2">{services.find(x => x.code === code)?.name ?? code}</h3>
+                <TermsFields idPrefix={`terms-${code}`} value={terms[code] ?? emptyTerms()} onChange={v => setTerms(t => ({ ...t, [code]: v }))} errors={termErrors[code]} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-5">
         <h2 className="text-sm font-bold text-slate-900 mb-3">Follow-up</h2>
@@ -800,6 +830,9 @@ export const EditLeadView: React.FC<{
         </div>
         <ServicePicker services={services} value={selected} onChange={setSelected} variant="chips" error={errors.services} disabled={locked} />
       </Card>
+
+      {/* Subscription: Sales sets the plan and duration of each saved service; the dates are read-only here (they come from the panel activation) */}
+      <SubscriptionPanel key={`${id}-${lead.services.join(',')}`} customerId={id} />
 
       {/* 4 + 5 · Last conversation and the conversation history */}
       <ConversationSection customerId={id} conversations={conversations} onChange={setConversations} onSaved={refreshActivities} />

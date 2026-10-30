@@ -1973,7 +1973,7 @@ export const META_STATUSES = ['PENDING', 'IN_PROGRESS', 'DOCUMENTS_REQUIRED', 'R
 export type MetaStatus = (typeof META_STATUSES)[number];
 export type ServiceSetupStatus = 'PENDING' | 'IN_PROGRESS' | 'READY';
 /** The dashboard sections the database opens and closes by stage. */
-export const CLIENT_SECTIONS = ['overview', 'journey', 'services', 'campaigns', 'explore', 'plans', 'calendar', 'documents', 'invoices', 'tickets', 'chat', 'notifications', 'docs'] as const;
+export const CLIENT_SECTIONS = ['overview', 'journey', 'services', 'subscription', 'campaigns', 'explore', 'plans', 'calendar', 'documents', 'invoices', 'tickets', 'chat', 'notifications', 'docs'] as const;
 export type ClientSectionKey = (typeof CLIENT_SECTIONS)[number];
 export interface JourneyPerson { name: string; position: string | null }
 export interface JourneyOutstandingItem { code: string; label: string; status: 'MISSING' | 'REJECTED'; note: string | null }
@@ -2033,6 +2033,93 @@ export interface CustomerJourneyStatus {
   completedAt: string | null;
   services: { code: string; name: string; status: ServiceSetupStatus; note: string | null; updatedAt: string | null; readyAt: string | null; canChange: boolean }[];
 }
+// ---- Subscriptions: duration chosen by Sales, dates confirmed when the panel is activated, expiry calculated by the database ----
+export const SUBSCRIPTION_DURATIONS = ['1M', '2M', '3M', '6M', '1Y', '2Y', 'CUSTOM'] as const;
+export type SubscriptionDurationCode = (typeof SUBSCRIPTION_DURATIONS)[number];
+export const SUBSCRIPTION_DURATION_LABEL: Record<SubscriptionDurationCode, string> = {
+  '1M': '1 Month', '2M': '2 Months', '3M': '3 Months', '6M': '6 Months', '1Y': '1 Year', '2Y': '2 Years', CUSTOM: 'Custom'
+};
+export type SubscriptionStatus = 'NOT_STARTED' | 'ACTIVE' | 'EXPIRED' | 'PAUSED' | 'CANCELLED';
+export interface SubscriptionMessages {
+  total: number;
+  used: number;
+  remaining: number;
+  percent: number;
+  asOf: string | null;
+  /** false: no usage figures have been reported yet (the total is the credits Sales entered). */
+  reported: boolean;
+}
+/** One service's subscription as the team sees it. Dates are empty until the panel activation is confirmed. */
+export interface SubscriptionInfo {
+  service: string;
+  serviceName: string;
+  category: string;
+  plan: string | null;
+  amount: number | null;
+  panel: string | null;
+  durationCode: SubscriptionDurationCode | null;
+  durationMonths: number | null;
+  durationDays: number | null;
+  durationLabel: string | null;
+  messageCredits: number | null;
+  status: SubscriptionStatus;
+  termsComplete: boolean;
+  panelCreatedOn: string | null;
+  startedOn: string | null;
+  expiresOn: string | null;
+  daysLeft: number | null;
+  activatedAt: string | null;
+  activatedBy: string | null;
+  cycle: number;
+  canSetTerms: boolean;
+  canActivate: boolean;
+  /** What is still missing before the subscription can start (null when nothing). */
+  blocker: string | null;
+  canCorrect: boolean;
+  canRenew: boolean;
+  canResendEmail: boolean;
+  messages: SubscriptionMessages | null;
+  email: { status: string; detail: string | null; sentAt: string | null; attempts: number; recipient: string | null } | null;
+}
+export interface SubscriptionHistoryItem {
+  id: string;
+  service: string;
+  cycle: number | null;
+  action: 'TERMS_SET' | 'ACTIVATED' | 'DATES_CORRECTED' | 'RENEWED' | 'EMAIL_RESENT';
+  old: Record<string, unknown> | null;
+  new: Record<string, unknown> | null;
+  reason: string | null;
+  by: string | null;
+  at: string;
+}
+export interface SubscriptionOverview {
+  services: SubscriptionInfo[];
+  history: SubscriptionHistoryItem[];
+  cycles: { service: string; cycle: number; kind: 'INITIAL' | 'RENEWAL'; status: 'ACTIVE' | 'ENDED'; plan: string | null; durationLabel: string | null; startedOn: string; expiresOn: string }[];
+  /** The customer's verified payments, for choosing the one that pays for a renewal. */
+  payments: { id: string; amount: number; paidAt: string; method: string | null; used: boolean }[];
+}
+/** What the client sees under My Subscription. */
+export interface ClientSubscription {
+  service: string;
+  serviceName: string;
+  plan: string | null;
+  durationLabel: string | null;
+  status: SubscriptionStatus;
+  panelCreated: boolean;
+  panelCreatedOn: string | null;
+  startedOn: string | null;
+  expiresOn: string | null;
+  daysLeft: number | null;
+  messages: SubscriptionMessages | null;
+  messageCredits: number | null;
+}
+export interface UsageAlertSettings {
+  enabled: boolean;
+  thresholds: number[];
+  canEdit: boolean;
+}
+
 /** What happened to the client's login when Accounts confirmed the payment. */
 export interface ClientLoginOutcome {
   status: 'CREATED' | 'EXISTS' | 'NOT_CREATED';
@@ -4099,3 +4186,218 @@ export interface FinanceMailList {
   counts: Partial<Record<FinanceMailStatus, number>>;
   items: FinanceMailItem[];
 }
+
+// ---------------------------------------------------------------------------
+// Employee issues and HR meeting requests (one page for Team Members, Team Leads and Department Heads; two sections for HR)
+// ---------------------------------------------------------------------------
+export const ISSUE_CATEGORIES = ['WORKPLACE', 'HR_POLICY', 'ATTENDANCE_LEAVE', 'SALARY_PAYROLL', 'TEAM_MANAGEMENT', 'TECHNICAL_SYSTEM', 'FACILITIES', 'OTHER'] as const;
+export type IssueCategory = (typeof ISSUE_CATEGORIES)[number];
+export const ISSUE_CATEGORY_LABELS: Record<IssueCategory, string> = {
+  WORKPLACE: 'Workplace Issue', HR_POLICY: 'HR or Policy Concern', ATTENDANCE_LEAVE: 'Attendance or Leave', SALARY_PAYROLL: 'Salary or Payroll',
+  TEAM_MANAGEMENT: 'Team or Management Concern', TECHNICAL_SYSTEM: 'Technical or System Issue', FACILITIES: 'Workplace Facilities', OTHER: 'Other'
+};
+export const ISSUE_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
+export const ISSUE_PRIORITY_LABELS: Record<IssuePriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
+export const ISSUE_STATUSES = ['NEW', 'IN_PROGRESS', 'AWAITING_EMPLOYEE', 'RESOLVED', 'CLOSED'] as const;
+export type IssueStatus = (typeof ISSUE_STATUSES)[number];
+/** HR's wording; the employee's own page says "Waiting for your reply" for AWAITING_EMPLOYEE. */
+export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
+  NEW: 'New', IN_PROGRESS: 'In Progress', AWAITING_EMPLOYEE: 'Awaiting Employee Response', RESOLVED: 'Resolved', CLOSED: 'Closed'
+};
+export const MEETING_CATEGORIES = ['HR_CONCERN', 'WORKPLACE_ISSUE', 'ATTENDANCE_LEAVE', 'SALARY_PAYROLL', 'MANAGEMENT', 'PERSONAL_CONFIDENTIAL', 'OTHER'] as const;
+export type MeetingCategory = (typeof MEETING_CATEGORIES)[number];
+export const MEETING_CATEGORY_LABELS: Record<MeetingCategory, string> = {
+  HR_CONCERN: 'HR Concern', WORKPLACE_ISSUE: 'Workplace Issue', ATTENDANCE_LEAVE: 'Attendance or Leave', SALARY_PAYROLL: 'Salary or Payroll',
+  MANAGEMENT: 'Management Discussion', PERSONAL_CONFIDENTIAL: 'Personal or Confidential Concern', OTHER: 'Other'
+};
+export const MEETING_STATUSES = ['PENDING', 'SCHEDULED', 'ALTERNATIVE_PROPOSED', 'DECLINED', 'CANCELLED', 'COMPLETED'] as const;
+export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+export const MEETING_STATUS_LABELS: Record<MeetingStatus, string> = {
+  PENDING: 'Pending', SCHEDULED: 'Scheduled', ALTERNATIVE_PROPOSED: 'Another time proposed', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Completed'
+};
+export const MEETING_MODES = ['IN_PERSON', 'ONLINE'] as const;
+export type MeetingMode = (typeof MEETING_MODES)[number];
+export const MEETING_MODE_LABELS: Record<MeetingMode, string> = { IN_PERSON: 'In Person', ONLINE: 'Online' };
+/** What HR can do with a meeting request (the database checks each against the request's current status). */
+export const MEETING_ACTIONS = ['APPROVE', 'DECLINE', 'PROPOSE', 'RESCHEDULE', 'CANCEL', 'COMPLETE'] as const;
+export type MeetingAction = (typeof MEETING_ACTIONS)[number];
+
+export interface CaseEmployee { id: string; name: string; employeeCode: string; departmentId: string | null; department: string | null; designation: string | null }
+export interface CaseHr { id: string; name: string }
+/** The employee details a form shows (read from the signed-in employee's own profile). */
+export interface CaseMyDetails { id: string; name: string; code: string; departmentId: string | null; department: string | null; designation: string | null }
+export interface EmployeeIssue {
+  id: string;
+  reference: string;
+  title: string;
+  category: IssueCategory;
+  priority: IssuePriority;
+  status: IssueStatus;
+  /** Only in the detail (the lists never carry the text). */
+  description: string | null;
+  preferredResolution: string | null;
+  hrResponse: string | null;
+  hrResponseAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  assignedHr: CaseHr | null;
+  employee: CaseEmployee;
+  /** Set when a submission was recognised as one that already exists. */
+  duplicate?: boolean;
+}
+export interface CaseEvent {
+  id: number;
+  kind: string;
+  /** EMPLOYEE: the employee reads it; HR: an internal note, only HR ever gets it. */
+  visibility: 'EMPLOYEE' | 'HR';
+  side: 'EMPLOYEE' | 'HR';
+  actorName: string | null;
+  body: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+  createdAt: string;
+}
+export interface IssueAttachment { id: string; name: string; mime: string; size: number; eventId: number | null; createdAt: string }
+export interface EmployeeIssueDetail { issue: EmployeeIssue; events: CaseEvent[]; attachments: IssueAttachment[] }
+export interface EmployeeIssueList { items: EmployeeIssue[]; total: number; limit: number; offset: number }
+export interface EmployeeIssueOverview { total: number; new: number; inProgress: number; awaiting: number; resolved: number; closed: number; urgent: number }
+export interface HrAssignee { id: string; name: string; designation: string }
+export interface CaseDepartment { id: string; name: string }
+export interface IssueUploadTicket {
+  attachment: { id: string; name: string; mime: string; size: number };
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
+}
+
+export interface EmployeeMeeting {
+  id: string;
+  reference: string;
+  subject: string;
+  category: MeetingCategory;
+  status: MeetingStatus;
+  description: string | null;
+  notes: string | null;
+  preferredDate: string;
+  preferredTime: string;
+  mode: MeetingMode;
+  confirmedDate: string | null;
+  confirmedTime: string | null;
+  confirmedMode: MeetingMode | null;
+  location: string | null;
+  link: string | null;
+  instructions: string | null;
+  proposedDate: string | null;
+  proposedTime: string | null;
+  hrResponse: string | null;
+  hrResponseAt: string | null;
+  /** Why it was declined, cancelled or rescheduled. */
+  reason: string | null;
+  /** HR only: what was discussed and what happens next (null for the employee). */
+  outcome: string | null;
+  followUp: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  assignedHr: CaseHr | null;
+  employee: CaseEmployee;
+  duplicate?: boolean;
+}
+export interface EmployeeMeetingDetail { meeting: EmployeeMeeting; events: CaseEvent[] }
+export interface EmployeeMeetingList { items: EmployeeMeeting[]; total: number; limit: number; offset: number }
+export interface EmployeeMeetingOverview { total: number; pending: number; scheduled: number; completed: number; declinedOrCancelled: number }
+
+// ---- Employee approval hierarchy ---------------------------------------------------------------------------------------------------------
+export type EmployeeRequestRoleKey = 'OPERATIONS_HEAD' | 'DEPARTMENT_HEAD' | 'TEAM_HEAD' | 'TEAM_MEMBER';
+export type EmployeeRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export interface EmployeeRequest {
+  id: string;
+  status: EmployeeRequestStatus;
+  source: 'HR' | 'MANAGER';
+  attempt: number;
+  resubmissionOf: string | null;
+  requestedRole: EmployeeRequestRoleKey;
+  department: { id: string; name: string; slug: string } | null;
+  division: 'SALES' | 'SUPPORT' | 'GENERAL' | null;
+  employee: { id: string; name: string; email: string; status: string; designation: string | null; joiningDate: string | null; contactNumber: string | null; employeeCode: string | null } | null;
+  submittedBy: { id: string; name: string } | null;
+  submittedAt: string;
+  approverKind: 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'DEPARTMENT_HEAD' | null;
+  approver: { id: string; name: string } | null;
+  /** A Department Head request in a department nobody is accountable for yet: it waits for the Super Admin to name the Operations Head. */
+  awaitingOwner: boolean;
+  decidedBy: { id: string; name: string } | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  /** The signed-in person is the right approver and the request is still pending. */
+  canDecide: boolean;
+  history?: { id: string; attempt: number; status: EmployeeRequestStatus; decidedAt: string | null; decisionNote: string | null; decidedBy: string | null; submittedAt: string }[];
+}
+
+export interface OperationsHeadAdmin {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  homeDepartment: { id: string; name: string } | null;
+  departments: { id: string; name: string; slug: string; primary: boolean }[];
+  pendingApprovals: number;
+  lastLoginAt: string | null;
+}
+export interface OperationsHeadsAdmin {
+  heads: OperationsHeadAdmin[];
+  /** Departments nobody is accountable for: a Department Head request there cannot be routed. */
+  unowned: { id: string; name: string; pendingRequests: number }[];
+  departments: { id: string; name: string; slug: string; owner: { id: string; name: string } | null }[];
+}
+export interface OperationsActivityEntry { at: string; action?: string; type?: string; reference: string; department: string | null; by?: string | null; departmentHead?: string | null; outcome?: string }
+
+export interface OperationsDashboardDepartment {
+  id: string;
+  name: string;
+  slug: string;
+  accountable: boolean;
+  departmentHeads: { id: string; name: string; email: string; status: string; side: string | null; lastLoginAt: string | null }[];
+  teamLeads: number;
+  teamMembers: number;
+  awaitingAssignment: number;
+  pendingDepartmentHeadApprovals: number;
+  leads: number;
+  onboarding: number;
+  customers: number;
+  awaitingDepartmentHead: number;
+  withVerifier: number;
+}
+export interface OperationsDashboard {
+  departments: OperationsDashboardDepartment[];
+  totals: { departments: number; departmentHeads: number; teamLeads: number; teamMembers: number; awaitingAssignment: number; pendingDepartmentHeadApprovals: number };
+}
+export interface OperationsDepartmentDetail {
+  teamLeads: { id: string; name: string; team: string | null; division: string | null; members: number }[];
+  awaitingAssignment: { id: string; name: string; email: string; approvedAt: string | null }[];
+}
+
+export type DirectoryMemberState = 'AWAITING_ASSIGNMENT' | 'ASSIGNED' | 'INACTIVE';
+export interface DepartmentDirectoryMember {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  approvedAt: string | null;
+  team: { id: string; name: string; division: string; isPool: boolean };
+  lead: { id: string; name: string } | null;
+  state: DirectoryMemberState;
+  lastAssignment: { kind: string; at: string; by: string | null } | null;
+}
+export interface DepartmentEmployeeDirectory {
+  department: { id: string; name: string } | null;
+  headDivision: string | null;
+  members: DepartmentDirectoryMember[];
+  leads: { id: string; name: string; status: string; team: { id: string; name: string; division: string }; members: number }[];
+}
+export interface TeamAssignmentRecord { id: string; kind: string; note: string | null; createdAt: string; fromTeam: string | null; toTeam: string | null; lead: string | null; assignedBy: string | null }

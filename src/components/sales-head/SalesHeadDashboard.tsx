@@ -10,6 +10,8 @@ import { ClientNotices } from '../notices/ClientNotices';
 import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { SalesOverview } from './SalesOverview';
 import { LeadList } from './LeadList';
 import { LeadAssign } from './LeadAssign';
@@ -19,7 +21,7 @@ import { SalesIncomePage } from './SalesIncomePage';
 import { SalesReports } from './SalesReports';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
-import { OperationsOverview } from '../operations/OperationsOverview';
+import { OperationsDashboard } from '../operations/OperationsDashboard';
 
 import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
 export { SALES_HEAD_BASE, parseSalesHeadPage };
@@ -55,12 +57,13 @@ export const SalesHeadDashboard: React.FC = () => {
     navigateTo(seg ? `${SALES_HEAD_BASE(userId)}/${seg}` : SALES_HEAD_BASE(userId));
   };
   useOpenChatRequest(React.useCallback(() => go('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
       {
         items: [
-          ...(operationsHead ? [{ id: 'operations', label: 'Operations Overview', icon: Building2 }] : []),
+          ...(operationsHead ? [{ id: 'operations', label: 'Operations Dashboard', icon: Building2 }] : []),
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           { id: 'leads', label: 'Leads', icon: Target, children: [{ id: 'leads-list', label: 'Lead List' }, { id: 'leads-assign', label: 'Lead Assign' }] },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
@@ -71,6 +74,7 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee },
           { id: 'notices', label: 'Client Notices', icon: Megaphone },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+          { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell }
         ]
@@ -107,7 +111,7 @@ export const SalesHeadDashboard: React.FC = () => {
       }
       wide
     >
-      {page === 'operations' && operationsHead && <OperationsOverview />}
+      {page === 'operations' && operationsHead && <OperationsDashboard />}
       {page === 'overview' && <SalesOverview go={go} />}
       {page === 'leads-list' && <LeadList key={intent.n} initialFilter={intent.filter} go={go} />}
       {page === 'leads-assign' && <LeadAssign />}
@@ -120,6 +124,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}
+      {page === 'raise-issue' && <IssuesRoute />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>
   );

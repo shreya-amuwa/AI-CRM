@@ -1,7 +1,9 @@
+import { accountsCustomerDetailsSchema } from '../../shared/validation.js';
 import type {
   ClientLoginOutcome,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
+  SubscriptionOverview,
   DeliveryQueueItem,
   ServiceJourneySetting,
   DivisionLeadsOverview,
@@ -72,6 +74,10 @@ import {
   backOutSchema,
   metaVerificationSchema,
   journeyVerifierSchema,
+  subscriptionActivationSchema,
+  subscriptionCorrectionSchema,
+  subscriptionRenewalSchema,
+  subscriptionTermsSchema,
   serviceSetupSchema,
   consultantWebsiteSchema,
   handoverNoteSchema,
@@ -103,6 +109,8 @@ const inboundIdSchema = z.string().trim().min(1).max(100);
  * Every state change is a database function that re-checks hierarchy access
  * and writes the audit/activity trail in the same transaction.
  */
+const serviceCodeParam = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.');
+
 export class PipelineService {
   constructor(
     private readonly repo: PipelineRepository,
@@ -189,12 +197,27 @@ export class PipelineService {
     if (!input.ownerId && !actor.teamId) {
       throw new AppError('VALIDATION_ERROR', 'Choose a lead owner who belongs to a team.', [{ path: 'ownerId', message: 'Required' }]);
     }
-    return this.repo.get(await this.repo.createLead(input));
+    const customerId = await this.repo.createLead(input);
+    // the plan, duration, amount and credits chosen for each service (validated above: there is no date in them)
+    for (const { service, ...terms } of input.subscriptions ?? []) {
+      await this.repo.setSubscriptionTerms(customerId, service, this.termsPayload(terms));
+    }
+    return this.repo.get(customerId);
+  }
+
+  private termsPayload(t: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(t)) if (v !== undefined && v !== null) out[k] = v;
+    return out;
   }
 
   async updateLead(id: string, body: unknown): Promise<PipelineCustomer> {
     const customerId = parse(uuidSchema, id);
-    await this.repo.updateLead(customerId, parse(leadUpdateSchema, body));
+    const input = parse(leadUpdateSchema, body);
+    await this.repo.updateLead(customerId, input);
+    for (const { service, ...terms } of input.subscriptions ?? []) {
+      await this.repo.setSubscriptionTerms(customerId, service, this.termsPayload(terms));
+    }
     return this.repo.get(customerId);
   }
 
@@ -265,6 +288,10 @@ export class PipelineService {
   }
 
   /** Accounts: correct a missing or wrong e-mail on the record before the login is made (reason required, audited). */
+  async accountsCustomerDetails(id: string, body?: unknown) {
+    return this.repo.accountsCustomerDetails(parse(uuidSchema, id), body === undefined ? null : parse(accountsCustomerDetailsSchema, body));
+  }
+
   async correctCustomerEmail(id: string, body: unknown): Promise<void> {
     const customerId = parse(uuidSchema, id);
     const input = parse(customerEmailCorrectionSchema, body);
@@ -746,6 +773,48 @@ export class PipelineService {
       // a login that already exists is not a problem; anything else is shown to Accounts, who can retry from Client Logins
       return { status: /already has a login/i.test(message) ? 'EXISTS' : 'NOT_CREATED', ...(/already has a login/i.test(message) ? {} : { detail: message }) };
     }
+  }
+
+  // ---- subscriptions ----
+  subscriptionOverview(id: string): Promise<SubscriptionOverview> {
+    return this.repo.subscriptionOverview(parse(uuidSchema, id));
+  }
+
+  /** Sales: the plan, duration, amount and credits of one service. The body has no date field: one is refused. */
+  async setSubscriptionTerms(id: string, code: string, body: unknown): Promise<SubscriptionOverview> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.setSubscriptionTerms(customerId, parse(serviceCodeParam, code), this.termsPayload(parse(subscriptionTermsSchema, body)));
+    return this.repo.subscriptionOverview(customerId);
+  }
+
+  /** The team: the panel was created and activated, on this date. The database calculates the expiry; a repeated request changes nothing. */
+  async confirmSubscriptionActivation(id: string, code: string, body: unknown): Promise<SubscriptionOverview> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(subscriptionActivationSchema, body);
+    await this.repo.confirmSubscriptionActivation(customerId, parse(serviceCodeParam, code), input.activationDate, input.panelCreatedOn ?? null, input.note ?? null);
+    // (the activation e-mail the database queued is sent right after this request by the pipeline hook; a failure never undoes the activation and can be retried)
+    return this.repo.subscriptionOverview(customerId);
+  }
+
+  async correctSubscriptionDates(id: string, code: string, body: unknown): Promise<SubscriptionOverview> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(subscriptionCorrectionSchema, body);
+    await this.repo.correctSubscriptionDates(customerId, parse(serviceCodeParam, code), input.activationDate, input.panelCreatedOn ?? null, input.reason);
+    return this.repo.subscriptionOverview(customerId);
+  }
+
+  async confirmSubscriptionRenewal(id: string, code: string, body: unknown): Promise<SubscriptionOverview> {
+    const customerId = parse(uuidSchema, id);
+    const input = parse(subscriptionRenewalSchema, body);
+    await this.repo.confirmSubscriptionRenewal(customerId, parse(serviceCodeParam, code), input.paymentId, input.startDate ?? null,
+      input.terms ? this.termsPayload(input.terms) : null, input.note ?? null);
+    return this.repo.subscriptionOverview(customerId);
+  }
+
+  async resendActivationEmail(id: string, code: string): Promise<SubscriptionOverview> {
+    const customerId = parse(uuidSchema, id);
+    await this.repo.resendActivationEmail(customerId, parse(serviceCodeParam, code));
+    return this.repo.subscriptionOverview(customerId);
   }
 
   // ---- onboarding journey: Meta verification, the Meta Verifier, service setup ----

@@ -12,6 +12,7 @@ import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
   CUSTOMER_DOCUMENT_MAX_BYTES,
+  SUBSCRIPTION_DURATIONS,
   CUSTOMER_DOCUMENT_MAX_LABEL,
   INVOICE_PDF_MAX_BYTES,
   INVOICE_PDF_MAX_LABEL,
@@ -45,7 +46,14 @@ import {
   DEMO_STATUSES,
   CALL_STATUSES,
   LEAD_TEMPERATURES,
-  TEAM_DIVISIONS
+  TEAM_DIVISIONS,
+  ISSUE_CATEGORIES,
+  ISSUE_PRIORITIES,
+  ISSUE_STATUSES,
+  MEETING_ACTIONS,
+  MEETING_CATEGORIES,
+  MEETING_MODES,
+  MEETING_STATUSES
 } from './contracts.js';
 
 const trimmed = (max: number) => z.string().trim().max(max);
@@ -158,7 +166,7 @@ export const customerActivityCreateSchema = z
 export const assignableRoleSchema = z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']);
 
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-export const DESIGNATIONS = ['Department Head', 'Team Lead', 'Team Member'] as const;
+export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member'] as const;
 
 /** A real calendar date (YYYY-MM-DD) as days since 1970, or null. */
 function dayNumber(v: string): number | null {
@@ -469,6 +477,36 @@ export const auditListQuerySchema = z.object({
 const serviceCodes = z.array(z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/)).max(40);
 const datetime = z.string().datetime({ offset: true });
 
+// ---- Subscription terms: Sales names the plan, the duration, the amount and the credits. There is no field for a start or an expiry date. ----
+const blankToUndefined = (v: unknown) => (v === '' || v === null ? undefined : v);
+const subscriptionTermsBase = z
+  .object({
+    plan: trimmed(120).min(1, 'Enter the subscription plan.'),
+    durationCode: z.enum(SUBSCRIPTION_DURATIONS, { errorMap: () => ({ message: 'Choose the subscription duration.' }) }),
+    customMonths: z.preprocess(blankToUndefined, z.coerce.number({ invalid_type_error: 'Enter a whole number of months.' }).int('Enter a whole number of months.').min(1, 'At least 1 month.').max(120, 'At most 120 months.').optional()),
+    customDays: z.preprocess(blankToUndefined, z.coerce.number({ invalid_type_error: 'Enter a whole number of days.' }).int('Enter a whole number of days.').min(1, 'At least 1 day.').max(3650, 'At most 3650 days.').optional()),
+    amount: z.preprocess(blankToUndefined, z.coerce.number({ required_error: 'Enter the subscription amount.', invalid_type_error: 'Enter the subscription amount.' }).min(0, 'The amount cannot be negative.').max(99999999, 'That amount is too large.')),
+    messageCredits: z.preprocess(blankToUndefined, z.coerce.number({ invalid_type_error: 'Enter the message credits as a whole number.' }).int('Enter the message credits as a whole number.').min(0, 'The credits cannot be negative.').max(2000000000, 'That is too many credits.').optional()),
+    panel: optionalText(120)
+  })
+  .strict();
+const refineTerms = (v: { durationCode: string; customMonths?: number; customDays?: number }, ctx: z.RefinementCtx) => {
+  if (v.durationCode === 'CUSTOM') {
+    if ((v.customMonths === undefined) === (v.customDays === undefined)) {
+      ctx.addIssue({ code: 'custom', path: ['customMonths'], message: 'Enter the custom duration in months or in days (one of them).' });
+    }
+  } else if (v.customMonths !== undefined || v.customDays !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['customMonths'], message: 'Custom months or days are for the Custom duration only.' });
+  }
+};
+export const subscriptionTermsSchema = subscriptionTermsBase.superRefine(refineTerms);
+export type SubscriptionTermsInput = z.infer<typeof subscriptionTermsSchema>;
+const serviceCodeOne = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.');
+export const leadSubscriptionsSchema = z
+  .array(subscriptionTermsBase.extend({ service: serviceCodeOne }).superRefine(refineTerms))
+  .max(40)
+  .refine(a => new Set(a.map(x => x.service)).size === a.length, { message: 'Each service can have only one subscription.' });
+
 const leadFields = {
   name: trimmed(200).min(1, 'Customer name is required.'),
   company: trimmed(200).min(1, 'Business name is required.'),
@@ -486,7 +524,7 @@ const leadFields = {
 };
 
 export const leadCreateSchema = z
-  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional() })
+  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional(), subscriptions: leadSubscriptionsSchema.optional() })
   .strict();
 export type LeadCreateInput = z.infer<typeof leadCreateSchema>;
 
@@ -495,6 +533,7 @@ export const leadUpdateSchema = z
   .partial()
   .extend({
     services: serviceCodes.min(1, 'Select at least one service.').optional(),
+    subscriptions: leadSubscriptionsSchema.optional(),
     activityNote: optionalText(500)
   })
   .strict()
@@ -1907,3 +1946,207 @@ export const followUpContactSchema = z
   .refine(b => !['NO_ANSWER', 'CALL_BACK'].includes(b.outcome) || !!b.nextFollowUpAt, { message: 'Give the date of the next follow-up.', path: ['nextFollowUpAt'] });
 export const followUpAssignSchema = z.object({ profileId: uuidSchema }).strict();
 export const tcFollowupDelaySchema = z.object({ days: z.number().int().min(1, 'Enter 1 to 365 days.').max(365, 'Enter 1 to 365 days.').nullable() }).strict();
+
+// ---------------------------------------------------------------------------
+// Employee issues and HR meeting requests
+// ---------------------------------------------------------------------------
+const caseAttachmentIds = z.array(uuidSchema).max(5, 'You can attach up to 5 files at a time.').default([]);
+const caseTime = z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/, 'Choose a time (HH:MM).');
+const casePaging = {
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).max(100000).default(0)
+};
+/** The employee's own form: nothing about the employee is sent, it is read from their profile. */
+export const issueSubmitSchema = z
+  .object({
+    clientRequestId: uuidSchema,
+    title: trimmed(200).min(3, 'Enter an issue title (at least 3 characters).'),
+    category: z.enum(ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose an issue category.' }) }),
+    description: trimmed(5000).min(10, 'Describe the issue (at least 10 characters).'),
+    priority: z.enum(ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }),
+    preferredResolution: optionalText(2000),
+    attachmentIds: caseAttachmentIds
+  })
+  .strict();
+export const issueReplySchema = z
+  .object({ message: trimmed(4000).min(2, 'Write your reply.'), attachmentIds: caseAttachmentIds })
+  .strict();
+export const caseMyListQuerySchema = z
+  .object({ status: z.enum(['ALL', ...ISSUE_STATUSES, ...MEETING_STATUSES]).optional(), ...casePaging })
+  .strict();
+const caseDateTime = z.string().datetime({ offset: true });
+export const issueHrListQuerySchema = z
+  .object({
+    status: z.enum(['ALL', ...ISSUE_STATUSES]).optional(),
+    departmentId: uuidSchema.optional(),
+    priority: z.enum(['ALL', ...ISSUE_PRIORITIES]).optional(),
+    category: z.enum(['ALL', ...ISSUE_CATEGORIES]).optional(),
+    assigneeId: uuidSchema.optional(),
+    unassigned: booleanParam.optional(),
+    from: caseDateTime.optional(),
+    to: caseDateTime.optional(),
+    search: trimmed(120).optional(),
+    ...casePaging
+  })
+  .strict();
+export const issueAssignSchema = z.object({ hrId: uuidSchema.nullable() }).strict();
+export const issueStatusSchema = z
+  .object({
+    status: z.enum(ISSUE_STATUSES, { errorMap: () => ({ message: 'Choose a status.' }) }),
+    message: optionalText(4000)
+  })
+  .strict();
+export const issueRespondSchema = z
+  .object({ message: trimmed(4000).min(2, 'Write the response.'), requestInfo: z.boolean().default(false) })
+  .strict();
+export const caseNoteSchema = z.object({ note: trimmed(4000).min(2, 'Write the note.') }).strict();
+export const issueUploadSchema = z
+  .object({
+    fileName: trimmed(200).min(1, 'The file needs a name.'),
+    mimeType: z.enum(CHAT_MIME_TYPES, { errorMap: () => ({ message: 'This file type cannot be attached. Use an image, PDF, text, CSV, Word or Excel file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(CHAT_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+  })
+  .strict();
+
+export const meetingSubmitSchema = z
+  .object({
+    clientRequestId: uuidSchema,
+    subject: trimmed(200).min(3, 'Enter a meeting subject (at least 3 characters).'),
+    category: z.enum(MEETING_CATEGORIES, { errorMap: () => ({ message: 'Choose a meeting category.' }) }),
+    description: trimmed(5000).min(10, 'Describe the purpose of the meeting (at least 10 characters).'),
+    preferredDate: isoDate,
+    preferredTime: caseTime,
+    mode: z.enum(MEETING_MODES, { errorMap: () => ({ message: 'Choose In Person or Online.' }) }),
+    notes: optionalText(2000)
+  })
+  .strict();
+export const meetingHrListQuerySchema = z
+  .object({
+    status: z.enum(['ALL', ...MEETING_STATUSES]).optional(),
+    departmentId: uuidSchema.optional(),
+    category: z.enum(['ALL', ...MEETING_CATEGORIES]).optional(),
+    assigneeId: uuidSchema.optional(),
+    unassigned: booleanParam.optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    search: trimmed(120).optional(),
+    ...casePaging
+  })
+  .strict();
+const httpsLink = z.preprocess(
+  v => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'The meeting link must start with https://').nullable().optional()
+);
+/** HR's decision on a meeting request. The database checks the request's current status for each action. */
+export const meetingDecideSchema = z
+  .object({
+    action: z.enum(MEETING_ACTIONS, { errorMap: () => ({ message: 'Choose what to do with this request.' }) }),
+    date: isoDate.nullable().optional(),
+    time: caseTime.nullable().optional(),
+    mode: z.enum(MEETING_MODES).nullable().optional(),
+    location: optionalText(300),
+    link: httpsLink,
+    instructions: optionalText(2000),
+    message: optionalText(4000),
+    reason: optionalText(2000),
+    outcome: optionalText(4000),
+    followUp: optionalText(4000)
+  })
+  .strict()
+  .superRefine((b, ctx) => {
+    if (['APPROVE', 'PROPOSE', 'RESCHEDULE'].includes(b.action) && (!b.date || !b.time)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose the meeting date and time.', path: ['date'] });
+    }
+    if (['DECLINE', 'CANCEL', 'RESCHEDULE'].includes(b.action) && (!b.reason || b.reason.length < 3)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Give a reason (the employee will read it).', path: ['reason'] });
+    }
+  });
+export const meetingCancelSchema = z.object({ reason: optionalText(2000) }).strict();
+export const meetingAlternativeSchema = z.object({ accept: z.boolean(), message: optionalText(2000) }).strict();
+
+// Subscription activation, correction and renewal (the team; never Sales)
+// ---------------------------------------------------------------------------
+export const subscriptionActivationSchema = z
+  .object({ activationDate: isoDate, panelCreatedOn: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()), note: optionalText(500) })
+  .strict();
+export const subscriptionCorrectionSchema = z
+  .object({
+    activationDate: isoDate,
+    panelCreatedOn: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    reason: trimmed(500).min(5, 'Give the reason for the correction.')
+  })
+  .strict();
+export const subscriptionRenewalSchema = z
+  .object({
+    paymentId: uuidSchema,
+    startDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    terms: subscriptionTermsBase.partial().nullish(),
+    note: optionalText(500)
+  })
+  .strict();
+export const usageAlertSettingsSchema = z
+  .object({ enabled: z.boolean(), thresholds: z.array(z.number().int().min(1).max(100)).min(1).max(8) })
+  .strict();
+// Accounts profile corrections deliberately exclude all financial and assignment fields.
+export const accountsCustomerDetailsSchema = z.object({
+  name: leadFields.name, company: leadFields.company, phone: leadFields.phone,
+  whatsapp: leadFields.whatsapp, email: leadFields.email, city: leadFields.city,
+  address: leadFields.address, businessCategory: leadFields.businessCategory
+}).strict();
+
+// ---- Employee approval hierarchy ---------------------------------------------------------------------------------------------------------
+export const EMPLOYEE_REQUEST_ROLES = ['OPERATIONS_HEAD', 'DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER'] as const;
+export type EmployeeRequestRole = (typeof EMPLOYEE_REQUEST_ROLES)[number];
+const DESIGNATION_OF_ROLE: Record<EmployeeRequestRole, (typeof DESIGNATIONS)[number]> = {
+  OPERATIONS_HEAD: 'Operations Head', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
+};
+/** HR (or a Team Lead, for a Team Member) asks for an employee. The approver is decided by the database from the role and department, never sent. */
+export const employeeRequestSchema = z
+  .object({
+    email: emailSchema,
+    fullName: trimmed(160).min(1, 'Full name is required.'),
+    password: z.string().min(10, 'Temporary password must be at least 10 characters.').max(72),
+    role: z.enum(EMPLOYEE_REQUEST_ROLES, { errorMap: () => ({ message: 'Choose the designation.' }) }),
+    departmentId: uuidSchema,
+    /** Sales or Support side (a Department Head's side; the side of a Team Lead's team and of a Team Member). */
+    division: z.enum(['SALES', 'SUPPORT', 'GENERAL']).optional(),
+    employeeCode: optionalText(40),
+    details: memberDetailsSchema
+  })
+  .strict()
+  .refine(r => r.details.designation === DESIGNATION_OF_ROLE[r.role], { message: 'The designation must match the role.', path: ['details', 'designation'] });
+export type EmployeeRequestInput = z.infer<typeof employeeRequestSchema>;
+
+export const employeeRequestListQuerySchema = z
+  .object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(), toDecide: z.enum(['true', 'false']).optional() })
+  .strict();
+
+export const employeeDecisionSchema = z
+  .object({
+    approve: z.boolean(),
+    note: optionalText(500),
+    /** Operations Head approval only: the departments they manage, and the ones they approve Department Heads for. */
+    departmentIds: z.array(uuidSchema).max(40).optional(),
+    primaryDepartmentIds: z.array(uuidSchema).max(40).optional()
+  })
+  .strict()
+  .refine(d => d.approve || (typeof d.note === 'string' && d.note.trim().length >= 3), { message: 'Give the reason for rejecting.', path: ['note'] });
+
+export const employeeResubmitSchema = z
+  .object({
+    role: z.enum(EMPLOYEE_REQUEST_ROLES),
+    departmentId: uuidSchema,
+    division: z.enum(['SALES', 'SUPPORT', 'GENERAL']).optional(),
+    position: optionalText(120),
+    employeeCode: optionalText(40)
+  })
+  .strict();
+
+export const operationsScopeSchema = z
+  .object({ departmentIds: z.array(uuidSchema).max(40), primaryDepartmentIds: z.array(uuidSchema).max(40).optional() })
+  .strict()
+  .refine(s => (s.primaryDepartmentIds ?? []).every(id => s.departmentIds.includes(id)), {
+    message: 'A department you approve for must be one of the departments they manage.', path: ['primaryDepartmentIds']
+  });
+
+export const assignLeadSchema = z.object({ leadId: uuidSchema, note: optionalText(500) }).strict();

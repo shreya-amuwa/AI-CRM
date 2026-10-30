@@ -205,7 +205,7 @@ await t1.close();
 const b1 = await login('ba.one@amuwa.com', { width: 1440, height: 900 }, 'text=Quick actions');
 await expect(/\/business-associate\/dashboard\//.test(b1.url()), 'routing: a Business Associate lands on the Business Associate dashboard', b1.url());
 const nav = (await b1.locator('aside nav button').allInnerTexts()).map(s => s.trim());
-await expect(nav.join('|') === 'Home|Tasks|Leads|Field Visit|Quotation|Demo Schedule|Scope of Project', 'sidebar: Tasks, Leads, Field Visit, Quotation, Demo Schedule, Scope of Project (after Home)', nav);
+await expect(nav.join('|') === 'Home|Tasks|Leads|Field Visit|Quotation|Demo Schedule|Scope of Project|Raise an Issue', 'sidebar: Tasks, Leads, Field Visit, Quotation, Demo Schedule, Scope of Project (after Home), then Raise an Issue', nav);
 const baDesign = await styleOf(b1);
 await expect(sameDesign(baDesign, refDesign, ['page', 'sidebar', 'active', 'inactive', 'header', 'title', 'card']), 'design: the page background, sidebar, active menu item, header, page title and cards are the Department Head dashboard\'s', { baDesign, refDesign });
 await expect(baDesign.primary && refDesign.primary && sameDesign(baDesign, refDesign, ['primary']), 'design: the primary button is the Department Head dashboard\'s (colour, radius, height)', { baDesign: baDesign.primary, refDesign: refDesign.primary });

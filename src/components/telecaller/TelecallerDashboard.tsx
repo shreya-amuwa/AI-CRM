@@ -6,13 +6,15 @@ import { DashboardShell, PageTitle, groupNavItems } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { FIELD_VISIT_GROUP_ID, FIELD_VISIT_NAV, FIELD_VISIT_SEGMENT, FieldVisitWorkspace, fieldVisitPageFromSegment, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
 import { HomePage } from './HomePage';
 import { ConvertLead } from './ConvertLead';
 import { LeadDialog, LeadsPage, telecallerLeadsApi } from './LeadsPage';
 import { TasksPage } from './TasksPage';
 
-export type TelecallerPage = 'home' | 'tasks' | 'leads' | 'notifications' | FieldVisitPage;
+export type TelecallerPage = 'home' | 'tasks' | 'leads' | 'raise-issue' | 'notifications' | FieldVisitPage;
 export interface TelecallerNavigate {
   (page: TelecallerPage, options?: { status?: string; addLead?: boolean }): void;
 }
@@ -22,7 +24,8 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: 'tasks', label: 'Tasks', icon: ClipboardList },
   { id: 'leads', label: 'Leads', icon: Target },
   // Field Visit: planning and recording visits to leads, inside this same dashboard
-  { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV }
+  { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV },
+  { ...ISSUES_NAV }
 ];
 
 export const TELECALLER_BASE = (userId: string) => `/telecaller/dashboard/${userId}`;
@@ -31,7 +34,7 @@ export function parseTelecallerPage(path: string): TelecallerPage {
   const seg = path.replace(/\/+$/, '').split('/')[4];
   const visit = fieldVisitPageFromSegment(seg);
   if (visit) return visit;
-  return seg === 'tasks' || seg === 'leads' || seg === 'notifications' ? seg : 'home';
+  return seg === 'tasks' || seg === 'leads' || seg === 'notifications' || seg === 'raise-issue' ? seg : 'home';
 }
 
 /**
@@ -57,8 +60,9 @@ export const TelecallerDashboard: React.FC = () => {
     navigateTo(next === 'home' ? TELECALLER_BASE(userId) : `${TELECALLER_BASE(userId)}/${isFieldVisitPage(next) ? FIELD_VISIT_SEGMENT[next] : next}`);
   };
 
+  useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   const displayName = profile?.fullName || user?.name || 'Telecaller';
-  const groups = groupNavItems(NAV, [{ ids: ['home', 'tasks', 'leads', FIELD_VISIT_GROUP_ID] }]);
+  const groups = groupNavItems(NAV, [{ ids: ['home', 'tasks', 'leads', FIELD_VISIT_GROUP_ID, ISSUES_NAV.id] }]);
 
   return (
     <DashboardShell
@@ -89,6 +93,7 @@ export const TelecallerDashboard: React.FC = () => {
         {page === 'tasks' && <TasksPage key={`tasks-${intent.n}`} initialStatus={intent.status} />}
         {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} scopeFilters openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
         {page === 'notifications' && <NotificationsPage />}
+        {page === 'raise-issue' && <IssuesRoute />}
         {isFieldVisitPage(page) && (
           <FieldVisitWorkspace
             page={page}

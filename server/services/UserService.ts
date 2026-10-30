@@ -55,6 +55,10 @@ export class UserService {
    */
   async create(actor: Actor, body: unknown): Promise<Profile> {
     const input = parse(userCreateSchema, body);
+    if (actor.role === 'TEAM_HEAD') {
+      // A new team member needs the Department Head's approval: a Team Lead asks (an employee request), they do not create an active account.
+      throw new AppError('FORBIDDEN', 'A Team Lead asks the Department Head to approve a new team member. Send an employee request instead of creating the account.');
+    }
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
     await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {

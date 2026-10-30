@@ -31,9 +31,13 @@ import { WorkflowService } from './WorkflowService.js';
 import { WorkflowRepository } from '../repositories/WorkflowRepository.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
+import { EmployeeApprovalService } from './EmployeeApprovalService.js';
+import { EmployeeApprovalRepository } from '../repositories/EmployeeApprovalRepository.js';
 import { CustomerImportService } from './CustomerImportService.js';
 import { ChatService } from './ChatService.js';
 import { TicketAttachmentService } from './TicketAttachmentService.js';
+import { EmployeeCaseService } from './EmployeeCaseService.js';
+import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { TicketAttachmentRepository } from '../repositories/TicketAttachmentRepository.js';
 import { ChatRepository } from '../repositories/ChatRepository.js';
 import { DashboardRepository } from '../repositories/DashboardRepository.js';
@@ -57,6 +61,7 @@ import { PerformanceRepository } from '../repositories/PerformanceRepository.js'
 export function createServices(db: SupabaseClient) {
   return {
     users: new UserService(new ProfileRepository(db), undefined, new HrRepository(db)),
+    employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
     performance: new PerformanceService(new PerformanceRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
@@ -81,6 +86,7 @@ export function createServices(db: SupabaseClient) {
     generatedInvoices: new GeneratedInvoiceService(new GeneratedInvoiceRepository(db), new StorageRepository()),
     customerImport: new CustomerImportService(db),
     chat: new ChatService(new ChatRepository(db), new StorageRepository()),
+    employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };

@@ -29,7 +29,7 @@ changing the catalogue never moves work in flight. The Super Admin or the Depart
 | Role | Where it sits | Can | Cannot |
 | --- | --- | --- | --- |
 | Super Admin | top | everything below; makes Operations Heads, Meta Verifiers; sets the follow-up delay and which services are Meta services | |
-| **Operations Head** (new) | between Super Admin and Department Head | oversees the several departments the Super Admin assigned (Operations Overview, switches department inside the dashboard) | no automatic Super Admin permissions; cannot make others Operations Heads or give anyone a department |
+| **Operations Head** (new) | between Super Admin and Department Head | oversees the several departments the Super Admin assigned (Operations Dashboard, switches department inside the dashboard) | no automatic Super Admin permissions; cannot make others Operations Heads or give anyone a department |
 | Department Head | one department (plus the other function of it, e.g. D Talk and Wabatalk) | manages that department; receives handed-over customers; re-routes a customer; records "Meta verification completed" | can no longer be given several departments (the database refuses it) |
 | **Meta Verifier** (new) | Support team member | sees WhatsApp customers sent for verification; authorises documents; enters the WABA ID; writes verification notes and outcomes; sends back for correction; hands over to the Department Head; records "Meta verification completed" | no add-ons, no consultation notes, no follow-ups, no client login, sees nothing of the consultant's customers |
 | Technical Consultant | Support team member | consults after the delay; follow-up list; records contacts and outcomes; add-ons; sees a Meta customer **after** the hand-over | cannot create the client login; cannot verify, hand over or write verification notes for a Meta customer |
@@ -43,6 +43,8 @@ Every rule is enforced in the database (RLS policies and `SECURITY DEFINER` RPCs
 only decide what to show.
 
 ## 3. Operations Head
+
+Employee approval, department ownership and team assignment are described in `docs/EMPLOYEE_APPROVAL.md`.
 
 * `profiles.is_operations_head` (Department Heads only); `department_access.transition` marks a legacy grant.
 * A trigger refuses a cross-department grant unless the person is an Operations Head or the grant is marked `transition`.

@@ -11,11 +11,15 @@ import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
 import { EmailAutomation } from './components/hr/EmailAutomation';
 import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
+import { EmployeeIssuesManagement } from './components/hr/EmployeeIssuesManagement';
+import { HrEmployeeRequestsPage } from './components/employees/HrEmployeeRequestsPage';
+import { MeetingRequestsManagement } from './components/hr/MeetingRequestsManagement';
 import { TrainingWorkspace } from './components/hr/TrainingWorkspace';
 import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
+import { useOpenHrCaseRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
 import { TabBar } from './components/layout/TabBar';
 
 // Dedicated Department Panels
@@ -69,6 +73,9 @@ const MainAppContent: React.FC = () => {
   // a notification can ask for the Chat page of whichever dashboard layout is showing
   const showChat = React.useRef<(() => void) | null>(null);
   useOpenChatRequest(React.useCallback(() => showChat.current?.(), []));
+  // and HR's Employee Issues / Meeting Requests section on one case
+  const showHrCase = React.useRef<((d: OpenHrCaseDetail) => void) | null>(null);
+  useOpenHrCaseRequest(React.useCallback(d => showHrCase.current?.(d), []));
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
@@ -382,6 +389,7 @@ const MainAppContent: React.FC = () => {
   };
 
   showChat.current = () => handleTabUpdate('chat');
+  showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : 'hr_meetings');
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -473,12 +481,18 @@ const MainAppContent: React.FC = () => {
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
               <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
+            ) : currentActiveTab === 'hr_requests' && currentDeptId === 'hr' ? (
+              <HrEmployeeRequestsPage />
             ) : currentActiveTab === 'hr_recruitment' && currentDeptId === 'hr' ? (
               <RecruitmentManagement />
             ) : currentActiveTab === 'hr_training' && currentDeptId === 'hr' ? (
               <TrainingWorkspace />
             ) : currentActiveTab === 'hr_email' && currentDeptId === 'hr' ? (
               <EmailAutomation />
+            ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (
+              <EmployeeIssuesManagement />
+            ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
+              <MeetingRequestsManagement />
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
             ) : currentActiveTab === 'business_reports' && currentDeptId === 'accounts' ? (

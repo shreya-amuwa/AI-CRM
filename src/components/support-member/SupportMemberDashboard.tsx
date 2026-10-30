@@ -6,6 +6,8 @@ import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/she
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
+import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
@@ -24,7 +26,7 @@ import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
@@ -46,6 +48,7 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
+  { id: 'raise-issue', label: ISSUES_NAV.label, icon: ISSUES_NAV.icon },
   { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
 ];
@@ -88,6 +91,7 @@ export const SupportMemberDashboard: React.FC = () => {
   }, []);
 
   useOpenChatRequest(React.useCallback(() => { setProfileId(null); setPage('chat'); }, []));
+  useOpenIssuesRequest(React.useCallback(() => { setProfileId(null); setPage('raise-issue'); }, []));
 
   const go = (next: SupportPage) => {
     setProfileId(null);
@@ -110,7 +114,7 @@ export const SupportMemberDashboard: React.FC = () => {
       { label: 'Work', ids: ['tasks', 'tickets', 'delivery', 'invoices'] },
       { label: 'Customers', ids: ['my-clients', 'add-customer', 'import', 'client-documents', 'client-calendar'] },
       { label: 'My Leads', ids: ['leads', 'potential', 'onboarding', 'part-payments'] },
-      { label: 'Team', ids: ['chat', 'notifications'] }
+      { label: 'Team', ids: ['raise-issue', 'chat', 'notifications'] }
     ]
   );
 
@@ -177,6 +181,8 @@ export const SupportMemberDashboard: React.FC = () => {
         <TicketsPage mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
       ) : page === 'chat' ? (
         <ChatRoute />
+      ) : page === 'raise-issue' ? (
+        <IssuesRoute />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : (

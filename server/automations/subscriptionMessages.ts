@@ -25,7 +25,7 @@ export interface ReminderMessage {
   id: string;
   channel: MessageChannel;
   attempts: number;
-  stage: 7 | 3 | 1;
+  stage: 15 | 7 | 3 | 1 | 0;
   expiryDate: string;
   daysLeft: number;
   /** An e-mail address, or +91 and the ten digit mobile number. */
