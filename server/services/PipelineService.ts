@@ -1,3 +1,4 @@
+import { accountsCustomerDetailsSchema } from '../../shared/validation.js';
 import type {
   ClientLoginOutcome,
   CustomerJourneyInfo,
@@ -265,6 +266,10 @@ export class PipelineService {
   }
 
   /** Accounts: correct a missing or wrong e-mail on the record before the login is made (reason required, audited). */
+  async accountsCustomerDetails(id: string, body?: unknown) {
+    return this.repo.accountsCustomerDetails(parse(uuidSchema, id), body === undefined ? null : parse(accountsCustomerDetailsSchema, body));
+  }
+
   async correctCustomerEmail(id: string, body: unknown): Promise<void> {
     const customerId = parse(uuidSchema, id);
     const input = parse(customerEmailCorrectionSchema, body);

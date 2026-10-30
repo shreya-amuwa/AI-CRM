@@ -1907,3 +1907,10 @@ export const followUpContactSchema = z
   .refine(b => !['NO_ANSWER', 'CALL_BACK'].includes(b.outcome) || !!b.nextFollowUpAt, { message: 'Give the date of the next follow-up.', path: ['nextFollowUpAt'] });
 export const followUpAssignSchema = z.object({ profileId: uuidSchema }).strict();
 export const tcFollowupDelaySchema = z.object({ days: z.number().int().min(1, 'Enter 1 to 365 days.').max(365, 'Enter 1 to 365 days.').nullable() }).strict();
+
+// Accounts profile corrections deliberately exclude all financial and assignment fields.
+export const accountsCustomerDetailsSchema = z.object({
+  name: leadFields.name, company: leadFields.company, phone: leadFields.phone,
+  whatsapp: leadFields.whatsapp, email: leadFields.email, city: leadFields.city,
+  address: leadFields.address, businessCategory: leadFields.businessCategory
+}).strict();
