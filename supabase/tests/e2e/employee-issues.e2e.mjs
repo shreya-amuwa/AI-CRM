@@ -92,9 +92,9 @@ await expect(labels.some(l => /^Raise an Issue$/.test(l)), 'a Team Member has "R
 await expect(!labels.some(l => /Employee Issues|Meeting Requests/.test(l)), 'and no HR section');
 await openRaise(TM);
 await expect((await TM.getByTestId('case-type').locator('option').allInnerTexts()).join('|') === 'Raise an Issue|Meeting Request', 'the selector at the top offers Raise an Issue and Meeting Request');
-await TM.waitForFunction(() => /EMP-/.test(document.querySelector('[data-testid="my-details"]')?.innerText ?? ''), null, { timeout: 10000 }).catch(() => fail('the employee details did not load'));
+await TM.waitForFunction(() => /Rahul Mehta/.test(document.querySelector('[data-testid="my-details"]')?.innerText ?? ''), null, { timeout: 10000 }).catch(() => fail('the employee details did not load'));
 const det = await TM.getByTestId('my-details').innerText();
-await expect(/Rahul Mehta/.test(det) && /EMP-[0-9A-F]{8}/.test(det) && /Sales Executive/.test(det) && /Wabastore/i.test(det), 'the employee\'s name, employee ID, department and designation are shown from the profile (not typed)');
+await expect(/Rahul Mehta/.test(det) && /Sales Executive/.test(det) && /Wabastore/i.test(det) && !/EMP-|Employee ID/i.test(det), 'the employee\'s name, department and designation are shown from the profile (not typed), and no employee ID');
 await expect(await TM.locator('#issue-title').count() === 1 && await TM.locator('input[name="employee"], #employee-name').count() === 0, 'the issue form asks nothing the profile already knows');
 // the whole form: the fields of the specification
 const cats = await TM.locator('#issue-category option').allInnerTexts();
