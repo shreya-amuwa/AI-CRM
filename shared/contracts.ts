@@ -4311,3 +4311,93 @@ export interface EmployeeMeeting {
 export interface EmployeeMeetingDetail { meeting: EmployeeMeeting; events: CaseEvent[] }
 export interface EmployeeMeetingList { items: EmployeeMeeting[]; total: number; limit: number; offset: number }
 export interface EmployeeMeetingOverview { total: number; pending: number; scheduled: number; completed: number; declinedOrCancelled: number }
+
+// ---- Employee approval hierarchy ---------------------------------------------------------------------------------------------------------
+export type EmployeeRequestRoleKey = 'OPERATIONS_HEAD' | 'DEPARTMENT_HEAD' | 'TEAM_HEAD' | 'TEAM_MEMBER';
+export type EmployeeRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export interface EmployeeRequest {
+  id: string;
+  status: EmployeeRequestStatus;
+  source: 'HR' | 'MANAGER';
+  attempt: number;
+  resubmissionOf: string | null;
+  requestedRole: EmployeeRequestRoleKey;
+  department: { id: string; name: string; slug: string } | null;
+  division: 'SALES' | 'SUPPORT' | 'GENERAL' | null;
+  employee: { id: string; name: string; email: string; status: string; designation: string | null; joiningDate: string | null; contactNumber: string | null; employeeCode: string | null } | null;
+  submittedBy: { id: string; name: string } | null;
+  submittedAt: string;
+  approverKind: 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'DEPARTMENT_HEAD' | null;
+  approver: { id: string; name: string } | null;
+  /** A Department Head request in a department nobody is accountable for yet: it waits for the Super Admin to name the Operations Head. */
+  awaitingOwner: boolean;
+  decidedBy: { id: string; name: string } | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  /** The signed-in person is the right approver and the request is still pending. */
+  canDecide: boolean;
+  history?: { id: string; attempt: number; status: EmployeeRequestStatus; decidedAt: string | null; decisionNote: string | null; decidedBy: string | null; submittedAt: string }[];
+}
+
+export interface OperationsHeadAdmin {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  homeDepartment: { id: string; name: string } | null;
+  departments: { id: string; name: string; slug: string; primary: boolean }[];
+  pendingApprovals: number;
+  lastLoginAt: string | null;
+}
+export interface OperationsHeadsAdmin {
+  heads: OperationsHeadAdmin[];
+  /** Departments nobody is accountable for: a Department Head request there cannot be routed. */
+  unowned: { id: string; name: string; pendingRequests: number }[];
+  departments: { id: string; name: string; slug: string; owner: { id: string; name: string } | null }[];
+}
+export interface OperationsActivityEntry { at: string; action?: string; type?: string; reference: string; department: string | null; by?: string | null; departmentHead?: string | null; outcome?: string }
+
+export interface OperationsDashboardDepartment {
+  id: string;
+  name: string;
+  slug: string;
+  accountable: boolean;
+  departmentHeads: { id: string; name: string; email: string; status: string; side: string | null; lastLoginAt: string | null }[];
+  teamLeads: number;
+  teamMembers: number;
+  awaitingAssignment: number;
+  pendingDepartmentHeadApprovals: number;
+  leads: number;
+  onboarding: number;
+  customers: number;
+  awaitingDepartmentHead: number;
+  withVerifier: number;
+}
+export interface OperationsDashboard {
+  departments: OperationsDashboardDepartment[];
+  totals: { departments: number; departmentHeads: number; teamLeads: number; teamMembers: number; awaitingAssignment: number; pendingDepartmentHeadApprovals: number };
+}
+export interface OperationsDepartmentDetail {
+  teamLeads: { id: string; name: string; team: string | null; division: string | null; members: number }[];
+  awaitingAssignment: { id: string; name: string; email: string; approvedAt: string | null }[];
+}
+
+export type DirectoryMemberState = 'AWAITING_ASSIGNMENT' | 'ASSIGNED' | 'INACTIVE';
+export interface DepartmentDirectoryMember {
+  id: string;
+  name: string;
+  email: string;
+  status: string;
+  approvedAt: string | null;
+  team: { id: string; name: string; division: string; isPool: boolean };
+  lead: { id: string; name: string } | null;
+  state: DirectoryMemberState;
+  lastAssignment: { kind: string; at: string; by: string | null } | null;
+}
+export interface DepartmentEmployeeDirectory {
+  department: { id: string; name: string } | null;
+  headDivision: string | null;
+  members: DepartmentDirectoryMember[];
+  leads: { id: string; name: string; status: string; team: { id: string; name: string; division: string }; members: number }[];
+}
+export interface TeamAssignmentRecord { id: string; kind: string; note: string | null; createdAt: string; fromTeam: string | null; toTeam: string | null; lead: string | null; assignedBy: string | null }

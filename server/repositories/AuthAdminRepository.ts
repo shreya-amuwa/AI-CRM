@@ -51,6 +51,38 @@ export class AuthAdminRepository {
   }
 
   /**
+   * An employee submitted for approval: the sign-in exists (so the person is one identity from the start) but the database creates only a PENDING profile
+   * and an approval request for it, never an active account. `request_*` in app_metadata is writable only with the service key; the trigger re-validates it.
+   */
+  async createEmployeeRequestUser(input: {
+    email: string; password: string; fullName: string; position?: string | null;
+    role: 'DEPARTMENT_HEAD' | 'TEAM_HEAD' | 'TEAM_MEMBER'; operationsHead: boolean; departmentId: string; division?: string | null; employeeCode?: string | null; requestedBy: string;
+  }): Promise<string> {
+    const { data, error } = await getServiceClient().auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { full_name: input.fullName, position: input.position ?? null },
+      app_metadata: {
+        request_by: input.requestedBy,
+        request_role: input.role,
+        request_operations_head: input.operationsHead,
+        request_department_id: input.departmentId,
+        request_division: input.division ?? null,
+        request_employee_code: input.employeeCode ?? null
+      }
+    });
+    if (error || !data.user) {
+      if (/already (been )?registered|exists/i.test(error?.message || '')) {
+        throw new AppError('CONFLICT', 'A user with this e-mail already exists.');
+      }
+      console.error('[api] auth.admin.createUser (employee request) failed', error?.message);
+      throw new AppError('INTERNAL', 'Could not create the employee request.');
+    }
+    return data.user.id;
+  }
+
+  /**
    * The client's panel login. `app_metadata.client_customer_id` (service key only)
    * keeps the database from creating a CRM profile for it. The password is hashed
    * by Supabase Auth and is neither stored nor returned by the CRM.

@@ -68,6 +68,7 @@ export type ActiveTab =
   | 'support_flow'
   | 'staff_access'
   | 'staff_add'
+  | 'hr_requests'
   | 'client_notices'
   | 'hr_email'
   | 'hr_recruitment'
@@ -313,7 +314,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canSendClientNotices = user?.role === 'superadmin' || (user?.role === 'hr' && profileRole === 'DEPARTMENT_HEAD');
   const hrNav: typeof baseNavItems = [
     baseNavItems[0],
-    { id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus },
+    { id: 'hr_requests' as ActiveTab, label: 'Employee Requests', icon: UserPlus },
+    ...(user?.role === 'superadmin' ? [{ id: 'staff_add' as ActiveTab, label: 'Add Member', icon: UserPlus }] : []),
     { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
     ...baseNavItems.slice(1, -1),
     { id: 'hr_recruitment' as ActiveTab, label: 'Recruitment Management', icon: Briefcase },

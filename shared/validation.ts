@@ -166,7 +166,7 @@ export const customerActivityCreateSchema = z
 export const assignableRoleSchema = z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']);
 
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-export const DESIGNATIONS = ['Department Head', 'Team Lead', 'Team Member'] as const;
+export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member'] as const;
 
 /** A real calendar date (YYYY-MM-DD) as days since 1970, or null. */
 function dayNumber(v: string): number | null {
@@ -2093,3 +2093,60 @@ export const accountsCustomerDetailsSchema = z.object({
   whatsapp: leadFields.whatsapp, email: leadFields.email, city: leadFields.city,
   address: leadFields.address, businessCategory: leadFields.businessCategory
 }).strict();
+
+// ---- Employee approval hierarchy ---------------------------------------------------------------------------------------------------------
+export const EMPLOYEE_REQUEST_ROLES = ['OPERATIONS_HEAD', 'DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER'] as const;
+export type EmployeeRequestRole = (typeof EMPLOYEE_REQUEST_ROLES)[number];
+const DESIGNATION_OF_ROLE: Record<EmployeeRequestRole, (typeof DESIGNATIONS)[number]> = {
+  OPERATIONS_HEAD: 'Operations Head', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
+};
+/** HR (or a Team Lead, for a Team Member) asks for an employee. The approver is decided by the database from the role and department, never sent. */
+export const employeeRequestSchema = z
+  .object({
+    email: emailSchema,
+    fullName: trimmed(160).min(1, 'Full name is required.'),
+    password: z.string().min(10, 'Temporary password must be at least 10 characters.').max(72),
+    role: z.enum(EMPLOYEE_REQUEST_ROLES, { errorMap: () => ({ message: 'Choose the designation.' }) }),
+    departmentId: uuidSchema,
+    /** Sales or Support side (a Department Head's side; the side of a Team Lead's team and of a Team Member). */
+    division: z.enum(['SALES', 'SUPPORT', 'GENERAL']).optional(),
+    employeeCode: optionalText(40),
+    details: memberDetailsSchema
+  })
+  .strict()
+  .refine(r => r.details.designation === DESIGNATION_OF_ROLE[r.role], { message: 'The designation must match the role.', path: ['details', 'designation'] });
+export type EmployeeRequestInput = z.infer<typeof employeeRequestSchema>;
+
+export const employeeRequestListQuerySchema = z
+  .object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(), toDecide: z.enum(['true', 'false']).optional() })
+  .strict();
+
+export const employeeDecisionSchema = z
+  .object({
+    approve: z.boolean(),
+    note: optionalText(500),
+    /** Operations Head approval only: the departments they manage, and the ones they approve Department Heads for. */
+    departmentIds: z.array(uuidSchema).max(40).optional(),
+    primaryDepartmentIds: z.array(uuidSchema).max(40).optional()
+  })
+  .strict()
+  .refine(d => d.approve || (typeof d.note === 'string' && d.note.trim().length >= 3), { message: 'Give the reason for rejecting.', path: ['note'] });
+
+export const employeeResubmitSchema = z
+  .object({
+    role: z.enum(EMPLOYEE_REQUEST_ROLES),
+    departmentId: uuidSchema,
+    division: z.enum(['SALES', 'SUPPORT', 'GENERAL']).optional(),
+    position: optionalText(120),
+    employeeCode: optionalText(40)
+  })
+  .strict();
+
+export const operationsScopeSchema = z
+  .object({ departmentIds: z.array(uuidSchema).max(40), primaryDepartmentIds: z.array(uuidSchema).max(40).optional() })
+  .strict()
+  .refine(s => (s.primaryDepartmentIds ?? []).every(id => s.departmentIds.includes(id)), {
+    message: 'A department you approve for must be one of the departments they manage.', path: ['primaryDepartmentIds']
+  });
+
+export const assignLeadSchema = z.object({ leadId: uuidSchema, note: optionalText(500) }).strict();
