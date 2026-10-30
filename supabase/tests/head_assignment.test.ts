@@ -1,4 +1,6 @@
 /** Add Team Member for a Department Head: which departments / functions the form sends (no database). */
+import { defaultDashboardLabel } from '../../src/lib/auth/roleMapping.js';
+import { parseSalesHeadPage } from '../../src/components/sales-head/salesHeadPaths.js';
 import { buildHeadAssignment, offers, whyNot, type AssignableDepartment, type AssignableTeam } from '../../src/lib/scope/headAssignment.js';
 
 let passed = 0;
@@ -12,6 +14,12 @@ const both = (id: string): AssignableTeam[] => [{ departmentId: id, division: 'S
 const deps = [d('wabastore'), d('whatsbox'), d('wabastar'), d('dtalk'), d('wabatalk', 'dtalk', 'SUPPORT'), d('mpillar')];
 const teams = [...both('wabastore'), ...both('whatsbox'), { departmentId: 'wabastar', division: 'GENERAL' }, ...both('dtalk'), ...both('mpillar')];
 const o = offers(deps, teams);
+// an Operations Head opens its own dashboard, not the Department Head one
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, null, false, true) === 'Operations Head Dashboard · Wabastore', 'an Operations Head with no side opens the Operations Head Dashboard');
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, undefined, false, 'wabastore', null, 'SALES', false, true) === 'Sales Operations Head Dashboard', 'a Sales Operations Head opens the Sales Operations Head Dashboard');
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, undefined, false, 'wabastore', null, 'SUPPORT', false, true) === 'Support Operations Head Dashboard', 'a Support Operations Head opens the Support Operations Head Dashboard');
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, 'SALES') === 'Sales Department Head Dashboard · Wabastore' && defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, null) === 'Department Head Dashboard · Wabastore', 'a Department Head still opens the Department Head dashboards');
+check(parseSalesHeadPage('/sales-head/dashboard/u1', 'operations') === 'operations' && parseSalesHeadPage('/sales-head/dashboard/u1') === 'overview' && parseSalesHeadPage('/sales-head/dashboard/u1/overview', 'operations') === 'overview' && parseSalesHeadPage('/sales-head/dashboard/u1/leads', 'operations') === 'leads-list', 'the bare Sales head address opens the Operations Overview for an Operations Head, the Overview for anyone else');
 check(o.get('wabastore')!.sales && o.get('wabastore')!.support, 'a department with both teams offers both');
 check(!o.get('wabastar')!.sales && !o.get('wabastar')!.support, 'a department with only a General team offers nothing');
 check(o.get('dtalk')!.sales && !o.get('dtalk')!.support, 'D Talk offers Sales only (its Support is Wabatalk)');

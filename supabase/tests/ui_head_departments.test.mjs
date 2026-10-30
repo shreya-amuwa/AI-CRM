@@ -66,6 +66,18 @@ const plan = async page => JSON.parse(await page.textContent('#plan'));
   await page.close();
 }
 {
+  // the options are named for the role being created
+  let page = await open({ width: 1280, height: 900 }, true);
+  const ops = await page.$$eval('#staff-head-division option', os => os.map(o => o.textContent.trim()));
+  check(ops.length === 4 && ops[1] === 'Sales Operations Head' && ops[2] === 'Support Operations Head' && /^Sales & Support Operations Head/.test(ops[3]) && /Operations Head/.test(ops[0]), 'an Operations Head chooses Sales Operations Head, Support Operations Head or both', ops);
+  check(/Operations Head of/.test(await page.innerText('[data-testid="head-departments"] label')), 'and the field is called "Operations Head of"');
+  await page.close();
+  page = await open({ width: 1280, height: 900 }, false);
+  const dh = await page.$$eval('#staff-head-division option', os => os.map(o => o.textContent.trim()));
+  check(dh[1] === 'Sales Department Head' && dh[2] === 'Support Department Head' && /Department Head of/.test(await page.innerText('[data-testid="head-departments"] label')), 'a Department Head keeps the Department Head names', dh);
+  await page.close();
+}
+{
   // a plain Department Head works in one department: choosing another replaces the choice; a facet of the same department (Wabatalk) stays
   const page = await open({ width: 1280, height: 900 }, false);
   await page.selectOption('#staff-head-division', 'SUPPORT');
