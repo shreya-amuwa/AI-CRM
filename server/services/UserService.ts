@@ -55,10 +55,8 @@ export class UserService {
    */
   async create(actor: Actor, body: unknown): Promise<Profile> {
     const input = parse(userCreateSchema, body);
-    if (actor.role === 'TEAM_HEAD') {
-      // A new team member needs the Department Head's approval: a Team Lead asks (an employee request), they do not create an active account.
-      throw new AppError('FORBIDDEN', 'A Team Lead asks the Department Head to approve a new team member. Send an employee request instead of creating the account.');
-    }
+    // Who creates decides the workflow, from the signed-in account: the Super Admin, a Department Head and a Team Lead (a Team Member of their own team) add people
+    // directly - an active account, no approval; HR sends an employee request instead (the database refuses HR here: assert_can_create_user).
     assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
     await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
@@ -68,8 +66,8 @@ export class UserService {
       throw new AppError('VALIDATION_ERROR', 'A Meta Verifier must be in a support team.');
     }
     if (input.salesSubRole) {
-      // Only the Super Admin and the Department Head give a Sales role, and only to a member of a Sales team.
-      if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin or the Department Head can set a Sales role.');
+      // The Super Admin, the Department Head and the Team Lead of the member's team give a Sales role, and only to a member of a Sales team (the database checks again).
+      if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD' && actor.role !== 'TEAM_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin, the Department Head or the Team Lead can set a Sales role.');
       if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
     }
     const { details, salesSubRole, additionalAccess, operationsHead, ...account } = input;

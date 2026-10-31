@@ -24,8 +24,12 @@ set role authenticated;
 \echo '   the sub-role'
 select test.login('tm_a');
 select test.must_fail($$select set_sales_sub_role(test.id('tc_a'), 'TELECALLER')$$, 'a Sales member cannot set a sub-role', 'FORBIDDEN');
+select test.login('th_wbx');
+select test.must_fail($$select set_sales_sub_role(test.id('tc_a'), 'TELECALLER')$$, 'nor can the Team Lead of another team', 'FORBIDDEN');
 select test.login('th_wab');
-select test.must_fail($$select set_sales_sub_role(test.id('tc_a'), 'TELECALLER')$$, 'nor can a Team Lead', 'FORBIDDEN');
+select test.must_fail($$select set_sales_sub_role(test.id('th_wab'), 'TELECALLER')$$, 'a Team Lead cannot give a Sales role to a Team Lead (not even themselves)', 'FORBIDDEN|Team Member');
+select test.check((select set_sales_sub_role(test.id('tc_a'), 'TELECALLER') ->> 'defaultDashboard' = 'telecaller'), 'the Team Lead of the member''s own team can (the dashboard follows)');
+select set_sales_sub_role(test.id('tc_a'), null);
 select test.login('dh_wbx');
 select test.must_fail($$select set_sales_sub_role(test.id('tc_a'), 'TELECALLER')$$, 'the Department Head of another department cannot', 'FORBIDDEN');
 select test.login('dh_wab');

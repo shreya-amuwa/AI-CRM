@@ -8,6 +8,8 @@
 \echo '--- 77. Employee approval hierarchy'
 reset role;
 \i supabase/migrations/20261211000100_employee_approval_hierarchy.sql
+-- the later migration replaces four of its functions (a Team Lead adds people directly; only HR sends a request): applied again on top, like production
+\i supabase/migrations/20261212000200_team_lead_direct_member_creation.sql
 
 -- clean synthetic world (re-runnable): departments with a Sales and a Support team
 delete from auth.users where email like 'eh.%@example.com';
@@ -205,7 +207,7 @@ select test.check((select bool_and(approver_kind = 'DEPARTMENT_HEAD' and approve
 select test.check((select count(*) = 0 from profiles where id in (test.id('eh_tl1'), test.id('eh_tm1')) and status = 'ACTIVE'), 'none of them has access before approval');
 select test.check((select count(*) = 1 from notifications where recipient_id = test.id('eh_dha') and entity_id = (select id from eh_r where name = 'tm1')), 'the Department Head is told once per request');
 select test.service();
-select test.must_fail($$select test.create_auth_user('eh_bad', 'eh.bad@example.com', '{}', test.ehapp('eh_dhb', 'TEAM_MEMBER', false, 'eh-b'))$$, 'only HR or a Team Lead can submit', 'cannot submit');
+select test.must_fail($$select test.create_auth_user('eh_bad', 'eh.bad@example.com', '{}', test.ehapp('eh_dhb', 'TEAM_MEMBER', false, 'eh-b'))$$, 'only HR can submit an employee request', 'cannot submit');
 set role authenticated;
 select test.login('eh_dhb');
 select test.must_fail($$select employee_request_decide((select id from eh_r where name = 'tl1'), true, null, null, null)$$, 'a Department Head cannot approve employees of another department', 'NOT_FOUND|not the approver');
@@ -226,24 +228,58 @@ select test.check((select count(distinct team_id) = 2 from profiles where id in 
 select test.check((select bool_and(t.is_pool) from profiles p join teams t on t.id = p.team_id where p.id in (test.id('eh_tm1'), test.id('eh_tm2'))), 'Team Members wait in the pool');
 select test.check((select status = 'PENDING' from profiles where id = test.id('eh_tmx')), 'an unapproved employee is not active');
 
-\echo '   a Team Lead asks for a Team Member of their own side'
+\echo '   a Team Lead adds a Team Member directly; only HR submits a request'
 select test.service();
-select test.create_auth_user('eh_tm3', 'eh.tm3@example.com', '{"full_name":"EH Member Three"}', test.ehapp('eh_tl1', 'TEAM_MEMBER', false, 'eh-a'));
-select test.check((select source = 'MANAGER' and approver_id = test.id('eh_dha') and status = 'PENDING' from approval_requests where subject_user_id = test.id('eh_tm3')), 'it is a request, routed to the Department Head - not an active account');
+select test.must_fail($$select test.create_auth_user('eh_bad1', 'eh.bad1@example.com', '{}', test.ehapp('eh_tl1', 'TEAM_MEMBER', false, 'eh-a'))$$, 'a Team Lead can no longer send a team member for approval', 'cannot submit');
 select test.service();
-select test.must_fail($$select test.create_auth_user('eh_bad2', 'eh.bad2@example.com', '{}', test.ehapp('eh_tl1', 'TEAM_HEAD', false, 'eh-a'))$$, 'a Team Lead cannot ask for a Team Lead', 'cannot submit');
+select test.must_fail($$select test.create_auth_user('eh_bad2', 'eh.bad2@example.com', '{}', test.ehapp('eh_tl1', 'TEAM_HEAD', false, 'eh-a'))$$, 'nor a Team Lead', 'cannot submit');
 select test.service();
 select test.must_fail($$select test.create_auth_user('eh_bad3', 'eh.bad3@example.com', '{}', test.ehapp('eh_tl1', 'TEAM_MEMBER', false, 'eh-b'))$$, 'nor for another department', 'cannot submit');
+select test.service();
+select test.create_auth_user('eh_tm3', 'eh.tm3@example.com', '{"full_name":"EH Member Three"}',
+  jsonb_build_object('provisioned_by', test.id('eh_tl1'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select team_id from profiles where id = test.id('eh_tl1'))));
+select test.check((select status = 'ACTIVE' and role = 'TEAM_MEMBER' and team_id = (select team_id from profiles where id = test.id('eh_tl1')) and department_id = (select department_id from profiles where id = test.id('eh_tl1')) and approved_by = test.id('eh_tl1') from profiles where id = test.id('eh_tm3')),
+  'the Team Member is active at once, in the Team Lead''s own team and department');
+select test.check((select count(*) = 0 from approval_requests where subject_user_id = test.id('eh_tm3')), 'with no approval request');
+select test.check((select count(*) = 1 from audit_logs where action = 'USER_CREATED' and entity_id = test.id('eh_tm3') and actor_id = test.id('eh_tl1')), 'and the Team Lead is recorded as the creator');
+select test.service();
+select test.must_fail($$select test.create_auth_user('eh_bad4', 'eh.bad4@example.com', '{}', jsonb_build_object('provisioned_by', test.id('eh_tl1'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', (select team_id from profiles where id = test.id('eh_tl1'))))$$, 'a Team Lead cannot create a Team Lead directly', 'not allowed');
+select test.service();
+select test.must_fail($$select test.create_auth_user('eh_bad5', 'eh.bad5@example.com', '{}', jsonb_build_object('provisioned_by', test.id('eh_tl1'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select team_id from profiles where id = test.id('eh_tlb'))))$$, 'nor a member of another team or department', 'not allowed');
+select test.service();
+select test.must_fail($$select test.create_auth_user('eh_bad6', 'eh.bad6@example.com', '{}', jsonb_build_object('provisioned_by', test.id('eh_tl1'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.ehd('eh-a')))$$, 'nor a Department Head', 'not allowed');
+select test.service();
+select test.must_fail($$select test.create_auth_user('eh_bad7', 'eh.bad7@example.com', '{}', jsonb_build_object('provisioned_by', test.id('eh_hr'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select team_id from profiles where id = test.id('eh_tl1'))))$$, 'HR cannot create anybody directly, around the approval', 'not allowed');
+select test.service();
+-- a Department Head still adds a Team Member directly
+select test.create_auth_user('eh_tm4', 'eh.tm4@example.com', '{"full_name":"EH Member Four"}',
+  jsonb_build_object('provisioned_by', test.id('eh_dha'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select team_id from profiles where id = test.id('eh_tl1'))));
+select test.check((select status = 'ACTIVE' from profiles where id = test.id('eh_tm4')) and (select count(*) = 0 from approval_requests where subject_user_id = test.id('eh_tm4')), 'a Department Head still adds a person directly');
+-- the Sales role: a Team Lead sets it for a member of their own Sales team only
+set role authenticated;
+select test.login('eh_tl1');
+select test.check((select set_sales_sub_role(test.id('eh_tm3'), 'TELECALLER') ->> 'defaultDashboard' = 'telecaller'), 'a Team Lead gives a Telecaller role to a member of their own Sales team (the dashboard follows)');
+select test.check((select set_sales_sub_role(test.id('eh_tm3'), 'BUSINESS_ASSOCIATE') ->> 'salesSubRole' = 'BUSINESS_ASSOCIATE'), 'and a Business Associate role');
+select test.must_fail($$select set_sales_sub_role(test.id('eh_tm2'), 'TELECALLER')$$, 'but not to a member of another team', 'Only the Super Admin');
+select test.must_fail($$select set_sales_sub_role(test.id('eh_tm3'), 'MANAGER')$$, 'and only a Sales role', 'Choose Telecaller');
+select test.login('eh_hr');
+select test.must_fail($$select set_sales_sub_role(test.id('eh_tm3'), 'TELECALLER')$$, 'HR cannot set it', 'Only the Super Admin');
+select test.login('eh_tl1');
+select test.must_fail($$select assert_can_create_user('TEAM_HEAD', test.ehd('eh-a'), (select team_id from profiles where id = test.id('eh_tl1')), null)$$, 'the form check refuses a Team Lead creating a Team Lead', 'not allowed');
+select test.check((select assert_can_create_user('TEAM_MEMBER', test.ehd('eh-a'), (select team_id from profiles where id = test.id('eh_tl1')), null)), 'and allows a Team Member of their own team');
+select test.login('eh_hr');
+select test.must_fail($$select assert_can_create_user('TEAM_MEMBER', test.ehd('eh-a'), (select team_id from profiles where id = test.id('eh_tl1')), null)$$, 'HR is told to send an employee request', 'employee request');
+reset role;
 
 \echo '   direct paths around the approval are closed'
 set role authenticated;
 select test.login('eh_dha');
-select test.must_fail($$select approve_registration((select id from approval_requests where subject_user_id = test.id('eh_tm3')), (select id from teams where department_id = test.ehd('eh-a') and name = 'Sales'), null)$$, 'the registration approval cannot decide an HR request', 'decided only through|no completed approval');
-select test.must_fail($$update approval_requests set status = 'APPROVED', decided_at = now() where subject_user_id = test.id('eh_tm3')$$, 'nor can a table update', 'permission denied|decided only through|0 rows');
+select test.must_fail($$select approve_registration((select id from approval_requests where subject_user_id = test.id('eh_tmx')), (select id from teams where department_id = test.ehd('eh-a') and name = 'Sales'), null)$$, 'the registration approval cannot decide an HR request', 'decided only through|no completed approval');
+select test.must_fail($$update approval_requests set status = 'APPROVED', decided_at = now() where subject_user_id = test.id('eh_tmx')$$, 'nor can a table update', 'permission denied|decided only through|0 rows');
 select test.login('eh_hr');
-select test.must_fail($$insert into approval_requests (request_type, subject_user_id, status, source) values ('USER_REGISTRATION', test.id('eh_tm3'), 'APPROVED', 'HR')$$, 'nor an insert', 'permission denied|row-level security');
+select test.must_fail($$insert into approval_requests (request_type, subject_user_id, status, source) values ('USER_REGISTRATION', test.id('eh_tmx'), 'APPROVED', 'HR')$$, 'nor an insert', 'permission denied|row-level security');
 reset role;
-select test.must_fail($$insert into approval_requests (request_type, subject_user_id, department_id, status, source, requested_role, approver_kind) values ('USER_REGISTRATION', test.id('eh_tm3'), test.ehd('eh-a'), 'PENDING', 'HR', 'TEAM_MEMBER', 'DEPARTMENT_HEAD')$$, 'there is one open request per employee', 'duplicate key');
+select test.must_fail($$insert into approval_requests (request_type, subject_user_id, department_id, status, source, requested_role, approver_kind) values ('USER_REGISTRATION', test.id('eh_tmx'), test.ehd('eh-a'), 'PENDING', 'HR', 'TEAM_MEMBER', 'DEPARTMENT_HEAD')$$, 'there is one open request per employee', 'duplicate key');
 
 \echo '   assignment is a separate step: Department Head puts a Team Member under a Team Lead'
 create temp table eh_n as select count(*) as requests from approval_requests where source <> 'REGISTRATION';
@@ -299,8 +335,8 @@ select test.login('eh_oh1');
 select test.check(exists (select 1 from jsonb_array_elements(operations_dashboard() -> 'departments') x where x ->> 'id' = test.ehd('eh-a')::text) and exists (select 1 from jsonb_array_elements(operations_dashboard() -> 'departments') x where x ->> 'id' = test.ehd('eh-b')::text),
   'it lists the assigned departments');
 select test.check(not exists (select 1 from jsonb_array_elements(operations_dashboard() -> 'departments') x where x ->> 'id' in (test.ehd('eh-c')::text, test.ehd('eh-d')::text)), 'and not an unassigned one');
-select test.check((select (x ->> 'teamLeads')::int = 2 and (x ->> 'teamMembers')::int = 2 and (x ->> 'awaitingAssignment')::int = 1 from jsonb_array_elements(operations_dashboard() -> 'departments') x where x ->> 'id' = test.ehd('eh-a')::text),
-  'Alpha: 2 Team Leads, 2 Team Members, 1 awaiting assignment (actual counts)');
+select test.check((select (x ->> 'teamLeads')::int = 2 and (x ->> 'teamMembers')::int = 4 and (x ->> 'awaitingAssignment')::int = 1 from jsonb_array_elements(operations_dashboard() -> 'departments') x where x ->> 'id' = test.ehd('eh-a')::text),
+  'Alpha: 2 Team Leads, 4 Team Members (two approved, two added directly), 1 awaiting assignment (actual counts)');
 select test.check((select jsonb_array_length(x -> 'departmentHeads') = 1 and x -> 'departmentHeads' -> 0 ->> 'name' = 'EH Head Alpha' from jsonb_array_elements(operations_dashboard() -> 'departments') x where x ->> 'id' = test.ehd('eh-a')::text), 'the responsible Department Head is shown');
 reset role;
 insert into auth_login_attempts (user_id) values (test.id('eh_dha'));
