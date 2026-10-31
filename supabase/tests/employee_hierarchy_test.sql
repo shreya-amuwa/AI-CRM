@@ -9,7 +9,7 @@
 reset role;
 \i supabase/migrations/20261211000100_employee_approval_hierarchy.sql
 -- the later migration replaces four of its functions (a Team Lead adds people directly; only HR sends a request): applied again on top, like production
-\i supabase/migrations/20261212000100_team_lead_direct_member_creation.sql
+\i supabase/migrations/20261212000200_team_lead_direct_member_creation.sql
 
 -- clean synthetic world (re-runnable): departments with a Sales and a Support team
 delete from auth.users where email like 'eh.%@example.com';

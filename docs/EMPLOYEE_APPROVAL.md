@@ -88,7 +88,7 @@ No new e-mail template was added: approvers are reached through the in-app notif
 `supabase/tests/employee_hierarchy_test.sql` (routing, every refusal, owner changes, scope changes, activity, assignment, direct-path bypasses, history),
 `api_integration.test.ts` (the same through HTTP), `ui_employee_hierarchy.test.mjs` (approver, HR, directory, Operations dashboard, Super Admin scope; phone and desktop).
 
-## 9. Who adds a team member, and how (`20261212000100_team_lead_direct_member_creation.sql`, re-runnable)
+## 9. Who adds a team member, and how (`20261212000200_team_lead_direct_member_creation.sql`, re-runnable)
 
 The path depends on **who is signed in**, decided in the database from the caller (never from anything the browser sends):
 

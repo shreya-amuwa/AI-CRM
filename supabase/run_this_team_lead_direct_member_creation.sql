@@ -1,4 +1,4 @@
--- Run this ONE file once in the Supabase SQL editor (safe to run again). It is the migration 20261212000100_team_lead_direct_member_creation.sql.
+-- Run this ONE file once in the Supabase SQL editor (safe to run again). It is the migration 20261212000200_team_lead_direct_member_creation.sql.
 -- It needs the employee approval hierarchy migration (20261211000100) and the Telecaller migration (sales sub-role) to be applied already.
 
 -- =============================================================================
