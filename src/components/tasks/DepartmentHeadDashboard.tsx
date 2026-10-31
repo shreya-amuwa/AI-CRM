@@ -13,6 +13,7 @@ import {
   Megaphone,
   ReceiptIndianRupee,
   TrendingUp,
+  Trophy,
   Sparkles,
   UserCheck,
   UserPlus,
@@ -46,6 +47,7 @@ import { HeadReports } from './head/HeadReports';
 import { HeadDaily } from './head/HeadDaily';
 import { HeadSearch } from './head/HeadSearch';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
+import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
@@ -83,6 +85,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       { id: 'reports', label: 'Task Reports', icon: BarChart3 },
       { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
       { id: 'performance', label: 'Performance Management', icon: LineChart },
+      { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
       { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
       { id: 'activity', label: 'Team Activity', icon: Activity }
     ];
@@ -185,6 +188,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'reports' && <HeadReports data={data} />}
       {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}
+      {nav === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {nav === 'daily' && <HeadDaily data={data} />}
       {nav === 'activity' && <TeamActivityPage />}
       {nav === 'support' && <SupportDeskPage />}

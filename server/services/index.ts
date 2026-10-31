@@ -45,6 +45,7 @@ import { ChatRepository } from '../repositories/ChatRepository.js';
 import { DashboardRepository } from '../repositories/DashboardRepository.js';
 import { DashboardService } from './DashboardService.js';
 import { PerformanceService } from './PerformanceService.js';
+import { PerformersService } from './PerformersService.js';
 import { RecruitmentService } from './RecruitmentService.js';
 import { TrainingService } from './TrainingService.js';
 import { TelecallerService } from './TelecallerService.js';
@@ -58,6 +59,7 @@ import { SalesHeadRepository } from '../repositories/SalesHeadRepository.js';
 import { TrainingRepository } from '../repositories/TrainingRepository.js';
 import { RecruitmentRepository } from '../repositories/RecruitmentRepository.js';
 import { PerformanceRepository } from '../repositories/PerformanceRepository.js';
+import { PerformersRepository } from '../repositories/PerformersRepository.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
@@ -66,6 +68,7 @@ export function createServices(db: SupabaseClient) {
     employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
     performance: new PerformanceService(new PerformanceRepository(db)),
+    performers: new PerformersService(new PerformersRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
     training: new TrainingService(new TrainingRepository(db)),
     fieldVisit: new FieldVisitService(new FieldVisitRepository(db)),
