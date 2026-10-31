@@ -41,12 +41,20 @@ every section stays open for them. A migration backfill applies this to existing
 
 ## Sign-in at payment confirmation
 
-When Accounts confirms the payment (`POST /pipeline/customers/:id/accounts/payment-confirmed`) the API runs the same secure flow Accounts uses
-from **Client Logins** (`accountsCreateClientLogin`, method LINK): the e-mail comes from the customer record, the login gets a random password
-nobody knows, and the client receives the one-time set-password e-mail through the automation outbox. Nothing is unlocked by it. A failure
-(no valid e-mail, the sign-in service is down) never undoes the confirmation: the answer says why and Accounts retries from Client Logins.
-Set `AUTO_CLIENT_LOGIN=off` to turn the automatic step off. No password is stored or sent in the outbox, and the "Meta Verification completed"
-message follows Meta verification, not the login.
+Confirming the payment and returning the customer to Sales (`POST /pipeline/customers/:id/accounts/payment-confirmed`) does **not** make the
+client's login and does **not** send the "set your password" e-mail. Accounts creates the login from **Client Logins** (or the journey's
+"Create login" step; `accountsCreateClientLogin`, method LINK): the e-mail comes from the customer record, the login gets a random password
+nobody knows, and the client receives the one-time set-password e-mail then. The confirmation answer says `LATER` for the login.
+Set `AUTO_CLIENT_LOGIN=on` to make the login at confirmation as well (the previous behaviour). No password is stored or sent in the outbox, and the
+"Meta Verification completed" message follows Meta verification, not the login.
+
+## Where the e-mail links point
+
+Every link in a client e-mail starts at `APP_URL` (default `https://crm.amuwacorporation.com`): the sign-in page `/client/login` and the
+set-password link `/client/set-password?token_hash=...&type=recovery`. The set-password link goes straight to the CRM, not through Supabase's own
+redirect, so Supabase's *Site URL* / *Redirect URLs* settings no longer matter for it. The token is used only when the client presses
+"Save password", so an e-mail scanner that opens the link does not use it up. An expired or used link shows "This link has expired" with a
+way back to sign in ("Forgot password?").
 
 ## Section access
 

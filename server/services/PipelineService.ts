@@ -755,7 +755,9 @@ export class PipelineService {
    * the same secure flow Accounts uses from Client Logins (accountsCreateClientLogin: the e-mail on the customer record, a random password
    * nobody knows, a one-time set-password link e-mailed through the outbox). Nothing is unlocked by it: the dashboard shows the onboarding
    * journey and opens the other sections stage by stage (the database decides). Making the login never fails the confirmation: when it
-   * cannot be made the reason is returned and Accounts can create it from Client Logins. AUTO_CLIENT_LOGIN=off turns this off.
+   * cannot be made the reason is returned and Accounts can create it from Client Logins.
+   * By default NOTHING is made or e-mailed here: the client's login (and its "set your password" e-mail) is created when Accounts does it
+   * from Client Logins (or the journey's "Create login" step). Set AUTO_CLIENT_LOGIN=on to make it at confirmation as well.
    */
   async confirmAndReturn(actor: Actor, id: string, body: unknown): Promise<ClientLoginOutcome> {
     const customerId = parse(uuidSchema, id);
@@ -764,7 +766,8 @@ export class PipelineService {
   }
 
   private async provisionLoginAfterPayment(actor: Actor, customerId: string): Promise<ClientLoginOutcome> {
-    if (!hasServiceClient() || process.env.AUTO_CLIENT_LOGIN === 'off') {
+    if (process.env.AUTO_CLIENT_LOGIN !== 'on') return { status: 'LATER' };
+    if (!hasServiceClient()) {
       return { status: 'NOT_CREATED', detail: 'Client logins are not created automatically on this server. Create it from Client Logins.' };
     }
     try {

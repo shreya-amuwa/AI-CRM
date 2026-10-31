@@ -92,6 +92,15 @@ async function handleAuth(req, res, path, url) {
     res.writeHead(303, { location: `${to}#access_token=${token}&expires_at=${Math.floor(Date.now() / 1000) + 3600}&expires_in=3600&refresh_token=x&token_type=bearer&type=recovery` });
     return res.end();
   }
+  // verifyOtp({ token_hash, type }): the one-time token from the link is exchanged for a session (it works once)
+  if (path === '/verify' && req.method === 'POST') {
+    const id = recoveryTokens.get(body.token_hash);
+    recoveryTokens.delete(body.token_hash);
+    if (!id) return json(res, 403, { code: 403, error_code: 'otp_expired', msg: 'Email link is invalid or has expired' });
+    const { rows } = await db.query('select * from auth.users where id = $1', [id]);
+    const token = signJwt({ sub: id, role: 'authenticated', email: rows[0].email });
+    return json(res, 200, { access_token: token, token_type: 'bearer', expires_in: 3600, expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_token: 'x', user: userJson(rows[0]) });
+  }
   if (path === '/user' && req.method === 'PUT') {
     if (!claims?.sub) return json(res, 401, { msg: 'invalid JWT' });
     const { rows } = await db.query('select * from auth.users where id = $1', [claims.sub]);

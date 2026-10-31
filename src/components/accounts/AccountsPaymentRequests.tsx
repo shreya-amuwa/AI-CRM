@@ -164,7 +164,7 @@ const RequestDetail: React.FC<{
             // the login is made by the same flow as Client Logins; a failure never undoes the confirmation and can be retried there
             const login = clientLogin.status === 'CREATED'
               ? ` The client dashboard login (${clientLogin.email}) was created and the set-password e-mail is on its way.`
-              : clientLogin.status === 'EXISTS' ? '' : ` The client login was not created: ${clientLogin.detail ?? 'create it from Client Logins.'}`;
+              : clientLogin.status === 'EXISTS' ? '' : clientLogin.status === 'LATER' ? ' The client dashboard login is not made yet: create it from Client Logins and the client gets the set-password e-mail then.' : ` The client login was not created: ${clientLogin.detail ?? 'create it from Client Logins.'}`;
             onResolved(`${name} confirmed and returned to Sales for onboarding.${login}`);
           }}
         />

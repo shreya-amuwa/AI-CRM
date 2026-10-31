@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Lock } from 'lucide-react';
 import { getSupabase } from '../services/supabaseClient';
 import { ApiError } from '../lib/api/client';
@@ -18,12 +18,17 @@ export const SetPassword: React.FC<{ forced?: boolean; onChanged?: () => void }>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  // The e-mail link is /client/set-password?token_hash=...&type=recovery. Nothing is verified when the page opens (an e-mail scanner
+  // that only opens the link cannot use the one-time token up): it is exchanged for a session when the client saves their password.
+  const tokenHash = useRef<string | null>(forced ? null : new URLSearchParams(window.location.search).get('token_hash'));
+
   useEffect(() => {
     if (forced) return;
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const supabase = getSupabase();
     if (hash.get('error') || !supabase) { setState('expired'); return; }
-    // the Supabase client reads the link's sign-in from the address bar while it starts
+    if (tokenHash.current) { setState('ready'); return; }
+    // an older link: the Supabase client reads the link's sign-in from the address bar while it starts
     supabase.auth.getSession().then(({ data }) => setState(data.session ? 'ready' : 'expired'), () => setState('expired'));
   }, []);
 
@@ -34,6 +39,13 @@ export const SetPassword: React.FC<{ forced?: boolean; onChanged?: () => void }>
     if (password.length > 72) { setError('Use at most 72 characters.'); return; }
     if (password !== confirm) { setError('The two passwords are not the same.'); return; }
     setBusy(true);
+    if (tokenHash.current) {
+      const supabase = getSupabase();
+      const { error: verifyError } = supabase ? await supabase.auth.verifyOtp({ token_hash: tokenHash.current, type: 'recovery' }) : { error: new Error('no client') };
+      if (verifyError) { setBusy(false); setState('expired'); return; }
+      tokenHash.current = null; // the token is used up; from here the sign-in it made carries the request
+      window.history.replaceState(null, '', '/client/set-password');
+    }
     // the server puts the password on the sign-in (so a temporary one cannot be kept) and records that the client has chosen their own
     try {
       await clientApi.changePassword(password);
