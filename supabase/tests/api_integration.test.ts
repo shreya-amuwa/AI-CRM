@@ -8308,6 +8308,58 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(n === 3, 'work reports: the Operations Head was told about the package, the report and the resubmission (once each)', n);
 }
 
+// --- Secure messaging keys that are made automatically (no passphrase, no backup) and a new key on a device without the old one ---
+{
+  const depts = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows;
+  const team = (await db.query(`insert into public.teams (department_id, name, division) values ($1, 'AutoKeys', 'SALES') returning id`, [depts[0].id])).rows[0].id as string;
+  const mk = async (name: string) => {
+    const res = await api('sa', 'POST', '/users', { email: `ck.${name}@amuwa.com`, fullName: `CK ${name}`, password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: team });
+    check(res.status === 201, `automatic keys: ${name} account created`, res);
+    tokens.set(`ck_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  const ck1 = await mk('one');
+  await mk('two');
+  const pub = () => Buffer.concat([Buffer.from([4]), crypto.randomBytes(64)]).toString('base64');
+  const KEY1 = pub(), KEY2 = pub(), KEY3 = pub();
+
+  let r = await api(null, 'POST', '/chat/keys/register', { publicKey: KEY1 });
+  check(r.status === 401, 'automatic keys: sign-in is needed', r);
+  r = await api('ck_one', 'GET', '/chat/keys/status');
+  check(r.status === 200 && r.json.data.hasKey === false && r.json.data.hasBackup === false && r.json.data.backupVersion === null, 'automatic keys: a new account has no key and no backup', r.json);
+  r = await api('ck_one', 'POST', '/chat/keys/register', { publicKey: 'short' });
+  check(r.status === 422, 'automatic keys: a public key of the wrong length is refused', r);
+  r = await api('ck_one', 'POST', '/chat/keys/register', { publicKey: KEY1, backup: { v: 1 }, passphrase: 'x' });
+  check(r.status === 422, 'automatic keys: the request takes the public key and nothing else (no backup, no passphrase)', r);
+  r = await api('ck_one', 'POST', '/chat/keys/register', { publicKey: Buffer.from(Buffer.concat([Buffer.from([5]), crypto.randomBytes(64)])).toString('base64') });
+  check(r.status === 422, 'automatic keys: a key that is not an uncompressed P-256 point is refused', r);
+  r = await api('ck_one', 'POST', '/chat/keys/register', { publicKey: KEY1 });
+  check(r.status === 201 && r.json.data.version === 1 && r.json.data.created === true && /^[0-9a-f]{64}$/.test(r.json.data.fingerprint), 'automatic keys: the first key is registered as version 1, the fingerprint computed by the database', r);
+  r = await api('ck_one', 'POST', '/chat/keys/register', { publicKey: KEY1 });
+  check(r.status === 201 && r.json.data.version === 1 && r.json.data.created === false, 'automatic keys: the same key again changes nothing (a retry or a second tab)', r);
+  r = await api('ck_one', 'POST', '/chat/keys/register', { publicKey: KEY2 });
+  check(r.status === 409, 'automatic keys: a different key is refused: a login on another browser never replaces the key', r);
+  r = await api('ck_one', 'POST', '/chat/keys', { publicKey: KEY2, backup: { v: 1, kdf: 'PBKDF2-SHA256', iter: 600000, salt: 'AAAAAAAAAAAAAAAAAAAAAA==', iv: 'AAAAAAAAAAAAAAAA', ct: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' } });
+  check(r.status === 409, 'automatic keys: nor does the older passphrase set-up', r);
+  r = await api('ck_one', 'GET', '/chat/keys/status');
+  check(r.status === 200 && r.json.data.hasKey && r.json.data.version === 1 && r.json.data.publicKey === KEY1 && r.json.data.hasBackup === false, 'automatic keys: the account still has the first key and no backup', r.json);
+  r = await api('ck_two', 'GET', `/chat/keys/lookup?profileId=${ck1}&version=1`);
+  check(r.status === 200 && r.json.data.publicKey === KEY1 && r.json.data.retired === false, 'automatic keys: a colleague can look up the public key', r);
+  r = await api('ck_one', 'POST', '/chat/keys/rotate', { publicKey: KEY3 });
+  check(r.status === 200 && r.json.data.version === 2 && r.json.data.created === true, 'automatic keys: a new key on a device without the old one is version 2', r);
+  r = await api('ck_one', 'POST', '/chat/keys/rotate', { publicKey: KEY3 });
+  check(r.status === 200 && r.json.data.version === 2 && r.json.data.created === false, 'automatic keys: the same new key again changes nothing', r);
+  r = await api('ck_two', 'GET', `/chat/keys/lookup?profileId=${ck1}&version=1`);
+  check(r.status === 200 && r.json.data.retired === true, 'automatic keys: the first key is retired (colleagues are asked to accept the new one)', r);
+  const rows = (await db.query(`select key_version, retired_at is not null as retired from public.chat_user_keys where profile_id = $1 order by key_version`, [ck1])).rows;
+  check(rows.length === 2 && rows[0].retired && !rows[1].retired, 'automatic keys: one active key, the old one kept as retired', rows);
+  const audit = (await db.query(`select action, metadata from public.audit_logs where entity_id = $1 and action in ('CHAT_KEY_REGISTERED', 'CHAT_KEYS_RESET') order by created_at`, [ck1])).rows;
+  check(audit.length === 2 && audit[0].metadata.automatic === true && audit[1].metadata.passphrase === false && !JSON.stringify(audit).includes(KEY1), 'automatic keys: registering and the new key are audited once each (version and fingerprint, never the key)', audit);
+  check((await db.query(`select count(*)::int n from public.chat_key_backups where profile_id = $1`, [ck1])).rows[0].n === 0, 'automatic keys: no backup was ever made');
+  r = await api('cl1', 'POST', '/chat/keys/register', { publicKey: pub() });
+  check(r.status === 403 || r.status === 401, 'automatic keys: a client cannot register an employee key', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

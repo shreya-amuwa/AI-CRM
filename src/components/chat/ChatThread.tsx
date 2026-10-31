@@ -10,7 +10,7 @@ import { uploadToTicket } from '../../lib/uploadToTicket';
 import { looksLike } from '../../lib/checklistUpload';
 import { ChatModal } from './ChatBits';
 import { EmojiPicker } from './EmojiPicker';
-import { SecureSetupDialog, SecurityDialog, type SecureMode } from './SecureDialogs';
+import { NewKeyDialog, SecureSetupDialog, SecureStateNotice, SecurityDialog, type SecureDialogMode } from './SecureDialogs';
 import './chat.css';
 
 export const CHAT_MAX_BODY = 4000;
@@ -174,7 +174,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
   // secure messaging (direct messages and groups)
   const secure = useSecureChat();
   const secureState = useSecureSnapshot(secure);
-  const [secureDialog, setSecureDialog] = useState<SecureMode | null>(null);
+  const [secureDialog, setSecureDialog] = useState<SecureDialogMode | null>(null);
   const [securityOpen, setSecurityOpen] = useState(false);
   const [peers, setPeers] = useState<PeerInfo[]>([]);
   const body = useRef<HTMLDivElement>(null);
@@ -297,8 +297,9 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
   const sending = pending.some(p => p.status === 'sending');
   const busy = uploading.length > 0;
   const secureBlock = secureKind && c?.canWrite
-    ? secureState.status === 'setup' ? 'Turn on secure messaging to send messages in this chat.'
-      : secureState.status === 'locked' ? 'Unlock secure messaging to send messages in this chat.'
+    ? secureState.status === 'preparing' ? 'Secure messaging is being set up. You can send in a moment.'
+      : secureState.status === 'setup' ? 'Secure messaging is not available in this browser yet. See the message above.'
+      : secureState.status === 'locked' ? (secureState.recovery === 'passphrase' ? 'Unlock secure messaging to send messages in this chat.' : 'Set up this device for secure messaging to send messages in this chat.')
       : secureState.status === 'ready' && changedPeers.length > 0 ? 'Review the changed security key before you send a message.'
       : secureState.status === 'ready' && missingPeers.length > 0 ? `${missingPeers.map(p => p.name).join(', ')} ${missingPeers.length === 1 ? 'has' : 'have'} not turned on secure messaging yet. You can send as soon as ${missingPeers.length === 1 ? 'they do' : 'they have'}: ask them to open Chat once.`
       : secureState.status === 'loading' || secureState.status === 'error' ? 'Secure messaging is not available right now.'
@@ -423,26 +424,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
         <div className="ch-head"><button type="button" className="ch-icon" onClick={onBack} aria-label="Back to conversations"><ArrowLeft size={18} /></button></div>
       ) : null}
 
-      {secureKind && !loading && (
-        secureState.status === 'ready' ? (
-          <div className="ch-secure-bar" data-testid="secure-bar" data-state="ready">
-            <ShieldCheck size={15} aria-hidden /> <span>End-to-end encrypted. Only the people in this chat can read these messages.</span>
-            <button type="button" className="ch-link" onClick={() => setSecurityOpen(true)} data-testid="open-security">Security</button>
-          </div>
-        ) : secureState.status === 'setup' ? (
-          <div className="ch-secure-bar warn" role="status" data-testid="secure-bar" data-state="setup">
-            <Lock size={15} aria-hidden /> <span>Secure messaging is not turned on for your account yet.</span>
-            <button type="button" className="ch-link" onClick={() => setSecureDialog('setup')} data-testid="secure-turn-on">Turn on</button>
-          </div>
-        ) : secureState.status === 'locked' ? (
-          <div className="ch-secure-bar warn" role="status" data-testid="secure-bar" data-state="locked">
-            <Lock size={15} aria-hidden /> <span>Secure messaging is locked on this device. Unlock it to read and send messages.</span>
-            <button type="button" className="ch-link" onClick={() => setSecureDialog('unlock')} data-testid="secure-unlock">Unlock</button>
-          </div>
-        ) : secureState.status === 'error' ? (
-          <div className="ch-secure-bar bad" role="alert" data-testid="secure-bar" data-state="error"><ShieldAlert size={15} aria-hidden /> <span>{secureState.error || 'Secure messaging could not start.'}</span></div>
-        ) : null
-      )}
+      {secureKind && !loading && secure && <SecureStateNotice client={secure} variant="thread" onDialog={setSecureDialog} onSecurity={() => setSecurityOpen(true)} />}
       {secureKind && changedPeers.length > 0 && (
         <div className="ch-secure-bar bad" role="alert" data-testid="key-changed-bar">
           <ShieldAlert size={15} aria-hidden /> <span>The security key of {changedPeers.map(p => p.name).join(', ')} changed. Check it before you send anything.</span>
@@ -584,7 +566,8 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
           {deleteError && <p className="ch-note" role="alert" style={{ color: 'var(--ch-danger)' }}>{deleteError}</p>}
         </ChatModal>
       )}
-      {secureDialog && secure && <SecureSetupDialog client={secure} mode={secureDialog} onClose={() => setSecureDialog(null)} onSwitch={setSecureDialog} />}
+      {secureDialog === 'new-key' && secure && <NewKeyDialog client={secure} onClose={() => setSecureDialog(null)} />}
+      {secureDialog && secureDialog !== 'new-key' && secure && <SecureSetupDialog client={secure} mode={secureDialog} onClose={() => setSecureDialog(null)} onSwitch={setSecureDialog} />}
       {securityOpen && secure && c && <SecurityDialog client={secure} conversationId={c.id} onClose={() => setSecurityOpen(false)} onChanged={refreshPeers} />}
     </section>
   );

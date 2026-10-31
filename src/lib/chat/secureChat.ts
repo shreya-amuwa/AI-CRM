@@ -10,6 +10,10 @@ import type { KeyStore, PeerPin, StoredKey } from './keyStore';
 /** What the secure-messaging client needs from the server (the API in the app, a stand-in in the tests). */
 export interface SecureChatApi {
   keyStatus(): Promise<ChatKeyStatus>;
+  /** The automatic first key: the public key only. Repeating it with the same key is safe; a different key is refused (CONFLICT). */
+  keyRegister(publicKey: string): Promise<{ version: number; fingerprint: string }>;
+  /** A new key on this device when the person chose to go on without the old one (no passphrase). */
+  keyRotate(publicKey: string): Promise<{ version: number; fingerprint: string }>;
   keySetup(publicKey: string, backup: ChatKeyBackupBlob): Promise<{ version: number; fingerprint: string }>;
   keyReset(publicKey: string, backup: ChatKeyBackupBlob): Promise<{ version: number; fingerprint: string }>;
   keyBackupGet(): Promise<ChatKeyBackup | null>;
@@ -18,10 +22,22 @@ export interface SecureChatApi {
   keyLookup(profileId: string, version: number): Promise<ChatPublicKey | null>;
 }
 
-/** not set up yet | set up elsewhere, locked here | ready */
-export type SecureStatus = 'loading' | 'setup' | 'locked' | 'ready' | 'error';
+/**
+ * loading | preparing (the key is being made and published, nothing to do) | ready |
+ * locked (a key exists for this account but this device does not hold it) |
+ * setup (no key could be made automatically: this browser cannot keep keys, or the server did not answer; see `setupReason`) | error
+ */
+export type SecureStatus = 'loading' | 'preparing' | 'setup' | 'locked' | 'ready' | 'error';
+/** What opens a locked device: the recovery passphrase (an older account with a backup), or a new key made here after the person agrees. */
+export type SecureRecovery = 'passphrase' | 'new-key';
 export interface SecureSnapshot {
   status: SecureStatus;
+  /** For `locked`: how this device can get back in. */
+  recovery: SecureRecovery | null;
+  /** For `setup`: why it was not done by itself. */
+  setupReason: 'storage' | 'failed' | null;
+  /** A recovery backup (protected by a passphrase) of the CURRENT key exists on the server. */
+  hasBackup: boolean;
   error: string;
   version: number | null;
   fingerprint: string | null;
@@ -50,6 +66,7 @@ export interface PeerInfo {
 }
 
 const peerCacheKey = (id: string, v: number) => `${id}:${v}`;
+const publicRawOf = async (key: CryptoKey) => b64(new Uint8Array(await crypto.subtle.exportKey('raw', key)));
 
 /**
  * The browser side of the end-to-end encrypted chats. It owns the person's keys (via the key store), turns a message into an envelope for
@@ -65,7 +82,7 @@ export class SecureChatClient {
   private myPublicRaw = new Map<number, string>();
 
   constructor(private readonly myId: string, private readonly api: SecureChatApi, private readonly store: KeyStore) {
-    this.snap = { status: 'loading', error: '', version: null, fingerprint: null, persistent: store.persistent, revision: 0 };
+    this.snap = { status: 'loading', recovery: null, setupReason: null, hasBackup: false, error: '', version: null, fingerprint: null, persistent: store.persistent, revision: 0 };
   }
 
   // ------------------------------------------------------------------------------------------------------------------------ state
@@ -76,22 +93,123 @@ export class SecureChatClient {
     this.listeners.forEach(l => l());
   }
 
-  /** Looks at the server and at this device and decides: set up, locked or ready. */
+  /**
+   * Looks at the server and at this device and decides. A person with no key yet gets one made here without being asked (see provision);
+   * a person whose key exists but is not on this device is "locked"; a person whose key is on this device is "ready".
+   */
   async init(): Promise<void> {
     try {
-      const [status, local] = await Promise.all([this.api.keyStatus(), this.store.keys()]);
-      this.keys = new Map(local.map(k => [k.version, k]));
-      await this.indexOwnPublicKeys();
-      this.activeVersion = status.version;
-      if (!status.hasKey) return this.set({ status: 'setup', error: '', version: null, fingerprint: null });
-      const mine = status.version !== null ? this.keys.get(status.version) : undefined;
-      if (mine && status.publicKey && this.myPublicRaw.get(mine.version) === status.publicKey) {
-        return this.set({ status: 'ready', error: '', version: status.version, fingerprint: status.fingerprint });
+      const status = await this.api.keyStatus();
+      if (!status.hasKey && this.store.persistent) {
+        this.set({ status: 'preparing', error: '' });
+        try {
+          await this.provision();
+        } catch (e) {
+          // the server did not take the key (or did not answer): the person can try again, or choose a passphrase set-up
+          this.set({ status: 'setup', setupReason: 'failed', recovery: null, error: e instanceof Error ? e.message : 'Secure messaging could not be prepared.' });
+        }
+        return;
       }
-      this.set({ status: 'locked', error: '', version: status.version, fingerprint: status.fingerprint });
+      await this.evaluate(status);
     } catch (e) {
       this.set({ status: 'error', error: e instanceof Error ? e.message : 'Secure messaging could not start.' });
     }
+  }
+
+  /** Decides from what the server says and what this device holds. Never changes a key. */
+  private async evaluate(status: ChatKeyStatus): Promise<void> {
+    let local = await this.store.keys();
+    // a key made here whose publication was cut short: if the server holds exactly that key, it is this device's key for that version
+    const pend = await this.store.pending();
+    if (pend && status.hasKey && status.version !== null && !local.some(k => k.version === status.version) && (await publicRawOf(pend.publicKey)) === status.publicKey) {
+      await this.store.promote(status.version);
+      local = await this.store.keys();
+    }
+    this.keys = new Map(local.map(k => [k.version, k]));
+    await this.indexOwnPublicKeys();
+    this.activeVersion = status.version;
+    const hasBackup = status.hasBackup && (status.backupVersion === undefined || status.backupVersion === null || status.backupVersion === status.version);
+    if (!status.hasKey) return this.set({ status: 'setup', setupReason: 'storage', recovery: null, hasBackup: false, error: '', version: null, fingerprint: null });
+    const mine = status.version !== null ? this.keys.get(status.version) : undefined;
+    if (mine && status.publicKey && this.myPublicRaw.get(mine.version) === status.publicKey) {
+      return this.set({ status: 'ready', setupReason: null, recovery: null, hasBackup, error: '', version: status.version, fingerprint: status.fingerprint });
+    }
+    this.set({ status: 'locked', setupReason: null, recovery: hasBackup ? 'passphrase' : 'new-key', hasBackup, error: '', version: status.version, fingerprint: status.fingerprint });
+  }
+
+  /** Runs one thing at a time for this person across the tabs of this browser (Web Locks); where they do not exist the steps below are safe to repeat. */
+  private async exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    if (!locks?.request) return fn();
+    return locks.request(`amuwa-chat-keys:${this.myId}`, fn) as Promise<T>;
+  }
+
+  /**
+   * The first key, made without a passphrase. The key pair is made in this browser and kept as a NON-extractable key in IndexedDB; only the
+   * public half is sent. Steps that make it safe to repeat: the key is first stored as "pending" (created only if there is none), then
+   * published (the server accepts the same key twice and refuses a different one), then it becomes the key of that version. A second tab, a
+   * reload half way and a retry all end with one key; an existing key of the account is never replaced.
+   */
+  private async provision(): Promise<void> {
+    await this.exclusive(async () => {
+      const status = await this.api.keyStatus(); // somebody else (another tab, another device) may have done it while this waited
+      if (status.hasKey) return this.evaluate(status);
+      let key = await this.store.pending();
+      if (!key) {
+        const { pkcs8 } = await generateIdentity();
+        const id = await identityFromPkcs8(pkcs8);
+        pkcs8.fill(0);
+        const fresh: StoredKey = { version: 0, privateKey: id.privateKey, publicKey: id.publicKey };
+        key = (await this.store.putPendingIfAbsent(fresh)) ? fresh : await this.store.pending();
+      }
+      if (!key) throw new Error('This browser could not keep the key.');
+      await this.publish(key, 'register');
+    });
+  }
+
+  private async publish(key: StoredKey, how: 'register' | 'rotate'): Promise<void> {
+    const raw = await publicRawOf(key.publicKey);
+    let done: { version: number; fingerprint: string };
+    try {
+      done = how === 'register' ? await this.api.keyRegister(raw) : await this.api.keyRotate(raw);
+    } catch (e) {
+      if ((e as { code?: string }).code === 'CONFLICT') { // the account got a key from another device first: this one is of no use
+        await this.store.dropPending();
+        return this.evaluate(await this.api.keyStatus());
+      }
+      throw e;
+    }
+    // (a second tab may have promoted the same pending key a moment ago: then it is already the key of that version)
+    const stored = (await this.store.promote(done.version)) ?? (await this.store.keys()).find(k => k.version === done.version) ?? null;
+    if (!stored) throw new Error('This browser lost the key while it was being published. Reload the page.');
+    this.keys.set(done.version, stored);
+    await this.indexOwnPublicKeys();
+    this.activeVersion = done.version;
+    this.opened.clear();
+    this.set({ status: 'ready', setupReason: null, recovery: null, hasBackup: false, error: '', version: done.version, fingerprint: done.fingerprint });
+  }
+
+  /** Try the automatic set-up again (after it failed). */
+  async retryAutomatic(): Promise<void> { await this.init(); }
+
+  /**
+   * A locked device, no backup: go on here with a NEW key. It is only done when the person asks for it: the old key stays with the device
+   * that holds it, colleagues are asked to accept the new one, and messages sealed for the old key cannot be read on this device.
+   */
+  async continueWithNewKey(): Promise<void> {
+    if (!this.store.persistent) throw new Error('This browser cannot keep keys. Use a normal browser window.');
+    await this.exclusive(async () => {
+      let key = await this.store.pending();
+      if (!key) {
+        const { pkcs8 } = await generateIdentity();
+        const id = await identityFromPkcs8(pkcs8);
+        pkcs8.fill(0);
+        const fresh: StoredKey = { version: 0, privateKey: id.privateKey, publicKey: id.publicKey };
+        key = (await this.store.putPendingIfAbsent(fresh)) ? fresh : await this.store.pending();
+      }
+      if (!key) throw new Error('This browser could not keep the key.');
+      await this.publish(key, 'rotate');
+    });
   }
 
   private async indexOwnPublicKeys() {
@@ -128,7 +246,7 @@ export class SecureChatClient {
     if (done.version !== 1) await this.api.keyBackupSet(await encryptKeyring(passphrase, await this.ringWith({ version: done.version, pkcs8 }, null)), done.version);
     await this.keep(pkcs8, done.version);
     this.activeVersion = done.version;
-    this.set({ status: 'ready', error: '', version: done.version, fingerprint: done.fingerprint });
+    this.set({ status: 'ready', recovery: null, setupReason: null, hasBackup: true, error: '', version: done.version, fingerprint: done.fingerprint });
   }
 
   /** Another device (or after clearing site data): the passphrase opens the backup and the keys are kept here, non-extractable. */
@@ -161,7 +279,7 @@ export class SecureChatClient {
     await this.keep(pkcs8, done.version);
     this.activeVersion = done.version;
     this.opened.clear();
-    this.set({ status: 'ready', error: '', version: done.version, fingerprint: done.fingerprint });
+    this.set({ status: 'ready', recovery: null, setupReason: null, hasBackup: true, error: '', version: done.version, fingerprint: done.fingerprint });
   }
 
   /** A new recovery passphrase: the current one opens the backup, the new one seals it again. */

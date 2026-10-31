@@ -222,6 +222,7 @@ button.ch-person:hover { background: var(--ch-surface); }
 .ch-legacy { display: block; margin-top: 2px; font-size: 11px; color: var(--ch-muted); }
 
 .ch-secure-bar { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-size: 12.5px; background: #e7f5ef; color: #14532d; border-bottom: 1px solid #c8e6d6; flex: none; }
+.ch-secure-bar.quiet { background: transparent; border-bottom: 1px solid var(--ch-border); color: var(--ch-muted); padding: 3px 14px; font-size: 12px; }
 .ch-secure-bar.warn { background: #fff7e0; color: #7a4b00; border-bottom-color: #f2dba0; }
 .ch-secure-bar.bad { background: #fde8e8; color: #7f1d1d; border-bottom-color: #f5b5b5; }
 .ch-secure-bar span { flex: 1; min-width: 0; }

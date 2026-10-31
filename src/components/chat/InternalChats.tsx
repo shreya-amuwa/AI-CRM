@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Info, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { Info, Loader2, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { ChatConversation } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
 import { chatApi, staffTransport } from '../../lib/chat/api';
 import { useChatLive } from '../../lib/chat/useChatLive';
-import { SecureChatProvider, useSecureChat, useSecureSnapshot } from '../../lib/chat/useSecureChat';
-import { SecureSetupDialog, type SecureMode } from './SecureDialogs';
+import { SecureChatProvider, useHasSecureChatProvider, useSecureChat, useSecureSnapshot } from '../../lib/chat/useSecureChat';
+import { NewKeyDialog, SecureSetupDialog, SecureStateNotice, SecuritySettingsDialog, type SecureDialogMode } from './SecureDialogs';
 import { Avatar, ConversationItem, Split, previewOf } from './ChatBits';
 import { ChatThread } from './ChatThread';
 import { GroupInfoDialog, NewChatDialog } from './ChatDialogs';
@@ -14,7 +14,10 @@ import { GroupInfoDialog, NewChatDialog } from './ChatDialogs';
 /** Direct messages and groups between employees: end-to-end encrypted (the keys live in this browser; see lib/chat/secureChat.ts). */
 export const InternalChats: React.FC<{ active: boolean; onUnreadChange: () => void; initialId?: string | null }> = props => {
   const { profile } = useAuth();
+  const provided = useHasSecureChatProvider();
   if (!profile?.id) return null;
+  // the app mounts one provider for the signed-in employee; this one is only for a screen shown without it
+  if (provided) return <InternalChatsInner {...props} />;
   return <SecureChatProvider userId={profile.id}><InternalChatsInner {...props} /></SecureChatProvider>;
 };
 
@@ -27,8 +30,9 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
   const [creating, setCreating] = useState(false);
   const [info, setInfo] = useState(false);
   const secure = useSecureChat();
-  const secureState = useSecureSnapshot(secure);
-  const [secureDialog, setSecureDialog] = useState<SecureMode | null>(null);
+  const [secureDialog, setSecureDialog] = useState<SecureDialogMode | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const secureReady = useSecureSnapshot(secure).status === 'ready';
 
   const load = useCallback(() => {
     chatApi.internal(term.trim() || undefined).then(
@@ -56,14 +60,10 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
 
   const list = (
     <>
-      {secure && (secureState.status === 'setup' || secureState.status === 'locked') && (
-        <div className="ch-secure-bar warn" role="status" data-testid="secure-list-bar" data-state={secureState.status}>
-          <span>{secureState.status === 'setup' ? 'Turn on secure messaging: your chats with colleagues are end-to-end encrypted.' : 'Secure messaging is locked on this device.'}</span>
-          <button type="button" className="ch-link" onClick={() => setSecureDialog(secureState.status === 'setup' ? 'setup' : 'unlock')} data-testid="secure-list-action">{secureState.status === 'setup' ? 'Turn on' : 'Unlock'}</button>
-        </div>
-      )}
+      {secure && <SecureStateNotice client={secure} variant="list" onDialog={setSecureDialog} />}
       <div className="ch-search">
         <input type="search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
+        {secureReady && <button type="button" className="ch-icon" onClick={() => setSettingsOpen(true)} aria-label="Secure messaging settings" title="Secure messaging settings" data-testid="secure-settings-open"><ShieldCheck size={18} aria-hidden /></button>}
         <button type="button" className="ch-btn primary" onClick={() => setCreating(true)}><Plus size={14} aria-hidden /> New</button>
       </div>
       {error ? (
@@ -111,7 +111,9 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
           <div className="ch-pane-empty" style={{ flex: 1 }} role="alert"><div><p><b>This chat is not available</b></p><p>You may have been removed from it.</p><button type="button" className="ch-btn" onClick={() => setSelected(null)}>Back to chats</button></div></div>
         )}
       />
-      {secureDialog && secure && <SecureSetupDialog client={secure} mode={secureDialog} onClose={() => setSecureDialog(null)} onSwitch={setSecureDialog} />}
+      {settingsOpen && secure && <SecuritySettingsDialog client={secure} onClose={() => setSettingsOpen(false)} />}
+      {secureDialog === 'new-key' && secure && <NewKeyDialog client={secure} onClose={() => setSecureDialog(null)} />}
+      {secureDialog && secureDialog !== 'new-key' && secure && <SecureSetupDialog client={secure} mode={secureDialog} onClose={() => setSecureDialog(null)} onSwitch={setSecureDialog} />}
       {creating && <NewChatDialog onClose={() => setCreating(false)} onOpened={open} />}
       {info && current && current.kind === 'GROUP' && (
         <GroupInfoDialog conversation={current} onClose={() => setInfo(false)}

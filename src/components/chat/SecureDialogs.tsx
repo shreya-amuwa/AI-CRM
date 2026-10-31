@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Loader2, Lock, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { errorMessage } from '../../lib/api/client';
 import { MIN_PASSPHRASE_LENGTH, formatFingerprint, passphraseProblem } from '../../lib/chat/e2ee';
 import type { PeerInfo, SecureChatClient } from '../../lib/chat/secureChat';
@@ -7,11 +7,89 @@ import { useSecureSnapshot } from '../../lib/chat/useSecureChat';
 import { ChatModal } from './ChatBits';
 
 export type SecureMode = 'setup' | 'unlock' | 'reset';
+/** The dialogs the notice can open: the three above (a recovery passphrase) and the step for a new device that has no backup. */
+export type SecureDialogMode = SecureMode | 'new-key';
 
 const TITLE: Record<SecureMode, string> = { setup: 'Turn on secure messaging', unlock: 'Unlock secure messaging', reset: 'Reset secure messaging' };
 
 /**
- * Setting up, unlocking and resetting secure messaging. The recovery passphrase is used in this browser only: it encrypts (or opens) the
+ * A device that does not hold the person's key and has no recovery backup (an account whose key was made automatically, now on another
+ * browser or after the site data was cleared). Going on here makes a NEW key; that is only done after the person says so.
+ */
+export const NewKeyDialog: React.FC<{ client: SecureChatClient; onClose: () => void }> = ({ client, onClose }) => {
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const go = async () => {
+    setBusy(true); setError('');
+    try { await client.continueWithNewKey(); onClose(); } catch (err) { setError(errorMessage(err)); setBusy(false); }
+  };
+  return (
+    <ChatModal title="Use secure messaging on this device" onClose={busy ? () => undefined : onClose}
+      footer={<>
+        <button type="button" className="ch-btn" onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="button" className="ch-btn primary" onClick={() => void go()} disabled={busy || !confirm} data-testid="secure-new-key-go">
+          {busy ? <Loader2 size={14} className="ch-spin" aria-hidden /> : null} Continue on this device
+        </button>
+      </>}>
+      <p className="ch-note">Your secure messaging key is on another device or browser, and it cannot be copied from there. You can go on here with a <b>new</b> key.</p>
+      <p className="ch-note warn">Your colleagues will be asked to accept your new key. Messages that were sent to your old key stay readable only on the device that holds it; they cannot be read here. If you still use that device, you may prefer to keep working there.</p>
+      <label style={{ display: 'flex', gap: 8, fontSize: 13, alignItems: 'flex-start' }}>
+        <input type="checkbox" checked={confirm} onChange={e => setConfirm(e.target.checked)} data-testid="secure-new-key-confirm" /> I understand that earlier messages will not be readable on this device.
+      </label>
+      {error && <p className="ch-note" role="alert" style={{ color: 'var(--ch-danger)' }}>{error}</p>}
+    </ChatModal>
+  );
+};
+
+/**
+ * What the person is told about secure messaging, in one place. Normally almost nothing: it sets itself up, and a quiet "End-to-end encrypted"
+ * shows in a conversation. A bar with a button appears only when the person has to do something (a locked device, a browser that cannot keep keys).
+ */
+export const SecureStateNotice: React.FC<{ client: SecureChatClient; onDialog: (m: SecureDialogMode) => void; onSecurity?: () => void; variant: 'thread' | 'list' }> = ({ client, onDialog, onSecurity, variant }) => {
+  const snap = useSecureSnapshot(client);
+  const list = variant === 'list';
+  const id = list ? 'secure-list-bar' : 'secure-bar';
+  if (snap.status === 'loading') return null;
+  if (snap.status === 'preparing') {
+    return <div className="ch-secure-bar quiet" role="status" data-testid={id} data-state="preparing"><Loader2 size={14} className="ch-spin" aria-hidden /> <span>Setting up secure messaging...</span></div>;
+  }
+  if (snap.status === 'ready') {
+    if (list || !onSecurity) return null;
+    return (
+      <div className="ch-secure-bar quiet" data-testid="secure-bar" data-state="ready">
+        <ShieldCheck size={14} aria-hidden /> <span>End-to-end encrypted</span>
+        <button type="button" className="ch-link" onClick={onSecurity} data-testid="open-security">Security</button>
+      </div>
+    );
+  }
+  if (snap.status === 'setup') {
+    return (
+      <div className="ch-secure-bar warn" role="status" data-testid={id} data-state="setup">
+        <Lock size={15} aria-hidden />
+        <span>{snap.setupReason === 'storage'
+          ? 'This browser cannot keep secure messaging keys (a private window?). Open Chat in a normal window, or turn it on with a recovery passphrase.'
+          : 'Secure messaging could not be set up automatically.'}</span>
+        {snap.setupReason !== 'storage' && <button type="button" className="ch-link" onClick={() => void client.retryAutomatic()} data-testid="secure-retry">Try again</button>}
+        <button type="button" className="ch-link" onClick={() => onDialog('setup')} data-testid={list ? 'secure-list-action' : 'secure-turn-on'}>Use a recovery passphrase</button>
+      </div>
+    );
+  }
+  if (snap.status === 'locked') {
+    const passphrase = snap.recovery === 'passphrase';
+    return (
+      <div className="ch-secure-bar warn" role="status" data-testid={id} data-state="locked" data-recovery={snap.recovery ?? ''}>
+        <Lock size={15} aria-hidden />
+        <span>{passphrase ? 'Secure messaging is locked on this device. Unlock it to read and send messages.' : 'This device does not have your secure messaging key yet.'}</span>
+        <button type="button" className="ch-link" onClick={() => onDialog(passphrase ? 'unlock' : 'new-key')} data-testid={list ? 'secure-list-action' : 'secure-unlock'}>{passphrase ? 'Unlock' : 'Set up this device'}</button>
+      </div>
+    );
+  }
+  return <div className="ch-secure-bar bad" role="alert" data-testid={id} data-state="error"><ShieldAlert size={15} aria-hidden /> <span>{snap.error || 'Secure messaging could not start.'}</span></div>;
+};
+
+/**
+ * Setting up, unlocking and resetting secure messaging with a recovery passphrase (older accounts, or a browser that cannot keep keys). The recovery passphrase is used in this browser only: it encrypts (or opens) the
  * backup of the key. It is never sent anywhere, and nobody - not Amuwa's administrators either - can recover it for you.
  */
 export const SecureSetupDialog: React.FC<{ client: SecureChatClient; mode: SecureMode; onClose: () => void; onSwitch?: (m: SecureMode) => void }> = ({ client, mode, onClose, onSwitch }) => {
@@ -86,6 +164,7 @@ const SelfSettings: React.FC<{ client: SecureChatClient; onReset: () => void }> 
   const [next, setNext] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const snap = useSecureSnapshot(client);
   const change = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setMsg(null);
@@ -97,10 +176,12 @@ const SelfSettings: React.FC<{ client: SecureChatClient; onReset: () => void }> 
     <div className="ch-note" data-testid="secure-settings" style={{ borderTop: '1px solid var(--ch-border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
       <b>Your secure messaging</b>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <button type="button" className="ch-link" style={{ marginLeft: 0 }} onClick={() => setOpen(o => !o)}>Change recovery passphrase</button>
-        <button type="button" className="ch-link" style={{ marginLeft: 0 }} onClick={onReset} data-testid="secure-reset">Reset secure messaging</button>
+        {snap.hasBackup && <button type="button" className="ch-link" style={{ marginLeft: 0 }} onClick={() => setOpen(o => !o)}>Change recovery passphrase</button>}
+        <button type="button" className="ch-link" style={{ marginLeft: 0 }} onClick={onReset} data-testid="secure-reset">{snap.hasBackup ? 'Reset secure messaging' : 'Make a new key with a recovery passphrase'}</button>
         <button type="button" className="ch-link" style={{ marginLeft: 0 }} data-testid="secure-remove-device"
-          onClick={() => { if (window.confirm('Remove your secure messaging keys from this device? You will need your recovery passphrase to read messages here again.')) void client.removeFromDevice(); }}>Remove keys from this device</button>
+          onClick={() => { if (window.confirm(snap.hasBackup
+            ? 'Remove your secure messaging keys from this device? You will need your recovery passphrase to read messages here again.'
+            : 'Remove your secure messaging keys from this device? You have no recovery passphrase, so the messages you have received cannot be read again on this device, and nobody can restore them. Your colleagues will be asked to accept a new key if you set secure messaging up here again.')) void client.removeFromDevice(); }}>Remove keys from this device</button>
       </div>
       {open && (
         <form onSubmit={e => void change(e)} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -111,6 +192,25 @@ const SelfSettings: React.FC<{ client: SecureChatClient; onReset: () => void }> 
       )}
       {msg && <span role={msg.ok ? 'status' : 'alert'} style={{ color: msg.ok ? '#14532d' : 'var(--ch-danger)' }}>{msg.text}</span>}
     </div>
+  );
+};
+
+/**
+ * The person's own secure messaging, outside any conversation: their fingerprint, a recovery passphrase (so another device can unlock), taking the
+ * keys off this device. A recovery passphrase makes a NEW key (the key on this device cannot be read out to be backed up), so colleagues are asked
+ * to accept it; that is said before it is done.
+ */
+export const SecuritySettingsDialog: React.FC<{ client: SecureChatClient; onClose: () => void }> = ({ client, onClose }) => {
+  const snap = useSecureSnapshot(client);
+  const [reset, setReset] = useState(false);
+  return (
+    <ChatModal title="Your secure messaging" onClose={onClose} footer={<button type="button" className="ch-btn primary" onClick={onClose}>Done</button>}>
+      <p className="ch-note"><ShieldCheck size={14} aria-hidden style={{ verticalAlign: '-2px' }} /> Your messages to colleagues are end-to-end encrypted. The key was made on this device when you signed in; only its public half is shared.</p>
+      {snap.fingerprint && (<div><p className="ch-note"><b>Your fingerprint</b></p><div className="ch-fp" data-testid="my-fingerprint">{formatFingerprint(snap.fingerprint)}</div></div>)}
+      {!snap.hasBackup && snap.status === 'ready' && <p className="ch-note">To read your messages on another computer or phone you need a recovery passphrase. It starts a new key, so colleagues are asked to accept it.</p>}
+      {snap.status === 'ready' && <SelfSettings client={client} onReset={() => setReset(true)} />}
+      {reset && <SecureSetupDialog client={client} mode="reset" onClose={() => setReset(false)} />}
+    </ChatModal>
   );
 };
 

@@ -200,3 +200,15 @@ lead); `POST /support/tickets/:id/client-reply` (Support).
 
 Notes: a client and a staff member signing in on the same browser share Supabase's saved session, so signing in as one
 replaces the other in that browser. Add-on services appear in **My Services** only after the add-on is completed.
+
+
+## Phone layout of the chat
+
+The chat fills what is visible: `src/lib/chat/useFillViewport.ts` (a callback ref) sets the height of the chat card from the **visual viewport**
+(`fitHeight` in `viewportFit.ts`), less the fixed tab bar. It re-measures per animation frame on resize, rotation, address-bar changes, focus
+and visual-viewport scroll, and when what sits above the chat changes. While the on-screen keyboard is open (`visualViewport` shorter than the
+window, or a focused text box on a touch screen) it sets `data-kbd="1"` on the page: the tab bar steps aside and the message box stays above the
+keyboard; on a very short window (`data-vshort="1"`) the title bar and channel tabs make room too. The chat page itself does not scroll
+(`html.cd-chat-open`), the messages scroll inside, and a reader at the bottom stays at the bottom when the area changes height.
+Touch screens get 16px message text (iOS does not zoom) and 44px buttons. Tests: `viewport_fit.test.ts`, `ui_mobile_chat.test.mjs` (8 window sizes,
+keyboard, landscape).

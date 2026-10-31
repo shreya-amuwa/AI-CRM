@@ -10,6 +10,7 @@ import {
   chatKeyBackupSetSchema,
   chatKeyLookupQuerySchema,
   chatKeySetupSchema,
+  chatKeyRegisterSchema,
   chatReadSchema,
   chatReviewQuerySchema,
   chatSearchQuerySchema,
@@ -108,6 +109,8 @@ export class ChatService {
   // ---------------------------------------------------------------- keys for end-to-end encryption
   keyStatus() { return this.repo.keyStatus(); }
   keySetup(body: unknown) { const i = parse(chatKeySetupSchema, body); return this.repo.keySetup(i.publicKey, i.backup); }
+  keyRegister(body: unknown) { return this.repo.keyRegister(parse(chatKeyRegisterSchema, body).publicKey); }
+  keyRotate(body: unknown) { return this.repo.keyRotate(parse(chatKeyRegisterSchema, body).publicKey); }
   keyReset(body: unknown) { const i = parse(chatKeySetupSchema, body); return this.repo.keyReset(i.publicKey, i.backup); }
   keyBackupGet() { return this.repo.keyBackupGet(); }
   async keyBackupSet(body: unknown): Promise<null> { const i = parse(chatKeyBackupSetSchema, body); await this.repo.keyBackupSet(i.backup, i.version); return null; }

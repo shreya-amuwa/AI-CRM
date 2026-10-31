@@ -113,6 +113,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/chat/keys/status', handler: chat.keyStatus },
   { method: 'POST', path: '/chat/keys', handler: chat.keySetup, options: S },
   { method: 'POST', path: '/chat/keys/reset', handler: chat.keyReset, options: S },
+  { method: 'POST', path: '/chat/keys/register', handler: chat.keyRegister, options: S },
+  { method: 'POST', path: '/chat/keys/rotate', handler: chat.keyRotate, options: S },
   { method: 'GET', path: '/chat/keys/backup', handler: chat.keyBackupGet, options: S },
   { method: 'POST', path: '/chat/keys/backup', handler: chat.keyBackupSet, options: S },
   { method: 'GET', path: '/chat/keys/lookup', handler: chat.keyLookup },
