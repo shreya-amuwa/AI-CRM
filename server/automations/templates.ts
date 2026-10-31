@@ -140,8 +140,7 @@ function mailCompleted(d: TemplateData) {
     <b>Department:</b> ${esc(d.department)}<br>
     <b>Panel Website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a><br>
     <b>User ID:</b> ${esc(d.userId)}
-  </p>
-  <p>Sign in with the password you chose from the "Set your password" e-mail we sent you. If you have not set it yet, or you forgot it, use "Forgot password?" on the sign-in page.</p>`
+  </p>`
     : `<p>Your panel login is being prepared by our accounts team. You will receive a separate e-mail with a link to set your own password.</p>`;
   return `
   <p>Dear ${esc(d.name)},</p>

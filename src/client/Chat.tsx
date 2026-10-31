@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { ShieldCheck, Users } from 'lucide-react';
 import type { ChatChannel, ChatConversation } from '../../shared/contracts';
 import { ChatThread } from '../components/chat/ChatThread';
@@ -19,6 +19,11 @@ export const Chat: React.FC = () => {
   // on a phone the dashboard has a tab bar fixed to the bottom of the window
   const card = useFillViewport<HTMLDivElement>(() => document.querySelector<HTMLElement>('.cd-tabbar')?.offsetHeight ?? 0);
   const onConversation = useCallback(() => refreshChatUnread(), [refreshChatUnread]);
+  // while the chat is open the page itself does not scroll or keep room under it (the chat scrolls inside)
+  useEffect(() => {
+    document.documentElement.classList.add('cd-chat-open');
+    return () => document.documentElement.classList.remove('cd-chat-open');
+  }, []);
 
   const info = journey.data?.chat;
   const visible = (info?.channels ?? []).filter(c => c.visible);
@@ -29,7 +34,7 @@ export const Chat: React.FC = () => {
   if (!info) {
     return (
       <div className="cd-chat-page">
-        <div className="cd-chat-card" ref={card} role="status" aria-label={journey.error ? 'Unavailable' : 'Loading'}>
+        <div key="card" className="cd-chat-card" ref={card} role="status" aria-label={journey.error ? 'Unavailable' : 'Loading'}>
           {journey.error ? <p className="cd-muted" style={{ padding: 24 }}>The chat could not be opened right now. Please try again in a moment.</p> : null}
         </div>
       </div>
@@ -74,7 +79,7 @@ export const Chat: React.FC = () => {
   return (
     <div className="cd-chat-page">
       {visible.length > 1 ? (
-        <div className="cd-chat-tabs" role="tablist" aria-label="Conversations">
+        <div key="tabs" className="cd-chat-tabs" role="tablist" aria-label="Conversations">
           {visible.map(c => (
             <button key={c.channel} role="tab" aria-selected={c.channel === channel} className="cd-chat-tab" onClick={() => go(dashboardPath('chat', `/${c.channel.toLowerCase()}`))}>
               {c.label}{!c.open && c.channel === 'META' ? <small> · closed</small> : null}
@@ -82,7 +87,7 @@ export const Chat: React.FC = () => {
           ))}
         </div>
       ) : null}
-      <div className="cd-chat-card" ref={card}>
+      <div key="card" className="cd-chat-card" ref={card}>
         <ChatThread
           transport={clientTransport(channel)}
           header={header}

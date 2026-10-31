@@ -35,8 +35,10 @@ const errors = [];
 let current;
 const fail = async m => { await current?.screenshot({ path: `${OUT}/chat-fail.png`, fullPage: true }).catch(() => {}); console.error('FAILED:', m, errors.length ? JSON.stringify(errors.slice(0, 4)) : ''); process.exit(1); };
 const expect = (c, m) => (c ? ok(m) : fail(m));
-const open = async (viewport = { width: 1440, height: 900 }) => {
+const open = async (viewport = { width: 1440, height: 900 }, { noIndexedDb = false } = {}) => {
   const ctx = await browser.newContext({ viewport, acceptDownloads: true });
+  // a private window / a locked-down browser: nothing can keep the keys
+  if (noIndexedDb) await ctx.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true }); });
   if (TW) await ctx.route(/cdn\.tailwindcss\.com/, r => r.fulfill({ body: TW, contentType: 'application/javascript' }));
   const p = await ctx.newPage();
   p.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -44,9 +46,10 @@ const open = async (viewport = { width: 1440, height: 900 }) => {
   p.ctx = ctx;
   return p;
 };
-const staffLogin = async (email, viewport) => {
+const staffLogin = async (email, viewport, options) => {
   const password = pwOf(email);
-  const p = await open(viewport);
+  const p = await open(viewport, options);
+  track(p); // from the first request: secure messaging now sets itself up when the person signs in
   await p.goto(BASE + '/login');
   await p.getByPlaceholder('name@amuwa.com').fill(email);
   await p.locator('input[type="password"]').first().fill(password);
@@ -74,15 +77,25 @@ const PASS = { M: 'mohan correct horse battery', R: 'rina correct horse battery'
 const sent = [];
 const track = p => p.on('request', r => { const d = r.postData(); if (d) sent.push({ url: r.url(), body: d }); });
 const messagesTab = async p => { await openChat(p); await p.getByRole('tab', { name: /Messages/ }).click().catch(() => {}); };
-const turnOn = async (p, pass) => {
+// secure messaging sets itself up: nothing to click, nothing to type
+const autoReady = async p => {
   await messagesTab(p);
-  await wait(p, '[data-testid="secure-list-action"]', 'the Turn on button of secure messaging did not show');
-  await p.getByTestId('secure-list-action').click();
+  await gone(p, '[data-testid="secure-list-bar"]', 'secure messaging did not set itself up');
+  await expect(await p.locator('.ch-modal').count() === 0 && await p.locator('[data-testid="secure-pass"]').count() === 0 && await p.locator('[data-testid="secure-turn-on"]').count() === 0, 'no dialog, no button and no passphrase was needed to start');
+};
+// a recovery passphrase is optional: it makes a new key that another device can unlock (the settings are in the shield button beside "New")
+const addPassphrase = async (p, pass) => {
+  await messagesTab(p);
+  await p.getByTestId('secure-settings-open').click();
+  await wait(p, '[data-testid="secure-settings"]', 'the secure messaging settings did not open');
+  await p.getByTestId('secure-reset').click();
   await p.getByTestId('secure-pass').fill(pass);
   await p.getByTestId('secure-pass-again').fill(pass);
-  await p.getByLabel('Turn on secure messaging').getByRole('button', { name: 'Turn on' }).click();
-  await gone(p, '.ch-modal', 'the setup dialog did not close');
-  await gone(p, '[data-testid="secure-list-bar"]', 'secure messaging did not turn on');
+  await p.getByTestId('secure-reset-confirm').check();
+  await p.getByRole('button', { name: 'Reset and turn on' }).click();
+  await gone(p, '[data-testid="secure-pass-again"]', 'the passphrase dialog did not close');
+  await p.getByRole('button', { name: 'Done' }).click();
+  await gone(p, '.ch-modal', 'the settings did not close');
 };
 const unlock = async (p, pass) => {
   await messagesTab(p);
@@ -102,7 +115,7 @@ const mk = async (name, company, phone, services, amount, email) => {
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/order-gst`, { rate: 0 });
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/payments`, { type: 'PART', amount: amount / 2, method: 'CASH', verify: true });
   await api(arun, 'POST', `/pipeline/customers/${l.id}/accounts/payment-confirmed`, { note: 'ok' });
-  await q(`update customer_onboarding set forwarded_to_support_at = now(), stage = 'SETUP', sent_to_accounts_at = now(), accounts_confirmed_at = now() where customer_id = $1`, [l.id]);
+  await q(`update customer_onboarding set forwarded_to_support_at = now(), stage = 'SETUP', sent_to_accounts_at = now(), accounts_confirmed_at = now(), meta_completed_at = now() where customer_id = $1`, [l.id]);
   return l.id;
 };
 const CLIENT_A = { email: 'anil@acharya.example.com', password: secret() }, CLIENT_B = { email: 'bhavna@bose.example.com', password: secret() };
@@ -136,7 +149,6 @@ const L = await staffLogin('tl.delivery@amuwa.com');
 const D = await staffLogin('dh@amuwa.com');
 const R = await staffLogin('tm2.delivery@amuwa.com');
 ok('a client, a Team Member, a Team Lead, a Department Head and a second Team Member are signed in in separate browsers');
-[M, L, R].forEach(track);
 
 // ------------------------------------------------------------------ client: the Chat tab
 current = C;
@@ -145,7 +157,7 @@ await wait(C, '.cd-chat-card', 'Chat tab did not open');
 await wait(C, '.ch-head h2:has-text("Your Amuwa team")', 'team header missing');
 await wait(C, '.ch-head-main p:has-text("Mohan Member")', 'the team names did not load');
 const head = await C.locator('.ch-head').innerText();
-await expect(/Mohan Member \(Team Member\)/.test(head) && /Dina Delivery \(Team Lead\)/.test(head), 'the client chat header names the assigned Team Member and Team Lead');
+await expect(/Mohan Member \(Relationship Manager\)/.test(head) && /Dina Delivery \(Team Lead\)/.test(head), 'the client chat header names the assigned Team Member and Team Lead');
 await expect(!/Dev Head|Rina/.test(await C.locator('body').innerText()), 'no Department Head or other employee is shown to the client');
 await wait(C, '.ch-empty', 'empty state missing');
 await expect(await C.getByText('Start the conversation').count() === 1, 'empty conversation shows a friendly empty state');
@@ -184,17 +196,17 @@ await expect(bells[0].n === 1, 'Dina gets one in-app notification for an unread 
 await send(M, "Hi Anil, I'm on it");
 await wait(C, '.ch-row.theirs .ch-bubble:has-text("Hi Anil, I\'m on it")', 'reply did not reach the client live');
 const reply = await C.locator('.ch-row.theirs .ch-bubble', { hasText: "I'm on it" }).innerText();
-await expect(/Mohan Member/.test(reply) && /Team Member/.test(reply), 'the client sees who answered: name and "Team Member"');
+await expect(/Mohan Member/.test(reply) && /Relationship Manager/.test(reply), 'the client sees who answered: name and "Relationship Manager"');
 // WhatsApp-style layout: my messages on the right, the team's on the left, and the chat fills the page
 const geo = await C.evaluate(() => {
   const body = document.querySelector('.ch-body').getBoundingClientRect();
   const mine = document.querySelector('.ch-row.mine .ch-bubble').getBoundingClientRect();
   const theirs = document.querySelector('.ch-row.theirs .ch-bubble').getBoundingClientRect();
   const card = document.querySelector('.cd-chat-card').getBoundingClientRect();
-  return { bodyLeft: body.left, bodyRight: body.right, mineRight: mine.right, theirsLeft: theirs.left, cardH: card.height, vh: window.innerHeight };
+  return { bodyLeft: body.left, bodyRight: body.right, mineRight: mine.right, theirsLeft: theirs.left, cardH: card.height, cardBottom: card.bottom, vh: window.innerHeight };
 });
 await expect(geo.bodyRight - geo.mineRight < 90 && geo.theirsLeft - geo.bodyLeft < 90, `my messages sit on the right edge and the team's on the left (mine ends ${Math.round(geo.bodyRight - geo.mineRight)}px from the right, theirs starts ${Math.round(geo.theirsLeft - geo.bodyLeft)}px from the left)`);
-await expect(geo.cardH > geo.vh - 120, `the client chat fills the page (${Math.round(geo.cardH)}px of ${geo.vh}px)`);
+await expect(Math.abs(geo.cardBottom - geo.vh) <= 1, `the client chat fills the page down to the bottom of the window (ends at ${Math.round(geo.cardBottom)}px of ${geo.vh}px)`);
 await C.screenshot({ path: `${OUT}/chat-client-conversation.png` });
 
 // unread badge on the client's sidebar while on another page
@@ -318,12 +330,19 @@ await C.screenshot({ path: `${OUT}/chat-client-history.png` });
 
 // ------------------------------------------------------------------ internal chat: secure messaging is turned on, then direct messages
 // nobody can chat with a colleague who has not turned it on: the chats are end-to-end encrypted, so every member needs a key
-await turnOn(R, PASS.R); await closeChat(R);
-await turnOn(L, PASS.L); await closeChat(L);
-await turnOn(M, PASS.M);
-const keyRows = await q(`select p.email, k.key_version, length(k.public_key) as n from chat_user_keys k join profiles p on p.id = k.profile_id order by p.email`);
-await expect(keyRows.length === 3 && keyRows.every(k => k.key_version === 1 && k.n === 88), 'three people turned on secure messaging: each published one public key (version 1)', keyRows);
-ok('secure messaging is turned on in the browsers of Mohan, Dina and Rina');
+await autoReady(R); await closeChat(R);
+await autoReady(L); await closeChat(L);
+await autoReady(M);
+const trio = ['tm.delivery@amuwa.com', 'tl.delivery@amuwa.com', 'tm2.delivery@amuwa.com'];
+const autoRows = await q(`select p.email, k.key_version, length(k.public_key) as n from chat_user_keys k join profiles p on p.id = k.profile_id where p.email = any($1) order by p.email`, [trio]);
+await expect(autoRows.length === 3 && autoRows.every(k => k.key_version === 1 && k.n === 88), 'secure messaging set itself up for Mohan, Dina and Rina: each published one public key (version 1)', autoRows);
+await expect((await q(`select count(*)::int n from chat_key_backups`))[0].n === 0, 'and no recovery backup exists: no passphrase was ever asked for');
+// Mohan and Rina choose a recovery passphrase now (a new key), so the new-device flows below can be tried; Dina keeps the key made automatically
+await addPassphrase(R, PASS.R); await closeChat(R);
+await addPassphrase(M, PASS.M);
+const keyRows = await q(`select p.email, k.key_version, k.retired_at is not null as retired from chat_user_keys k join profiles p on p.id = k.profile_id where p.email = any($1) order by p.email, k.key_version`, [trio]);
+await expect(keyRows.filter(k => !k.retired).map(k => `${k.email}:${k.key_version}`).join() === 'tl.delivery@amuwa.com:1,tm.delivery@amuwa.com:2,tm2.delivery@amuwa.com:2', 'choosing a passphrase made a new key (version 2) for Mohan and Rina; Dina still has her first', keyRows);
+ok('secure messaging is on in the browsers of Mohan, Dina and Rina (Dina without any passphrase)');
 current = M;
 await M.getByRole('tab', { name: /Messages/ }).click();
 await wait(M, '.ch-list-empty:has-text("No chats yet")', 'Mohan should have no internal chats yet');
@@ -497,8 +516,10 @@ await expect((await q(`select count(*)::int n from chat_conversations where last
 const secureSends = sent.filter(x => /\/secure-messages$/.test(x.url));
 await expect(secureSends.length >= 6 && secureSends.every(x => PLAIN.every(w => !x.body.includes(w)) && !('body' in JSON.parse(x.body))), `what the browsers sent for ${secureSends.length} messages holds no readable text (the request itself is the envelope)`);
 await expect(sent.every(x => Object.values(PASS).every(pw => !x.body.includes(pw))), `none of the ${sent.length} requests the browsers made contains a recovery passphrase`);
-const keyReqs = sent.filter(x => /\/chat\/keys(\/reset)?$/.test(x.url));
-await expect(keyReqs.length === 3 && keyReqs.every(x => { const b = JSON.parse(x.body); return Object.keys(b).sort().join() === 'backup,publicKey' && !/pkcs8|privateKey|"d":/.test(x.body) && b.backup.kdf === 'PBKDF2-SHA256' && b.backup.iter >= 600000; }), 'the only key material sent is the public key and the passphrase-encrypted backup (PBKDF2, 600,000 rounds)');
+const keyReqs = sent.filter(x => /\/chat\/keys\/(register|reset)$/.test(x.url));
+const autoReqs = keyReqs.filter(x => /\/register$/.test(x.url)), resetReqs = keyReqs.filter(x => /\/reset$/.test(x.url));
+await expect(autoReqs.length >= 1 && autoReqs.every(x => Object.keys(JSON.parse(x.body)).join() === 'publicKey' && !/pkcs8|privateKey|"d":/.test(x.body)), `the automatic set-up sent only the public key (${autoReqs.length} requests, no backup, no private key)`);
+await expect(resetReqs.length >= 2 && resetReqs.every(x => { const b = JSON.parse(x.body); return Object.keys(b).sort().join() === 'backup,publicKey' && !/pkcs8|privateKey|"d":/.test(x.body) && b.backup.kdf === 'PBKDF2-SHA256' && b.backup.iter >= 600000; }), 'a recovery passphrase sends only the public key and the passphrase-encrypted backup (PBKDF2, 600,000 rounds)');
 const idb = await M.evaluate(async () => {
   const db = await new Promise((res, rej) => { const r = indexedDB.open('amuwa-chat-e2ee'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
   const rows = await new Promise(res => { const r = db.transaction('keys').objectStore('keys').getAll(); r.onsuccess = () => res(r.result); });
@@ -506,7 +527,7 @@ const idb = await M.evaluate(async () => {
   for (const k of rows) { let exported = true; try { await crypto.subtle.exportKey('pkcs8', k.privateKey); } catch { exported = false; } out.push({ extractable: k.privateKey.extractable, exported }); }
   return out;
 });
-await expect(idb.length === 1 && idb[0].extractable === false && idb[0].exported === false, 'the private key on the device is a non-extractable CryptoKey: the page can use it but cannot read it out', idb);
+await expect(idb.length >= 1 && idb.every(k => k.extractable === false && k.exported === false), 'the private key on the device is a non-extractable CryptoKey: the page can use it but cannot read it out', idb);
 ok('the server holds ciphertext, public keys and an encrypted backup: no readable message, no private key, no passphrase');
 
 // ------------------------------------------------------------------ deleting messages
@@ -528,7 +549,7 @@ await wait(R, '.ch-bubble:has-text("Emoji check")', 'the chat did not reopen aft
 await expect(await bubble(R, 'Delete me test').count() === 0, 'Delete for me: after a reload it stays hidden');
 const hidden = await q(`select h.profile_id, m.deleted_at, m.e2ee is not null as intact from chat_message_hidden h join chat_messages m on m.id = h.message_id`);
 await expect(hidden.length === 1 && hidden[0].profile_id === tm2 && hidden[0].deleted_at === null && hidden[0].intact, 'Delete for me is stored per person; the shared message is untouched');
-const R2 = await staffLogin('tm2.delivery@amuwa.com'); track(R2);
+const R2 = await staffLogin('tm2.delivery@amuwa.com');
 await unlock(R2, PASS.R);
 await R2.locator('.ch-item', { hasText: 'Mohan Member' }).click();
 await wait(R2, '.ch-bubble:has-text("Emoji check")', 'on another device the chat should open after unlocking');
@@ -583,7 +604,7 @@ ok('deleting a message with a file for everyone removes the stored encrypted fil
 
 // ------------------------------------------------------------------ a new device, a wrong passphrase, failed decryption
 await R2.close();
-const R3 = await staffLogin('tm2.delivery@amuwa.com'); track(R3);
+const R3 = await staffLogin('tm2.delivery@amuwa.com');
 await messagesTab(R3);
 await wait(R3, '[data-testid="secure-list-bar"][data-state="locked"]', 'a fresh browser should show secure messaging as locked');
 await R3.getByTestId('secure-list-action').click();
@@ -613,7 +634,7 @@ await R.getByTestId('secure-reset-confirm').check();
 await R.getByRole('button', { name: 'Reset and turn on' }).click();
 await gone(R, '[data-testid="secure-pass-again"]', 'the reset dialog did not close');
 const keysNow = await q(`select key_version, retired_at is not null as retired from chat_user_keys where profile_id = $1 order by key_version`, [tm2]);
-await expect(keysNow.length === 2 && keysNow[0].retired && !keysNow[1].retired, 'the reset retired the old key and published a new one');
+await expect(keysNow.length === 3 && keysNow[0].retired && keysNow[1].retired && !keysNow[2].retired, 'the reset retired the old key and published a new one');
 await R.keyboard.press('Escape');
 // Mohan does not know yet: his next message is stopped on his own screen, not sent to the old key
 await send(M, 'After the reset');
@@ -645,6 +666,33 @@ await wait(R3, '[data-testid="message-undecryptable"][data-reason="old-key"]', '
 await expect(await R3.locator('.ch-bubble', { hasText: 'Emoji check' }).count() === 0, 'and show no text');
 await R3.screenshot({ path: `${OUT}/chat-old-key-messages.png` });
 ok('after a reset a new device reads only what was sealed for the new key; older messages are marked unreadable, with no text');
+
+// ------------------------------------------------------------------ an automatic account on a second browser, and a browser that cannot keep keys
+// Dina's key was made by her browser on its own and she has no recovery passphrase: another browser cannot get it, and says so
+const dinaKeysBefore = (await q(`select key_version from chat_user_keys where profile_id = $1 and retired_at is null`, [tl]))[0].key_version;
+const L2 = await staffLogin('tl.delivery@amuwa.com');
+await messagesTab(L2);
+await wait(L2, '[data-testid="secure-list-bar"][data-state="locked"][data-recovery="new-key"]', 'a second browser of an automatic account should be locked and offer the new-key step');
+await expect(/Set up this device/.test(await L2.getByTestId('secure-list-action').innerText()) && await L2.getByTestId('secure-pass').count() === 0, 'it offers "Set up this device", not a passphrase box');
+await expect((await q(`select key_version from chat_user_keys where profile_id = $1 and retired_at is null`, [tl]))[0].key_version === dinaKeysBefore, "just signing in on another browser did not replace Dina's key");
+await L2.getByTestId('secure-list-action').click();
+await wait(L2, '[data-testid="secure-new-key-go"]', 'the new device step did not open');
+await expect(await L2.getByTestId('secure-new-key-go').isDisabled(), 'the step cannot be taken without ticking that earlier messages will not be readable here');
+await L2.getByTestId('secure-new-key-confirm').check();
+await L2.getByTestId('secure-new-key-go').click();
+await gone(L2, '.ch-modal', 'the new device step did not finish');
+await gone(L2, '[data-testid="secure-list-bar"]', 'the second browser did not become ready');
+const dinaKeys = await q(`select key_version, retired_at is not null as retired from chat_user_keys where profile_id = $1 order by key_version`, [tl]);
+await expect(dinaKeys.length === 2 && dinaKeys[0].retired && !dinaKeys[1].retired, "going on there made a new key (version 2) and retired the first, after Dina asked for it");
+await expect((await q(`select count(*)::int n from chat_key_backups where profile_id = $1`, [tl]))[0].n === 0, 'and still no backup or passphrase');
+await L2.screenshot({ path: `${OUT}/chat-new-device.png` });
+ok('a second browser of an automatic account is locked, asks before it makes a new key, and does not replace the key behind her back');
+const arunRow = async () => (await q(`select count(*)::int n from chat_user_keys where profile_id = $1`, [arun]))[0].n;
+const P = await staffLogin('acc.member@amuwa.com', undefined, { noIndexedDb: true });
+await messagesTab(P);
+await wait(P, '[data-testid="secure-list-bar"][data-state="setup"]', 'a browser that cannot keep keys should say so');
+await expect(/cannot keep secure messaging keys/.test(await P.getByTestId('secure-list-bar').innerText()) && await arunRow() === 0, 'a browser that cannot keep keys says so, and no key was published that would be lost with the tab');
+ok('where keys cannot be kept (a private window) nothing is set up behind the scenes');
 
 // ------------------------------------------------------------------ mobile
 const phone = await staffLogin('tm.delivery@amuwa.com', { width: 390, height: 780 });

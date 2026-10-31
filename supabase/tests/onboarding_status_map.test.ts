@@ -80,6 +80,18 @@ for (const stage of stages) check(!/Password:/i.test(renderEmail(stage as any, b
 const noLogin = renderEmail('COMPLETED', { ...baseMail, hasLogin: false }).html;
 check(!/User ID/.test(noLogin) && /separate e-mail/.test(noLogin), 'with no login yet the completed e-mail does not pretend there is one');
 
+// the completed e-mail has no sign-in / password explanation (the set-password e-mail is where that belongs)
+{
+  const done = renderEmail('COMPLETED', baseMail);
+  for (const [kind, body] of [['html', done.html], ['text', done.text]] as const) {
+    check(/successfully completed/i.test(body) && /User ID/.test(body) && body.includes(baseMail.panelUrl) && body.includes(baseMail.userId), `the completed e-mail (${kind}) still says it succeeded and names the panel and the user ID`);
+    check(!/Sign in with the password/i.test(body) && !/Set your password/i.test(body) && !/Forgot password/i.test(body), `the completed e-mail (${kind}) has no sign-in or password paragraph`);
+  }
+  check(/team|contact/i.test(done.html) && /Amuwa Corporation/.test(done.html), 'the completed e-mail keeps the team contact and the signature');
+  const evil = renderEmail('COMPLETED', { ...baseMail, name: '<script>alert(1)</script>' }).html;
+  check(!evil.includes('<script>alert(1)'), 'a customer name is still escaped in the completed e-mail');
+}
+
 // "account created" is its own event: its own status and stage code, and the WhatsApp never carries a password
 hits.length = 0;
 const acc = await processJob(s, job('ACCOUNT_CREATED', 'WHATSAPP'));

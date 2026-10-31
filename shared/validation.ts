@@ -1534,6 +1534,8 @@ const chatKeyBackupBlobSchema = z
   })
   .strict();
 export const chatKeySetupSchema = z.object({ publicKey: base64(88, 88), backup: chatKeyBackupBlobSchema }).strict();
+/** The automatic first key (and a new key on a device without the old one): the public key only, no backup and no passphrase. */
+export const chatKeyRegisterSchema = z.object({ publicKey: base64(88, 88) }).strict();
 export const chatKeyBackupSetSchema = z.object({ backup: chatKeyBackupBlobSchema, version: z.number().int().min(1).max(1_000_000) }).strict();
 export const chatKeyLookupQuerySchema = z.object({ profileId: uuidSchema, version: z.coerce.number().int().min(1).max(1_000_000) }).strict();
 

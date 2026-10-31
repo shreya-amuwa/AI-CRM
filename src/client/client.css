@@ -322,6 +322,7 @@ button.cd-docs-card { cursor: pointer; }
   .cd-account { padding: 3px; }
   .cd-search { display: none; }
   .cd-shell { padding-bottom: 72px; }
+  .cd-chat-open .cd-shell { padding-bottom: 0; }
   .cd-tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--card);
     border-top: 1px solid var(--border); padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); }
   .cd-tabbar button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; border: 0; background: transparent; color: var(--muted);
@@ -514,7 +515,7 @@ button.cd-docs-card { cursor: pointer; }
 
 /* ---- Chat: fills the whole page area, like a messaging app ---- */
 .cd-content-flush { padding: 0; max-width: none; }
-.cd-chat-card { background: #fff; overflow: hidden; height: calc(100vh - var(--cd-top-h, 69px)); height: calc(100dvh - var(--cd-top-h, 69px)); min-height: 420px; }
+.cd-chat-card { background: #fff; overflow: hidden; height: calc(100vh - var(--cd-top-h, 69px)); height: calc(100dvh - var(--cd-top-h, 69px)); min-height: 0; }
 
 /* Phones: use the height that is really visible (the address bar does not hide the bottom of the page or the menu). */
 @supports (height: 100dvh) {
@@ -578,10 +579,18 @@ button.cd-docs-card { cursor: pointer; }
 .cd-locked-page { padding: 12px; }
 
 /* ---- Chat: the client's two conversations (Meta Verifier, then Relationship Manager) ---- */
-.cd-chat-tabs { display: flex; gap: 6px; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.cd-chat-tabs { display: flex; align-items: flex-start; flex: none; gap: 6px; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--border); overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .cd-chat-tab { flex: none; border: 1px solid var(--border); background: var(--card); color: var(--fg-2); border-radius: var(--radius-pill); padding: 6px 14px; font-size: 14px; font-weight: 600; min-height: 36px; }
 .cd-chat-tab[aria-selected='true'] { background: var(--green-light); color: var(--green-house); border-color: var(--green-mint); font-weight: 800; }
 .cd-chat-tab small { font-weight: 500; color: var(--muted); }
+@media (pointer: coarse) { .cd-chat-tab { min-height: var(--tap); } }
+
+/* The chat page: the chat scrolls inside, the page does not, and nothing is left under the message box.
+   The hook in useFillViewport sets the chat's height from what is visible; data-kbd is set while the on-screen keyboard is open. */
+.cd-chat-open .cd-content-flush { padding-bottom: 0; }
+html.cd-chat-open, html.cd-chat-open body { overscroll-behavior-y: none; }
+html[data-kbd='1'] .cd-tabbar { display: none; }
+html[data-vshort='1'] .cd-chat-card .ch-head, html[data-vshort='1'] .cd-chat-tabs { display: none; }
 @media (max-width: 767px) {
   .cd-jr-summary { padding: 18px 16px; }
   .cd-jr-step { padding-left: 46px; }

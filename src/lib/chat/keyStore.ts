@@ -20,8 +20,18 @@ export interface PeerPin {
 
 export interface KeyStore {
   readonly persistent: boolean;
+  /** The keys of published versions (1, 2, ...). A key that is not published yet (see pending) is not in this list. */
   keys(): Promise<StoredKey[]>;
   putKey(k: StoredKey): Promise<void>;
+  /**
+   * A key that was made on this device and not yet published. It is kept so that a page closed half way through (or a second tab) never makes a
+   * second key: the next start publishes this one. `putPendingIfAbsent` is atomic and says whether this call stored it.
+   */
+  pending(): Promise<StoredKey | null>;
+  putPendingIfAbsent(k: StoredKey): Promise<boolean>;
+  /** The pending key was published as this version: it becomes that version's key (one step). */
+  promote(version: number): Promise<StoredKey | null>;
+  dropPending(): Promise<void>;
   peer(profileId: string): Promise<PeerPin | null>;
   putPeer(p: PeerPin): Promise<void>;
   /** Forget everything on this device (keys and pins) for this person. */
@@ -29,14 +39,20 @@ export interface KeyStore {
 }
 
 class MemoryStore implements KeyStore {
-  readonly persistent = false;
+  /** Only the tests say `true` (a store that stands in for IndexedDB); the real one made when IndexedDB is missing is not persistent. */
+  constructor(readonly persistent = false) {}
   private k = new Map<number, StoredKey>();
   private p = new Map<string, PeerPin>();
+  private pend: StoredKey | null = null;
   async keys() { return [...this.k.values()]; }
   async putKey(k: StoredKey) { this.k.set(k.version, k); }
+  async pending() { return this.pend; }
+  async putPendingIfAbsent(k: StoredKey) { if (this.pend) return false; this.pend = k; return true; }
+  async promote(version: number) { const k = this.pend; if (!k) return null; const stored = { ...k, version }; this.k.set(version, stored); this.pend = null; return stored; }
+  async dropPending() { this.pend = null; }
   async peer(id: string) { return this.p.get(id) ?? null; }
   async putPeer(p: PeerPin) { this.p.set(p.profileId, p); }
-  async wipe() { this.k.clear(); this.p.clear(); }
+  async wipe() { this.k.clear(); this.p.clear(); this.pend = null; }
 }
 
 const DB = 'amuwa-chat-e2ee';
@@ -63,8 +79,39 @@ class IdbStore implements KeyStore {
   private id = (x: string | number) => `${this.userId}:${x}`;
   async keys(): Promise<StoredKey[]> {
     const rows = (await done(this.db.transaction('keys').objectStore('keys').getAll())) as (StoredKey & { id: string; userId: string })[];
-    return rows.filter(r => r.userId === this.userId).map(r => ({ version: r.version, privateKey: r.privateKey, publicKey: r.publicKey }));
+    return rows.filter(r => r.userId === this.userId && r.version >= 1).map(r => ({ version: r.version, privateKey: r.privateKey, publicKey: r.publicKey }));
   }
+  // the unpublished key is kept in the same store under the name "pending" (version 0)
+  async pending(): Promise<StoredKey | null> {
+    const row = (await done(this.db.transaction('keys').objectStore('keys').get(this.id('pending')))) as (StoredKey & { id: string }) | undefined;
+    return row ? { version: 0, privateKey: row.privateKey, publicKey: row.publicKey } : null;
+  }
+  async putPendingIfAbsent(k: StoredKey): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      const req = this.db.transaction('keys', 'readwrite').objectStore('keys').add({ id: this.id('pending'), userId: this.userId, version: 0, privateKey: k.privateKey, publicKey: k.publicKey });
+      req.onsuccess = () => resolve(true);
+      req.onerror = event => { if (req.error?.name === 'ConstraintError') { event.preventDefault(); resolve(false); } else reject(req.error); };
+    });
+  }
+  async promote(version: number): Promise<StoredKey | null> {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('keys', 'readwrite');
+      const store = tx.objectStore('keys');
+      let out: StoredKey | null = null;
+      const get = store.get(this.id('pending'));
+      get.onsuccess = () => {
+        const row = get.result as (StoredKey & { id: string }) | undefined;
+        if (!row) return;
+        out = { version, privateKey: row.privateKey, publicKey: row.publicKey };
+        store.put({ id: this.id(version), userId: this.userId, ...out });
+        store.delete(this.id('pending'));
+      };
+      tx.oncomplete = () => resolve(out);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  }
+  async dropPending() { await done(this.db.transaction('keys', 'readwrite').objectStore('keys').delete(this.id('pending'))); }
   async putKey(k: StoredKey) {
     await done(this.db.transaction('keys', 'readwrite').objectStore('keys').put({ id: this.id(k.version), userId: this.userId, ...k }));
   }

@@ -2811,6 +2811,8 @@ export interface ChatKeyStatus {
   publicKey: string | null;
   fingerprint: string | null;
   hasBackup: boolean;
+  /** The key version the stored recovery backup belongs to (older than `version` after a new key was made on a device without the passphrase). */
+  backupVersion?: number | null;
 }
 export interface ChatMemberKey {
   profileId: string;

@@ -101,6 +101,8 @@ export function staffTransport(conversationId: string, opts: { review?: boolean 
 export const chatKeysApi = {
   status: () => api.get<ChatKeyStatus>('/chat/keys/status'),
   setup: (publicKey: string, backup: ChatKeyBackupBlob) => api.post<{ version: number; fingerprint: string }>('/chat/keys', { publicKey, backup }),
+  register: (publicKey: string) => api.post<{ version: number; fingerprint: string; created: boolean }>('/chat/keys/register', { publicKey }),
+  rotate: (publicKey: string) => api.post<{ version: number; fingerprint: string; created: boolean }>('/chat/keys/rotate', { publicKey }),
   reset: (publicKey: string, backup: ChatKeyBackupBlob) => api.post<{ version: number; fingerprint: string }>('/chat/keys/reset', { publicKey, backup }),
   backup: () => api.get<ChatKeyBackup | null>('/chat/keys/backup'),
   setBackup: (backup: ChatKeyBackupBlob, version: number) => api.post<null>('/chat/keys/backup', { backup, version }),

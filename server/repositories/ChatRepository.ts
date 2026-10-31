@@ -71,6 +71,8 @@ export class ChatRepository {
   // ---- end-to-end encryption keys (public keys and the passphrase-encrypted private-key backup; no secret is ever in these calls)
   keyStatus() { return this.rpc<ChatKeyStatus>('chat_key_status'); }
   keySetup(publicKey: string, backup: ChatKeyBackupBlob) { return this.rpc<{ version: number; fingerprint: string }>('chat_key_setup', { p_public: publicKey, p_backup: backup }); }
+  keyRegister(publicKey: string) { return this.rpc<{ version: number; fingerprint: string; created: boolean }>('chat_key_register', { p_public: publicKey }); }
+  keyRotate(publicKey: string) { return this.rpc<{ version: number; fingerprint: string; created: boolean }>('chat_key_rotate', { p_public: publicKey }); }
   keyReset(publicKey: string, backup: ChatKeyBackupBlob) { return this.rpc<{ version: number; fingerprint: string }>('chat_key_reset', { p_public: publicKey, p_backup: backup }); }
   keyBackupGet() { return this.rpc<ChatKeyBackup | null>('chat_key_backup_get'); }
   async keyBackupSet(backup: ChatKeyBackupBlob, version: number) { await this.rpc<null>('chat_key_backup_set', { p_backup: backup, p_version: version }); }

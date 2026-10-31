@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { DepartmentProvider, useDepartments } from './context/DepartmentContext';
 import { LeadStoreProvider } from './context/LeadStoreContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { SecureChatProvider } from './lib/chat/useSecureChat';
 import { TabProvider, useTabs } from './context/TabContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
@@ -598,6 +599,12 @@ const MainAppContent: React.FC = () => {
   );
 };
 
+/** Secure messaging starts for the signed-in employee as soon as they are in (their key is made on its own the first time). Always the same element, so nothing below it restarts when the profile arrives. */
+const EmployeeSecureChat: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { profile } = useAuth();
+  return <SecureChatProvider userId={profile?.id ?? null}>{children}</SecureChatProvider>;
+};
+
 export function App() {
   return (
     <DepartmentProvider>
@@ -605,9 +612,11 @@ export function App() {
         <TabProvider>
           <LeadStoreProvider>
             <NotificationProvider>
-              <Suspense fallback={<ScreenLoader />}>
-                <MainAppContent />
-              </Suspense>
+              <EmployeeSecureChat>
+                <Suspense fallback={<ScreenLoader />}>
+                  <MainAppContent />
+                </Suspense>
+              </EmployeeSecureChat>
             </NotificationProvider>
           </LeadStoreProvider>
         </TabProvider>

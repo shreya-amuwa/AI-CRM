@@ -17,10 +17,29 @@ class FakeServer {
   backups = new Map<string, ChatKeyBackup>();
   members: { id: string; name: string }[] = [];
   seen: unknown[] = [];
+  /** Makes keyRegister fail (the network is down). */
+  down = false;
   api(me: string): SecureChatApi {
     const active = (id: string) => (this.keys.get(id) ?? []).find(k => !k.retired);
     return {
-      keyStatus: async (): Promise<ChatKeyStatus> => { const k = active(me); return { hasKey: !!k, version: k?.version ?? null, publicKey: k?.publicKey ?? null, fingerprint: k?.fingerprint ?? null, hasBackup: this.backups.has(me) }; },
+      keyStatus: async (): Promise<ChatKeyStatus> => { const k = active(me); return { hasKey: !!k, version: k?.version ?? null, publicKey: k?.publicKey ?? null, fingerprint: k?.fingerprint ?? null, hasBackup: this.backups.has(me), backupVersion: this.backups.get(me)?.version ?? null }; },
+      // the database functions: chat_key_register (idempotent for the same key, CONFLICT for another) and chat_key_rotate (no passphrase, the old key retired)
+      keyRegister: async publicKey => {
+        this.seen.push({ publicKey, via: 'register' });
+        if (this.down) throw new Error('The server did not answer.');
+        const fp = await fingerprintOf(publicKey);
+        const k = active(me);
+        if (k) { if (k.publicKey === publicKey) return { version: k.version, fingerprint: k.fingerprint }; throw Object.assign(new Error('Secure messaging is already set up for this account on another device.'), { code: 'CONFLICT' }); }
+        return this.addNow(me, publicKey, null, fp);
+      },
+      keyRotate: async publicKey => {
+        this.seen.push({ publicKey, via: 'rotate' });
+        const fp = await fingerprintOf(publicKey);
+        const k = active(me);
+        if (k && k.publicKey === publicKey) return { version: k.version, fingerprint: k.fingerprint };
+        (this.keys.get(me) ?? []).forEach(x => { x.retired = true; });
+        return this.addNow(me, publicKey, null, fp);
+      },
       keySetup: async (publicKey, blob) => { this.seen.push({ publicKey, blob }); if (active(me)) throw new Error('already set up'); return this.add(me, publicKey, blob); },
       keyReset: async (publicKey, blob) => { this.seen.push({ publicKey, blob }); (this.keys.get(me) ?? []).forEach(k => { k.retired = true; }); return this.add(me, publicKey, blob); },
       keyBackupGet: async () => this.backups.get(me) ?? null,
@@ -29,13 +48,14 @@ class FakeServer {
       keyLookup: async (id, version): Promise<ChatPublicKey | null> => { const k = (this.keys.get(id) ?? []).find(x => x.version === version); return k ? { profileId: id, keyVersion: k.version, publicKey: k.publicKey, fingerprint: k.fingerprint, retired: k.retired } : null; }
     };
   }
-  private async add(id: string, publicKey: string, blob: ChatKeyBackupBlob) {
+  /** One step with no awaiting in it, like the database function under its lock. */
+  private add(id: string, publicKey: string, blob: ChatKeyBackupBlob | null) { return fingerprintOf(publicKey).then(fp => this.addNow(id, publicKey, blob, fp)); }
+  private addNow(id: string, publicKey: string, blob: ChatKeyBackupBlob | null, fingerprint: string) {
     const list = this.keys.get(id) ?? [];
     const version = (list.length ? Math.max(...list.map(k => k.version)) : 0) + 1;
-    const fingerprint = await fingerprintOf(publicKey);
     list.push({ version, publicKey, fingerprint, retired: false });
     this.keys.set(id, list);
-    this.backups.set(id, { version, blob });
+    if (blob) this.backups.set(id, { version, blob });
     return { version, fingerprint };
   }
 }
@@ -136,5 +156,140 @@ check(m.body === payload.t, 'the device that still holds the old key keeps readi
 // ---- removing keys from a device
 await asha3.c.removeFromDevice();
 check(asha3.c.getSnapshot().status === 'locked' && (await asha3.store.keys()).length === 0, 'removing the keys from a device locks it (the passphrase brings them back)');
+
+
+// ============================================================================================================================ automatic set-up
+// A store that stands in for IndexedDB (keys survive between starts); the plain MemoryStore() is the private-window case.
+const device = () => new MemoryStore(true);
+{
+  const S = new FakeServer();
+  S.members = [{ id: A, name: 'Asha' }, { id: B, name: 'Bilal' }];
+  const mk = (id: string, store = device()) => ({ c: new SecureChatClient(id, S.api(id), store), store });
+
+  // ---- first use: nothing to click, nothing to type
+  const a1 = mk(A);
+  await a1.c.init();
+  const snap = a1.c.getSnapshot();
+  check(snap.status === 'ready' && snap.version === 1 && /^[0-9a-f]{64}$/.test(snap.fingerprint ?? ''), 'automatic set-up: a person with no key is ready after the first start, with nothing asked');
+  check((await a1.store.keys()).length === 1 && (await a1.store.pending()) === null, 'the key is kept on the device and nothing is left pending');
+  check(S.backups.size === 0 && snap.hasBackup === false, 'no recovery backup and no passphrase were made');
+  check(S.seen.length === 1 && Object.keys(S.seen[0] as object).sort().join() === 'publicKey,via' && (S.seen[0] as { publicKey: string }).publicKey.length === 88, 'the server was given the public key and nothing else');
+  const stored = (await a1.store.keys())[0];
+  check(stored.privateKey.extractable === false && (await crypto.subtle.exportKey('pkcs8', stored.privateKey).then(() => false, () => true)), 'the private key is non-extractable: it cannot be read out of the browser');
+  check(JSON.stringify(S).indexOf('PRIVATE') < 0 && !JSON.stringify(S.seen).includes('pkcs8'), 'no private key material reached the server');
+
+  // ---- starting again, a reload, the same browser: the same key, no second one
+  const a1b = mk(A, a1.store);
+  await a1b.c.init();
+  check(a1b.c.getSnapshot().status === 'ready' && a1b.c.getSnapshot().version === 1 && S.keys.get(A)!.length === 1 && S.seen.length === 1, 'a restart reuses the key: no second key, no second registration');
+
+  // ---- two tabs of one browser start at the same moment (they share the store)
+  const shared = device();
+  const t1 = mk(B, shared), t2 = mk(B, shared);
+  await Promise.all([t1.c.init(), t2.c.init()]);
+  check(t1.c.getSnapshot().status === 'ready' && t2.c.getSnapshot().status === 'ready' && S.keys.get(B)!.length === 1 && (await shared.keys()).length === 1, 'two tabs starting together end with ONE key, both ready');
+  check(t1.c.getSnapshot().fingerprint === t2.c.getSnapshot().fingerprint, 'and the same key');
+
+  // ---- messages work with no passphrase anywhere
+  const seal = await a1.c.seal(conv, msgId, { t: 'no passphrase needed' });
+  check(seal.wraps.length === 2 && JSON.stringify(seal).indexOf('no passphrase') < 0, 'a message is sealed for both members, ciphertext only');
+  const wire = (viewer: string): ChatMessage => ({ id: crypto.randomUUID(), conversationId: conv.id, seq: 1, mine: viewer === A, senderKind: 'STAFF', senderName: 'Asha', senderLabel: null, kind: 'TEXT', body: '', attachments: [], clientMsgId: msgId,
+    createdAt: new Date().toISOString(), replyTo: null, encrypted: true, senderId: A, e2ee: { v: 1, sv: seal.sv, iv: seal.iv, ct: seal.ct, wrap: seal.wraps.find(w => w.to === viewer) ?? null } });
+  const [got] = await t1.c.open(conv.id, [wire(B)]);
+  check(got.body === 'no passphrase needed' && got.secure?.state === 'ok', 'the colleague reads it');
+
+  // ---- a second device of an automatic account: locked, and nothing is replaced behind the person's back
+  const a2 = mk(A);
+  await a2.c.init();
+  const lockedSnap = a2.c.getSnapshot();
+  check(lockedSnap.status === 'locked' && lockedSnap.recovery === 'new-key' && lockedSnap.hasBackup === false, 'a new device of an account with no backup is locked and says the way in is a new key');
+  check(S.keys.get(A)!.length === 1 && !S.keys.get(A)![0].retired && (await a2.store.keys()).length === 0, 'the account keeps its key: the login on another browser did not replace it');
+  check(await fails(() => a2.c.seal(conv, crypto.randomUUID(), { t: 'x' }), e => e instanceof SecureSendError && e.code === 'LOCKED'), 'a locked device cannot send (no plaintext fallback)');
+  const [lockedMsg] = await a2.c.open(conv.id, [wire(A)]);
+  check(lockedMsg.body === '' && lockedMsg.secure?.state === 'failed' && lockedMsg.secure.reason === 'locked', 'and shows encrypted messages as locked, with no text');
+  check(await fails(() => a2.c.unlock('anything at all 12345')), 'there is no passphrase that unlocks it');
+
+  // ---- two devices start at the same moment: one key wins, the other is told (and keeps nothing)
+  const S2 = new FakeServer();
+  S2.members = S.members;
+  const dev1 = new SecureChatClient(A, S2.api(A), device()), dev2 = new SecureChatClient(A, S2.api(A), device());
+  await Promise.all([dev1.init(), dev2.init()]);
+  const statuses = [dev1.getSnapshot().status, dev2.getSnapshot().status].sort().join();
+  check(statuses === 'locked,ready' && S2.keys.get(A)!.length === 1, 'two devices at once: one is ready, the other locked, and the account has ONE key');
+  const loser = dev1.getSnapshot().status === 'locked' ? dev1 : dev2;
+  check(loser.getSnapshot().recovery === 'new-key', 'the other device is offered the new-key step, not a silent reset');
+
+  // ---- the person chooses to go on with a new key on the new device
+  await t1.c.peers(conv.id); // Bilal's device has seen Asha's first key
+  await a2.c.continueWithNewKey();
+  check(a2.c.getSnapshot().status === 'ready' && a2.c.getSnapshot().version === 2, 'on request the device continues with a NEW key (version 2)');
+  check(S.keys.get(A)!.filter(k => !k.retired).length === 1 && S.keys.get(A)!.find(k => k.version === 1)!.retired, 'the old key is retired, one key is active');
+  check(S.seen.filter(x => (x as { via?: string }).via === 'rotate').length === 1, 'it went through the explicit rotate call');
+  const [oldMsg] = await a2.c.open(conv.id, [wire(A)]);
+  check(oldMsg.secure?.state === 'failed' && oldMsg.secure.reason === 'old-key', 'messages sealed for the old key are marked unreadable here, with the reason');
+  const bSeesA = await t1.c.peers(conv.id);
+  check(bSeesA.find(p => p.profileId === A)?.changed === true, "Bilal's device sees that Asha's key changed and holds sending until it is accepted");
+  check(await fails(() => t1.c.seal(conv, crypto.randomUUID(), { t: 'x' }), e => e instanceof SecureSendError && e.code === 'KEY_CHANGED'), 'no message goes out to the changed key until it is accepted');
+
+  // ---- the network fails during set-up: nothing is lost, a retry finishes with the SAME key
+  const S3 = new FakeServer();
+  S3.members = [{ id: A, name: 'Asha' }];
+  S3.down = true;
+  const store3 = device();
+  const n1 = new SecureChatClient(A, S3.api(A), store3);
+  await n1.init();
+  check(n1.getSnapshot().status === 'setup' && n1.getSnapshot().setupReason === 'failed' && S3.keys.size === 0, 'a failed registration leaves "set-up" with a reason, and nothing was registered');
+  const pendingBefore = await store3.pending();
+  check(!!pendingBefore, 'the key made on the device is kept (pending), not thrown away');
+  S3.down = false;
+  await n1.retryAutomatic();
+  check(n1.getSnapshot().status === 'ready' && S3.keys.get(A)!.length === 1 && (await store3.pending()) === null, 'the retry publishes it: ready, one key, nothing pending');
+  check((S3.seen as { publicKey: string }[]).every(x => x.publicKey === (S3.seen as { publicKey: string }[])[0].publicKey), 'every attempt carried the SAME public key (no second key was made)');
+
+  // ---- the page closed after the server took the key and before the device recorded it
+  const S4 = new FakeServer();
+  S4.members = [{ id: A, name: 'Asha' }];
+  const store4 = device();
+  const half = new SecureChatClient(A, S4.api(A), store4);
+  const { pkcs8 } = await (await import('../../src/lib/chat/e2ee.js')).generateIdentity();
+  const idn = await (await import('../../src/lib/chat/e2ee.js')).identityFromPkcs8(pkcs8);
+  await store4.putPendingIfAbsent({ version: 0, privateKey: idn.privateKey, publicKey: idn.publicKey });
+  await S4.api(A).keyRegister(idn.publicRaw);
+  await half.init();
+  check(half.getSnapshot().status === 'ready' && half.getSnapshot().version === 1 && S4.keys.get(A)!.length === 1 && (await store4.keys()).length === 1, 'a set-up cut short is completed on the next start with the same key');
+
+  // ---- a browser that cannot keep keys (a private window): nothing is registered by itself
+  const S5 = new FakeServer();
+  S5.members = [{ id: A, name: 'Asha' }];
+  const priv = new SecureChatClient(A, S5.api(A), new MemoryStore());
+  await priv.init();
+  check(priv.getSnapshot().status === 'setup' && priv.getSnapshot().setupReason === 'storage' && S5.keys.size === 0 && S5.seen.length === 0, 'where keys cannot be kept the set-up is not done by itself (no key is published that would be lost with the tab)');
+  check(await fails(() => priv.continueWithNewKey(), e => /cannot keep keys/.test(e.message)), 'and a new key is not made there either');
+  await priv.setup('a recovery passphrase for a private window');
+  check(priv.getSnapshot().status === 'ready' && priv.getSnapshot().hasBackup, 'the passphrase set-up still works there (the backup is what makes it recoverable)');
+
+  // ---- an older account with a recovery backup: unlock with the passphrase, as before
+  const S6 = new FakeServer();
+  S6.members = [{ id: A, name: 'Asha' }];
+  const first = new SecureChatClient(A, S6.api(A), new MemoryStore());
+  await first.init();
+  await first.setup(PASS);
+  const other = new SecureChatClient(A, S6.api(A), device());
+  await other.init();
+  check(other.getSnapshot().status === 'locked' && other.getSnapshot().recovery === 'passphrase' && other.getSnapshot().hasBackup, 'an account with a backup: a new device is locked and offered the passphrase');
+  await other.unlock(PASS);
+  check(other.getSnapshot().status === 'ready' && S6.keys.get(A)!.length === 1, 'the passphrase unlocks it, and no new key was made');
+  // a backup of an OLDER key is not offered as a way in
+  const third = new SecureChatClient(A, S6.api(A), device());
+  await third.init();
+  await third.continueWithNewKey();
+  const fourth = new SecureChatClient(A, S6.api(A), device());
+  await fourth.init();
+  check(fourth.getSnapshot().status === 'locked' && fourth.getSnapshot().recovery === 'new-key' && !fourth.getSnapshot().hasBackup, 'a backup that belongs to an older key is not offered as a way in');
+
+  // ---- removing the keys from the only device of an automatic account
+  await a1.c.removeFromDevice();
+  check(a1.c.getSnapshot().status === 'locked' && a1.c.getSnapshot().recovery === 'new-key' && S.keys.get(A)![0].retired === true && S.keys.get(A)!.length === 2, 'removing the keys leaves the account locked (it does not quietly make a new key)');
+}
 
 console.log(`=== CHAT SECURE CLIENT TESTS PASSED (${passed}) ===`);
