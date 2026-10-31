@@ -44,7 +44,7 @@ check(!JSON.stringify(p).includes('customer-documents') && !JSON.stringify(p).in
 for (const [n, file] of [['GST/26-27/001', 'GST-26-27-001-paid-invoice.pdf'], ['Amuwa/26-27/001', 'Amuwa-26-27-001-paid-invoice.pdf'], ['GST/27-28/1000', 'GST-27-28-1000-paid-invoice.pdf']] as const) {
   const q = invoiceWhatsAppPayload(job({ number: n, total: 5000 }), 'https://l.example.test/x') as any;
   const b = builderInvoicePayload(job({ number: n, total: 5000 }), 'https://l.example.test/x') as any;
-  check(q.variables.invoiceNumber === n && q.document.filename === file && b.invoice_number === n && b.invoice_filename === file && b.stage_code === 'INVOICE_PAID', `${n}: the WhatsApp request carries that exact number and a safe file name`, { q, b });
+  check(q.variables.invoiceNumber === n && q.document.filename === file && b.invoice_number === n && b.invoice_filename === file && b.stage_code === 'INVOICE_PAID' && b.number === '9820000123' && b.pdf_invoice_link === 'https://l.example.test/x' && b.pdf_invoice_link === b.invoice_pdf_url, `${n}: the WhatsApp request carries that exact number and a safe file name`, { q, b });
   check(/^Rs\.\s?5,000(\.00)?$/.test(q.variables.amount) && b.invoice_amount === q.variables.amount, `${n}: and the persisted total`, q.variables.amount);
 }
 

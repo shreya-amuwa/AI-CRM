@@ -14,6 +14,7 @@
     "test:api": "supabase/tests/run-api.sh",
     "test:unit": "supabase/tests/run-unit.sh",
     "bootstrap:super-admin": "node scripts/bootstrap-super-admin.mjs",
+    "seed:test-accounts": "node scripts/seed-test-accounts.mjs",
     "create:hr-login": "node scripts/create-hr-login.mjs",
     "docs:build": "node docs-site/build.mjs",
     "docs:build-client": "node docs-site/build.mjs --audience=client",

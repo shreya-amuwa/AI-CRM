@@ -105,7 +105,7 @@ export interface InvoiceWhatsAppSender {
 
 /**
  * The paid invoice as an event for the WhatsApp Automation Builder webhook: the same keys the onboarding events carry (so the router reads it the
- * same way) with a fixed `stage_code` to route on, plus the invoice. `invoice_pdf_url` is the short-lived link. In the builder: add a route whose
+ * same way) with a fixed `stage_code` to route on, plus the invoice. `invoice_pdf_url` and `pdf_invoice_link` are the short-lived link; `number` is the 10-digit mobile number. In the builder: add a route whose
  * condition is `stage_code` equals `INVOICE_PAID` and send the invoice template (with the document) from it. Use a new event_key for every test.
  */
 export function builderInvoicePayload(job: InvoiceWhatsAppJob, link: string): Record<string, unknown> {
@@ -118,6 +118,9 @@ export function builderInvoicePayload(job: InvoiceWhatsAppJob, link: string): Re
     department: '',
     website: '',
     whatsapp_number: `91${ten}`,
+    // the fields the invoice panel reads: the customer's 10-digit mobile number and the short-lived PDF link (the same link as invoice_pdf_url)
+    number: ten,
+    pdf_invoice_link: link,
     status: 'Paid Invoice',
     stage_code: 'INVOICE_PAID',
     source: automationSettings().whatsapp.source,

@@ -54,6 +54,7 @@ With `WHATSAPP_WEBHOOK_URL` set and no `WABASTORE_WEBHOOK_URL`, the paid invoice
 
 ```json
 {"name":"<customer>","email":"","phone":"91XXXXXXXXXX","department":"","website":"","whatsapp_number":"91XXXXXXXXXX",
+ "number":"XXXXXXXXXX","pdf_invoice_link":"<short-lived link>",
  "status":"Paid Invoice","stage_code":"INVOICE_PAID","source":"<WHATSAPP_SOURCE>","automation":"Paid Invoice","event_key":"invoice|<dispatch id>|<attempt>",
  "invoice_number":"INV-2026-00052","invoice_amount":"Rs.10,000.00","invoice_date":"27 Oct 2026","invoice_pdf_url":"<short-lived link>","invoice_filename":"INV-2026-00052-paid-invoice.pdf"}
 ```

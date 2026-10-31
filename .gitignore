@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 CREDENTIALS.md
+# passwords of the dummy test accounts (npm run seed:test-accounts)
+*.local.md
+qa-accounts.local.*
 
 # Dependencies
 node_modules/
