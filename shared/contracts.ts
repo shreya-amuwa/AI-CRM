@@ -4429,3 +4429,150 @@ export interface DepartmentEmployeeDirectory {
   leads: { id: string; name: string; status: string; team: { id: string; name: string; division: string }; members: number }[];
 }
 export interface TeamAssignmentRecord { id: string; kind: string; note: string | null; createdAt: string; fromTeam: string | null; toTeam: string | null; lead: string | null; assignedBy: string | null }
+
+// ---- Work reports (Team Member -> Team Lead -> Department Head -> Operations Head) ----
+export type { ReportKind, ReportPeriodType, ReportStatus } from './reportFields.js';
+import type { ReportFieldKey, ReportKind as WorkReportKind, ReportPeriodType as WorkReportPeriod, ReportStatus as WorkReportStatus } from './reportFields.js';
+
+export interface ReportAttachment { name?: string; url: string }
+export type WorkReportContent = Partial<Record<ReportFieldKey, string>> & { attachments?: ReportAttachment[] };
+
+/** A report as the lists show it (a short excerpt instead of the whole content). */
+export interface WorkReportSummary {
+  id: string;
+  kind: WorkReportKind;
+  authorId: string | null;
+  author: string;
+  designation: string | null;
+  departmentId: string;
+  department: string | null;
+  teamId: string | null;
+  team: string | null;
+  title: string;
+  reportDate: string;
+  periodType: WorkReportPeriod;
+  periodStart: string;
+  periodEnd: string;
+  status: WorkReportStatus;
+  revision: number;
+  submittedAt: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewComment: string | null;
+  createdAt: string;
+  updatedAt: string;
+  excerpt: string;
+}
+export interface WorkReportEvent {
+  at: string;
+  actor: string;
+  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'OPENED' | 'APPROVED' | 'REJECTED' | 'REVISION_REQUESTED';
+  fromStatus: string | null;
+  toStatus: string | null;
+  comment: string | null;
+  revision: number;
+}
+export interface WorkReportDetail extends WorkReportSummary {
+  content: WorkReportContent;
+  canEdit?: boolean;
+  canReview?: boolean;
+  events?: WorkReportEvent[];
+}
+export type ReportLevel = 'MEMBER' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'SUPER_ADMIN';
+export interface ReportContext {
+  level: ReportLevel;
+  canWrite: boolean;
+  name: string;
+  team: string | null;
+  reportsTo: { id: string; name: string }[];
+  pendingReview: number;
+  needsRevision: number;
+  badge: number;
+}
+export interface ReportInbox {
+  items: WorkReportSummary[];
+  counts: Partial<Record<WorkReportStatus, number>>;
+}
+export interface ReportCounts { submitted: number; approved: number; pending: number; revision: number; rejected: number }
+/** One Team Lead's box: the lead's own reports and the APPROVED reports of the team (the others are only counted). */
+export interface TeamLeadBox {
+  leadId: string;
+  lead: string;
+  teamId: string | null;
+  team: string | null;
+  totalMembers: number;
+  counts: ReportCounts;
+  leadReports: WorkReportDetail[];
+  memberReports: WorkReportDetail[];
+  /** Status of the lead's own report in the period, shown even while the reports themselves are not released. */
+  leadReportStatus: WorkReportStatus | null;
+  lastSubmittedAt: string | null;
+}
+export interface TeamBoxMember {
+  id: string;
+  name: string;
+  designation: string | null;
+  counts: ReportCounts;
+  reports: WorkReportSummary[];
+}
+export interface TeamReportBox {
+  teamId: string | null;
+  team: string | null;
+  teamLead: string;
+  periodStart: string;
+  periodEnd: string;
+  totalMembers: number;
+  counts: ReportCounts;
+  members: TeamBoxMember[];
+  myReports: WorkReportSummary[];
+}
+export interface ReportPackage {
+  status: 'SUBMITTED' | 'NOT_SUBMITTED';
+  id?: string;
+  note?: string | null;
+  submittedBy?: string | null;
+  submittedAt?: string;
+  periodType?: WorkReportPeriod;
+}
+export interface DepartmentReportBox {
+  departmentId: string;
+  department: string | null;
+  departmentHead: string;
+  periodStart: string;
+  periodEnd: string;
+  teams: TeamLeadBox[];
+  package: ReportPackage;
+  myReports: WorkReportSummary[];
+}
+export interface OperationsDepartmentRow {
+  id: string;
+  name: string;
+  slug: string;
+  departmentHeads: string[];
+  teamLeads: number;
+  teamMembers: number;
+  counts: {
+    submitted: number;
+    memberApproved: number;
+    memberPending: number;
+    teamLeadReports: number;
+    headReports: number;
+    headPending: number;
+  };
+  headReportStatus: WorkReportStatus | null;
+  lastSubmittedAt: string | null;
+  package: ReportPackage;
+}
+export interface OperationsReportBoard { periodStart: string; periodEnd: string; departments: OperationsDepartmentRow[] }
+export interface ReportsDepartmentDetail {
+  departmentId: string;
+  department: string | null;
+  periodStart: string;
+  periodEnd: string;
+  package: ReportPackage;
+  /** False until the Department Head forwards the package for the period: only counts are shown before that. */
+  released: boolean;
+  packages: { id: string; periodType: WorkReportPeriod; periodStart: string; periodEnd: string; submittedAt: string }[];
+  departmentHeads: { id: string; name: string; designation: string | null; reports: WorkReportSummary[] }[];
+  teamLeads: TeamLeadBox[];
+}

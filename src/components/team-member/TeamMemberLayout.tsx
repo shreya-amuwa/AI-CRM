@@ -22,6 +22,8 @@ import { useOpenChatRequest } from '../chat/chatEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 
 export type TeamMemberNav =
   | 'home'
@@ -39,6 +41,7 @@ export type TeamMemberNav =
   | 'settings'
   | 'chat'
   | 'raise-issue'
+  | 'work-reports'
   | 'notifications';
 
 interface TeamMemberLayoutProps {
@@ -73,6 +76,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
     { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
+    { id: REPORTS_NAV.id as TeamMemberNav, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
@@ -102,6 +106,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   };
 
   const chatUnread = useChatNavBadge();
+  const reportsBadge = useReportsBadge();
+  useOpenReportsRequest(React.useCallback(() => handleNavClick('work-reports'), []));
   useOpenChatRequest(React.useCallback(() => handleNavClick('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => handleNavClick('raise-issue'), []));
   const displayName = user?.name || 'Team Member';
@@ -185,7 +191,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
                 </div>
               );
             }
-            return <NavButton key={item.id} label={item.label} icon={Icon} badge={item.id === 'chat' ? chatUnread : undefined} active={currentNav === item.id} onClick={() => handleNavClick(item.id)} />;
+            return <NavButton key={item.id} label={item.label} icon={Icon} badge={item.id === 'chat' ? chatUnread : item.id === 'work-reports' ? reportsBadge : undefined} active={currentNav === item.id} onClick={() => handleNavClick(item.id)} />;
             })();
             return (
               <React.Fragment key={item.id}>
@@ -211,7 +217,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
         <main className={currentNav === 'chat' ? 'flex-1 min-w-0' : 'flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-y-auto'}>
           {currentNav === 'chat' && <ChatRoute />}
           {currentNav === 'raise-issue' && <IssuesRoute />}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue'}>{children}</div>
+          {currentNav === 'work-reports' && <ReportsRoute />}
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports'}>{children}</div>
         </main>
       </div>
     </div>

@@ -10,13 +10,15 @@ import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { DashboardShell, PageTitle, type ShellNavGroup } from '../layout/shell';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { TeamCustomers } from './TeamCustomers';
 
-export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'notifications';
+export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
 
 interface TeamLeadDashboardProps {
   currentUserId: string;
@@ -34,6 +36,8 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
+  const reportsBadge = useReportsBadge();
+  useOpenReportsRequest(React.useCallback(() => setNav('work-reports'), []));
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -44,6 +48,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
           { id: 'customers', label: 'Team Customers', icon: Users },
           { id: 'assigned-tasks', label: 'Assigned Tasks', icon: ClipboardList },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
+          { ...REPORTS_NAV, badge: reportsBadge },
           { id: 'field-visits', label: 'Field Visits', icon: Navigation }
         ]
       },
@@ -57,7 +62,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         ]
       }
     ],
-    [chatUnread]
+    [chatUnread, reportsBadge]
   );
 
   return (
@@ -94,6 +99,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       )}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'raise-issue' && <IssuesRoute />}
+      {nav === 'work-reports' && <ReportsRoute />}
       {nav === 'notifications' && <NotificationsPage />}
     </DashboardShell>
   );

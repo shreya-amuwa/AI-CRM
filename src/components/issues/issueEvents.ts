@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { openReports } from '../reports/reportEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -57,6 +58,11 @@ export function useOpenHrCaseRequest(show: (detail: OpenHrCaseDetail) => void) {
 const EMPLOYEE_SIDE = new Set(['EMPLOYEE_ISSUE_UPDATED', 'EMPLOYEE_MEETING_UPDATED']);
 /** A notification about an employee issue or meeting request: open the right page on it. Returns false for any other notification. */
 export function openFromNotification(n: { type: string; entityType: string | null; entityId: string | null }): boolean {
+  // a work report notification (submitted, decided, sent back, package sent) opens the Reports page, on the report when it names one
+  if (n.entityType === 'work_report' || n.entityType === 'work_report_package') {
+    openReports({ id: n.entityType === 'work_report' ? n.entityId ?? undefined : undefined });
+    return true;
+  }
   if (n.entityType !== 'employee_issue' && n.entityType !== 'employee_meeting') return false;
   const issue = n.entityType === 'employee_issue';
   if (EMPLOYEE_SIDE.has(n.type)) openIssues({ kind: issue ? 'ISSUE' : 'MEETING', id: n.entityId ?? undefined });

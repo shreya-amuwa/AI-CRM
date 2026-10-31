@@ -7,6 +7,7 @@ import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
 import { checkPanelUrl } from './panelUrl.js';
+import { ALL_REPORT_FIELD_KEYS, REPORT_PERIOD_TYPES, REPORT_STATUSES, type ReportFieldKey } from './reportFields.js';
 import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
   ACCOUNT_STATUSES,
@@ -2160,3 +2161,48 @@ export const subscriptionListQuerySchema = z
     pageSize: z.coerce.number().int().min(1).max(100).default(20)
   })
   .strict();
+
+// ---- Work reports (Team Member -> Team Lead -> Department Head -> Operations Head) ----
+const reportText = z.string().trim().max(5000, 'Keep each section under 5000 characters.');
+const reportAttachmentSchema = z.object({
+  name: z.string().trim().max(120).optional(),
+  url: z.string().trim().max(500).regex(/^https?:\/\/\S+$/i, 'An attachment link must be a web address starting with http:// or https://.')
+});
+const reportContentShape = Object.fromEntries(ALL_REPORT_FIELD_KEYS.map(k => [k, reportText.optional()])) as Record<ReportFieldKey, z.ZodOptional<typeof reportText>>;
+const reportPeriodRefine = <T extends { periodStart: string; periodEnd: string }>(d: T) => d.periodEnd >= d.periodStart;
+
+export const reportSaveSchema = z
+  .object({
+    title: z.string().trim().min(3, 'Enter a report title.').max(200),
+    reportDate: isoDate,
+    periodType: z.enum(REPORT_PERIOD_TYPES).default('DAILY'),
+    periodStart: isoDate,
+    periodEnd: isoDate,
+    content: z
+      .object({
+        ...reportContentShape,
+        attachments: z.array(reportAttachmentSchema).max(5, 'Add at most 5 attachment links.').optional()
+      })
+      .default({})
+  })
+  .strict()
+  .refine(reportPeriodRefine, { message: 'The reporting period must end on or after its start.', path: ['periodEnd'] });
+
+export const reportReviewSchema = z
+  .object({ decision: z.enum(['APPROVED', 'REJECTED', 'REVISION_REQUIRED']), comment: optionalText(2000) })
+  .strict()
+  .refine(d => d.decision === 'APPROVED' || (d.comment ?? '').trim().length >= 3, { message: 'Write a comment so the author knows what to do.', path: ['comment'] });
+
+export const reportListQuerySchema = z
+  .object({ status: z.enum([...REPORT_STATUSES, 'PENDING']).optional(), from: isoDate.optional(), to: isoDate.optional(), author: uuidSchema.optional() })
+  .strict();
+
+export const reportRangeQuerySchema = z
+  .object({ from: isoDate, to: isoDate })
+  .strict()
+  .refine(d => d.to >= d.from, { message: 'The period must end on or after its start.', path: ['to'] });
+
+export const reportPackageSchema = z
+  .object({ from: isoDate, to: isoDate, periodType: z.enum(REPORT_PERIOD_TYPES).default('WEEKLY'), note: optionalText(4000) })
+  .strict()
+  .refine(d => d.to >= d.from, { message: 'The period must end on or after its start.', path: ['to'] });

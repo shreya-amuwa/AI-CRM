@@ -1,0 +1,43 @@
+import type {
+  DepartmentReportBox, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
+} from '../../shared/contracts.js';
+import { reportListQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
+import { REPORT_STATUSES } from '../../shared/reportFields.js';
+import { AppError } from '../http/errors.js';
+import { parse } from '../http/validate.js';
+import type { WorkReportRepository } from '../repositories/WorkReportRepository.js';
+
+/**
+ * Work reports: Team Member -> Team Lead -> Department Head -> Operations Head. Who may write, read or decide on a report is decided by the
+ * database from the caller's own login; this layer only validates the input (the same schemas the forms use).
+ */
+export class WorkReportService {
+  constructor(private readonly repo: WorkReportRepository) {}
+
+  context(): Promise<ReportContext> { return this.repo.context(); }
+  mine(query: unknown): Promise<WorkReportSummary[]> {
+    const status = (query as { status?: string } | undefined)?.status;
+    if (status !== undefined && !(REPORT_STATUSES as readonly string[]).includes(status)) throw new AppError('VALIDATION_ERROR', 'Choose a valid status.');
+    return this.repo.mine(status);
+  }
+  get(id: string): Promise<WorkReportDetail> { return this.repo.get(parse(uuidSchema, id)); }
+  create(body: unknown): Promise<WorkReportDetail> { return this.repo.save(null, parse(reportSaveSchema, body)); }
+  update(id: string, body: unknown): Promise<WorkReportDetail> { return this.repo.save(parse(uuidSchema, id), parse(reportSaveSchema, body)); }
+  submit(id: string): Promise<WorkReportDetail> { return this.repo.submit(parse(uuidSchema, id)); }
+  deleteDraft(id: string): Promise<void> { return this.repo.deleteDraft(parse(uuidSchema, id)); }
+
+  inbox(query: unknown): Promise<ReportInbox> { return this.repo.inbox(parse(reportListQuerySchema, query ?? {})); }
+  review(id: string, body: unknown): Promise<WorkReportDetail> {
+    const r = parse(reportReviewSchema, body);
+    return this.repo.review(parse(uuidSchema, id), r.decision, r.comment);
+  }
+
+  teamBox(query: unknown): Promise<TeamReportBox> { const q = parse(reportRangeQuerySchema, query); return this.repo.teamBox(q.from, q.to); }
+  department(query: unknown): Promise<DepartmentReportBox> { const q = parse(reportRangeQuerySchema, query); return this.repo.department(q.from, q.to); }
+  submitPackage(body: unknown): Promise<ReportPackage> { return this.repo.submitPackage(parse(reportPackageSchema, body)); }
+  operations(query: unknown): Promise<OperationsReportBoard> { const q = parse(reportRangeQuerySchema, query); return this.repo.operations(q.from, q.to); }
+  operationsDepartment(id: string, query: unknown): Promise<ReportsDepartmentDetail> {
+    const q = parse(reportRangeQuerySchema, query);
+    return this.repo.operationsDepartment(parse(uuidSchema, id), q.from, q.to);
+  }
+}

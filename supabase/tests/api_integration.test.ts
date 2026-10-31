@@ -8153,6 +8153,161 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- Work reports: Team Member -> Team Lead -> Department Head -> Operations Head (every role goes through the real routes) ---
+{
+  const depts = (await db.query(`insert into public.departments (slug, name) values ('wr-api-a', 'WR API Alpha'), ('wr-api-b', 'WR API Beta'), ('wr-api-home', 'WR API Home') returning id, slug`)).rows as { id: string; slug: string }[];
+  const dId = (slug: string) => depts.find(d => d.slug === slug)!.id;
+  const teams = (await db.query(`insert into public.teams (department_id, name, division) select id, 'Sales', 'SALES' from public.departments where slug like 'wr-api-%' returning id, department_id`)).rows as { id: string; department_id: string }[];
+  const tId = (slug: string) => teams.find(t => t.department_id === dId(slug))!.id;
+  const mk = async (name: string, body: Record<string, unknown>) => {
+    const res = await api('sa', 'POST', '/users', { email: `wr.${name}@amuwa.com`, fullName: `WR ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `work reports: ${name} account created`, res);
+    tokens.set(`wr_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  const ohId = await mk('oh', { role: 'DEPARTMENT_HEAD', departmentId: dId('wr-api-home'), operationsHead: true });
+  const dhaId = await mk('dha', { role: 'DEPARTMENT_HEAD', departmentId: dId('wr-api-a') });
+  await mk('dhb', { role: 'DEPARTMENT_HEAD', departmentId: dId('wr-api-b') });
+  await mk('tl1', { role: 'TEAM_HEAD', teamId: tId('wr-api-a') });
+  await mk('tlb', { role: 'TEAM_HEAD', teamId: tId('wr-api-b') });
+  await mk('m1', { role: 'TEAM_MEMBER', teamId: tId('wr-api-a') });
+  await mk('mb', { role: 'TEAM_MEMBER', teamId: tId('wr-api-b') });
+  r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [dId('wr-api-a')], primaryDepartmentIds: [dId('wr-api-a')] });
+  check(r.status === 200, 'work reports: the Operations Head is given the Alpha department', r);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const body = (o: Record<string, unknown> = {}) => ({ title: 'Daily report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { workCompleted: 'Closed three tickets', tasksCompleted: '3' }, ...o });
+
+  // ---- sign-in and validation
+  r = await api(null, 'GET', '/work-reports/context');
+  check(r.status === 401, 'work reports: sign-in is needed', r);
+  r = await api('wr_m1', 'GET', '/work-reports/context');
+  check(r.status === 200 && r.json.data.level === 'MEMBER' && r.json.data.canWrite && r.json.data.reportsTo.some((x: any) => x.name === 'WR tl1'), 'work reports: a Team Member sees their Team Lead as the reviewer', r.json);
+  r = await api('wr_m1', 'POST', '/work-reports', body({ title: 'x' }));
+  check(r.status === 422, 'work reports: a title is required', r);
+  r = await api('wr_m1', 'POST', '/work-reports', body({ periodEnd: '2000-01-01' }));
+  check(r.status === 422, 'work reports: the period must end after it starts', r);
+  r = await api('wr_m1', 'POST', '/work-reports', body({ content: { workCompleted: 'ok ok', attachments: [{ url: 'javascript:alert(1)' }] } }));
+  check(r.status === 422, 'work reports: an attachment link must be http(s)', r);
+  r = await api('wr_m1', 'POST', '/work-reports', { ...body(), status: 'APPROVED', authorId: dhaId, departmentId: dId('wr-api-b') });
+  check(r.status === 422, 'work reports: a request cannot name a status, an author or a department', r);
+
+  // ---- Team Member: draft, submit
+  r = await api('wr_m1', 'POST', '/work-reports', body());
+  check(r.status === 201 && r.json.data.status === 'DRAFT' && r.json.data.kind === 'MEMBER', 'work reports: saved as a draft', r);
+  const rid = r.json.data.id as string;
+  r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED', 'work reports: submitted to the Team Lead', r);
+  r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
+  check(r.status === 409 || r.status === 422, 'work reports: it cannot be submitted twice', r);
+  r = await api('wr_m1', 'PATCH', `/work-reports/${rid}`, body({ title: 'Edited after submit' }));
+  check(r.status === 409 || r.status === 422, 'work reports: a submitted report cannot be edited', r);
+
+  // ---- who can read it
+  r = await api('wr_mb', 'GET', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: a member of another team cannot open it', r);
+  r = await api('wr_tlb', 'GET', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: another department\'s Team Lead cannot open it', r);
+  r = await api('wr_dhb', 'GET', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: another department\'s head cannot open it', r);
+  r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: the Department Head does not see it until it is approved', r);
+  r = await api('wr_oh', 'GET', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: nor the Operations Head', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' }).then(x => x);
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: the assigned Team Lead approves it', r);
+  r = await api('wr_tlb', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED', comment: 'not mine to decide' });
+  check(r.status === 404, 'work reports: another Team Lead cannot decide on it', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED', comment: 'overruling the lead' });
+  check(r.status === 404, 'work reports: the Department Head does not decide on member reports', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED' });
+  check(r.status === 422, 'work reports: a rejection needs a comment', r);
+  r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: once approved, the Department Head can open it', r);
+  r = await api('wr_oh', 'GET', `/work-reports/${rid}`);
+  check(r.status === 200, 'work reports: and the Operations Head', r);
+
+  // ---- no mixing of roles
+  for (const [who, path] of [['wr_m1', '/work-reports/inbox'], ['wr_m1', `/work-reports/team-box?from=${today}&to=${today}`], ['wr_m1', `/work-reports/department?from=${today}&to=${today}`], ['wr_m1', `/work-reports/operations?from=${today}&to=${today}`],
+                             ['wr_tl1', `/work-reports/department?from=${today}&to=${today}`], ['wr_tl1', `/work-reports/operations?from=${today}&to=${today}`], ['wr_dha', `/work-reports/team-box?from=${today}&to=${today}`], ['wr_dha', `/work-reports/operations?from=${today}&to=${today}`]]) {
+    r = await api(who, 'GET', path);
+    check(r.status === 403, `work reports: ${who} cannot open ${path.split('?')[0]}`, r);
+  }
+  r = await api('wr_m1', 'POST', '/work-reports/package', { from: today, to: today, periodType: 'DAILY' });
+  check(r.status === 403, 'work reports: a Team Member cannot send the department package', r);
+  r = await api('wr_tl1', 'POST', '/work-reports/package', { from: today, to: today, periodType: 'DAILY' });
+  check(r.status === 403, 'work reports: nor a Team Lead', r);
+
+  // ---- the boxes
+  r = await api('wr_tl1', 'GET', `/work-reports/team-box?from=${today}&to=${today}`);
+  check(r.status === 200 && r.json.data.totalMembers === 1 && r.json.data.counts.approved === 1 && r.json.data.members[0].reports.length === 1, 'work reports: the Team Lead\'s box counts the member\'s approved report', r);
+  r = await api('wr_tl1', 'POST', '/work-reports', body({ title: 'Lead report', content: { workCompleted: 'Reviewed the pipeline', teamCoordination: 'Stand-up' } }));
+  check(r.status === 201 && r.json.data.kind === 'TEAM_LEAD', 'work reports: the Team Lead writes an individual report', r);
+  const leadReport = r.json.data.id as string;
+  r = await api('wr_tl1', 'POST', `/work-reports/${leadReport}/submit`, {});
+  check(r.status === 200, 'work reports: it goes straight to the Department Head', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${leadReport}/review`, { decision: 'APPROVED' });
+  check(r.status === 404, 'work reports: a Team Lead cannot approve their own report', r);
+  r = await api('wr_dha', 'GET', `/work-reports/inbox?status=PENDING`);
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === leadReport, 'work reports: the Department Head\'s inbox holds the Team Lead\'s report', r);
+  r = await api('wr_dha', 'GET', `/work-reports/department?from=${today}&to=${today}`);
+  const box = r.json.data?.teams?.find((t: any) => t.lead === 'WR tl1');
+  check(r.status === 200 && box && box.leadReports.length === 1 && box.memberReports.length === 1 && box.counts.approved === 1 && r.json.data.package.status === 'NOT_SUBMITTED', 'work reports: the Department Head sees one box per Team Lead with the lead\'s report and the approved member report', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${leadReport}/review`, { decision: 'APPROVED', comment: 'Fine' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: the Department Head approves the Team Lead\'s report', r);
+
+  // ---- Department Head: own report and the package
+  r = await api('wr_dha', 'POST', '/work-reports', body({ title: 'Department overview', content: { workCompleted: 'Hiring done', departmentOverview: 'Healthy' } }));
+  check(r.status === 201 && r.json.data.kind === 'DEPARTMENT_HEAD', 'work reports: the Department Head writes an individual report', r);
+  const headReport = r.json.data.id as string;
+  r = await api('wr_dha', 'POST', `/work-reports/${headReport}/submit`, {});
+  check(r.status === 200, 'work reports: it is submitted to the Operations Head', r);
+  r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-a')}?from=${today}&to=${today}`);
+  check(r.status === 200 && r.json.data.released === false && r.json.data.teamLeads.every((t: any) => t.leadReports.length === 0 && t.memberReports.length === 0), 'work reports: before the package is sent the Operations Head sees only counts', r);
+  r = await api('wr_dha', 'POST', '/work-reports/package', { from: today, to: today, periodType: 'DAILY', note: 'All on track' });
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED', 'work reports: the Department Head sends the department package', r);
+  r = await api('wr_dha', 'POST', '/work-reports/package', { from: today, to: today, periodType: 'DAILY', note: 'All on track (updated)' });
+  check(r.status === 200, 'work reports: sending it again updates it', r);
+  check((await db.query(`select count(*)::int n from public.work_report_packages where department_id = $1`, [dId('wr-api-a')])).rows[0].n === 1, 'work reports: still one package for the period');
+
+  // ---- Operations Head: nested chain
+  r = await api('wr_oh', 'GET', `/work-reports/operations?from=${today}&to=${today}`);
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].name === 'WR API Alpha' && r.json.data.departments[0].counts.memberApproved === 1 && r.json.data.departments[0].package.status === 'SUBMITTED', 'work reports: the Operations Head sees only their department with its counts', r);
+  r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-a')}?from=${today}&to=${today}`);
+  const lead = r.json.data?.teamLeads?.find((t: any) => t.lead === 'WR tl1');
+  check(r.status === 200 && r.json.data.released === true && r.json.data.departmentHeads[0].reports.length === 1 && lead && lead.leadReports.length === 1 && lead.memberReports.length === 1 && lead.memberReports[0].content.workCompleted, 'work reports: opened, the department shows the Department Head, the Team Lead and the member\'s report with its content', r);
+  r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-b')}?from=${today}&to=${today}`);
+  check(r.status === 404, 'work reports: a department they do not manage is closed', r);
+  r = await api('wr_oh', 'POST', `/work-reports/${headReport}/review`, { decision: 'REVISION_REQUIRED', comment: 'Add the targets' });
+  check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED', 'work reports: the Operations Head sends the Department Head\'s report back', r);
+  r = await api('wr_dha', 'PATCH', `/work-reports/${headReport}`, body({ title: 'Department overview', content: { workCompleted: 'Hiring done', targets: 'Hit 90%' } }));
+  check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED', 'work reports: the author edits the report that was sent back', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${headReport}/submit`, {});
+  check(r.status === 200 && r.json.data.revision === 2, 'work reports: resubmitted as revision 2', r);
+  r = await api('wr_oh', 'GET', `/work-reports/${headReport}`);
+  check(r.status === 200 && r.json.data.events.length >= 5, 'work reports: the history keeps every step', r);
+
+  // ---- the author's own lists, drafts and the sidebar badge
+  r = await api('wr_m1', 'GET', '/work-reports/mine');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === rid, 'work reports: My Reports holds only my own', r);
+  r = await api('wr_mb', 'GET', '/work-reports/mine');
+  check(r.status === 200 && r.json.data.length === 0, 'work reports: another member has none', r);
+  r = await api('wr_mb', 'POST', '/work-reports', body({ content: {} }));
+  const draftId = r.json.data.id as string;
+  r = await api('wr_mb', 'POST', `/work-reports/${draftId}/submit`, {});
+  check(r.status === 422, 'work reports: work completed is needed to submit', r);
+  r = await api('wr_mb', 'DELETE', `/work-reports/${draftId}`);
+  check(r.status === 200, 'work reports: a draft can be deleted', r);
+  r = await api('wr_m1', 'DELETE', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: an approved report cannot be deleted', r);
+  r = await api('wr_oh', 'GET', '/work-reports/context');
+  check(r.status === 200 && r.json.data.level === 'OPERATIONS_HEAD' && r.json.data.pendingReview === 1 && r.json.data.badge === 1, 'work reports: the Operations Head\'s badge counts the resubmitted report', r);
+  r = await api('client', 'GET', '/work-reports/context');
+  check(r.status === 403 || r.status === 401, 'work reports: a client cannot use the employee routes', r);
+  const n = (await db.query(`select count(*)::int n from public.notifications where type like 'REPORT\\_%' and recipient_id = $1`, [ohId])).rows[0].n as number;
+  check(n === 3, 'work reports: the Operations Head was told about the package, the report and the resubmission (once each)', n);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

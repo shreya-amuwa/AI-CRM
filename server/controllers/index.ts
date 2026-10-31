@@ -639,3 +639,21 @@ export const workflowController = {
   usageAlerts: (async ctx => ok(await svc(ctx).workflow.usageAlertSettings())) as Handler,
   setUsageAlerts: (async ctx => ok(await svc(ctx).workflow.setUsageAlertSettings(ctx.req.body))) as Handler
 };
+
+// Work reports: Team Member -> Team Lead -> Department Head -> Operations Head (the database decides who may call each)
+export const workReportsController = {
+  context: (async ctx => ok(await svc(ctx).workReports.context())) as Handler,
+  mine: (async ctx => ok(await svc(ctx).workReports.mine(ctx.req.query))) as Handler,
+  create: (async ctx => ok(await svc(ctx).workReports.create(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).workReports.update(ctx.params.id, ctx.req.body))) as Handler,
+  submit: (async ctx => ok(await svc(ctx).workReports.submit(ctx.params.id))) as Handler,
+  deleteDraft: (async ctx => (await svc(ctx).workReports.deleteDraft(ctx.params.id), ok(null))) as Handler,
+  get: (async ctx => ok(await svc(ctx).workReports.get(ctx.params.id))) as Handler,
+  inbox: (async ctx => ok(await svc(ctx).workReports.inbox(ctx.req.query))) as Handler,
+  review: (async ctx => ok(await svc(ctx).workReports.review(ctx.params.id, ctx.req.body))) as Handler,
+  teamBox: (async ctx => ok(await svc(ctx).workReports.teamBox(ctx.req.query))) as Handler,
+  department: (async ctx => ok(await svc(ctx).workReports.department(ctx.req.query))) as Handler,
+  submitPackage: (async ctx => ok(await svc(ctx).workReports.submitPackage(ctx.req.body))) as Handler,
+  operations: (async ctx => ok(await svc(ctx).workReports.operations(ctx.req.query))) as Handler,
+  operationsDepartment: (async ctx => ok(await svc(ctx).workReports.operationsDepartment(ctx.params.id, ctx.req.query))) as Handler
+};

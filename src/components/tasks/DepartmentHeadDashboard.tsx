@@ -37,6 +37,8 @@ import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
+import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
@@ -72,11 +74,14 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
+  const reportsBadge = useReportsBadge();
+  useOpenReportsRequest(React.useCallback(() => setNav('work-reports'), []));
 
   const groups: ShellNavGroup[] = useMemo(() => {
     const work = [
       { id: 'assign', label: 'Assign', icon: ClipboardList },
-      { id: 'reports', label: 'Reports', icon: BarChart3 },
+      { id: 'reports', label: 'Task Reports', icon: BarChart3 },
+      { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
       { id: 'performance', label: 'Performance Management', icon: LineChart },
       { id: 'daily', label: 'Daily Tasks', icon: CalendarCheck },
       { id: 'activity', label: 'Team Activity', icon: Activity }
@@ -124,7 +129,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         ]
       }
     ];
-  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread]);
+  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread, reportsBadge]);
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
@@ -194,6 +199,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'service-prices' && !supportSide && <ServicePrices />}
       {nav === 'chat' && <ChatRoute />}
       {nav === 'raise-issue' && <IssuesRoute />}
+      {nav === 'work-reports' && <ReportsRoute />}
       {nav === 'notifications' && <NotificationsPage />}
       {nav === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} />}
     </DashboardShell>

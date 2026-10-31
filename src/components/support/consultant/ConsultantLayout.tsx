@@ -5,8 +5,10 @@ import { DashboardShell, type ShellNavGroup } from '../../layout/shell';
 import { LeaveCenter } from '../../leave/LeaveCenter';
 import { CHAT_NAV, useChatNavBadge } from '../../chat/ChatRoute';
 import { ISSUES_NAV } from '../../issues/IssuesRoute';
+import { REPORTS_NAV } from '../../reports/ReportsRoute';
+import { useReportsBadge } from '../../reports/reportEvents';
 
-export type ConsultantPage = 'customers' | 'addons' | 'followups' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'raise-issue' | 'notifications';
+export type ConsultantPage = 'customers' | 'addons' | 'followups' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
 
 /** Shell of the Technical Consultant / Meta Verifier dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{
@@ -28,6 +30,7 @@ export const ConsultantLayout: React.FC<{
   const verifier = mode === 'verifier';
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
+  const reportsBadge = useReportsBadge();
   const groups: ShellNavGroup[] = [
     {
       label: 'Customers',
@@ -52,6 +55,7 @@ export const ConsultantLayout: React.FC<{
     {
       label: 'Team',
       items: [
+        { ...REPORTS_NAV, badge: reportsBadge },
         { ...ISSUES_NAV },
         { ...CHAT_NAV, count: chatUnread > 0 ? chatUnread : undefined },
         { id: 'notifications', label: 'Notification Center', icon: Bell, count: unreadCount > 0 ? unreadCount : undefined }
