@@ -2149,7 +2149,8 @@ export interface UsageAlertSettings {
 
 /** What happened to the client's login when Accounts confirmed the payment. */
 export interface ClientLoginOutcome {
-  status: 'CREATED' | 'EXISTS' | 'NOT_CREATED';
+  /** LATER: nothing was made or e-mailed; Accounts creates the login from Client Logins when ready. */
+  status: 'CREATED' | 'EXISTS' | 'NOT_CREATED' | 'LATER';
   email?: string;
   mail?: 'SENT' | 'NOT_SENT';
   detail?: string;

@@ -21,6 +21,12 @@ const isCandidateRoute = window.location.pathname.replace(/\/+$/, '') === '/cand
 // reaches the app, so send it on.
 if (window.location.pathname === '/documentation') window.location.replace('/documentation/' + window.location.search + window.location.hash);
 
+// A set-password link that Supabase could not send to our page (expired or already used) lands on the site's main address with
+// #error=...otp_expired. Show the client the friendly "this link has expired" page instead of the staff sign-in.
+if (!/^\/client(\/|$)/.test(window.location.pathname) && /error_code=otp_expired/.test(window.location.hash)) {
+  window.location.replace('/client/set-password' + window.location.hash);
+}
+
 const isClientRoute = /^\/client(\/|$)/.test(window.location.pathname);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

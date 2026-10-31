@@ -76,7 +76,7 @@ and DM Sans body, pill status badges), adapted to a desktop dashboard with a sli
 * A **staff** login is refused on the client page ("not a client account"), and a **client** login is refused by every staff
   route. A customer who signs in on the normal staff login page is sent to `/client/dashboard`.
 * Wrong credentials, an expired session, a network failure and "no access" each have their own message.
-* Passwords: the client sets their own from a "Set your password" e-mail link, and can get a new link with "Forgot password?" on the sign-in page (see EXISTING_CUSTOMERS_IMPORT.md). There is no shared account.
+* Passwords: the client sets their own from a "Set your password" e-mail link (sent when Accounts creates the login from Client Logins, not when the customer is returned to Sales; it opens `https://crm.amuwacorporation.com/client/set-password` directly, see CLIENT_ONBOARDING_JOURNEY.md), and can get a new link with "Forgot password?" on the sign-in page (see EXISTING_CUSTOMERS_IMPORT.md). There is no shared account.
 
 ## How the customer's data is protected
 

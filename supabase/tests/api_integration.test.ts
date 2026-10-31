@@ -42,6 +42,8 @@ function check(cond: unknown, label: string, extra?: unknown) {
   console.log(`ok - ${label}`);
 }
 
+// The existing client-login checks below run with the login made at payment confirmation; the default (off) is checked in its own block at the end.
+process.env.AUTO_CLIENT_LOGIN = 'on';
 const tokens = new Map<string, string>();
 const tokenFor = (id: string) => sign({ sub: id, role: 'authenticated' });
 
@@ -1146,6 +1148,17 @@ check(r.json.data.total === 0, 'member B sees no onboarding customers of A');
 // --- client login (Accounts creates it from the e-mail on the record) + hand-over: consultant → department head → team lead → team member ---
 const clientEmail = 'client.galaxy@example.com';
 /** The client's own choice of password, through the same one-time link the e-mail carries (here made by the local sign-in service). */
+// What the client's browser does with a set-password link: the CRM's own link carries a one-time token that the page exchanges for a session
+// (supabase.auth.verifyOtp); an older Supabase action link redirects with the session in the address. null once the link is used up.
+async function tokenFromLink(link: string): Promise<string | null> {
+  const tokenHash = new URL(link).searchParams.get('token_hash');
+  if (tokenHash) {
+    const v = await fetch(`${process.env.GATEWAY_URL}/auth/v1/verify`, { method: 'POST', headers: { 'content-type': 'application/json', apikey: process.env.SUPABASE_ANON_KEY! }, body: JSON.stringify({ type: 'recovery', token_hash: tokenHash }) });
+    return v.status === 200 ? ((await v.json()) as any).access_token : null;
+  }
+  const v = await fetch(link, { redirect: 'manual' });
+  return /access_token=([^&]+)/.exec(v.headers.get('location') || '')?.[1] ?? null;
+}
 async function setClientPassword(email: string, password: string, link?: string): Promise<boolean> {
   const svc = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   let action = link;
@@ -1156,8 +1169,7 @@ async function setClientPassword(email: string, password: string, link?: string)
     });
     action = ((await gl.json()) as any).action_link as string;
   }
-  const v = await fetch(action, { redirect: 'manual' });
-  const token = /access_token=([^&]+)/.exec(v.headers.get('location') || '')?.[1];
+  const token = await tokenFromLink(action);
   if (!token) return false;
   const put = await fetch(`${process.env.GATEWAY_URL}/auth/v1/user`, {
     method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, apikey: process.env.SUPABASE_ANON_KEY! }, body: JSON.stringify({ password })
@@ -2105,10 +2117,10 @@ process.env.APP_URL = 'https://crm.example.test';
 failNext['/wa'] = [503];
 d = await dispatch('dispatch-secret-0123456789');
 const welcome = outbox.find(o => o.path === '/emails' && o.body.to?.[0] === 'auto.client@example.com' && o.body.subject === 'Your Amuwa client dashboard - set your password');
-check(welcome && welcome.body.html.includes('Set your password') && welcome.body.html.includes('client%2Fset-password') && /\/auth\/v1\/verify\?token=/.test(welcome.body.html)
+check(welcome && welcome.body.html.includes('Set your password') && welcome.body.html.includes('https://crm.example.test/client/set-password?token_hash=') && welcome.body.html.includes('type=recovery') && !/localhost|\/auth\/v1\/verify/.test(welcome.body.html)
   && !/Password:/i.test(welcome.body.html) && !/Password:/i.test(welcome.body.text),
   'the client gets a one-time set-password link by e-mail, and no password', welcome?.body?.html);
-const welcomeLink = /href="([^"]*\/auth\/v1\/verify[^"]*)"/.exec(welcome.body.html)![1].replace(/&amp;/g, '&');
+const welcomeLink = /href="([^"]*\/client\/set-password\?token_hash=[^"]*)"/.exec(welcome.body.html)![1].replace(/&amp;/g, '&');
 check(await setClientPassword('auto.client@example.com', 'AutoPass#2026x', welcomeLink), 'the link from the e-mail lets the client choose their password');
 check(!(await setClientPassword('auto.client@example.com', 'Reused#2026x', welcomeLink)), 'and it works once');
 jobs = await jobsOf(autoA);
@@ -2505,14 +2517,12 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(acct?.email === 'imp.client@example.com' && acct.cid === impCustomer, 'import: the login is recorded for that customer only', acct);
 
   // the client opens the link, chooses a password and signs in with it
-  const verify = await fetch(link, { redirect: 'manual' });
-  const hash = new URLSearchParams((verify.headers.get('location') ?? '').split('#')[1] ?? '');
-  check(verify.status === 303 && hash.get('type') === 'recovery' && !!hash.get('access_token'), 'import: the link signs the client in to set the password');
-  await fetch(`${GW}/auth/v1/user`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${hash.get('access_token')}` }, body: JSON.stringify({ password: 'MyOwnPass#2026' }) });
+  const importToken = await tokenFromLink(link);
+  check(!!importToken, 'import: the link signs the client in to set the password');
+  await fetch(`${GW}/auth/v1/user`, { method: 'PUT', headers: { 'content-type': 'application/json', authorization: `Bearer ${importToken}` }, body: JSON.stringify({ password: 'MyOwnPass#2026' }) });
   const signed = await fetch(`${GW}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'imp.client@example.com', password: 'MyOwnPass#2026' }) });
   tokens.set('imp', ((await signed.json()) as any).access_token);
-  const again = await fetch(link, { redirect: 'manual' });
-  check(/error=access_denied/.test(again.headers.get('location') ?? ''), 'import: the link works only once');
+  check((await tokenFromLink(link)) === null, 'import: the link works only once');
   r = await api('imp', 'GET', '/client/services');
   const wa = r.json.data?.find((s: any) => s.code === 'WHATSAPP_API_BLUE_TICK');
   check(r.status === 200 && wa?.planName === '2 Lakh messages' && wa.usage?.metrics?.packageMessages === 200000 && wa.usage.metrics.sent === 190000, 'import: the client sees the plan and the usage', r);
@@ -2532,7 +2542,7 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await forgot('IMP.client@example.com');
   check(r.status === 200 && r.json.data.ok === true, 'forgot password: answers ok', r);
   const reset = outbox.filter(o => o.path === '/emails').slice(n0).find(o => o.body.to?.[0] === 'imp.client@example.com');
-  check(!!reset && /new password/i.test(reset.body.subject) && reset.body.html.includes(encodeURIComponent('https://crm.example.test/client/set-password')), 'forgot password: the client gets a reset link to the CRM (not to the caller\'s site)', reset?.body);
+  check(!!reset && /new password/i.test(reset.body.subject) && reset.body.html.includes('https://crm.example.test/client/set-password?token_hash=') && !/evil\.example|localhost/.test(reset.body.html), 'forgot password: the client gets a reset link to the CRM (not to the caller\'s site)', reset?.body);
   const n1 = outbox.filter(o => o.path === '/emails').length;
   r = await forgot('imp.other@example.com');
   check(r.status === 200 && r.json.data.ok === true && outbox.filter(o => o.path === '/emails').length === n1, 'forgot password: same answer and no e-mail for an address without a client login', r);
@@ -8107,6 +8117,40 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 201 && r.json.data.status === 'ACTIVE' && (await approvals(r.json.data.id)) === 0, 'the Super Admin still adds directly, with no approval', r);
   r = await api('dh', 'POST', '/users', mk('dh.direct@amuwa.com'));
   check(r.status === 201 && r.json.data.status === 'ACTIVE' && (await approvals(r.json.data.id)) === 0, 'and so does the Department Head', r);
+}
+
+// The client's "set your password" e-mail is sent when Accounts creates the login, not when the customer is returned to Sales.
+{
+  const was = process.env.AUTO_CLIENT_LOGIN;
+  delete process.env.AUTO_CLIENT_LOGIN;
+  try {
+    let r = await api('a', 'POST', '/pipeline/leads', { name: 'Later Login', company: 'Later Login Co', phone: '9847650999', email: 'later.login@example.com', leadSource: 'Walk-in', services: ['AI_CALLING'] });
+    const id = r.json.data.id;
+    await api('a', 'POST', `/pipeline/customers/${id}/send-to-accounts`, { amount: 12000 });
+    await api('accm', 'POST', `/pipeline/customers/${id}/accounts/order-gst`, { rate: 0 });
+    r = await api('accm', 'POST', `/pipeline/customers/${id}/accounts/payments`, { type: 'FULL', amount: 12000, method: 'CASH', verify: true });
+    check(r.status === 201, 'client login on request: the payment is recorded and verified', r);
+    r = await api('accm', 'POST', `/pipeline/customers/${id}/accounts/payment-confirmed`, {});
+    check(r.status === 200 && r.json.data.clientLogin.status === 'LATER', 'client login on request: returning the customer to Sales makes no login', r.json.data);
+    const none = (await db.query(`select (select count(*)::int from customer_client_accounts where customer_id = $1) a, (select count(*)::int from automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED') j`, [id])).rows[0];
+    check(none.a === 0 && none.j === 0, 'client login on request: no login and no e-mail is queued yet', none);
+    r = await api('accm', 'POST', `/pipeline/customers/${id}/accounts/client-login`, {});
+    check(r.status === 201 && r.json.data.email === 'later.login@example.com', 'client login on request: Accounts creates the login from Client Logins', r);
+    const sent = (await db.query(`select (select count(*)::int from customer_client_accounts where customer_id = $1) a, (select count(*)::int from automation_jobs where customer_id = $1 and stage = 'ACCOUNT_CREATED' and channel = 'EMAIL') j`, [id])).rows[0];
+    check(sent.a === 1 && sent.j === 1, 'client login on request: now the login exists and the set-password e-mail is queued', sent);
+    // the link in that e-mail goes straight to the CRM page (not through Supabase's redirect) and carries the one-time token
+    const { AuthAdminRepository } = await import('../../server/repositories/AuthAdminRepository');
+    const { automationSettings, DEFAULT_APP_URL } = await import('../../server/automations/config');
+    const appUrlBefore = process.env.APP_URL;
+    delete process.env.APP_URL;
+    check(DEFAULT_APP_URL === 'https://crm.amuwacorporation.com' && automationSettings().appUrl === DEFAULT_APP_URL, 'client e-mails link to crm.amuwacorporation.com unless APP_URL says otherwise', automationSettings().appUrl);
+    if (appUrlBefore !== undefined) process.env.APP_URL = appUrlBefore;
+    const link = new URL(await new AuthAdminRepository().passwordLink('later.login@example.com', `${DEFAULT_APP_URL}/client/set-password`));
+    check(link.origin === DEFAULT_APP_URL && link.pathname === '/client/set-password' && link.searchParams.get('type') === 'recovery' && (link.searchParams.get('token_hash') ?? '').length > 8,
+      'the set-password link opens the CRM page with a one-time token (no Supabase redirect, so no localhost)', link.toString().replace(/token_hash=[^&]+/, 'token_hash=...'));
+  } finally {
+    if (was === undefined) delete process.env.AUTO_CLIENT_LOGIN; else process.env.AUTO_CLIENT_LOGIN = was;
+  }
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

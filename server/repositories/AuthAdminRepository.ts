@@ -161,17 +161,22 @@ export class AuthAdminRepository {
   }
 
   /**
-   * A one-time "set your password" link for a login (Supabase Auth recovery link). It opens
-   * `redirectTo` signed in, where the user chooses their own password.
+   * A one-time "set your password" link for a login (Supabase Auth recovery token). The link points straight at OUR page
+   * (`redirectTo`?token_hash=...&type=recovery) and the page exchanges the token for a session when the client saves their password.
+   * It does not go through Supabase's own redirect, so it does not depend on Supabase's Site URL / Redirect URLs settings (a wrong one sent
+   * clients to localhost), and an e-mail scanner that only opens the link cannot use the token up (nothing is verified until the button is pressed).
    */
   async passwordLink(email: string, redirectTo: string): Promise<string> {
     const { data, error } = await getServiceClient().auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
-    const link = data?.properties?.action_link;
-    if (error || !link) {
+    const token = data?.properties?.hashed_token;
+    if (error || !token) {
       console.error('[api] auth.admin.generateLink failed', error?.message);
       throw new AppError('INTERNAL', 'Could not make the set-password link.');
     }
-    return link;
+    const url = new URL(redirectTo);
+    url.searchParams.set('token_hash', token);
+    url.searchParams.set('type', 'recovery');
+    return url.toString();
   }
 
   /** The client login behind an e-mail (for "Forgot password?"), or null. */

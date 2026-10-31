@@ -81,12 +81,13 @@ function httpsUrl(raw: string | undefined): string | null {
   }
 }
 
-/** The CRM's own web address (for the links in staff emails): APP_URL, else the Vercel production domain. */
-function appBaseUrl(env: NodeJS.ProcessEnv): string | null {
+/** Where the CRM is hosted. Every link in a client e-mail (sign-in page, set-password link) starts here unless APP_URL says otherwise. */
+export const DEFAULT_APP_URL = 'https://crm.amuwacorporation.com';
+
+/** The CRM's own web address (for the links in e-mails): APP_URL when set, otherwise the production domain above. */
+function appBaseUrl(env: NodeJS.ProcessEnv): string {
   const explicit = httpsUrl(env.APP_URL);
-  if (explicit) return explicit.replace(/\/+$/, '');
-  const vercel = env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
-  return vercel ? httpsUrl(`https://${vercel}`)?.replace(/\/+$/, '') ?? null : null;
+  return (explicit ?? DEFAULT_APP_URL).replace(/\/+$/, '');
 }
 
 /** Read on every use, so a change of environment variable needs no code change. */
