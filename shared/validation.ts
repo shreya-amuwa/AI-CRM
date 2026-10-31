@@ -2217,3 +2217,17 @@ export const metaWorkflowStatusSchema = z.object({ status: z.enum(META_WORKFLOW_
 export const workflowStatusesQuerySchema = z.object({
   ids: z.string().regex(/^[0-9a-fA-F-]{36}(,[0-9a-fA-F-]{36}){0,199}$/, 'Give up to 200 customer ids, separated by commas.')
 }).strict();
+
+// Top Performers & Rankings
+// ---------------------------------------------------------------------------
+/** A month as YYYY-MM or YYYY-MM-01, always handed on as the first day of the month. */
+const performerMonth = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])(-01)?$/, 'Choose a month.')
+  .transform(v => (v.length === 7 ? `${v}-01` : v));
+export const performersQuerySchema = z.object({ month: performerMonth.optional(), departmentId: uuidSchema.optional() }).strict();
+export const performersEvaluateSchema = performersQuerySchema;
+export const performerDecisionSchema = z
+  .object({ decision: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(500, 'Keep the note under 500 characters.').optional() })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (v.note?.length ?? 0) >= 3, { message: 'Give the reason for rejecting.', path: ['note'] });

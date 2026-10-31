@@ -5,6 +5,7 @@
 import type {
   OperationsHeadReviewItem, OperationsOverviewRow,
   CustomerWorkflow, CustomerWorkflowStatuses, TcWorkflowStatus, MetaWorkflowStatus,
+  PerformersDepartment, PerformersCompany, PerformerRecognition, PerformerEvaluationRun,
   DepartmentEmployeeDirectory, EmployeeRequest, OperationsActivityEntry, OperationsDashboard, OperationsDepartmentDetail, OperationsHeadAdmin, OperationsHeadsAdmin, TeamAssignmentRecord,
   ClientAccessMethod, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
@@ -746,6 +747,14 @@ export const performanceApi = {
   report: (k: PerformanceReportKey) => api.get<PerformanceReport | null>('/performance/report', k),
   generate: (k: PerformanceReportKey) => api.post<{ state: string; report: PerformanceReport }>('/performance/report', k),
   history: (id: string) => api.get<PerformanceHistoryEntry[]>(`/performance/report/${id}/history`)
+};
+
+/** Top performers: a department's monthly rankings, the company view (Operations Head / Super Admin) and the Department Head's recognition decisions. */
+export const performersApi = {
+  department: (q: { month?: string; departmentId?: string }) => api.get<PerformersDepartment>('/top-performers/department', q),
+  company: (q: { month?: string }) => api.get<PerformersCompany>('/top-performers/company', q),
+  evaluate: (q: { month?: string; departmentId?: string }) => api.post<PerformerEvaluationRun>('/top-performers/evaluate', q),
+  decide: (id: string, body: { decision: 'APPROVE' | 'REJECT'; note?: string }) => api.post<PerformerRecognition>(`/top-performers/recognitions/${id}/decision`, body)
 };
 
 export interface PerformanceReportKey {
