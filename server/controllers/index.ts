@@ -626,6 +626,10 @@ export const businessAssociateController = {
 };
 
 export const workflowController = {
+  customerWorkflow: (async ctx => ok(await svc(ctx).workflow.customerWorkflow(ctx.params.id))) as Handler,
+  customerWorkflowStatuses: (async ctx => ok(await svc(ctx).workflow.customerWorkflowStatuses(ctx.req.query))) as Handler,
+  setTcStatus: (async ctx => ok(await svc(ctx).workflow.setTcStatus(ctx.params.id, ctx.req.body))) as Handler,
+  setMetaStatus: (async ctx => ok(await svc(ctx).workflow.setMetaStatus(ctx.params.id, ctx.req.body))) as Handler,
   verificationNotes: (async ctx => ok(await svc(ctx).workflow.verificationNotes(ctx.params.id))) as Handler,
   addVerificationNote: (async ctx => ok(await svc(ctx).workflow.addVerificationNote(ctx.params.id, ctx.req.body), 201)) as Handler,
   panelDetails: (async ctx => ok(await svc(ctx).workflow.panelDetails(ctx.params.id))) as Handler,

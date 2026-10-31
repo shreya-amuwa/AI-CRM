@@ -90,6 +90,10 @@ department / team / Team Lead box, no approval row, the right dashboard for each
 submitting an employee ("Employee Submitted for Department Head Approval", pending and unable to sign in, no way around it through `POST /users`), and the Department
 Head approving and rejecting (reason required) with HR seeing both outcomes (36 checks).
 
+`run-consultant-meta.sh` drives the Technical Consultant and Meta Verifier workflows on one customer: the consultant sees a Meta customer from the moment Sales sends
+it, both statuses on the customer page, each role changing only its own (the Meta change going through the existing Meta verification), Meta onboarding completing
+while the customer stays in the consultant's dashboard as Add-on Services Recommended, an open add-on request blocking Completed, and the phone layout (21 checks).
+
 `run-top-performers.sh` drives Top Performers & Rankings from real task and report records: the Department Head's Top 3 / Top 5, complete ranking with an
 "Insufficient Data" employee, individual cards with the evaluation, Team Leads compared, monthly recognition (recommended, not official; rejection needs a
 reason; only the Department Head approves), the ranking following changed task records, the read-only company view of an Operations Head, the Super Admin's
