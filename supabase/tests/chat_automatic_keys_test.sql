@@ -6,7 +6,7 @@
 \set QUIET 1
 \echo '--- Chat: automatic keys'
 reset role;
-\i supabase/migrations/20261214000100_chat_automatic_keys.sql
+\i supabase/migrations/20261215000100_chat_automatic_keys.sql
 create function pg_temp.pub(p_name text) returns text language sql immutable as $$
   select translate(encode('\x04'::bytea || decode(repeat(md5(p_name), 4), 'hex'), 'base64'), E'\n', '')
 $$;

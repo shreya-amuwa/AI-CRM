@@ -21,7 +21,7 @@ Messages written **before** this migration stay readable and are labelled as old
 Everything uses the browser's WebCrypto plus one reviewed library, **hpke-js** (`@hpke/core` 1.9.0, pinned), an implementation of
 **HPKE, RFC 9180**.
 
-* **Identity key**: each person has one ECDH **P-256** key pair, generated in their browser (since migration `20261214000100` automatically when they sign in; before that on "Turn on secure messaging", see *Automatic set-up* below). The private
+* **Identity key**: each person has one ECDH **P-256** key pair, generated in their browser (since migration `20261215000100` automatically when they sign in; before that on "Turn on secure messaging", see *Automatic set-up* below). The private
   key is stored in IndexedDB as a **non-extractable** `CryptoKey` (the page can use it, nothing can read it out). The server only ever
   receives the public key.
 * **Message**: a random AES-256-GCM key encrypts the message (random 96-bit IV). The message key is sealed separately for each
@@ -56,7 +56,7 @@ Everything uses the browser's WebCrypto plus one reviewed library, **hpke-js** (
 
 ## Automatic set-up (no button, no passphrase)
 
-Migration `supabase/migrations/20261214000100_chat_automatic_keys.sql` (run it before deploying the app version that uses it; until then the
+Migration `supabase/migrations/20261215000100_chat_automatic_keys.sql` (run it before deploying the app version that uses it; until then the
 app falls back to the passphrase set-up, so nothing breaks). Safe to run again; nothing is deleted.
 
 **What happens.** When an employee signs in, the app (one `SecureChatProvider` for the signed-in employee) asks the server for their key status.
