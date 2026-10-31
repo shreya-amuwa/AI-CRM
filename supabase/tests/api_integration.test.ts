@@ -8308,7 +8308,6 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(n === 3, 'work reports: the Operations Head was told about the package, the report and the resubmission (once each)', n);
 }
 
-<<<<<<< HEAD
 // --- Secure messaging keys that are made automatically (no passphrase, no backup) and a new key on a device without the old one ---
 {
   const depts = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows;
@@ -8359,7 +8358,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await db.query(`select count(*)::int n from public.chat_key_backups where profile_id = $1`, [ck1])).rows[0].n === 0, 'automatic keys: no backup was ever made');
   r = await api('cl1', 'POST', '/chat/keys/register', { publicKey: pub() });
   check(r.status === 403 || r.status === 401, 'automatic keys: a client cannot register an employee key', r);
-=======
+}
+
 // --- Top performers: rankings from the task and approved report records, monthly recognition (every role goes through the real routes) ---
 {
   const depts = (await db.query(`insert into public.departments (slug, name) values ('tp-api-a', 'TP API Alpha'), ('tp-api-b', 'TP API Beta'), ('tp-api-home', 'TP API Home') returning id, slug`)).rows as { id: string; slug: string }[];
@@ -8481,7 +8481,6 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 403, 'top performers: a Team Member cannot ask for evaluations', r);
   const noTable = await db.query(`select has_table_privilege('authenticated', 'public.performer_scores', 'select') as s, has_table_privilege('authenticated', 'public.performer_recognitions', 'update') as u`);
   check(noTable.rows[0].s === false && noTable.rows[0].u === false, 'top performers: the tables cannot be read or changed directly by users');
->>>>>>> origin/main
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
