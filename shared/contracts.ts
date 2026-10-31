@@ -4576,3 +4576,141 @@ export interface ReportsDepartmentDetail {
   departmentHeads: { id: string; name: string; designation: string | null; reports: WorkReportSummary[] }[];
   teamLeads: TeamLeadBox[];
 }
+
+// ---------------------------------------------------------------------------
+// Top Performers & Rankings (monthly scores from the task and approved report records, AI evaluations, monthly recognition)
+// ---------------------------------------------------------------------------
+export type PerformerRoleKind = 'MEMBER' | 'TEAM_LEAD';
+export type PerformerStatus = 'RANKED' | 'INSUFFICIENT_DATA';
+export type PerformerTrend = 'IMPROVING' | 'DECLINING' | 'STEADY';
+export type PerformerAwardType = 'EMPLOYEE_OF_MONTH' | 'TOP_EMPLOYEE' | 'BEST_TEAM_LEAD' | 'MOST_IMPROVED' | 'HIGHEST_COMPLETION' | 'BEST_REPORT_CONSISTENCY';
+export type PerformerRecognitionStatus = 'RECOMMENDED' | 'APPROVED' | 'REJECTED';
+
+export interface PerformerComponent {
+  key: string;
+  label: string;
+  weight: number;
+  /** 0 to 100, or null when there is no data for this measure (it is then left out of the score). */
+  value: number | null;
+  detail: string;
+}
+export interface PerformerEvaluation {
+  summary: string | null;
+  strengths: string[];
+  improvementAreas: string[];
+  whyRanked: string | null;
+  source: 'AI' | 'RULES' | null;
+  status: 'PENDING' | 'OK' | 'FAILED' | 'NOT_CONFIGURED';
+  /** false when the figures changed after this was written (a new one is on its way). */
+  current: boolean;
+}
+export interface PerformerMetrics {
+  tasks: {
+    assigned: number; completed: number; judged: number; judgedDone: number; weightedDone: number; onTime: number; late: number;
+    completionPct: number | null;
+    excluded: { duplicates: number; instant: number; delegated: number; blocked: number };
+  };
+  reports: { approved: number; pending: number; rejected: number; revision: number; coveragePct: number | null; quality: number | null; workingDays: number; coveredDays: number };
+  team: { members: number; assigned: number; judged: number; judgedDone: number; weightedDone: number; completionPct: number | null; reviewsTimely: number; reviewsLate: number } | null;
+  weightedCompletionPct: number | null;
+  productivityPct: number | null;
+  weightPresent: number;
+}
+export interface PerformerCard {
+  scoreId: string;
+  profileId: string;
+  name: string;
+  designation: string;
+  roleKind: PerformerRoleKind;
+  avatarUrl: string | null;
+  teamId: string | null;
+  teamName: string | null;
+  status: PerformerStatus;
+  score: number | null;
+  rank: number | null;
+  previousScore: number | null;
+  change: number | null;
+  trend: PerformerTrend | null;
+  metrics: PerformerMetrics;
+  components: PerformerComponent[];
+  insufficientReasons: string[];
+  evaluation: PerformerEvaluation | null;
+  departmentName?: string;
+  departmentId?: string;
+}
+export interface PerformerRecognition {
+  id: string;
+  departmentId: string;
+  departmentName?: string;
+  month: string;
+  awardType: PerformerAwardType;
+  place: number;
+  profileId: string;
+  name: string;
+  avatarUrl: string | null;
+  designation: string;
+  score: number | null;
+  value: number | null;
+  reason: string;
+  status: PerformerRecognitionStatus;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  summary: string | null;
+}
+export interface PerformerMethodology {
+  member: { key: string; label: string; weight: number }[];
+  teamLead: { key: string; label: string; weight: number }[];
+  thresholds: { minJudgedTasks: number; minWeightPresent: number; minRankedForAwards: number; trendPoints: number; reviewHours: number };
+  rules: string[];
+}
+export interface PerformersDepartment {
+  department: { id: string; name: string };
+  month: string;
+  monthEnd: string;
+  today: string;
+  monthClosed: boolean;
+  canDecide: boolean;
+  level: string;
+  summary: { people: number; ranked: number; insufficient: number; avgScore: number | null; taskCompletionPct: number | null; reportCoveragePct: number | null; previousAvgScore: number | null };
+  evaluationsPending: number;
+  employees: PerformerCard[];
+  teamLeads: PerformerCard[];
+  recognitions: PerformerRecognition[];
+  approvedHistory: PerformerRecognition[];
+  monthly: { month: string; avgScore: number | null; ranked: number; taskCompletionPct: number | null }[];
+  quarterly: { quarterStart: string; avgScore: number | null; ranked: number }[];
+  methodology: PerformerMethodology;
+}
+export interface PerformersCompanyDepartment {
+  id: string;
+  name: string;
+  people: number;
+  ranked: number;
+  insufficient: number;
+  avgScore: number | null;
+  previousAvgScore: number | null;
+  taskCompletionPct: number | null;
+  reportCoveragePct: number | null;
+  topEmployee: { name: string; score: number } | null;
+  topTeamLead: { name: string; score: number } | null;
+  pendingRecommendations: number;
+  approvedRecognitions: number;
+}
+export interface PerformersCompany {
+  month: string;
+  monthEnd: string;
+  monthClosed: boolean;
+  level: string;
+  departments: PerformersCompanyDepartment[];
+  topEmployees: PerformerCard[];
+  topTeamLeads: PerformerCard[];
+  trends: { departmentId: string; name: string; points: { month: string; avgScore: number | null }[] }[];
+  recognitions: PerformerRecognition[];
+  methodology: PerformerMethodology;
+}
+export interface PerformerEvaluationRun {
+  written: number;
+  ai: { configured: boolean; ok: number; failed: number };
+  data: PerformersDepartment;
+}
