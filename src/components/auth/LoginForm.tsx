@@ -362,7 +362,7 @@ export const LoginForm: React.FC = () => {
                       <strong className="text-slate-700 font-semibold">
                         {regSubDepartment === 'support'
                           ? 'Support Team Member Dashboard'
-                          : 'Sales Team Member Dashboard'}
+                          : 'Sales Dashboard'}
                       </strong>
                     </span>
                   </div>

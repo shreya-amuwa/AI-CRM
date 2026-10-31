@@ -91,7 +91,7 @@ const styleOf = async p => { await p.waitForSelector('main .bg-white.rounded-2xl
   const header = document.querySelector('header');
   const title = document.querySelector('main h1');
   const primary = [...document.querySelectorAll('main button')].find(b => /\bbg-blue-600\b/.test(b.className) && !b.getAttribute('role'));
-  const card = document.querySelector('main .bg-white.rounded-2xl.border');
+  const card = document.querySelector('main .bg-white.rounded-2xl.border:not([role="timer"])');
   return {
     page: cs(aside?.parentElement, ['backgroundColor']),
     sidebar: { ...cs(aside, ['backgroundColor', 'borderRightColor']), width: Math.round(aside?.getBoundingClientRect().width ?? 0) },
@@ -205,7 +205,7 @@ await t1.close();
 const b1 = await login('ba.one@amuwa.com', { width: 1440, height: 900 }, 'text=Quick actions');
 await expect(/\/business-associate\/dashboard\//.test(b1.url()), 'routing: a Business Associate lands on the Business Associate dashboard', b1.url());
 const nav = (await b1.locator('aside nav button').allInnerTexts()).map(s => s.trim());
-await expect(nav.join('|') === 'Home|Tasks|Leads|Field Visit|Quotation|Demo Schedule|Scope of Project|Raise an Issue', 'sidebar: Tasks, Leads, Field Visit, Quotation, Demo Schedule, Scope of Project (after Home), then Raise an Issue', nav);
+await expect(nav.join('|') === 'Dashboard|Leads|My Customers|Tasks & Follow-ups|My Tasks|Field Visit|Calendar|BA Tasks|Quotation|Demo Schedule|Scope of Project|Subscriptions|Invoices|Delivery Queue|Chat|Notification Center|Raise an Issue|Settings', 'sidebar: the unified Sales menu (Overview, Sales & Leads, Business Associate, Subscriptions & Services, Communication, Account) - every page once', nav);
 const baDesign = await styleOf(b1);
 await expect(sameDesign(baDesign, refDesign, ['page', 'sidebar', 'active', 'inactive', 'header', 'title', 'card']), 'design: the page background, sidebar, active menu item, header, page title and cards are the Department Head dashboard\'s', { baDesign, refDesign });
 await expect(baDesign.primary && refDesign.primary && sameDesign(baDesign, refDesign, ['primary']), 'design: the primary button is the Department Head dashboard\'s (colour, radius, height)', { baDesign: baDesign.primary, refDesign: refDesign.primary });
@@ -214,10 +214,10 @@ await b1.getByTestId('stat-assigned-contacts').waitFor({ timeout: 15000 });
 await expect(Number(await b1.getByTestId('stat-assigned-contacts').innerText()) === 1 && Number(await b1.getByTestId('stat-upcoming-demos').innerText()) === 0 && Number(await b1.getByTestId('stat-scope-documents-generated').innerText()) === 0, 'Home: the counts come from the data (1 contact; zeros where nothing exists)');
 await expect(/Meera Kapoor/.test(await text(b1)) && /Converted by Tele One/.test(await text(b1)), 'Home: recent activity shows the hand-over');
 const quick = (await b1.locator('section[aria-label="Quick actions"] button').allInnerTexts()).map(s => s.trim());
-await expect(quick.join('|') === 'Open Tasks|Add Lead|Generate Quotation|Schedule Demo|Generate Scope of Project', 'Home: the five quick actions', quick);
+await expect(quick.join('|') === 'Open BA Tasks|Add Lead|Generate Quotation|Schedule Demo|Generate Scope of Project', 'Home: the five quick actions', quick);
 await b1.screenshot({ path: `${OUT}/ba-3-home.png`, fullPage: true });
 
-await menu(b1, 'Tasks');
+await menu(b1, 'BA Tasks');
 await b1.locator('tbody tr', { hasText: 'Meera Kapoor' }).waitFor({ timeout: 15000 });
 const heads = (await b1.locator('thead th').allInnerTexts()).map(s => s.trim().toLowerCase());
 await expect(heads.join('|') === 'contact name|company/business name|phone number|email|lead source|assigned telecaller|assigned date|business associate|requirement status|next follow-up|actions', 'Tasks: the eleven required columns', heads);
@@ -339,7 +339,7 @@ await dm2.getByRole('button', { name: 'Schedule demo' }).click();
 await dm2.getByText(/already have a demo at that time/).waitFor({ timeout: 10000 }).catch(() => fail('Demo Schedule: an overlapping demo was accepted'));
 ok('Demo Schedule: an overlapping demo is a conflict');
 await dm2.getByRole('button', { name: 'Cancel' }).click();
-await b1.getByRole('button', { name: 'Calendar' }).click();
+await b1.locator('main').getByRole('button', { name: 'Calendar' }).click();
 await b1.locator('button[title^="Product demo"]').first().waitFor({ timeout: 10000 }).catch(() => fail('Demo Schedule: the calendar does not show the demo'));
 ok('Demo Schedule: the calendar view shows it');
 await b1.screenshot({ path: `${OUT}/ba-7-demo-calendar.png`, fullPage: true });
@@ -406,7 +406,7 @@ await b1.locator('#sc-client').selectOption(contactId);
 await b1.getByText('Version 1').first().waitFor({ timeout: 10000 });
 await expect(/Version 2/.test(await text(b1)) && /Final/.test(await text(b1)), 'Scope: both versions are listed; the final one is kept');
 await b1.screenshot({ path: `${OUT}/ba-9-scope-versions.png`, fullPage: true });
-await menu(b1, 'Tasks');
+await menu(b1, 'BA Tasks');
 await b1.locator('tbody tr', { hasText: 'Meera Kapoor' }).waitFor({ timeout: 15000 });
 await b1.locator('tbody tr', { hasText: 'Meera Kapoor' }).click();
 await b1.getByRole('heading', { name: 'Meera Kapoor' }).waitFor();
@@ -448,7 +448,14 @@ await b1.locator('#lead-name').fill('Ravi Menon');
 await b1.locator('#lead-company').fill('Menon Cafe');
 await b1.locator('#lead-phone').fill('9811234567');
 await b1.locator('#lead-leadSource').selectOption('Instagram');
-await b1.getByRole('button', { name: 'Select all services' }).click();
+await b1.locator('fieldset input[type="checkbox"]').first().check();
+// the plan, duration and amount of the selected service (Sales never enters a start or an expiry date)
+const terms = b1.locator('[data-testid^="terms-"]').first();
+await terms.waitFor({ timeout: 10000 }).catch(() => fail('Add lead: the Subscription card did not appear for the selected service'));
+await expect((await b1.locator('main input[type="date"]').count()) === 0 || (await terms.locator('input[type="date"]').count()) === 0, 'Add lead: the subscription card has no start or expiry date to enter');
+await terms.locator('input[id$="-plan"]').fill('Growth');
+await terms.locator('select[id$="-duration"]').selectOption('6M');
+await terms.locator('input[id$="-amount"]').fill('12000');
 await b1.getByRole('button', { name: 'Save lead' }).click();
 await b1.getByRole('button', { name: /Save & move to Potential|Back to leads|Back/ }).first().waitFor({ timeout: 15000 }).catch(() => fail('Leads: the lead was not saved from the Add lead form'));
 await pipeStep(b1, 'Leads');
@@ -505,7 +512,7 @@ await b1.close();
 // ------------------------------------------------------------------ 8. routing and permissions
 const b2 = await login('ba.two@amuwa.com', { width: 1440, height: 900 }, 'text=Quick actions');
 await expect(Number(await b2.getByTestId('stat-assigned-contacts').innerText()) === 0, 'permissions: the other Business Associate has their own (empty) counts');
-await menu(b2, 'Tasks');
+await menu(b2, 'BA Tasks');
 await b2.getByText('No contacts have been handed over to you yet').waitFor({ timeout: 10000 }).catch(() => fail('Tasks: no empty state'));
 ok('Tasks: an empty state when nothing has been handed over');
 await b2.goto(`${BASE}/business-associate/dashboard/${baOne.id}`);
@@ -524,8 +531,11 @@ ok('routing: a Telecaller cannot open the Business Associate dashboard');
 await tl.close();
 const rahul = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'nav button');
 await rahul.goto(`${BASE}/business-associate/dashboard/${baOne.id}`);
-await rahul.waitForFunction(() => location.pathname.startsWith('/team-member/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Sales member reached the Business Associate route'));
-ok('routing: a Sales member cannot open it either, and keeps the Sales member dashboard');
+await rahul.waitForFunction(id => location.pathname.startsWith('/business-associate/dashboard/') && !location.pathname.includes(id), baOne.id, { timeout: 15000 }).catch(() => fail('routing: a Sales member opened a Business Associate\'s dashboard URL'));
+ok('routing: a Sales member cannot open another person\'s dashboard URL: they are sent to their own unified Sales dashboard');
+await rahul.goto(`${BASE}/team-member/dashboard/${await idOf('rahul@amuwa.com')}`);
+await rahul.waitForFunction(() => location.pathname.startsWith('/business-associate/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: the old Sales Team Member address did not redirect'));
+ok('routing: the old /team-member/dashboard address of a Sales member redirects to the unified dashboard');
 await rahul.close();
 
 // ------------------------------------------------------------------ 8b. a Sales member works as a Business Associate from the Sales Team Member dashboard
@@ -533,28 +543,25 @@ const rahulId = await idOf('rahul@amuwa.com');
 const sunita = await mkLead('Sunita Rao', 'INTERESTED', [svc[0].code]);
 const handed = await api(tele.id, 'POST', `/telecaller/leads/${sunita.id}/convert`, { assigneeId: rahulId, note: 'Please call today' });
 await expect(handed.assigneeName === 'Rahul' || !!handed.contactId, 'Sales member: a Telecaller hands a contact to a Sales member', handed);
-const sm = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'nav button');
-await expect(/\/team-member\/dashboard\//.test(sm.url()), 'Sales member: keeps the Sales Team Member dashboard', sm.url());
-await navItem(sm, 'Business Associate').waitFor({ timeout: 15000 }).catch(() => fail('Sales member: the Business Associate group is missing from the sidebar'));
-await expect(await navItem(sm, 'My Leads').count() === 1 && await navItem(sm, 'My Customers').count() === 1, 'Sales member: the existing menu (My Leads, My Customers) is still there');
-await navItem(sm, 'Business Associate').click();
-const subs = (await sm.locator('#business-associate-subtree button').allInnerTexts()).map(t => t.trim());
-await expect(JSON.stringify(subs) === JSON.stringify(['BA Overview', 'BA Tasks', 'Quotation', 'Demo Schedule', 'Scope of Project']), 'Sales member: the Business Associate group lists its pages', subs);
-await sm.locator('main').getByText('Quick actions').first().waitFor({ timeout: 15000 }).catch(() => fail('Sales member: BA Overview did not open'));
-await sm.locator('#business-associate-subtree button', { hasText: 'BA Tasks' }).click();
+const sm = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'text=Quick actions');
+await expect(/\/business-associate\/dashboard\//.test(sm.url()), 'Sales member: lands on the unified Sales dashboard (the Business Associate dashboard)', sm.url());
+const smNav = (await sm.locator('aside nav button').allInnerTexts()).map(t => t.trim());
+await expect(smNav.join('|') === 'Dashboard|Leads|My Customers|Tasks & Follow-ups|My Tasks|Field Visit|Calendar|BA Tasks|Quotation|Demo Schedule|Scope of Project|Subscriptions|Invoices|Delivery Queue|Chat|Notification Center|Raise an Issue|Settings', 'Sales member: the one menu has the Sales Team Member pages and the Business Associate pages, each once', smNav);
+await expect((await sm.locator('aside nav button').filter({ hasText: /^Home$/ }).count()) === 0 && (await sm.locator('aside nav button').filter({ hasText: /^My Leads$/ }).count()) === 0, 'Sales member: no second Home and no second Leads entry');
+await menu(sm, 'BA Tasks');
 await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Sunita Rao' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Sales member: the contact handed to them is not in BA Tasks'));
 await expect(!(await text(sm)).includes('Meera Kapoor'), 'Sales member: sees only their own contacts (not a Business Associate\'s)');
 await sm.screenshot({ path: `${OUT}/ba-8b-sales-member-contacts.png`, fullPage: true });
-// the Sales member's own pipeline is untouched: a lead created there appears in My Leads, once, and the Lead -> Potential -> Customer onboarding steps are all still in the menu
+// the Sales member's own pipeline is untouched: a lead created there appears in Leads, once, and the Lead -> Potential -> Customer onboarding -> Part payments steps are all in the menu
 const pipeLead = await api(rahulId, 'POST', '/pipeline/leads', { name: 'Pipeline Pal', company: 'Pal Co', phone: '+91 98200 33333', leadSource: 'Instagram', services: [svc[0].code] });
 await expect(!!pipeLead.id, 'Pipeline: a Sales member creates a lead', pipeLead);
-await navItem(sm, 'My Leads').click();
-const steps = (await sm.locator('#my-leads-subtree button').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim().replace(/\s*\d+$/, ''));
-await expect(steps.length === 4 && /^1 Leads/.test(steps[0]) && /^2 Potential/.test(steps[1]) && /^3 Customer onboarding/.test(steps[2]) && /^4 Part payments/.test(steps[3]), 'Pipeline: My Leads still has Leads, Potential, Customer onboarding and Part payments', steps);
-await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Pipeline Pal' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Pipeline: the new lead is not in My Leads'));
+await pipeStep(sm, 'Leads');
+const steps = (await sm.locator('#nav-sub-leads-group button').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim());
+await expect(JSON.stringify(steps) === JSON.stringify(['Leads', 'Potential', 'Customer onboarding', 'Part payments']), 'Pipeline: Leads still has Leads, Potential, Customer onboarding and Part payments', steps);
+await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Pipeline Pal' }).first().waitFor({ timeout: 15000 }).catch(() => fail('Pipeline: the new lead is not in Leads'));
 await expect((await q(`select count(*)::int n from customers where name = 'Pipeline Pal'`))[0].n === 1, 'Pipeline: exactly one record exists for the lead');
 await expect((await q(`select count(*)::int n from ba_contacts c join customers l on l.id = c.lead_id where l.name = 'Pipeline Pal'`))[0].n === 0, 'Pipeline: the lead is not turned into a Business Associate contact by itself');
-// the five lead filters are on the Sales member's Leads list too
+// the five lead filters
 const smScope = (await sm.locator('[data-testid="lead-scope-tabs"] [role="tab"]').allInnerTexts()).map(t => t.replace(/\s*\d+\s*$/, '').trim());
 await expect(JSON.stringify(smScope) === JSON.stringify(['All Leads', 'My Leads', 'Department Leads', 'To Accounts', 'Returned by Accounts']), 'Sales member: Leads has All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts', smScope);
 await sm.locator('[data-testid="lead-scope-DEPARTMENT"]').click();
@@ -563,11 +570,20 @@ await expect((await sm.locator('tbody tr', { hasText: 'Meera Kapoor' }).first().
 await sm.locator('[data-testid="lead-scope-MINE"]').click();
 await sm.locator('tbody tr:visible, main ul li:visible', { hasText: 'Pipeline Pal' }).first().waitFor({ timeout: 15000 });
 await sm.screenshot({ path: `${OUT}/ba-8b-sales-member-my-leads.png`, fullPage: true });
-for (const [label, heading] of [['Quotation', 'Quotation'], ['Demo Schedule', 'Demo Schedule'], ['Scope of Project', 'Scope of Project']]) {
-  await sm.locator('#business-associate-subtree button', { hasText: label }).click();
-  await sm.getByRole('heading', { name: heading }).first().waitFor({ timeout: 15000 }).catch(() => fail(`Sales member: ${label} did not open`));
+for (const label of ['Quotation', 'Demo Schedule', 'Scope of Project']) {
+  await menu(sm, label);
+  await sm.getByRole('heading', { name: label }).first().waitFor({ timeout: 15000 }).catch(() => fail(`Sales member: ${label} did not open`));
 }
 ok('Sales member: Quotation, Demo Schedule and Scope of Project open');
+// the pages that came from the Sales Team Member dashboard are in the unified one
+for (const [label, heading] of [['My Customers', /My Customers|Customers/], ['Tasks & Follow-ups', /Tasks & Follow-ups/], ['Calendar', /Calendar/], ['Invoices', /Invoices/], ['Subscriptions', /^Subscriptions$/], ['Settings', /Settings|Targets/]]) {
+  await menu(sm, label);
+  await sm.getByRole('heading', { name: heading }).first().waitFor({ timeout: 15000 }).catch(() => fail(`Sales member: ${label} did not open in the unified dashboard`));
+}
+ok('Sales member: My Customers, Tasks & Follow-ups, Calendar, Invoices, Subscriptions and Settings open in the unified dashboard');
+await menu(sm, 'Dashboard');
+await sm.getByTestId('stat-total-leads').waitFor({ timeout: 15000 }).catch(() => fail('Sales member: Dashboard has no Total Leads tile'));
+await expect((await sm.getByTestId('stat-total-leads').count()) === 1 && (await sm.getByTestId('stat-pending-follow-ups').count()) === 1 && (await sm.getByTestId('stat-active-subscriptions').count()) === 1, 'Dashboard: the combined numbers (Total Leads, Pending Follow-ups, Active Subscriptions) are each shown once');
 await sm.close();
 const vs = await login('visit.sales@amuwa.com', { width: 1440, height: 900 }, 'text=dashboard is not set up yet');
 await expect(/\/sales-role\//.test(vs.url()), 'routing: another Sales role (Visit Sales) still gets the "not set up yet" page, not this dashboard', vs.url());
@@ -580,12 +596,12 @@ await leadPage.close();
 const ph = await login('ba.one@amuwa.com', { width: 390, height: 844 }, 'text=Quick actions');
 const noSideways = async label => expect(await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `phone: no sideways scrolling on ${label}`);
 await noSideways('Home');
-await menu(ph, 'Tasks'); await ph.locator('ul li').first().waitFor({ timeout: 10000 }); await noSideways('Tasks');
+await menu(ph, 'BA Tasks'); await ph.locator('ul li').first().waitFor({ timeout: 10000 }); await noSideways('BA Tasks');
 await pipeStep(ph, 'Leads'); await ph.getByRole('heading', { name: 'Leads' }).first().waitFor({ timeout: 10000 }); await noSideways('Leads');
 await menu(ph, 'Quotation'); await ph.getByRole('heading', { name: 'Quotation' }).first().waitFor({ timeout: 10000 }); await noSideways('Quotation');
 await ph.screenshot({ path: `${OUT}/ba-10-phone-quotation.png`, fullPage: true });
 await menu(ph, 'Demo Schedule'); await ph.getByRole('heading', { name: 'Demo Schedule' }).waitFor({ timeout: 10000 }); await noSideways('Demo Schedule');
-await ph.getByRole('button', { name: 'Calendar' }).click(); await noSideways('the calendar');
+await ph.locator('main').getByRole('button', { name: 'Calendar' }).click(); await noSideways('the calendar');
 await menu(ph, 'Scope of Project'); await ph.locator('#sc-client').waitFor({ timeout: 10000 }); await noSideways('Scope of Project');
 await ph.close();
 
@@ -593,7 +609,7 @@ await ph.close();
 const tb = await login('ba.one@amuwa.com', { width: 820, height: 1180 }, 'text=Quick actions');
 const tabletOk = async label => expect(await tb.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `tablet: no sideways scrolling on ${label}`);
 await tabletOk('Home');
-for (const [label, ready] of [['Tasks', 'tbody tr:visible, main ul li:visible'], ['Leads', 'tbody tr:visible, main ul li:visible'], ['Quotation', 'tbody tr:visible, main ul li:visible'], ['Demo Schedule', 'text=Demo Schedule'], ['Scope of Project', '#sc-client']]) {
+for (const [label, ready] of [['BA Tasks', 'tbody tr:visible, main ul li:visible'], ['Leads', 'tbody tr:visible, main ul li:visible'], ['Quotation', 'tbody tr:visible, main ul li:visible'], ['Demo Schedule', 'text=Demo Schedule'], ['Scope of Project', '#sc-client']]) {
   if (label === 'Leads') await pipeStep(tb, 'Leads'); else await menu(tb, label);
   await tb.waitForSelector(ready, { timeout: 15000 });
   await tabletOk(label);

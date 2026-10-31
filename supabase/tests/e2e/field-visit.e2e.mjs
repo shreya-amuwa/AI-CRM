@@ -274,7 +274,7 @@ await sh.screenshot({ path: `${OUT}/fv-4-assign.png` });
 const b1 = await loginGeo('fv.ba@amuwa.com', 'aside nav button');
 await b1.waitForURL(/\/business-associate\/dashboard\//, { timeout: 15000 }).catch(() => fail('the Business Associate did not land on /business-associate/dashboard/…: ' + b1.url()));
 labels = await menuLabels(b1);
-await expect(['Home', 'Tasks', 'Leads', 'Quotation', 'Demo Schedule', 'Scope of Project', 'Field Visit'].every(l => labels.includes(l)), 'Business Associate: the existing menu is kept and Field Visit is added', labels);
+await expect(['Dashboard', 'Leads', 'BA Tasks', 'Quotation', 'Demo Schedule', 'Scope of Project', 'Field Visit'].every(l => labels.includes(l)), 'Business Associate: the existing menu is kept and Field Visit is added', labels);
 await fvNav(b1, 'Field Visit');
 await expect(JSON.stringify(await groupOf(b1)) === JSON.stringify(NAV_ORDER), 'Business Associate: the same ten pages', await groupOf(b1));
 await fvNav(b1, 'Department Head Assigned Leads');
@@ -328,15 +328,15 @@ ok('Withdraw: the lead leaves the Business Associate\'s assigned list; their fin
 await fvNav(b1, 'Visit History');
 await b1.locator('[data-testid="fv-visit-row"]', { hasText: 'Rahul Lead One' }).waitFor({ timeout: 15000 }).catch(() => fail('Visit History lost the finished visit'));
 
-// ------------------------------------------------------------------ 4. The Sales Team Member (existing sales dashboard)
+// ------------------------------------------------------------------ 4. The Sales Team Member (works in the unified Sales dashboard, the Business Associate dashboard)
 const r1 = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'aside nav button');
 labels = await menuLabels(r1);
-await expect(['Home', 'My Leads', 'Business Associate', 'Field Visit', 'My Customers'].every(l => labels.includes(l)), 'Sales Team Member: the existing menu is kept and Field Visit is added', labels);
+await expect(['Dashboard', 'Leads', 'My Customers', 'Field Visit', 'BA Tasks'].every(l => labels.includes(l)), 'Sales Team Member: the unified Sales menu has the Sales pages, the Business Associate pages and Field Visit', labels);
 await fvNav(r1, 'Field Visit');
 await expect(JSON.stringify(await groupOf(r1)) === JSON.stringify(NAV_ORDER), 'Sales Team Member: the same ten pages', await groupOf(r1));
 await fvNav(r1, 'Field Visit Overview');
 await r1.getByTestId('fv-overview').waitFor({ timeout: 15000 });
-await expect(!/telecaller|business-associate/.test(r1.url()), 'Sales Team Member: Field Visit stays in the Sales member dashboard', r1.url());
+await expect(/business-associate\/dashboard/.test(r1.url()) && !/telecaller/.test(r1.url()), 'Sales Team Member: Field Visit is inside the unified Sales dashboard', r1.url());
 const rcount = n => r1.getByTestId(`fv-count-${n}`).innerText().then(Number);
 await r1.getByTestId('fv-count-MINE').waitFor({ timeout: 10000 });
 await expect((await rcount('MINE')) === 1, 'Sales Team Member: My Leads counts only their own lead', await rcount('MINE'));

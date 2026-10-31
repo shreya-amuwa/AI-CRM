@@ -48,6 +48,12 @@ export function toAuthUser(profile: Profile): AuthUser {
         role = profile.salesSubRole === 'TELECALLER' ? 'telecaller' : profile.salesSubRole === 'BUSINESS_ASSOCIATE' ? 'business-associate' : 'sales-role';
         break;
       }
+      // A Sales Team Member with no Sales role works in the one Sales dashboard (the Business Associate dashboard, which carries the pages
+      // the separate Sales Team Member dashboard had). Permissions are unchanged: they come from the profile in the database.
+      if (isSalesTeamMember(profile)) {
+        role = 'business-associate';
+        break;
+      }
       role = isMetaVerifier(profile) ? 'meta-verifier' : isTechnicalConsultant(profile) ? 'technical-support' : isSupportMember(profile) ? 'support-member' : 'team-member';
   }
   return {
@@ -111,6 +117,11 @@ export function isMetaVerifier(p: Pick<Profile, 'role' | 'isMetaVerifier' | 'tea
 /** A Team Member of a Sales team who has a Sales role (Telecaller, Business Associate, ...). */
 export function isSalesSubRoleMember(p: Pick<Profile, 'role' | 'team' | 'salesSubRole'>): boolean {
   return p.role === 'TEAM_MEMBER' && p.team?.division === 'SALES' && !!p.salesSubRole;
+}
+
+/** A Team Member of a Sales team (whatever Sales role they have, or none). */
+export function isSalesTeamMember(p: Pick<Profile, 'role' | 'team'>): boolean {
+  return p.role === 'TEAM_MEMBER' && p.team?.division === 'SALES';
 }
 
 /** A support team member created (or marked) as Technical Consultant. */
@@ -193,7 +204,7 @@ export function defaultDashboardLabel(
       if (division === 'SALES' && salesSubRole === 'BUSINESS_ASSOCIATE') return `Business Associate Dashboard${dept}`;
       if (division === 'SALES' && salesSubRole) return `${SALES_SUB_ROLE_LABELS[salesSubRole]} (dashboard not set up yet)${dept}`;
       // Only a Sales team opens as "Sales"; other teams get the plain label.
-      if (division === 'SALES') return `Sales Team Member Dashboard${dept}`;
+      if (division === 'SALES') return `Sales Dashboard${dept}`;
       if (division === 'SUPPORT') return `Support Team Member Dashboard${dept}`;
       return `Team Member Dashboard${dept}`;
   }
