@@ -8308,6 +8308,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(n === 3, 'work reports: the Operations Head was told about the package, the report and the resubmission (once each)', n);
 }
 
+<<<<<<< HEAD
 // --- Secure messaging keys that are made automatically (no passphrase, no backup) and a new key on a device without the old one ---
 {
   const depts = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows;
@@ -8358,6 +8359,129 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await db.query(`select count(*)::int n from public.chat_key_backups where profile_id = $1`, [ck1])).rows[0].n === 0, 'automatic keys: no backup was ever made');
   r = await api('cl1', 'POST', '/chat/keys/register', { publicKey: pub() });
   check(r.status === 403 || r.status === 401, 'automatic keys: a client cannot register an employee key', r);
+=======
+// --- Top performers: rankings from the task and approved report records, monthly recognition (every role goes through the real routes) ---
+{
+  const depts = (await db.query(`insert into public.departments (slug, name) values ('tp-api-a', 'TP API Alpha'), ('tp-api-b', 'TP API Beta'), ('tp-api-home', 'TP API Home') returning id, slug`)).rows as { id: string; slug: string }[];
+  const dId = (slug: string) => depts.find(d => d.slug === slug)!.id;
+  const teams = (await db.query(`insert into public.teams (department_id, name, division) select id, 'Sales', 'SALES' from public.departments where slug like 'tp-api-%' returning id, department_id`)).rows as { id: string; department_id: string }[];
+  const tId = (slug: string) => teams.find(t => t.department_id === dId(slug))!.id;
+  const mk = async (name: string, body: Record<string, unknown>) => {
+    const res = await api('sa', 'POST', '/users', { email: `tp.${name}@amuwa.com`, fullName: `TP ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `top performers: ${name} account created`, res);
+    tokens.set(`tp_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  const ohId = await mk('oh', { role: 'DEPARTMENT_HEAD', departmentId: dId('tp-api-home'), operationsHead: true });
+  const dhaId = await mk('dha', { role: 'DEPARTMENT_HEAD', departmentId: dId('tp-api-a') });
+  await mk('dhb', { role: 'DEPARTMENT_HEAD', departmentId: dId('tp-api-b') });
+  const tlId = await mk('tl', { role: 'TEAM_HEAD', teamId: tId('tp-api-a') });
+  const ids: Record<string, string> = {};
+  for (const m of ['m1', 'm2', 'm3']) ids[m] = await mk(m, { role: 'TEAM_MEMBER', teamId: tId('tp-api-a') });
+  r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [dId('tp-api-a')], primaryDepartmentIds: [dId('tp-api-a')] });
+  check(r.status === 200, 'top performers: the Operations Head is given the Alpha department', r);
+
+  // last month's records: m1 finishes everything on time with an approved report, m2 misses half, m3 has too few tasks
+  const month = (await db.query(`select to_char(date_trunc('month', private.hr_today()::timestamp - interval '1 month'), 'YYYY-MM-DD') as m`)).rows[0].m as string;
+  const task = (who: string, title: string, due: number, status: string, doneDay: number | null) => db.query(
+    `insert into public.work_tasks (department_id, team_id, title, priority, due_date, assigned_by, assignee_id, status, progress, completed_at, created_at)
+     values ($1, $2, $3, 'MEDIUM', ($4::date + $5::int), $6, $7, $8, $9, case when $10::int is null then null else (($4::date + $10::int)::timestamp + interval '1 day 4 hours') at time zone 'Asia/Kolkata' end, (($4::date + 1)::timestamp + interval '4 hours') at time zone 'Asia/Kolkata')`,
+    [dId('tp-api-a'), tId('tp-api-a'), title, month, due, dhaId, who, status, status === 'COMPLETED' ? 100 : 0, doneDay]);
+  for (let i = 1; i <= 4; i++) await task(ids.m1, `M1 task ${i}`, 9 + i, 'COMPLETED', 7 + i);
+  for (let i = 1; i <= 4; i++) await task(ids.m2, `M2 task ${i}`, 9 + i, i <= 2 ? 'COMPLETED' : 'IN_PROGRESS', i <= 2 ? 7 + i : null);
+  for (let i = 1; i <= 2; i++) await task(ids.m3, `M3 task ${i}`, 9 + i, 'COMPLETED', 7 + i);
+  for (const who of [ids.m1, ids.m2]) {
+    await db.query(
+      `insert into public.work_reports (kind, author_id, author_name, department_id, team_id, title, report_date, period_type, period_start, period_end, content, status, submitted_at, reviewed_at, reviewed_by)
+       values ('MEMBER', $1, 'x', $2, $3, 'Month report', $4::date + 27, 'CUSTOM', $4::date, $4::date + 31, '{"workCompleted":"work"}', $5, now(), now(), $6)`,
+      [who, dId('tp-api-a'), tId('tp-api-a'), month, who === ids.m1 ? 'APPROVED' : 'SUBMITTED', tlId]);
+  }
+  const q = `month=${month.slice(0, 7)}`;
+
+  // ---- who may call
+  r = await api(null, 'GET', `/top-performers/department?${q}`);
+  check(r.status === 401, 'top performers: sign-in is needed', r);
+  r = await api('client', 'GET', `/top-performers/department?${q}`);
+  check(r.status === 403 || r.status === 401, 'top performers: a client cannot use it', r);
+  r = await api('tp_m1', 'GET', `/top-performers/department?${q}`);
+  check(r.status === 403, 'top performers: a Team Member is refused', r);
+  r = await api('tp_tl', 'GET', `/top-performers/department?${q}`);
+  check(r.status === 403, 'top performers: a Team Lead is refused', r);
+  r = await api('tp_dhb', 'GET', `/top-performers/department?${q}&departmentId=${dId('tp-api-a')}`);
+  check(r.status === 403, 'top performers: another department\'s head cannot ask for Alpha, even by naming it', r);
+  r = await api('tp_dha', 'GET', `/top-performers/department?${q}&role=SUPER_ADMIN`);
+  check(r.status === 422, 'top performers: an unknown query field is refused', r);
+  r = await api('tp_dha', 'GET', '/top-performers/department?month=2026-13');
+  check(r.status === 422, 'top performers: a bad month is refused', r);
+  r = await api('tp_dha', 'GET', '/top-performers/department?month=2999-01');
+  check(r.status === 422, 'top performers: a month in the future is refused', r);
+  r = await api('tp_dha', 'GET', '/top-performers/company');
+  check(r.status === 403, 'top performers: a Department Head cannot open the company view', r);
+
+  // ---- the Department Head's rankings, from the records
+  r = await api('tp_dha', 'GET', `/top-performers/department?${q}`);
+  check(r.status === 200 && r.json.data.department.name === 'TP API Alpha' && r.json.data.canDecide === true && r.json.data.monthClosed === true, 'top performers: the Department Head gets their department for a closed month', r.json);
+  const emp = (name: string) => r.json.data.employees.find((e: any) => e.name === name);
+  check(emp('TP m1').status === 'RANKED' && emp('TP m1').rank === 1 && emp('TP m1').score > emp('TP m2').score, 'top performers: the member who completed everything on time with an approved report ranks above the one who did not', [emp('TP m1'), emp('TP m2')]);
+  check(emp('TP m3').status === 'INSUFFICIENT_DATA' && emp('TP m3').rank === null && emp('TP m3').score === null, 'top performers: two tasks are "Insufficient Data": no rank, no score', emp('TP m3'));
+  check(emp('TP m2').metrics.reports.approved === 0 && emp('TP m2').metrics.reports.pending === 1, 'top performers: a submitted report that is not approved does not count', emp('TP m2').metrics.reports);
+  check(r.json.data.employees.every((e: any) => e.designation && 'avatarUrl' in e && Array.isArray(e.components)), 'top performers: every card carries designation, picture, and the measures behind the score');
+  check(r.json.data.teamLeads.length === 1 && r.json.data.methodology.member.length === 6, 'top performers: the Team Lead and the methodology are listed');
+  const before = emp('TP m2').score;
+  const m2score = (await db.query('select version from public.performer_scores where profile_id = $1 and period_start = $2::date', [ids.m2, month])).rows[0].version as number;
+  await db.query(`update public.work_tasks set status = 'COMPLETED', progress = 100, completed_at = ((($1::date + 12)::timestamp) + interval '8 hours') at time zone 'Asia/Kolkata' where assignee_id = $2 and title = 'M2 task 3'`, [month, ids.m2]);
+  r = await api('tp_dha', 'GET', `/top-performers/department?${q}`);
+  check(emp('TP m2').score > before, 'top performers: finishing a task changes the ranking the next time it is opened', [before, emp('TP m2').score]);
+  check((await db.query('select version from public.performer_scores where profile_id = $1 and period_start = $2::date', [ids.m2, month])).rows[0].version === m2score + 1, 'top performers: the earlier figures are kept as a version');
+
+  // ---- the Operations Head and the Super Admin look, and cannot decide
+  r = await api('tp_oh', 'GET', `/top-performers/department?${q}`);
+  check(r.status === 422, 'top performers: an Operations Head must name the department', r);
+  r = await api('tp_oh', 'GET', `/top-performers/department?${q}&departmentId=${dId('tp-api-a')}`);
+  check(r.status === 200 && r.json.data.canDecide === false, 'top performers: an Operations Head reads their department but cannot decide', r.json);
+  r = await api('tp_oh', 'GET', `/top-performers/department?${q}&departmentId=${dId('tp-api-b')}`);
+  check(r.status === 403, 'top performers: and not a department they do not manage', r);
+  r = await api('tp_oh', 'GET', `/top-performers/company?${q}`);
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].name === 'TP API Alpha', 'top performers: the Operations Head\'s company view holds only their departments', r.json);
+  r = await api('sa', 'GET', `/top-performers/company?${q}`);
+  check(r.status === 200 && r.json.data.departments.some((d: any) => d.name === 'TP API Alpha') && Array.isArray(r.json.data.topEmployees) && Array.isArray(r.json.data.trends), 'top performers: the Super Admin sees all departments, the top employees and the trends', r.json);
+
+  // ---- monthly recognition: recommended by the system, official only when the Department Head approves
+  r = await api('tp_dha', 'GET', `/top-performers/department?${q}`);
+  const recs = r.json.data.recognitions as any[];
+  check(recs.length > 0 && recs.every(x => x.status === 'RECOMMENDED'), 'top performers: the recommendations are not official awards', recs.map(x => x.status));
+  const eom = recs.find(x => x.awardType === 'EMPLOYEE_OF_MONTH');
+  check(!eom || eom.name === 'TP m1' || eom.name === 'TP m2', 'top performers: Employee of the Month is one of the ranked members', eom);
+  if (!eom) throw new Error('top performers: no Employee of the Month was recommended: ' + JSON.stringify(recs));
+  r = await api('tp_oh', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 403, 'top performers: an Operations Head cannot approve', r);
+  r = await api('sa', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 403, 'top performers: nor can the Super Admin', r);
+  r = await api('tp_dhb', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 404, 'top performers: nor another department\'s head', r);
+  r = await api('tp_tl', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 403, 'top performers: nor a Team Lead', r);
+  r = await api('tp_dha', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'MAYBE' });
+  check(r.status === 422, 'top performers: the decision must be approve or reject', r);
+  r = await api('tp_dha', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'REJECT' });
+  check(r.status === 422, 'top performers: a rejection needs a reason', r);
+  r = await api('tp_dha', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'APPROVE', status: 'APPROVED', profileId: ids.m2 });
+  check(r.status === 422, 'top performers: a decision cannot name the winner or a status', r);
+  r = await api('tp_dha', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'APPROVE', note: 'Well deserved' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.decidedBy === 'TP dha', 'top performers: the Department Head approves, and who decided is recorded', r.json);
+  r = await api('tp_dha', 'POST', `/top-performers/recognitions/${eom.id}/decision`, { decision: 'REJECT', note: 'changed my mind' });
+  check(r.status === 409 || r.status === 422, 'top performers: an approved award cannot be decided again', r);
+  const n = (await db.query(`select count(*)::int n from public.notifications where type = 'RECOGNITION_APPROVED' and recipient_id = $1`, [eom.profileId])).rows[0].n as number;
+  check(n === 1, 'top performers: the winner is told once the award is official', n);
+
+  // ---- the evaluation of the figures (AI when configured, rules otherwise); a person with insufficient data gets none
+  r = await api('tp_dha', 'POST', '/top-performers/evaluate', { month: month.slice(0, 7) });
+  check(r.status === 200 && typeof r.json.data.written === 'number' && Array.isArray(r.json.data.data.employees), 'top performers: the evaluation request answers with the rankings', r.json);
+  r = await api('tp_m1', 'POST', '/top-performers/evaluate', { month: month.slice(0, 7) });
+  check(r.status === 403, 'top performers: a Team Member cannot ask for evaluations', r);
+  const noTable = await db.query(`select has_table_privilege('authenticated', 'public.performer_scores', 'select') as s, has_table_privilege('authenticated', 'public.performer_recognitions', 'update') as u`);
+  check(noTable.rows[0].s === false && noTable.rows[0].u === false, 'top performers: the tables cannot be read or changed directly by users');
+>>>>>>> origin/main
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

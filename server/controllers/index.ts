@@ -236,6 +236,13 @@ export const performanceController = {
   history: (async ctx => ok(await svc(ctx).performance.history(ctx.params.id))) as Handler
 };
 
+export const performersController = {
+  department: (async ctx => ok(await svc(ctx).performers.department(ctx.req.query))) as Handler,
+  company: (async ctx => ok(await svc(ctx).performers.company(ctx.req.query))) as Handler,
+  evaluate: (async ctx => ok(await svc(ctx).performers.evaluate(ctx.req.body))) as Handler,
+  decide: (async ctx => ok(await svc(ctx).performers.decide(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const recruitmentController = {
   overview: (async ctx => ok(await svc(ctx).recruitment.overview())) as Handler,
   agenda: (async ctx => ok(await svc(ctx).recruitment.agenda())) as Handler,

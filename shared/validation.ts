@@ -2208,3 +2208,18 @@ export const reportPackageSchema = z
   .object({ from: isoDate, to: isoDate, periodType: z.enum(REPORT_PERIOD_TYPES).default('WEEKLY'), note: optionalText(4000) })
   .strict()
   .refine(d => d.to >= d.from, { message: 'The period must end on or after its start.', path: ['to'] });
+
+// ---------------------------------------------------------------------------
+// Top Performers & Rankings
+// ---------------------------------------------------------------------------
+/** A month as YYYY-MM or YYYY-MM-01, always handed on as the first day of the month. */
+const performerMonth = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])(-01)?$/, 'Choose a month.')
+  .transform(v => (v.length === 7 ? `${v}-01` : v));
+export const performersQuerySchema = z.object({ month: performerMonth.optional(), departmentId: uuidSchema.optional() }).strict();
+export const performersEvaluateSchema = performersQuerySchema;
+export const performerDecisionSchema = z
+  .object({ decision: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(500, 'Keep the note under 500 characters.').optional() })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (v.note?.length ?? 0) >= 3, { message: 'Give the reason for rejecting.', path: ['note'] });

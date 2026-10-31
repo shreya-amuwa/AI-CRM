@@ -89,3 +89,8 @@ internal notes), and phone / tablet layouts (83 checks).
 department / team / Team Lead box, no approval row, the right dashboard for each, the new Telecaller signing in), the API refusing a Team Lead who tries more, HR
 submitting an employee ("Employee Submitted for Department Head Approval", pending and unable to sign in, no way around it through `POST /users`), and the Department
 Head approving and rejecting (reason required) with HR seeing both outcomes (36 checks).
+
+`run-top-performers.sh` drives Top Performers & Rankings from real task and report records: the Department Head's Top 3 / Top 5, complete ranking with an
+"Insufficient Data" employee, individual cards with the evaluation, Team Leads compared, monthly recognition (recommended, not official; rejection needs a
+reason; only the Department Head approves), the ranking following changed task records, the read-only company view of an Operations Head, the Super Admin's
+access through the API, who has no page (Team Lead, Team Member) and the phone layout (35 checks).

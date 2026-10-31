@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, UserPlus } from 'lucide-react';
+import { Bell, Building2, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -19,6 +19,7 @@ import { LeadList } from './LeadList';
 import { LeadAssign } from './LeadAssign';
 import { SalesDailyTasks } from './SalesDailyTasks';
 import { SalesPerformance } from './SalesPerformance';
+import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { SalesIncomePage } from './SalesIncomePage';
 import { SalesReports } from './SalesReports';
 import { ContactSheets } from '../telecaller/ContactSheets';
@@ -72,6 +73,7 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'leads', label: 'Leads', icon: Target, children: [{ id: 'leads-list', label: 'Lead List' }, { id: 'leads-assign', label: 'Lead Assign' }] },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
+          { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'income', label: 'Department Income', icon: TrendingUp },
           { id: 'reports', label: 'Sales Reports', icon: ReceiptIndianRupee },
           { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
@@ -122,6 +124,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'leads-assign' && <LeadAssign />}
       {page === 'tasks' && <SalesDailyTasks key={intent.n} initialFilter={intent.filter} />}
       {page === 'performance' && <SalesPerformance />}
+      {page === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {page === 'income' && <SalesIncomePage />}
       {page === 'reports' && <SalesReports />}
       {page === 'work-reports' && <ReportsRoute />}

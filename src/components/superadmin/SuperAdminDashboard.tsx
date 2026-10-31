@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, LayoutDashboard, RotateCcw, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { BarChart3, Bell, Building2, LayoutDashboard, RotateCcw, ShieldCheck, Trophy, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -11,11 +11,12 @@ import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { BusinessReports } from '../reports/BusinessReports';
 import { DepartmentIncome } from '../reports/DepartmentIncome';
+import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'security' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'security' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -48,6 +49,7 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'departments', label: 'Departments', icon: Building2 },
           { id: 'team', label: 'Team Members', icon: Users },
           { id: 'income', label: 'Department Income', icon: Building2 },
+          { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
         ]
       },
@@ -77,7 +79,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'team'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'top-performers' || page === 'team'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -105,6 +107,7 @@ export const SuperAdminDashboard: React.FC = () => {
       )}
       {page === 'team' && <TeamMemberManagement initialTab={teamTab.tab} openRequest={teamTab.n} />}
       {page === 'income' && <DepartmentIncome />}
+      {page === 'top-performers' && <TopPerformersPage mode="COMPANY" />}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'chat' && <ChatRoute />}

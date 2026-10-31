@@ -1,5 +1,5 @@
 -- =============================================================================
--- Chat, migration 20261214000100: secure messaging keys that are made and published automatically (no passphrase, no backup), and a new key
+-- Chat, migration 20261215000100: secure messaging keys that are made and published automatically (no passphrase, no backup), and a new key
 -- made on a device without the old one. The real cryptography is tested in the browser code (chat_secure_client.test.ts); here the database rules are.
 -- =============================================================================
 \set ON_ERROR_STOP 1

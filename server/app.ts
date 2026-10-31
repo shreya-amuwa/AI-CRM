@@ -22,6 +22,7 @@ import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
 import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
 import { runPerformanceAutomation } from './performance/writer.js';
+import { runTopPerformersAutomation } from './topPerformers/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { bolifySender } from './automations/bolify.js';
@@ -175,7 +176,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, training }));
+  // Top performers: recalculate the monthly scores from the task and approved report records, prepare the monthly recommendations, write the evaluations. Idempotent.
+  const topPerformers = await runTopPerformersAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".
