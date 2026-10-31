@@ -3,6 +3,9 @@
 Every agent working in this repository follows these rules. They exist so that several agents (and people) can work at the
 same time without breaking `main`, without merge conflicts and without losing anyone's work.
 
+**Before writing code, plan the change (section 8).** Then build it on its own branch (section 1), keep it conflict-free (sections 2 to 4)
+and prove it works (section 6).
+
 ## 1. Branches: never push to `main`
 
 * **Never commit or push to `main`.** `main` changes only by merging a reviewed pull request.
@@ -95,3 +98,70 @@ test to make it pass. If you remove a feature, update the tests that used it (in
 * Commit messages: a short summary line, a blank line, then what changed and why.
 * Pull request description: what changed, the migrations to run (if any), and the checks you ran with their results.
 * If the pull request shows red checks or "This branch has conflicts", fix it on the **same branch** (section 2) instead of opening a new one.
+
+## 8. Plan and design before coding
+
+### 8.1 Understand first
+
+* Read the request fully and restate it as a short list of requirements and acceptance checks. If something is genuinely ambiguous
+  (money, permissions, deleting data, who can see what), ask before building; otherwise choose the safest reasonable option and say so in the pull request.
+* Read the existing code for the same area before writing anything: the page in `src/`, its API route, service, repository, the
+  database functions it calls (`grep` the function name in `supabase/migrations/`, the **latest** definition wins) and its tests in `supabase/tests/`.
+* Read the relevant `docs/*.md` (for example `ARCHITECTURE.md`, `BACKEND.md`, the feature's own doc).
+* Find what already exists and **reuse it** (helpers in `private.*`, shared components, `shared/validation.ts` schemas, existing upload,
+  notification, audit and permission functions). Do not build a second version of something the codebase already has.
+
+### 8.2 Write a short plan
+
+Before coding, write (in the task / pull request description) a plan that covers:
+
+1. **What changes**: the user-visible behaviour, screen by screen.
+2. **Data**: tables / columns / functions to add or change, and why existing ones are not enough. Prefer adding over changing; never
+   change the meaning of an existing column.
+3. **Permissions**: who may read and who may write, enforced in the database function (not only hidden in the UI). Include the
+   "someone else's record" and "a client / another department" cases.
+4. **API**: routes, request and response shapes (types in `shared/contracts.ts`, validation in `shared/validation.ts`).
+5. **Edge cases and failures**: empty data, missing optional columns on an older database, duplicates, double clicks / retries,
+   concurrent edits, large inputs, network errors, what the user sees in each case.
+6. **Impact on existing features**: what else reads or writes the same data (search the code), and how it stays correct.
+7. **Tests**: the database, API and unit checks you will add, including permission-denied cases.
+8. **Rollout**: the migration(s) the owner must run, and whether the code still works before they are run.
+
+Split a large plan into several small pull requests that each work on their own (for example: database + API first, then the screens).
+
+### 8.3 System design principles for this codebase
+
+* **The database is the source of truth and the security boundary.** Business rules and permission checks live in `security definer`
+  functions; the API and the UI call them and never re-implement or bypass them. The browser is never trusted for ids, roles, prices or totals.
+* **Layering:** UI -> API route -> controller -> service (validation) -> repository (one database call) -> database function. Keep each
+  layer thin and in its own place; no database calls from components, no business rules in controllers.
+* **Single source of truth for shapes:** one Zod schema and one TypeScript type per payload, shared by the form and the server.
+* **Least privilege:** each role sees and changes only its own scope (own records, own team, own department, own customer for clients).
+  Clients use only `client_*` functions that take no customer id.
+* **Idempotent and safe writes:** retries must not create duplicates (unique keys, `on conflict`, dedupe keys for notifications);
+  money and stock-like values are changed in one transaction with row locks (`for update`).
+* **Auditability:** important changes (money, status, permissions, personal data) are written to the audit log with who, when and before/after.
+* **Backward compatibility:** new columns are nullable or have defaults; new API fields are optional; old clients keep working
+  until the migration runs. Never remove or rename something other code still uses in the same pull request.
+* **Performance:** filter, sort and paginate in the database (not in the browser); add an index for every new frequent filter;
+  avoid one query per row (N+1); no polling timers where realtime or reload-on-action works.
+* **Files:** uploads go straight to storage with a signed, single-use link; the server checks size and real content type; files are
+  private and opened with short-lived signed links.
+* **Observability:** errors returned to users are clear and actionable (`VALIDATION_ERROR: Enter the amount in whole rupees.`); internal
+  details (SQL, stack traces, keys) are never shown to users or logged with personal data.
+
+### 8.4 Coding practices
+
+* Small, readable functions with clear names; follow the style, naming and comment density of the surrounding code.
+* TypeScript strictly typed: no `any` for new code unless unavoidable at a boundary, no `@ts-ignore`.
+* Handle loading, empty, error and permission-denied states on every new screen; forms disable the button while saving and show the server's message.
+* Accessible UI: labels for inputs, buttons with clear text or `aria-label`, keyboard usable, works on mobile widths.
+* No hard-coded sample data in production screens; empty states say so.
+* No secrets, credentials or customer data in code, tests, logs or commits.
+* Comments explain **why**, not what. Update the relevant `docs/*.md` when behaviour changes.
+* Remove code that your change makes unused, but only code that belongs to your change.
+
+### 8.5 Definition of done
+
+A task is done only when: the plan's requirements are met, permissions are enforced in the database and tested, all checks in section 6
+pass, the branch is up to date with `main` with no conflicts, the docs are updated, and the pull request lists the migrations to run and the checks performed.
