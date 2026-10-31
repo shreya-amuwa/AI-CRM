@@ -8,6 +8,8 @@ import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
+import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
 import { useSupportInvoices, useTickets } from '../../lib/support';
@@ -26,7 +28,7 @@ import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | 'work-reports' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
@@ -36,6 +38,7 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   // Clients handed over Technical Consultant -> Department Head -> Support Team Lead -> me.
   { id: 'my-clients', label: 'My Clients', icon: UserCheck },
   { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
+  { id: 'work-reports', label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
   { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
   // Support also pitches services (referrals and other channels): the same lead pipeline Sales uses, limited to their own records
@@ -75,6 +78,7 @@ export const SupportMemberDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
+  const reportsBadge = useReportsBadge();
   const userId = user?.id || profile?.id || '';
   const [page, setPage] = useState<SupportPage>(() => parseSupportPage(window.location.pathname));
   const [profileId, setProfileId] = useState<string | null>(null);
@@ -92,6 +96,7 @@ export const SupportMemberDashboard: React.FC = () => {
 
   useOpenChatRequest(React.useCallback(() => { setProfileId(null); setPage('chat'); }, []));
   useOpenIssuesRequest(React.useCallback(() => { setProfileId(null); setPage('raise-issue'); }, []));
+  useOpenReportsRequest(React.useCallback(() => { setProfileId(null); setPage('work-reports'); }, []));
 
   const go = (next: SupportPage) => {
     setProfileId(null);
@@ -108,10 +113,10 @@ export const SupportMemberDashboard: React.FC = () => {
   const teamName = profile?.team?.name;
 
   const groups: ShellNavGroup[] = groupNavItems(
-    NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n)),
+    NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n.id === 'work-reports' ? { ...n, badge: reportsBadge } : n)),
     [
       { ids: ['customers'] },
-      { label: 'Work', ids: ['tasks', 'tickets', 'delivery', 'invoices'] },
+      { label: 'Work', ids: ['tasks', 'work-reports', 'tickets', 'delivery', 'invoices'] },
       { label: 'Customers', ids: ['my-clients', 'add-customer', 'import', 'client-documents', 'client-calendar'] },
       { label: 'My Leads', ids: ['leads', 'potential', 'onboarding', 'part-payments'] },
       { label: 'Team', ids: ['raise-issue', 'chat', 'notifications'] }
@@ -183,6 +188,8 @@ export const SupportMemberDashboard: React.FC = () => {
         <ChatRoute />
       ) : page === 'raise-issue' ? (
         <IssuesRoute />
+      ) : page === 'work-reports' ? (
+        <ReportsRoute />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : (

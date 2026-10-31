@@ -1,6 +1,6 @@
 /** The pages of the Sales Department Head dashboard and their addresses (kept apart from the component so they can be tested without a browser). */
 export type SalesHeadPage =
-  | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'tasks' | 'performance' | 'income' | 'reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications';
+  | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'tasks' | 'performance' | 'income' | 'reports' | 'work-reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -16,6 +16,7 @@ export const PATHS: Record<SalesHeadPage, string> = {
   performance: 'performance',
   income: 'income',
   reports: 'reports',
+  'work-reports': 'work-reports',
   'telecaller-sheets': 'telecaller-sheets',
   'service-prices': 'service-prices',
   notices: 'notices',

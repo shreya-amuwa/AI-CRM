@@ -12,6 +12,8 @@ import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
+import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { FIELD_VISIT_GROUP_ID, FIELD_VISIT_NAV, FIELD_VISIT_SEGMENT, FieldVisitWorkspace, fieldVisitPageFromSegment, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
 import { AddLeadView } from '../team-member/pipeline/LeadForms';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
@@ -28,7 +30,7 @@ export type BaPage = 'home' | 'tasks' | 'leads' | 'quotation' | 'demos' | 'scope
 /** The pages of the Business Associate pages that also take a client (and document) to open. */
 type MemberPage = 'customers' | 'follow-ups' | 'work-tasks' | 'calendar' | 'invoices' | 'delivery' | 'settings' | 'notifications';
 /** The pages of this dashboard: the Business Associate pages, the Leads group, the member pages (customers, follow-ups, calendar ...), subscriptions and chat. */
-type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage | MemberPage | 'subscriptions' | 'chat' | 'raise-issue';
+type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage | MemberPage | 'subscriptions' | 'chat' | 'raise-issue' | 'work-reports';
 /** Where a button sends the Business Associate: a page, and optionally the client (and document) to open there. */
 export interface BaTarget { contactId?: string; quotationId?: string; scopeId?: string; stage?: string; addLead?: boolean; newDemo?: boolean }
 export type BaNavigate = (page: BaPage, target?: BaTarget) => void;
@@ -68,6 +70,7 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
   { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon || MessageCircle },
   { id: 'notifications', label: 'Notification Center', icon: Bell },
+  { ...REPORTS_NAV },
   { ...ISSUES_NAV },
   { id: 'settings', label: 'Settings', icon: Settings }
 ];
@@ -76,13 +79,13 @@ const SECTIONS_OF_NAV = [
   { label: 'Sales & Leads', ids: ['leads-group', 'customers', 'follow-ups', 'work-tasks', FIELD_VISIT_GROUP_ID, 'calendar'] },
   { label: 'Business Associate', ids: ['tasks', 'quotation', 'demos', 'scope'] },
   { label: 'Subscriptions & Services', ids: ['subscriptions', 'invoices', 'delivery'] },
-  { label: 'Communication', ids: ['chat', 'notifications', ISSUES_NAV.id] },
+  { label: 'Communication', ids: ['chat', 'notifications', REPORTS_NAV.id, ISSUES_NAV.id] },
   { label: 'Account', ids: ['settings'] }
 ];
 const SEGMENT: Record<Section, string> = {
   ...FIELD_VISIT_SEGMENT,
   home: '', tasks: 'tasks', leads: 'leads', potential: 'potential', onboarding: 'customer-onboarding', 'part-payments': 'part-payments',
-  quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project', 'raise-issue': 'raise-issue',
+  quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project', 'raise-issue': 'raise-issue', 'work-reports': 'work-reports',
   customers: 'customers', 'follow-ups': 'follow-ups', 'work-tasks': 'my-tasks', calendar: 'calendar', invoices: 'invoices', delivery: 'delivery-queue',
   settings: 'settings', notifications: 'notifications', subscriptions: 'subscriptions', chat: 'chat'
 };
@@ -124,11 +127,13 @@ export const BusinessAssociateDashboard: React.FC = () => {
   const go: BaNavigate = (next, t) => open(next, t);
   useOpenIssuesRequest(React.useCallback(() => open('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenChatRequest(React.useCallback(() => open('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  useOpenReportsRequest(React.useCallback(() => open('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  const reportsBadge = useReportsBadge();
 
   const displayName = profile?.fullName || user?.name || 'Business Associate';
   // a Sales Team Member has no Sales role: they work here too, with the same pages and the same ownership rules
   const roleLabel = profile?.salesSubRole === 'BUSINESS_ASSOCIATE' ? 'Business Associate' : 'Sales Team Member';
-  const nav = NAV.map(n => (n.id === 'chat' ? { ...n, badge: chatUnread } : n));
+  const nav = NAV.map(n => (n.id === 'chat' ? { ...n, badge: chatUnread } : n.id === REPORTS_NAV.id ? { ...n, badge: reportsBadge } : n));
   const groups = groupNavItems(nav, SECTIONS_OF_NAV);
   const key = `${page}-${target.n}`;
   const memberSection = MEMBER_SECTION[page];
@@ -191,6 +196,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
           {page === 'scope' && <ScopePage key={key} go={go} initialContactId={target.contactId} initialScopeId={target.scopeId} />}
           {page === 'subscriptions' && <SubscriptionsPage key={key} />}
           {page === 'raise-issue' && <IssuesRoute />}
+          {page === 'work-reports' && <ReportsRoute />}
         </div>
       )}
     </DashboardShell>

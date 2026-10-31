@@ -12,6 +12,8 @@ import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
+import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { SalesOverview } from './SalesOverview';
 import { LeadList } from './LeadList';
 import { LeadAssign } from './LeadAssign';
@@ -42,6 +44,7 @@ export const SalesHeadDashboard: React.FC = () => {
   // a filter the page being opened should start with (the Overview cards link to the Lead List)
   const [intent, setIntent] = useState<{ filter?: string; n: number }>({ n: 0 });
   const chatUnread = useChatNavBadge();
+  const reportsBadge = useReportsBadge();
 
   useEffect(() => {
     const onPop = () => setPage(parseSalesHeadPage(window.location.pathname, home));
@@ -58,6 +61,7 @@ export const SalesHeadDashboard: React.FC = () => {
   };
   useOpenChatRequest(React.useCallback(() => go('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  useOpenReportsRequest(React.useCallback(() => go('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -69,7 +73,8 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'income', label: 'Department Income', icon: TrendingUp },
-          { id: 'reports', label: 'Reports', icon: ReceiptIndianRupee },
+          { id: 'reports', label: 'Sales Reports', icon: ReceiptIndianRupee },
+          { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
           { id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet },
           { id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee },
           { id: 'notices', label: 'Client Notices', icon: Megaphone },
@@ -80,7 +85,7 @@ export const SalesHeadDashboard: React.FC = () => {
         ]
       }
     ],
-    [chatUnread, operationsHead]
+    [chatUnread, operationsHead, reportsBadge]
   );
 
   const roleName = operationsHead ? 'Sales Operations Head' : 'Sales Department Head';
@@ -119,6 +124,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'performance' && <SalesPerformance />}
       {page === 'income' && <SalesIncomePage />}
       {page === 'reports' && <SalesReports />}
+      {page === 'work-reports' && <ReportsRoute />}
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
       {page === 'notices' && <ClientNotices />}

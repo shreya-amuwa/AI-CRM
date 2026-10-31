@@ -120,7 +120,7 @@ const sh = await login('sales.head@amuwa.com', { width: 1440, height: 900 }, 'as
 await sh.waitForURL(/\/sales-head\/dashboard\//, { timeout: 15000 }).catch(() => fail('the Sales head did not land on /sales-head/dashboard/…: ' + sh.url()));
 ok('the Sales Department Head opens the Sales Department Head dashboard');
 let labels = await menuLabels(sh);
-const expectedTop = ['Overview', 'Leads', 'Daily Tasks', 'Performance Management', 'Department Income', 'Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Raise an Issue', 'Chat', 'Notification Center'];
+const expectedTop = ['Overview', 'Leads', 'Daily Tasks', 'Performance Management', 'Department Income', 'Sales Reports', 'Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Raise an Issue', 'Chat', 'Notification Center'];
 await expect(JSON.stringify(labels.filter(l => expectedTop.includes(l))) === JSON.stringify(expectedTop) && labels.length === expectedTop.length, 'the menu is in the agreed order', labels);
 await sh.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).first().click();
 labels = await menuLabels(sh);
@@ -266,7 +266,7 @@ await sh.getByRole('button', { name: /Back|All employees|Generate|Refresh/ }).fi
 ok('Performance: the AI-assisted performance report opens for the person');
 
 // ------------------------------------------------------------------ 7. Reports
-await page(sh, 'Reports');
+await page(sh, 'Sales Reports');
 await sh.locator('#sr-who').waitFor({ timeout: 15000 });
 await sh.locator('#sr-who').selectOption('TEAM_LEAD');
 await sh.getByText('Team Lead report').first().waitFor({ timeout: 15000 });
