@@ -10,6 +10,8 @@ reset role;
 -- running the migrations again must change nothing (they are safe to re-run)
 \i supabase/migrations/20261205000200_meta_verifier_workflow.sql
 \i supabase/migrations/20261205000300_accounts_client_provisioning.sql
+-- the Technical Consultant keeps every customer Sales sends (20261215000100 replaces the either-or visibility of the Meta route)
+\i supabase/migrations/20261215000100_consultant_meta_workflows.sql
 
 create temp table mv (name text primary key, id uuid);
 grant all on mv to authenticated, service_role;
@@ -97,7 +99,7 @@ select test.must_fail($$select consultant_set_addons_required((select id from mc
 select test.must_fail($$select consultant_set_contract((select id from mc where name = 'wa1'), true)$$, 'nor is the consultation ("contacted")', 'NOT_FOUND');
 select test.login('late_consultant');
 select test.check((select count(*) = 1 from customers where id = (select id from mc where name = 'ai1')), 'the Technical Consultant sees their customer');
-select test.check((select count(*) = 0 from customers where id in (select id from mc where name in ('wa1', 'wa2'))), 'and not the WhatsApp customers before they are handed over');
+select test.check((select count(*) = 2 from customers where id in (select id from mc where name in ('wa1', 'wa2'))), 'and also the WhatsApp customers from the moment Sales sent them (they are no longer hidden until the hand-over)');
 select test.must_fail($$select verification_note_add((select id from mc where name = 'wa1'), 'x', 'NOTE')$$, 'cannot write verification notes for them', 'NOT_FOUND');
 select test.must_fail($$select verify_all_onboarding_entries((select id from mc where name = 'wa1'))$$, 'nor verify their documents', 'NOT_FOUND');
 select test.login('tm_a');
@@ -267,7 +269,7 @@ set role authenticated;
 select test.login('late_verifier');
 select test.check((select count(*) = 1 from customers where id = (select id from mc where name = 'ai1')), 'the Meta Verifier now sees it');
 select test.login('late_consultant');
-select test.check((select count(*) = 0 from customers where id = (select id from mc where name = 'ai1')), 'and the Technical Consultant no longer does');
+select test.check((select count(*) = 1 from customers where id = (select id from mc where name = 'ai1')), 'and the Technical Consultant keeps it (the verification moved, the consultant''s work did not)');
 select test.login('dh_wbx');
 select test.must_fail($$select reroute_verification((select id from mc where name = 'ai1'), 'TECHNICAL', 'not mine')$$, 'a Department Head of another department cannot', 'NOT_FOUND');
 reset role;

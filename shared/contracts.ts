@@ -4576,3 +4576,51 @@ export interface ReportsDepartmentDetail {
   departmentHeads: { id: string; name: string; designation: string | null; reports: WorkReportSummary[] }[];
   teamLeads: TeamLeadBox[];
 }
+
+// ---------------------------------------------------------------------------
+// Technical Consultant and Meta Verifier: two independent statuses on one customer
+// ---------------------------------------------------------------------------
+export const TC_WORKFLOW_STATUSES = [
+  'NEW_LEAD', 'VERIFICATION_PENDING', 'VERIFICATION_IN_PROGRESS', 'ADDON_SERVICES_RECOMMENDED', 'WAITING_FOR_CUSTOMER_PURCHASE',
+  'PAYMENT_CONFIRMATION_PENDING', 'ADDON_PURCHASED', 'TECHNICAL_PROCESSING', 'COMPLETED', 'ON_HOLD'
+] as const;
+export type TcWorkflowStatus = (typeof TC_WORKFLOW_STATUSES)[number];
+export const META_WORKFLOW_STATUSES = [
+  'ONBOARDING_PENDING', 'ONBOARDING_IN_PROGRESS', 'DOCUMENTS_PENDING', 'VERIFICATION_PENDING', 'ONBOARDING_COMPLETED', 'REJECTED', 'ON_HOLD'
+] as const;
+export type MetaWorkflowStatus = (typeof META_WORKFLOW_STATUSES)[number];
+/** The statuses a person may choose; the others (New Lead, Payment Confirmation Pending, Add-on Purchased) follow Sales and Accounts. */
+export const TC_MANUAL_STATUSES: readonly TcWorkflowStatus[] = [
+  'VERIFICATION_PENDING', 'VERIFICATION_IN_PROGRESS', 'ADDON_SERVICES_RECOMMENDED', 'WAITING_FOR_CUSTOMER_PURCHASE', 'TECHNICAL_PROCESSING', 'COMPLETED', 'ON_HOLD'
+];
+export const TC_STATUS_LABELS: Record<TcWorkflowStatus, string> = {
+  NEW_LEAD: 'New Lead', VERIFICATION_PENDING: 'Verification Pending', VERIFICATION_IN_PROGRESS: 'Verification In Progress',
+  ADDON_SERVICES_RECOMMENDED: 'Add-on Services Recommended', WAITING_FOR_CUSTOMER_PURCHASE: 'Waiting for Customer Purchase',
+  PAYMENT_CONFIRMATION_PENDING: 'Payment Confirmation Pending', ADDON_PURCHASED: 'Add-on Purchased', TECHNICAL_PROCESSING: 'Technical Processing',
+  COMPLETED: 'Completed', ON_HOLD: 'On Hold'
+};
+export const META_STATUS_LABELS: Record<MetaWorkflowStatus, string> = {
+  ONBOARDING_PENDING: 'Onboarding Pending', ONBOARDING_IN_PROGRESS: 'Onboarding In Progress', DOCUMENTS_PENDING: 'Documents Pending',
+  VERIFICATION_PENDING: 'Verification Pending', ONBOARDING_COMPLETED: 'Onboarding Completed', REJECTED: 'Rejected', ON_HOLD: 'On Hold'
+};
+
+export interface WorkflowHistoryEntry {
+  track: 'TECHNICAL_CONSULTANT' | 'META_VERIFIER';
+  from: string | null;
+  to: string;
+  source: 'SYSTEM' | 'USER';
+  by: string | null;
+  note: string | null;
+  at: string;
+}
+export interface CustomerWorkflow {
+  customerId: string;
+  technicalConsultant: { status: TcWorkflowStatus; since: string | null; note: string | null; by: string | null; source: 'SYSTEM' | 'USER'; sentBySales: boolean };
+  metaVerifier: { applicable: boolean; status: MetaWorkflowStatus | null; since: string | null; note: string | null; by: string | null; source: 'SYSTEM' | 'USER' };
+  canSetTechnicalConsultant: boolean;
+  canSetMetaVerifier: boolean;
+  addon: { latestStatus: string | null; open: boolean; addonsRequired: boolean | null; paymentPending: boolean };
+  onboarding: { handedOver: boolean; itemsTotal: number | null; itemsVerified: number | null };
+  history: WorkflowHistoryEntry[];
+}
+export type CustomerWorkflowStatuses = Record<string, { technicalConsultant: TcWorkflowStatus; metaVerifier: MetaWorkflowStatus | null }>;

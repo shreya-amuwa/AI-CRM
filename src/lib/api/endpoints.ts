@@ -4,6 +4,7 @@
  */
 import type {
   OperationsHeadReviewItem, OperationsOverviewRow,
+  CustomerWorkflow, CustomerWorkflowStatuses, TcWorkflowStatus, MetaWorkflowStatus,
   DepartmentEmployeeDirectory, EmployeeRequest, OperationsActivityEntry, OperationsDashboard, OperationsDepartmentDetail, OperationsHeadAdmin, OperationsHeadsAdmin, TeamAssignmentRecord,
   ClientAccessMethod, PanelDetails, TcFollowUp, VerificationNote, VerificationRouteReviewItem, WorkflowSettings,
   BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice,
@@ -251,6 +252,11 @@ export interface PipelineQuery {
 }
 
 export const pipelineApi = {
+  /** Both workflow statuses of one customer (Technical Consultant and Meta Verifier), the history, and who may change which. */
+  workflow: (id: string) => api.get<CustomerWorkflow>(`/pipeline/customers/${id}/workflow`),
+  workflowStatuses: (ids: string[]) => (ids.length ? api.get<CustomerWorkflowStatuses>('/pipeline/workflow-statuses', { ids: ids.join(',') }) : Promise.resolve({} as CustomerWorkflowStatuses)),
+  setTcStatus: (id: string, body: { status: TcWorkflowStatus; note?: string }) => api.post<CustomerWorkflow>(`/pipeline/customers/${id}/workflow/technical-consultant`, body),
+  setMetaStatus: (id: string, body: { status: MetaWorkflowStatus; note?: string }) => api.post<CustomerWorkflow>(`/pipeline/customers/${id}/workflow/meta-verifier`, body),
   services: () => api.get<ServiceCatalogItem[]>('/pipeline/services'),
   counts: () => api.get<PipelineCounts>('/pipeline/counts'),
   divisionSupportOverview: (departmentId: string, division: TeamDivision) =>

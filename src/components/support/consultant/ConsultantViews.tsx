@@ -54,6 +54,7 @@ import { ClientMessagesPanel } from './ClientMessagesPanel';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
 import { CustomerAddonDetails } from './CustomerAddonDetails';
 import { ConsultationNotes } from './ConsultationNotes';
+import { MetaChip, TcChip, useWorkflowStatuses, WorkflowStatusPanel } from './WorkflowStatusPanel';
 import { useRealtime } from '../../../lib/support';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 import { EntryDialog } from '../../team-member/pipeline/ChecklistPanel';
@@ -137,7 +138,7 @@ const TABS: { key: ReviewFilter | ''; label: string; countKey: keyof ReviewCount
 ];
 const PAGE_SIZE = 12;
 
-export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onOpen: (id: string) => void }> = ({ counts, onOpen }) => {
+export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onOpen: (id: string) => void; mode?: ConsultantMode }> = ({ counts, onOpen, mode = 'consultant' }) => {
   const { byCode } = useServiceCatalog();
   const [tab, setTab] = useState<ReviewFilter | ''>('');
   const [search, setSearch] = useState('');
@@ -163,6 +164,7 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
   useEffect(load, [load]);
   useEffect(() => setPage(1), [tab, debounced]);
   usePipelineRealtime(load);
+  const workflow = useWorkflowStatuses(data?.items.map(c => c.id) ?? []);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -232,7 +234,11 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
                       <div className="font-bold text-slate-900 truncate">{c.company || c.name}</div>
                       <div className="text-sm text-slate-500 truncate">{c.name}</div>
                     </div>
-                    <StatusPill status={statusOf(o)} />
+                    <div className="flex flex-col items-end gap-1.5">
+                      <StatusPill status={statusOf(o)} />
+                      {mode === 'consultant' && workflow[c.id] && <TcChip status={workflow[c.id].technicalConsultant} />}
+                      {mode === 'verifier' && workflow[c.id]?.metaVerifier && <MetaChip status={workflow[c.id].metaVerifier!} />}
+                    </div>
                   </div>
                   {o?.returnedAt && (
                     <p className="mt-3 text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5">
@@ -408,6 +414,8 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
       {actionError && <ErrorBanner message={actionError} />}
 
       <HandoverBanner info={c.handover} />
+
+      <WorkflowStatusPanel customerId={c.id} onChanged={load} />
 
       {waiting && (
         <div className="p-4 rounded-2xl border border-violet-200 bg-violet-50 text-sm text-violet-900" role="status">

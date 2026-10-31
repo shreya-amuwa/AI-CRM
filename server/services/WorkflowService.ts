@@ -1,4 +1,4 @@
-import type { HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { CustomerWorkflow, CustomerWorkflowStatuses, HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import {
   usageAlertSettingsSchema,
   followUpAssignSchema,
@@ -11,6 +11,9 @@ import {
   rerouteVerificationSchema,
   serviceMetaVerificationSchema,
   tcFollowupDelaySchema,
+  tcWorkflowStatusSchema,
+  metaWorkflowStatusSchema,
+  workflowStatusesQuerySchema,
   uuidSchema,
   verificationNoteSchema
 } from '../../shared/validation.js';
@@ -26,6 +29,21 @@ const codeSchema = z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/, 'Unknown service.'
 export class WorkflowService {
   constructor(private readonly repo: WorkflowRepository) {}
 
+  customerWorkflow(customerId: string): Promise<CustomerWorkflow> {
+    return this.repo.customerWorkflow(parse(uuidSchema, customerId));
+  }
+  customerWorkflowStatuses(query: unknown): Promise<CustomerWorkflowStatuses> {
+    return this.repo.customerWorkflowStatuses(parse(workflowStatusesQuerySchema, query).ids.split(','));
+  }
+  /** The Technical Consultant's own status. The request names no customer owner, role or other status: the database decides who may change which. */
+  setTcStatus(customerId: string, body: unknown): Promise<CustomerWorkflow> {
+    const input = parse(tcWorkflowStatusSchema, body);
+    return this.repo.setTcStatus(parse(uuidSchema, customerId), input.status, input.note);
+  }
+  setMetaStatus(customerId: string, body: unknown): Promise<CustomerWorkflow> {
+    const input = parse(metaWorkflowStatusSchema, body);
+    return this.repo.setMetaStatus(parse(uuidSchema, customerId), input.status, input.note);
+  }
   verificationNotes(customerId: string): Promise<VerificationNote[]> {
     return this.repo.verificationNotes(parse(uuidSchema, customerId));
   }
