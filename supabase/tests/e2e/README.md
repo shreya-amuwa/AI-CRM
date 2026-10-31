@@ -84,3 +84,8 @@ PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/
 (Employee Issues, Meeting Requests): submitting with validation and an attachment, the reference number, HR's cards, filters, search, assigning, responding,
 requesting information, resolving / closing with confirmations, scheduling, declining, proposing another time, what the employee sees (and never the
 internal notes), and phone / tablet layouts (83 checks).
+
+`run-member-creation.sh` drives who adds a team member: a Team Lead adds members to their own team at once (the Sales role dropdown with the five Sales roles, the
+department / team / Team Lead box, no approval row, the right dashboard for each, the new Telecaller signing in), the API refusing a Team Lead who tries more, HR
+submitting an employee ("Employee Submitted for Department Head Approval", pending and unable to sign in, no way around it through `POST /users`), and the Department
+Head approving and rejecting (reason required) with HR seeing both outcomes (36 checks).

@@ -12,7 +12,7 @@ import type { EmployeeApprovalRepository } from '../repositories/EmployeeApprova
 const DB_ROLE = { OPERATIONS_HEAD: 'DEPARTMENT_HEAD', DEPARTMENT_HEAD: 'DEPARTMENT_HEAD', TEAM_HEAD: 'TEAM_HEAD', TEAM_MEMBER: 'TEAM_MEMBER' } as const;
 
 /**
- * Employee approval. HR (or a Team Lead, for a Team Member) submits; the database resolves the approver from the role and department, activates the
+ * Employee approval. HR submits (a Team Lead adds team members directly, through the account form, with no request); the database resolves the approver from the role and department, activates the
  * account only in the approval itself, and enforces every rule again. The server never trusts an approver, a role check or a status from the browser.
  */
 export class EmployeeApprovalService {
@@ -21,7 +21,7 @@ export class EmployeeApprovalService {
     private readonly authAdmin = new AuthAdminRepository()
   ) {}
 
-  /** Used by the HR form and by a Team Lead's "add a team member" (which now asks the Department Head instead of creating an active account). */
+  /** Used by the HR form only: the database refuses everybody who is not HR. */
   async submit(actor: Actor, body: unknown): Promise<EmployeeRequest> {
     return this.create(actor, parse(employeeRequestSchema, body));
   }

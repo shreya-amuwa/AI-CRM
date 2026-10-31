@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import type { EmployeeRequest } from '../../../shared/contracts';
 import { BLOOD_GROUPS, EMPLOYEE_REQUEST_ROLES, employeeRequestSchema, type EmployeeRequestRole } from '../../../shared/validation';
-import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi } from '../../lib/api/endpoints';
@@ -16,19 +15,22 @@ export const APPROVER_LABEL: Record<EmployeeRequestRole, string> = {
   OPERATIONS_HEAD: 'the Super Admin', DEPARTMENT_HEAD: 'the Operations Head who owns the department', TEAM_HEAD: 'the Department Head', TEAM_MEMBER: 'the Department Head'
 };
 
+/** The title of the approver, for the confirmation (the database decides who it is). */
+const APPROVER_TITLE: Record<EmployeeRequestRole, string> = { OPERATIONS_HEAD: 'Super Admin', DEPARTMENT_HEAD: 'Operations Head', TEAM_HEAD: 'Department Head', TEAM_MEMBER: 'Department Head' };
+
 const label = 'block text-xs font-semibold text-slate-700';
 
 /**
- * Employee request: HR (any role of the HR department) asks for an Operations Head, Department Head, Team Lead or Team Member; a Team Lead asks for a Team Member
- * of their own department. Nobody becomes active here: the request goes to the approver the database picks, and the person signs in only after it is approved.
+ * Employee request: HR (any role of the HR department) asks for an Operations Head, Department Head, Team Lead or Team Member. Nobody becomes active here: the request
+ * goes to the approver the database picks (for a Team Member or Team Lead: the Department Head), and the person signs in only after it is approved.
+ * A Team Lead does not use this form: they add a Team Member of their own team directly (Team Members > Add Team Member).
  */
-export const EmployeeRequestForm: React.FC<{ mode: 'hr' | 'lead'; onSubmitted?: (request: EmployeeRequest) => void }> = ({ mode, onSubmitted }) => {
-  const { profile } = useAuth();
+export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeRequest) => void }> = ({ onSubmitted }) => {
   const { departments } = useDepartments();
   const usable = useMemo(() => departments.filter(d => d.dbId), [departments]);
-  const roles = mode === 'lead' ? (['TEAM_MEMBER'] as const) : EMPLOYEE_REQUEST_ROLES;
-  const [role, setRole] = useState<EmployeeRequestRole>(mode === 'lead' ? 'TEAM_MEMBER' : 'TEAM_MEMBER');
-  const [departmentId, setDepartmentId] = useState(mode === 'lead' ? profile?.departmentId ?? '' : '');
+  const roles = EMPLOYEE_REQUEST_ROLES;
+  const [role, setRole] = useState<EmployeeRequestRole>('TEAM_MEMBER');
+  const [departmentId, setDepartmentId] = useState('');
   const [division, setDivision] = useState<'SALES' | 'SUPPORT' | 'GENERAL' | ''>('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -75,26 +77,24 @@ export const EmployeeRequestForm: React.FC<{ mode: 'hr' | 'lead'; onSubmitted?: 
       <div className="flex items-center gap-3">
         <span className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0" aria-hidden="true"><UserPlus className="w-4 h-4" /></span>
         <div>
-          <h2 className="font-bold text-slate-900">{mode === 'lead' ? 'Ask for a team member' : 'New employee request'}</h2>
-          <p className="text-xs text-slate-500">The account stays inactive until {APPROVER_LABEL[role]} approves it. You are told the result.</p>
+          <h2 className="font-bold text-slate-900">New employee request</h2>
+          <p className="text-xs text-slate-500">This employee needs approval first: the account stays inactive until {APPROVER_LABEL[role]} approves it. You are told the result.</p>
         </div>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">
         <label className={label}>Designation
-          <select className={`${inputCls} mt-1`} value={role} onChange={e => setRole(e.target.value as EmployeeRequestRole)} disabled={mode === 'lead'}>
+          <select className={`${inputCls} mt-1`} value={role} onChange={e => setRole(e.target.value as EmployeeRequestRole)}>
             {roles.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
           </select>
         </label>
-        {mode === 'hr' && (
-          <label className={label}>{role === 'OPERATIONS_HEAD' ? 'Home department' : 'Department'}
-            <select className={`${inputCls} mt-1`} value={departmentId} onChange={e => setDepartmentId(e.target.value)} required>
-              <option value="">Choose a department</option>
-              {usable.map(d => <option key={d.dbId} value={d.dbId}>{d.name}</option>)}
-            </select>
-          </label>
-        )}
-        {role !== 'OPERATIONS_HEAD' && mode === 'hr' && (
+        <label className={label}>{role === 'OPERATIONS_HEAD' ? 'Home department' : 'Department'}
+          <select className={`${inputCls} mt-1`} value={departmentId} onChange={e => setDepartmentId(e.target.value)} required>
+            <option value="">Choose a department</option>
+            {usable.map(d => <option key={d.dbId} value={d.dbId}>{d.name}</option>)}
+          </select>
+        </label>
+        {role !== 'OPERATIONS_HEAD' && (
           <label className={label}>Side
             <select className={`${inputCls} mt-1`} value={division} onChange={e => setDivision(e.target.value as typeof division)}>
               <option value="">Not specified</option><option value="SALES">Sales</option><option value="SUPPORT">Support</option><option value="GENERAL">General</option>
@@ -120,8 +120,9 @@ export const EmployeeRequestForm: React.FC<{ mode: 'hr' | 'lead'; onSubmitted?: 
 
       {error && <p role="alert" className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">{error}</p>}
       {done && (
-        <p role="status" className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-          Sent for approval: {done.employee?.name} is waiting for {done.approver?.name ?? (done.awaitingOwner ? 'an Operations Head to be assigned to the department' : APPROVER_LABEL[(done.requestedRole as EmployeeRequestRole)])}.
+        <p role="status" className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" data-testid="submitted-for-approval">
+          <span className="block text-sm font-bold">Employee Submitted for {APPROVER_TITLE[done.requestedRole as EmployeeRequestRole]} Approval</span>
+          {done.employee?.name} is waiting for {done.approver?.name ?? (done.awaitingOwner ? 'an Operations Head to be assigned to the department' : APPROVER_LABEL[(done.requestedRole as EmployeeRequestRole)])}. The status is in "Requests you sent" below.
         </p>
       )}
       <div className="flex justify-end">

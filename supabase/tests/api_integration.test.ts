@@ -95,8 +95,10 @@ const salesTeamLeadId = r.json.data.id;
 r = await api('th', 'GET', '/me');
 check(r.status === 200 && r.json.data.defaultDashboard === 'sales-lead', 'a Sales team lead resolves to the Sales Team Lead dashboard', r);
 
-r = await api('th', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Member A', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
-check(r.status === 403 && /Department Head/.test(r.json.error.message), 'a team lead cannot create an active team member: the Department Head approves (an employee request)', r);
+r = await api('th', 'POST', '/users', { email: 'x.lead@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: sales.id });
+check(r.status === 403, 'a team lead cannot create a team lead', r);
+r = await api('th', 'POST', '/users', { email: 'x.dh@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id });
+check(r.status === 403, 'nor a department head', r);
 r = await api('dh', 'POST', '/users', { email: 'a@amuwa.com', fullName: 'Member A', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
 check(r.status === 201, 'department head creates team member', r);
 const memberA = r.json.data.id;
@@ -6332,9 +6334,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const serviceCode = (await db.query(`select code from crm_services where is_active order by sort_order limit 1`)).rows[0].code as string;
   const rows = (n: number, tag: string) => Array.from({ length: n }, (_v, i) => ({ row: i + 2, name: `API Person ${tag}${i}`, company: `API Co ${i}`, phone: `+9197000${String(i).padStart(5, '0')}`, email: `api${tag}${i}@example.com` }));
 
-  // ---- creating the person: the Sales role is chosen by the Super Admin or the Department Head
-  r = await api('th', 'POST', '/users', { email: 'tc.th@amuwa.com', fullName: 'Not Allowed', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
-  check(r.status === 403, 'telecaller API: a Team Lead cannot choose a Sales role', r);
+  // ---- creating the person: the Sales role is chosen by the Super Admin, the Department Head or the Team Lead of the team (the Team Lead's own cases are in the member-creation block at the end)
+  r = await api('a', 'POST', '/users', { email: 'tc.th@amuwa.com', fullName: 'Not Allowed', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 403, 'telecaller API: a Team Member cannot choose a Sales role (or create anybody)', r);
   r = await api('dh', 'POST', '/users', { email: 'tc.sup@amuwa.com', fullName: 'Support Tele', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, salesSubRole: 'TELECALLER' });
   check(r.status === 422 && /Sales team/.test(r.json.error.message), 'telecaller API: a Support member has no Sales role', r);
   check(Number((await db.query(`select count(*) from auth.users where email = 'tc.sup@amuwa.com'`)).rows[0].count) === 0, 'telecaller API: and no account was left behind');
@@ -6357,8 +6359,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const plainId = r.json.data.id as string;
   r = await api('dh', 'POST', '/users', { email: 'badrole@amuwa.com', fullName: 'Bad', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'MANAGER' });
   check(r.status === 422, 'telecaller API: only the five Sales roles exist', r);
-  r = await api('th', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'TELECALLER' });
-  check(r.status === 403, 'telecaller API: a Team Lead cannot give a Sales role later either', r);
+  r = await api('tl2', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'TELECALLER' });
+  check(r.status === 403 || r.status === 404, 'telecaller API: the Team Lead of another team cannot give a Sales role later (the Team Lead of the member\'s team can: see the member-creation block at the end)', r);
   r = await api('dh', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'TELECALLER' });
   check(r.status === 200 && r.json.data.defaultDashboard === 'telecaller', 'telecaller API: the Department Head gives an existing Sales member the Telecaller role', r);
   r = await api('dh', 'POST', `/users/${plainId}/sales-sub-role`, { role: null });
@@ -7993,6 +7995,118 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await api(null, 'PATCH', path, profile)).status === 401, 'profile correction: anonymous is refused');
   check((await api('accm', 'PATCH', path, { ...profile, dealAmount: 1 })).status === 422, 'profile correction: financial fields rejected');
   check((await api('accm', 'PATCH', path, { ...profile, email: 'invalid' })).status === 422, 'profile correction: invalid email rejected');
+}
+
+// --- Who adds a team member, and how: a Team Lead adds directly (no approval, Sales roles included); HR sends a request the Department Head approves ---
+{
+  const pw = 'Sup3rSecret!';
+  const signInRaw = async (email: string, password: string) => fetch(`${process.env.GATEWAY_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST', headers: { 'content-type': 'application/json', apikey: process.env.SUPABASE_ANON_KEY! }, body: JSON.stringify({ email, password })
+  });
+  const approvals = async (id: string) => Number((await db.query(`select count(*) c from public.approval_requests where subject_user_id = $1`, [id])).rows[0].c);
+  const mk = (email: string, extra: Record<string, unknown> = {}) => ({ email, fullName: 'Direct ' + email.split('@')[0], password: pw, role: 'TEAM_MEMBER', teamId: sales.id, ...extra });
+  const thProfile = (await api('th', 'GET', '/me')).json.data;
+
+  // ---- the Sales roles: every one of them, created by the Team Lead, active at once
+  const roles: [string, string][] = [['TELECALLER', 'telecaller'], ['BUSINESS_ASSOCIATE', 'business-associate'], ['INFLUENCER', 'sales-influencer'], ['VISIT_SALES', 'sales-visit-sales'], ['BUSINESS_PARTNER', 'sales-business-partner']];
+  const created: Record<string, any> = {};
+  for (const [role, dash] of roles) {
+    r = await api('th', 'POST', '/users', mk(`tl.${role.toLowerCase()}@amuwa.com`, { salesSubRole: role }));
+    check(r.status === 201 && r.json.data.status === 'ACTIVE' && r.json.data.role === 'TEAM_MEMBER' && r.json.data.salesSubRole === role && r.json.data.team?.id === sales.id && r.json.data.department?.id === wab.id,
+      `team lead adds a ${role} directly: active at once, in their own team and department, with the Sales role saved`, r);
+    created[role] = r.json.data;
+    check((await db.query(`select default_dashboard, approved_by from public.profiles where id = $1`, [created[role].id])).rows.every(x => x.default_dashboard === dash && x.approved_by === thProfile.id), `${role}: the dashboard is ${dash} and the Team Lead is recorded as the creator`);
+    check((await approvals(created[role].id)) === 0, `${role}: no approval request was created`);
+    const login = await signInRaw(`tl.${role.toLowerCase()}@amuwa.com`, pw);
+    check(login.status === 200, `${role}: the new member can sign in with the account that was set up`, login.status);
+  }
+  r = await api('th', 'POST', '/users', mk('tl.plain@amuwa.com'));
+  check(r.status === 201 && r.json.data.status === 'ACTIVE' && r.json.data.salesSubRole === null, 'team lead adds a plain Sales Team Member (no specific role)', r);
+  check((await db.query(`select default_dashboard from public.profiles where id = $1`, [r.json.data.id])).rows[0].default_dashboard === 'sales-member', 'who gets the Sales member dashboard');
+  const plainId = r.json.data.id;
+  r = await api('th', 'GET', '/users?pageSize=100');
+  check(r.status === 200 && Object.values(created).every((c: any) => r.json.data.items.some((m: any) => m.id === c.id && m.status === 'ACTIVE')), 'the new members are in the Team Lead\'s Team Members list at once', r.json.data.total);
+  r = await api('dh', 'GET', '/users?pageSize=100');
+  check(Object.values(created).every((c: any) => r.json.data.items.some((m: any) => m.id === c.id)), 'and in the Department Head\'s');
+  check(Number((await db.query(`select count(*) c from public.audit_logs where action = 'USER_CREATED' and actor_id = $1`, [thProfile.id])).rows[0].c) >= 6, 'every creation is in the audit log with the Team Lead as the actor');
+
+  // ---- what a Team Lead cannot do, also straight through the API
+  r = await api('th', 'POST', '/users', mk('tl.bad1@amuwa.com', { role: 'TEAM_HEAD' }));
+  check(r.status === 403, 'a Team Lead cannot create a Team Lead', r);
+  r = await api('th', 'POST', '/users', mk('tl.bad2@amuwa.com', { role: 'DEPARTMENT_HEAD', teamId: undefined, departmentId: wab.id }));
+  check(r.status === 403, 'nor a Department Head (a higher role)', r);
+  r = await api('th', 'POST', '/users', mk('tl.bad3@amuwa.com', { role: 'SUPER_ADMIN' }));
+  check(r.status === 422 || r.status === 403, 'nor a Super Admin', r);
+  const wbxTeam = (await api('sa', 'GET', `/teams?departmentId=${wbx.id}`)).json.data[0].id;
+  r = await api('th', 'POST', '/users', mk('tl.bad4@amuwa.com', { teamId: wbxTeam }));
+  check(r.status === 403, 'nor a member of another department\'s team', r);
+  r = await api('th', 'POST', '/users', mk('tl.bad5@amuwa.com', { teamId: delivery }));
+  check(r.status === 403, 'nor of another team of their own department', r);
+  r = await api('th', 'POST', '/users', mk('tl.bad6@amuwa.com', { salesSubRole: 'MANAGER' }));
+  check(r.status === 422, 'an unknown Sales role is refused', r);
+  r = await api('th', 'POST', '/users', mk('tl.bad7@amuwa.com', { technicalConsultant: true }));
+  check(r.status === 422, 'a Technical Consultant must be in a support team', r);
+  r = await api('th', 'POST', '/users', mk(`tl.telecaller@amuwa.com`, { salesSubRole: 'TELECALLER' }));
+  check(r.status === 409, 'the same e-mail is never added twice', r);
+  check(Number((await db.query(`select count(*) c from public.profiles where email like 'tl.bad%@amuwa.com'`)).rows[0].c) === 0, 'and none of the refused accounts exists (no half-made user)');
+  r = await api('tl2', 'POST', '/users', mk('tl.bad8@amuwa.com', { teamId: delivery, salesSubRole: 'TELECALLER' }));
+  check(r.status === 422 || r.status === 403, 'a Sales role cannot be given in a team that is not a Sales team', r);
+  r = await api('th', 'POST', '/users', mk('tl.bad9@amuwa.com', { teamId: sales.id, headDivision: 'SALES' }));
+  check(r.status === 422 || r.status === 403, 'a Team Lead cannot make a head of a side', r);
+  // the Sales role can also be changed later, by the Team Lead of the team, for a member of the team only
+  r = await api('th', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'VISIT_SALES' });
+  check(r.status === 200 && r.json.data.salesSubRole === 'VISIT_SALES', 'the Team Lead sets a Sales role on a member of their team afterwards', r);
+  r = await api('tl2', 'POST', `/users/${plainId}/sales-sub-role`, { role: 'TELECALLER' });
+  check(r.status === 403 || r.status === 404, 'the Team Lead of another team cannot', r);
+  r = await api('th', 'POST', `/users/${thProfile.id}/sales-sub-role`, { role: 'TELECALLER' });
+  check(r.status >= 400, 'a Team Lead cannot give a Sales role to themselves', r);
+
+  // ---- HR: never a direct creation, always a request the Department Head approves
+  r = await api('hrlead', 'POST', '/users', { email: 'hr.direct1@amuwa.com', fullName: 'HR Direct', password: pw, role: 'TEAM_MEMBER', teamId: (await db.query(`select team_id from public.profiles where email = 'hr.lead@amuwa.com'`)).rows[0].team_id });
+  check(r.status === 403 && /request/i.test(r.json.error.message), 'an HR Team Lead cannot create a person directly: HR sends a request', r);
+  r = await api('hrmember', 'POST', '/users', mk('hr.direct2@amuwa.com'));
+  check(r.status === 403, 'nor an HR member (and not into another department)', r);
+  check(Number((await db.query(`select count(*) c from public.profiles where email like 'hr.direct%'`)).rows[0].c) === 0, 'no account was made');
+  r = await api('th', 'POST', '/employee-requests', { email: 'tl.req@amuwa.com', fullName: 'TL Request', password: pw, role: 'TEAM_MEMBER', departmentId: wab.id, division: 'SALES', details: { designation: 'Team Member', joiningDate: '2026-01-05', dateOfBirth: '1995-05-05', bloodGroup: 'B+', contactNumber: '+919123456780', emergencyContact: '+919123456781' } });
+  check(r.status === 403, 'a Team Lead cannot send an employee request either (that is HR\'s workflow)', r);
+  r = await api('dh', 'POST', '/employee-requests', { email: 'dh.req@amuwa.com', fullName: 'DH Request', password: pw, role: 'TEAM_MEMBER', departmentId: wab.id, division: 'SALES', details: { designation: 'Team Member', joiningDate: '2026-01-05', dateOfBirth: '1995-05-05', bloodGroup: 'B+', contactNumber: '+919123456782', emergencyContact: '+919123456783' } });
+  check(r.status === 403, 'nor a Department Head (they add directly)', r);
+  check(Number((await db.query(`select count(*) c from public.profiles where email in ('tl.req@amuwa.com', 'dh.req@amuwa.com')`)).rows[0].c) === 0, 'and nothing was created');
+  // HR: the request is pending, cannot sign in, goes to the Department Head, who approves; a rejection keeps the record and the access closed
+  const hrBody = (email: string) => ({ email, fullName: 'HR ' + email.split('@')[0], password: pw, role: 'TEAM_MEMBER', departmentId: wab.id, division: 'SALES', details: { designation: 'Team Member', joiningDate: '2026-01-05', dateOfBirth: '1995-05-05', bloodGroup: 'B+', contactNumber: '+919123456790', emergencyContact: '+919123456791' } });
+  r = await api('hrmember', 'POST', '/employee-requests', hrBody('hr.sub1@amuwa.com'));
+  check(r.status === 201 && r.json.data.status === 'PENDING' && r.json.data.source === 'HR' && r.json.data.employee.status === 'PENDING' && r.json.data.approverKind === 'DEPARTMENT_HEAD', 'HR sends a Team Member: pending, source HR, routed to the Department Head', r);
+  const reqApprove = r.json.data; const approveId = reqApprove.employee.id;
+  tokens.set('hrsub1', tokenFor(approveId));
+  r = await api('hrsub1', 'GET', '/customers');
+  check(r.status === 401 || r.status === 403, 'a pending employee has no access to anything (the local sign-in service does not apply the ban the real one does)', r);
+  check((await db.query(`select raw_app_meta_data ->> 'banned' as b from auth.users where id = $1`, [approveId])).rows[0].b !== null && !['none', ''].includes(String((await db.query(`select raw_app_meta_data ->> 'banned' as b from auth.users where id = $1`, [approveId])).rows[0].b)), 'and their sign-in is banned until the approval');
+  r = await api('shd', 'GET', '/employee-requests?toDecide=true');
+  check(r.status === 200 && r.json.data.some((x: any) => x.id === reqApprove.id && x.employee.name && x.employee.email === 'hr.sub1@amuwa.com' && x.employee.designation === 'Team Member' && x.employee.contactNumber), 'the Department Head sees the request with the employee\'s details', r);
+  r = await api('shd', 'POST', `/employee-requests/${reqApprove.id}/decide`, { approve: true });
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.decidedBy?.name, 'the Department Head approves: the decision records who decided', r);
+  check((await db.query(`select status from public.profiles where id = $1`, [approveId])).rows[0].status === 'ACTIVE', 'the account is active after the approval');
+  check(((await db.query(`select raw_app_meta_data ->> 'banned' as b from auth.users where id = $1`, [approveId])).rows[0].b ?? 'none') === 'none', 'and the sign-in ban is lifted');
+  r = await api('hrsub1', 'GET', '/me');
+  check(r.status === 200 && r.json.data.status === 'ACTIVE', 'the approved employee reaches their account', r);
+  r = await api('shd', 'GET', '/department/employees');
+  check(r.status === 200 && JSON.stringify(r.json.data).includes(approveId), 'and the employee is listed in the department directory', r.status);
+  r = await api('hrmember', 'POST', '/employee-requests', hrBody('hr.sub2@amuwa.com'));
+  const rejId = r.json.data.employee.id;
+  r = await api('shd', 'POST', `/employee-requests/${r.json.data.id}/decide`, { approve: false, note: 'Not needed this quarter' });
+  check(r.status === 200 && r.json.data.status === 'REJECTED' && r.json.data.decisionNote === 'Not needed this quarter', 'a rejection keeps the record with its reason', r);
+  check((await db.query(`select status from public.profiles where id = $1`, [rejId])).rows[0].status === 'REJECTED', 'the rejected employee is not active');
+  tokens.set('hrsub2', tokenFor(rejId));
+  r = await api('hrsub2', 'GET', '/customers');
+  check(r.status === 401 || r.status === 403, 'and gets no access', r);
+  check((await db.query(`select raw_app_meta_data ->> 'banned' as b from auth.users where id = $1`, [rejId])).rows[0].b !== null && (await db.query(`select raw_app_meta_data ->> 'banned' as b from auth.users where id = $1`, [rejId])).rows[0].b !== 'none', 'their sign-in stays banned');
+  r = await api('hrmember', 'GET', '/employee-requests');
+  check(r.json.data.some((x: any) => x.employee.id === rejId && x.status === 'REJECTED') && r.json.data.some((x: any) => x.employee.id === approveId && x.status === 'APPROVED'), 'HR sees both with their status', r);
+  // the Super Admin and the Department Head still add directly
+  r = await api('sa', 'POST', '/users', mk('sa.direct@amuwa.com'));
+  check(r.status === 201 && r.json.data.status === 'ACTIVE' && (await approvals(r.json.data.id)) === 0, 'the Super Admin still adds directly, with no approval', r);
+  r = await api('dh', 'POST', '/users', mk('dh.direct@amuwa.com'));
+  check(r.status === 201 && r.json.data.status === 'ACTIVE' && (await approvals(r.json.data.id)) === 0, 'and so does the Department Head', r);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

@@ -66,7 +66,7 @@ Activity is real audit and sign-in records of the Department Heads of that depar
 * A department gets an accountable owner automatically only when **exactly one** active Operations Head already covers it (audited `DEPARTMENT_OWNER_BACKFILLED`).
 * `supabase/review_employee_hierarchy.sql` (read only) lists: departments with no owner, departments several heads cover, current owners, still-pending sign-up requests,
   transition grants, and Team Members in a team with no Team Lead.
-* Self-registration (public sign-up) keeps its own flow (`source = REGISTRATION`); only HR / Team Lead requests use the hierarchy.
+* Self-registration (public sign-up) keeps its own flow (`source = REGISTRATION`); only HR requests use the hierarchy (a Team Lead no longer files requests: see section 9).
 
 ## 6. Routes
 
@@ -87,3 +87,25 @@ No new e-mail template was added: approvers are reached through the in-app notif
 
 `supabase/tests/employee_hierarchy_test.sql` (routing, every refusal, owner changes, scope changes, activity, assignment, direct-path bypasses, history),
 `api_integration.test.ts` (the same through HTTP), `ui_employee_hierarchy.test.mjs` (approver, HR, directory, Operations dashboard, Super Admin scope; phone and desktop).
+
+## 9. Who adds a team member, and how (`20261212000100_team_lead_direct_member_creation.sql`, re-runnable)
+
+The path depends on **who is signed in**, decided in the database from the caller (never from anything the browser sends):
+
+| Creator | What happens | Approval |
+| --- | --- | --- |
+| Super Admin, Department Head | creates the account directly (any role they may create) | none, active at once |
+| **Team Lead** | *Team Members > Add Team Member*: a **Team Member of their own team** is created directly and is active at once, with the team, department and the Team Lead (reports to) set. For a Sales team the form also offers the **Sales role** (Telecaller, Business Associate, Influencer, Visit Sales, Business Partner), saved on `profiles.sales_sub_role`. | none |
+| **HR** (any active member of the HR department) | *Employee Requests*: the employee is created **PENDING** and a request goes to the approver of section 1 (a Team Member or Team Lead: the Department Head). HR sees "Employee Submitted for Department Head Approval" and the status of every request. | required |
+
+* A Team Lead cannot create a Super Admin, Operations Head, Department Head or Team Lead, cannot add anyone to another team or department, and cannot raise their own
+  role. `private.actor_can_assign_role` refuses it in the database, so a direct API call fails the same way as the form.
+* HR **cannot** skip the approval: `private.actor_can_assign_role` and `public.assert_can_create_user` refuse HR (HR is told to use *Employee Requests*), so `POST /users`
+  is closed to HR. The Team Lead path is also closed on `employee_request_submit` (`private.check_employee_submission`: only HR submits; `source` is always `HR`).
+* The Department Head decides under *Team Members & Access > Employee Approvals*: details first, Approve, or Reject with a reason (required). The decision, the approver and
+  the time are stored on the request and are the history. A rejected person never gets a sign-in. When approved, the account is active and
+  the Department Head puts the Team Member under a Team Lead (*Approved Employees*). The HR request form has no Sales role field: the Department Head sets it afterwards
+  (`POST /users/:id/sales-sub-role`, also allowed for a Team Lead on a member of their own team).
+* Requests a Team Lead filed before this change (`source = MANAGER`) stay decidable by the Department Head: nothing is deleted or rewritten.
+* Tests: `employee_hierarchy_test.sql` and `telecaller_test.sql` (DB), `api_integration.test.ts` ("Who adds a team member, and how"), and `supabase/tests/e2e/run-member-creation.sh`
+  (Team Lead creates six members including all five Sales roles; HR submits, the Department Head approves and rejects).

@@ -289,8 +289,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const headOfSide = (side: HeadDivision) => existingHeads.find(h => h.headDivision === side) || null;
   const unlabelledHead = existingHeads.find(h => !h.headDivision) || null;
   const existingHead = role === 'DEPARTMENT_HEAD' && headDivision ? headOfSide(headDivision) : null;
-  // The Sales role (Telecaller, ...) is chosen for a Team Member of a Sales team, by the Super Admin or the Department Head.
-  const canSetSalesRole = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD';
+  // The Sales role (Telecaller, ...) is chosen for a Team Member of a Sales team, by the Super Admin, the Department Head or the Team Lead of that team.
+  const canSetSalesRole = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'TEAM_HEAD';
   const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && !metaVerifier && selectedTeam?.division === 'SALES';
   const subDeptLabel = selectedTeam ? `${department?.name || ''} · ${selectedTeam.name}` : department?.name || departmentSlug;
 
@@ -592,10 +592,18 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <h3 className="text-sm font-bold text-slate-900">Add Team Member</h3>
           </div>
 
+          {isTeamLead && (
+            <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-xs text-blue-900 space-y-0.5" data-testid="lead-association">
+              <div>Department: <strong>{department?.name || profile.department?.name || '-'}</strong> · Team: <strong>{selectedTeam?.name || profile.team?.name || '-'}</strong></div>
+              <div>Team Lead (reports to): <strong>{profile.fullName}</strong></div>
+              <div className="text-blue-800">The member is added to your team and can sign in at once: no approval is needed.</div>
+            </div>
+          )}
+
           {created && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs space-y-1.5">
               <div className="flex items-center gap-1.5 font-bold">
-                <CheckCircle2 className="w-4 h-4" /> {created.profile.fullName} can now sign in
+                <CheckCircle2 className="w-4 h-4" /> Team Member Added Successfully: {created.profile.fullName} can now sign in
               </div>
               <div>
                 Login: <span className="font-mono">{created.profile.email}</span>

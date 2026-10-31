@@ -8,7 +8,6 @@ import { AccessControlTab } from '../scope/AccessControlTab';
 import { WorkflowSettings } from '../workflow/WorkflowSettings';
 import { StaffManagementPanel } from './StaffManagementPanel';
 import { DepartmentEmployeeDirectoryPanel } from '../employees/DepartmentEmployeeDirectory';
-import { EmployeeRequestForm } from '../employees/EmployeeRequestForm';
 import { EmployeeRequestsPanel } from '../employees/EmployeeRequestsPanel';
 import { OperationsHeadsAdminPanel } from '../employees/OperationsHeadsAdmin';
 
@@ -98,7 +97,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
   if (!profile) return null;
 
   const meta: Record<TeamMemberTab, { label: string; icon: typeof Users; hint: string }> = {
-    add: { label: isTeamLead ? 'Ask for a Team Member' : 'Add Team Member', icon: UserPlus, hint: isTeamLead ? 'Ask for a new team member. The Department Head approves before the account is active.' : 'Create an account. Only the roles you may create are offered.' },
+    add: { label: 'Add Team Member', icon: UserPlus, hint: isTeamLead ? 'Add a team member to your team. The account is active at once: no approval is needed.' : 'Create an account. Only the roles you may create are offered.' },
     approvals: { label: 'Employee Approvals', icon: ClipboardCheck, hint: isSuperAdmin ? 'Operations Heads HR asked for. You decide them and choose the departments they manage.' : 'Team Leads and Team Members HR asked for in your department.' },
     directory: { label: 'Approved Employees', icon: UserCheck, hint: 'Put approved Team Members under a Team Lead.' },
     operations: { label: 'Operations Heads', icon: Building2, hint: 'The departments each Operations Head manages, and who approves the Department Heads of each.' },
@@ -168,7 +167,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
       {justAdded && tab === 'add' && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-900" role="status">
           <span className="inline-flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> {justAdded.fullName} was added.
+            <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Team Member Added Successfully: {justAdded.fullName}.
           </span>
           <button type="button" onClick={() => showTab('members')} className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-white border border-emerald-300 text-xs font-bold text-emerald-800 hover:bg-emerald-100">
             View in Team Members
@@ -177,12 +176,7 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
       )}
 
       {/* Add and Team Members stay mounted, so a half-filled form or a search is not lost when switching tabs. */}
-      {canAdd && isTeamLead && (
-        <div role="tabpanel" id="staff-panel-add" aria-labelledby="staff-tab-add" hidden={tab !== 'add'}>
-          <EmployeeRequestForm mode="lead" />
-        </div>
-      )}
-      {canAdd && !isTeamLead && (
+      {canAdd && (
         <div role="tabpanel" id="staff-panel-add" aria-labelledby="staff-tab-add" hidden={tab !== 'add'}>
           {slug && (
             <StaffManagementPanel
