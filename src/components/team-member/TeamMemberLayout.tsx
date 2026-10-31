@@ -8,8 +8,6 @@ import {
   FileText,
   Settings,
   Bell,
-  Briefcase,
-  MapPinned,
   ChevronDown,
   ClipboardList,
   PackageCheck
@@ -24,8 +22,6 @@ import { useOpenChatRequest } from '../chat/chatEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
-import { BA_WORKSPACE_NAV, isBaNav } from '../business-associate/BusinessAssociateWorkspace';
-import { FIELD_VISIT_NAV, isFieldVisitPage, type FieldVisitPage } from '../field-visit/FieldVisitWorkspace';
 
 export type TeamMemberNav =
   | 'home'
@@ -40,13 +36,6 @@ export type TeamMemberNav =
   | 'calendar'
   | 'invoices'
   | 'delivery'
-  | 'ba-home'
-  | 'ba-contacts'
-  | 'ba-quotation'
-  | 'ba-demos'
-  | 'ba-scope'
-  | 'field-visit'
-  | FieldVisitPage
   | 'settings'
   | 'chat'
   | 'raise-issue'
@@ -75,15 +64,10 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   pipelineCounts
 }) => {
   const { user, logout } = useAuth();
-  const isSalesMember = user?.subDepartment === 'sales';
 
   const navItems = [
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
     { id: 'leads' as TeamMemberNav, label: 'My Leads', icon: UserCheck },
-    // a Sales Team Member also works as a Business Associate: the Business Associate pages sit in their own group, under My Leads
-    ...(isSalesMember ? [{ id: 'ba-home' as TeamMemberNav, label: 'Business Associate', icon: Briefcase }] : []),
-    // Field Visit: planning and recording visits to leads, in its own group (Sales members only)
-    ...(isSalesMember ? [{ id: 'field-visit' as TeamMemberNav, label: 'Field Visit', icon: MapPinned }] : []),
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
@@ -101,15 +85,11 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
 
   const [currentNav, setCurrentNav] = useState<TeamMemberNav>(activeNav || 'leads');
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
-  const [baOpen, setBaOpen] = useState(() => isBaNav(activeNav || 'leads'));
-  const [fvOpen, setFvOpen] = useState(() => isFieldVisitPage(activeNav || 'leads'));
 
   React.useEffect(() => {
     if (activeNav) {
       setCurrentNav(activeNav);
       if (isPipelineNav(activeNav)) setLeadsOpen(true);
-      if (isBaNav(activeNav)) setBaOpen(true);
-      if (isFieldVisitPage(activeNav)) setFvOpen(true);
     }
   }, [activeNav]);
 
@@ -196,94 +176,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
                                   {count}
                                 </span>
                               )}
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            }
-            if (item.id === 'field-visit') {
-              const inFv = isFieldVisitPage(currentNav);
-              return (
-                <div key="field-visit">
-                  <NavButton
-                    label={item.label}
-                    icon={Icon}
-                    active={inFv}
-                    onClick={() => {
-                      if (!inFv) {
-                        setFvOpen(true);
-                        handleNavClick('fv-overview');
-                      } else {
-                        setFvOpen(o => !o);
-                      }
-                    }}
-                  >
-                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${fvOpen ? '' : '-rotate-90'}`} aria-hidden="true" />
-                  </NavButton>
-                  {fvOpen && (
-                    <ul id="field-visit-subtree" role="group" aria-label="Field Visit" className="mt-1 ml-4 pl-2.5 border-l border-slate-200 space-y-0.5">
-                      {FIELD_VISIT_NAV.map(child => {
-                        const active = currentNav === child.id;
-                        return (
-                          <li key={child.id}>
-                            <button
-                              type="button"
-                              aria-current={active ? 'page' : undefined}
-                              onClick={() => handleNavClick(child.id)}
-                              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[9px] text-[13px] text-left transition-colors ${
-                                active ? 'bg-blue-50 font-bold text-blue-700' : 'font-medium text-slate-700 hover:bg-slate-50'
-                              }`}
-                            >
-                              <span className="flex-1 leading-tight">{child.label}</span>
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-              );
-            }
-            if (item.id === 'ba-home') {
-              const inBa = isBaNav(currentNav);
-              return (
-                <div key="business-associate">
-                  <NavButton
-                    label={item.label}
-                    icon={Icon}
-                    active={inBa}
-                    onClick={() => {
-                      if (!inBa) {
-                        setBaOpen(true);
-                        handleNavClick('ba-home');
-                      } else {
-                        setBaOpen(o => !o);
-                      }
-                    }}
-                  >
-                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${baOpen ? '' : '-rotate-90'}`} aria-hidden="true" />
-                  </NavButton>
-                  {baOpen && (
-                    <ul id="business-associate-subtree" role="group" aria-label="Business Associate" className="mt-1 ml-4 pl-2.5 border-l border-slate-200 space-y-0.5">
-                      {BA_WORKSPACE_NAV.map(child => {
-                        const active = currentNav === child.nav;
-                        const ChildIcon = child.icon;
-                        return (
-                          <li key={child.nav}>
-                            <button
-                              type="button"
-                              aria-current={active ? 'page' : undefined}
-                              onClick={() => handleNavClick(child.nav as TeamMemberNav)}
-                              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-[9px] text-[13px] text-left transition-colors ${
-                                active ? 'bg-blue-50 font-bold text-blue-700' : 'font-medium text-slate-700 hover:bg-slate-50'
-                              }`}
-                            >
-                              <ChildIcon className={`w-4 h-4 shrink-0 ${active ? 'text-blue-700' : 'text-slate-500'}`} strokeWidth={1.9} aria-hidden="true" />
-                              <span className="flex-1 leading-tight">{child.label}</span>
                             </button>
                           </li>
                         );

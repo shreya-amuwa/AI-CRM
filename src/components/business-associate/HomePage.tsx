@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarClock, ClipboardList, FileSignature, FileText, PlusCircle } from 'lucide-react';
-import { BA_STAGE_LABELS, type BaHome } from '../../../shared/contracts';
+import { BA_STAGE_LABELS, type BaHome, type SubscriptionList } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
-import { businessAssociateApi } from '../../lib/api/endpoints';
+import { businessAssociateApi, pipelineApi } from '../../lib/api/endpoints';
 import { useAuth } from '../../context/AuthContext';
 import { PageTitle } from '../layout/shell';
+import { HomeClock } from '../team-member/HomeClock';
+import { MemberAnalyticsWidgets } from '../team-member/MemberAnalyticsWidgets';
+import { MemberRightSidebar } from '../team-member/MemberRightSidebar';
+import type { MemberWorkspaceData } from '../team-member/MemberSections';
 import { Avatar, ErrorBanner, Spinner } from '../team-member/pipeline/shared';
 import { Card, CardHead } from '../tasks/head/headParts';
 import { EmptyState, StatCard, dateText, dateTimeText, tcBtn } from '../telecaller/ui';
@@ -16,15 +20,34 @@ const greeting = () => {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
 };
 
-/** Home: live counts for the Business Associate, the next demos, recent activity and the quick actions. */
-export const HomePage: React.FC<{ go: BaNavigate }> = ({ go }) => {
+interface HomeProps {
+  go: BaNavigate;
+  /** The member's own numbers (leads, follow-up tasks, target, today's activities). */
+  workspace: MemberWorkspaceData;
+  /** The lead pipeline's counts: accounts created (customers in onboarding) and payments still being collected. */
+  pipelineCounts: { onboarding: { all: number }; partPayments?: number } | null;
+  /** Open another page of this dashboard. */
+  open: (page: 'customers' | 'subscriptions' | 'onboarding' | 'part-payments' | 'follow-ups') => void;
+  userName: string;
+  roleLabel: string;
+}
+
+/**
+ * Home of the unified Sales / Business Associate dashboard: one set of numbers (a metric that both dashboards had is shown once), the next demos,
+ * recent activity, the sales target and the quick actions.
+ */
+export const HomePage: React.FC<HomeProps> = ({ go, workspace, pipelineCounts, open, userName, roleLabel }) => {
   const { profile } = useAuth();
+  const { kpis, followUps, target, activities, leadSources } = workspace;
+  const [subs, setSubs] = useState<SubscriptionList | null>(null);
   const [data, setData] = useState<BaHome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const load = useCallback(() => {
     setError(null);
     businessAssociateApi.home().then(d => alive.current && setData(d), err => alive.current && setError(errorMessage(err)));
+    // the subscription counts are an extra: if they cannot be read the tiles show a dash, the rest of Home still works
+    pipelineApi.subscriptionsList({ pageSize: 1 }).then(d => alive.current && setSubs(d), () => undefined);
   }, []);
   useEffect(() => {
     alive.current = true;
@@ -42,20 +65,23 @@ export const HomePage: React.FC<{ go: BaNavigate }> = ({ go }) => {
   const first = (profile?.fullName || '').split(' ')[0];
   return (
     <div className="space-y-6">
-      <PageTitle title={`${greeting()}${first ? `, ${first}` : ''}`} subtitle="Your contacts, quotations, demos and project scopes." />
+      <PageTitle title={`${greeting()}${first ? `, ${first}` : ''}`} subtitle="Your leads, customers, subscriptions, quotations, demos and project scopes." actions={<HomeClock />} />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!data && !error && <Spinner label="Loading your day…" />}
       {data && (
         <>
-          <section aria-label="Summary" className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <section aria-label="Sales summary" className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <StatCard label="Total Leads" value={kpis.totalLeads} tone="blue" hint={`${kpis.newLeadsThisWeek} new in the last 7 days`} onClick={() => go('leads')} />
+            <StatCard label="Converted Customers" value={kpis.convertedLeads} tone="green" hint={`${kpis.conversionRate}% conversion`} onClick={() => open('customers')} />
+            <StatCard label="Pending Follow-ups" value={data.followUpsDue + followUps.filter(f => f.status !== 'completed').length} tone="red"
+              hint={`${data.followUpsDue} contact / lead follow-ups due · ${followUps.filter(f => f.status !== 'completed').length} scheduled tasks open`} onClick={() => open('follow-ups')} />
+            <StatCard label="Accounts Created" value={pipelineCounts?.onboarding.all ?? '-'} tone="neutral" hint="Customers in onboarding" onClick={() => open('onboarding')} />
+            <StatCard label="Active Subscriptions" value={subs ? subs.counts.active : '-'} tone="green" hint={subs ? `${subs.counts.notStarted} waiting for the panel` : undefined} onClick={() => open('subscriptions')} />
+            <StatCard label="Pending Payments" value={pipelineCounts?.partPayments ?? '-'} tone="amber" hint="Part payments still to collect" onClick={() => open('part-payments')} />
             <StatCard label="Assigned Contacts" value={data.assignedContacts} tone="blue" hint={data.newContacts ? `${data.newContacts} new` : undefined} onClick={() => go('tasks')} />
-            <StatCard label="Leads in Progress" value={data.leadsInProgress} tone="blue" onClick={() => go('leads')} />
-            <StatCard label="Quotations Drafted" value={data.quotationsDrafted} tone="amber" onClick={() => go('quotation')} />
-            <StatCard label="Quotations Awaiting Review" value={data.quotationsAwaitingReview} tone="amber" hint="AI drafts you have not reviewed" onClick={() => go('quotation')} />
             <StatCard label="Upcoming Demos" value={data.upcomingDemos} tone="blue" onClick={() => go('demos')} />
+            <StatCard label="Quotations" value={data.quotationsDrafted} tone="amber" hint={`${data.quotationsAwaitingReview} AI drafts you have not reviewed`} onClick={() => go('quotation')} />
             <StatCard label="Scope Documents Generated" value={data.scopeDocumentsGenerated} tone="green" onClick={() => go('scope')} />
-            <StatCard label="Follow-ups Due" value={data.followUpsDue} tone="red" hint="Contacts and leads, today or overdue" onClick={() => go('tasks')} />
-            <StatCard label="Completed Contacts" value={data.stageCounts.COMPLETED ?? 0} tone="neutral" onClick={() => go('tasks', { stage: 'COMPLETED' })} />
           </section>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -101,16 +127,18 @@ export const HomePage: React.FC<{ go: BaNavigate }> = ({ go }) => {
             </div>
 
             <div className="space-y-4 self-start">
+              <MemberRightSidebar userName={userName} userRole={roleLabel} target={target} activities={activities} />
               <Card label="Quick actions">
                 <CardHead title="Quick actions" />
                 <div className="px-5 pb-5 space-y-2.5">
-                  <button type="button" className={`${tcBtn.primary} w-full`} onClick={() => go('tasks')}><ClipboardList className="w-4 h-4" aria-hidden="true" /> Open Tasks</button>
+                  <button type="button" className={`${tcBtn.primary} w-full`} onClick={() => go('tasks')}><ClipboardList className="w-4 h-4" aria-hidden="true" /> Open BA Tasks</button>
                   <button type="button" className={`${tcBtn.secondary} w-full`} onClick={() => go('leads', { addLead: true })}><PlusCircle className="w-4 h-4" aria-hidden="true" /> Add Lead</button>
                   <button type="button" className={`${tcBtn.secondary} w-full`} onClick={() => go('quotation')}><FileText className="w-4 h-4" aria-hidden="true" /> Generate Quotation</button>
                   <button type="button" className={`${tcBtn.secondary} w-full`} onClick={() => go('demos', { newDemo: true })}><CalendarClock className="w-4 h-4" aria-hidden="true" /> Schedule Demo</button>
                   <button type="button" className={`${tcBtn.secondary} w-full`} onClick={() => go('scope')}><FileSignature className="w-4 h-4" aria-hidden="true" /> Generate Scope of Project</button>
                 </div>
               </Card>
+              <MemberAnalyticsWidgets leadSources={leadSources} totalLeads={kpis.totalLeads} />
               <Card label="Where your contacts are">
                 <CardHead title="Where your contacts are" hint={`As of ${dateText(data.today)}`} />
                 <ul className="px-5 pb-5 space-y-2 text-sm">

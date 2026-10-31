@@ -150,6 +150,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/pipeline/customers/:id/meta-verifier', handler: pipeline.assignMetaVerifier, options: S },
   { method: 'GET', path: '/pipeline/customers/:id/meta-verifier/candidates', handler: pipeline.metaVerifierCandidates },
   { method: 'POST', path: '/pipeline/customers/:id/services/:code/setup', handler: pipeline.setServiceSetup, options: S },
+  { method: 'GET', path: '/pipeline/subscriptions', handler: pipeline.subscriptionsList },
   { method: 'GET', path: '/pipeline/customers/:id/subscriptions', handler: pipeline.subscriptionOverview },
   { method: 'POST', path: '/pipeline/customers/:id/subscriptions/:code/terms', handler: pipeline.setSubscriptionTerms, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/subscriptions/:code/activation', handler: pipeline.confirmSubscriptionActivation, options: S },

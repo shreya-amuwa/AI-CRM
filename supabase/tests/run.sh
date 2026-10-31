@@ -113,3 +113,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/subscription_activation_test.sql 2
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/accounts_customer_details_test.sql
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/employee_hierarchy_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/subscriptions_list_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

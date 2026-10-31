@@ -2150,3 +2150,13 @@ export const operationsScopeSchema = z
   });
 
 export const assignLeadSchema = z.object({ leadId: uuidSchema, note: optionalText(500) }).strict();
+
+// ---- Subscriptions list (Sales / Business Associate dashboard) ----
+export const subscriptionListQuerySchema = z
+  .object({
+    search: trimmed(100).optional(),
+    status: z.enum(['NOT_STARTED', 'ACTIVE', 'EXPIRED', 'PAUSED', 'CANCELLED']).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20)
+  })
+  .strict();

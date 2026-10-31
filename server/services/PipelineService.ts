@@ -3,6 +3,7 @@ import type {
   ClientLoginOutcome,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
+  SubscriptionList,
   SubscriptionOverview,
   DeliveryQueueItem,
   ServiceJourneySetting,
@@ -75,6 +76,7 @@ import {
   metaVerificationSchema,
   journeyVerifierSchema,
   subscriptionActivationSchema,
+  subscriptionListQuerySchema,
   subscriptionCorrectionSchema,
   subscriptionRenewalSchema,
   subscriptionTermsSchema,
@@ -776,6 +778,11 @@ export class PipelineService {
   }
 
   // ---- subscriptions ----
+  /** The signed-in employee's customers' subscriptions (read only; the database applies the same scope as the customer pages). */
+  subscriptionsList(query: unknown): Promise<SubscriptionList> {
+    return this.repo.subscriptionsList(parse(subscriptionListQuerySchema, query ?? {}));
+  }
+
   subscriptionOverview(id: string): Promise<SubscriptionOverview> {
     return this.repo.subscriptionOverview(parse(uuidSchema, id));
   }

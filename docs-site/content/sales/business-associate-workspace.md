@@ -78,3 +78,7 @@ Creating a **Quotation**, booking a **Demo Schedule**, or drafting a **Scope of 
 
 - **Cannot move a handover to `2 Potential`**: Ensure at least one catalog service is selected and a positive integer **Deal Amount (₹)** is saved on the lead record.
 - **Payment verified by Accounts is not showing in `Collected Revenue`**: Refresh the dashboard or check **Part payments** to confirm Accounts has marked the ledger row `VERIFIED`.
+
+## One dashboard for Sales
+
+The Business Associate dashboard is also the dashboard of every **Sales Team Member who has no other Sales role**: the separate Sales Team Member dashboard no longer exists, and its old address redirects here. The menu is grouped: **Overview** (Dashboard), **Sales & Leads** (Leads, My Customers, Tasks & Follow-ups, My Tasks, Field Visit, Calendar), **Business Associate** (BA Tasks, Quotation, Demo Schedule, Scope of Project), **Subscriptions & Services** (Subscriptions, Invoices, Delivery Queue), **Communication** (Chat, Notification Center, Raise an Issue) and **Account** (Settings). Every page appears once, and what you can see and change is unchanged: your own leads, customers and contacts. See `docs/SALES_DASHBOARD_MERGE.md`.

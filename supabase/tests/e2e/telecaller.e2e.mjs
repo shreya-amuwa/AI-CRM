@@ -383,8 +383,10 @@ await t1.goto(`${BASE}/telecaller/dashboard/${otherId}`);
 await t1.waitForFunction(id => location.pathname.startsWith('/telecaller/dashboard/') && !location.pathname.includes(id), otherId, { timeout: 15000 }).catch(() => fail('routing: a Telecaller opened another Telecaller\'s route'));
 ok('routing: another Telecaller\'s dashboard URL redirects to the Telecaller\'s own');
 await t1.goto(`${BASE}/team-member/dashboard/${oneProfile.id}`);
-await t1.waitForFunction(() => location.pathname.startsWith('/telecaller/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Telecaller opened the Sales member dashboard'));
-ok('routing: a Telecaller cannot open the Sales member dashboard');
+await t1.waitForFunction(() => location.pathname.startsWith('/telecaller/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Telecaller opened the old Sales member address'));
+await t1.goto(`${BASE}/business-associate/dashboard/${oneProfile.id}`);
+await t1.waitForFunction(() => location.pathname.startsWith('/telecaller/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Telecaller opened the unified Sales dashboard'));
+ok('routing: a Telecaller cannot open the Sales member dashboard (old or unified)');
 const forbidden = await fetch(BASE + '/api/v1/telecaller/contacts', { headers: { authorization: `Bearer ${sign({ sub: await idOf('rahul@amuwa.com'), role: 'authenticated' })}` } });
 await expect(forbidden.status === 403, 'permissions: a Sales member gets 403 from the Telecaller API');
 await t1.close();
@@ -412,9 +414,9 @@ await t2.close();
 
 // ------------------------------------------------------------------ 5. other roles never get a Telecaller dashboard
 const rahul = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'nav button');
-await expect(/\/team-member\/dashboard\//.test(rahul.url()), 'routing: a Sales member still lands on the Sales member dashboard', rahul.url());
+await expect(/\/business-associate\/dashboard\//.test(rahul.url()), 'routing: a Sales member lands on the unified Sales (Business Associate) dashboard', rahul.url());
 await rahul.goto(`${BASE}/telecaller/dashboard/${oneProfile.id}`);
-await rahul.waitForFunction(() => location.pathname.startsWith('/team-member/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Sales member reached the Telecaller route'));
+await rahul.waitForFunction(() => location.pathname.startsWith('/business-associate/dashboard/'), null, { timeout: 15000 }).catch(() => fail('routing: a Sales member reached the Telecaller route'));
 ok('routing: a Sales member cannot open the Telecaller dashboard');
 await rahul.close();
 const ba = await login('biz.assoc@amuwa.com', { width: 1440, height: 900 }, 'text=dashboard is not set up yet');

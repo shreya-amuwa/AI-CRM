@@ -68,6 +68,7 @@ import type {
   ClientDocumentQueueItem,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
+  SubscriptionList,
   SubscriptionOverview,
   ClientLoginOutcome,
   ProvisioningFilter,
@@ -271,6 +272,7 @@ export const pipelineApi = {
   setMetaVerification: (id: string, body: { status: 'IN_PROGRESS' | 'DOCUMENTS_REQUIRED' | 'REJECTED' | 'COMPLETED'; feedback?: string | null }) =>
     api.post<CustomerJourneyStatus>(`/pipeline/customers/${id}/meta-verification`, body),
   /** Subscriptions: the terms Sales sets (never a date), the activation the team confirms (the expiry is calculated), corrections and renewals. */
+  subscriptionsList: (q: { search?: string; status?: string; page?: number; pageSize?: number } = {}) => api.get<SubscriptionList>('/pipeline/subscriptions', { ...q }),
   subscriptions: (id: string) => api.get<SubscriptionOverview>(`/pipeline/customers/${id}/subscriptions`),
   setSubscriptionTerms: (id: string, service: string, body: Record<string, unknown>) =>
     api.post<SubscriptionOverview>(`/pipeline/customers/${id}/subscriptions/${service}/terms`, body),
