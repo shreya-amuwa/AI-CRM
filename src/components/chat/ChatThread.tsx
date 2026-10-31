@@ -271,6 +271,21 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
     lastCount.current = messages.length;
   }, [messages, pending.length, toBottom]);
 
+  // the message area changes height when the keyboard opens or closes (or the window turns): a reader at the bottom stays at the bottom
+  const hasBody = !!c;
+  useEffect(() => {
+    const el = body.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let height = el.clientHeight;
+    const ro = new ResizeObserver(() => {
+      if (el.clientHeight === height) return;
+      height = el.clientHeight;
+      if (stick.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hasBody, transport.key]);
+
   const onScroll = () => {
     stick.current = nearBottom();
     if (stick.current) setFresh(0);
