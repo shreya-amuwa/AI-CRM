@@ -1506,7 +1506,8 @@ check(r.status === 200 && r.json.data.months.length === 6 && r.json.data.expense
 
 // --- rate limiting (shared Postgres counters) + response headers -------------
 let limited: Response | null = null;
-for (let i = 0; i < 4 && !limited; i++) {
+// the counter is per minute: if the minute rolls over during these requests it starts again, so allow enough requests to reach the limit in the next one
+for (let i = 0; i < 8 && !limited; i++) {
   const res = await fetch(base + '/customers/import', {
     method: 'POST',
     headers: { authorization: `Bearer ${tokens.get('dh')}`, 'content-type': 'application/json' },
