@@ -2099,6 +2099,33 @@ export interface SubscriptionOverview {
   /** The customer's verified payments, for choosing the one that pays for a renewal. */
   payments: { id: string; amount: number; paidAt: string; method: string | null; used: boolean }[];
 }
+// ---- Subscriptions list of the Sales / Business Associate dashboard (read only) ----
+export interface SubscriptionListItem {
+  customerId: string;
+  customer: string;
+  contact: string;
+  lifecycleStage: LifecycleStage;
+  service: string;
+  serviceName: string;
+  plan: string | null;
+  durationLabel: string | null;
+  amount: number | null;
+  messageCredits: number | null;
+  status: SubscriptionStatus;
+  panelCreatedOn: string | null;
+  startedOn: string | null;
+  expiresOn: string | null;
+  daysLeft: number | null;
+  paymentStatus: string | null;
+  hasLogin: boolean;
+}
+export interface SubscriptionList {
+  total: number;
+  counts: { all: number; active: number; notStarted: number; expired: number; accountsCreated: number; pendingPayments: number };
+  page: number;
+  pageSize: number;
+  items: SubscriptionListItem[];
+}
 /** What the client sees under My Subscription. */
 export interface ClientSubscription {
   service: string;

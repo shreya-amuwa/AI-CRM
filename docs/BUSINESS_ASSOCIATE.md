@@ -58,6 +58,7 @@ checked by the database first. Conversions, finalisations, reassignment and pric
 `ba_pdf.test.ts` (the PDFs), `telecaller_sheet.test.ts`, and `supabase/tests/e2e/run-business-associate.sh` (real browser).
 
 ## A Sales Team Member working as a Business Associate
+> **Superseded by `docs/SALES_DASHBOARD_MERGE.md`:** the Sales Team Member dashboard was merged into this dashboard. A Sales Team Member (no other Sales role) now works in the Business Associate dashboard itself, with the pages of both; the "Business Associate" group in the Sales Team Member menu no longer exists. The rules below (ownership, `ba_eligible()`) still apply.
 The Business Associate keeps its own dashboard, role and data. In addition, a **Sales Team Member who has no Sales role** (the "Sales Team Member" dashboard) works as a Business
 Associate from their own sidebar: a **Business Associate** group under *My Leads* with **BA Overview, BA Tasks, Quotation, Demo Schedule and Scope of Project** - the same pages, the same
 rules, the same AI drafts and PDFs. Only these pages are added; every other page of that dashboard is unchanged. The Business Associate's *Leads* page is not repeated: a Sales member's

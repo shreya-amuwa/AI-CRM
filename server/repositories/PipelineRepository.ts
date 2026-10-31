@@ -29,6 +29,7 @@ import type {
   ServiceCatalogItem,
   ServiceRequirement,
   SubscriptionInfo,
+  SubscriptionList,
   SubscriptionOverview
 } from '../../shared/contracts.js';
 import type { LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
@@ -374,6 +375,10 @@ export class PipelineRepository {
   }
 
   // ---- subscriptions: terms (Sales), activation / correction / renewal (the team) ----
+  async subscriptionsList(q: { search?: string; status?: string; page: number; pageSize: number }): Promise<SubscriptionList> {
+    return unwrap(await this.db.rpc('subscriptions_list', { p_search: q.search ?? null, p_status: q.status ?? null, p_page: q.page, p_page_size: q.pageSize })) as SubscriptionList;
+  }
+
   async subscriptionOverview(customerId: string): Promise<SubscriptionOverview> {
     return unwrap(await this.db.rpc('subscription_overview', { p_customer: customerId })) as SubscriptionOverview;
   }

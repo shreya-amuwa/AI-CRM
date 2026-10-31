@@ -309,6 +309,7 @@ export const pipelineController = {
   assignMetaVerifier: (async ctx => ok(await svc(ctx).pipeline.assignMetaVerifier(ctx.params.id, ctx.req.body))) as Handler,
   metaVerifierCandidates: (async ctx => ok(await svc(ctx).pipeline.metaVerifierCandidates(ctx.params.id))) as Handler,
   setServiceSetup: (async ctx => ok(await svc(ctx).pipeline.setServiceSetup(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
+  subscriptionsList: (async ctx => ok(await svc(ctx).pipeline.subscriptionsList(ctx.req.query))) as Handler,
   subscriptionOverview: (async ctx => ok(await svc(ctx).pipeline.subscriptionOverview(ctx.params.id))) as Handler,
   setSubscriptionTerms: (async ctx => ok(await svc(ctx).pipeline.setSubscriptionTerms(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
   confirmSubscriptionActivation: (async ctx => ok(await svc(ctx).pipeline.confirmSubscriptionActivation(ctx.params.id, ctx.params.code, ctx.req.body))) as Handler,
