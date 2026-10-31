@@ -274,7 +274,7 @@ await sh.screenshot({ path: `${OUT}/fv-4-assign.png` });
 const b1 = await loginGeo('fv.ba@amuwa.com', 'aside nav button');
 await b1.waitForURL(/\/business-associate\/dashboard\//, { timeout: 15000 }).catch(() => fail('the Business Associate did not land on /business-associate/dashboard/…: ' + b1.url()));
 labels = await menuLabels(b1);
-await expect(['Home', 'Tasks', 'Leads', 'Quotation', 'Demo Schedule', 'Scope of Project', 'Field Visit'].every(l => labels.includes(l)), 'Business Associate: the existing menu is kept and Field Visit is added', labels);
+await expect(['Dashboard', 'Leads', 'BA Tasks', 'Quotation', 'Demo Schedule', 'Scope of Project', 'Field Visit'].every(l => labels.includes(l)), 'Business Associate: the existing menu is kept and Field Visit is added', labels);
 await fvNav(b1, 'Field Visit');
 await expect(JSON.stringify(await groupOf(b1)) === JSON.stringify(NAV_ORDER), 'Business Associate: the same ten pages', await groupOf(b1));
 await fvNav(b1, 'Department Head Assigned Leads');
