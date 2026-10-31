@@ -1,12 +1,12 @@
 -- =============================================================================
--- Chat, migration 20261215000100: secure messaging keys that are made and published automatically (no passphrase, no backup), and a new key
+-- Chat, migration 20261216000100: secure messaging keys that are made and published automatically (no passphrase, no backup), and a new key
 -- made on a device without the old one. The real cryptography is tested in the browser code (chat_secure_client.test.ts); here the database rules are.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
 \echo '--- Chat: automatic keys'
 reset role;
-\i supabase/migrations/20261215000100_chat_automatic_keys.sql
+\i supabase/migrations/20261216000100_chat_automatic_keys.sql
 create function pg_temp.pub(p_name text) returns text language sql immutable as $$
   select translate(encode('\x04'::bytea || decode(repeat(md5(p_name), 4), 'hex'), 'base64'), E'\n', '')
 $$;

@@ -1,11 +1,24 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { CustomerWorkflow, CustomerWorkflowStatuses, HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Meta Verifier workflow: verification notes, re-routing, the Technical Consultant's follow-ups and the delay setting. The database decides who may do what. */
 export class WorkflowRepository {
   constructor(private readonly db: SupabaseClient) {}
 
+  /** Both statuses of one customer (Technical Consultant and Meta Verifier). The database says who may see and who may change which. */
+  async customerWorkflow(customerId: string): Promise<CustomerWorkflow> {
+    return unwrap(await this.db.rpc('customer_workflow_get', { p_customer: customerId })) as CustomerWorkflow;
+  }
+  async customerWorkflowStatuses(ids: string[]): Promise<CustomerWorkflowStatuses> {
+    return unwrap(await this.db.rpc('customer_workflow_statuses', { p_ids: ids })) as CustomerWorkflowStatuses;
+  }
+  async setTcStatus(customerId: string, status: string, note?: string | null): Promise<CustomerWorkflow> {
+    return unwrap(await this.db.rpc('customer_workflow_set_tc', { p_customer: customerId, p_status: status, p_note: note ?? null })) as CustomerWorkflow;
+  }
+  async setMetaStatus(customerId: string, status: string, note?: string | null): Promise<CustomerWorkflow> {
+    return unwrap(await this.db.rpc('customer_workflow_set_meta', { p_customer: customerId, p_status: status, p_note: note ?? null })) as CustomerWorkflow;
+  }
   async verificationNotes(customerId: string): Promise<VerificationNote[]> {
     return unwrap(await this.db.rpc('verification_notes_list', { p_customer: customerId })) as VerificationNote[];
   }

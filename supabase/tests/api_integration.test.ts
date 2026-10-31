@@ -1627,7 +1627,9 @@ check(r.status === 200 && r.json.data.automated === false && r.json.data.stage =
 {
   const wf = await autoCustomer({ name: 'Flow One', company: 'Flow One Traders', email: 'flow.one@example.com', whatsapp: '9819900077', phone: '9819900078' }, 'https://flow-one.example');
   r = await api('tc', 'GET', `/pipeline/customers/${wf}/verification/notes`);
-  check(r.status === 404, 'workflow: the Technical Consultant cannot read the notes of a Meta customer before the hand-over', r);
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'workflow: the Technical Consultant now sees a Meta customer from the start and can read its (still empty) verification notes', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE' });
+  check(r.status === 404, 'workflow: but only the Meta Verifier writes verification notes', r);
   r = await api('a', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'x', outcome: 'NOTE' });
   check(r.status === 404, 'workflow: Sales cannot write verification notes', r);
   r = await api('mv', 'POST', `/pipeline/customers/${wf}/verification/notes`, { body: 'GST certificate checked', outcome: 'NOTE' });
@@ -8358,6 +8360,54 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await db.query(`select count(*)::int n from public.chat_key_backups where profile_id = $1`, [ck1])).rows[0].n === 0, 'automatic keys: no backup was ever made');
   r = await api('cl1', 'POST', '/chat/keys/register', { publicKey: pub() });
   check(r.status === 403 || r.status === 401, 'automatic keys: a client cannot register an employee key', r);
+}
+
+// --- Technical Consultant and Meta Verifier: two independent statuses on one customer (real routes) ---
+{
+  r = await api(null, 'GET', `/pipeline/customers/${leadA}/workflow`);
+  check(r.status === 401, 'workflow status: sign-in is needed', r);
+  r = await api('client', 'GET', `/pipeline/customers/${leadA}/workflow`);
+  check(r.status === 401 || r.status === 403 || r.status === 404, 'workflow status: a client cannot read it', r);
+  r = await api('tc', 'GET', `/pipeline/customers/${leadA}/workflow`);
+  check(r.status === 200 && r.json.data.customerId === leadA && r.json.data.canSetTechnicalConsultant === true && r.json.data.canSetMetaVerifier === false
+    && r.json.data.technicalConsultant.sentBySales === true && Array.isArray(r.json.data.history) && r.json.data.history.length >= 1, 'workflow status: the Technical Consultant reads both statuses of the customer and may change their own', r.json);
+  const tcNow = r.json.data.technicalConsultant.status as string;
+  r = await api('a', 'GET', `/pipeline/customers/${leadA}/workflow`);
+  check(r.status === 200 && r.json.data.canSetTechnicalConsultant === false && r.json.data.canSetMetaVerifier === false, 'workflow status: Sales follows the progress, read only', r.json);
+  r = await api('b', 'GET', `/pipeline/customers/${leadA}/workflow`);
+  check(r.status === 404, 'workflow status: another salesperson cannot read it', r);
+  r = await api('a', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'ON_HOLD', note: 'sneaky' });
+  check(r.status === 403, 'workflow status: Sales cannot change the Technical Consultant status', r);
+  r = await api('a', 'POST', `/pipeline/customers/${leadA}/workflow/meta-verifier`, { status: 'REJECTED', note: 'sneaky' });
+  check(r.status === 403 || r.status === 409, 'nor the Meta status', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'SOMETHING' });
+  check(r.status === 422, 'workflow status: an unknown status is refused', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'ADDON_PURCHASED' });
+  check(r.status === 422, 'workflow status: Add-on Purchased is set by Accounts\' confirmation, not by hand', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'ON_HOLD', note: 'x', customerId: leadA, role: 'SUPER_ADMIN' });
+  check(r.status === 422, 'workflow status: a request cannot name a customer or a role', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'ON_HOLD' });
+  check(r.status === 422, 'workflow status: On Hold needs a reason', r);
+  r = await api('mv', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'VERIFICATION_PENDING' });
+  check(r.status === 404 || r.status === 403, 'workflow status: the Meta Verifier cannot change the Technical Consultant status', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/meta-verifier`, { status: 'ONBOARDING_IN_PROGRESS' });
+  check(r.status === 409, 'workflow status: a customer off the Meta route has no Meta status to set', r);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'ON_HOLD', note: 'Waiting for the customer' });
+  check(r.status === 200 && r.json.data.technicalConsultant.status === 'ON_HOLD' && r.json.data.technicalConsultant.by && r.json.data.technicalConsultant.source === 'USER'
+    && r.json.data.history[0].to === 'ON_HOLD' && r.json.data.history[0].note === 'Waiting for the customer', 'workflow status: the Technical Consultant puts the customer on hold; who, when and why are in the history', r.json);
+  r = await api('tc', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: 'ON_HOLD', note: 'again' });
+  check(r.status === 409, 'workflow status: the same status twice is refused', r);
+  r = await api('dh', 'POST', `/pipeline/customers/${leadA}/workflow/technical-consultant`, { status: tcNow === 'NEW_LEAD' ? 'VERIFICATION_PENDING' : (tcNow === 'VERIFICATION_PENDING' ? 'VERIFICATION_IN_PROGRESS' : 'VERIFICATION_PENDING'), note: 'Department Head stepping in' });
+  check(r.status === 200 || r.status === 404, 'workflow status: the Department Head of the department can step in (or the customer is another department\'s)', r);
+  r = await api('sa', 'GET', `/pipeline/workflow-statuses?ids=${leadA}`);
+  check(r.status === 200 && r.json.data[leadA] && typeof r.json.data[leadA].technicalConsultant === 'string', 'workflow status: a list page reads the statuses of several customers at once', r.json);
+  r = await api('b', 'GET', `/pipeline/workflow-statuses?ids=${leadA}`);
+  check(r.status === 200 && Object.keys(r.json.data).length === 0, 'workflow status: and only the ones the caller may see', r.json);
+  r = await api('sa', 'GET', '/pipeline/workflow-statuses?ids=not-an-id');
+  check(r.status === 422, 'workflow status: ids must be customer ids', r);
+  const direct = await db.query(`select has_table_privilege('authenticated', 'public.customer_workflow_status', 'select') as s, has_table_privilege('authenticated', 'public.customer_workflow_status', 'update') as u, has_table_privilege('authenticated', 'public.customer_workflow_events', 'select') as e`);
+  check(direct.rows[0].s === false && direct.rows[0].u === false && direct.rows[0].e === false, 'workflow status: the tables cannot be read or changed directly by users');
+  check((await db.query('select count(*)::int n from public.customer_workflow_status where customer_id = $1', [leadA])).rows[0].n === 1, 'workflow status: one record per customer (the same customer id)');
 }
 
 // --- Top performers: rankings from the task and approved report records, monthly recognition (every role goes through the real routes) ---

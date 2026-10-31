@@ -100,7 +100,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
       ) : openId ? (
         <ConsultantCustomerDetail id={openId} mode={mode} onBack={() => setOpenId(null)} />
       ) : (
-        <ConsultantCustomerList counts={counts} onOpen={setOpenId} />
+        <ConsultantCustomerList counts={counts} onOpen={setOpenId} mode={mode} />
       )}
     </ConsultantLayout>
   );

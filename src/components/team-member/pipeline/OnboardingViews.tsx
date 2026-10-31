@@ -1,3 +1,4 @@
+import { WorkflowStatusPanel } from '../../support/consultant/WorkflowStatusPanel';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -405,6 +406,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
       </div>
 
       {mode === 'sales' && <HandoverBanner info={c.handover} audience="sales" />}
+      {mode === 'sales' && c.onboarding?.forwardedToSupportAt && <WorkflowStatusPanel customerId={c.id} />}
 
       <Card className="p-5 flex flex-col xl:flex-row gap-4 xl:items-center justify-between">
         <div className="flex items-center gap-4 min-w-0">

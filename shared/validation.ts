@@ -54,7 +54,9 @@ import {
   MEETING_ACTIONS,
   MEETING_CATEGORIES,
   MEETING_MODES,
-  MEETING_STATUSES
+  MEETING_STATUSES,
+  TC_WORKFLOW_STATUSES,
+  META_WORKFLOW_STATUSES
 } from './contracts.js';
 
 const trimmed = (max: number) => z.string().trim().max(max);
@@ -2210,6 +2212,14 @@ export const reportPackageSchema = z
   .refine(d => d.to >= d.from, { message: 'The period must end on or after its start.', path: ['to'] });
 
 // ---------------------------------------------------------------------------
+// Technical Consultant / Meta Verifier workflow statuses
+// ---------------------------------------------------------------------------
+export const tcWorkflowStatusSchema = z.object({ status: z.enum(TC_WORKFLOW_STATUSES), note: optionalText(500) }).strict();
+export const metaWorkflowStatusSchema = z.object({ status: z.enum(META_WORKFLOW_STATUSES), note: optionalText(500) }).strict();
+export const workflowStatusesQuerySchema = z.object({
+  ids: z.string().regex(/^[0-9a-fA-F-]{36}(,[0-9a-fA-F-]{36}){0,199}$/, 'Give up to 200 customer ids, separated by commas.')
+}).strict();
+
 // Top Performers & Rankings
 // ---------------------------------------------------------------------------
 /** A month as YYYY-MM or YYYY-MM-01, always handed on as the first day of the month. */
