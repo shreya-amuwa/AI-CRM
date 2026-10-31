@@ -58,7 +58,7 @@ API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABAS
   node scripts/seed-test-accounts.mjs --out "$WORK/second.local.md"
 echo "--- custom names (--prefix acme --sep -)"
 API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABASE_ANON_KEY="$ANON" SA_EMAIL=root@amuwa.com SA_PASSWORD="$SA_PASSWORD" \
-  node scripts/seed-test-accounts.mjs --out "$WORK/custom.local.md" --prefix acme --sep - --domain example.com
+  SEED_PASSWORD="Shared-Test-Pass-2026" node scripts/seed-test-accounts.mjs --out "$WORK/custom.local.md" --prefix acme --sep - --domain example.com --same-password
 echo "--- every department (--all-departments)"
 API_URL=http://localhost:3071/api/v1 SUPABASE_URL=http://localhost:54480 SUPABASE_ANON_KEY="$ANON" SA_EMAIL=root@amuwa.com SA_PASSWORD="$SA_PASSWORD" \
   node scripts/seed-test-accounts.mjs --out "$WORK/all.local.md" --prefix all --sep - --all-departments --no-clients

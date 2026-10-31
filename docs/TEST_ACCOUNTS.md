@@ -30,6 +30,13 @@ alone and the file says so. `--dry-run` creates nothing.
 
 Your own Super Admin account opens the Super Admin dashboard.
 
+## One password for every account
+
+Add `--same-password`: the script asks for one password (typed twice, not shown; 10 to 72 characters, no spaces) and gives it to every account made in that run,
+clients included. For a script, set `SEED_PASSWORD` instead. Use it on a test or staging project only: one shared, easy password is as weak as it is convenient.
+An account that already exists keeps its own password (the file says "password unchanged"); to get the shared password for it, delete the user in Team Members
+and run the script again, or use a new `--prefix`.
+
 ## Choosing the e-mail names
 
 The login is `<prefix><sep><name>@<domain>`. By default `qa.sales.head@example.com`. With `--prefix wabastore --sep -` it becomes

@@ -15,11 +15,11 @@
  *   API_URL=https://your-app.example/api/v1 \
  *   SUPABASE_URL=https://xxxx.supabase.co SUPABASE_ANON_KEY=... \
  *   SA_EMAIL=you@yourcompany.com   [SA_PASSWORD=...  (otherwise asked, without echo)] \
- *   npm run seed:test-accounts -- [--all-departments [--only wabastore,whatsbox] [--skip dtalk]] [--domain example.com] [--prefix qa] [--sep .] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
+ *   npm run seed:test-accounts -- [--same-password] [--all-departments [--only wabastore,whatsbox] [--skip dtalk]] [--domain example.com] [--prefix qa] [--sep .] [--out qa-accounts.local.md] [--no-clients] [--dry-run]
  *     --all-departments   also one login per role in EVERY real department: wabastore-sales-head@, whatsbox-support-member@, ... (real teams, see below)
  *     --prefix wabastore --sep -   makes wabastore-sales-head@example.com, wabastore-support-member@example.com, ...
  *
- * Passwords are made up on every run, written ONLY to the --out file (mode 600, git-ignored: qa-accounts.local.*) and never printed or logged.
+ * Passwords are made up on every run (or, with --same-password, one password you type for all of them), written ONLY to the --out file (mode 600, git-ignored: qa-accounts.local.*) and never printed or logged.
  * An account that already exists is left as it is (its password is not changed and is not in the file): the file says so.
  * Rerunning is safe. Remove the accounts afterwards by suspending or deleting these users in Team Members.
  */
@@ -41,6 +41,7 @@ const SEP = opt('sep') || '.';
 const OUT = opt('out') || 'qa-accounts.local.md';
 const DRY = flag('dry-run');
 const ALL = flag('all-departments');
+const SAME = flag('same-password');
 const ONLY = (opt('only') || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 const SKIP = (opt('skip') || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 const API_URL = (process.env.API_URL || '').replace(/\/+$/, '');
@@ -98,6 +99,22 @@ const must = async (token, method, path, body) => {
 };
 
 // ---------------------------------------------------------------------------------------------------------------------------------------
+// --same-password: ONE password for every account made in this run (easier testing). Typed twice without echo, or SEED_PASSWORD for scripts.
+// It is as weak as it is easy: use it on a test or staging project only. Accounts that already exist keep their own password.
+let SHARED = null;
+if (SAME) {
+  SHARED = process.env.SEED_PASSWORD || (await ask('One password for every test account (10 to 72 characters, not shown): '));
+  if (!process.env.SEED_PASSWORD && SHARED !== (await ask('Type it again: '))) {
+    console.error('The two passwords are not the same.');
+    process.exit(1);
+  }
+  if (SHARED.length < 10 || SHARED.length > 72 || /\s/.test(SHARED)) {
+    console.error('The password needs 10 to 72 characters and no spaces.');
+    process.exit(1);
+  }
+}
+const pick = () => SHARED ?? password();
+
 const saToken = process.env.SA_TOKEN || (await signIn(SA_EMAIL, process.env.SA_PASSWORD || (await ask('Super Admin password (not shown): '))));
 const me = await must(saToken, 'GET', '/me');
 if (me.role !== 'SUPER_ADMIN') throw new Error('The signed-in account is not a Super Admin.');
@@ -139,7 +156,7 @@ const firstTeam = async dept => (dept ? (await must(saToken, 'GET', `/teams?depa
 const made = {}; // email -> { password, id }
 async function user(who, dashboard, local, fullName, body, { optional = false, email: given } = {}) {
   const email = given ?? mail(local);
-  const pw = password();
+  const pw = pick();
   if (DRY) {
     rows.push({ who, dashboard, email, password: '(dry run)', note: '' });
     return;
@@ -252,8 +269,8 @@ async function seedClients() {
   } else {
     const token = await signIn(mail('support.member'), supportMember.password);
     const clients = [
-      { key: 'client.calls', name: 'QA Client Calls', business: 'QA Calls Traders (TEST)', mobile: '9000000101', service: 'AI Calling', pw: password() },
-      { key: 'client.whatsapp', name: 'QA Client WhatsApp', business: 'QA WhatsApp Stores (TEST)', mobile: '9000000102', service: 'WhatsApp API', pw: password() }
+      { key: 'client.calls', name: 'QA Client Calls', business: 'QA Calls Traders (TEST)', mobile: '9000000101', service: 'AI Calling', pw: pick() },
+      { key: 'client.whatsapp', name: 'QA Client WhatsApp', business: 'QA WhatsApp Stores (TEST)', mobile: '9000000102', service: 'WhatsApp API', pw: pick() }
     ];
     const data = {
       customers: clients.map((c, i) => ({ row: 3 + i, mobile: c.mobile, name: c.name, businessName: c.business, email: mail(c.key), loginEmail: mail(c.key), loginPassword: c.pw })),

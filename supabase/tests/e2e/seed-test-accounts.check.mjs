@@ -75,6 +75,12 @@ for (const [who, email] of [['Sales Department Head', 'acme-sales-head@example.c
   const { data, error } = await sb().auth.signInWithPassword({ email, password: row.password });
   check(!error && data.session, `${email} signs in`, error?.message);
 }
+const shared = custom.filter(r => r.password && r.password !== '-');
+check(shared.length >= 20 && shared.every(r => r.password === 'Shared-Test-Pass-2026'), `--same-password: all ${shared.length} accounts of that run have the one password`);
+for (const e of ['acme-technical-consultant@example.com', 'acme-accounts-member@example.com', 'acme-client-whatsapp@example.com']) {
+  const { data, error } = await sb().auth.signInWithPassword({ email: e, password: 'Shared-Test-Pass-2026' });
+  check(!error && data.session, `${e} signs in with the shared password`, error?.message);
+}
 check(custom.every(r => /^acme-[a-z-]+@example\.com$/.test(r.email) || r.email === '-'), 'every custom address follows acme-<role>@example.com');
 // every department
 const all = fs.readFileSync(process.env.ALL, 'utf8').split('\n').filter(l => l.startsWith('| ') && !l.startsWith('| Who') && !l.startsWith('|---')).map(l => l.split('|').slice(1, -1).map(c => c.trim())).map(([who, opens, email, password, note]) => ({ who, opens, email, password, note }));
