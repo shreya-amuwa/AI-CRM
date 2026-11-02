@@ -117,5 +117,6 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/employee_hierarchy_test.sql 2>&1 |
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/subscriptions_list_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/work_reports_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/work_reports_two_level_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/employee_welcome_email_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/consultant_meta_workflow_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/top_performers_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
