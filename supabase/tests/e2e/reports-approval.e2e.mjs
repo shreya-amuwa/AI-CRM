@@ -96,7 +96,7 @@ await openReports(opsHead);
 await openReports(member);
 
 // ------------------------------------------------------------------ 1. the Team Member form
-await expect(await tab(member, /^Submit Report/).isVisible() && await tab(member, /^My Reports/).isVisible(), 'the Team Member has two tabs: Submit Report and My Reports');
+await expect(await tab(member, /^Submit Daily Report/).isVisible() && await tab(member, /^My Reports/).isVisible(), 'the Team Member has two tabs: Submit Daily Report and My Reports');
 const form = member.getByRole('form', { name: 'Submit report' });
 await wait(member, '[data-testid="assigned-tasks"]', 'the member\'s tasks did not load');
 const formText = await form.innerText();
@@ -145,7 +145,7 @@ await head.getByRole('button', { name: 'Give final approval' }).click();
 await live(member, () => /Fully Approved/.test(document.querySelector('[data-testid="my-reports"]')?.innerText ?? ''), 'the member sees Fully Approved');
 await lead.keyboard.press('Escape');
 await tab(lead, /^Team Member Reports/).click();
-await lead.getByRole('button', { name: /^Fully approved/ }).click();
+await lead.getByRole('button', { name: /^Fully approved/i }).click();
 await live(lead, () => /Friday sales report/.test(document.body.innerText), 'the Team Lead finds it under Fully approved');
 await live(head, () => !/Review tasks and decide/.test(document.body.innerText), 'the Department Head\'s pending list is empty again');
 await tab(head, /^Team Reports/).click();
@@ -176,16 +176,16 @@ await live(member, () => /Revision Required/.test(document.querySelector('[data-
 await live(head, () => /Revision required\s*1/i.test(document.body.innerText), 'the Department Head\'s counts move to Revision required');
 await api(rahul, 'POST', `/work-reports/${second.id}/submit`, {});
 await tab(lead, /^Team Member Reports/).click();
-await lead.getByRole('button', { name: /^Pending/ }).click();
+await lead.getByRole('button', { name: /^Pending Team Lead Approval/ }).click();
 await live(lead, () => /Monday sales report/.test(document.body.innerText), 'the resubmitted report is back with the Team Lead');
 ok('a Department Head revision sends the report back to the employee, and after resubmission it starts again with the Team Lead');
 
 // ------------------------------------------------------------------ 7. the Team Lead's individual report: no Download, no History
 const leadId = await idOf('lead@amuwa.com');
 const today = new Date().toISOString().slice(0, 10);
-const own = await api(leadId, 'POST', '/work-reports', { title: 'Lead weekly report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { workCompleted: 'Reviewed the pipeline' } });
+const own = await api(leadId, 'POST', '/work-reports', { title: 'Lead weekly report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { remarks: 'Reviewed the pipeline' } });
 await api(leadId, 'POST', `/work-reports/${own.id}/submit`, {});
-await tab(lead, /^My Individual Report/).click();
+await tab(lead, /^My Daily Report/).click();
 const ownText = await text(lead);
 await expect(/Report title/.test(ownText) && /Submit report/.test(ownText), 'the Team Lead\'s own report screen keeps the form and Submit report');
 await lead.getByRole('button', { name: 'Open report Lead weekly report' }).click();

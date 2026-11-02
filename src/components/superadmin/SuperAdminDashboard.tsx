@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, LayoutDashboard, RotateCcw, ShieldCheck, Trophy, UserPlus, Users } from 'lucide-react';
+import React, { Suspense, lazy, useMemo, useState } from 'react';
+import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, RotateCcw, ShieldCheck, Trophy, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -9,6 +9,7 @@ import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { useOpenReportsRequest } from '../reports/reportEvents';
 import { BusinessReports } from '../reports/BusinessReports';
 import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { TopPerformersPage } from '../top-performers/TopPerformersPage';
@@ -16,7 +17,9 @@ import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'security' | 'chat' | 'notifications';
+const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
+
+type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -39,6 +42,7 @@ export const SuperAdminDashboard: React.FC = () => {
   };
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
+  useOpenReportsRequest(React.useCallback(() => setPage('report-performance'), []));
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -50,6 +54,7 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'team', label: 'Team Members', icon: Users },
           { id: 'income', label: 'Department Income', icon: Building2 },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
+          { id: 'report-performance', label: 'Reports & Performance', icon: FileBarChart },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
         ]
       },
@@ -79,7 +84,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'top-performers' || page === 'team'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'top-performers' || page === 'report-performance' || page === 'team'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -108,6 +113,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'team' && <TeamMemberManagement initialTab={teamTab.tab} openRequest={teamTab.n} />}
       {page === 'income' && <DepartmentIncome />}
       {page === 'top-performers' && <TopPerformersPage mode="COMPANY" />}
+      {page === 'report-performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><ReportPerformance /></Suspense>}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'chat' && <ChatRoute />}

@@ -29,6 +29,7 @@ import { runHrAutomation } from './automations/hrDispatcher.js';
 import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
 import { runPerformanceAutomation } from './performance/writer.js';
 import { runTopPerformersAutomation } from './topPerformers/writer.js';
+import { runReportAnalysisAutomation } from './reportAnalysis/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { bolifySender } from './automations/bolify.js';
@@ -199,7 +200,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Top performers: recalculate the monthly scores from the task and approved report records, prepare the monthly recommendations, write the evaluations. Idempotent.
   const topPerformers = await runTopPerformersAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, training, careers }));
+  // Company report analysis: write the analysis of every consolidated week HR submitted that is still waiting for it. Idempotent.
+  const reportAnalysis = await runReportAnalysisAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

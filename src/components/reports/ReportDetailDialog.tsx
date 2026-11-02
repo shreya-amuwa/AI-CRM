@@ -64,20 +64,20 @@ export const ReportDetailDialog: React.FC<{
         <div className="space-y-4" data-testid="report-detail">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
             <StatusPill status={report.status} kind={report.kind} />
-            {report.kind === 'MEMBER' ? <ApprovalSteps tl={report.tlStatus} dh={report.dhStatus} /> : null}
-            <span>Period: <b>{periodLabel(report.periodStart, report.periodEnd)}</b></span>
+            {report.kind === 'MEMBER' || report.kind === 'TEAM_LEAD' ? <ApprovalSteps tl={report.kind === 'MEMBER' ? report.tlStatus : undefined} dh={report.dhStatus} /> : null}
             <span>Report date: <b>{dateLabel(report.reportDate)}</b></span>
+            {report.periodStart !== report.periodEnd ? <span>Period: <b>{periodLabel(report.periodStart, report.periodEnd)}</b></span> : null}
             {report.department ? <span>{report.department}{report.team ? ` / ${report.team}` : ''}</span> : null}
             {report.revision > 1 ? <span>Revision {report.revision}</span> : null}
             <span>Submitted: <b>{timeLabel(report.submittedAt)}</b></span>
           </div>
 
-          {report.kind === 'MEMBER' && report.tlStatus ? (
+          {(report.kind === 'MEMBER' && report.tlStatus) || (report.kind === 'TEAM_LEAD' && report.dhStatus) ? (
             <div className="grid gap-2 sm:grid-cols-2" data-testid="approval-stages">
               {([
                 ['TEAM_LEAD', report.tlStatus, report.tlReviewer ?? report.teamLead, report.tlReviewedAt, report.tlComment],
                 ['DEPARTMENT_HEAD', report.dhStatus ?? null, report.dhReviewer, report.dhReviewedAt, report.dhComment]
-              ] as const).map(([stage, st, who, at, note]) => (
+              ] as const).filter(([stage]) => report.kind === 'MEMBER' || stage === 'DEPARTMENT_HEAD').map(([stage, st, who, at, note]) => (
                 <div key={stage} className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-sm">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700">{STAGE_LABEL[stage]}</p>
                   <p className="mt-0.5 text-slate-800">

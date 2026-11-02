@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem,
   DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -49,5 +50,23 @@ export class WorkReportRepository {
   operations(from: string, to: string) { return this.rpc<OperationsReportBoard>('work_reports_operations', { p_from: from, p_to: to }); }
   operationsDepartment(departmentId: string, from: string, to: string) {
     return this.rpc<ReportsDepartmentDetail>('work_reports_operations_department', { p_department: departmentId, p_from: from, p_to: to });
+  }
+
+  /** The Daily Department Summary of one day (calculated from the individual reports). */
+  dailySummary(q: { date?: string; department?: string }) {
+    return this.rpc<DailyDepartmentSummary>('work_reports_daily_summary', { p_date: q.date ?? null, p_department: q.department ?? null });
+  }
+  /** The weekly department report (Department Head): the saved package, the live figures and the day-by-day figures. */
+  weekly(weekStart: string) { return this.rpc<WeeklyDepartmentReport>('work_reports_weekly', { p_week_start: weekStart }); }
+  weeklySave(w: { weekStart: string; title: string; assignedOverview?: string | null; completedOverview?: string | null; remarks?: string | null; submit: boolean }) {
+    return this.rpc<ReportPackage>('work_report_weekly_save', {
+      p_week_start: w.weekStart, p_title: w.title, p_assigned_overview: w.assignedOverview ?? null, p_completed_overview: w.completedOverview ?? null,
+      p_remarks: w.remarks ?? null, p_submit: w.submit
+    });
+  }
+  weeklyBoard(weekStart: string) { return this.rpc<WeeklyBoard>('work_reports_weekly_board', { p_week_start: weekStart }); }
+  weeklyPending() { return this.rpc<WeeklyPendingItem[]>('work_reports_weekly_pending'); }
+  weeklyReview(id: string, decision: string, comment?: string | null) {
+    return this.rpc<ReportPackage>('work_report_weekly_review', { p_package: id, p_decision: decision, p_comment: comment ?? null });
   }
 }

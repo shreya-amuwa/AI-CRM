@@ -7,7 +7,7 @@ import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
 import { checkPanelUrl } from './panelUrl.js';
-import { ALL_REPORT_FIELD_KEYS, REPORT_PERIOD_TYPES, REPORT_STATUSES, type ReportFieldKey } from './reportFields.js';
+import { ALL_REPORT_FIELD_KEYS, REPORT_PERIOD_TYPES, REPORT_REMARKS_MAX, REPORT_STATUSES, type ReportFieldKey } from './reportFields.js';
 import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
   ACCOUNT_STATUSES,
@@ -2201,6 +2201,8 @@ export const reportSaveSchema = z
     content: z
       .object({
         ...reportContentShape,
+        // the one short remark of the standard report form
+        remarks: z.string().trim().max(REPORT_REMARKS_MAX, `Keep the remarks under ${REPORT_REMARKS_MAX} characters.`).optional(),
         attachments: z.array(reportAttachmentSchema).max(5, 'Add at most 5 attachment links.').optional(),
         // Team Member report: ids of the member's own tasks (the database checks they were assigned to the author and are really completed)
         assignedTasks: z.array(uuidSchema).max(100, 'Choose at most 100 tasks.').optional(),
@@ -2296,3 +2298,93 @@ export const careerDocumentRequestSchema=z.union([
 export const careerDocumentLinkSchema=z.object({file_id:uuidSchema}).strict();
 export const careerTrainingSchema=z.object({application_id:uuidSchema,program_id:uuidSchema.nullable(),complete:z.boolean()}).strict();
 export const careerTrainingInviteSchema=z.object({application_id:uuidSchema,test_id:uuidSchema,available_until:z.string().datetime({offset:true}),day:z.number().int().min(1).max(3)}).strict();
+
+// ---------------------------------------------------------------------------
+// Company reporting: daily summary, weekly cycle, HR reviews, leaderboard, analysis
+// ---------------------------------------------------------------------------
+const reportMonday = isoDate.refine(d => new Date(`${d}T00:00:00Z`).getUTCDay() === 1, { message: 'Choose a week that starts on a Monday.' });
+
+export const reportWeekQuerySchema = z.object({ weekStart: reportMonday }).strict();
+export const reportDailySummaryQuerySchema = z.object({ date: isoDate.optional(), department: uuidSchema.optional() }).strict();
+export const reportWeeklySaveSchema = z
+  .object({
+    weekStart: reportMonday,
+    title: z.string().trim().max(200, 'Keep the title under 200 characters.').default(''),
+    assignedOverview: optionalText(2000),
+    completedOverview: optionalText(2000),
+    remarks: optionalText(2000),
+    submit: z.boolean().default(false)
+  })
+  .strict()
+  .refine(d => !d.submit || d.title.trim().length >= 3, { message: 'Enter the weekly report title before submitting.', path: ['title'] });
+export const reportWeeklyReviewSchema = z
+  .object({ decision: z.enum(['APPROVED', 'REVISION_REQUIRED']), comment: optionalText(2000) })
+  .strict()
+  .refine(d => d.decision === 'APPROVED' || (d.comment ?? '').trim().length >= 3, { message: 'Write a comment so the Department Head knows what to correct.', path: ['comment'] });
+
+export const hrReviewsQuerySchema = z.object({ weekStart: reportMonday.optional() }).strict();
+export const hrReviewSaveSchema = z
+  .object({
+    packageId: uuidSchema,
+    subjectId: uuidSchema,
+    rating: z.number().int().min(1).max(10).nullable().default(null),
+    consistencyNote: optionalText(1000),
+    workAssessment: optionalText(2000),
+    comments: optionalText(2000),
+    recommendations: optionalText(2000),
+    submit: z.boolean().default(false)
+  })
+  .strict()
+  .refine(d => !d.submit || (d.rating !== null && ((d.workAssessment ?? '').trim() !== '' || (d.comments ?? '').trim() !== '')), {
+    message: 'Give a rating and write the work assessment or your comments before submitting the review.',
+    path: ['rating']
+  });
+export const hrConsolidatedSaveSchema = z.object({ weekStart: reportMonday, note: optionalText(4000), submit: z.boolean().default(false) }).strict();
+export const hrReviewLogQuerySchema = z
+  .object({ department: uuidSchema.optional(), search: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).default(1) })
+  .strict();
+
+const numberFilter = (max: number) => z.coerce.number().min(0).max(max).optional();
+export const reportLeaderboardQuerySchema = z
+  .object({
+    periodType: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']).default('WEEKLY'),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    category: z.enum(['TOP10', 'BOTTOM10', 'TOP_MEMBERS', 'LOWEST_MEMBERS', 'TOP_LEADS', 'LOWEST_LEADS', 'TOP_DEPARTMENTS', 'LOWEST_DEPARTMENTS', 'ALL']).default('TOP10'),
+    department: uuidSchema.optional(),
+    team: uuidSchema.optional(),
+    designation: z.string().trim().max(120).optional(),
+    role: z.enum(['TEAM_MEMBER', 'TEAM_LEAD', 'DEPARTMENT_HEAD']).optional(),
+    person: uuidSchema.optional(),
+    teamLead: uuidSchema.optional(),
+    departmentHead: uuidSchema.optional(),
+    operationsHead: uuidSchema.optional(),
+    performance: z.enum(['STRONG', 'AVERAGE', 'NEEDS_ATTENTION', 'INSUFFICIENT_DATA']).optional(),
+    ratingMin: numberFilter(10),
+    ratingMax: numberFilter(10),
+    complianceMin: numberFilter(100),
+    complianceMax: numberFilter(100),
+    completionMin: numberFilter(100),
+    completionMax: numberFilter(100),
+    limit: z.coerce.number().int().min(1).max(200).optional(),
+    offset: z.coerce.number().int().min(0).optional()
+  })
+  .strict();
+export const reportEmployeeProfileQuerySchema = z
+  .object({ periodType: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']).default('MONTHLY'), from: isoDate.optional(), to: isoDate.optional() })
+  .strict();
+export const reportAnalysisQuerySchema = z
+  .object({ from: isoDate, to: isoDate })
+  .strict()
+  .refine(d => d.to >= d.from, { message: 'The period must end on or after its start.', path: ['to'] });
+export const reportSettingsSchema = z
+  .object({
+    weights: z.object({
+      taskCompletion: z.number().min(0).max(100), compliance: z.number().min(0).max(100), onTime: z.number().min(0).max(100),
+      approvalQuality: z.number().min(0).max(100), hrRating: z.number().min(0).max(100)
+    }).strict().refine(w => Object.values(w).some(v => v > 0), { message: 'At least one measure needs a weight above 0.' }),
+    minTasks: z.number().int().min(1).max(100),
+    minExpectedReports: z.number().int().min(1).max(100),
+    workingDays: z.array(z.number().int().min(1).max(7)).min(1).max(7)
+  })
+  .strict();

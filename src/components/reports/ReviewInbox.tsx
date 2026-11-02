@@ -8,7 +8,7 @@ import { ReportRow } from './ReportRow';
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 type InboxFilter = { id: string; label: string; match: (r: WorkReportSummary) => boolean; count: (c: ReportInbox['counts']) => number };
 const FILTERS: InboxFilter[] = [
-  { id: 'PENDING', label: 'Pending', match: r => r.status === 'SUBMITTED' || r.status === 'UNDER_REVIEW', count: c => (c.SUBMITTED ?? 0) + (c.UNDER_REVIEW ?? 0) },
+  { id: 'PENDING', label: 'Pending approval', match: r => r.status === 'SUBMITTED' || r.status === 'UNDER_REVIEW', count: c => (c.SUBMITTED ?? 0) + (c.UNDER_REVIEW ?? 0) },
   { id: 'APPROVED', label: 'Approved', match: r => r.status === 'APPROVED', count: c => c.APPROVED ?? 0 },
   { id: 'REJECTED', label: 'Rejected', match: r => r.status === 'REJECTED', count: c => c.REJECTED ?? 0 },
   { id: 'REVISION_REQUIRED', label: 'Revision required', match: r => r.status === 'REVISION_REQUIRED', count: c => c.REVISION_REQUIRED ?? 0 },
@@ -17,10 +17,10 @@ const FILTERS: InboxFilter[] = [
 
 // A Team Lead's inbox of Team Member reports has two approvals behind it: waiting for the Team Lead, then for the Department Head
 const MEMBER_FILTERS: InboxFilter[] = [
-  FILTERS[0],
-  { id: 'WITH_DEPARTMENT_HEAD', label: 'With Department Head', match: r => r.status === 'PENDING_DEPARTMENT_HEAD', count: c => c.PENDING_DEPARTMENT_HEAD ?? 0 },
-  { id: 'APPROVED', label: 'Fully approved', match: r => r.status === 'APPROVED', count: c => c.APPROVED ?? 0 },
-  FILTERS[3],
+  { ...FILTERS[0], label: 'Pending Team Lead Approval' },
+  { id: 'WITH_DEPARTMENT_HEAD', label: 'Pending Department Head Approval', match: r => r.status === 'PENDING_DEPARTMENT_HEAD', count: c => c.PENDING_DEPARTMENT_HEAD ?? 0 },
+  { id: 'APPROVED', label: 'Fully Approved', match: r => r.status === 'APPROVED', count: c => c.APPROVED ?? 0 },
+  { ...FILTERS[3], label: 'Revision Required' },
   FILTERS[2],
   FILTERS[4]
 ];

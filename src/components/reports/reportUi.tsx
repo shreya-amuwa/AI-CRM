@@ -1,6 +1,6 @@
 import React, { useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { reportStatusLabel, type ReportKind, type ReportPeriodType, type ReportStatus } from '../../../shared/reportFields';
+import { reportStatusLabel, WEEKLY_STATUS_LABEL, type ReportKind, type ReportPeriodType, type ReportStatus, type WeeklyReportStatus } from '../../../shared/reportFields';
 import type { ReportStageStatus } from '../../../shared/contracts';
 import { inputCls, selectCls } from '../team-member/pipeline/shared';
 
@@ -53,6 +53,46 @@ export const StatusPill: React.FC<{ status: ReportStatus | string | null | undef
   );
 };
 
+const WEEKLY_TONE: Record<WeeklyReportStatus | 'NOT_SUBMITTED', string> = {
+  NOT_SUBMITTED: 'bg-slate-100 text-slate-500 ring-slate-200',
+  DRAFT: 'bg-slate-100 text-slate-600 ring-slate-200',
+  COMPILING: 'bg-slate-100 text-slate-600 ring-slate-200',
+  PENDING_OPERATIONS_HEAD: 'bg-violet-50 text-violet-700 ring-violet-200',
+  REVISION_REQUIRED: 'bg-amber-50 text-amber-800 ring-amber-200',
+  APPROVED_BY_OPERATIONS_HEAD: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  SENT_TO_HR: 'bg-sky-50 text-sky-700 ring-sky-200',
+  HR_REVIEW_IN_PROGRESS: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  HR_REVIEW_COMPLETED: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  SUBMITTED_TO_SUPERADMIN: 'bg-emerald-100 text-emerald-800 ring-emerald-300'
+};
+/** The status of a weekly department report (kept apart from the daily statuses and from the HR review status). */
+export const WeeklyStatusPill: React.FC<{ status: WeeklyReportStatus | 'NOT_SUBMITTED' | string | null | undefined }> = ({ status }) => {
+  const key = (status && status in WEEKLY_TONE ? status : 'NOT_SUBMITTED') as WeeklyReportStatus | 'NOT_SUBMITTED';
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 whitespace-nowrap ${WEEKLY_TONE[key]}`}>{WEEKLY_STATUS_LABEL[key]}</span>;
+};
+
+/** A figure for a summary: a big number with a small label. */
+export const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string; tone?: 'neutral' | 'good' | 'warn' | 'bad' | 'info' }> = ({ label, value, hint, tone = 'neutral' }) => {
+  const cls = { neutral: 'text-slate-900', good: 'text-emerald-700', warn: 'text-amber-700', bad: 'text-rose-700', info: 'text-sky-700' }[tone];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-xs">
+      <div className={`text-xl font-bold tabular-nums ${cls}`}>{value}</div>
+      <div className="text-[11px] font-medium text-slate-500">{label}</div>
+      {hint ? <div className="text-[10px] text-slate-400 mt-0.5">{hint}</div> : null}
+    </div>
+  );
+};
+export const pctLabel = (v: number | null | undefined) => (typeof v === 'number' ? `${v}%` : 'No data');
+/** The Monday of the week that contains a date, and the Sunday after it. */
+export function weekOf(iso: string): { start: string; end: string } {
+  const d = parseIso(iso);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const e = new Date(d);
+  e.setDate(e.getDate() + 6);
+  return { start: isoOf(d), end: isoOf(e) };
+}
+export const shiftWeek = (startIso: string, weeks: number) => { const d = parseIso(startIso); d.setDate(d.getDate() + 7 * weeks); return isoOf(d); };
+
 const STEP_TONE: Record<ReportStageStatus, string> = {
   PENDING: 'bg-slate-100 text-slate-500',
   APPROVED: 'bg-emerald-50 text-emerald-700',
@@ -63,7 +103,12 @@ const STEP_WORD: Record<ReportStageStatus, string> = { PENDING: 'pending', APPRO
 
 /** The two approvals of a Team Member report side by side: Team Lead, then Department Head. */
 export const ApprovalSteps: React.FC<{ tl?: ReportStageStatus | null; dh?: ReportStageStatus | null }> = ({ tl, dh }) => {
-  if (!tl) return null;
+  // a Team Lead's own report has no Team Lead stage: only the Department Head's approval is shown
+  if (!tl && !dh) return null;
+  if (!tl) {
+    const st: ReportStageStatus = dh ?? 'PENDING';
+    return <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STEP_TONE[st]}`} aria-label="Approval step">Dept Head: {STEP_WORD[st]}</span>;
+  }
   const step = (label: string, v: ReportStageStatus | null | undefined) => {
     const st: ReportStageStatus = v ?? 'PENDING';
     return <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STEP_TONE[st]}`}>{label}: {v ? STEP_WORD[st] : 'waiting'}</span>;
@@ -163,6 +208,25 @@ export const PeriodBar: React.FC<{ value: Period; onChange: (p: Period) => void;
         <label className="block text-[11px] font-semibold text-slate-500 mb-1" htmlFor={toId}>To</label>
         <input id={toId} type="date" className={`${inputCls} !py-1.5 !w-auto`} value={value.to} min={value.from} onChange={e => e.target.value && onChange({ type: 'CUSTOM', from: value.from, to: e.target.value })} />
       </div>
+    </div>
+  );
+};
+
+/** Choose a Monday-to-Sunday week: previous / next buttons and the date range (the weekly reports are always whole weeks). */
+export const WeekPicker: React.FC<{ value: string; onChange: (weekStart: string) => void; label?: string; maxFuture?: boolean }> = ({ value, onChange, label = 'Reporting week', maxFuture = false }) => {
+  const thisWeek = weekOf(todayIso()).start;
+  const end = weekOf(value).end;
+  return (
+    <div className="flex items-end gap-2" role="group" aria-label={label}>
+      <div>
+        <span className="block text-[11px] font-semibold text-slate-500 mb-1">{label}</span>
+        <div className="flex items-center gap-1">
+          <button type="button" className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50" onClick={() => onChange(shiftWeek(value, -1))} aria-label="Previous week">&lsaquo;</button>
+          <span className="min-w-44 text-center text-sm font-semibold text-slate-800 tabular-nums" aria-live="polite">{dateLabel(value)} - {dateLabel(end)}</span>
+          <button type="button" className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-40" onClick={() => onChange(shiftWeek(value, 1))} disabled={!maxFuture && value >= thisWeek} aria-label="Next week">&rsaquo;</button>
+        </div>
+      </div>
+      {value !== thisWeek ? <button type="button" className="text-xs font-semibold text-indigo-700 hover:underline pb-2" onClick={() => onChange(thisWeek)}>This week</button> : null}
     </div>
   );
 };

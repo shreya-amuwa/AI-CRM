@@ -1,4 +1,5 @@
 import type {
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem,
   DepartmentReportBox, MemberApprovalList, ReportContext, ReportTaskOption, ReportInbox, ReportPackage, ReportsDepartmentDetail, OperationsReportBoard, TeamReportBox, WorkReportContent, WorkReportDetail,
   WorkReportSummary
 } from '../../../shared/contracts';
@@ -35,4 +36,15 @@ export const workReportsApi = {
   submitPackage: (p: { from: string; to: string; periodType: ReportPeriodType; note?: string }) => api.post<ReportPackage>('/work-reports/package', p),
   operations: (from: string, to: string) => api.get<OperationsReportBoard>('/work-reports/operations', { from, to }),
   operationsDepartment: (id: string, from: string, to: string) => api.get<ReportsDepartmentDetail>(`/work-reports/operations/departments/${id}`, { from, to })
+};
+
+// ---- Daily summary and the weekly department report (Department Head -> Operations Head -> HR) ----
+export const weeklyReportsApi = {
+  dailySummary: (q: { date?: string; department?: string } = {}) => api.get<DailyDepartmentSummary>('/work-reports/daily-summary', { ...q }),
+  weekly: (weekStart: string) => api.get<WeeklyDepartmentReport>('/work-reports/weekly', { weekStart }),
+  saveWeekly: (w: { weekStart: string; title: string; assignedOverview?: string; completedOverview?: string; remarks?: string; submit: boolean }) =>
+    api.post<ReportPackage>('/work-reports/weekly', w),
+  board: (weekStart: string) => api.get<WeeklyBoard>('/work-reports/weekly/board', { weekStart }),
+  pending: () => api.get<WeeklyPendingItem[]>('/work-reports/weekly/pending'),
+  review: (id: string, decision: 'APPROVED' | 'REVISION_REQUIRED', comment?: string) => api.post<ReportPackage>(`/work-reports/weekly/${id}/review`, { decision, comment })
 };

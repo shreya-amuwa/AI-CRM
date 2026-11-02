@@ -8189,7 +8189,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200, 'work reports: the Operations Head is given the Alpha department', r);
 
   const today = new Date().toISOString().slice(0, 10);
-  const body = (o: Record<string, unknown> = {}) => ({ title: 'Daily report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { workCompleted: 'Closed three tickets', tasksCompleted: '3' }, ...o });
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  // the Monday and the Sunday of the current week (the weekly department report is a whole week)
+  const thisMonday = (() => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); })();
+  const thisSunday = new Date(new Date(`${thisMonday}T00:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10);
+  const body = (o: Record<string, unknown> = {}) => ({ title: 'Daily report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { remarks: 'Closed three tickets' }, ...o });
   // a Team Member report: title, date, assigned tasks, completed tasks
   const mbody = (o: Record<string, unknown> = {}) => body({ content: { assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone] }, ...o });
 
@@ -8213,7 +8217,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_m1', 'GET', '/work-reports/my-tasks');
   check(r.status === 200 && r.json.data.length === 2 && r.json.data.every((t: any) => [taskDone, taskOpen].includes(t.id)), 'work reports: a Team Member lists only their own tasks', r);
   r = await api('wr_tl1', 'GET', '/work-reports/my-tasks');
-  check(r.status === 403, 'work reports: the task list is for Team Members', r);
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'work reports: a Team Lead has the same task list (their own tasks only)', r);
+  r = await api('wr_oh', 'GET', '/work-reports/my-tasks');
+  check(r.status === 403, 'work reports: the Operations Head writes no daily report, so has no task list', r);
   r = await api('wr_m1', 'POST', '/work-reports', { ...body(), status: 'APPROVED', authorId: dhaId, departmentId: dId('wr-api-b') });
   check(r.status === 422, 'work reports: a request cannot name a status, an author or a department', r);
 
@@ -8237,7 +8243,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_dhb', 'GET', `/work-reports/${rid}`);
   check(r.status === 404, 'work reports: another department\'s head cannot open it', r);
   r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
-  check(r.status === 404, 'work reports: the Department Head does not see it until the Team Lead approved it', r);
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.canReview === false, 'work reports: the Department Head reads it while it waits for the Team Lead, but cannot decide yet', r);
   r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
   check(r.status === 404, 'work reports: and cannot approve it (no skipping the Team Lead)', r);
   r = await api('wr_oh', 'GET', `/work-reports/${rid}`);
@@ -8284,7 +8290,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
   check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.revision === 2 && r.json.data.tlStatus === 'PENDING' && r.json.data.dhStatus === null, 'work reports: resubmitted: both approvals start again', r);
   r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
-  check(r.status === 404, 'work reports: the Department Head does not see it again until the Team Lead approves', r);
+  check(r.status === 200 && r.json.data.canReview === false, 'work reports: after the resubmission the Department Head reads it but cannot decide until the Team Lead approves again', r);
   r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
   check(r.status === 200 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD', 'work reports: the Team Lead approves the revision', r);
   r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED', comment: 'Good' });
@@ -8310,7 +8316,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // ---- the boxes
   r = await api('wr_tl1', 'GET', `/work-reports/team-box?from=${today}&to=${today}`);
   check(r.status === 200 && r.json.data.totalMembers === 1 && r.json.data.counts.approved === 1 && r.json.data.counts.pendingDh === 0 && r.json.data.members[0].reports.length === 1, 'work reports: the Team Lead\'s box counts the member\'s fully approved report', r);
-  r = await api('wr_tl1', 'POST', '/work-reports', body({ title: 'Lead report', content: { workCompleted: 'Reviewed the pipeline', teamCoordination: 'Stand-up' } }));
+  r = await api('wr_tl1', 'POST', '/work-reports', body({ title: 'Lead report', content: { remarks: 'Reviewed the pipeline' } }));
   check(r.status === 201 && r.json.data.kind === 'TEAM_LEAD', 'work reports: the Team Lead writes an individual report', r);
   const leadReport = r.json.data.id as string;
   r = await api('wr_tl1', 'POST', `/work-reports/${leadReport}/submit`, {});
@@ -8326,7 +8332,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: the Department Head approves the Team Lead\'s report', r);
 
   // ---- Department Head: own report and the package
-  r = await api('wr_dha', 'POST', '/work-reports', body({ title: 'Department overview', content: { workCompleted: 'Hiring done', departmentOverview: 'Healthy' } }));
+  r = await api('wr_dha', 'POST', '/work-reports', body({ title: 'Department overview', content: { remarks: 'Hiring done' } }));
   check(r.status === 201 && r.json.data.kind === 'DEPARTMENT_HEAD', 'work reports: the Department Head writes an individual report', r);
   const headReport = r.json.data.id as string;
   r = await api('wr_dha', 'POST', `/work-reports/${headReport}/submit`, {});
@@ -8334,22 +8340,24 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-a')}?from=${today}&to=${today}`);
   check(r.status === 200 && r.json.data.released === false && r.json.data.teamLeads.every((t: any) => t.leadReports.length === 0 && t.memberReports.length === 0), 'work reports: before the package is sent the Operations Head sees only counts', r);
   r = await api('wr_dha', 'POST', '/work-reports/package', { from: today, to: today, periodType: 'DAILY', note: 'All on track' });
-  check(r.status === 200 && r.json.data.status === 'SUBMITTED', 'work reports: the Department Head sends the department package', r);
-  r = await api('wr_dha', 'POST', '/work-reports/package', { from: today, to: today, periodType: 'DAILY', note: 'All on track (updated)' });
-  check(r.status === 200, 'work reports: sending it again updates it', r);
-  check((await db.query(`select count(*)::int n from public.work_report_packages where department_id = $1`, [dId('wr-api-a')])).rows[0].n === 1, 'work reports: still one package for the period');
+  check(r.status === 422, 'work reports: the department report is weekly (a single day is refused)', r);
+  r = await api('wr_dha', 'POST', '/work-reports/weekly', { weekStart: thisMonday, title: 'Weekly report Alpha', remarks: 'All on track', submit: true });
+  check(r.status === 200 && r.json.data.status === 'PENDING_OPERATIONS_HEAD' && r.json.data.revision === 1, 'work reports: the Department Head sends the weekly department report', r);
+  r = await api('wr_dha', 'POST', '/work-reports/weekly', { weekStart: thisMonday, title: 'Weekly report Alpha', remarks: 'All on track (updated)', submit: true });
+  check(r.status === 409, 'work reports: a submitted week cannot be sent again', r);
+  check((await db.query(`select count(*)::int n from public.work_report_packages where department_id = $1`, [dId('wr-api-a')])).rows[0].n === 1, 'work reports: still one weekly report for the week');
 
   // ---- Operations Head: nested chain
-  r = await api('wr_oh', 'GET', `/work-reports/operations?from=${today}&to=${today}`);
-  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].name === 'WR API Alpha' && r.json.data.departments[0].counts.memberApproved === 1 && r.json.data.departments[0].package.status === 'SUBMITTED', 'work reports: the Operations Head sees only their department with its counts', r);
-  r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-a')}?from=${today}&to=${today}`);
+  r = await api('wr_oh', 'GET', `/work-reports/operations?from=${thisMonday}&to=${thisSunday}`);
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].name === 'WR API Alpha' && r.json.data.departments[0].counts.memberApproved === 1 && r.json.data.departments[0].package.status === 'PENDING_OPERATIONS_HEAD', 'work reports: the Operations Head sees only their department with its counts', r);
+  r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-a')}?from=${thisMonday}&to=${thisSunday}`);
   const lead = r.json.data?.teamLeads?.find((t: any) => t.lead === 'WR tl1');
   check(r.status === 200 && r.json.data.released === true && r.json.data.departmentHeads[0].reports.length === 1 && lead && lead.leadReports.length === 1 && lead.memberReports.length === 1 && lead.memberReports[0].content.assignedTasks.length === 2, 'work reports: opened, the department shows the Department Head, the Team Lead and the member\'s report with its content', r);
   r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-b')}?from=${today}&to=${today}`);
   check(r.status === 404, 'work reports: a department they do not manage is closed', r);
   r = await api('wr_oh', 'POST', `/work-reports/${headReport}/review`, { decision: 'REVISION_REQUIRED', comment: 'Add the targets' });
   check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED', 'work reports: the Operations Head sends the Department Head\'s report back', r);
-  r = await api('wr_dha', 'PATCH', `/work-reports/${headReport}`, body({ title: 'Department overview', content: { workCompleted: 'Hiring done', targets: 'Hit 90%' } }));
+  r = await api('wr_dha', 'PATCH', `/work-reports/${headReport}`, body({ title: 'Department overview', content: { remarks: 'Hiring done, hit 90%' } }));
   check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED', 'work reports: the author edits the report that was sent back', r);
   r = await api('wr_dha', 'POST', `/work-reports/${headReport}/submit`, {});
   check(r.status === 200 && r.json.data.revision === 2, 'work reports: resubmitted as revision 2', r);
@@ -8366,10 +8374,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`update public.work_tasks set status = 'IN_PROGRESS', completed_at = null where id = $1`, [taskOther]);
   r = await api('wr_mb', 'POST', `/work-reports/${draftId}/submit`, {});
   check(r.status === 422, 'work reports: a task reopened since the draft was saved cannot be sent as completed', r);
-  r = await api('wr_tl1', 'POST', '/work-reports', body({ content: {} }));
+  r = await api('wr_tl1', 'POST', '/work-reports', body({ content: {}, reportDate: yesterday, periodStart: yesterday, periodEnd: yesterday }));
   const emptyLead = r.json.data.id as string;
   r = await api('wr_tl1', 'POST', `/work-reports/${emptyLead}/submit`, {});
-  check(r.status === 422, 'work reports: a Team Lead report needs the work completed to be submitted', r);
+  check(r.status === 422, 'work reports: a report needs assigned tasks or a short remark to be submitted', r);
   r = await api('wr_tl1', 'DELETE', `/work-reports/${emptyLead}`);
   check(r.status === 200, 'work reports: that draft can be deleted', r);
   r = await api('wr_mb', 'DELETE', `/work-reports/${draftId}`);
@@ -8377,7 +8385,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_m1', 'DELETE', `/work-reports/${rid}`);
   check(r.status === 404, 'work reports: an approved report cannot be deleted', r);
   r = await api('wr_oh', 'GET', '/work-reports/context');
-  check(r.status === 200 && r.json.data.level === 'OPERATIONS_HEAD' && r.json.data.pendingReview === 1 && r.json.data.badge === 1, 'work reports: the Operations Head\'s badge counts the resubmitted report', r);
+  check(r.status === 200 && r.json.data.level === 'OPERATIONS_HEAD' && r.json.data.pendingReview === 1 && r.json.data.weeklyPending === 1 && r.json.data.badge === 2, 'work reports: the Operations Head\'s badge counts the resubmitted report and the weekly report waiting', r);
   r = await api('client', 'GET', '/work-reports/context');
   check(r.status === 403 || r.status === 401, 'work reports: a client cannot use the employee routes', r);
   const n = (await db.query(`select count(*)::int n from public.notifications where type like 'REPORT\\_%' and recipient_id = $1`, [ohId])).rows[0].n as number;
@@ -8996,6 +9004,218 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const direct = await db.query(`select has_table_privilege('authenticated', 'public.operations_head_departments', 'select') as s, has_table_privilege('authenticated', 'public.operations_head_departments', 'insert') as i`);
   check(direct.rows[0].s === false && direct.rows[0].i === false, 'operations head: the assignments table cannot be read or written directly by users');
 
+}
+
+// --- Company reporting: daily summary, weekly department report, HR reviews, consolidated report, Super Admin leaderboard and analysis ---
+{
+  const depts = (await db.query(`insert into public.departments (slug, name) values ('rcx-a', 'RCX Alpha'), ('rcx-home', 'RCX Home') returning id, slug`)).rows as { id: string; slug: string }[];
+  const dId = (slug: string) => depts.find(d => d.slug === slug)!.id;
+  const teamA = (await db.query(`insert into public.teams (department_id, name, division) values ($1, 'Sales', 'SALES') returning id`, [dId('rcx-a')])).rows[0].id as string;
+  const hrTeam = (await db.query(`insert into public.teams (department_id, name, division) select id, 'RCX HR', 'GENERAL' from public.departments where slug = 'hr' returning id`)).rows[0].id as string;
+  const mk = async (name: string, body: Record<string, unknown>) => {
+    const res = await api('sa', 'POST', '/users', { email: `rcx.${name}@amuwa.com`, fullName: `RCX ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `company reporting: ${name} account created`, res);
+    tokens.set(`rcx_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  const ohId = await mk('oh', { role: 'DEPARTMENT_HEAD', departmentId: dId('rcx-home'), operationsHead: true });
+  await mk('dh', { role: 'DEPARTMENT_HEAD', departmentId: dId('rcx-a') });
+  const tlId = await mk('tl', { role: 'TEAM_HEAD', teamId: teamA });
+  const m1Id = await mk('m1', { role: 'TEAM_MEMBER', teamId: teamA });
+  const m2Id = await mk('m2', { role: 'TEAM_MEMBER', teamId: teamA });
+  await mk('hr1', { role: 'TEAM_MEMBER', teamId: hrTeam });
+  r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [dId('rcx-a')], primaryDepartmentIds: [dId('rcx-a')] });
+  check(r.status === 200, 'company reporting: the Operations Head is given the department', r);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const addDays = (iso: string, n: number) => new Date(new Date(`${iso}T00:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
+  const monday = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const lastMonday = addDays(monday(today), -7);
+  const saId2 = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' limit 1`)).rows[0].id as string;
+  const mkTask = async (assignee: string, title: string, status: string) =>
+    (await db.query(`insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, status, progress, completed_at, due_date)
+                     values ($1, $2, $3, $4, $5, $6, 50, case when $6 = 'COMPLETED' then now() end, $7::date) returning id`, [dId('rcx-a'), teamA, title, saId2, assignee, status, addDays(lastMonday, 1)])).rows[0].id as string;
+  const t1 = await mkTask(m1Id, 'RCX call leads', 'COMPLETED');
+  const t2 = await mkTask(tlId, 'RCX review pipeline', 'COMPLETED');
+  // the accounts are old enough to have been expected to report last week
+  await db.query(`update public.profiles set created_at = now() - interval '90 days', approved_at = now() - interval '90 days' where email like 'rcx.%'`);
+
+  // ---- the standard report form for a Team Lead (same as the Team Member's) and the daily cycle through the real routes
+  const std = (date: string, content: Record<string, unknown>) => ({ title: 'Daily report', reportDate: date, periodType: 'DAILY', periodStart: date, periodEnd: date, content });
+  r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1], completedTasks: [t1], remarks: 'x'.repeat(501) }));
+  check(r.status === 422, 'company reporting: the remarks are short (500 characters)', r);
+  r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1], completedTasks: [t1], remarks: 'Calls done.' }));
+  check(r.status === 201 && r.json.data.content.remarks === 'Calls done.' && r.json.data.assignedCount === 1 && r.json.data.completedCount === 1, 'company reporting: a Team Member report holds the tasks and the short remark', r);
+  const m1Report = r.json.data.id as string;
+  r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, {}));
+  check(r.status === 409, 'company reporting: one report per person and day', r);
+  r = await api('rcx_m1', 'POST', `/work-reports/${m1Report}/submit`, {});
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED', 'company reporting: submitted to the Team Lead', r);
+  r = await api('rcx_tl', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1] }));
+  check(r.status === 422, 'company reporting: a Team Lead cannot report a Team Member\'s task', r);
+  r = await api('rcx_tl', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t2], completedTasks: [t2], remarks: 'Team stand-up held.' }));
+  check(r.status === 201 && r.json.data.kind === 'TEAM_LEAD' && r.json.data.periodType === 'DAILY', 'company reporting: a Team Lead report is the same daily form', r);
+  const tlReport = r.json.data.id as string;
+  r = await api('rcx_tl', 'POST', `/work-reports/${tlReport}/submit`, {});
+  check(r.status === 200 && r.json.data.dhStatus === 'PENDING' && r.json.data.tlStatus === null, 'company reporting: it goes to the Department Head, with its own Department Head status', r);
+  r = await api('rcx_tl', 'POST', `/work-reports/${m1Report}/review`, { decision: 'APPROVED' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD', 'company reporting: Team Lead approval forwards the report', r);
+  r = await api('rcx_dh', 'POST', `/work-reports/${m1Report}/review`, { decision: 'APPROVED' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'company reporting: Department Head approval: Fully Approved', r);
+  r = await api('rcx_dh', 'POST', `/work-reports/${tlReport}/review`, { decision: 'APPROVED' });
+  check(r.status === 200 && r.json.data.dhStatus === 'APPROVED', 'company reporting: the Department Head approves the Team Lead\'s own report', r);
+
+  // ---- Daily Department Summary
+  r = await api('rcx_dh', 'GET', `/work-reports/daily-summary?date=${lastMonday}`);
+  check(r.status === 200 && r.json.data.submitted === 2 && r.json.data.approved === 2 && r.json.data.members === 2 && r.json.data.teamLeads === 1 && Array.isArray(r.json.data.teams), 'company reporting: the Daily Department Summary is calculated from the reports', r);
+  r = await api('rcx_dh', 'GET', `/work-reports/daily-summary?date=not-a-date`);
+  check(r.status === 422, 'company reporting: the summary date is validated', r);
+  r = await api('rcx_dh', 'GET', `/work-reports/daily-summary?date=${lastMonday}&department=${dId('rcx-home')}`);
+  check(r.status === 403, 'company reporting: a Department Head cannot open another department\'s summary', r);
+  for (const who of ['rcx_m1', 'rcx_tl', 'rcx_hr1']) {
+    r = await api(who, 'GET', `/work-reports/daily-summary?date=${lastMonday}`);
+    check(r.status === 403, `company reporting: ${who} has no department summary`, r);
+  }
+
+  // ---- weekly department report: Department Head -> Operations Head -> HR
+  r = await api('rcx_dh', 'GET', `/work-reports/weekly?weekStart=${addDays(lastMonday, 1)}`);
+  check(r.status === 422, 'company reporting: the week must start on a Monday', r);
+  r = await api('rcx_dh', 'GET', `/work-reports/weekly?weekStart=${lastMonday}`);
+  check(r.status === 200 && r.json.data.days.length === 7 && r.json.data.stats.submitted === 2 && r.json.data.package.status === 'NOT_SUBMITTED' && r.json.data.canEdit === true, 'company reporting: the week is compiled from the daily reports', r);
+  r = await api('rcx_m1', 'POST', '/work-reports/weekly', { weekStart: lastMonday, title: 'Not allowed', submit: true });
+  check(r.status === 403, 'company reporting: a Team Member cannot submit the weekly report', r);
+  r = await api('rcx_dh', 'POST', '/work-reports/weekly', { weekStart: lastMonday, title: '', submit: true });
+  check(r.status === 422, 'company reporting: a title is needed to submit', r);
+  r = await api('rcx_dh', 'POST', '/work-reports/weekly', { weekStart: lastMonday, title: 'Week report RCX', assignedOverview: '3 tasks', completedOverview: '2 done', remarks: 'Good week', submit: false });
+  check(r.status === 200 && r.json.data.status === 'DRAFT', 'company reporting: a draft of the weekly report', r);
+  r = await api('rcx_oh', 'GET', `/work-reports/weekly/board?weekStart=${lastMonday}`);
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.pendingApprovals === 0, 'company reporting: the Operations Head sees a draft as not yet submitted', r);
+  r = await api('rcx_dh', 'POST', '/work-reports/weekly', { weekStart: lastMonday, title: 'Week report RCX', assignedOverview: '3 tasks', completedOverview: '2 done', remarks: 'Good week', submit: true });
+  check(r.status === 200 && r.json.data.status === 'PENDING_OPERATIONS_HEAD', 'company reporting: submitted to the Operations Head', r);
+  const pkgId = r.json.data.id as string;
+  r = await api('rcx_oh', 'GET', '/work-reports/weekly/pending');
+  check(r.status === 200 && r.json.data.some((x: any) => x.package.id === pkgId), 'company reporting: it is in the Weekly Approvals', r);
+  r = await api('rcx_dh', 'GET', '/work-reports/weekly/pending');
+  check(r.status === 403, 'company reporting: the Department Head has no weekly approvals', r);
+  r = await api('rcx_dh', 'POST', `/work-reports/weekly/${pkgId}/review`, { decision: 'APPROVED' });
+  check(r.status === 403, 'company reporting: the Department Head cannot approve their own weekly report', r);
+  r = await api('rcx_oh', 'POST', `/work-reports/weekly/${pkgId}/review`, { decision: 'REVISION_REQUIRED' });
+  check(r.status === 422, 'company reporting: a revision needs a comment', r);
+  r = await api('rcx_hr1', 'GET', '/hr-reviews/overview');
+  check(r.status === 200 && r.json.data.departments.length === 0, 'company reporting: HR does not receive an unapproved weekly report', r);
+  r = await api('rcx_hr1', 'GET', `/hr-reviews/packages/${pkgId}`);
+  check(r.status === 404, 'company reporting: nor open it', r);
+  r = await api('rcx_oh', 'POST', `/work-reports/weekly/${pkgId}/review`, { decision: 'REVISION_REQUIRED', comment: 'Add the team progress' });
+  check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED' && r.json.data.ohComment === 'Add the team progress', 'company reporting: the Operations Head sends it back', r);
+  r = await api('rcx_dh', 'POST', '/work-reports/weekly', { weekStart: lastMonday, title: 'Week report RCX (revised)', remarks: 'Team progress added', submit: true });
+  check(r.status === 200 && r.json.data.revision === 2, 'company reporting: resubmitted as revision 2', r);
+  r = await api('rcx_oh', 'POST', `/work-reports/weekly/${pkgId}/review`, { decision: 'APPROVED', comment: 'Good' });
+  check(r.status === 200 && r.json.data.status === 'SENT_TO_HR' && r.json.data.ohReviewer === 'RCX oh', 'company reporting: approved: sent to HR, with the reviewer recorded', r);
+
+  // ---- HR reviews
+  for (const who of ['rcx_m1', 'rcx_tl', 'rcx_dh', 'rcx_oh']) {
+    r = await api(who, 'GET', '/hr-reviews/overview');
+    check(r.status === 403, `company reporting: ${who} cannot open the HR reviews`, r);
+  }
+  r = await api('rcx_hr1', 'GET', `/hr-reviews/overview?weekStart=${lastMonday}`);
+  check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].reviews.expected === 3 && r.json.data.scale.length === 5, 'company reporting: HR receives the approved weekly report: 3 people to review', r);
+  r = await api('rcx_hr1', 'GET', `/hr-reviews/packages/${pkgId}`);
+  check(r.status === 200 && r.json.data.teamLeads.length === 1 && r.json.data.teamLeads[0].members.length === 2 && r.json.data.canReview === true, 'company reporting: the department opens down to the Team Lead and the Team Members', r);
+  r = await api('rcx_hr1', 'GET', `/hr-reviews/packages/${pkgId}/people/${m1Id}/reports`);
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === m1Report, 'company reporting: the Team Member\'s daily report history loads on demand', r);
+  r = await api('rcx_hr1', 'GET', `/work-reports/${m1Report}`);
+  check(r.status === 200 && r.json.data.canReview === false && r.json.data.canEdit === false, 'company reporting: HR reads a daily report but cannot decide on it or edit it', r);
+  r = await api('rcx_hr1', 'POST', `/work-reports/${m1Report}/review`, { decision: 'REJECTED', comment: 'HR cannot do this' });
+  check(r.status === 404 || r.status === 409, 'company reporting: HR cannot change the approval', r);
+  const review = (subject: string, o: Record<string, unknown> = {}) => ({ packageId: pkgId, subjectId: subject, rating: 4, workAssessment: 'Solid delivery', comments: 'Good', recommendations: 'Keep going', submit: false, ...o });
+  r = await api('rcx_hr1', 'POST', '/hr-reviews', review(m1Id, { rating: 11 }));
+  check(r.status === 422, 'company reporting: a rating is within 1 to 10', r);
+  r = await api('rcx_hr1', 'POST', '/hr-reviews', review(m1Id, { rating: 9 }));
+  check(r.status === 422, 'company reporting: and on the configured scale', r);
+  r = await api('rcx_hr1', 'POST', '/hr-reviews', review(m1Id, { rating: null, submit: true }));
+  check(r.status === 422, 'company reporting: a final review needs a rating', r);
+  r = await api('rcx_m1', 'POST', '/hr-reviews', review(m2Id));
+  check(r.status === 403, 'company reporting: a Team Member cannot write a review', r);
+  r = await api('rcx_hr1', 'POST', '/hr-reviews', review(m1Id));
+  check(r.status === 200 && r.json.data.status === 'DRAFT' && r.json.data.packageStatus === 'HR_REVIEW_IN_PROGRESS', 'company reporting: a review draft is saved', r);
+  const consolidatedBefore = await api('rcx_hr1', 'GET', `/hr-reviews/consolidated?weekStart=${lastMonday}`);
+  check(consolidatedBefore.status === 200 && consolidatedBefore.json.data.readiness.pending.some((d: any) => d.department === 'RCX Alpha' && d.missingReviews.length === 3), 'company reporting: the consolidated preview names the missing reviews', consolidatedBefore.json);
+  r = await api('rcx_hr1', 'POST', '/hr-reviews/consolidated', { weekStart: lastMonday, note: 'Not yet', submit: true });
+  check(r.status === 409, 'company reporting: nothing complete: nothing is submitted to the Super Admin', r);
+  r = await api('rcx_hr1', 'POST', '/hr-reviews/consolidated', { weekStart: lastMonday, note: 'Draft note', submit: false });
+  check(r.status === 200 && r.json.data.status === 'DRAFT', 'company reporting: the consolidated report can be saved as a draft', r);
+  for (const who of [m1Id, m2Id, tlId]) {
+    r = await api('rcx_hr1', 'POST', '/hr-reviews', review(who, { submit: true }));
+    check(r.status === 200 && r.json.data.status === 'SUBMITTED', `company reporting: review submitted for ${who === tlId ? 'the Team Lead' : 'a Team Member'}`, r);
+  }
+  r = await api('rcx_hr1', 'POST', '/hr-reviews', review(m1Id, { rating: 1 }));
+  check(r.status === 409, 'company reporting: a submitted review stays unchanged', r);
+  r = await api('rcx_hr1', 'GET', `/hr-reviews/history/${m1Id}`);
+  check(r.status === 200 && r.json.data.length === 1, 'company reporting: the review is in the person\'s history', r);
+  r = await api('rcx_hr1', 'GET', '/hr-reviews/log?search=RCX');
+  check(r.status === 200 && r.json.data.total >= 3, 'company reporting: Review History lists the submitted reviews', r);
+  r = await api('rcx_hr1', 'GET', `/hr-reviews/consolidated?weekStart=${lastMonday}`);
+  check(r.status === 200 && r.json.data.readiness.complete.some((d: any) => d.department === 'RCX Alpha'), 'company reporting: Alpha is complete in the consolidated preview', r.json);
+  r = await api('rcx_dh', 'POST', '/hr-reviews/consolidated', { weekStart: lastMonday, submit: true });
+  check(r.status === 403, 'company reporting: only HR submits the consolidated report', r);
+  r = await api('rcx_hr1', 'POST', '/hr-reviews/consolidated', { weekStart: lastMonday, note: 'Week 1', submit: true });
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED_TO_SUPERADMIN' && r.json.data.submittedDepartments >= 1, 'company reporting: submitted to the Super Admin', r);
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'REPORT_CONSOLIDATED_SUBMITTED' and recipient_id = $1`, [saId2])).rows[0].n >= 1, 'company reporting: the Super Admin is notified');
+
+  // ---- Super Admin: company reports, leaderboard, employee profile, settings, analysis
+  r = await api('sa', 'GET', '/report-performance/consolidated');
+  check(r.status === 200 && r.json.data.length >= 1, 'company reporting: the Super Admin receives the consolidated report', r);
+  const consId = r.json.data[0].id as string;
+  r = await api('sa', 'GET', `/report-performance/consolidated/${consId}`);
+  check(r.status === 200 && r.json.data.departments.length >= 1, 'company reporting: with its departments', r);
+  for (const who of ['rcx_hr1', 'rcx_oh', 'rcx_dh', 'rcx_m1']) {
+    for (const path of ['/report-performance/leaderboard', '/report-performance/options', '/report-performance/consolidated', `/report-performance/analysis?from=${lastMonday}&to=${addDays(lastMonday, 6)}`]) {
+      r = await api(who, 'GET', path);
+      check(r.status === 403, `company reporting: ${who} cannot open ${path.split('?')[0]}`, r);
+    }
+  }
+  r = await api('sa', 'GET', `/report-performance/leaderboard?periodType=WEEKLY&from=${lastMonday}&category=TOP10`);
+  check(r.status === 200 && Array.isArray(r.json.data.rows) && r.json.data.counts.people >= 4 && r.json.data.methodology.weights.taskCompletion > 0, 'company reporting: the leaderboard is calculated for the period', r);
+  r = await api('sa', 'GET', `/report-performance/leaderboard?periodType=WEEKLY&from=${lastMonday}&category=ALL&department=${dId('rcx-a')}&limit=50`);
+  check(r.status === 200 && r.json.data.rows.length >= 4 && r.json.data.rows.every((x: any) => x.department === 'RCX Alpha'), 'company reporting: the department filter works', r);
+  const m1Row = r.json.data.rows.find((x: any) => x.id === m1Id);
+  check(!!m1Row && m1Row.hrRating === 4 && m1Row.assignedTasks === 1 && m1Row.completedTasks === 1 && m1Row.breakdown.length === 5, 'company reporting: the row shows the HR rating next to the measures from the records', m1Row);
+  r = await api('sa', 'GET', `/report-performance/leaderboard?category=BOTTOM10&periodType=WEEKLY&from=${lastMonday}`);
+  check(r.status === 200 && r.json.data.rows.every((x: any) => x.status === 'RANKED'), 'company reporting: Bottom 10 never holds Insufficient Data', r);
+  r = await api('sa', 'GET', '/report-performance/leaderboard?category=BEST');
+  check(r.status === 422, 'company reporting: an unknown category is refused', r);
+  r = await api('sa', 'GET', '/report-performance/leaderboard?periodType=CUSTOM');
+  check(r.status === 422, 'company reporting: a custom period needs its dates', r);
+  r = await api('sa', 'GET', '/report-performance/options');
+  check(r.status === 200 && r.json.data.departments.length >= 2 && r.json.data.people.length >= 4, 'company reporting: the filter choices come from the database', r);
+  r = await api('sa', 'GET', `/report-performance/employees/${m1Id}?periodType=WEEKLY&from=${lastMonday}`);
+  check(r.status === 200 && r.json.data.name === 'RCX m1' && r.json.data.reports.length === 1 && r.json.data.hrReviews.length === 1 && r.json.data.weeks.length === 8, 'company reporting: the employee profile has the reports, the HR review and the weekly history', r);
+  r = await api('sa', 'GET', '/report-performance/settings');
+  check(r.status === 200 && r.json.data.canEdit === true && r.json.data.ratingScale.length === 5, 'company reporting: the Super Admin reads the scoring settings', r);
+  r = await api('rcx_hr1', 'GET', '/report-performance/settings');
+  check(r.status === 200 && r.json.data.canEdit === false, 'company reporting: HR reads them, read only', r);
+  const weights = { taskCompletion: 35, compliance: 20, onTime: 10, approvalQuality: 10, hrRating: 25 };
+  r = await api('rcx_hr1', 'PATCH', '/report-performance/settings', { weights, minTasks: 3, minExpectedReports: 3, workingDays: [1, 2, 3, 4, 5, 6] });
+  check(r.status === 403, 'company reporting: HR cannot change the weights', r);
+  r = await api('sa', 'PATCH', '/report-performance/settings', { weights: { ...weights, hrRating: 500 }, minTasks: 3, minExpectedReports: 3, workingDays: [1, 2, 3, 4, 5, 6] });
+  check(r.status === 422, 'company reporting: a weight is 0 to 100', r);
+  r = await api('sa', 'PATCH', '/report-performance/settings', { weights: { taskCompletion: 0, compliance: 0, onTime: 0, approvalQuality: 0, hrRating: 0 }, minTasks: 3, minExpectedReports: 3, workingDays: [1, 2, 3, 4, 5, 6] });
+  check(r.status === 422, 'company reporting: at least one weight is needed', r);
+  r = await api('sa', 'PATCH', '/report-performance/settings', { weights: { ...weights, taskCompletion: 40, hrRating: 20 }, minTasks: 3, minExpectedReports: 3, workingDays: [1, 2, 3, 4, 5, 6] });
+  check(r.status === 200 && r.json.data.weights.taskCompletion === 40, 'company reporting: the Super Admin changes the weights', r);
+  r = await api('sa', 'PATCH', '/report-performance/settings', { weights, minTasks: 3, minExpectedReports: 3, workingDays: [1, 2, 3, 4, 5, 6] });
+  check(r.status === 200, 'company reporting: and back', r);
+  r = await api('sa', 'GET', `/report-performance/analysis?from=${lastMonday}&to=${addDays(lastMonday, 6)}`);
+  check(r.status === 200 && r.json.data.facts.counts.people >= 4 && Array.isArray(r.json.data.facts.lowCompletion) && typeof r.json.data.aiConfigured === 'boolean', 'company reporting: the measurable facts of the period', r);
+  r = await api('sa', 'POST', '/report-performance/analysis', { from: lastMonday, to: addDays(lastMonday, 6) });
+  check(r.status === 200 && r.json.data.analysis && typeof r.json.data.analysis.narrative.summary === 'string' && ['AI', 'RULES'].includes(r.json.data.analysis.source), 'company reporting: the analysis is written from the facts', r);
+  check(r.json.data.analysis.narrative.sections.every((sec: any) => sec.items.every((i: any) => i.factIds.length >= 1)), 'company reporting: every point is traceable to facts');
+  r = await api('sa', 'POST', '/report-performance/analysis', { from: addDays(lastMonday, 6), to: lastMonday });
+  check(r.status === 422, 'company reporting: the period must end after it starts', r);
+  r = await api('rcx_hr1', 'POST', '/report-performance/analysis', { from: lastMonday, to: addDays(lastMonday, 6) });
+  check(r.status === 403, 'company reporting: only the Super Admin writes it', r);
+  // the analysis is apart from the reports and the ratings: nothing changed
+  check((await db.query(`select count(*)::int n from public.hr_performance_reviews where package_id = $1 and rating is not null`, [pkgId])).rows[0].n === 3, 'company reporting: the HR ratings are unchanged by the analysis');
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

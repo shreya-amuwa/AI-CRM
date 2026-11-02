@@ -678,5 +678,34 @@ export const workReportsController = {
   department: (async ctx => ok(await svc(ctx).workReports.department(ctx.req.query))) as Handler,
   submitPackage: (async ctx => ok(await svc(ctx).workReports.submitPackage(ctx.req.body))) as Handler,
   operations: (async ctx => ok(await svc(ctx).workReports.operations(ctx.req.query))) as Handler,
-  operationsDepartment: (async ctx => ok(await svc(ctx).workReports.operationsDepartment(ctx.params.id, ctx.req.query))) as Handler
+  operationsDepartment: (async ctx => ok(await svc(ctx).workReports.operationsDepartment(ctx.params.id, ctx.req.query))) as Handler,
+  dailySummary: (async ctx => ok(await svc(ctx).workReports.dailySummary(ctx.req.query))) as Handler,
+  weekly: (async ctx => ok(await svc(ctx).workReports.weekly(ctx.req.query))) as Handler,
+  weeklySave: (async ctx => ok(await svc(ctx).workReports.weeklySave(ctx.req.body))) as Handler,
+  weeklyBoard: (async ctx => ok(await svc(ctx).workReports.weeklyBoard(ctx.req.query))) as Handler,
+  weeklyPending: (async ctx => ok(await svc(ctx).workReports.weeklyPending())) as Handler,
+  weeklyReview: (async ctx => ok(await svc(ctx).workReports.weeklyReview(ctx.params.id, ctx.req.body))) as Handler
+}
+
+// HR performance reviews and the consolidated report (HR), the Super Admin's performance views
+export const hrReviewsController = {
+  overview: (async ctx => ok(await svc(ctx).hrReviews.overview(ctx.req.query))) as Handler,
+  department: (async ctx => ok(await svc(ctx).hrReviews.department(ctx.params.id))) as Handler,
+  personReports: (async ctx => ok(await svc(ctx).hrReviews.personReports(ctx.params.id, ctx.params.personId))) as Handler,
+  save: (async ctx => ok(await svc(ctx).hrReviews.save(ctx.req.body))) as Handler,
+  history: (async ctx => ok(await svc(ctx).hrReviews.history(ctx.params.id))) as Handler,
+  log: (async ctx => ok(await svc(ctx).hrReviews.log(ctx.req.query))) as Handler,
+  consolidated: (async ctx => ok(await svc(ctx).hrReviews.consolidated(ctx.req.query))) as Handler,
+  consolidatedSave: (async ctx => ok(await svc(ctx).hrReviews.consolidatedSave(ctx.req.body))) as Handler
+}
+export const reportAnalyticsController = {
+  consolidatedList: (async ctx => ok(await svc(ctx).reportAnalytics.consolidatedList())) as Handler,
+  consolidated: (async ctx => ok(await svc(ctx).reportAnalytics.consolidated(ctx.params.id))) as Handler,
+  leaderboard: (async ctx => ok(await svc(ctx).reportAnalytics.leaderboard(ctx.req.query))) as Handler,
+  options: (async ctx => ok(await svc(ctx).reportAnalytics.options())) as Handler,
+  employee: (async ctx => ok(await svc(ctx).reportAnalytics.employee(ctx.params.id, ctx.req.query))) as Handler,
+  settings: (async ctx => ok(await svc(ctx).reportAnalytics.settings())) as Handler,
+  updateSettings: (async ctx => ok(await svc(ctx).reportAnalytics.updateSettings(ctx.req.body))) as Handler,
+  analysis: (async ctx => ok(await svc(ctx).reportAnalytics.analysis(ctx.req.query))) as Handler,
+  generate: (async ctx => ok(await svc(ctx).reportAnalytics.generate(ctx.req.body))) as Handler
 };

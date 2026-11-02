@@ -1,7 +1,8 @@
 import type {
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem,
   DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
-import { reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
+import { reportDailySummaryQuerySchema, reportWeekQuerySchema, reportWeeklyReviewSchema, reportWeeklySaveSchema, reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
 import { REPORT_STATUSES } from '../../shared/reportFields.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
@@ -41,5 +42,15 @@ export class WorkReportService {
   operationsDepartment(id: string, query: unknown): Promise<ReportsDepartmentDetail> {
     const q = parse(reportRangeQuerySchema, query);
     return this.repo.operationsDepartment(parse(uuidSchema, id), q.from, q.to);
+  }
+
+  dailySummary(query: unknown): Promise<DailyDepartmentSummary> { return this.repo.dailySummary(parse(reportDailySummaryQuerySchema, query ?? {})); }
+  weekly(query: unknown): Promise<WeeklyDepartmentReport> { return this.repo.weekly(parse(reportWeekQuerySchema, query).weekStart); }
+  weeklySave(body: unknown): Promise<ReportPackage> { return this.repo.weeklySave(parse(reportWeeklySaveSchema, body)); }
+  weeklyBoard(query: unknown): Promise<WeeklyBoard> { return this.repo.weeklyBoard(parse(reportWeekQuerySchema, query).weekStart); }
+  weeklyPending(): Promise<WeeklyPendingItem[]> { return this.repo.weeklyPending(); }
+  weeklyReview(id: string, body: unknown): Promise<ReportPackage> {
+    const r = parse(reportWeeklyReviewSchema, body);
+    return this.repo.weeklyReview(parse(uuidSchema, id), r.decision, r.comment);
   }
 }

@@ -37,6 +37,7 @@ const SupportMemberDashboard = lazy(() => import('./components/support-member/Su
 const StaffManagementPanel = lazy(() => import('./components/common/StaffManagementPanel').then(m => ({ default: m.StaffManagementPanel })));
 const AmuwaHqPanel = lazy(() => import('./components/departments/amuwa/AmuwaHqPanel').then(m => ({ default: m.AmuwaHqPanel })));
 const AmuwaSettingsPanel = lazy(() => import('./components/departments/amuwa/AmuwaSettingsPanel').then(m => ({ default: m.AmuwaSettingsPanel })));
+const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews'));
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
 const SupportSuperAdminDashboard = lazy(() => import('./components/departments/wabastore/superadmin/SupportSuperAdminDashboard').then(m => ({ default: m.SupportSuperAdminDashboard })));
@@ -390,7 +391,7 @@ const MainAppContent: React.FC = () => {
   };
 
   showChat.current = () => handleTabUpdate('chat');
-  showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : 'hr_meetings');
+  showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -494,6 +495,8 @@ const MainAppContent: React.FC = () => {
               <EmployeeIssuesManagement />
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
               <MeetingRequestsManagement />
+            ) : currentActiveTab === 'hr_reviews' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><PerformanceReviews /></Suspense>
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
             ) : currentActiveTab === 'business_reports' && currentDeptId === 'accounts' ? (

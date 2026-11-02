@@ -19,10 +19,12 @@ export const TaskList: React.FC<{ tasks: WorkReportTask[]; done?: boolean; empty
 
 /** The sections of a report that have text, in the order of the form, with the attachment links. */
 export const ReportContentView: React.FC<{ kind: ReportKind; content: WorkReportContent; compact?: boolean }> = ({ kind, content, compact }) => {
-  const sections = REPORT_FIELDS[kind].filter(f => (content[f.key as keyof WorkReportContent] as string | undefined)?.trim());
+  // the standard form has tasks and a short remark; reports written before it (long-form Team Lead / Department Head sections) still show theirs
+  const sections = REPORT_FIELDS[kind].filter(f => f.key !== 'remarks' && (content[f.key as keyof WorkReportContent] as string | undefined)?.trim());
+  const remarks = content.remarks?.trim();
   const links = content.attachments ?? [];
-  const hasTasks = kind === 'MEMBER' && (Array.isArray(content.assignedTasks) || Array.isArray(content.completedTasks));
-  if (sections.length === 0 && links.length === 0 && !hasTasks) return <p className="text-xs text-slate-500">This report has no written sections.</p>;
+  const hasTasks = Array.isArray(content.assignedTasks) || Array.isArray(content.completedTasks);
+  if (sections.length === 0 && links.length === 0 && !hasTasks && !remarks) return <p className="text-xs text-slate-500">This report has no written sections.</p>;
   return (
     <dl className={`grid gap-3 ${compact ? 'sm:grid-cols-2' : ''}`}>
       {hasTasks ? (
@@ -36,6 +38,12 @@ export const ReportContentView: React.FC<{ kind: ReportKind; content: WorkReport
             <dd className="mt-1"><TaskList tasks={content.completedTasks ?? []} done empty="No completed tasks." /></dd>
           </div>
         </>
+      ) : null}
+      {remarks ? (
+        <div className="rounded-xl bg-slate-50/80 px-3 py-2 sm:col-span-2">
+          <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Remarks / Work Summary</dt>
+          <dd className="mt-1 text-sm text-slate-800 whitespace-pre-wrap break-words">{remarks}</dd>
+        </div>
       ) : null}
       {sections.map(f => (
         <div key={f.key} className="rounded-xl bg-slate-50/80 px-3 py-2">
@@ -66,11 +74,12 @@ export function reportAsText(r: { title: string; author: string; designation: st
   if (r.reviewedBy) lines.push(`Reviewed by: ${r.reviewedBy}`);
   if (r.reviewComment) lines.push(`Review comment: ${r.reviewComment}`);
   lines.push('');
-  if (r.kind === 'MEMBER' && (content.assignedTasks || content.completedTasks)) {
+  if (content.assignedTasks || content.completedTasks) {
     lines.push(`ASSIGNED TASKS (${content.assignedTasks?.length ?? 0})`, ...(content.assignedTasks ?? []).map(t => `- ${t.title}`), '');
     lines.push(`COMPLETED TASKS (${content.completedTasks?.length ?? 0})`, ...(content.completedTasks ?? []).map(t => `- ${t.title}`), '');
   }
-  for (const f of REPORT_FIELDS[r.kind]) {
+  if (content.remarks?.trim()) lines.push('REMARKS / WORK SUMMARY', content.remarks.trim(), '');
+  for (const f of REPORT_FIELDS[r.kind].filter(x => x.key !== 'remarks')) {
     const v = (content[f.key as keyof WorkReportContent] as string | undefined)?.trim();
     if (v) lines.push(f.label.toUpperCase(), v, '');
   }

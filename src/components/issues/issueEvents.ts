@@ -33,7 +33,7 @@ export function useOpenIssuesRequest(show: () => void) {
 /** HR: a notification opens HR's Employee Issues / Meeting Requests section on the case it is about. */
 export const OPEN_HR_CASE_EVENT = 'crm:open-hr-case';
 export interface OpenHrCaseDetail {
-  section: 'issues' | 'meetings';
+  section: 'issues' | 'meetings' | 'reviews';
   id?: string;
 }
 let pendingHr: OpenHrCaseDetail | null = null;
@@ -59,6 +59,9 @@ const EMPLOYEE_SIDE = new Set(['EMPLOYEE_ISSUE_UPDATED', 'EMPLOYEE_MEETING_UPDAT
 /** A notification about an employee issue or meeting request: open the right page on it. Returns false for any other notification. */
 export function openFromNotification(n: { type: string; entityType: string | null; entityId: string | null }): boolean {
   // a work report notification (submitted, decided, sent back, package sent) opens the Reports page, on the report when it names one
+  // a weekly report that reached HR opens HR's Performance Reviews; the consolidated report / analysis opens the Super Admin's Reports & Performance
+  if (n.entityType === 'work_report_package' && n.type === 'REPORT_WEEKLY_SENT_TO_HR') { openHrCase({ section: 'reviews' }); return true; }
+  if (n.entityType === 'hr_consolidated_report') { openReports({}); return true; }
   if (n.entityType === 'work_report' || n.entityType === 'work_report_package') {
     openReports({ id: n.entityType === 'work_report' ? n.entityId ?? undefined : undefined });
     return true;
