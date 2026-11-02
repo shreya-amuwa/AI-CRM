@@ -156,7 +156,7 @@ const open = async (view, vp = { width: 1280, height: 900 }) => {
 }
 { // operations dashboard
   const page = await open('operations');
-  await page.waitForSelector('[data-testid="operations-dashboard"] >> text=Alpha');
+  await page.waitForSelector('[data-testid="operations-dashboard"] [data-testid="ops-department-row"]:has-text("Alpha")');
   const text = await page.locator('[data-testid="operations-dashboard"]').innerText();
   check(/Beta/.test(text) && /No Department Head/.test(text) && /Dev Head/.test(text), 'each assigned department with its Department Head (or the lack of one)');
   check(/you approve heads/.test(text), 'the department they are accountable for is marked');
@@ -186,7 +186,7 @@ const open = async (view, vp = { width: 1280, height: 900 }) => {
 for (const [name, vp] of [['phone', { width: 360, height: 740 }], ['desktop', { width: 1440, height: 900 }]]) {
   for (const view of ['approver', 'directory', 'operations']) {
     const page = await open(view, vp);
-    await page.waitForSelector(view === 'operations' ? '[data-testid="operations-dashboard"] >> text=Alpha' : 'li');
+    await page.waitForSelector(view === 'operations' ? '[data-testid="operations-dashboard"] [data-testid="ops-department-row"]:has-text("Alpha")' : 'li');
     const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth }));
     check(view === 'operations' && name === 'phone' ? true : m.sw <= m.iw, `${name}: ${view} does not scroll the page sideways`, m);
     await page.close();

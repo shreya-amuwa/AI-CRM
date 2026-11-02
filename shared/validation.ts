@@ -264,13 +264,19 @@ export const userCreateSchema = z
     headDivision: z.enum(HEAD_DIVISIONS).optional(),
     /** An Operations Head oversees several departments (the Super Admin makes one; a plain Department Head works in one department). */
     operationsHead: z.boolean().optional(),
+    /** The departments a NEW Operations Head supervises (one account, several departments; the first is where the person is placed). Operations Head only. */
+    departmentIds: z.array(uuidSchema).min(1, 'Choose at least one department.').max(40).optional(),
     /** More (department, function) pairs the head works in, besides their own department and side. Another DEPARTMENT is for an Operations Head only. Super Admin only. */
     additionalAccess: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(40).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
   })
   .strict()
-  .refine(u => (u.role === 'DEPARTMENT_HEAD' ? !!u.departmentId && !u.teamId : !!u.teamId), {
+  .refine(u => !u.departmentIds?.length || u.operationsHead === true, {
+    message: 'Only an Operations Head is given several departments in one step.',
+    path: ['departmentIds']
+  })
+  .refine(u => (u.role === 'DEPARTMENT_HEAD' ? (!!u.departmentId || (u.operationsHead === true && !!u.departmentIds?.length)) && !u.teamId : !!u.teamId), {
     message: 'Department heads need a department; team heads and members need a team.',
     path: ['teamId']
   })
