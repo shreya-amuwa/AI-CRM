@@ -10,6 +10,7 @@ insert into cp select 'one',id from auth.users where email='career.one@example.c
 insert into cp select 'two',id from auth.users where email='career.two@example.com';
 insert into cp select 'unverified',id from auth.users where email='career.unverified@example.com';
 select test.check(not exists(select 1 from profiles where id in(select v from cp)),'candidate signup creates no staff profiles or employee approval requests');
+select test.check(not exists(select 1 from employee_welcome_emails where employee_id in(select v from cp)),'candidate signup queues no employee welcome email');
 select test.login('hr_head');
 select hr_career_posting(jsonb_build_object('position_id',(select id from hr_positions where title='Backend Developer'),'title','Portal Developer','description','Build reliable applications with our engineering team.','location','Mumbai','employment_type','FULL_TIME','published',true));
 reset role;

@@ -8,6 +8,7 @@ import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import type { EmployeeApprovalRepository } from '../repositories/EmployeeApprovalRepository.js';
+import { temporaryPassword } from '../automations/secrets.js';
 
 const DB_ROLE = { OPERATIONS_HEAD: 'DEPARTMENT_HEAD', DEPARTMENT_HEAD: 'DEPARTMENT_HEAD', TEAM_HEAD: 'TEAM_HEAD', TEAM_MEMBER: 'TEAM_MEMBER' } as const;
 
@@ -29,7 +30,7 @@ export class EmployeeApprovalService {
   async create(actor: Actor, input: EmployeeRequestInput): Promise<EmployeeRequest> {
     await this.repo.assertCanSubmit({ email: input.email, role: input.role, departmentId: input.departmentId, division: input.division });
     const id = await this.authAdmin.createEmployeeRequestUser({
-      email: input.email, password: input.password, fullName: input.fullName, position: input.details.designation, role: DB_ROLE[input.role],
+      email: input.email, password: input.password ?? temporaryPassword(28), fullName: input.fullName, position: input.details.designation, role: DB_ROLE[input.role],
       operationsHead: input.role === 'OPERATIONS_HEAD', departmentId: input.departmentId, division: input.division, employeeCode: input.employeeCode, requestedBy: actor.id
     });
     try {

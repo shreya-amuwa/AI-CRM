@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, RefreshCw, XCircle } from 'lucide-react';
-import type { EmployeeRequest } from '../../../shared/contracts';
+import type { EmployeeRequest, WelcomeEmailItem, WelcomeEmailStatus } from '../../../shared/contracts';
 import { useDepartments } from '../../context/DepartmentContext';
 import { errorMessage } from '../../lib/api/client';
-import { employeesApi } from '../../lib/api/endpoints';
+import { employeesApi, welcomeEmailsApi } from '../../lib/api/endpoints';
 import { getSupabase } from '../../services/supabaseClient';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, Pill, Spinner, type Tone } from '../team-member/pipeline/shared';
 import { APPROVER_LABEL, ROLE_LABEL } from './EmployeeRequestForm';
 import type { EmployeeRequestRole } from '../../../shared/validation';
 
 const STATUS_TONE: Record<EmployeeRequest['status'], Tone> = { PENDING: 'orange', APPROVED: 'green', REJECTED: 'red' };
+const MAIL_TONE: Record<WelcomeEmailStatus, Tone> = { SENT: 'green', PENDING: 'indigo', PROCESSING: 'indigo', RETRYING: 'orange', FAILED: 'red', SKIPPED: 'red', DRY_RUN: 'slate' };
+const MAIL_LABEL: Record<WelcomeEmailStatus, string> = { SENT: 'Sent', PENDING: 'Pending', PROCESSING: 'Sending', RETRYING: 'Retrying', FAILED: 'Failed', SKIPPED: 'Not sent', DRY_RUN: 'Not sent (dry run)' };
 
 /** Refresh when a request changes (Realtime), when something in this tab changes, or when the tab is focused again. No timer. */
 function useRequestsLive(onChange: () => void) {
@@ -42,17 +44,37 @@ export const EmployeeRequestsPanel: React.FC<{ view: 'hr' | 'approver'; title?: 
   const [open, setOpen] = useState<EmployeeRequest | null>(null);
   const [decision, setDecision] = useState<{ request: EmployeeRequest; approve: boolean } | null>(null);
   const [resubmitFor, setResubmitFor] = useState<EmployeeRequest | null>(null);
+  // HR: the welcome e-mail of each approved employee (status from the database; the resend makes a fresh one-time link)
+  const [welcome, setWelcome] = useState<Record<string, WelcomeEmailItem>>({});
+  const [resending, setResending] = useState<string | null>(null);
+  const [mailNote, setMailNote] = useState<string | null>(null);
 
   const load = useCallback(() => {
     employeesApi.list({ toDecide: view === 'approver' && filter === 'WAITING' ? true : undefined }).then(
       r => { setRows(r); setError(null); },
       e => setError(errorMessage(e))
     );
+    // not everybody who sees requests may see the welcome e-mails: the database answers, and a refusal just hides the column
+    if (view === 'hr') welcomeEmailsApi.list().then(l => setWelcome(Object.fromEntries(l.items.map(i => [i.employeeId, i]))), () => setWelcome({}));
   }, [view, filter]);
   useEffect(load, [load]);
   useRequestsLive(load);
 
   const shown = useMemo(() => (rows ?? []).filter(r => !only || r.requestedRole === only), [rows, only]);
+  const resend = async (employeeId: string) => {
+    setResending(employeeId);
+    setMailNote(null);
+    try {
+      const item = await welcomeEmailsApi.resend(employeeId);
+      setWelcome(w => ({ ...w, [employeeId]: item }));
+      setMailNote('The welcome e-mail was queued again with a fresh secure link.');
+      load();
+    } catch (e) {
+      setMailNote(errorMessage(e));
+    } finally {
+      setResending(null);
+    }
+  };
   const changed = () => { window.dispatchEvent(new Event('crm:employee-requests-changed')); load(); };
 
   return (
@@ -72,6 +94,7 @@ export const EmployeeRequestsPanel: React.FC<{ view: 'hr' | 'approver'; title?: 
         </div>
       </div>
       {error && <ErrorBanner message={error} onRetry={load} />}
+      {mailNote && <p role="status" className="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">{mailNote}</p>}
       {!rows && !error && <Spinner label="Loading requests…" />}
       {rows && shown.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">{view === 'approver' && filter === 'WAITING' ? 'Nothing is waiting for you.' : 'No requests yet.'}</p>}
       {shown.length > 0 && (
@@ -87,6 +110,25 @@ export const EmployeeRequestsPanel: React.FC<{ view: 'hr' | 'approver'; title?: 
                 <Pill tone={STATUS_TONE[r.status]}>{r.status === 'PENDING' ? (r.awaitingOwner ? 'Waiting for an owner' : 'Pending') : r.status === 'APPROVED' ? 'Approved' : 'Rejected'}</Pill>
                 {r.attempt > 1 && <span className="text-[10px] text-slate-500">Attempt {r.attempt}</span>}
               </div>
+              {view === 'hr' && r.status === 'APPROVED' && r.employee && (
+                <div className="flex flex-col items-end gap-1 text-[11px] text-slate-600" data-testid="welcome-status">
+                  <span>Account: <b className="text-emerald-700">{welcome[r.employee.id]?.accountStatus === 'ACTIVE' || !welcome[r.employee.id] ? 'Active' : welcome[r.employee.id].accountStatus}</b></span>
+                  {welcome[r.employee.id] ? (
+                    <>
+                      <span className="flex items-center gap-1">Welcome email: <Pill tone={MAIL_TONE[welcome[r.employee.id].status]}>{MAIL_LABEL[welcome[r.employee.id].status]}</Pill></span>
+                      {welcome[r.employee.id].setupCompletedAt && <span className="text-emerald-700">Password set by the employee</span>}
+                      {(welcome[r.employee.id].status === 'FAILED' || welcome[r.employee.id].status === 'SKIPPED' || welcome[r.employee.id].status === 'RETRYING') && welcome[r.employee.id].lastError && (
+                        <span className="text-rose-700 max-w-[16rem] text-right">{welcome[r.employee.id].lastError}</span>
+                      )}
+                      {welcome[r.employee.id].canResend && (
+                        <button type="button" className={btn.secondary} disabled={resending === r.employee.id} onClick={() => void resend(r.employee!.id)}>
+                          {resending === r.employee.id ? 'Sending…' : 'Resend welcome e-mail'}
+                        </button>
+                      )}
+                    </>
+                  ) : <span>Welcome email: not recorded</span>}
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 {view === 'approver' && r.canDecide && (
                   <>
