@@ -132,7 +132,7 @@ begin
  perform private.hr_require_staff();
  if p_page not between 1 and 10000 then raise exception 'VALIDATION_ERROR: Invalid page.'; end if;
  return jsonb_build_object('items',(select coalesce(jsonb_agg(to_jsonb(x)),'[]') from (
-   select c.*,j.title,(select coalesce(jsonb_agg(to_jsonb(a)-'answers'),'[]') from public.career_attempts a where a.application_id=c.id) as attempts,
+   select c.*,j.title,(select coalesce(jsonb_agg((to_jsonb(a)-'answers')||jsonb_build_object('title',testrow.title)),'[]') from public.career_attempts a join public.career_tests testrow on testrow.id=a.test_id where a.application_id=c.id) as attempts,
      (select coalesce(jsonb_agg(to_jsonb(i) order by i.scheduled_at),'[]') from public.career_interviews i where i.application_id=c.id) as interviews
     from public.career_applications c join public.career_postings j on j.id=c.posting_id order by c.created_at desc,c.id limit 20 offset (p_page-1)*20) x),
     'total',(select count(*) from public.career_applications));
