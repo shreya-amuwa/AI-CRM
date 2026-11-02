@@ -1,3 +1,4 @@
+import { careerTestSchema,careerInviteSchema,careerAttemptSchema,careerStageSchema,careerInterviewSchema } from '../../shared/validation.js';
 import { randomUUID } from 'node:crypto';
 import { matchesSignature } from '../storage/signature.js';
 import type { CareerFile, CareerUpload } from '../../shared/contracts.js';
@@ -18,6 +19,14 @@ export class CareerService {
   files() { return this.repo.files(); }
   applications() { return this.repo.applications(); }
   apply(body: unknown) { const i=parse(careerApplySchema,body); return this.repo.apply(i.posting_id,i.resume_id); }
+  tests(body?:unknown) { return this.repo.tests(body===undefined ? null : parse(careerTestSchema,body)); }
+  invite(body:unknown) { const i=parse(careerInviteSchema,body); return this.repo.invite(i.application_id,i.test_id,i.available_until); }
+  assessments() { return this.repo.assessments(); }
+  attempt(id:string,body?:unknown) { return this.repo.attempt(parse(uuidSchema,id),body===undefined ? null : parse(careerAttemptSchema,body)); }
+  staffApplications(query:unknown) { return this.repo.staffApplications(parse(careerJobQuerySchema,query).page); }
+  stage(body:unknown) { const i=parse(careerStageSchema,body); return this.repo.stage(i.application_id,i.stage,i.version,i.message); }
+  interview(body:unknown) { const {application_id,...data}=parse(careerInterviewSchema,body); return this.repo.interview(application_id,data); }
+  interviews() { return this.repo.interviews(); }
   async beginUpload(body: unknown): Promise<CareerUpload> {
     const i=parse(careerUploadSchema,body);
     const driver=this.storage.active();
