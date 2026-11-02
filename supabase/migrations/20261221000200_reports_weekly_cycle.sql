@@ -303,6 +303,10 @@ grant execute on function public.work_report_weekly_save(date, text, text, text,
 create or replace function public.work_report_package_submit(p_from date, p_to date, p_period_type text, p_note text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 begin
+  -- who may send it is decided before anything about the request is looked at
+  if private.report_level() <> 'DEPARTMENT_HEAD' then
+    raise exception 'FORBIDDEN: Only a Department Head forwards the department package.' using errcode = '42501';
+  end if;
   if p_from is null or p_to is null or p_to <> p_from + 6 or extract(isodow from p_from) <> 1 then
     raise exception 'VALIDATION_ERROR: The department report is weekly: choose a week from Monday to Sunday.' using errcode = 'P0001';
   end if;
