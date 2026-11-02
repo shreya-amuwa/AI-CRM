@@ -31,9 +31,9 @@ Portal Updates and application timelines expose only candidate-visible events (n
 
 ## Deployment order and settings
 Apply these files, in order, after all existing main migrations:
-1. `20261218000100_candidate_careers_foundation.sql`
-2. `20261218000200_candidate_assessments_workflow.sql`
-3. `20261218000300_candidate_joining_training.sql`
+1. `20261218010000_candidate_careers_foundation.sql`
+2. `20261218020000_candidate_assessments_workflow.sql`
+3. `20261218030000_candidate_joining_training.sql`
 
 Each script is rerunnable and uses no cross-statement temporary state. Deploy migrations before the corresponding code. Existing staff/client features do not require portal membership; older databases show an actionable migration-required error only when opening the new feature. `/candidate` replaces the old unlocked seeded trainee demo, while `/careers` serves public vacancies. Supabase Auth must enable email confirmation and permit `<app origin>/candidate` as a redirect URL. The portal uses the existing VITE_SUPABASE_URL/ANON_KEY and server service binding; candidate/staff browser sessions use different storage keys and candidate sign-out is local to its session.
 
