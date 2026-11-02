@@ -84,6 +84,14 @@ export class ProfileRepository {
       p_head_division: headDivision ?? null
     }));
   }
+  /** An Operations Head is its own role: the Super Admin only, and the Department Head one-per-side rule does not apply to it. */
+  async assertCanCreateOperationsHead(departmentId: string): Promise<void> {
+    unwrap(await this.db.rpc('assert_can_create_operations_head', { p_department_id: departmentId }));
+  }
+  /** The departments a new Operations Head supervises (Super Admin only; the database checks). */
+  async assignOperationsDepartments(id: string, departmentIds: string[]): Promise<void> {
+    unwrap(await this.db.rpc('operations_head_assign_new', { p_profile: id, p_departments: departmentIds }));
+  }
 
   async myDepartmentScopes(): Promise<MyDepartmentScopes> {
     return unwrap(await this.db.rpc('my_department_scopes')) as MyDepartmentScopes;
