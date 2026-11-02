@@ -43,10 +43,10 @@ select test.must_fail($$select * from audit_logs$$, 'nor the audit log', 'permis
 reset role;
 select test.check((select count(*) = 0 from information_schema.role_table_grants where table_schema = 'public' and grantee = 'anon'),
   'the anon role holds no table privileges');
-select test.check((select coalesce(array_agg(p.proname::text order by p.proname), '{}') = array['list_registration_options']
+select test.check((select coalesce(array_agg(p.proname::text order by p.proname), '{}') = array['career_jobs', 'list_registration_options']
                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                     where n.nspname = 'public' and p.prokind = 'f' and has_function_privilege('anon', p.oid, 'execute')),
-  'only the sign-up options list is callable by signed-out visitors');
+  'only sign-up options and published careers jobs are callable by signed-out visitors');
 select test.check((select count(*) = 0 from information_schema.role_table_grants
                     where table_schema = 'public' and grantee = 'authenticated' and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')),
   'signed-in users cannot TRUNCATE (it skips row-level security)');

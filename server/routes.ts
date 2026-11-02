@@ -1,3 +1,4 @@
+import { careerController as career } from './controllers/career.js';
 import {
   accountsFinanceController as finance,
   addonInvoiceController as addons,
@@ -410,6 +411,9 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/leave/:id/hr-decision', handler: hr.decideAsHr, options: S },
   { method: 'GET', path: '/leave/monthly-summary', handler: hr.monthlySummary },
   { method: 'GET', path: '/hr/email-automation/overview', handler: hr.emailOverview },
+  { method: 'GET', path: '/hr/recruitment/careers/postings', handler: career.postings },
+  { method: 'POST', path: '/hr/recruitment/careers/postings', handler: career.savePosting, options: S },
+  { method: 'GET', path: '/hr/recruitment/careers/resumes/:id/url', handler: career.hrFileUrl },
   { method: 'GET', path: '/hr/recruitment/overview', handler: recruitment.overview },
   { method: 'GET', path: '/hr/recruitment/agenda', handler: recruitment.agenda },
   { method: 'GET', path: '/hr/recruitment/positions', handler: recruitment.positions },

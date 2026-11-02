@@ -1,3 +1,7 @@
+import { CareerRepository } from './repositories/CareerRepository.js';
+import { candidateRoutes } from './candidateRoutes.js';
+import { createUserClient, getAnonClient } from './db/supabase.js';
+import { extractBearerToken } from './auth/authenticate.js';
 import { getRequestListener } from '@hono/node-server';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -13,7 +17,7 @@ import { healthCheck } from './health.js';
 import { AppError, fromDatabaseError } from './http/errors.js';
 import { parse } from './http/validate.js';
 import { biometricPunchSchema, loginFailureReportSchema } from '../shared/validation.js';
-import { enforce, ipBuckets, type BucketResult } from './http/rateLimit.js';
+import { enforce, ipBuckets, userBuckets, type BucketResult } from './http/rateLimit.js';
 import type { ApiRequest, HttpMethod, RouteDef } from './http/types.js';
 import { routes } from './routes.js';
 import { automationSettings } from './automations/config.js';
@@ -254,6 +258,21 @@ app.post('/auth/login-failed', async c => {
 });
 
 // The client dashboard: the customer's own login, their own records only.
+// Candidate membership is checked by each RPC, independently of staff profiles.
+for (const route of candidateRoutes) {
+  app.on(route.method, route.path, async c => {
+    const db=route.public ? getAnonClient() : createUserClient(extractBearerToken(c.req.header('authorization')));
+    if (!route.public) {
+      const me=await new CareerRepository(db).profile();
+      setRateHeaders(c,await enforce(userBuckets(`candidate:${me.id}`,route.method==='GET' ? 'default' : 'sensitive'),'memory'));
+    }
+    const request: ApiRequest={ method:c.req.method as HttpMethod,path:relativePath(c),query:c.req.query(),headers:{},
+      body:['GET','DELETE'].includes(c.req.method) ? undefined : await readJson(c) };
+    const result=await route.handler({db,req:request,params:c.req.param() as Record<string,string>});
+    return c.json(ok(result.data),(result.status??200) as 200);
+  });
+}
+
 for (const route of clientRoutes) {
   app.on(route.method, `/client${route.path}`, async c => {
     const { db, me, limit } = await authenticateClient(c.req.header('authorization'));
@@ -275,7 +294,7 @@ for (const route of routes) {
   app.on(route.method, route.path, authenticated(route), adapt(route));
 }
 
-const routeMatchers = [...routes.map(r => new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`)), ...clientRouteMatchers];
+const routeMatchers = [...candidateRoutes.map(r => new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`)),...routes.map(r => new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`)), ...clientRouteMatchers];
 
 app.notFound(c => {
   const path = relativePath(c);
