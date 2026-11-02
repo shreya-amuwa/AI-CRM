@@ -211,6 +211,14 @@ select test.must_fail($$select work_reports_daily_summary(test.rcweek())$$, 'a T
 select test.login('rc_tl1');
 select test.must_fail($$select work_reports_daily_summary(test.rcweek())$$, 'nor a Team Lead', 'FORBIDDEN');
 
+-- the Department Head sees every submitted report of their teams, but decides only after the Team Lead approved
+select test.login('rc_dha');
+select test.check((work_report_get(test.rcid('m3a')) ->> 'status') = 'SUBMITTED' and (work_report_get(test.rcid('m3a')) ->> 'canReview')::boolean is false, 'the Department Head reads a member report still with the Team Lead, read only');
+select test.must_fail(format($$select work_report_review('%s', 'APPROVED', null)$$, test.rcid('m3a')), 'and cannot decide on it before the Team Lead did', 'NOT_FOUND');
+select test.check((select jsonb_array_length(b -> 'memberReports') = 1 and (b -> 'counts' ->> 'pendingTl')::int = 1 from jsonb_array_elements(work_reports_department(test.rcweek(), test.rcweek()) -> 'teams') b where b ->> 'lead' = 'RC tl2'), 'the Team Lead box lists it as pending Team Lead approval');
+select test.login('rc_hr1');
+select test.must_fail(format($$select work_report_get('%s')$$, test.rcid('m3a')), 'HR still cannot read it (the week is not approved)', 'NOT_FOUND');
+
 -- finish the week's daily cycle: the remaining reports are decided
 select test.login('rc_tl1'); select work_report_review(test.rcid('m2a'), 'APPROVED', null);
 select test.login('rc_tl2'); select work_report_review(test.rcid('m3a'), 'REJECTED', 'Wrong day');
@@ -281,7 +289,7 @@ select test.login('rc_oh');
 select test.check((work_report_weekly_review((select id from test.rcpkg('rc-a')), 'APPROVED', 'Good') ->> 'status') = 'SENT_TO_HR', 'approved: sent to HR');
 reset role;
 select test.check((select oh_reviewer_id = test.id('rc_oh') and oh_reviewed_at is not null and sent_to_hr_at is not null from test.rcpkg('rc-a')), 'the Operations Head''s reviewer, time and comment are recorded');
-select test.check((select count(*) = 3 from notifications where type = 'REPORT_WEEKLY_SENT_TO_HR' and entity_id = (select id from test.rcpkg('rc-a'))) and (select count(*) = 3 from private.hr_reviewer_ids()), 'every HR staff member is told, once');
+select test.check((select count(*) = (select count(*) from private.hr_reviewer_ids()) and count(distinct recipient_id) = count(*) and count(*) >= 3 from notifications where type = 'REPORT_WEEKLY_SENT_TO_HR' and entity_id = (select id from test.rcpkg('rc-a'))), 'every HR staff member is told, once');
 select test.check((select array_agg(action order by id) = array['COMPILED', 'SAVED', 'SUBMITTED', 'REVISION_REQUESTED', 'RESUBMITTED', 'APPROVED']
                      from public.work_report_package_events where package_id = (select id from test.rcpkg('rc-a'))), 'the weekly history keeps every step');
 set role authenticated;

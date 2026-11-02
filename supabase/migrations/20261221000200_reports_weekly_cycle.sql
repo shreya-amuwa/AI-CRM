@@ -101,19 +101,30 @@ returns boolean language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.report_released_to_hr(uuid, date) from public, anon, authenticated;
 
--- HR may read (never change) the daily reports of an approved week; the Super Admin reads everything as before.
+-- Who may read a report:
+--   the author; the Super Admin; the reviewer (any report that was submitted);
+--   a Department Head (of that department and side): every submitted Team Lead and Team Member report of their teams (read only: the
+--     Department Head can DECIDE on a Team Member report only once the Team Lead approved it, see report_review_stage);
+--   an Operations Head of the department: every submitted report of the department's chain;
+--   HR staff: the daily reports of a week the Operations Head approved (read only).
 create or replace function private.can_view_report(r public.work_reports)
 returns boolean language sql stable security definer set search_path = '' as $$
   select r.author_id = auth.uid()
       or private.report_level() = 'SUPER_ADMIN'
       or (r.status <> 'DRAFT' and (
             private.is_report_reviewer(r)
-         or (r.kind = 'MEMBER' and r.tl_status = 'APPROVED' and private.head_covers(auth.uid(), r.department_id, r.team_id))
-         or (r.kind = 'TEAM_LEAD' and private.head_covers(auth.uid(), r.department_id, r.team_id))
+         or (r.kind in ('MEMBER', 'TEAM_LEAD') and private.head_covers(auth.uid(), r.department_id, r.team_id))
          or (private.report_level() = 'OPERATIONS_HEAD' and r.department_id in (select private.report_scope_departments()))
          or (private.is_hr_reviewer() and private.report_released_to_hr(r.department_id, r.report_date))))
 $$;
 revoke all on function private.can_view_report(public.work_reports) from public, anon, authenticated;
+
+-- The Department Head's view of a Team Lead's box now includes the Team Member reports still waiting for the Team Lead (read only).
+create or replace function private.team_lead_box(p_lead public.profiles, p_from date, p_to date)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select private.team_lead_box(p_lead, p_from, p_to, true)
+$$;
+revoke all on function private.team_lead_box(public.profiles, date, date) from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3. The package as the screens read it

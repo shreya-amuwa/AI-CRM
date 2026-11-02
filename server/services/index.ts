@@ -42,6 +42,10 @@ import { EmployeeCaseService } from './EmployeeCaseService.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
 import { WorkReportService } from './WorkReportService.js';
+import { HrReviewRepository } from '../repositories/HrReviewRepository.js';
+import { HrReviewService } from './HrReviewService.js';
+import { ReportAnalyticsRepository } from '../repositories/ReportAnalyticsRepository.js';
+import { ReportAnalyticsService } from './ReportAnalyticsService.js';
 import { TicketAttachmentRepository } from '../repositories/TicketAttachmentRepository.js';
 import { ChatRepository } from '../repositories/ChatRepository.js';
 import { DashboardRepository } from '../repositories/DashboardRepository.js';
@@ -95,6 +99,8 @@ export function createServices(db: SupabaseClient) {
     chat: new ChatService(new ChatRepository(db), new StorageRepository()),
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     workReports: new WorkReportService(new WorkReportRepository(db)),
+    hrReviews: new HrReviewService(new HrReviewRepository(db)),
+    reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),
     welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())

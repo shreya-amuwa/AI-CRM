@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Save, Send } from 'lucide-react';
+import { REPORT_REMARKS_MAX, type ReportKind } from '../../../shared/reportFields';
 import type { ReportTaskOption, WorkReportDetail } from '../../../shared/contracts';
 import { reportSaveSchema } from '../../../shared/validation';
 import { ApiError } from '../../lib/api/client';
@@ -12,20 +13,28 @@ const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e
 const dayOf = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '');
 const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return isoOf(d); };
 
+const WHO: Record<ReportKind, (names: string) => React.ReactNode> = {
+  MEMBER: n => (n ? <>Your Team Lead <b>{n}</b> approves it first, then your Department Head.</> : 'No Team Lead is assigned to you yet; you can save drafts, but submitting needs one.'),
+  TEAM_LEAD: n => (n ? <>It goes straight to your Department Head <b>{n}</b>. You cannot approve your own report.</> : 'No Department Head is set for your department yet; you can save drafts, but submitting needs one.'),
+  DEPARTMENT_HEAD: n => (n ? <>It is kept in the department's reporting history and goes to the Operations Head <b>{n}</b>.</> : 'No Operations Head manages your department yet; you can save drafts, but submitting needs one.')
+};
+
 /**
- * The Team Member report: a title, the report date, the tasks that were assigned to the member and the ones they completed. Nothing else.
- * The tasks are the member's own records (work_reports_my_tasks), the completed ones are only those the task records really show as
- * completed, and the database checks both lists again on save and on submit. "Save as draft" keeps the report private; "Submit report"
- * sends it to the Team Lead (then the Department Head).
+ * THE standard daily report form, the same for every level (Team Member, Team Lead, Department Head): a title, the report date, the tasks
+ * assigned to the author, the ones they completed and one short optional remark. The tasks are the author's own records
+ * (work_reports_my_tasks), the completed ones are only those the task records really show as completed, and the database checks both lists
+ * again on save and on submit. "Save as draft" keeps the report private; "Submit report" sends it to the next reviewer.
  */
-export const MemberReportForm: React.FC<{
+export const DailyReportForm: React.FC<{
+  kind: ReportKind;
   reportsTo: string[];
   initial?: WorkReportDetail | null;
   onDone: (r: WorkReportDetail, submitted: boolean) => void;
   onCancel?: () => void;
-}> = ({ reportsTo, initial, onDone, onCancel }) => {
+}> = ({ kind, reportsTo, initial, onDone, onCancel }) => {
   const uid = useId();
-  const [title, setTitle] = useState(initial?.title ?? '');
+  const [title, setTitle] = useState(initial?.title ?? `Daily report - ${dateLabel(todayIso())}`);
+  const [remarks, setRemarks] = useState(initial?.content?.remarks ?? '');
   const [reportDate, setReportDate] = useState(initial?.reportDate ?? todayIso());
   const [tasks, setTasks] = useState<ReportTaskOption[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -88,13 +97,13 @@ export const MemberReportForm: React.FC<{
     periodType: 'DAILY',
     periodStart: reportDate,
     periodEnd: reportDate,
-    content: { assignedTasks: [...assigned], completedTasks: [...completed] } as unknown as WorkReportForm['content']
-  }), [title, reportDate, assigned, completed]);
+    content: { assignedTasks: [...assigned], completedTasks: [...completed], ...(remarks.trim() ? { remarks: remarks.trim() } : {}) } as unknown as WorkReportForm['content']
+  }), [title, reportDate, assigned, completed, remarks]);
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
     const parsed = reportSaveSchema.safeParse(body);
-    if (!parsed.success) for (const i of parsed.error.issues) e[String(i.path[0])] ??= i.message;
+    if (!parsed.success) for (const i of parsed.error.issues) e[String(i.path[i.path[0] === 'content' ? 1 : 0])] ??= i.message;
     if (reportDate > todayIso()) e.reportDate = 'The report date cannot be in the future.';
     if (reportDate < daysAgo(60)) e.reportDate = 'Choose a date within the last 60 days.';
     setErrors(e);
@@ -126,10 +135,8 @@ export const MemberReportForm: React.FC<{
     <Card className="p-5">
       <form onSubmit={e => { e.preventDefault(); void run(true); }} noValidate className="space-y-4" aria-label="Submit report">
         <div>
-          <h2 className="text-base font-bold text-slate-900">{initial ? (sentBack ? 'Revise your report' : 'Edit your draft') : 'Submit report'}</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {reportsTo.length > 0 ? <>Your Team Lead <b>{reportsTo.join(', ')}</b> approves it first, then your Department Head.</> : 'No Team Lead is assigned to you yet; you can save drafts, but submitting needs one.'}
-          </p>
+          <h2 className="text-base font-bold text-slate-900">{initial ? (sentBack ? 'Revise your daily report' : 'Edit your draft') : kind === 'MEMBER' ? 'Submit daily report' : 'My daily report'}</h2>
+          <p className="text-xs text-slate-500 mt-0.5">{WHO[kind](reportsTo.join(', '))}</p>
         </div>
 
         {sentBack && initial?.reviewComment ? (
@@ -194,6 +201,12 @@ export const MemberReportForm: React.FC<{
             </fieldset>
           </div>
         )}
+
+        <Field label="Remarks / Work Summary" htmlFor={`${uid}-remarks`} error={errors.remarks}>
+          <span className="block text-[11px] text-slate-500 mb-1">Optional. A short note about your work or anything the tasks do not show.</span>
+          <textarea id={`${uid}-remarks`} className={`${inputCls} min-h-16`} rows={2} value={remarks} maxLength={REPORT_REMARKS_MAX} onChange={e => { setRemarks(e.target.value); setErrors(x => ({ ...x, remarks: '' })); }} aria-invalid={!!errors.remarks} />
+          <span className="block text-right text-[11px] text-slate-400 tabular-nums" aria-live="polite">{remarks.length}/{REPORT_REMARKS_MAX}</span>
+        </Field>
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <button type="button" className={btn.secondary} onClick={() => void run(false)} disabled={!!busy}><Save className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'draft' ? 'Saving...' : 'Save as draft'}</button>

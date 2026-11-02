@@ -1,5 +1,7 @@
 # Hierarchical work reports
 
+> The report form, the daily summary, the weekly Department Head -> Operations Head -> HR cycle, HR reviews and the Super Admin analysis / leaderboard are described in [COMPANY_REPORTING.md](COMPANY_REPORTING.md), which replaces this page where they differ (one standard form for every level; the department package is now the weekly report).
+
 `Team Member -> Team Lead -> Department Head -> Operations Head`. Every person below the Operations Head writes an individual report; the
 chain reviews it; each level sees the level below it in expandable boxes. Migration: `supabase/migrations/20261213000100_work_reports.sql`.
 

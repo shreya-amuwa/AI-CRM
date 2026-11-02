@@ -56,13 +56,13 @@ export const TeamLeadBoxView: React.FC<{
       ) : (
         <div className="space-y-4">
           <section aria-label={`${box.lead} individual report`}>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">A. Team Lead individual report</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Section 1 - Team Lead's individual daily report</h4>
             {box.leadReports.length === 0 ? <p className="text-xs text-slate-500">No individual report submitted in this period.</p> : (
               <ul className="space-y-2">{box.leadReports.map(r => <li key={r.id}><ReportRow r={r} onOpen={onOpen} /></li>)}</ul>
             )}
           </section>
           <section aria-label={`${box.lead} team member reports`}>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">B. Team Member reports</h4>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Section 2 - Team Member daily reports</h4>
             {shown === 0 ? (
               <p className="text-xs text-slate-500">No Team Member report to show in this period{!showAll && c.pendingTl ? ` (${c.pendingTl} still with the Team Lead)` : ''}.</p>
             ) : (

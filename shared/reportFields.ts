@@ -100,3 +100,57 @@ export function reportStatusLabel(status: ReportStatus, kind?: ReportKind | null
   }
   return REPORT_STATUS_LABEL[status];
 }
+
+// ---------------------------------------------------------------------------
+// Company reporting: the standard form, the weekly cycle and the HR review stages
+// ---------------------------------------------------------------------------
+/** The one standard report form of every level: title, date, assigned tasks, completed tasks and a short remark. */
+export const REPORT_REMARKS_MAX = 500;
+
+/** The statuses of a weekly department report (kept apart from the daily statuses and from the HR review statuses). */
+export const WEEKLY_REPORT_STATUSES = [
+  'DRAFT', 'COMPILING', 'PENDING_OPERATIONS_HEAD', 'REVISION_REQUIRED', 'APPROVED_BY_OPERATIONS_HEAD', 'SENT_TO_HR',
+  'HR_REVIEW_IN_PROGRESS', 'HR_REVIEW_COMPLETED', 'SUBMITTED_TO_SUPERADMIN'
+] as const;
+export type WeeklyReportStatus = (typeof WEEKLY_REPORT_STATUSES)[number];
+
+export const WEEKLY_STATUS_LABEL: Record<WeeklyReportStatus | 'NOT_SUBMITTED', string> = {
+  NOT_SUBMITTED: 'Not started',
+  DRAFT: 'Draft',
+  COMPILING: 'Compiling',
+  PENDING_OPERATIONS_HEAD: 'Pending Operations Head Approval',
+  REVISION_REQUIRED: 'Revision Required',
+  APPROVED_BY_OPERATIONS_HEAD: 'Approved by Operations Head',
+  SENT_TO_HR: 'Sent to HR',
+  HR_REVIEW_IN_PROGRESS: 'HR Review In Progress',
+  HR_REVIEW_COMPLETED: 'HR Review Completed',
+  SUBMITTED_TO_SUPERADMIN: 'Submitted to Superadmin'
+};
+
+/** The final performance reporting stage of a week (HR reviews, then the Super Admin). */
+export const PERFORMANCE_STAGE_LABEL = {
+  PENDING_HR_REVIEW: 'Pending HR Review',
+  PARTIALLY_REVIEWED: 'Partially Reviewed',
+  HR_REVIEW_COMPLETED: 'HR Review Completed',
+  SUBMITTED_TO_SUPERADMIN: 'Submitted to Superadmin',
+  AI_ANALYSIS_COMPLETED: 'AI Analysis Completed'
+} as const;
+export type PerformanceStage = keyof typeof PERFORMANCE_STAGE_LABEL;
+
+export const HR_REVIEW_STATUS_LABEL = { DRAFT: 'Draft', SUBMITTED: 'Submitted' } as const;
+
+export const LEADERBOARD_CATEGORIES = [
+  'TOP10', 'BOTTOM10', 'TOP_MEMBERS', 'LOWEST_MEMBERS', 'TOP_LEADS', 'LOWEST_LEADS', 'TOP_DEPARTMENTS', 'LOWEST_DEPARTMENTS', 'ALL'
+] as const;
+export type LeaderboardCategory = (typeof LEADERBOARD_CATEGORIES)[number];
+export const LEADERBOARD_CATEGORY_LABEL: Record<LeaderboardCategory, string> = {
+  TOP10: 'Top 10 Performers',
+  BOTTOM10: 'Bottom 10 Performers',
+  TOP_MEMBERS: 'Top Performing Team Members',
+  LOWEST_MEMBERS: 'Lowest Performing Team Members',
+  TOP_LEADS: 'Top Performing Team Leads',
+  LOWEST_LEADS: 'Lowest Performing Team Leads',
+  TOP_DEPARTMENTS: 'Top Performing Departments',
+  LOWEST_DEPARTMENTS: 'Lowest Performing Departments',
+  ALL: 'Full ranking'
+};

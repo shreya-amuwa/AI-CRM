@@ -4463,7 +4463,7 @@ export interface TeamAssignmentRecord { id: string; kind: string; note: string |
 
 // ---- Work reports (Team Member -> Team Lead -> Department Head -> Operations Head) ----
 export type { ReportKind, ReportPeriodType, ReportStatus } from './reportFields.js';
-import type { ReportFieldKey, ReportKind as WorkReportKind, ReportPeriodType as WorkReportPeriod, ReportStatus as WorkReportStatus } from './reportFields.js';
+import type { ReportFieldKey, ReportKind as WorkReportKind, ReportPeriodType as WorkReportPeriod, ReportStatus as WorkReportStatus, WeeklyReportStatus, PerformanceStage } from './reportFields.js';
 
 export interface ReportAttachment { name?: string; url: string }
 /** A task of the member as it was when the report was saved (the real record lives in work_tasks). */
@@ -4499,6 +4499,10 @@ export interface WorkReportSummary {
   createdAt: string;
   updatedAt: string;
   excerpt: string;
+  /** The standard form: how many tasks were assigned / completed and the short remark. */
+  assignedCount?: number;
+  completedCount?: number;
+  remarks?: string;
   /** Team Member reports: the two approval stages (each with its own reviewer, time and comment). Absent on a database without the second migration. */
   teamLead?: string | null;
   tlStatus?: ReportStageStatus | null;
@@ -4541,6 +4545,8 @@ export interface ReportContext {
   /** Department Head: Team Lead reports waiting / Team Member reports the Team Leads approved and that wait for the head. */
   pendingLeadReports?: number;
   pendingMemberApprovals?: number;
+  /** Department Head: weekly reports sent back; Operations Head: weekly reports waiting for approval. */
+  weeklyPending?: number;
   needsRevision: number;
   badge: number;
 }
@@ -4588,12 +4594,26 @@ export interface TeamReportBox {
   myReports: WorkReportSummary[];
 }
 export interface ReportPackage {
-  status: 'SUBMITTED' | 'NOT_SUBMITTED';
+  status: WeeklyReportStatus | 'NOT_SUBMITTED';
   id?: string;
+  title?: string | null;
+  assignedOverview?: string | null;
+  completedOverview?: string | null;
   note?: string | null;
+  revision?: number;
   submittedBy?: string | null;
   submittedAt?: string;
   periodType?: WorkReportPeriod;
+  periodStart?: string;
+  periodEnd?: string;
+  /** The figures stored when the Department Head submitted the week. */
+  stats?: ReportStats | null;
+  ohReviewer?: string | null;
+  ohReviewedAt?: string | null;
+  ohComment?: string | null;
+  sentToHrAt?: string | null;
+  hrCompletedAt?: string | null;
+  events?: { at: string; actor: string; action: string; fromStatus: string | null; toStatus: string | null; comment: string | null; revision: number }[];
 }
 export interface DepartmentReportBox {
   departmentId: string;
@@ -4637,7 +4657,9 @@ export interface ReportsDepartmentDetail {
   package: ReportPackage;
   /** False until the Department Head forwards the package for the period: only counts are shown before that. */
   released: boolean;
-  packages: { id: string; periodType: WorkReportPeriod; periodStart: string; periodEnd: string; submittedAt: string }[];
+  packages: { id: string; periodType: WorkReportPeriod; periodStart: string; periodEnd: string; submittedAt: string; status?: WeeklyReportStatus }[];
+  /** The period's figures worked out from the individual reports (team by team inside). */
+  stats?: ReportStats;
   departmentHeads: { id: string; name: string; designation: string | null; reports: WorkReportSummary[] }[];
   teamLeads: TeamLeadBox[];
 }
@@ -4864,3 +4886,155 @@ export interface CareerStaffApplication extends CareerApplication { title: strin
 export interface CareerOffer {id:string;application_id:string;title:string;terms:string;expires_at:string;joining_date:string;status:'DRAFT'|'RELEASED'|'ACCEPTED'|'DECLINED'|'EXPIRED'|'WITHDRAWN';version:number}
 export interface CareerDocument {id:string;application_id:string;title:string;file_id:string|null;status:'REQUESTED'|'UPLOADED'|'APPROVED'|'REJECTED';message:string|null;version:number}
 export interface CareerTraining {id:string;application_id:string;title:string;start_date:string;status:string;days:{day_no:number;title:string;topics:string[];trainer_name:string|null;attendance:string|null;assessment_result:string|null;completed:boolean|null}[]}
+
+// ---------------------------------------------------------------------------
+// Company reporting: daily summary, weekly cycle, HR reviews, leaderboard, analysis
+// ---------------------------------------------------------------------------
+export interface ReportTeamStats {
+  teamId: string; team: string; lead: string | null; members: number; expected: number; submitted: number; approved: number;
+  pendingTl: number; pendingDh: number; assignedTasks: number; completedTasks: number; completionRate: number | null; compliance: number | null;
+}
+/** Report and task figures of a department (or of a Department Head's teams) in a period, worked out from the individual reports. */
+export interface ReportStats {
+  members: number; teamLeads: number; departmentHeads: number;
+  expected: number; submitted: number; pendingTl: number; pendingDh: number; pendingOh: number; approved: number; revision: number; rejected: number;
+  assignedTasks: number; completedTasks: number; completionRate: number | null; compliance: number | null;
+  teams: ReportTeamStats[];
+  missing: { id: string; name: string; designation: string | null; kind: WorkReportKind; expected: number }[];
+}
+export interface DailyDepartmentSummary extends ReportStats { date: string; departmentId: string; department: string | null }
+
+export interface WeeklyDepartmentReport {
+  departmentId: string; department: string | null; departmentHead: string; weekStart: string; weekEnd: string;
+  package: ReportPackage; stats: ReportStats;
+  days: { date: string; workingDay: boolean; stats: ReportStats | null }[];
+  canEdit: boolean;
+  weeks: { weekStart: string; status: WeeklyReportStatus }[];
+}
+export interface WeeklyBoardDepartment {
+  id: string; name: string; slug: string; departmentHeads: string[]; stats: ReportStats; package: ReportPackage;
+}
+export interface WeeklyBoard { weekStart: string; weekEnd: string; departments: WeeklyBoardDepartment[]; pendingApprovals: number }
+export interface WeeklyPendingItem { departmentId: string; department: string; package: ReportPackage }
+
+export interface RatingScaleLevel { value: number; label: string }
+export interface HrReviewCounts { expected: number; submitted: number; drafts: number }
+export interface PersonStats {
+  expected: number; submitted: number; approved: number; pendingTl: number; pendingDh: number; rejected: number; revisionNow: number; revisionRequests: number;
+  tlApproved: number; dhApproved: number; onTime: number; assigned: number; completed: number; compliance: number | null;
+  tasksAssigned: number; tasksCompleted: number; taskCompletionRate: number | null;
+}
+export interface HrReview {
+  id: string; packageId: string; subjectId: string | null; subject: string; subjectKind: 'TEAM_MEMBER' | 'TEAM_LEAD';
+  periodStart: string; periodEnd: string; status: 'DRAFT' | 'SUBMITTED';
+  rating: number | null; ratingLabel: string | null; consistencyNote: string | null; workAssessment: string | null; comments: string | null; recommendations: string | null;
+  reviewer: string; submittedAt: string | null; updatedAt: string; metrics: PersonStats | null;
+  department?: string;
+}
+export interface HrPerson { id: string; name: string; designation: string | null; stats: PersonStats; review: HrReview | null }
+export interface HrTeamLead extends HrPerson { teamId: string | null; team: string | null; teamStats: ReportTeamStats | null; members: HrPerson[] }
+export interface HrReviewDepartmentRow {
+  id: string; name: string; packageId: string; departmentHeads: string[]; package: ReportPackage; reviews: HrReviewCounts; teamLeads: number; teamMembers: number;
+}
+export interface HrReviewsOverview { weekStart: string | null; weekEnd: string | null; departments: HrReviewDepartmentRow[]; weeks: string[]; scale: RatingScaleLevel[] }
+export interface HrReviewDepartment {
+  package: ReportPackage; departmentId: string; department: string | null; periodStart: string; periodEnd: string; reviews: HrReviewCounts; stats: ReportStats;
+  teamLeads: HrTeamLead[]; otherMembers: HrPerson[]; scale: RatingScaleLevel[]; canReview: boolean;
+}
+export interface HrReviewSaved extends HrReview { packageStatus: WeeklyReportStatus; reviews: HrReviewCounts }
+export interface HrReviewLog { total: number; items: HrReview[] }
+
+export interface ConsolidatedDepartment {
+  packageId: string; departmentId: string; department: string; status: WeeklyReportStatus; revision: number; reviews: HrReviewCounts; complete: boolean;
+  alreadySubmitted: boolean; openApprovals: number; openRevisions: number;
+  missingReviews: { id: string; name: string; kind: string; draft: boolean | null }[];
+}
+export interface ConsolidatedReadiness {
+  complete: ConsolidatedDepartment[]; pending: ConsolidatedDepartment[];
+  notReceived: { departmentId: string; department: string; status: string }[];
+}
+export interface HrConsolidated {
+  weekStart: string; weekEnd: string; readiness: ConsolidatedReadiness; stage: PerformanceStage; weeks: string[];
+  report: { id: string; status: 'DRAFT' | 'SUBMITTED_TO_SUPERADMIN' | 'AI_ANALYSIS_COMPLETED'; note: string | null; revision: number; submittedBy: string | null; submittedAt: string | null; snapshot: ConsolidatedReadiness | null } | null;
+}
+export interface HrConsolidatedSaved { id: string; status: string; note: string | null; revision: number; submittedAt: string | null; submittedDepartments: number }
+
+export interface SaConsolidatedListItem {
+  id: string; weekStart: string; weekEnd: string; status: 'SUBMITTED_TO_SUPERADMIN' | 'AI_ANALYSIS_COMPLETED'; revision: number; note: string | null;
+  submittedBy: string | null; submittedAt: string | null; snapshot: ConsolidatedReadiness | null; departments: number;
+  analysis: { id: string; status: string; source: string; createdAt: string } | null;
+}
+export interface SaConsolidated extends Omit<SaConsolidatedListItem, 'analysis' | 'departments'> {
+  departments: { packageId: string; departmentId: string; department: string; package: ReportPackage; departmentHeads: string[]; stats: ReportStats; reviews: HrReviewCounts; avgRating: number | null }[];
+}
+
+export interface ScoreComponent { key: string; label: string; value: number | null; weight: number; detail: string }
+export interface LeaderboardRow {
+  rank: number | null; id: string; employeeId: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD'; designation: string | null;
+  departmentId: string; department: string; teamId: string | null; team: string | null; teamLead: string | null;
+  assignedTasks: number; completedTasks: number; completionRate: number | null;
+  reportsExpected: number; reportsSubmitted: number; compliance: number | null; onTimeRate: number | null; approvalRate: number | null;
+  hrRating: number | null; hrRatingLabel: string | null; hrReviews: number;
+  score: number | null; breakdown: ScoreComponent[]; status: 'RANKED' | 'INSUFFICIENT_DATA';
+  category: 'STRONG' | 'AVERAGE' | 'NEEDS_ATTENTION' | 'INSUFFICIENT_DATA';
+  previousScore: number | null; trend: 'IMPROVING' | 'STABLE' | 'DECLINING' | 'NO_TREND';
+}
+export interface LeaderboardDepartment {
+  departmentId: string; department: string; score: number | null; status: 'RANKED' | 'INSUFFICIENT_DATA'; people: number; ranked: number; insufficient: number;
+  assignedTasks: number; completedTasks: number; completionRate: number | null; reportsExpected: number; reportsSubmitted: number; compliance: number | null;
+  hrRating: number | null; rank?: number | null;
+}
+export interface ScoringMethod { weights: Record<string, number>; minTasks: number; minExpectedReports: number; ratingScale: RatingScaleLevel[] }
+export interface Leaderboard {
+  category: string;
+  period: { type: string; from: string; to: string; previousFrom: string; previousTo: string };
+  rows: (LeaderboardRow | LeaderboardDepartment)[];
+  insufficientData: LeaderboardRow[];
+  departments: LeaderboardDepartment[];
+  counts: { people: number; ranked: number; insufficient: number };
+  methodology: ScoringMethod;
+}
+export interface LeaderboardOptions {
+  departments: { id: string; name: string }[];
+  teams: { id: string; name: string; departmentId: string }[];
+  designations: string[];
+  people: { id: string; name: string; role: string; departmentId: string; teamId: string | null }[];
+  operationsHeads: { id: string; name: string }[];
+  ratingScale: RatingScaleLevel[];
+}
+export interface EmployeeProfile {
+  id: string; employeeId: string; name: string; role: string; designation: string | null; department: string; team: string | null; teamLead: string | null;
+  period: { type: string; from: string; to: string };
+  score: number | null; status: 'RANKED' | 'INSUFFICIENT_DATA'; category: string; breakdown: ScoreComponent[]; stats: PersonStats;
+  weeks: { weekStart: string; weekEnd: string; score: number | null; status: string; completionRate: number | null; compliance: number | null; tasks: number; completed: number; submitted: number; expected: number }[];
+  hrReviews: HrReview[];
+  reports: WorkReportDetail[];
+}
+export interface ReportSettings {
+  workingDays: number[]; weights: Record<string, number>; minTasks: number; minExpectedReports: number; ratingScale: RatingScaleLevel[]; canEdit: boolean; updatedAt: string;
+}
+
+/** One measurable fact the analysis is written from: it names the person / team / department, the numbers and the records it comes from. */
+export interface AnalysisFact {
+  factId: string; subjectType: 'PERSON' | 'TEAM' | 'DEPARTMENT'; subjectId: string; name: string; department?: string; team?: string | null; sources: string[];
+  [metric: string]: unknown;
+}
+export interface AnalysisFacts {
+  period: { from: string; to: string; days: number; previousFrom: string; previousTo: string };
+  thresholds: Record<string, number>;
+  counts: { people: number; ranked: number; insufficient: number };
+  strongCompletion: AnalysisFact[]; lowCompletion: AnalysisFact[]; missingReports: AnalysisFact[]; repeatedRevisions: AnalysisFact[];
+  wellPerformingTeams: AnalysisFact[]; taskGaps: AnalysisFact[]; performanceChanges: AnalysisFact[]; departmentDelays: AnalysisFact[];
+  hrRatings: { departmentId: string; department: string; average: number; reviews: number }[];
+}
+export interface AnalysisNarrativeItem { text: string; factIds: string[] }
+export interface AnalysisNarrative {
+  summary: string;
+  sections: { key: string; title: string; items: AnalysisNarrativeItem[] }[];
+  limitations: string[];
+}
+export interface ReportAnalysis {
+  id: string; periodStart: string; periodEnd: string; facts: AnalysisFacts; narrative: AnalysisNarrative; source: 'AI' | 'RULES';
+  status: 'OK' | 'FAILED' | 'NOT_CONFIGURED'; model: string | null; error: string | null; createdAt: string;
+}
+export interface ReportAnalysisView { facts: AnalysisFacts; analysis: ReportAnalysis | null; aiConfigured: boolean }

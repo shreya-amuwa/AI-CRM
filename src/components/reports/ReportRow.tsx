@@ -18,13 +18,16 @@ export const ReportRow: React.FC<{
         {r.submittedAt ? <> - submitted {dateLabel(r.submittedAt)}</> : null}
         {r.revision > 1 ? <> - revision {r.revision}</> : null}
       </span>
-      {r.excerpt ? <span className="block text-xs text-slate-600 mt-1 line-clamp-2">{r.excerpt}</span> : null}
+      {typeof r.assignedCount === 'number' && (r.assignedCount > 0 || r.completedCount) ? (
+        <span className="block text-[11px] text-slate-600 mt-0.5">{r.assignedCount} assigned - {r.completedCount ?? 0} completed</span>
+      ) : null}
+      {r.remarks ? <span className="block text-xs text-slate-600 mt-1 line-clamp-2">{r.remarks}</span> : r.excerpt && typeof r.assignedCount !== 'number' ? <span className="block text-xs text-slate-600 mt-1 line-clamp-2">{r.excerpt}</span> : null}
       {r.reviewComment && (r.status === 'REVISION_REQUIRED' || r.status === 'REJECTED' || r.kind !== 'MEMBER')
         ? <span className="block text-xs text-indigo-800 mt-1 line-clamp-2">{r.reviewedBy ?? 'Reviewer'}{r.decisionStage === 'DEPARTMENT_HEAD' ? ' (Department Head)' : r.decisionStage === 'TEAM_LEAD' ? ' (Team Lead)' : ''}: {r.reviewComment}</span> : null}
     </button>
     <div className="shrink-0 flex flex-col items-end gap-1.5">
       <StatusPill status={r.status} kind={r.kind} />
-      {r.kind === 'MEMBER' && r.status !== 'DRAFT' ? <ApprovalSteps tl={r.tlStatus} dh={r.dhStatus} /> : null}
+      {r.status !== 'DRAFT' && (r.kind === 'MEMBER' || r.kind === 'TEAM_LEAD') ? <ApprovalSteps tl={r.kind === 'MEMBER' ? r.tlStatus : undefined} dh={r.dhStatus} /> : null}
       {extra}
     </div>
   </div>
