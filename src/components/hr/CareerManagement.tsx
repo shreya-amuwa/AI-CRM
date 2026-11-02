@@ -1,3 +1,4 @@
+import { careerDateTimeLocal } from '../../../shared/careerTime';
 import React, { useCallback, useState } from 'react';
 import type {
   CareerJob,
@@ -146,7 +147,7 @@ const PostingForm: React.FC<{
     location: initial?.location ?? '',
     employment_type: initial?.employment_type ?? 'FULL_TIME',
     published: initial?.published ?? false,
-    closes_at: initial?.closes_at ? initial.closes_at.slice(0, 16) : '',
+    closes_at: initial?.closes_at ? careerDateTimeLocal(initial.closes_at) : '',
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
