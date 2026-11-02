@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+const StaffApp = React.lazy(() => import('./App'));
 const CandidateApp = React.lazy(() => import('./candidate/CandidateApp'));
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { installChunkReload } from './lib/chunkReload';
@@ -31,7 +31,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       {isCandidateRoute ? <React.Suspense fallback={<div style={{ padding: 24 }}>Loading candidate portal…</div>}><CandidateApp /></React.Suspense> : isClientRoute ? (
         <React.Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}><ClientApp /></React.Suspense>
-      ) : <App />}
+      ) : <React.Suspense fallback={<div style={{ padding: 24 }}>Loading workspace…</div>}><StaffApp /></React.Suspense>}
     </ErrorBoundary>
   </React.StrictMode>
 );
