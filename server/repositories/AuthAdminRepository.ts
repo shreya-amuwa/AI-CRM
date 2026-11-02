@@ -21,6 +21,8 @@ export class AuthAdminRepository {
     technicalConsultant?: boolean;
     metaVerifier?: boolean;
     headDivision?: HeadDivision;
+    /** An Operations Head is created as one from the start (the Super Admin only; the database re-checks the provisioning actor). */
+    operationsHead?: boolean;
     provisionedBy: string;
   }): Promise<string> {
     const { data, error } = await getServiceClient().auth.admin.createUser({
@@ -37,7 +39,8 @@ export class AuthAdminRepository {
         provisioned_team_id: input.teamId ?? null,
         provisioned_head_division: input.headDivision ?? null,
         provisioned_technical_consultant: input.technicalConsultant === true,
-        provisioned_meta_verifier: input.metaVerifier === true
+        provisioned_meta_verifier: input.metaVerifier === true,
+        provisioned_operations_head: input.operationsHead === true
       }
     });
     if (error || !data.user) {

@@ -6,7 +6,7 @@
 \set QUIET 1
 \echo '--- 92. Employee welcome e-mail'
 reset role;
-\i supabase/migrations/20261218000100_employee_welcome_email.sql
+\i supabase/migrations/20261219000100_employee_welcome_email.sql
 
 delete from auth.users where email like 'we.%@example.com';
 delete from test.users where name like 'we\_%';
@@ -210,6 +210,6 @@ select test.login('we_hr');
 select test.must_fail($$select count(*) from public.employee_welcome_emails$$, 'the tracking table is not readable directly', 'permission denied');
 reset role;
 -- the migration can be run again
-\i supabase/migrations/20261218000100_employee_welcome_email.sql
+\i supabase/migrations/20261219000100_employee_welcome_email.sql
 select test.check(test.wecount('we_new') = 1 and test.wecount('we_tl') >= 1, 'running the migration again changes nothing');
 \echo '   employee welcome e-mail: all checks passed'

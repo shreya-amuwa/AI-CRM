@@ -16,7 +16,7 @@
 --    flight, within two minutes of the last, and once the employee has chosen their own password.
 --  * HR is notified when the account is created and again if the welcome e-mail fails.
 --
--- Safe to run again; nothing is deleted. Run after 20261217000100_reports_two_level_approval.sql.
+-- Safe to run again; nothing is deleted. Run after 20261218000100_operations_head_creation.sql.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------

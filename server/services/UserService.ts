@@ -59,8 +59,19 @@ export class UserService {
     const input = parse(userCreateSchema, body);
     // Who creates decides the workflow, from the signed-in account: the Super Admin, a Department Head and a Team Lead (a Team Member of their own team) add people
     // directly - an active account, no approval; HR sends an employee request instead (the database refuses HR here: assert_can_create_user).
-    assertCanAssignRole(actor, input.role, input.departmentId, input.teamId);
-    await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
+    // An Operations Head is its own role: only the Super Admin makes one, and the Department Head rule of one head per department and side does not apply to it
+    // (that rule is unchanged for Department Heads). The form sends `departmentIds`: whole departments, set in the same step. An older client that sends one
+    // department with (department, function) pairs keeps working: the account is still made as an Operations Head from the start.
+    const wholeDepartments = !!input.operationsHead && !!input.departmentIds?.length;
+    const operationsDepartments = wholeDepartments ? [...new Set(input.departmentIds)] : [];
+    if (input.operationsHead) {
+      if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can make an Operations Head.');
+      if (input.role !== 'DEPARTMENT_HEAD' || input.teamId) throw new AppError('VALIDATION_ERROR', 'An Operations Head is created without a team.');
+    }
+    const homeDepartment = wholeDepartments ? operationsDepartments[0] : input.departmentId;
+    assertCanAssignRole(actor, input.role, homeDepartment, input.teamId);
+    if (input.operationsHead) await this.profiles.assertCanCreateOperationsHead(homeDepartment!);
+    else await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }
@@ -72,8 +83,15 @@ export class UserService {
       if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD' && actor.role !== 'TEAM_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin, the Department Head or the Team Lead can set a Sales role.');
       if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
     }
-    const { details, salesSubRole, additionalAccess, operationsHead, ...account } = input;
+    const { details, salesSubRole, additionalAccess: requestedAccess, operationsHead, departmentIds: _departmentIds, ...account } = input;
+    void _departmentIds;
     if (operationsHead && actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can make an Operations Head.');
+    // Whole departments are set by operations_head_assign_new; (department, function) pairs are for the older request shape and for a Department Head.
+    const additionalAccess = wholeDepartments ? undefined : requestedAccess;
+    if (wholeDepartments) {
+      account.departmentId = homeDepartment;
+      account.headDivision = undefined;
+    }
     // One account for a head who works in several departments / both functions: every extra pair is checked BEFORE the account exists
     // (a wrong pair never leaves a half-made user), and given right after it by the Super Admin's own database call.
     const extra = additionalAccess?.length ? [...new Map(additionalAccess.map(a => [`${a.departmentId}:${a.division}`, a])).values()] : [];
@@ -90,10 +108,10 @@ export class UserService {
       }
     }
     // nobody types or knows an employee's password: the account starts with a random one and the employee chooses their own from the welcome e-mail
-    const id = await this.authAdmin.createProvisionedUser({ ...account, password: account.password ?? temporaryPassword(28), provisionedBy: actor.id });
-    if (operationsHead) {
+    const id = await this.authAdmin.createProvisionedUser({ ...account, password: account.password ?? temporaryPassword(28), operationsHead: !!operationsHead, provisionedBy: actor.id });
+    if (wholeDepartments) {
       try {
-        await this.profiles.setOperationsHead(id, true, null);
+        await this.profiles.assignOperationsDepartments(id, operationsDepartments);
       } catch (err) {
         await this.authAdmin.deleteUser(id).catch(() => undefined);
         throw err;

@@ -2,7 +2,7 @@
 
 When a new employee's account becomes **active**, the backend e-mails them automatically: who they are, where to sign in, their login ID and a secure,
 one-time link to choose **their own** password. Nobody (HR included) types, sees, receives or stores an employee's password. Migration:
-`supabase/migrations/20261218000100_employee_welcome_email.sql` (safe to run twice; run after `20261217000100_reports_two_level_approval.sql`).
+`supabase/migrations/20261219000100_employee_welcome_email.sql` (safe to run twice; run after `20261218000100_operations_head_creation.sql`).
 
 ## When it is sent
 

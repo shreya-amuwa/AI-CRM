@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Building2, History, RefreshCw } from 'lucide-react';
 import type { OperationsActivityEntry, OperationsHeadAdmin, OperationsHeadsAdmin } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
-import { employeesApi } from '../../lib/api/endpoints';
+import { employeesApi, usersApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
 
 /**
@@ -14,6 +14,7 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<OperationsHeadAdmin | null>(null);
   const [history, setHistory] = useState<OperationsHeadAdmin | null>(null);
+  const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
 
   const load = useCallback(() => { employeesApi.operationsHeads().then(d => { setData(d); setError(null); }, e => setError(errorMessage(e))); }, []);
   useEffect(load, [load]);
@@ -23,16 +24,31 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
     return () => { window.removeEventListener('crm:employee-requests-changed', load); window.removeEventListener('focus', load); };
   }, [load]);
 
+  // Suspending takes the access away at once (the sign-in is blocked and the person supervises nothing); reactivating gives the same departments back.
+  const toggleStatus = async (h: OperationsHeadAdmin) => {
+    const next = h.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+    if (next === 'SUSPENDED' && !window.confirm(`Suspend ${h.name}? They cannot sign in until you reactivate them. Their departments, Department Heads and records stay as they are.`)) return;
+    setNotice(null);
+    try {
+      await usersApi.setStatus(h.id, next, next === 'SUSPENDED' ? 'Suspended from Operations Heads' : undefined);
+      setNotice({ text: `${h.name} is now ${next === 'ACTIVE' ? 'active' : 'suspended'}.`, ok: true });
+      load();
+    } catch (e) {
+      setNotice({ text: errorMessage(e), ok: false });
+    }
+  };
+
   return (
     <section className="space-y-4" aria-label="Operations Heads">
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" /> Operations Heads</h2>
-          <p className="text-xs text-slate-500">Choose the departments each Operations Head manages, and who approves the Department Heads of each. HR asks for an Operations Head; you approve it under Employee Approvals.</p>
+          <p className="text-xs text-slate-500">Choose the departments each Operations Head manages, and who approves the Department Heads of each. Create one with Add Team Member (any departments, even ones that already have a Department Head), or approve one HR asks for under Employee Approvals.</p>
         </div>
         <button type="button" className={btn.secondary} onClick={load}><RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Refresh</button>
       </div>
       {error && <ErrorBanner message={error} onRetry={load} />}
+      {notice && <p role="status" className={`text-xs font-semibold ${notice.ok ? 'text-emerald-800' : 'text-rose-700'}`} data-testid="operations-notice">{notice.text}</p>}
       {!data && !error && <Spinner label="Loading Operations Heads…" />}
       {data && data.unowned.length > 0 && (
         <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex gap-2">
@@ -55,6 +71,7 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
                 </div>
                 {h.pendingApprovals > 0 && <Pill tone="orange">{h.pendingApprovals} waiting</Pill>}
                 <button type="button" className={btn.secondary} onClick={() => setHistory(h)}><History className="w-3.5 h-3.5" aria-hidden="true" /> Activity</button>
+                <button type="button" className={btn.secondary} onClick={() => void toggleStatus(h)} data-testid={`operations-status-${h.id}`}>{h.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}</button>
                 <button type="button" className={btn.primary} onClick={() => setEditing(h)}>Edit departments</button>
               </div>
               <div className="flex flex-wrap gap-1.5">

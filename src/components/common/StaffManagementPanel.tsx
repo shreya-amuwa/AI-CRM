@@ -11,6 +11,7 @@ import { organizationApi, usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
 import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
+import { OperationsDepartmentsField } from './OperationsDepartmentsField';
 import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, type HeadFunction } from '../../lib/scope/headAssignment';
 import {
   META_VERIFIER_LABEL, OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isMetaVerifier, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
@@ -145,6 +146,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [headFn, setHeadFn] = useState<HeadFunction | ''>('');
   const [headDepts, setHeadDepts] = useState<string[]>([]);
   const [headDeptsInit, setHeadDeptsInit] = useState(false);
+  // Operations Head account: the departments the ONE account supervises (whole departments; no side, no Department Head rule).
+  const [opsDepts, setOpsDepts] = useState<string[]>([]);
   const [assignTeams, setAssignTeams] = useState<AssignableTeam[]>([]);
   const [headAccess, setHeadAccess] = useState<DepartmentHeadAccess[]>([]);
   const headDivision: HeadDivision | '' = headFn === 'SALES' || headFn === 'SUPPORT' ? headFn : '';
@@ -226,6 +229,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     if (profile?.role !== 'SUPER_ADMIN' || !allowedRoles.includes('DEPARTMENT_HEAD')) return;
     organizationApi.teams().then(ts => setAssignTeams(ts.map(t => ({ departmentId: t.departmentId, division: t.division }))), () => setAssignTeams([]));
   }, [profile?.role, allowedRoles]);
+  const operationsChoices = useMemo(() => assignable.filter(d => !d.facetOf).map(d => ({ id: d.id, name: d.name })), [assignable]);
   // The department the head is placed in (the first one chosen; a side department such as Wabatalk is placed in its base department).
   const headHome = headDepts[0] ? assignable.find(d => d.id === headDepts[0]) : undefined;
   const headHomeId = headHome ? headHome.facetOf ?? headHome.id : departmentId;
@@ -278,7 +282,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const needsTeam = role !== 'DEPARTMENT_HEAD';
   const headOfSide = (side: HeadDivision) => existingHeads.find(h => h.headDivision === side) || null;
   const unlabelledHead = existingHeads.find(h => !h.headDivision) || null;
-  const existingHead = role === 'DEPARTMENT_HEAD' && headDivision ? headOfSide(headDivision) : null;
+  const existingHead = role === 'DEPARTMENT_HEAD' && !operationsHead && headDivision ? headOfSide(headDivision) : null;
   // The Sales role (Telecaller, ...) is chosen for a Team Member of a Sales team, by the Super Admin, the Department Head or the Team Lead of that team.
   const canSetSalesRole = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'TEAM_HEAD';
   const showSalesRole = canSetSalesRole && role === 'TEAM_MEMBER' && !consultant && !metaVerifier && selectedTeam?.division === 'SALES';
@@ -309,6 +313,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setSalesSubRole('');
     setHeadFn('');
     setHeadDepts(departmentId ? [departmentId] : []);
+    setOpsDepts([]);
   };
 
   /** Give an existing Sales member a Sales role (or clear it); the database lets only the Super Admin and the Department Head do it. */
@@ -370,7 +375,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       return;
     }
     let headPlan: { departmentId: string; headDivision?: HeadDivision; additionalAccess: { departmentId: string; division: HeadDivision }[] } | null = null;
-    if (role === 'DEPARTMENT_HEAD') {
+    if (operationsHead) {
+      if (opsDepts.length === 0) {
+        setFormError('Choose at least one department for the Operations Head.');
+        return;
+      }
+    } else if (role === 'DEPARTMENT_HEAD') {
       const plan = buildHeadAssignment({ fn: headFn, selectedIds: headDepts, departments: assignable, teams: assignTeams });
       if (!plan.ok) {
         setFormError(plan.error);
@@ -383,6 +393,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       fullName,
       role,
       departmentId: headPlan ? headPlan.departmentId : undefined,
+      departmentIds: operationsHead ? opsDepts : undefined,
       teamId: needsTeam ? teamId || undefined : undefined,
       position: position || undefined,
       technicalConsultant: consultant || undefined,
@@ -658,7 +669,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </label>
           )}
 
-          {role === 'DEPARTMENT_HEAD' && (
+          {operationsHead && <OperationsDepartmentsField departments={operationsChoices} selected={opsDepts} onSelected={setOpsDepts} />}
+
+          {role === 'DEPARTMENT_HEAD' && !operationsHead && (
             <>
               <HeadDepartmentsField
                 fn={headFn}
@@ -668,7 +681,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 departments={assignable}
                 teams={assignTeams}
                 inputClass={inputClass}
-                multi={operationsHead}
+                multi={false}
               />
               <p className="text-[11px] text-slate-500">
                 A department has one Sales head and one Support head (the department the head is placed in is checked for this). {operationsHead ? 'An Operations Head oversees every department ticked above.' : 'A Department Head works in one department (and may handle both its Sales and Support); to oversee several departments choose Operations Head.'}
@@ -734,10 +747,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' ? headDivision || null : null, metaVerifier, operationsHead)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, operationsHead ? undefined : department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' && !operationsHead ? headDivision || null : null, metaVerifier, operationsHead)}</strong>
           </div>
 
-          {role === 'DEPARTMENT_HEAD' && existingHead && (
+          {role === 'DEPARTMENT_HEAD' && !operationsHead && existingHead && (
             <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
@@ -754,7 +767,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <button
             type="submit"
-            disabled={saving || !departmentId || (role === 'DEPARTMENT_HEAD' && (!headFn || headDepts.length === 0 || !!existingHead))}
+            disabled={saving || !departmentId || (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && (!headFn || headDepts.length === 0 || !!existingHead))}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}

@@ -8786,6 +8786,103 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
 }
 
+// --- Operations Head: created from the Super Admin form with several departments, even where every department has a Department Head ---
+{
+  const depts = (await db.query(`insert into public.departments (slug, name) values ('oh-api-a', 'OHA Alpha'), ('oh-api-b', 'OHA Beta'), ('oh-api-c', 'OHA Gamma'), ('oh-api-d', 'OHA Delta'), ('oh-api-g', 'OHA General') returning id, slug`)).rows as { id: string; slug: string }[];
+  const dId = (slug: string) => depts.find(d => d.slug === slug)!.id;
+  await db.query(`insert into public.teams (department_id, name, division) select id, 'Sales', 'SALES' from public.departments where slug in ('oh-api-a', 'oh-api-b', 'oh-api-c', 'oh-api-d')`);
+  await db.query(`insert into public.teams (department_id, name, division) select id, 'Support', 'SUPPORT' from public.departments where slug in ('oh-api-a', 'oh-api-b', 'oh-api-c', 'oh-api-d')`);
+  await db.query(`insert into public.teams (department_id, name, division) select id, 'General', 'GENERAL' from public.departments where slug = 'oh-api-g'`);
+  const mkHead = async (slug: string, extra: Record<string, unknown> = {}) => {
+    const res = await api('sa', 'POST', '/users', { email: `oha.dh.${slug}@amuwa.com`, fullName: `OHA DH ${slug}`, password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dId(slug), ...extra });
+    check(res.status === 201, `operations head: the Department Head of ${slug} exists`, res);
+    tokens.set(`oha_dh_${slug}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  for (const slug of ['oh-api-a', 'oh-api-b', 'oh-api-c', 'oh-api-d', 'oh-api-g']) await mkHead(slug);
+  const person = { password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', details: { designation: 'Operations Head', joiningDate: '2026-01-05', dateOfBirth: '1980-05-05', bloodGroup: 'O+', contactNumber: '+91 98200 10001', emergencyContact: '+91 98200 10002' } };
+
+  // the Department Head rule is unchanged
+  r = await api('sa', 'POST', '/users', { email: 'oha.dup@amuwa.com', fullName: 'Second head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dId('oh-api-a') });
+  check(r.status === 409 && /already has a Department Head/.test(r.json.error.message), 'operations head: a second Department Head of a department is still refused', r);
+
+  // the Operations Head: every selected department already has a Department Head
+  r = await api('sa', 'POST', '/users', { ...person, email: 'oha.op1@amuwa.com', fullName: 'OHA Ops One', operationsHead: true, departmentIds: [dId('oh-api-a'), dId('oh-api-b'), dId('oh-api-g')] });
+  check(r.status === 201 && r.json.data.isOperationsHead === true && r.json.data.role === 'DEPARTMENT_HEAD' && r.json.data.status === 'ACTIVE', 'operations head: created although all three departments already have a Department Head', r);
+  const op1 = r.json.data.id as string;
+  tokens.set('oha_op1', tokenFor(op1));
+  r = await api('sa', 'POST', '/users', { ...person, email: 'oha.op2@amuwa.com', fullName: 'OHA Ops Two', operationsHead: true, departmentIds: [dId('oh-api-c'), dId('oh-api-d')] });
+  check(r.status === 201 && r.json.data.isOperationsHead === true, 'operations head: a second one, independent of the first', r);
+  const op2 = r.json.data.id as string;
+  tokens.set('oha_op2', tokenFor(op2));
+  check((await db.query(`select count(*)::int n from public.profiles where role = 'DEPARTMENT_HEAD' and not is_operations_head and department_id in (select id from public.departments where slug like 'oh-api-%') and status = 'ACTIVE'`)).rows[0].n === 5, 'operations head: every department still has exactly its own Department Head');
+  check((await db.query(`select (select count(*)::int from public.operations_head_departments where profile_id = $1) a, (select count(*)::int from public.operations_head_departments where profile_id = $2) b`, [op1, op2])).rows[0].a === 3, 'operations head: the three departments are stored for the first account');
+  r = await api('sa', 'POST', '/users', { ...person, email: 'oha.op1@amuwa.com', fullName: 'Again', operationsHead: true, departmentIds: [dId('oh-api-a')] });
+  check(r.status === 409, 'operations head: the same e-mail cannot get a second account', r);
+
+  // validation and permissions on the way in
+  r = await api('sa', 'POST', '/users', { ...person, email: 'oha.none@amuwa.com', fullName: 'None', operationsHead: true });
+  check(r.status === 422, 'operations head: at least one department is required', r);
+  r = await api('sa', 'POST', '/users', { ...person, email: 'oha.dups@amuwa.com', fullName: 'Not an ops head', departmentIds: [dId('oh-api-a'), dId('oh-api-b')] });
+  check(r.status === 422, 'operations head: several departments are only for an Operations Head', r);
+  r = await api('sa', 'POST', '/users', { ...person, email: 'oha.bad@amuwa.com', fullName: 'Bad', operationsHead: true, departmentIds: ['00000000-0000-0000-0000-000000000000'] });
+  check(r.status >= 400, 'operations head: an unknown department is refused', r);
+  r = await api('oha_dh_oh-api-a', 'POST', '/users', { ...person, email: 'oha.x1@amuwa.com', fullName: 'X1', operationsHead: true, departmentIds: [dId('oh-api-a')] });
+  check(r.status === 403, 'operations head: a Department Head cannot create one', r);
+  r = await api('oha_op1', 'POST', '/users', { ...person, email: 'oha.x2@amuwa.com', fullName: 'X2', operationsHead: true, departmentIds: [dId('oh-api-a')] });
+  check(r.status === 403, 'operations head: nor can an Operations Head', r);
+  r = await api('oha_op1', 'POST', '/users', { ...person, email: 'oha.x3@amuwa.com', fullName: 'X3', departmentId: dId('oh-api-g') });
+  check(r.status === 403, 'operations head: nor create a Department Head', r);
+  r = await api('oha_op1', 'POST', `/users/${(await db.query(`select id from public.profiles where email = 'oha.dh.oh-api-a@amuwa.com'`)).rows[0].id}/operations-head`, { value: true });
+  check(r.status === 403, 'operations head: nor promote anybody to Operations Head', r);
+
+  // the dashboard: only the assigned departments
+  r = await api('oha_op1', 'GET', '/operations/dashboard');
+  const names1 = (r.json.data?.departments ?? []).map((d: any) => d.name).filter((n: string) => n.startsWith('OHA ')).sort();
+  check(r.status === 200 && JSON.stringify(names1) === JSON.stringify(['OHA Alpha', 'OHA Beta', 'OHA General']), 'operations head: the first sees Alpha, Beta and General on one dashboard', r.json);
+  r = await api('oha_op2', 'GET', '/operations/dashboard');
+  const names2 = (r.json.data?.departments ?? []).map((d: any) => d.name).filter((n: string) => n.startsWith('OHA ')).sort();
+  check(r.status === 200 && JSON.stringify(names2) === JSON.stringify(['OHA Delta', 'OHA Gamma']), 'operations head: the second sees only Gamma and Delta', r.json);
+  r = await api('oha_op1', 'GET', `/operations/departments/${dId('oh-api-c')}`);
+  check(r.status === 403 || r.status === 404, 'operations head: another Operations Head\'s department is refused by the API', r);
+  r = await api('oha_op1', 'GET', `/operations/departments/${dId('oh-api-g')}`);
+  check(r.status === 200, 'operations head: a department whose only team is a General team can be opened', r);
+  r = await api('oha_dh_oh-api-a', 'GET', '/operations/dashboard');
+  check(r.status === 403, 'operations head: a Department Head has no Operations dashboard', r);
+
+  // the Super Admin edits the departments; nobody else may
+  r = await api('oha_op1', 'POST', `/operations/heads/${op1}/scope`, { departmentIds: [dId('oh-api-a')] });
+  check(r.status === 403, 'operations head: an Operations Head cannot change their own departments', r);
+  r = await api('sa', 'POST', `/operations/heads/${op1}/scope`, { departmentIds: [dId('oh-api-a'), dId('oh-api-b'), dId('oh-api-g'), dId('oh-api-d')] });
+  check(r.status === 200 && r.json.data.departments.length === 4, 'operations head: a fourth department is added to the same account', r);
+  r = await api('oha_op1', 'GET', '/operations/dashboard');
+  check((r.json.data.departments as any[]).filter(d => d.name.startsWith('OHA ')).length === 4, 'operations head: it appears on the same dashboard', r.json);
+  check((await db.query(`select count(*)::int n from public.profiles where email = 'oha.op1@amuwa.com'`)).rows[0].n === 1, 'operations head: without a second account');
+  const peopleBefore = (await db.query(`select count(*)::int n from public.profiles where department_id = $1`, [dId('oh-api-b')])).rows[0].n;
+  r = await api('sa', 'POST', `/operations/heads/${op1}/scope`, { departmentIds: [dId('oh-api-a'), dId('oh-api-g'), dId('oh-api-d')] });
+  check(r.status === 200 && r.json.data.departments.length === 3, 'operations head: a department is removed', r);
+  r = await api('oha_op1', 'GET', `/operations/departments/${dId('oh-api-b')}`);
+  check(r.status === 403 || r.status === 404, 'operations head: access to the removed department is revoked at once', r);
+  check((await db.query(`select count(*)::int n from public.profiles where department_id = $1`, [dId('oh-api-b')])).rows[0].n === peopleBefore && (await db.query(`select count(*)::int n from public.departments where id = $1`, [dId('oh-api-b')])).rows[0].n === 1, 'operations head: the department, its Department Head and people were not deleted');
+  r = await api('sa', 'POST', `/operations/heads/${op1}/scope`, { departmentIds: [] });
+  check(r.status === 422 || r.status === 400, 'operations head: the last department cannot be removed (an Operations Head needs one)', r);
+
+  // suspend / reactivate
+  r = await api('sa', 'POST', `/users/${op2}/status`, { status: 'SUSPENDED', reason: 'test' });
+  check(r.status === 200 && r.json.data.status === 'SUSPENDED', 'operations head: the Super Admin suspends one', r);
+  r = await api('oha_op2', 'GET', '/operations/dashboard');
+  check(r.status === 403 || r.status === 401, 'operations head: a suspended one has no dashboard', r);
+  r = await api('sa', 'POST', `/users/${op2}/status`, { status: 'ACTIVE' });
+  r = await api('oha_op2', 'GET', '/operations/dashboard');
+  check(r.status === 200 && (r.json.data.departments as any[]).filter(d => d.name.startsWith('OHA ')).length === 2, 'operations head: reactivated, with the same departments', r.json);
+  r = await api('sa', 'GET', '/operations/heads');
+  check(r.status === 200 && r.json.data.heads.filter((h: any) => h.email.startsWith('oha.op')).length === 2, 'operations head: the Super Admin lists both', r.json);
+  r = await api('oha_dh_oh-api-a', 'GET', '/operations/heads');
+  check(r.status === 403, 'operations head: a Department Head cannot read the list', r);
+  const direct = await db.query(`select has_table_privilege('authenticated', 'public.operations_head_departments', 'select') as s, has_table_privilege('authenticated', 'public.operations_head_departments', 'insert') as i`);
+  check(direct.rows[0].s === false && direct.rows[0].i === false, 'operations head: the assignments table cannot be read or written directly by users');
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
