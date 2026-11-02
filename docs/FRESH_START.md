@@ -34,3 +34,10 @@ Counters start again: customer codes, ticket numbers, invoice numbers (INV-YYYY-
 
 ## If you ran the first version of the reset and creating people fails
 Symptom: *Could not create the user account* (HTTP 500) when adding anyone. Cause: the first version kept the audit log but set its numbering back to 1, so the next audit entry collided with an old one (`duplicate key ... audit_logs_pkey`). Run `supabase/maintenance/repair_audit_log_numbering.sql` once in the SQL editor (it deletes nothing); the reset script itself is fixed (it now continues the audit numbering).
+
+## If you already ran it before 31 Oct 2026
+
+Earlier versions of the reset script emptied five settings tables that were added after its keep-list was written: `order_gst_rates`, `invoice_whatsapp_settings`,
+`workflow_settings`, `usage_alert_settings` and `reminder_message_templates`. The visible symptom is an **empty GST rate drop-down** under *GST for this order*
+(Accounts > a customer). Run `supabase/run_this_restore_settings_after_reset.sql` once in the Supabase SQL editor: it puts the default rows back (safe to run
+again, overwrites nothing). The reset script now keeps these tables.

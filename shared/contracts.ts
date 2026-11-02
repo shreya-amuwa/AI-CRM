@@ -4437,7 +4437,13 @@ export type { ReportKind, ReportPeriodType, ReportStatus } from './reportFields.
 import type { ReportFieldKey, ReportKind as WorkReportKind, ReportPeriodType as WorkReportPeriod, ReportStatus as WorkReportStatus } from './reportFields.js';
 
 export interface ReportAttachment { name?: string; url: string }
-export type WorkReportContent = Partial<Record<ReportFieldKey, string>> & { attachments?: ReportAttachment[] };
+/** A task of the member as it was when the report was saved (the real record lives in work_tasks). */
+export interface WorkReportTask { id: string; title: string; status: string; priority?: string; dueDate?: string | null; completedAt?: string | null }
+export type WorkReportContent = Partial<Record<ReportFieldKey, string>> & { attachments?: ReportAttachment[]; assignedTasks?: WorkReportTask[]; completedTasks?: WorkReportTask[] };
+/** One task the member can pick for a report (work_reports_my_tasks). */
+export interface ReportTaskOption { id: string; title: string; status: string; priority: string; dueDate: string | null; progress: number; completedAt: string | null; assignedAt: string }
+export type ReportApprovalStage = 'TEAM_LEAD' | 'DEPARTMENT_HEAD';
+export type ReportStageStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVISION_REQUIRED';
 
 /** A report as the lists show it (a short excerpt instead of the whole content). */
 export interface WorkReportSummary {
@@ -4464,6 +4470,18 @@ export interface WorkReportSummary {
   createdAt: string;
   updatedAt: string;
   excerpt: string;
+  /** Team Member reports: the two approval stages (each with its own reviewer, time and comment). Absent on a database without the second migration. */
+  teamLead?: string | null;
+  tlStatus?: ReportStageStatus | null;
+  tlReviewer?: string | null;
+  tlReviewedAt?: string | null;
+  tlComment?: string | null;
+  dhStatus?: ReportStageStatus | null;
+  dhReviewer?: string | null;
+  dhReviewedAt?: string | null;
+  dhComment?: string | null;
+  /** Which stage made the last decision (shown with a rejection or a revision request). */
+  decisionStage?: ReportApprovalStage | null;
 }
 export interface WorkReportEvent {
   at: string;
@@ -4473,11 +4491,14 @@ export interface WorkReportEvent {
   toStatus: string | null;
   comment: string | null;
   revision: number;
+  stage?: ReportApprovalStage | null;
 }
 export interface WorkReportDetail extends WorkReportSummary {
   content: WorkReportContent;
   canEdit?: boolean;
   canReview?: boolean;
+  /** Which approval the caller may give right now (Team Lead or Department Head). */
+  reviewStage?: ReportApprovalStage | null;
   events?: WorkReportEvent[];
 }
 export type ReportLevel = 'MEMBER' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'SUPER_ADMIN';
@@ -4488,15 +4509,24 @@ export interface ReportContext {
   team: string | null;
   reportsTo: { id: string; name: string }[];
   pendingReview: number;
+  /** Department Head: Team Lead reports waiting / Team Member reports the Team Leads approved and that wait for the head. */
+  pendingLeadReports?: number;
+  pendingMemberApprovals?: number;
   needsRevision: number;
   badge: number;
+}
+/** The Team Member reports a Department Head approves (stage 2), with the counts per status. */
+export interface MemberApprovalList {
+  items: WorkReportDetail[];
+  counts: Partial<Record<WorkReportStatus, number>>;
 }
 export interface ReportInbox {
   items: WorkReportSummary[];
   counts: Partial<Record<WorkReportStatus, number>>;
 }
-export interface ReportCounts { submitted: number; approved: number; pending: number; revision: number; rejected: number }
-/** One Team Lead's box: the lead's own reports and the APPROVED reports of the team (the others are only counted). */
+/** pending = not finished (either stage); pendingTl / pendingDh say which stage it waits at. approved = fully approved (both stages). */
+export interface ReportCounts { submitted: number; approved: number; pending: number; revision: number; rejected: number; pendingTl?: number; pendingDh?: number }
+/** One Team Lead's box: the lead's own reports and the team's member reports with their true status (fully approved only after both approvals). */
 export interface TeamLeadBox {
   leadId: string;
   lead: string;
@@ -4557,6 +4587,10 @@ export interface OperationsDepartmentRow {
     submitted: number;
     memberApproved: number;
     memberPending: number;
+    memberPendingTl?: number;
+    memberPendingDh?: number;
+    memberRevision?: number;
+    memberRejected?: number;
     teamLeadReports: number;
     headReports: number;
     headPending: number;

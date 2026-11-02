@@ -15,9 +15,9 @@ const DepartmentBody: React.FC<{ row: OperationsDepartmentRow; period: Period; r
   const [detail, setDetail] = useState<ReportsDepartmentDetail | null>(null);
   const [error, setError] = useState('');
   const load = useCallback(() => {
-    setError('');
-    workReportsApi.operationsDepartment(row.id, period.from, period.to).then(setDetail, e => { setDetail(null); setError(errText(e)); });
+    workReportsApi.operationsDepartment(row.id, period.from, period.to).then(d => { setError(''); setDetail(d); }, e => setError(errText(e)));
   }, [row.id, period.from, period.to]);
+  useEffect(() => { setDetail(null); }, [row.id, period.from, period.to]);
   useEffect(load, [load, reloadKey]);
 
   if (error) return <ErrorBanner message={error} onRetry={load} />;
@@ -42,7 +42,7 @@ const DepartmentBody: React.FC<{ row: OperationsDepartmentRow; period: Period; r
         <p className="text-xs text-slate-500">Package sent {dateLabel(detail.package.submittedAt)} by {detail.package.submittedBy}.{detail.package.note ? <> <b>Department observations:</b> {detail.package.note}</> : null}</p>
       )}
       <section aria-label="Department Head individual report">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Level 1 - Department Head individual report</h4>
+        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Department Head individual report</h4>
         {detail.departmentHeads.length === 0 ? <p className="text-xs text-slate-500">No active Department Head.</p> : detail.departmentHeads.map(h => (
           <div key={h.id} className="mb-2">
             <p className="text-sm font-semibold text-slate-800 mb-1">{h.name}</p>
@@ -53,9 +53,9 @@ const DepartmentBody: React.FC<{ row: OperationsDepartmentRow; period: Period; r
         ))}
       </section>
       <section aria-label="Team Leads">
-        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Level 2 - Team Leads and Level 3 - Team Members</h4>
+        <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Team Leads and Team Members</h4>
         {detail.teamLeads.length === 0 ? <p className="text-xs text-slate-500">No Team Leads in this department.</p> : (
-          <div className="space-y-2">{detail.teamLeads.map(b => <TeamLeadBoxView key={b.leadId} box={b} onOpen={onOpen} released={detail.released} />)}</div>
+          <div className="space-y-2">{detail.teamLeads.map(b => <TeamLeadBoxView key={b.leadId} box={b} onOpen={onOpen} released={detail.released} showAll />)}</div>
         )}
       </section>
     </div>
@@ -65,7 +65,7 @@ const DepartmentBody: React.FC<{ row: OperationsDepartmentRow; period: Period; r
 /**
  * The Operations Head's company reports: one expandable box per department the head is accountable for (read from the database, no
  * department is named in the code). Opening a box shows the whole chain in one place: the Department Head, the Team Leads and, inside each,
- * the Team Members' approved reports, as nested expandable boxes.
+ * the Team Members' reports with their real approval status, as nested expandable boxes. Only reports both approvals passed count as approved.
  */
 export const OperationsReports: React.FC<{ reloadKey: number; onOpen: (id: string) => void }> = ({ reloadKey, onOpen }) => {
   const [period, setPeriod] = useState<Period>(() => presetPeriod('WEEK'));
@@ -74,9 +74,9 @@ export const OperationsReports: React.FC<{ reloadKey: number; onOpen: (id: strin
   const [search, setSearch] = useState('');
 
   const load = useCallback(() => {
-    setError('');
-    workReportsApi.operations(period.from, period.to).then(setBoard, e => { setBoard(null); setError(errText(e)); });
+    workReportsApi.operations(period.from, period.to).then(b => { setError(''); setBoard(b); }, e => setError(errText(e)));
   }, [period.from, period.to]);
+  useEffect(() => { setBoard(null); }, [period.from, period.to]);
   useEffect(load, [load, reloadKey]);
 
   const rows = useMemo(() => (board?.departments ?? []).filter(d => !search.trim() || d.name.toLowerCase().includes(search.trim().toLowerCase()) || d.departmentHeads.some(h => h.toLowerCase().includes(search.trim().toLowerCase()))), [board, search]);
@@ -110,16 +110,16 @@ export const OperationsReports: React.FC<{ reloadKey: number; onOpen: (id: strin
                     <>
                       <Chip label="Team Leads" value={d.teamLeads} />
                       <Chip label="Team Members" value={d.teamMembers} />
-                      <Chip label="reports submitted" value={d.counts.submitted} tone="info" />
-                      <Chip label="member reports approved" value={d.counts.memberApproved} tone="good" />
-                      <Chip label="member reports pending" value={d.counts.memberPending} tone={d.counts.memberPending ? 'warn' : 'neutral'} />
-                      <Chip label="Team Lead reports" value={d.counts.teamLeadReports} />
+                      <Chip label="pending Team Lead" value={d.counts.memberPendingTl ?? 0} tone={d.counts.memberPendingTl ? 'warn' : 'neutral'} />
+                      <Chip label="pending Dept Head" value={d.counts.memberPendingDh ?? d.counts.memberPending} tone={(d.counts.memberPendingDh ?? d.counts.memberPending) ? 'warn' : 'neutral'} />
+                      <Chip label="fully approved" value={d.counts.memberApproved} tone="good" />
+                      {(d.counts.memberRejected ?? 0) + (d.counts.memberRevision ?? 0) ? <Chip label="rejected / revision" value={(d.counts.memberRejected ?? 0) + (d.counts.memberRevision ?? 0)} tone="bad" /> : null}
                     </>
                   }
                   right={
                     <span className="flex flex-col items-end gap-1">
                       <span className="text-[10px] uppercase tracking-wide text-slate-400">Head report</span>
-                      <StatusPill status={d.headReportStatus} />
+                      <StatusPill status={d.headReportStatus} kind="DEPARTMENT_HEAD" />
                       <span className={`text-[11px] font-semibold ${d.package.status === 'SUBMITTED' ? 'text-emerald-700' : 'text-slate-400'}`}>{d.package.status === 'SUBMITTED' ? 'Package sent' : 'Package not sent'}</span>
                     </span>
                   }

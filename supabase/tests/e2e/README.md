@@ -102,3 +102,8 @@ access through the API, who has no page (Team Lead, Team Member) and the phone l
 `run-operations-head.sh` drives Operations Head creation in a browser: the Super Admin creates one over departments that all have a Department Head (no conflict warning), a second one,
 each signs in and sees only their own departments on one dashboard (with the department filter), a department is added (same account) and one removed (access revoked, nothing deleted),
 suspend / reactivate, the Department Head rule still refusing a second head, and the existing Department Head still signing in (36 checks).
+
+`run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
+assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
+a Department Head revision that starts both approvals again, the Team Lead's individual report without Download and History, and that every change appears on the
+other screens by itself with no duplicate cards (24 checks).

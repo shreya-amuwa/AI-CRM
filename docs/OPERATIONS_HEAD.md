@@ -1,6 +1,6 @@
 # Operations Head: creation and several departments on one account
 
-Migration: `supabase/migrations/20261217000100_operations_head_creation.sql` (re-runnable; nothing is deleted or rewritten).
+Migration: `supabase/migrations/20261218000100_operations_head_creation.sql` (re-runnable; nothing is deleted or rewritten).
 
 Hierarchy: Super Admin > Operations Head > Department Head > Team Lead > Team Member. Team Members report to their Team Lead, Team Leads to their Department Head, Department Heads to the Operations Head accountable for their department (`department_operations_owner`), Operations Heads to the Super Admin. The Operations Head is **not** a Department Head: it is a `DEPARTMENT_HEAD`-class profile with `profiles.is_operations_head = true` (so every existing role rule keeps working) that supervises departments instead of being the head of one.
 

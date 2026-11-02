@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Operations Head: create one from the Super Admin form even when every department already has a Department Head, and let ONE account supervise
 -- several departments through a single, unified dashboard. Safe to run again; no table is dropped and nothing is deleted or rewritten.
--- Run after 20261216000100_chat_automatic_keys.sql.
+-- Run after 20261217000100_reports_two_level_approval.sql.
 --
 -- ROOT CAUSE of "<Department> already has a Support Department Head (...). A department can have only one for each side."
 --   An Operations Head is stored as a DEPARTMENT_HEAD profile with profiles.is_operations_head = true. The account was created as a plain Department

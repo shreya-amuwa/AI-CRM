@@ -8173,13 +8173,23 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await mk('dhb', { role: 'DEPARTMENT_HEAD', departmentId: dId('wr-api-b') });
   await mk('tl1', { role: 'TEAM_HEAD', teamId: tId('wr-api-a') });
   await mk('tlb', { role: 'TEAM_HEAD', teamId: tId('wr-api-b') });
-  await mk('m1', { role: 'TEAM_MEMBER', teamId: tId('wr-api-a') });
-  await mk('mb', { role: 'TEAM_MEMBER', teamId: tId('wr-api-b') });
+  const m1Id = await mk('m1', { role: 'TEAM_MEMBER', teamId: tId('wr-api-a') });
+  const mbId = await mk('mb', { role: 'TEAM_MEMBER', teamId: tId('wr-api-b') });
+  // the members' real task records (a Team Member report lists tasks from these)
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' limit 1`)).rows[0].id as string;
+  const mkTask = async (slug: string, assignee: string, title: string, status: string) =>
+    (await db.query(`insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, status, progress, completed_at)
+                     values ($1, $2, $3, $4, $5, $6, $7, case when $6 = 'COMPLETED' then now() end) returning id`, [dId(slug), tId(slug), title, saId, assignee, status, status === 'COMPLETED' ? 100 : 10])).rows[0].id as string;
+  const taskDone = await mkTask('wr-api-a', m1Id, 'Call the new leads', 'COMPLETED');
+  const taskOpen = await mkTask('wr-api-a', m1Id, 'Prepare the demo deck', 'IN_PROGRESS');
+  const taskOther = await mkTask('wr-api-b', mbId, 'Beta follow-ups', 'COMPLETED');
   r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [dId('wr-api-a')], primaryDepartmentIds: [dId('wr-api-a')] });
   check(r.status === 200, 'work reports: the Operations Head is given the Alpha department', r);
 
   const today = new Date().toISOString().slice(0, 10);
   const body = (o: Record<string, unknown> = {}) => ({ title: 'Daily report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { workCompleted: 'Closed three tickets', tasksCompleted: '3' }, ...o });
+  // a Team Member report: title, date, assigned tasks, completed tasks
+  const mbody = (o: Record<string, unknown> = {}) => body({ content: { assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone] }, ...o });
 
   // ---- sign-in and validation
   r = await api(null, 'GET', '/work-reports/context');
@@ -8190,20 +8200,31 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'work reports: a title is required', r);
   r = await api('wr_m1', 'POST', '/work-reports', body({ periodEnd: '2000-01-01' }));
   check(r.status === 422, 'work reports: the period must end after it starts', r);
-  r = await api('wr_m1', 'POST', '/work-reports', body({ content: { workCompleted: 'ok ok', attachments: [{ url: 'javascript:alert(1)' }] } }));
+  r = await api('wr_tl1', 'POST', '/work-reports', body({ content: { workCompleted: 'ok ok', attachments: [{ url: 'javascript:alert(1)' }] } }));
   check(r.status === 422, 'work reports: an attachment link must be http(s)', r);
+  r = await api('wr_m1', 'POST', '/work-reports', mbody({ content: { assignedTasks: [taskOther] } }));
+  check(r.status === 422, 'work reports: a task assigned to someone else cannot be reported', r);
+  r = await api('wr_m1', 'POST', '/work-reports', mbody({ content: { assignedTasks: [taskOpen], completedTasks: [taskOpen] } }));
+  check(r.status === 422, 'work reports: a task not completed in the task records cannot be reported as completed', r);
+  r = await api('wr_m1', 'POST', '/work-reports', mbody({ content: { assignedTasks: ['not-a-uuid'] } }));
+  check(r.status === 422, 'work reports: task ids must be valid', r);
+  r = await api('wr_m1', 'GET', '/work-reports/my-tasks');
+  check(r.status === 200 && r.json.data.length === 2 && r.json.data.every((t: any) => [taskDone, taskOpen].includes(t.id)), 'work reports: a Team Member lists only their own tasks', r);
+  r = await api('wr_tl1', 'GET', '/work-reports/my-tasks');
+  check(r.status === 403, 'work reports: the task list is for Team Members', r);
   r = await api('wr_m1', 'POST', '/work-reports', { ...body(), status: 'APPROVED', authorId: dhaId, departmentId: dId('wr-api-b') });
   check(r.status === 422, 'work reports: a request cannot name a status, an author or a department', r);
 
   // ---- Team Member: draft, submit
-  r = await api('wr_m1', 'POST', '/work-reports', body());
-  check(r.status === 201 && r.json.data.status === 'DRAFT' && r.json.data.kind === 'MEMBER', 'work reports: saved as a draft', r);
+  r = await api('wr_m1', 'POST', '/work-reports', mbody({ content: { workCompleted: 'dropped', challenges: 'dropped', assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone] } }));
+  check(r.status === 201 && r.json.data.status === 'DRAFT' && r.json.data.kind === 'MEMBER'
+    && r.json.data.content.assignedTasks.length === 2 && r.json.data.content.completedTasks.length === 1 && !r.json.data.content.workCompleted && !r.json.data.content.challenges, 'work reports: saved as a draft with only the two task lists', r);
   const rid = r.json.data.id as string;
   r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
-  check(r.status === 200 && r.json.data.status === 'SUBMITTED', 'work reports: submitted to the Team Lead', r);
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.tlStatus === 'PENDING' && r.json.data.teamLead === 'WR tl1', 'work reports: submitted to the Team Lead (Pending Team Lead Approval)', r);
   r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
   check(r.status === 409 || r.status === 422, 'work reports: it cannot be submitted twice', r);
-  r = await api('wr_m1', 'PATCH', `/work-reports/${rid}`, body({ title: 'Edited after submit' }));
+  r = await api('wr_m1', 'PATCH', `/work-reports/${rid}`, mbody({ title: 'Edited after submit' }));
   check(r.status === 409 || r.status === 422, 'work reports: a submitted report cannot be edited', r);
 
   // ---- who can read it
@@ -8214,21 +8235,64 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_dhb', 'GET', `/work-reports/${rid}`);
   check(r.status === 404, 'work reports: another department\'s head cannot open it', r);
   r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
-  check(r.status === 404, 'work reports: the Department Head does not see it until it is approved', r);
+  check(r.status === 404, 'work reports: the Department Head does not see it until the Team Lead approved it', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 404, 'work reports: and cannot approve it (no skipping the Team Lead)', r);
   r = await api('wr_oh', 'GET', `/work-reports/${rid}`);
-  check(r.status === 404, 'work reports: nor the Operations Head', r);
-  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' }).then(x => x);
-  check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: the assigned Team Lead approves it', r);
-  r = await api('wr_tlb', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED', comment: 'not mine to decide' });
-  check(r.status === 404, 'work reports: another Team Lead cannot decide on it', r);
-  r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED', comment: 'overruling the lead' });
-  check(r.status === 404, 'work reports: the Department Head does not decide on member reports', r);
+  check(r.status === 200 && ['SUBMITTED', 'UNDER_REVIEW'].includes(r.json.data.status) && r.json.data.canReview === false, 'work reports: the Operations Head sees it with its true status, and cannot decide on it', r);
+  r = await api('wr_oh', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 404, 'work reports: no approval from the Operations Head', r);
   r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED' });
   check(r.status === 422, 'work reports: a rejection needs a comment', r);
+  r = await api('wr_tlb', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED', comment: 'not mine to decide' });
+  check(r.status === 404, 'work reports: another Team Lead cannot decide on it', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED', status: 'APPROVED' });
+  check(r.status === 422, 'work reports: a decision cannot name a status or a stage', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD' && r.json.data.tlStatus === 'APPROVED' && r.json.data.tlReviewer === 'WR tl1' && r.json.data.dhStatus === 'PENDING',
+    'work reports: the Team Lead approves: not final, it waits for the Department Head', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 409, 'work reports: the Team Lead cannot decide a second time', r);
   r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
-  check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: once approved, the Department Head can open it', r);
+  check(r.status === 200 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD' && r.json.data.canReview === true && r.json.data.reviewStage === 'DEPARTMENT_HEAD', 'work reports: now the Department Head can open it and decide', r);
+  r = await api('wr_dha', 'GET', '/work-reports/member-approvals?status=PENDING');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === rid && r.json.data.items[0].teamLead === 'WR tl1' && r.json.data.items[0].content.assignedTasks.length === 2
+    && r.json.data.counts.PENDING_DEPARTMENT_HEAD === 1, 'work reports: the Department Head\'s approval list holds it with the Team Lead, tasks and approval date', r);
+  r = await api('wr_dhb', 'GET', '/work-reports/member-approvals');
+  check(r.status === 200 && r.json.data.items.length === 0, 'work reports: another department\'s head sees none of it', r);
+  for (const who of ['wr_m1', 'wr_tl1', 'wr_oh']) {
+    r = await api(who, 'GET', '/work-reports/member-approvals');
+    check(r.status === 403, `work reports: ${who} cannot open the Department Head's approval list`, r);
+  }
+  r = await api('wr_tlb', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 404, 'work reports: another Team Lead still cannot decide', r);
+  r = await api('wr_dhb', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 404, 'work reports: nor another department\'s head', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'REJECTED', comment: 'taking it back' });
+  check(r.status === 409, 'work reports: the Team Lead cannot reject it after approving', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'REVISION_REQUIRED' });
+  check(r.status === 422, 'work reports: the Department Head needs a comment to send it back', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'REVISION_REQUIRED', comment: 'Add the client names' });
+  check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED' && r.json.data.decisionStage === 'DEPARTMENT_HEAD' && r.json.data.tlStatus === 'APPROVED' && r.json.data.dhComment === 'Add the client names',
+    'work reports: sent back by the Department Head: never approved, the Team Lead\'s approval stays on record', r);
+  r = await api('wr_m1', 'GET', `/work-reports/${rid}`);
+  check(r.status === 200 && r.json.data.canEdit === true && r.json.data.dhComment === 'Add the client names', 'work reports: the employee sees the Department Head\'s comment and can revise', r);
+  r = await api('wr_m1', 'PATCH', `/work-reports/${rid}`, mbody({}));
+  check(r.status === 200, 'work reports: the employee revises it', r);
+  r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
+  check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.revision === 2 && r.json.data.tlStatus === 'PENDING' && r.json.data.dhStatus === null, 'work reports: resubmitted: both approvals start again', r);
+  r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
+  check(r.status === 404, 'work reports: the Department Head does not see it again until the Team Lead approves', r);
+  r = await api('wr_tl1', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD', 'work reports: the Team Lead approves the revision', r);
+  r = await api('wr_dha', 'POST', `/work-reports/${rid}/review`, { decision: 'APPROVED', comment: 'Good' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.dhStatus === 'APPROVED' && r.json.data.dhReviewer === 'WR dha' && r.json.data.tlStatus === 'APPROVED',
+    'work reports: the Department Head approves independently: Fully Approved', r);
+  r = await api('wr_dha', 'GET', `/work-reports/${rid}`);
+  check(r.status === 200 && r.json.data.events.some((e: any) => e.stage === 'TEAM_LEAD' && e.action === 'APPROVED') && r.json.data.events.some((e: any) => e.stage === 'DEPARTMENT_HEAD' && e.action === 'REVISION_REQUESTED'),
+    'work reports: the history keeps both rounds with their stages', r);
   r = await api('wr_oh', 'GET', `/work-reports/${rid}`);
-  check(r.status === 200, 'work reports: and the Operations Head', r);
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: the Operations Head sees it fully approved', r);
 
   // ---- no mixing of roles
   for (const [who, path] of [['wr_m1', '/work-reports/inbox'], ['wr_m1', `/work-reports/team-box?from=${today}&to=${today}`], ['wr_m1', `/work-reports/department?from=${today}&to=${today}`], ['wr_m1', `/work-reports/operations?from=${today}&to=${today}`],
@@ -8243,7 +8307,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
   // ---- the boxes
   r = await api('wr_tl1', 'GET', `/work-reports/team-box?from=${today}&to=${today}`);
-  check(r.status === 200 && r.json.data.totalMembers === 1 && r.json.data.counts.approved === 1 && r.json.data.members[0].reports.length === 1, 'work reports: the Team Lead\'s box counts the member\'s approved report', r);
+  check(r.status === 200 && r.json.data.totalMembers === 1 && r.json.data.counts.approved === 1 && r.json.data.counts.pendingDh === 0 && r.json.data.members[0].reports.length === 1, 'work reports: the Team Lead\'s box counts the member\'s fully approved report', r);
   r = await api('wr_tl1', 'POST', '/work-reports', body({ title: 'Lead report', content: { workCompleted: 'Reviewed the pipeline', teamCoordination: 'Stand-up' } }));
   check(r.status === 201 && r.json.data.kind === 'TEAM_LEAD', 'work reports: the Team Lead writes an individual report', r);
   const leadReport = r.json.data.id as string;
@@ -8278,7 +8342,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.departments.length === 1 && r.json.data.departments[0].name === 'WR API Alpha' && r.json.data.departments[0].counts.memberApproved === 1 && r.json.data.departments[0].package.status === 'SUBMITTED', 'work reports: the Operations Head sees only their department with its counts', r);
   r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-a')}?from=${today}&to=${today}`);
   const lead = r.json.data?.teamLeads?.find((t: any) => t.lead === 'WR tl1');
-  check(r.status === 200 && r.json.data.released === true && r.json.data.departmentHeads[0].reports.length === 1 && lead && lead.leadReports.length === 1 && lead.memberReports.length === 1 && lead.memberReports[0].content.workCompleted, 'work reports: opened, the department shows the Department Head, the Team Lead and the member\'s report with its content', r);
+  check(r.status === 200 && r.json.data.released === true && r.json.data.departmentHeads[0].reports.length === 1 && lead && lead.leadReports.length === 1 && lead.memberReports.length === 1 && lead.memberReports[0].content.assignedTasks.length === 2, 'work reports: opened, the department shows the Department Head, the Team Lead and the member\'s report with its content', r);
   r = await api('wr_oh', 'GET', `/work-reports/operations/departments/${dId('wr-api-b')}?from=${today}&to=${today}`);
   check(r.status === 404, 'work reports: a department they do not manage is closed', r);
   r = await api('wr_oh', 'POST', `/work-reports/${headReport}/review`, { decision: 'REVISION_REQUIRED', comment: 'Add the targets' });
@@ -8295,10 +8359,17 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === rid, 'work reports: My Reports holds only my own', r);
   r = await api('wr_mb', 'GET', '/work-reports/mine');
   check(r.status === 200 && r.json.data.length === 0, 'work reports: another member has none', r);
-  r = await api('wr_mb', 'POST', '/work-reports', body({ content: {} }));
+  r = await api('wr_mb', 'POST', '/work-reports', mbody({ content: { assignedTasks: [taskOther], completedTasks: [taskOther] } }));
   const draftId = r.json.data.id as string;
+  await db.query(`update public.work_tasks set status = 'IN_PROGRESS', completed_at = null where id = $1`, [taskOther]);
   r = await api('wr_mb', 'POST', `/work-reports/${draftId}/submit`, {});
-  check(r.status === 422, 'work reports: work completed is needed to submit', r);
+  check(r.status === 422, 'work reports: a task reopened since the draft was saved cannot be sent as completed', r);
+  r = await api('wr_tl1', 'POST', '/work-reports', body({ content: {} }));
+  const emptyLead = r.json.data.id as string;
+  r = await api('wr_tl1', 'POST', `/work-reports/${emptyLead}/submit`, {});
+  check(r.status === 422, 'work reports: a Team Lead report needs the work completed to be submitted', r);
+  r = await api('wr_tl1', 'DELETE', `/work-reports/${emptyLead}`);
+  check(r.status === 200, 'work reports: that draft can be deleted', r);
   r = await api('wr_mb', 'DELETE', `/work-reports/${draftId}`);
   check(r.status === 200, 'work reports: a draft can be deleted', r);
   r = await api('wr_m1', 'DELETE', `/work-reports/${rid}`);

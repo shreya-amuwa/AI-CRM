@@ -5,16 +5,16 @@ import { ApiError } from '../../lib/api/client';
 import { workReportsApi } from '../../lib/api/workReports';
 import { btn, Card, ErrorBanner, inputCls, Spinner } from '../team-member/pipeline/shared';
 import { notifyReportsChanged } from './reportEvents';
-import { ReviewInbox } from './ReviewInbox';
 import { TeamLeadBoxView } from './TeamLeadBoxView';
 import { Chip, PeriodBar, periodLabel, presetPeriod, timeLabel, type Period } from './reportUi';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
 /**
- * The Department Head's team reports: the Team Leads' own reports waiting for the head's decision, one expandable box per Team Lead of the
- * department (loaded from the database, nothing hard-coded) and the consolidated department box, from which the head sends the package for
- * the period to the Operations Head. Only Team Member reports that their Team Lead approved are included; pending ones stay pending.
+ * The Department Head's team reports: one expandable box per Team Lead of the department (loaded from the database, nothing hard-coded)
+ * and the consolidated department box, from which the head sends the package for the period to the Operations Head. Only Team Member
+ * reports both approvals passed count as approved; the ones waiting for either approval stay pending. (The reports waiting for the
+ * head's decision are on the Pending Approvals tab.)
  */
 export const DepartmentReports: React.FC<{ reloadKey: number; onOpen: (id: string) => void }> = ({ reloadKey, onOpen }) => {
   const [period, setPeriod] = useState<Period>(() => presetPeriod('WEEK'));
@@ -25,10 +25,9 @@ export const DepartmentReports: React.FC<{ reloadKey: number; onOpen: (id: strin
   const [sent, setSent] = useState('');
 
   const load = useCallback(() => {
-    setError('');
-    workReportsApi.department(period.from, period.to).then(d => { setData(d); setNote(n => n || d.package.note || ''); }, e => { setData(null); setError(errText(e)); });
+    workReportsApi.department(period.from, period.to).then(d => { setError(''); setData(d); setNote(n => n || d.package.note || ''); }, e => setError(errText(e)));
   }, [period.from, period.to]);
-  useEffect(() => { setNote(''); setSent(''); }, [period.from, period.to]);
+  useEffect(() => { setNote(''); setSent(''); setData(null); }, [period.from, period.to]);
   useEffect(load, [load, reloadKey]);
 
   const totals = useMemo(() => {
@@ -58,8 +57,6 @@ export const DepartmentReports: React.FC<{ reloadKey: number; onOpen: (id: strin
 
   return (
     <div className="space-y-4">
-      <ReviewInbox title="Team Lead reports awaiting your decision" emptyText="No Team Lead report is waiting for you." period={period} reloadKey={reloadKey} onOpen={onOpen} />
-
       <Card className="p-5">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
           <div>
@@ -83,13 +80,13 @@ export const DepartmentReports: React.FC<{ reloadKey: number; onOpen: (id: strin
         <Card className="p-5" >
           <section aria-label="Consolidated department report" data-testid="consolidated-box">
             <h2 className="text-base font-bold text-slate-900">Consolidated department report</h2>
-            <p className="text-xs text-slate-500 mb-3">{data.department} - {periodLabel(period.from, period.to)}. A preview of what the Operations Head receives.</p>
+            <p className="text-xs text-slate-500 mb-3">{data.department} - {periodLabel(period.from, period.to)}. What the Operations Head receives.</p>
             <div className="flex flex-wrap gap-1.5 mb-3">
               <Chip label="Team Leads" value={totals.leads} />
               <Chip label="Team Members" value={totals.members} />
               <Chip label="Team Lead reports" value={totals.leadReports} tone="info" />
-              <Chip label="member reports included (approved)" value={totals.approved} tone="good" />
-              <Chip label="pending - not included" value={totals.pending} tone={totals.pending ? 'warn' : 'neutral'} />
+              <Chip label="member reports fully approved" value={totals.approved} tone="good" />
+              <Chip label="pending approval" value={totals.pending} tone={totals.pending ? 'warn' : 'neutral'} />
               {totals.revision ? <Chip label="returned for revision" value={totals.revision} tone="warn" /> : null}
               {totals.rejected ? <Chip label="rejected" value={totals.rejected} tone="bad" /> : null}
             </div>
@@ -97,11 +94,11 @@ export const DepartmentReports: React.FC<{ reloadKey: number; onOpen: (id: strin
               {data.teams.map(b => (
                 <li key={b.leadId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
                   <span className="font-semibold text-slate-800">{b.lead} <span className="font-normal text-slate-500">- {b.team ?? 'No team'}</span></span>
-                  <span className="text-xs text-slate-600">{b.leadReports.length ? 'Own report in' : 'Own report missing'} - {b.counts.approved} approved - {b.counts.pending} pending</span>
+                  <span className="text-xs text-slate-600">{b.leadReports.length ? 'Own report in' : 'Own report missing'} - {b.counts.approved} fully approved - {b.counts.pending} pending</span>
                 </li>
               ))}
             </ul>
-            {totals.pending > 0 ? <p className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">{totals.pending} Team Member report{totals.pending === 1 ? ' is' : 's are'} still waiting for a Team Lead. They stay pending and are not part of this package.</p> : null}
+            {totals.pending > 0 ? <p className="mb-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">{totals.pending} Team Member report{totals.pending === 1 ? ' is' : 's are'} still waiting for an approval. They stay pending and are not counted as approved.</p> : null}
             <label htmlFor="dept-observations" className="block text-xs font-semibold text-slate-700 mb-1">Department-level observations</label>
             <textarea id="dept-observations" className={`${inputCls} min-h-24`} value={note} maxLength={4000} onChange={e => setNote(e.target.value)} disabled={sending} placeholder="What the Operations Head should know about this period." />
             <div className="mt-3 flex flex-wrap items-center gap-3">

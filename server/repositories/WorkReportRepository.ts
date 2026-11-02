@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  DepartmentReportBox, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
+  DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -31,6 +31,12 @@ export class WorkReportRepository {
   inbox(q: { status?: string; from?: string; to?: string; author?: string }) {
     return this.rpc<ReportInbox>('work_reports_inbox', { p_status: q.status ?? null, p_from: q.from ?? null, p_to: q.to ?? null, p_author: q.author ?? null });
   }
+  /** The Team Member reports their Team Leads approved, for the Department Head's second approval. */
+  memberApprovals(q: { status?: string; from?: string; to?: string }) {
+    return this.rpc<MemberApprovalList>('work_reports_member_approvals', { p_status: q.status ?? null, p_from: q.from ?? null, p_to: q.to ?? null });
+  }
+  /** The member's own task records, to pick the assigned and completed tasks of a report. */
+  myTasks() { return this.rpc<ReportTaskOption[]>('work_reports_my_tasks'); }
   review(id: string, decision: string, comment?: string | null) {
     return this.rpc<WorkReportDetail>('work_report_review', { p_id: id, p_decision: decision, p_comment: comment ?? null });
   }

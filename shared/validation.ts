@@ -2191,7 +2191,10 @@ export const reportSaveSchema = z
     content: z
       .object({
         ...reportContentShape,
-        attachments: z.array(reportAttachmentSchema).max(5, 'Add at most 5 attachment links.').optional()
+        attachments: z.array(reportAttachmentSchema).max(5, 'Add at most 5 attachment links.').optional(),
+        // Team Member report: ids of the member's own tasks (the database checks they were assigned to the author and are really completed)
+        assignedTasks: z.array(uuidSchema).max(100, 'Choose at most 100 tasks.').optional(),
+        completedTasks: z.array(uuidSchema).max(100, 'Choose at most 100 tasks.').optional()
       })
       .default({})
   })
@@ -2205,6 +2208,11 @@ export const reportReviewSchema = z
 
 export const reportListQuerySchema = z
   .object({ status: z.enum([...REPORT_STATUSES, 'PENDING']).optional(), from: isoDate.optional(), to: isoDate.optional(), author: uuidSchema.optional() })
+  .strict();
+
+// Team Member reports waiting for (or decided by) the Department Head
+export const reportMemberApprovalsQuerySchema = z
+  .object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'REVISION_REQUIRED', 'ALL']).optional(), from: isoDate.optional(), to: isoDate.optional() })
   .strict();
 
 export const reportRangeQuerySchema = z

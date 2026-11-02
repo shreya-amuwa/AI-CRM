@@ -1,5 +1,5 @@
 -- =============================================================================
--- Operations Head creation and multi-department scope (migration 20261217000100). Runs late (same database) with its own synthetic departments:
+-- Operations Head creation and multi-department scope (migration 20261218000100). Runs late (same database) with its own synthetic departments:
 --   oh-a (Sales + Support teams, one Department Head), oh-b (same), oh-c (a Sales head AND a Support head), oh-d (Sales + Support, a head), oh-e (same),
 --   oh-gen (only a General team, a head: the kind of department Accounts / HR are).
 -- =============================================================================
@@ -7,7 +7,7 @@
 \set QUIET 1
 \echo '--- 97. Operations Head creation and several departments'
 reset role;
-\i supabase/migrations/20261217000100_operations_head_creation.sql
+\i supabase/migrations/20261218000100_operations_head_creation.sql
 
 delete from auth.users where email like 'oh2.%@example.com';
 delete from test.users where name like 'oh2\_%';
