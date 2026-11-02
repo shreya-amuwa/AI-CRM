@@ -231,8 +231,10 @@ export interface PanelCredentialsMailData {
   name: string;
   businessName?: string | null;
   serviceName: string;
-  /** The panel's name / address as recorded by the Meta Verifier (optional). */
+  /** The panel's name as recorded by the Meta Verifier. Internal: kept for the record, never printed (it can hold anything the team typed, even a price). */
   panel?: string | null;
+  /** Amuwa's panel sign-in address for this service (HTTPS). */
+  panelUrl?: string | null;
   /** The account / user ID of the panel login. */
   account: string;
   /** The password the Meta Verifier set on the panel. In this e-mail and nowhere else. */
@@ -248,7 +250,7 @@ export function renderPanelCredentialsEmail(d: PanelCredentialsMailData): Render
   <p>Dear ${esc(d.name)},</p>
   <p>Your <b>${esc(d.serviceName)}</b> panel${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''} is set up. This e-mail carries the login of that <b>WhatsApp panel</b> - it is separate from your Amuwa client dashboard login.</p>
   <p>
-    ${d.panel ? `<b>Panel:</b> ${esc(d.panel)}<br>` : ''}
+    ${d.panelUrl ? `<b>Panel website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a><br>` : ''}
     <b>Account / user ID:</b> ${esc(d.account)}<br>
     <b>Password:</b> ${esc(d.password)}
   </p>
@@ -275,7 +277,6 @@ export function renderPanelLinkEmail(d: PanelLinkMailData): RenderedEmail {
   <p>Dear ${esc(d.name)},</p>
   <p>Here is the sign-in address of your <b>${esc(d.serviceName)}</b> panel${d.businessName && d.businessName !== d.name ? ` for <b>${esc(d.businessName)}</b>` : ''}.</p>
   <p>
-    ${d.panel ? `<b>Panel:</b> ${esc(d.panel)}<br>` : ''}
     <b>Panel website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a>
     ${d.account ? `<br><b>Account / user ID:</b> ${esc(d.account)}` : ''}
   </p>
@@ -324,7 +325,6 @@ export function renderSubscriptionActivatedEmail(d: SubscriptionActivatedMailDat
     ${d.messageCredits !== null && d.messageCredits !== undefined ? `<b>Message limit:</b> ${esc(Number(d.messageCredits).toLocaleString('en-IN'))} messages<br>` : ''}
   </p>
   <p>
-    ${row('Panel', d.panel)}
     ${d.panelUrl ? `<b>Panel website:</b> <a href="${esc(d.panelUrl)}">${esc(d.panelUrl)}</a><br>` : ''}
     ${row('Account / user ID', d.panelAccount)}
   </p>

@@ -116,7 +116,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
         ) : (
           <>
             <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full text-left text-sm min-w-[1400px]" aria-busy={loading}>
+              <table className="w-full text-left text-sm min-w-[1500px]" aria-busy={loading}>
                 <thead>
                   <tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">
                     {['Lead ID', 'Customer Name', 'Company / Business', 'Phone', 'Email', 'Lead Source', 'Temperature', 'Call Status', 'Assigned To', 'Assigned', 'Last Contacted', 'Follow-up', 'Conversion', 'Actions'].map(h => (
@@ -129,9 +129,9 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
                     <tr key={l.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 text-xs font-mono text-slate-500 whitespace-nowrap">{l.leadCode}</td>
                       <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={l.name} /><span className="font-semibold text-slate-900 text-[13px] whitespace-nowrap">{l.name}</span></div></td>
-                      <td className="px-4 py-3 text-slate-600">{l.company || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 min-w-[9rem]">{l.company || '-'}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{l.phone ? <a href={`tel:${l.phone}`} className="text-blue-600 hover:underline">{l.phone}</a> : '-'}</td>
-                      <td className="px-4 py-3 text-slate-600 break-all">{l.email || '-'}</td>
+                      <td className="px-4 py-3 text-slate-600 min-w-[16rem] whitespace-nowrap">{l.email || '-'}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{l.source || '-'}</td>
                       <td className="px-4 py-3"><TemperatureBadge value={l.temperature} /></td>
                       <td className="px-4 py-3"><CallStatusBadge status={l.callStatus} /></td>
