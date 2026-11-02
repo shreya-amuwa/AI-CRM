@@ -666,7 +666,7 @@ const StaffApplication: React.FC<{
           <ul className="text-sm space-y-2">
             {a.attempts.map((x) => (
               <li key={x.id}>
-                Assessment{' '}
+                {x.title}{' '}
                 {x.submitted_at
                   ? `${x.passed ? 'Passed' : 'Not passed'} · Score ${x.score}`
                   : x.started_at
