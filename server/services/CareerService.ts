@@ -18,8 +18,6 @@ import {
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
 import { AppError } from '../http/errors.js';
-import { getServiceClient } from '../db/supabase.js';
-import { unwrap } from '../repositories/base.js';
 import { CareerRepository } from '../repositories/CareerRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
 
@@ -154,17 +152,9 @@ export class CareerService {
       .driver(f.storage_provider)
       .put(f.storage_bucket!, sealed, bytes, 'application/pdf');
     try {
-      const done = unwrap(
-        await getServiceClient().rpc('career_file_verified', {
-          p_id: f.id,
-          p_size: bytes.length,
-          p_path: sealed,
-        }),
-      ) as CareerFile;
-      if (done.storage_path !== sealed)
-        await this.storage
-          .remove(f.storage_bucket!, [sealed], f.storage_provider)
-          .catch(() => undefined);
+      const done=await this.repo.recordVerifiedFile(f.id,bytes.length,sealed);
+      if(done.storage_path!==sealed) await this.storage.remove(f.storage_bucket!,[sealed],f.storage_provider).catch(()=>undefined);
+
       return done;
     } catch (e) {
       await this.storage
