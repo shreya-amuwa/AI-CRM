@@ -93,9 +93,9 @@ begin
   perform private.career_finish(a.id);
  end loop;
  if p_id is null then
-  return coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'application_id',x.application_id,'title',t.title,'duration_minutes',t.duration_minutes,'available_until',x.available_until,
-    'started_at',x.started_at,'deadline',x.deadline,'submitted_at',x.submitted_at,'score',x.score,'passed',x.passed,'question_count',jsonb_array_length(t.questions),'version',x.version))
-    from public.career_attempts x join public.career_tests t on t.id=x.test_id join public.career_applications c on c.id=x.application_id where c.applicant_id=me),'[]');
+  return coalesce((select jsonb_agg(jsonb_build_object('id',x.id,'application_id',x.application_id,'title',testrow.title,'duration_minutes',testrow.duration_minutes,'available_until',x.available_until,
+    'started_at',x.started_at,'deadline',x.deadline,'submitted_at',x.submitted_at,'score',x.score,'passed',x.passed,'question_count',jsonb_array_length(testrow.questions),'version',x.version))
+    from public.career_attempts x join public.career_tests testrow on testrow.id=x.test_id join public.career_applications c on c.id=x.application_id where c.applicant_id=me),'[]');
  end if;
  select x.* into a from public.career_attempts x join public.career_applications c on c.id=x.application_id where x.id=p_id and c.applicant_id=me for update of x;
  if a.id is null then raise exception 'NOT_FOUND: Assessment not found.'; end if;
