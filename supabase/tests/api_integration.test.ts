@@ -8605,6 +8605,53 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(noTable.rows[0].s === false && noTable.rows[0].u === false, 'top performers: the tables cannot be read or changed directly by users');
 }
 
+// Candidate careers: use the real Hono -> PostgREST -> SQL path and private signed storage.
+{
+  const fake=await startFakeR2({key:'career-test-key',secret:'career-test-secret',bucket:'career-test'});
+  Object.assign(process.env,{STORAGE_PROVIDER:'r2',R2_ENDPOINT:fake.endpoint,R2_ACCESS_KEY_ID:'career-test-key',R2_SECRET_ACCESS_KEY:'career-test-secret',R2_BUCKET:'career-test'});
+  const ids=await db.query(`insert into auth.users(email,email_confirmed_at,raw_user_meta_data) values
+    ('career.api.one@example.com',now(),' {"candidate_portal":true}'),('career.api.two@example.com',now(),'{"candidate_portal":true}') returning id`);
+  tokens.set('career1',tokenFor(ids.rows[0].id)); tokens.set('career2',tokenFor(ids.rows[1].id));
+  check((await db.query('select id from profiles where id=any($1::uuid[])',[ids.rows.map(x=>x.id)])).rowCount===0,'careers: applicants never become staff profiles');
+  let q=await api('career1','GET','/candidate/profile');
+  check(q.status===200 && q.json.data.version===1,'careers: separate candidate session works',q);
+  const profile={name:'API Applicant',phone:'9847650321',city:'Mumbai',state:'Maharashtra',education:'Graduate',experience:'Fresher',skills:'TypeScript',bio:'',version:1};
+  q=await api('career1','PATCH','/candidate/profile',profile);
+  check(q.status===200 && q.json.data.version===2,'careers: validated profile save',q);
+  check((await api('career1','PATCH','/candidate/profile',{...profile,role:'SUPER_ADMIN'})).status===422,'careers: role injection refused');
+  check((await api(null,'GET','/candidate/profile')).status===401,'careers: signed-out profile refused');
+  check((await api('a','GET','/candidate/profile')).status===403,'careers: ordinary staff cannot impersonate candidates');
+  check((await api('career1','GET','/me')).status===401,'careers: candidate cannot use staff API');
+  const pos=(await db.query(`insert into hr_positions(title,is_open) values ('Portal API Position',true) returning id`)).rows[0].id;
+  q=await api('hr','POST','/hr/recruitment/careers/postings',{position_id:pos,title:'Portal API Job',description:'An engineering opportunity for the candidate portal integration test.',location:'Mumbai',employment_type:'FULL_TIME',published:true,closes_at:null});
+  check(q.status===200,'careers: HR publishes job',q);
+  const job=q.json.data.find((j:{title:string})=>j.title==='Portal API Job').id;
+  q=await api(null,'GET','/careers/jobs');
+  check(q.status===200 && q.json.data.items.some((j:{id:string})=>j.id===job),'careers: published job visible publicly',q);
+  check((await api('career1','GET','/hr/recruitment/careers/postings')).status===401,'careers: candidates cannot manage jobs');
+  const bytes=Buffer.from('%PDF-1.4\nCareer resume test\n%%EOF');
+  q=await api('career1','POST','/candidate/resumes',{file_name:'resume.pdf',size_bytes:bytes.length});
+  check(q.status===200 && !!q.json.data.upload.url,'careers: private signed upload target',q);
+  const upload=q.json.data;
+  const put=await fetch(upload.upload.url,{method:'PUT',headers:upload.upload.headers,body:bytes});
+  check(put.status===200,'careers: direct storage upload succeeds');
+  q=await api('career2','POST',`/candidate/resumes/${upload.file.id}/complete`,{});
+  check(q.status===404,'careers: other candidate cannot complete upload',q);
+  q=await api('career1','POST',`/candidate/resumes/${upload.file.id}/complete`,{});
+  check(q.status===200 && q.json.data.status==='READY','careers: server verifies and seals PDF',q);
+  const first=await api('career1','POST','/candidate/applications',{posting_id:job,resume_id:upload.file.id});
+  check(first.status===200,'careers: application enters HR workflow',first);
+  q=await api('career1','POST','/candidate/applications',{posting_id:job,resume_id:upload.file.id});
+  check(q.json.data.id===first.json.data.id,'careers: submission retry creates no duplicates');
+  q=await api('career2','GET','/candidate/applications');
+  check(q.status===200 && q.json.data.length===0,'careers: applications are private');
+  check((await api('career2','GET',`/candidate/resumes/${upload.file.id}/url`)).status===404,'careers: resume download cannot cross candidate boundaries');
+  await fetch(upload.upload.url,{method:'PUT',headers:upload.upload.headers,body:Buffer.from('%PDF-1.4 overwritten')});
+  q=await api('career1','GET',`/candidate/resumes/${upload.file.id}/url`);
+  check(q.status===200 && Buffer.from(await (await fetch(q.json.data.url)).arrayBuffer()).equals(bytes),'careers: reusing upload URL cannot mutate submitted resume');
+  await new Promise<void>(resolve=>fake.server.close(()=>resolve()));
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

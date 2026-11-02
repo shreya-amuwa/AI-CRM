@@ -2241,3 +2241,17 @@ export const performerDecisionSchema = z
   .object({ decision: z.enum(['APPROVE', 'REJECT']), note: z.string().trim().max(500, 'Keep the note under 500 characters.').optional() })
   .strict()
   .refine(v => v.decision === 'APPROVE' || (v.note?.length ?? 0) >= 3, { message: 'Give the reason for rejecting.', path: ['note'] });
+
+// Candidate careers portal. No staff role, ownership or workflow fields are accepted here.
+export const careerProfileSchema = z.object({
+  name: trimmed(160).min(2), phone: mobileSchema, city: trimmed(120), state: trimmed(120),
+  education: trimmed(2000), experience: trimmed(2000), skills: trimmed(2000), bio: trimmed(2000), version: z.number().int().positive()
+}).strict();
+export const careerJobQuerySchema = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1), search: trimmed(120).default('') });
+export const careerPostingSchema = z.object({
+  id: uuidSchema.optional(), position_id: uuidSchema, title: trimmed(160).min(2), description: trimmed(15000).min(20),
+  location: trimmed(200).min(1), employment_type: z.enum(['FULL_TIME','PART_TIME','INTERNSHIP','CONTRACT']),
+  published: z.boolean(), closes_at: z.string().datetime({ offset: true }).nullable(), version: z.number().int().positive().optional()
+}).strict();
+export const careerUploadSchema = z.object({ file_name: trimmed(180).regex(/\.pdf$/i, 'Upload a PDF resume.'), size_bytes: z.number().int().min(1).max(10485760) }).strict();
+export const careerApplySchema = z.object({ posting_id: uuidSchema, resume_id: uuidSchema }).strict();

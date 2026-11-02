@@ -4797,3 +4797,26 @@ export interface PerformerEvaluationRun {
   ai: { configured: boolean; ok: number; failed: number };
   data: PerformersDepartment;
 }
+
+// Candidate careers portal — independent from staff and customer memberships.
+export interface CareerProfile {
+  id: string; email: string; name: string; phone: string; city: string; state: string;
+  education: string; experience: string; skills: string; bio: string; version: number;
+}
+export interface CareerJob {
+  id: string; title: string; description: string; location: string; employment_type: 'FULL_TIME' | 'PART_TIME' | 'INTERNSHIP' | 'CONTRACT';
+  closes_at: string | null; position_id?: string; published?: boolean; version?: number;
+}
+export interface CareerFile {
+  id: string; file_name: string; size_bytes: number; created_at: string;
+  status?: 'PENDING' | 'READY' | 'ABORTED'; storage_provider?: 'SUPABASE' | 'R2'; storage_bucket?: string; storage_path?: string;
+}
+export interface CareerApplication {
+  id: string; posting_id: string; stage: string; candidate_message: string | null; version: number; created_at: string;
+  snapshot: { profile: CareerProfile; job: CareerJob; resume_id: string };
+  timeline: { kind: string; created_at: string }[];
+}
+export interface CareerUpload {
+  file: CareerFile; bucket: string; path: string; provider: 'SUPABASE' | 'R2'; token?: string;
+  upload?: { url: string; headers: Record<string,string> };
+}
