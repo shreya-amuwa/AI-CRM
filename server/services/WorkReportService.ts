@@ -1,7 +1,7 @@
 import type {
-  DepartmentReportBox, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
+  DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
-import { reportListQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
+import { reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
 import { REPORT_STATUSES } from '../../shared/reportFields.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
@@ -27,6 +27,8 @@ export class WorkReportService {
   deleteDraft(id: string): Promise<void> { return this.repo.deleteDraft(parse(uuidSchema, id)); }
 
   inbox(query: unknown): Promise<ReportInbox> { return this.repo.inbox(parse(reportListQuerySchema, query ?? {})); }
+  memberApprovals(query: unknown): Promise<MemberApprovalList> { return this.repo.memberApprovals(parse(reportMemberApprovalsQuerySchema, query ?? {})); }
+  myTasks(): Promise<ReportTaskOption[]> { return this.repo.myTasks(); }
   review(id: string, body: unknown): Promise<WorkReportDetail> {
     const r = parse(reportReviewSchema, body);
     return this.repo.review(parse(uuidSchema, id), r.decision, r.comment);

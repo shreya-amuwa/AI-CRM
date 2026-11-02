@@ -1,5 +1,5 @@
 import type {
-  DepartmentReportBox, ReportContext, ReportInbox, ReportPackage, ReportsDepartmentDetail, OperationsReportBoard, TeamReportBox, WorkReportContent, WorkReportDetail,
+  DepartmentReportBox, MemberApprovalList, ReportContext, ReportTaskOption, ReportInbox, ReportPackage, ReportsDepartmentDetail, OperationsReportBoard, TeamReportBox, WorkReportContent, WorkReportDetail,
   WorkReportSummary
 } from '../../../shared/contracts';
 import type { ReportPeriodType } from '../../../shared/reportFields';
@@ -25,6 +25,9 @@ export const workReportsApi = {
   submit: (id: string) => api.post<WorkReportDetail>(`/work-reports/${id}/submit`, {}),
   deleteDraft: (id: string) => api.delete<null>(`/work-reports/${id}`),
   inbox: (f: InboxFilter = {}) => api.get<ReportInbox>('/work-reports/inbox', { ...f }),
+  memberApprovals: (f: { status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVISION_REQUIRED' | 'ALL'; from?: string; to?: string } = {}) =>
+    api.get<MemberApprovalList>('/work-reports/member-approvals', { ...f }),
+  myTasks: () => api.get<ReportTaskOption[]>('/work-reports/my-tasks'),
   review: (id: string, decision: 'APPROVED' | 'REJECTED' | 'REVISION_REQUIRED', comment?: string) =>
     api.post<WorkReportDetail>(`/work-reports/${id}/review`, { decision, comment }),
   teamBox: (from: string, to: string) => api.get<TeamReportBox>('/work-reports/team-box', { from, to }),

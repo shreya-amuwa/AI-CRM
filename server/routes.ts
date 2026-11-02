@@ -297,6 +297,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/work-reports/context', handler: workReports.context },
   { method: 'GET', path: '/work-reports/mine', handler: workReports.mine },
   { method: 'GET', path: '/work-reports/inbox', handler: workReports.inbox },
+  { method: 'GET', path: '/work-reports/member-approvals', handler: workReports.memberApprovals },
+  { method: 'GET', path: '/work-reports/my-tasks', handler: workReports.myTasks },
   { method: 'GET', path: '/work-reports/team-box', handler: workReports.teamBox },
   { method: 'GET', path: '/work-reports/department', handler: workReports.department },
   { method: 'POST', path: '/work-reports/package', handler: workReports.submitPackage, options: S },
