@@ -440,12 +440,14 @@ button.cd-docs-card { cursor: pointer; }
   .cd-tk-back { display: inline-flex; }
   .cd-tk-head.is-open { display: none; }
   /* an open conversation takes the whole screen on a phone / tablet; the back arrow returns to the list */
-  .cd-tk.is-open { position: fixed; inset: 0; z-index: 60; height: auto; min-height: 0; border-radius: 0; box-shadow: none; }
+  /* it sits ABOVE the tab bar (z-index 60): the bar is hidden behind the open conversation, so the message box and Send are never under it */
+  .cd-tk.is-open { position: fixed; inset: 0; z-index: 70; height: 100vh; height: 100dvh; min-height: 0; border-radius: 0; box-shadow: none; }
+  .cd-tk.is-open .cd-composer { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .cd-tk.is-open .cd-chat-chips { display: none; }
 }
 @media (max-width: 479px) {
   .cd-tk { height: calc(100dvh - 160px - var(--tabbar, 0px)); min-height: 440px; }
-  .cd-tk.is-open { height: auto; min-height: 0; }
+  .cd-tk.is-open { height: 100vh; height: 100dvh; min-height: 0; }
   .cd-chat-head { padding: 12px 12px 6px; }
   .cd-chat-banner { margin: 4px 12px 0; }
   .cd-chat-chips { padding: 8px 12px 10px; }

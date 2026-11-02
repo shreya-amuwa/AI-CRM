@@ -129,11 +129,19 @@ async function processPanelCredentialsMail(s: AutomationSettings, job: ClaimedJo
   }
   const password = decryptSecret(job.secret, s.secretKey);
   if (!password) return { outcome: 'FAILED', detail: 'The panel password could not be read (check AUTOMATION_SECRET_KEY). Nothing was sent - set the password again.', recipient: email };
+  // Our panel link for this service: the address saved for it, else the department's panel. Never the free-text "panel" note.
+  let panelUrl: string | null = null;
+  try {
+    const { data } = await getServiceClient().from('customer_services').select('panel_url').eq('customer_id', c.id).eq('service_code', x.service).maybeSingle();
+    const saved = (data as { panel_url?: string | null } | null)?.panel_url;
+    panelUrl = saved && checkPanelUrl(saved).ok ? saved : null;
+  } catch { /* fall back below */ }
+  panelUrl ||= PANEL_URLS[c.departmentSlug] || null;
   const mail = renderPanelCredentialsEmail({
     name,
     businessName: c.company?.trim() || name,
     serviceName: x.serviceName || 'WhatsApp',
-    panel: x.panel,
+    panelUrl,
     account: x.account || '',
     password
   });
