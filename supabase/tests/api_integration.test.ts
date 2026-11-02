@@ -5791,6 +5791,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(bolifyHits.length === 1 && /expires on \d{4}-\d{2}-\d{2}, in 7 days/.test(bolifyHits[0].body.description) && bolifyHits[0].body.description.includes('Reference '), 'bolify api: with BOLIFY_INCLUDE_CONTEXT the description says what the call is about', bolifyHits[0].body.description);
   delete process.env.BOLIFY_INCLUDE_CONTEXT;
 
+  await db.query(`delete from public.onboarding_automation_runs where customer_id = $1`, [odc]); // the button allows one run a minute
   bolifyHits.length = 0;
   r = await api('mv', 'POST', `/pipeline/customers/${odc}/automations/AI_CALLING`);
   check(r.status === 200 && bolifyHits.length === 1 && bolifyHits[0].body.first_name === 'Onboard' && bolifyHits[0].body.last_name === 'Caller' && bolifyHits[0].body.phone_number[0] === '+919820011122' && bolifyHits[0].apiKey === 'bolify-api-key-456',
