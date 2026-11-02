@@ -2685,6 +2685,35 @@ export interface HrEmailDataIssue {
   joiningDate: string | null;
   issues: HrDataIssue[];
 }
+// ---- Welcome e-mail of a new employee (HR / Super Admin / Department Head). Never carries a password, a link or a token. ----
+export type WelcomeEmailStatus = 'PENDING' | 'PROCESSING' | 'RETRYING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'DRY_RUN';
+export interface WelcomeEmailItem {
+  id: string;
+  employeeId: string;
+  employee: string;
+  email: string;
+  department: string | null;
+  designation: string | null;
+  /** The account's own status (ACTIVE once approved / created). */
+  accountStatus: string;
+  emailType: 'WELCOME_LOGIN';
+  triggerEvent: 'EMPLOYEE_REQUEST_APPROVED' | 'ACCOUNT_PROVISIONED' | 'MANUAL_RESEND';
+  requestId: string | null;
+  status: WelcomeEmailStatus;
+  attempts: number;
+  retryCount: number;
+  resendCount: number;
+  sentAt: string | null;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  createdAt: string;
+  lastResendAt: string | null;
+  /** The employee chose their own password from the e-mailed link. */
+  setupCompletedAt: string | null;
+  canResend: boolean;
+}
+export interface WelcomeEmailList { items: WelcomeEmailItem[]; counts: Partial<Record<WelcomeEmailStatus, number>> }
+
 export interface HrEmailRunSummary {
   schedule: { day: string; birthdays: number; anniversaries: number; cyclesOpened: number; reminders: number; overdueReminders: number } | null;
   send: { mode: 'off' | 'dry_run' | 'live'; claimed: number; sent: number; dryRun: number; skipped: number; retrying: number; failed: number; note?: string };

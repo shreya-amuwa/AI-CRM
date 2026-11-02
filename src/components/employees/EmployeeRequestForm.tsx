@@ -34,7 +34,6 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
   const [division, setDivision] = useState<'SALES' | 'SUPPORT' | 'GENERAL' | ''>('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [employeeCode, setEmployeeCode] = useState('');
   const [joiningDate, setJoiningDate] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -46,7 +45,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setFullName(''); setEmail(''); setPassword(''); setEmployeeCode(''); setJoiningDate(''); setDateOfBirth(''); setBloodGroup(''); setContactNumber(''); setEmergencyContact('');
+    setFullName(''); setEmail(''); setEmployeeCode(''); setJoiningDate(''); setDateOfBirth(''); setBloodGroup(''); setContactNumber(''); setEmergencyContact('');
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -54,7 +53,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
     setError(null);
     setDone(null);
     const parsed = employeeRequestSchema.safeParse({
-      email, fullName, password, role, departmentId: departmentId || undefined, division: division || undefined, employeeCode: employeeCode || undefined,
+      email, fullName, role, departmentId: departmentId || undefined, division: division || undefined, employeeCode: employeeCode || undefined,
       details: { designation: ROLE_LABEL[role], joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
     });
     if (!parsed.success) return setError(parsed.error.issues[0]?.message || 'Please check the form.');
@@ -78,7 +77,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
         <span className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0" aria-hidden="true"><UserPlus className="w-4 h-4" /></span>
         <div>
           <h2 className="font-bold text-slate-900">New employee request</h2>
-          <p className="text-xs text-slate-500">This employee needs approval first: the account stays inactive until {APPROVER_LABEL[role]} approves it. You are told the result.</p>
+          <p className="text-xs text-slate-500">This employee needs approval first: the account stays inactive until {APPROVER_LABEL[role]} approves it. You are told the result. After the approval the employee is e-mailed a secure link to choose their own password, so nobody types or sees a password here.</p>
         </div>
       </div>
 
@@ -104,9 +103,6 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
         <label className={label}>Full name<input className={`${inputCls} mt-1`} value={fullName} onChange={e => setFullName(e.target.value)} required maxLength={160} /></label>
         <label className={label}>E-mail<input type="email" className={`${inputCls} mt-1`} value={email} onChange={e => setEmail(e.target.value)} required autoComplete="off" /></label>
         <label className={label}>Employee ID (optional)<input className={`${inputCls} mt-1`} value={employeeCode} onChange={e => setEmployeeCode(e.target.value)} maxLength={40} /></label>
-        <label className={label}>Temporary password
-          <input type="password" className={`${inputCls} mt-1`} value={password} onChange={e => setPassword(e.target.value)} required minLength={10} maxLength={72} autoComplete="new-password" />
-        </label>
         <label className={label}>Joining date<input type="date" className={`${inputCls} mt-1`} value={joiningDate} onChange={e => setJoiningDate(e.target.value)} required /></label>
         <label className={label}>Date of birth<input type="date" className={`${inputCls} mt-1`} value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} required /></label>
         <label className={label}>Blood group

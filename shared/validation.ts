@@ -249,7 +249,8 @@ export const userCreateSchema = z
   .object({
     email: emailSchema,
     fullName: trimmed(160).min(1, 'Full name is required.'),
-    password: z.string().min(10, 'Temporary password must be at least 10 characters.').max(72),
+    /** Not asked for by the screens: the server makes a random password nobody knows and the employee chooses their own from the e-mailed link. */
+    password: z.string().min(10, 'Temporary password must be at least 10 characters.').max(72).optional(),
     role: assignableRoleSchema,
     departmentId: uuidSchema.optional(),
     teamId: uuidSchema.optional(),
@@ -2116,7 +2117,8 @@ export const employeeRequestSchema = z
   .object({
     email: emailSchema,
     fullName: trimmed(160).min(1, 'Full name is required.'),
-    password: z.string().min(10, 'Temporary password must be at least 10 characters.').max(72),
+    /** Not asked for by the screens (see userCreateSchema): HR never knows an employee's password. */
+    password: z.string().min(10, 'Temporary password must be at least 10 characters.').max(72).optional(),
     role: z.enum(EMPLOYEE_REQUEST_ROLES, { errorMap: () => ({ message: 'Choose the designation.' }) }),
     departmentId: uuidSchema,
     /** Sales or Support side (a Department Head's side; the side of a Team Lead's team and of a Team Member). */
@@ -2127,6 +2129,14 @@ export const employeeRequestSchema = z
   .strict()
   .refine(r => r.details.designation === DESIGNATION_OF_ROLE[r.role], { message: 'The designation must match the role.', path: ['details', 'designation'] });
 export type EmployeeRequestInput = z.infer<typeof employeeRequestSchema>;
+
+// ---- Welcome e-mail of a new employee (status list for HR / administrators, resend) and the employee's own first password ----
+export const WELCOME_EMAIL_STATUSES = ['PENDING', 'PROCESSING', 'RETRYING', 'SENT', 'FAILED', 'SKIPPED', 'DRY_RUN'] as const;
+export const welcomeEmailListQuerySchema = z.object({ status: z.enum(WELCOME_EMAIL_STATUSES).optional(), employee: uuidSchema.optional() }).strict();
+/** The employee chooses their own password (from the e-mailed link). The same rules as the client's set-password page. */
+export const ownPasswordSchema = z
+  .object({ password: z.string().min(10, 'Use at least 10 characters.').max(72, 'Use at most 72 characters.') })
+  .strict();
 
 export const employeeRequestListQuerySchema = z
   .object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED']).optional(), toDecide: z.enum(['true', 'false']).optional() })
