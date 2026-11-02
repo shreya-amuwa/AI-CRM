@@ -33,7 +33,19 @@ export const OperationsDashboard: React.FC = () => {
     return () => { window.removeEventListener('crm:employee-requests-changed', load); window.removeEventListener('crm:pipeline-changed', load); window.removeEventListener('focus', load); };
   }, [load]);
 
-  const picked = selected && data?.departments.find(d => d.id === selected.id);
+  // Department filter: "all my departments" is the consolidated view; one department narrows the figures and opens its management view.
+  const [filterId, setFilterId] = useState('');
+  const shown = (data?.departments ?? []).filter(d => !filterId || d.id === filterId);
+  const sum = (f: (d: OperationsDashboardDepartment) => number) => shown.reduce((n, d) => n + f(d), 0);
+  const totals = {
+    departments: shown.length,
+    departmentHeads: sum(d => d.departmentHeads.length),
+    teamLeads: sum(d => d.teamLeads),
+    teamMembers: sum(d => d.teamMembers),
+    awaitingAssignment: sum(d => d.awaitingAssignment),
+    pendingDepartmentHeadApprovals: sum(d => d.pendingDepartmentHeadApprovals)
+  };
+  const picked = filterId ? shown[0] : selected && data?.departments.find(d => d.id === selected.id);
   return (
     <div className="space-y-6" data-testid="operations-dashboard">
       <div className="flex items-center justify-between gap-3">
@@ -48,13 +60,21 @@ export const OperationsDashboard: React.FC = () => {
       {data && data.departments.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">No department is assigned to you yet. The Super Admin assigns them.</p>}
       {data && data.departments.length > 0 && (
         <>
+          <label className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700" htmlFor="ops-department-filter">
+            <span>Department</span>
+            <select id="ops-department-filter" className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-normal min-w-[16rem]" value={filterId} onChange={e => { setFilterId(e.target.value); setSelected(null); }} data-testid="ops-department-filter">
+              <option value="">All my departments (consolidated)</option>
+              {data.departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+            <span className="font-normal text-slate-500" data-testid="ops-department-count">{filterId ? 'One department' : `${data.departments.length} department${data.departments.length === 1 ? '' : 's'} on this one dashboard`}</span>
+          </label>
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-            <Card label="Departments" value={data.totals.departments} />
-            <Card label="Department Heads" value={data.totals.departmentHeads} />
-            <Card label="Team Leads" value={data.totals.teamLeads} />
-            <Card label="Team Members" value={data.totals.teamMembers} hint={`${data.totals.awaitingAssignment} awaiting a Team Lead`} />
-            <Card label="Head approvals" value={data.totals.pendingDepartmentHeadApprovals} hint="waiting for you" />
-            <Card label="Awaiting assignment" value={data.totals.awaitingAssignment} />
+            <Card label="Departments" value={totals.departments} />
+            <Card label="Department Heads" value={totals.departmentHeads} />
+            <Card label="Team Leads" value={totals.teamLeads} />
+            <Card label="Team Members" value={totals.teamMembers} hint={`${totals.awaitingAssignment} awaiting a Team Lead`} />
+            <Card label="Head approvals" value={totals.pendingDepartmentHeadApprovals} hint="waiting for you" />
+            <Card label="Awaiting assignment" value={totals.awaitingAssignment} />
           </div>
 
           <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
@@ -66,10 +86,10 @@ export const OperationsDashboard: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {data.departments.map(d => {
+                {shown.map(d => {
                   const pending = d.pendingDepartmentHeadApprovals + d.awaitingDepartmentHead + d.awaitingAssignment;
                   return (
-                    <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => setSelected(d)}>
+                    <tr key={d.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => setSelected(d)} data-testid="ops-department-row">
                       <td className="p-3 font-semibold text-slate-900">{d.name}{d.accountable && <span className="ml-2"><Pill tone="green">you approve heads</Pill></span>}</td>
                       <td className="p-3 text-slate-700">{d.departmentHeads.length ? d.departmentHeads.map(h => h.name + (h.side ? ` (${h.side.toLowerCase()})` : '')).join(', ') : <span className="text-amber-700">No Department Head</span>}</td>
                       <td className="p-3 text-right">{d.teamLeads + d.teamMembers} <span className="text-slate-400">({d.teamLeads} leads, {d.teamMembers} members)</span></td>
@@ -82,7 +102,7 @@ export const OperationsDashboard: React.FC = () => {
             </table>
           </div>
 
-          {picked && <DepartmentView department={picked} onClose={() => setSelected(null)} />}
+          {picked && <DepartmentView department={picked} onClose={() => { setSelected(null); setFilterId(''); }} />}
         </>
       )}
 
