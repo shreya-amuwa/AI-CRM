@@ -1,3 +1,4 @@
+import {runCareerAutomation} from './automations/careerDispatcher.js';
 import { CareerRepository } from './repositories/CareerRepository.js';
 import { candidateRoutes } from './candidateRoutes.js';
 import { createUserClient, getAnonClient } from './db/supabase.js';
@@ -178,11 +179,12 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
+  const careers = await runCareerAutomation().catch(() => ({ error: 'Candidate maintenance failed.' }));
   const training = await runTrainingAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Top performers: recalculate the monthly scores from the task and approved report records, prepare the monthly recommendations, write the evaluations. Idempotent.
   const topPerformers = await runTopPerformersAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, training, careers }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".
@@ -249,7 +251,7 @@ for (const route of candidateRoutes) {
     const db=route.public ? getAnonClient() : createUserClient(extractBearerToken(c.req.header('authorization')));
     if (!route.public) {
       const me=await new CareerRepository(db).profile();
-      setRateHeaders(c,await enforce(userBuckets(`candidate:${me.id}`,route.method==='GET' ? 'default' : 'sensitive'),'memory'));
+      setRateHeaders(c,await enforce(userBuckets(`candidate:${me.id}`,route.rate ?? (route.method==='GET' ? 'default' : 'sensitive')),'memory'));
     }
     const request: ApiRequest={ method:c.req.method as HttpMethod,path:relativePath(c),query:c.req.query(),headers:{},
       body:['GET','DELETE'].includes(c.req.method) ? undefined : await readJson(c) };

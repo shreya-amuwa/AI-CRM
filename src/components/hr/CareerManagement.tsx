@@ -1,3 +1,4 @@
+import { CareerJoining } from './CareerJoining';
 import React, { useCallback, useState } from 'react';
 import type {
   CareerJob,
@@ -729,6 +730,16 @@ const StaffApplication: React.FC<{
               busy={busy}
             />
           ))}
+          {['SELECTED', 'JOINING', 'TRAINING', 'COMPLETED'].includes(
+            a.stage,
+          ) && (
+            <CareerJoining
+              application={a}
+              tests={tests}
+              busy={busy}
+              run={run}
+            />
+          )}
         </div>
       )}
     </Card>

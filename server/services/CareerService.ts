@@ -1,3 +1,11 @@
+import { careerTrainingInviteSchema } from '../../shared/validation.js';
+import {
+  careerOfferSchema,
+  careerOfferReplySchema,
+  careerDocumentRequestSchema,
+  careerDocumentLinkSchema,
+  careerTrainingSchema,
+} from '../../shared/validation.js';
 import {
   careerTestSchema,
   careerInviteSchema,
@@ -84,6 +92,57 @@ export class CareerService {
   }
   interviews() {
     return this.repo.interviews();
+  }
+  offers() {
+    return this.repo.offers();
+  }
+  offerReply(id: string, body: unknown) {
+    return this.repo.offerReply(
+      parse(uuidSchema, id),
+      parse(careerOfferReplySchema, body),
+    );
+  }
+  staffOffer(body: unknown) {
+    const { application_id, ...data } = parse(careerOfferSchema, body);
+    return this.repo.staffOffer(application_id, data);
+  }
+  documents() {
+    return this.repo.documents();
+  }
+  document(id: string, body: unknown) {
+    return this.repo.document(
+      parse(uuidSchema, id),
+      parse(careerDocumentLinkSchema, body).file_id,
+    );
+  }
+  staffDocument(body: unknown) {
+    const { application_id, ...data } = parse(
+      careerDocumentRequestSchema,
+      body,
+    );
+    return this.repo.staffDocument(application_id, data);
+  }
+  training() {
+    return this.repo.training();
+  }
+  staffTraining(body: unknown) {
+    const i = parse(careerTrainingSchema, body);
+    return this.repo.staffTraining(i.application_id, i.program_id, i.complete);
+  }
+  withdraw(id: string) {
+    return this.repo.withdraw(parse(uuidSchema, id));
+  }
+  trainingInvite(body: unknown) {
+    const i = parse(careerTrainingInviteSchema, body);
+    return this.repo.trainingInvite(
+      i.application_id,
+      i.test_id,
+      i.available_until,
+      i.day,
+    );
+  }
+  notifications() {
+    return this.repo.notifications();
   }
   async beginUpload(body: unknown): Promise<CareerUpload> {
     const i = parse(careerUploadSchema, body);

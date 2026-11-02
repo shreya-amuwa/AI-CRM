@@ -8,6 +8,9 @@ import type {
   CareerAttempt,
   CareerInterview,
   CareerStaffApplication,
+  CareerOffer,
+  CareerDocument,
+  CareerTraining,
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -83,6 +86,70 @@ export class CareerRepository {
   }
   interviews(): Promise<CareerInterview[]> {
     return this.call('career_interviews', {});
+  }
+  offers(): Promise<CareerOffer[]> {
+    return this.call('career_offers', {});
+  }
+  offerReply(id: string, data: unknown): Promise<CareerOffer> {
+    return this.call('career_offers', { p_id: id, p_data: data });
+  }
+  staffOffer(application: string, data: unknown): Promise<CareerOffer> {
+    return this.call('hr_career_offer', {
+      p_application: application,
+      p_data: data,
+    });
+  }
+  documents(): Promise<CareerDocument[]> {
+    return this.call('career_documents', {});
+  }
+  document(id: string, file: string): Promise<CareerDocument> {
+    return this.call('career_documents', { p_id: id, p_file: file });
+  }
+  staffDocument(application: string, data: unknown): Promise<CareerDocument[]> {
+    return this.call('hr_career_documents', {
+      p_application: application,
+      p_data: data,
+    });
+  }
+  training(): Promise<CareerTraining[]> {
+    return this.call('career_training', {});
+  }
+  staffTraining(
+    application: string,
+    program: string | null,
+    complete: boolean,
+  ): Promise<unknown> {
+    return this.call('hr_career_training', {
+      p_application: application,
+      p_program: program,
+      p_complete: complete,
+    });
+  }
+  withdraw(id: string): Promise<null> {
+    return this.call('career_withdraw', { p_application: id });
+  }
+  trainingInvite(
+    application: string,
+    test: string,
+    until: string,
+    day: number,
+  ): Promise<CareerAttempt> {
+    return this.call('hr_career_training_invite', {
+      p_application: application,
+      p_test: test,
+      p_until: until,
+      p_day: day,
+    });
+  }
+  notifications(): Promise<
+    {
+      id: string;
+      application_id: string | null;
+      kind: string;
+      created_at: string;
+    }[]
+  > {
+    return this.call('career_notifications', {});
   }
   async call<T>(name: string, args: Record<string, unknown>): Promise<T> {
     return unwrap(await this.db.rpc(name, args)) as T;

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import type {
   CareerApplication,
   CareerInterview,
@@ -10,6 +10,7 @@ import {
   Loading,
   Notice,
   button,
+  secondary,
   useRemote,
   stageName,
   when,
@@ -20,11 +21,34 @@ export const Applications: React.FC = () => {
     [],
   );
   const r = useRemote(get);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const withdraw = async (id: string) => {
+    if (
+      !window.confirm(
+        'Withdraw this application? Contact HR if you change your mind afterward.',
+      )
+    )
+      return;
+    setBusy(true);
+    setError('');
+    try {
+      await candidateRequest(`/candidate/applications/${id}/withdraw`, {});
+      r.reload();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'Could not withdraw application.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
   if (r.loading) return <Loading />;
   if (r.error) return <Failure message={r.error} retry={r.reload} />;
   return (
     <div className="space-y-5">
       <h1 className="text-2xl font-bold">My applications</h1>
+      {error && <Notice error>{error}</Notice>}
       {!r.data?.length ? (
         <Card>
           <p className="text-slate-500">
@@ -76,6 +100,21 @@ export const Applications: React.FC = () => {
                 ))}
               </ol>
             </details>
+            {![
+              'WITHDRAWN',
+              'REJECTED',
+              'JOINING',
+              'TRAINING',
+              'COMPLETED',
+            ].includes(a.stage) && (
+              <button
+                className={`${secondary} mt-4`}
+                disabled={busy}
+                onClick={() => void withdraw(a.id)}
+              >
+                Withdraw application
+              </button>
+            )}
           </Card>
         ))
       )}

@@ -1,3 +1,4 @@
+import { Offers, Documents, Training, Notifications } from './Joining';
 import React, { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import {
@@ -26,6 +27,10 @@ const pages = [
   ['My applications', FileText],
   ['Assessments', ClipboardCheck],
   ['Interviews', CalendarDays],
+  ['Offers & joining', FileText],
+  ['Documents', FileText],
+  ['Training', ClipboardCheck],
+  ['Updates', FileText],
 ] as const;
 export default function CandidateApp() {
   const [session, setSession] = useState<Session | null>(null);
@@ -40,11 +45,17 @@ export default function CandidateApp() {
   useEffect(() => {
     try {
       const auth = candidateAuth();
-      auth.auth.getSession().then(({ data, error }) => {
-        if (error) setError(error.message);
-        setSession(data.session);
-        setReady(true);
-      });
+      auth.auth
+        .getSession()
+        .then(({ data, error }) => {
+          if (error) setError(error.message);
+          setSession(data.session);
+          setReady(true);
+        })
+        .catch((e) => {
+          setError(readable(e));
+          setReady(true);
+        });
       const { data } = auth.auth.onAuthStateChange((event, next) => {
         setSession(next);
         if (event === 'PASSWORD_RECOVERY') setRecovery(true);
@@ -78,7 +89,7 @@ export default function CandidateApp() {
         !window.confirm('Sign out? Your assessment timer will continue.')
       )
         return;
-      const result = await candidateAuth().auth.signOut();
+      const result = await candidateAuth().auth.signOut({ scope: 'local' });
       if (result.error) throw result.error;
       setPage('Explore jobs');
     } catch (e) {
@@ -112,6 +123,14 @@ export default function CandidateApp() {
     <Assessments onActive={setActive} />
   ) : page === 'Interviews' ? (
     <Interviews />
+  ) : page === 'Offers & joining' ? (
+    <Offers />
+  ) : page === 'Documents' ? (
+    <Documents />
+  ) : page === 'Training' ? (
+    <Training />
+  ) : page === 'Updates' ? (
+    <Notifications />
   ) : (
     <Overview navigate={navigate} />
   );

@@ -4831,4 +4831,7 @@ export interface CareerInterview {
  id: string; application_id: string; round: 'HR'|'DEPARTMENT_HEAD'|'MANAGEMENT'; scheduled_at: string; location: string;
  status: 'SCHEDULED'|'COMPLETED'|'CANCELLED'; recommendation?: 'PROCEED'|'REJECT'|'HOLD'; internal_feedback?: string; version?: number;
 }
-export interface CareerStaffApplication extends CareerApplication { title: string; resume_id: string; hr_candidate_id: string; attempts: CareerAttempt[]; interviews: CareerInterview[] }
+export interface CareerStaffApplication extends CareerApplication { title: string; resume_id: string; hr_candidate_id: string; attempts: CareerAttempt[]; interviews: CareerInterview[]; offers:CareerOffer[]; documents:CareerDocument[] }
+export interface CareerOffer {id:string;application_id:string;title:string;terms:string;expires_at:string;joining_date:string;status:'DRAFT'|'RELEASED'|'ACCEPTED'|'DECLINED'|'EXPIRED'|'WITHDRAWN';version:number}
+export interface CareerDocument {id:string;application_id:string;title:string;file_id:string|null;status:'REQUESTED'|'UPLOADED'|'APPROVED'|'REJECTED';message:string|null;version:number}
+export interface CareerTraining {id:string;application_id:string;title:string;start_date:string;status:string;days:{day_no:number;title:string;topics:string[];trainer_name:string|null;attendance:string|null;assessment_result:string|null;completed:boolean|null}[]}
