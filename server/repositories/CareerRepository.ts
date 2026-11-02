@@ -1,3 +1,4 @@
+import { getServiceClient } from '../db/supabase.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CareerApplication, CareerFile, CareerJob, CareerProfile } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -11,5 +12,9 @@ export class CareerRepository {
   file(id: string | null, data: unknown = null): Promise<CareerFile> { return this.call('career_file', { p_id: id, p_data: data }); }
   apply(posting: string, resume: string): Promise<CareerApplication> { return this.call('career_apply', { p_posting: posting, p_resume: resume }); }
   applications(): Promise<CareerApplication[]> { return this.call('career_applications', {}); }
+  /** Server-only completion after ownership and stored-content verification in the service. */
+  async recordVerifiedFile(id: string, size: number, path: string): Promise<CareerFile> {
+    return unwrap(await getServiceClient().rpc('career_file_verified', { p_id: id, p_size: size, p_path: path })) as CareerFile;
+  }
   async call<T>(name: string, args: Record<string, unknown>): Promise<T> { return unwrap(await this.db.rpc(name,args)) as T; }
 }
