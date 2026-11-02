@@ -5671,13 +5671,13 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
     'reminder calls: live is refused while no calling provider is connected (nobody is called)', r.json);
 
   // --- BolifyAI: live calls go to the webhook (a local mock stands in for it) ---
-  const bolifyHits: { body: any; auth: string | undefined }[] = [];
+  const bolifyHits: { body: any; auth: string | undefined; apiKey?: string }[] = [];
   let bolifyReply: { status: number; body: string } = { status: 200, body: '{"call_id":"BOL-1001"}' };
   const bolify = http.createServer((req, res) => {
     let raw = '';
     req.on('data', d => (raw += d));
     req.on('end', () => {
-      bolifyHits.push({ body: JSON.parse(raw), auth: req.headers.authorization });
+      bolifyHits.push({ body: JSON.parse(raw), auth: req.headers.authorization, apiKey: req.headers['x-api-key'] as string | undefined });
       res.writeHead(bolifyReply.status, { 'content-type': 'application/json' });
       res.end(bolifyReply.body);
     });
@@ -5762,6 +5762,88 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('mv', 'POST', `/pipeline/customers/${odc}/automations/AI_CALLING`);
   check(r.status === 200 && bolifyHits.length === 1 && bolifyHits[0].body.name === 'Onboard Caller' && bolifyHits[0].body.phone === '+919820011122' && bolifyHits[0].body.location === 'Nashik' && r.json.data.lastRun.status === 'SENT',
     'bolify: the Technical Consultant\'s AI Calling posts the customer to BolifyAI and records the run', r.json);
+
+  // --- the BolifyAI API itself (the call the Google Sheet script makes): key in x-api-key, assistant and dialer in the body ---
+  delete process.env.BOLIFY_WEBHOOK_URL;
+  const ASSISTANT = '567eaefd-bc8f-42c2-8bff-c1d1ac2f97ba', DIALER = 'c19c9cff-d96d-48b7-b163-1c62be020e6d';
+  Object.assign(process.env, { BOLIFY_API_KEY: 'bolify-api-key-456', BOLIFY_API_URL: bolifyUrl, BOLIFY_ASSISTANT_ID: ASSISTANT, BOLIFY_DIALER_ID: DIALER });
+  bolifyReply = { status: 200, body: '{"data":{"call_id":"API-3003"}}' };
+  await reset();
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  bolifyHits.length = 0;
+  r = await dispatch('dispatch-secret-0123456789');
+  x = (await row())[0];
+  check(r.json.data.subscriptionReminders.accepted >= 1 && bolifyHits.length === 1, 'bolify api: a due reminder goes to the BolifyAI API in live mode', r.json);
+  check(Object.keys(bolifyHits[0].body).join() === 'first_name,last_name,email,phone_number,assistant_id,dialer_id,description'
+        && Array.isArray(bolifyHits[0].body.phone_number) && bolifyHits[0].body.phone_number.join() === '+919000000201'
+        && bolifyHits[0].body.assistant_id === ASSISTANT && bolifyHits[0].body.dialer_id === DIALER && bolifyHits[0].body.description === ''
+        && bolifyHits[0].apiKey === 'bolify-api-key-456' && bolifyHits[0].auth === undefined,
+    'bolify api: the request is the sheet script\'s (first_name, last_name, email, phone_number[], assistant_id, dialer_id, description) with the key in x-api-key', bolifyHits[0]);
+  check(x.status === 'ACCEPTED' && x.external_call_id === 'API-3003' && !JSON.stringify(x).includes('9000000201') && !JSON.stringify(x).includes('bolify-api-key-456'), 'bolify api: ACCEPTED with the call id; no full number and no key stored', x);
+
+  process.env.BOLIFY_INCLUDE_CONTEXT = 'true';
+  await reset();
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  bolifyHits.length = 0;
+  await dispatch('dispatch-secret-0123456789');
+  check(bolifyHits.length === 1 && /expires on \d{4}-\d{2}-\d{2}, in 7 days/.test(bolifyHits[0].body.description) && bolifyHits[0].body.description.includes('Reference '), 'bolify api: with BOLIFY_INCLUDE_CONTEXT the description says what the call is about', bolifyHits[0].body.description);
+  delete process.env.BOLIFY_INCLUDE_CONTEXT;
+
+  bolifyHits.length = 0;
+  r = await api('mv', 'POST', `/pipeline/customers/${odc}/automations/AI_CALLING`);
+  check(r.status === 200 && bolifyHits.length === 1 && bolifyHits[0].body.first_name === 'Onboard' && bolifyHits[0].body.last_name === 'Caller' && bolifyHits[0].body.phone_number[0] === '+919820011122' && bolifyHits[0].apiKey === 'bolify-api-key-456',
+    'bolify api: the Technical Consultant\'s AI Calling uses the API too (name split into first and last)', bolifyHits[0]);
+
+  // half-configured: no assistant -> no provider; the live run says what is missing and nobody is called
+  delete process.env.BOLIFY_ASSISTANT_ID;
+  await reset();
+  bolifyHits.length = 0;
+  r = await dispatch('dispatch-secret-0123456789');
+  check(r.json.data.subscriptionReminders.mode === 'off' && /BOLIFY_ASSISTANT_ID/.test(r.json.data.subscriptionReminders.note) && bolifyHits.length === 0, 'bolify api: without the assistant id live is refused and names it', r.json);
+  process.env.BOLIFY_ASSISTANT_ID = ASSISTANT;
+
+  // --- who an AI call is transferred to: the customer's department's Technical Consultant ---
+  const tcId = (await db.query(`select id from public.profiles where email = 'consultant@amuwa.com'`)).rows[0]?.id as string | undefined
+    ?? (await api('tc', 'GET', '/me')).json.data.id as string;
+  const dept = (await db.query(`select private.base_department(department_id) d from public.customers where id = $1`, [cust])).rows[0].d as string;
+  const deptName = (await db.query(`select name from public.departments where id = $1`, [dept])).rows[0].name as string;
+  await db.query(`update public.profiles set phone = null where is_technical_consultant and private.base_department(department_id) = $1 and id <> $2`, [dept, tcId]);
+  await db.query(`update public.profiles set phone = '9000000777' where id = $1`, [tcId]);
+  const transfer = (headers: Record<string, string>, query = '', body?: unknown) =>
+    fetch(base + '/integrations/bolify/transfer-target' + query, { method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body) })
+      .then(async res => ({ status: res.status, json: (await res.json()) as any }));
+  delete process.env.BOLIFY_TOOL_SECRET;
+  let t = await transfer({}, '?phone=9000000201');
+  check(t.status === 503, 'transfer: not configured, not available', t);
+  process.env.BOLIFY_TOOL_SECRET = 'tool-secret-0123456789';
+  t = await transfer({}, '?phone=9000000201');
+  check(t.status === 401, 'transfer: no secret, refused', t);
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456780' }, '?phone=9000000201');
+  check(t.status === 401, 'transfer: a wrong secret is refused', t);
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456789' }, '?phone=9000000201');
+  check(t.status === 200 && t.json.found === true && t.json.transfer_to === '+919000000777' && t.json.department === deptName && t.json.assigned_by && /connecting you/.test(t.json.say),
+    'transfer: the customer\'s department\'s consultant is returned, with a sentence for the agent', t.json);
+  check(Object.keys(t.json).sort().join() === 'assigned_by,consultant_first_name,consultant_name,department,found,say,transfer_to', 'transfer: the answer holds the number, the consultant and the department, nothing else', Object.keys(t.json));
+  t = await transfer({ authorization: 'Bearer tool-secret-0123456789' }, '', { phone_number: ['+91 90000 00201'], call_id: 'bolify-live-1' });
+  check(t.status === 200 && t.json.found === true && t.json.transfer_to === '+919000000777', 'transfer: Bearer works too, a POST with phone_number as a list works', t.json);
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456789' }, '', { variables: { customer_phone: '9000000201' } });
+  check(t.status === 200 && t.json.found === true, 'transfer: the number may be nested in variables', t.json);
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456789' }, '?phone=9811111111');
+  check(t.status === 200 && t.json.found === false && t.json.reason === 'NO_CUSTOMER' && t.json.transfer_to === undefined && t.json.say.length > 10, 'transfer: a number that is no customer is not routed, and the agent is told what to say', t.json);
+  process.env.BOLIFY_DEFAULT_TRANSFER_NUMBER = '9822345678';
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456789' }, '?phone=9811111111');
+  check(t.json.found === true && t.json.transfer_to === '+919822345678' && t.json.assigned_by === 'DEFAULT', 'transfer: the default number is for a number that is no customer (a test lead)', t.json);
+  await db.query(`update public.profiles set phone = null where id = $1`, [tcId]);
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456789' }, '?phone=9000000201&call_id=none-1');
+  check(t.json.found === false && t.json.reason === 'NO_CONSULTANT' && t.json.transfer_to === undefined, 'transfer: a known customer with nobody reachable never gets the default number', t.json);
+  delete process.env.BOLIFY_DEFAULT_TRANSFER_NUMBER;
+  t = await transfer({ 'x-api-key': 'tool-secret-0123456789' }, '');
+  check(t.status === 422, 'transfer: a request that names nothing is refused', t);
+  check((await db.query(`select count(*)::int n from public.ai_call_transfers where phone_masked ~ '[0-9]{10}'`)).rows[0].n === 0, 'transfer: the record holds masked numbers only');
+  delete process.env.BOLIFY_TOOL_SECRET;
+  for (const k of ['BOLIFY_API_URL', 'BOLIFY_ASSISTANT_ID', 'BOLIFY_DIALER_ID']) delete process.env[k];
   bolify.close();
   delete process.env.BOLIFY_WEBHOOK_URL;
   delete process.env.BOLIFY_API_KEY;

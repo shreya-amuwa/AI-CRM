@@ -11,7 +11,7 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
  * AUTOMATION_MODE_AI_CALL:
  *   off      nothing happens.
  *   dry_run  (default) reminders are decided and logged as "would call"; nobody is called, nothing leaves the server.
- *   live     calls are placed through the calling provider (BolifyAI, see bolify.ts). Without BOLIFY_WEBHOOK_URL there is no provider, so live
+ *   live     calls are placed through the calling provider (BolifyAI, see bolify.ts). Without BOLIFY_API_KEY + BOLIFY_ASSISTANT_ID + BOLIFY_DIALER_ID (or BOLIFY_WEBHOOK_URL) there is no provider, so live
  *            behaves like "off" and says so: nobody is called.
  */
 export type AiCallMode = 'off' | 'dry_run' | 'live';
@@ -69,7 +69,7 @@ export async function runSubscriptionReminders(
   if (mode === 'off') return { ...out, note: 'Reminder calls are switched off (AUTOMATION_MODE_AI_CALL=off).' };
   if (!opts.db && !hasServiceClient()) return { ...out, note: 'The server has no service key.' };
   if (mode === 'live' && !opts.sender) {
-    return { ...out, mode: 'off', note: 'Live calling is not available: no calling provider is connected (set BOLIFY_WEBHOOK_URL). Nothing was scheduled or called.' };
+    return { ...out, mode: 'off', note: 'Live calling is not available: no calling provider is connected (set BOLIFY_API_KEY, BOLIFY_ASSISTANT_ID and BOLIFY_DIALER_ID, or BOLIFY_WEBHOOK_URL). Nothing was scheduled or called.' };
   }
   const db = opts.db ?? getServiceClient();
   try {

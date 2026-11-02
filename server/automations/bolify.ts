@@ -3,7 +3,16 @@ import { automationSettings } from './config.js';
 import { cleanIndianMobile } from '../../shared/contactValidation.js';
 
 /**
- * BolifyAI: starts an AI call from a webhook. The Google Sheet script posted { name, phone, email, service, location } as JSON to that
+ * BolifyAI. Two ways to start a call, chosen by what is configured:
+ *
+ *  1. THE API (use this): POST https://api.bolifyai.com/api/v1/playground/call with the key in "x-api-key" and
+ *       { first_name, last_name, email, phone_number: ["+91..."], assistant_id, dialer_id, description }
+ *     exactly the call the Google Sheet script (onBolifySheetEdit) already makes. Needs BOLIFY_API_KEY, BOLIFY_ASSISTANT_ID and BOLIFY_DIALER_ID.
+ *  2. A WEBHOOK (older): BOLIFY_WEBHOOK_URL, the five fields name / phone / email / service / location, optional Bearer key.
+ *
+ * What follows describes the webhook; the API shares everything else (what a reply means, staging allow-list, retries).
+ *
+ * Starts an AI call from a webhook. The Google Sheet script posted { name, phone, email, service, location } as JSON to that
  * webhook and treated any 2xx as "sent"; the CRM sends the same five fields, so the BolifyAI agent behind the webhook needs no change.
  *
  * Settings (server environment only; never in the database, never in browser code):
@@ -19,12 +28,17 @@ import { cleanIndianMobile } from '../../shared/contactValidation.js';
  * and network errors = try again later; any other 4xx = the request itself was refused (not retried).
  */
 export interface BolifyConfig {
+  /** The BolifyAI API (preferred): set when the key, the assistant and the dialer are all configured. */
+  api: { url: string; assistantId: string; dialerId: string } | null;
   webhookUrl: string | null;
   apiKey: string | null;
   includeContext: boolean;
   phoneFormat: 'e164' | '91' | '10';
   timeoutMs: number;
 }
+
+/** BolifyAI's call endpoint (the one the Google Sheet script uses). */
+export const BOLIFY_API_URL = 'https://api.bolifyai.com/api/v1/playground/call';
 
 export function bolifyConfig(env: NodeJS.ProcessEnv = process.env): BolifyConfig {
   let url: string | null = null;
@@ -39,7 +53,23 @@ export function bolifyConfig(env: NodeJS.ProcessEnv = process.env): BolifyConfig
     }
   }
   const t = Number(env.BOLIFY_TIMEOUT_MS);
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const assistantId = (env.BOLIFY_ASSISTANT_ID || '').trim();
+  const dialerId = (env.BOLIFY_DIALER_ID || '').trim();
+  let apiUrl = BOLIFY_API_URL;
+  const customUrl = (env.BOLIFY_API_URL || '').trim();
+  if (customUrl) {
+    try {
+      const u = new URL(customUrl);
+      const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1';
+      apiUrl = u.protocol === 'https:' || (u.protocol === 'http:' && local) ? u.toString() : '';
+    } catch {
+      apiUrl = '';
+    }
+  }
+  const key = env.BOLIFY_API_KEY?.trim() || null;
   return {
+    api: key && apiUrl && uuid.test(assistantId) && uuid.test(dialerId) ? { url: apiUrl, assistantId, dialerId } : null,
     webhookUrl: url,
     apiKey: env.BOLIFY_API_KEY?.trim() || null,
     includeContext: (env.BOLIFY_INCLUDE_CONTEXT || '').trim().toLowerCase() === 'true',
@@ -77,6 +107,34 @@ export function bolifyPayload(call: ReminderCall, includeContext = false, phoneF
   return body;
 }
 
+/**
+ * The request the BolifyAI API takes (the body of the sheet script's UrlFetchApp call). The sheet needed a last name, so a customer with only
+ * one name is sent "-" rather than an empty string. `description` is what the call is about; it is empty unless BOLIFY_INCLUDE_CONTEXT=true,
+ * which is how the sheet sent it.
+ */
+export function bolifyApiPayload(
+  p: { firstName: string; lastName: string; email: string | null; phone: string; description: string },
+  api: { assistantId: string; dialerId: string },
+  includeContext: boolean
+) {
+  return {
+    first_name: p.firstName.trim() || '-',
+    last_name: p.lastName.trim() || '-',
+    email: p.email ?? '',
+    phone_number: [p.phone],
+    assistant_id: api.assistantId,
+    dialer_id: api.dialerId,
+    description: includeContext ? p.description.slice(0, 1000) : ''
+  };
+}
+
+/** What a reminder call is about, in one sentence the agent can say. */
+export function reminderDescription(call: ReminderCall): string {
+  const when = call.daysLeft === 1 ? 'tomorrow' : `in ${call.daysLeft} days`;
+  const plan = call.planName ? ` (${call.planName} plan)` : '';
+  return `Reminder: ${call.serviceName ?? call.serviceCode}${plan}${call.company ? ` for ${call.company}` : ''} expires on ${call.expiryDate}, ${when}. Reference ${call.id}.`;
+}
+
 /** Looks for a call id in the usual places of a JSON reply; null when there is none (the sheet script never had one). */
 function callIdOf(text: string): string | null {
   try {
@@ -100,30 +158,53 @@ export class BolifyWebhookSender implements ReminderCallSender {
   ) {}
 
   async place(call: ReminderCall) {
-    return this.post(bolifyPayload(call, this.cfg.includeContext, this.cfg.phoneFormat), call.phone);
+    if (this.cfg.api) {
+      const phone = bolifyPhone(call.phone, this.cfg.phoneFormat);
+      return this.send(
+        this.cfg.api.url, { 'x-api-key': this.cfg.apiKey ?? '' },
+        bolifyApiPayload({ firstName: call.firstName || call.company || '', lastName: call.lastName, email: call.email, phone, description: reminderDescription(call) }, this.cfg.api, this.cfg.includeContext),
+        phone, call.phone
+      );
+    }
+    return this.postWebhook(bolifyPayload(call, this.cfg.includeContext, this.cfg.phoneFormat), call.phone);
   }
 
-  /** One customer, on demand (the Technical Consultant's AI Calling automation): same five fields as the sheet script. */
+  /** One customer, on demand (the Technical Consultant's AI Calling automation). */
   async callCustomer(c: { name: string; company?: string | null; phone: string | null; whatsapp?: string | null; email?: string | null; city?: string | null }, services: string[]) {
     const phone = bolifyPhone(c.phone, this.cfg.phoneFormat) || bolifyPhone(c.whatsapp, this.cfg.phoneFormat);
-    return this.post({ name: (c.name || c.company || '').trim(), phone, email: c.email ?? '', service: services.join(', '), location: c.city ?? '' }, phone);
+    if (this.cfg.api) {
+      const full = (c.name || c.company || '').trim();
+      const first = full.split(/\s+/)[0] ?? '';
+      return this.send(
+        this.cfg.api.url, { 'x-api-key': this.cfg.apiKey ?? '' },
+        bolifyApiPayload({ firstName: first, lastName: full.slice(first.length), email: c.email ?? '', phone, description: services.length ? `Services: ${services.join(', ')}` : '' }, this.cfg.api, this.cfg.includeContext),
+        phone, phone
+      );
+    }
+    return this.postWebhook({ name: (c.name || c.company || '').trim(), phone, email: c.email ?? '', service: services.join(', '), location: c.city ?? '' }, phone);
   }
 
-  private async post(body: Record<string, string | number | null>, phoneForCheck: unknown) {
+  private async postWebhook(body: Record<string, string | number | null>, phoneForCheck: unknown) {
     const url = this.cfg.webhookUrl;
     if (!url) return { outcome: 'FAILED' as const, detail: 'BOLIFY_WEBHOOK_URL is not set (or is not an https address).' };
-    if (!cleanIndianMobile(body.phone) || !cleanIndianMobile(phoneForCheck)) {
+    const headers: Record<string, string> = {};
+    if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
+    return this.send(url, headers, body, String(body.phone ?? ''), phoneForCheck);
+  }
+
+  /** The one place a request leaves the server. */
+  private async send(url: string, extraHeaders: Record<string, string>, body: unknown, phone: string, phoneForCheck: unknown) {
+    if (!cleanIndianMobile(phone) || !cleanIndianMobile(phoneForCheck)) {
       return { outcome: 'FAILED' as const, detail: 'The customer has no valid Indian mobile number, so nobody was called.' };
     }
 
     // staging safety: only the listed numbers are called
     const tests = automationSettings().testRecipients;
-    if (tests && !tests.phones.has(cleanIndianMobile(body.phone))) {
+    if (tests && !tests.phones.has(cleanIndianMobile(phone))) {
       return { outcome: 'SKIPPED' as const, detail: 'Not called: this number is not in AUTOMATION_TEST_RECIPIENTS.' };
     }
 
-    const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json' };
-    if (this.cfg.apiKey) headers.authorization = `Bearer ${this.cfg.apiKey}`;
+    const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json', ...extraHeaders };
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs);
     try {
@@ -136,7 +217,7 @@ export class BolifyWebhookSender implements ReminderCallSender {
       if (res.status === 408 || res.status === 429 || res.status >= 500) {
         return { outcome: 'RETRY' as const, detail: `BolifyAI is busy or unavailable (HTTP ${res.status}). It will be tried again.`, code: res.status };
       }
-      return { outcome: 'FAILED' as const, detail: `BolifyAI refused the request (HTTP ${res.status}). Check the webhook address and key.`, code: res.status };
+      return { outcome: 'FAILED' as const, detail: `BolifyAI refused the request (HTTP ${res.status}). Check the ${this.cfg.api ? 'API key, assistant and dialer' : 'webhook address and key'}.`, code: res.status };
     } catch (err) {
       const aborted = (err as Error)?.name === 'AbortError';
       return { outcome: 'RETRY' as const, detail: aborted ? `BolifyAI did not answer within ${Math.round(this.cfg.timeoutMs / 1000)} seconds.` : 'Could not reach BolifyAI.' };
@@ -146,8 +227,8 @@ export class BolifyWebhookSender implements ReminderCallSender {
   }
 }
 
-/** The sender for live calls, or null when no webhook is configured (live then stays refused and nobody is called). */
+/** The sender for live calls, or null when nothing is configured (live then stays refused and nobody is called). */
 export function bolifySender(env: NodeJS.ProcessEnv = process.env): BolifyWebhookSender | null {
   const cfg = bolifyConfig(env);
-  return cfg.webhookUrl ? new BolifyWebhookSender(cfg) : null;
+  return cfg.api || cfg.webhookUrl ? new BolifyWebhookSender(cfg) : null;
 }

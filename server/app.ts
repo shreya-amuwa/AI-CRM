@@ -27,6 +27,7 @@ import { runTopPerformersAutomation } from './topPerformers/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
 import { bolifySender } from './automations/bolify.js';
+import { lookupTransfer, parseTransferRequest, toolSecretOk, toolSecrets } from './automations/aiCallTransfer.js';
 import { runAllSubscriptionMessages } from './automations/subscriptionMessages.js';
 import { applyDeliveryReport, normalizeProviderStatus, runInvoiceWhatsApp } from './invoices/whatsapp.js';
 import { StorageRepository } from './repositories/StorageRepository.js';
@@ -210,6 +211,18 @@ app.post('/integrations/biometric/punch', async c => {
   if (error) throw fromDatabaseError(error);
   if (data === 'UNKNOWN_EMPLOYEE') throw new AppError('NOT_FOUND', 'No active employee has this e-mail.');
   return c.json(ok({ recorded: true }));
+});
+
+// The AI calling agent asks, during a call, who to transfer the customer to (the customer's department's Technical Consultant).
+// Authenticated with the shared secret BOLIFY_TOOL_SECRET ("x-api-key" or "Authorization: Bearer"); GET with a query string or POST with JSON.
+app.on(['GET', 'POST'], '/integrations/bolify/transfer-target', async c => {
+  if (!toolSecrets().length) throw new AppError('SERVICE_UNAVAILABLE', 'AI call transfers are not configured.');
+  if (!toolSecretOk({ apiKey: c.req.header('x-api-key'), authorization: c.req.header('authorization') })) throw new AppError('UNAUTHENTICATED');
+  await enforce([{ key: `bolifytool:${clientIp(c)}`, limit: 120, window: 60 }], 'memory');
+  const input = c.req.method === 'GET' ? Object.fromEntries(new URL(c.req.url).searchParams) : await readJson(c);
+  if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'The server has no service key.');
+  // a flat answer (not the CRM's envelope): it is read by the calling agent's tool, not by the CRM's own screens
+  return c.json(await lookupTransfer(getServiceClient(), parseTransferRequest(input)));
 });
 
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
@@ -402,7 +415,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/login-failed']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/integrations/biometric/punch', '/integrations/bolify/transfer-target', '/client-auth/forgot-password', '/auth/login-failed']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {
