@@ -3,7 +3,7 @@
 --
 --   KEPT     the audit log (the database refuses to delete it by design - it is the security record; it only shows who did what, with no
 --            customer data), the Super Admin account(s) (login, profile), departments (incl. Wabatalk), teams, the service catalogue and prices, monthly plans,
---            GST states, document types, onboarding checklist templates, and the system settings (SLA, reminder, attribution rule, crm_settings).
+--            GST states and the GST rates of an order, document types, onboarding checklist templates, and the system settings (SLA, reminder, attribution rule, crm_settings, invoice WhatsApp, workflow, usage alerts, reminder wording).
 --   DELETED  everyone else (Department Heads, Team Leads, Team Members, HR, Accounts, ... and their logins), all customers / leads / clients
 --            (and their client logins), services, payments, invoices, add-ons, tickets, tasks, chat, notifications, HR / recruitment / training
 --            data, attendance, telecaller sheets, business-associate data, expenses, revenue attribution, rate-limit counters.
@@ -24,7 +24,8 @@
 with keep_tables(t) as (
   values ('departments'), ('teams'), ('crm_services'), ('service_prices'), ('crm_settings'), ('document_types'), ('gst_states'),
          ('onboarding_items'), ('onboarding_item_services'), ('reminder_call_settings'), ('revenue_attribution_settings'),
-         ('ticket_sla_settings'), ('monthly_plans'), ('monthly_plan_services'), ('profiles'), ('audit_logs')
+         ('ticket_sla_settings'), ('monthly_plans'), ('monthly_plan_services'), ('profiles'), ('audit_logs'),
+         ('order_gst_rates'), ('invoice_whatsapp_settings'), ('workflow_settings'), ('usage_alert_settings'), ('reminder_message_templates')
 )
 select 'KEPT: super admin' as what, p.email as detail, p.role::text as extra from public.profiles p where p.role = 'SUPER_ADMIN'
 union all
@@ -45,7 +46,8 @@ declare
   v_confirm constant text := '';     -- <- type exactly: DELETE EVERYTHING EXCEPT SUPER ADMIN
   v_keep_tables constant text[] := array['departments', 'teams', 'crm_services', 'service_prices', 'crm_settings', 'document_types', 'gst_states',
     'onboarding_items', 'onboarding_item_services', 'reminder_call_settings', 'revenue_attribution_settings', 'ticket_sla_settings',
-    'monthly_plans', 'monthly_plan_services', 'profiles', 'audit_logs'];
+    'monthly_plans', 'monthly_plan_services', 'profiles', 'audit_logs',
+    'order_gst_rates', 'invoice_whatsapp_settings', 'workflow_settings', 'usage_alert_settings', 'reminder_message_templates'];
   v_admins uuid[];
   v_list text;
   v_people integer;

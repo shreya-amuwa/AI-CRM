@@ -1,6 +1,6 @@
 import React from 'react';
 import type { WorkReportSummary } from '../../../shared/contracts';
-import { dateLabel, periodLabel, StatusPill } from './reportUi';
+import { ApprovalSteps, dateLabel, periodLabel, StatusPill } from './reportUi';
 
 /** One report in a list: a button that opens it. Used wherever reports are listed (my reports, the inbox, the boxes). */
 export const ReportRow: React.FC<{
@@ -19,10 +19,12 @@ export const ReportRow: React.FC<{
         {r.revision > 1 ? <> - revision {r.revision}</> : null}
       </span>
       {r.excerpt ? <span className="block text-xs text-slate-600 mt-1 line-clamp-2">{r.excerpt}</span> : null}
-      {r.reviewComment ? <span className="block text-xs text-indigo-800 mt-1 line-clamp-2">{r.reviewedBy ?? 'Reviewer'}: {r.reviewComment}</span> : null}
+      {r.reviewComment && (r.status === 'REVISION_REQUIRED' || r.status === 'REJECTED' || r.kind !== 'MEMBER')
+        ? <span className="block text-xs text-indigo-800 mt-1 line-clamp-2">{r.reviewedBy ?? 'Reviewer'}{r.decisionStage === 'DEPARTMENT_HEAD' ? ' (Department Head)' : r.decisionStage === 'TEAM_LEAD' ? ' (Team Lead)' : ''}: {r.reviewComment}</span> : null}
     </button>
     <div className="shrink-0 flex flex-col items-end gap-1.5">
-      <StatusPill status={r.status} />
+      <StatusPill status={r.status} kind={r.kind} />
+      {r.kind === 'MEMBER' && r.status !== 'DRAFT' ? <ApprovalSteps tl={r.tlStatus} dh={r.dhStatus} /> : null}
       {extra}
     </div>
   </div>

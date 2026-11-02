@@ -10,16 +10,16 @@ import { notifyReportsChanged } from './reportEvents';
 import { PeriodBar, presetPeriod, todayIso, type Period } from './reportUi';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
-const TITLES: Record<ReportKind, string> = { MEMBER: 'Submit report', TEAM_LEAD: 'My individual report', DEPARTMENT_HEAD: 'My individual report' };
+const TITLES: Record<Exclude<ReportKind, 'MEMBER'>, string> = { TEAM_LEAD: 'My individual report', DEPARTMENT_HEAD: 'My individual report' };
 const MAX_LINKS = 5;
 
 /**
- * The report form for the three kinds of report. The sections come from the shared field list (the server uses the same one), "Save as
+ * The report form for a Team Lead's and a Department Head's individual report (the Team Member report has its own, simpler form). The sections come from the shared field list (the server uses the same one), "Save as
  * draft" keeps it private to the author and "Submit report" sends it to the reviewer the database chose (never typed here). A report that
  * was sent back opens in the same form; submitting it again keeps the earlier version in the history.
  */
 export const ReportForm: React.FC<{
-  kind: ReportKind;
+  kind: Exclude<ReportKind, 'MEMBER'>;
   reportsTo: string[];
   initial?: WorkReportDetail | null;
   onDone: (r: WorkReportDetail, submitted: boolean) => void;

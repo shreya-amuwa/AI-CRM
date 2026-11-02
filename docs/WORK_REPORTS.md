@@ -50,3 +50,35 @@ output and never change a report's status.
 
 `supabase/tests/work_reports_test.sql` (roles, visibility, approvals, revision loop, packages, notifications, audit, no direct table access), the *Work reports* block of
 `supabase/tests/api_integration.test.ts` (every route per role, cross-department and cross-role denials) and `supabase/tests/work_reports.test.ts` (schemas).
+
+## Two-level approval for Team Member reports (migration `20261217000100_reports_two_level_approval.sql`)
+
+This section replaces what the sections above say about Team Member reports (the single Team Lead approval and the long member form); Team Lead and Department Head reports are unchanged.
+
+```
+Team Member submits -> Pending Team Lead Approval -> (Team Lead approves) -> Pending Department Head Approval -> (Department Head approves) -> Fully Approved
+```
+
+* **Statuses.** `SUBMITTED` / `UNDER_REVIEW` = *Pending Team Lead Approval*; the new `PENDING_DEPARTMENT_HEAD` = *Pending Department Head Approval*; `APPROVED` = *Fully Approved* and is reached **only** after both approvals;
+  `REJECTED` and `REVISION_REQUIRED` as before. The words come from `reportStatusLabel` in `shared/reportFields.ts`. Pending reports are never counted as approved, anywhere.
+* **Two stages, two records.** `work_reports` keeps, per stage, the reviewer (id and name), time, status and comment (`tl_*`, `dh_*`), the Team Lead who handled it (`team_lead_id/_name`) and `decision_stage` (which stage
+  made the last rejection / revision request). `work_report_events.stage` marks each history step. A resubmission clears the current approvals (so both stages repeat) and the earlier rounds stay in the history.
+* **Who decides.** The database works out the stage from the report's state and the caller (`private.report_review_stage`): only the report's own Team Lead decides stage 1, and only a Department Head covering the
+  department (and side) decides stage 2, and only after the Team Lead approved. Nobody decides on their own report; the Super Admin and the Operations Head read but do not take part in the member chain.
+  The browser sends only `decision` and `comment`.
+* **Department Head.** *Pending Approvals* tab: **Pending Team Member Approvals** (`GET /work-reports/member-approvals`) lists the reports the Team Leads approved: title, employee and designation, Team Lead, report date,
+  assigned and completed tasks, Team Lead approval date, status. Approve = fully approved; Reject / Request revision (comment required) sends it back to the employee with the Team Lead's approval kept on record,
+  and notifies the employee and the Team Lead. Notifications: Team Lead approved -> Department Head(s) (`REPORT_PENDING_DEPARTMENT_HEAD`) and the employee (`REPORT_TL_APPROVED`); final decisions -> the employee and the Team Lead.
+* **Boxes.** Team Lead box (Department Head): **A. Team Lead individual report**, **B. Team Member reports** grouped *Pending Department Head Approval / Fully Approved / Rejected - Revision Required*.
+  Operations Head: Department -> Department Head -> Team Lead -> Team Members, every status shown (*Pending Team Lead Approval* too); only fully approved reports count as approved. Counts: `pendingTl`, `pendingDh`, `approved`,
+  `revision`, `rejected`.
+* **The Team Member report** is only a title, a report date (today by default; up to 60 days back, never a future day), **assigned tasks** and **completed tasks**. The tasks are the member's own `work_tasks`
+  (`GET /work-reports/my-tasks`); the database refuses a task that was not assigned to the author, a completed task that is not one of the assigned tasks, and a completed task that is not completed in the task records
+  (checked on save and again on submit). The report stores a snapshot of the task titles. The old text sections are no longer saved; reports written before still show them.
+* **Team Lead individual report screen:** no Download button and no History section (the approval history is still recorded and shown to reviewers elsewhere).
+* **Live updates.** `work_report_signals` (published to Supabase Realtime, RLS: a person only receives their own rows, no report content) gets one row per affected person (author, Team Lead, Department Head(s), Operations Head)
+  when a report is submitted or its status changes and when a package is sent (triggers on `work_reports` / `work_report_packages`). `useReportsLive` (`src/components/reports/reportEvents.ts`) listens through the shared channel
+  (`listenToTables`: one subscription per tab, closed on unmount), debounces, and the Reports page reads again only the section on screen plus the badge. Without Realtime (no Supabase client) it falls back to a read on focus
+  and every 20 seconds while the tab is visible.
+* **Existing data.** Team Member reports that the Team Lead had already approved become the stage 1 approval and now wait for the Department Head (status `PENDING_DEPARTMENT_HEAD`); nothing is deleted.
+* **Tests.** `supabase/tests/work_reports_two_level_test.sql`, the *Work reports* block of `supabase/tests/api_integration.test.ts`, `supabase/tests/work_reports.test.ts` and `supabase/tests/e2e/run-reports-approval.sh` and `reports-approval.e2e.mjs`.

@@ -10,16 +10,23 @@ export interface ReportFieldDef {
   required?: boolean;
 }
 
+/**
+ * Sections of Team Member reports written before the report was simplified. New Team Member reports only have a title, a date, assigned
+ * tasks and completed tasks (see MEMBER_REPORT_TASK_KEYS); these labels are only used to show the older reports.
+ */
 export const MEMBER_REPORT_FIELDS = [
   { key: 'tasksAssigned', label: 'Assigned tasks', hint: 'What you were given to do in this period.' },
   { key: 'tasksCompleted', label: 'Completed tasks', hint: 'The tasks you finished.' },
-  { key: 'workCompleted', label: 'Work completed', hint: 'A summary of the work you completed.', required: true },
+  { key: 'workCompleted', label: 'Work completed', hint: 'A summary of the work you completed.' },
   { key: 'todayActivities', label: "Today's activities", hint: 'What you did during the day.' },
   { key: 'pendingTasks', label: 'Pending tasks', hint: 'What is still open and why.' },
   { key: 'challenges', label: 'Challenges', hint: 'Anything that slowed you down or needs help.' },
   { key: 'achievements', label: 'Achievements', hint: 'Wins and results worth noting.' },
   { key: 'remarks', label: 'Remarks', hint: 'Anything else your Team Lead should know.' }
 ] as const satisfies readonly ReportFieldDef[];
+
+/** The two task lists of a Team Member report: ids of the member's own task records (the database checks them). */
+export const MEMBER_REPORT_TASK_KEYS = ['assignedTasks', 'completedTasks'] as const;
 
 export const TEAM_LEAD_REPORT_FIELDS = [
   { key: 'workCompleted', label: 'Work completed personally', hint: 'What you completed yourself in this period.', required: true },
@@ -64,14 +71,32 @@ export const ALL_REPORT_FIELD_KEYS: readonly ReportFieldKey[] = [
 export const REPORT_PERIOD_TYPES = ['DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'] as const;
 export type ReportPeriodType = (typeof REPORT_PERIOD_TYPES)[number];
 
-export const REPORT_STATUSES = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'REJECTED', 'REVISION_REQUIRED'] as const;
+export const REPORT_STATUSES = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'PENDING_DEPARTMENT_HEAD', 'APPROVED', 'REJECTED', 'REVISION_REQUIRED'] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
 export const REPORT_STATUS_LABEL: Record<ReportStatus, string> = {
   DRAFT: 'Draft',
   SUBMITTED: 'Submitted',
   UNDER_REVIEW: 'Under review',
+  PENDING_DEPARTMENT_HEAD: 'Pending Department Head Approval',
   APPROVED: 'Approved',
   REJECTED: 'Rejected',
   REVISION_REQUIRED: 'Revision required'
 };
+
+/**
+ * The status as people read it. A Team Member report goes through two approvals, so its labels name the stage; a Team Lead or Department
+ * Head report has one reviewer and keeps the plain labels. Only a report both approvals passed is "Fully Approved".
+ */
+export function reportStatusLabel(status: ReportStatus, kind?: ReportKind | null): string {
+  if (kind === 'MEMBER') {
+    switch (status) {
+      case 'SUBMITTED':
+      case 'UNDER_REVIEW': return 'Pending Team Lead Approval';
+      case 'PENDING_DEPARTMENT_HEAD': return 'Pending Department Head Approval';
+      case 'APPROVED': return 'Fully Approved';
+      case 'REVISION_REQUIRED': return 'Revision Required';
+    }
+  }
+  return REPORT_STATUS_LABEL[status];
+}

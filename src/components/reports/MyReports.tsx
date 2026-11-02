@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { WorkReportSummary } from '../../../shared/contracts';
-import { REPORT_STATUSES, REPORT_STATUS_LABEL } from '../../../shared/reportFields';
+import { REPORT_STATUSES, reportStatusLabel, type ReportKind } from '../../../shared/reportFields';
 import { ApiError } from '../../lib/api/client';
 import { workReportsApi } from '../../lib/api/workReports';
 import { btn, Card, ErrorBanner, selectCls, Spinner } from '../team-member/pipeline/shared';
@@ -19,7 +19,10 @@ export const MyReports: React.FC<{
   reloadKey: number;
   onOpen: (id: string) => void;
   onEdit: (id: string) => void;
-}> = ({ reportsTo, reloadKey, onOpen, onEdit }) => {
+  /** A plain list of what was sent (no status filter): a Team Lead's individual report screen. */
+  simple?: boolean;
+  kind?: ReportKind;
+}> = ({ reportsTo, reloadKey, onOpen, onEdit, simple, kind }) => {
   const [items, setItems] = useState<WorkReportSummary[] | null>(null);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -40,14 +43,14 @@ export const MyReports: React.FC<{
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 className="text-base font-bold text-slate-900">My reports</h2>
-        <label className="flex items-center gap-2 text-xs text-slate-600">
+        <h2 className="text-base font-bold text-slate-900">{simple ? 'Submitted reports' : 'My reports'}</h2>
+        {simple ? null : <label className="flex items-center gap-2 text-xs text-slate-600">
           Status
           <select className={selectCls} value={status} onChange={e => setStatus(e.target.value)} aria-label="Filter my reports by status">
             <option value="">All</option>
-            {REPORT_STATUSES.map(s => <option key={s} value={s}>{REPORT_STATUS_LABEL[s]}</option>)}
+            {REPORT_STATUSES.map(s => <option key={s} value={s}>{reportStatusLabel(s, kind)}</option>)}
           </select>
-        </label>
+        </label>}
       </div>
       {error ? <ErrorBanner message={error} onRetry={load} /> : null}
       {items === null ? <Spinner /> : items.length === 0 ? (
@@ -62,7 +65,7 @@ export const MyReports: React.FC<{
                 extra={
                   <>
                     <span className="text-[11px] text-slate-500 text-right">
-                      {r.status === 'DRAFT' ? 'Not submitted' : <>To {reportsTo.join(', ') || 'your reviewer'}<br />{dateLabel(r.submittedAt)}</>}
+                      {r.status === 'DRAFT' ? 'Not submitted' : <>To {(r.kind === 'MEMBER' ? r.teamLead : null) ?? (reportsTo.join(', ') || 'your reviewer')}<br />{dateLabel(r.submittedAt)}</>}
                       <br />Updated {timeLabel(r.updatedAt)}
                     </span>
                     {r.status === 'DRAFT' || r.status === 'REVISION_REQUIRED' ? (

@@ -1,8 +1,8 @@
 /**
  * Work reports: the shared field list and the schemas the forms and the server both use (no database needed).
  */
-import { ALL_REPORT_FIELD_KEYS, REPORT_FIELDS } from '../../shared/reportFields.js';
-import { reportListQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema } from '../../shared/validation.js';
+import { ALL_REPORT_FIELD_KEYS, MEMBER_REPORT_TASK_KEYS, REPORT_FIELDS, REPORT_STATUSES, reportStatusLabel } from '../../shared/reportFields.js';
+import { reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema } from '../../shared/validation.js';
 
 let passed = 0;
 function check(cond: unknown, label: string, extra?: unknown) {
@@ -16,13 +16,15 @@ function check(cond: unknown, label: string, extra?: unknown) {
 
 const base = { title: 'Daily report', reportDate: '2026-12-01', periodType: 'DAILY', periodStart: '2026-12-01', periodEnd: '2026-12-01', content: { workCompleted: 'Closed tickets' } };
 
-// every kind of report has its own sections, and each one can be submitted only with "work completed"
-for (const kind of ['MEMBER', 'TEAM_LEAD', 'DEPARTMENT_HEAD'] as const) {
+// a Team Lead and a Department Head report have their own sections and are submitted only with "work completed"
+for (const kind of ['TEAM_LEAD', 'DEPARTMENT_HEAD'] as const) {
   const required = REPORT_FIELDS[kind].filter(f => 'required' in f && f.required).map(f => f.key);
   check(required.length === 1 && required[0] === 'workCompleted', `${kind}: work completed is the one required section`, required);
   check(new Set(REPORT_FIELDS[kind].map(f => f.key)).size === REPORT_FIELDS[kind].length, `${kind}: no section is listed twice`);
 }
-check(['tasksAssigned', 'tasksCompleted', 'todayActivities', 'pendingTasks'].every(k => REPORT_FIELDS.MEMBER.some(f => f.key === k)), 'a member report has the assigned / completed tasks, activities and pending tasks');
+// the Team Member report is title + date + assigned tasks + completed tasks; the older text sections are only kept to show older reports
+check(MEMBER_REPORT_TASK_KEYS.join() === 'assignedTasks,completedTasks', 'a member report has an assigned and a completed task list');
+check(!REPORT_FIELDS.MEMBER.some(f => 'required' in f && f.required), 'and no required text section');
 check(['teamCoordination', 'targetProgress', 'nextPlans'].every(k => REPORT_FIELDS.TEAM_LEAD.some(f => f.key === k)), 'a Team Lead report has team coordination, target progress and next plans');
 check(['departmentOverview', 'teamLeadPerformance', 'resourceRequirements'].every(k => REPORT_FIELDS.DEPARTMENT_HEAD.some(f => f.key === k)), 'a Department Head report has the overview, Team Lead performance and resource needs');
 check(ALL_REPORT_FIELD_KEYS.includes('workCompleted') && ALL_REPORT_FIELD_KEYS.length === new Set(ALL_REPORT_FIELD_KEYS).size, 'the combined list has each key once');
@@ -42,6 +44,24 @@ for (const bad of ['javascript:alert(1)', 'data:text/html,hi', 'ftp://x.test/a',
   check(!reportSaveSchema.safeParse({ ...base, content: { workCompleted: 'ok', attachments: [{ url: bad }] } }).success, `attachment link refused: ${bad}`);
 }
 check(!reportSaveSchema.safeParse({ ...base, content: { workCompleted: 'ok', attachments: Array.from({ length: 6 }, () => ({ url: 'https://example.com/a' })) } }).success, 'at most 5 attachment links');
+
+// the Team Member report: two task lists of ids (the database checks them against the member's own task records)
+const id1 = crypto.randomUUID();
+const id2 = crypto.randomUUID();
+const member = { ...base, content: { assignedTasks: [id1, id2], completedTasks: [id1] } };
+check(reportSaveSchema.safeParse(member).success, 'a member report with task ids passes');
+check(reportSaveSchema.parse(member).content.assignedTasks?.length === 2 && reportSaveSchema.parse(member).content.completedTasks?.length === 1, 'and keeps both lists');
+check(!reportSaveSchema.safeParse({ ...base, content: { assignedTasks: ['not-a-uuid'] } }).success, 'a task id must be a uuid');
+check(!reportSaveSchema.safeParse({ ...base, content: { assignedTasks: Array.from({ length: 101 }, () => crypto.randomUUID()) } }).success, 'at most 100 tasks');
+check(!reportSaveSchema.safeParse({ ...base, content: { assignedTasks: [{ id: id1, title: 'x' }] } }).success, 'a task is sent as an id, not as an object');
+
+// the two approvals: statuses and the words used for them
+check(REPORT_STATUSES.includes('PENDING_DEPARTMENT_HEAD'), 'there is a "waiting for the Department Head" status');
+check(reportStatusLabel('SUBMITTED', 'MEMBER') === 'Pending Team Lead Approval' && reportStatusLabel('UNDER_REVIEW', 'MEMBER') === 'Pending Team Lead Approval', 'a submitted member report is Pending Team Lead Approval');
+check(reportStatusLabel('PENDING_DEPARTMENT_HEAD', 'MEMBER') === 'Pending Department Head Approval', 'once the Team Lead approved it is Pending Department Head Approval');
+check(reportStatusLabel('APPROVED', 'MEMBER') === 'Fully Approved' && reportStatusLabel('APPROVED', 'TEAM_LEAD') === 'Approved', 'only a member report is "Fully Approved"');
+check(reportStatusLabel('REVISION_REQUIRED', 'MEMBER') === 'Revision Required' && reportStatusLabel('REJECTED', 'MEMBER') === 'Rejected', 'rejected and revision required keep their names');
+check(reportMemberApprovalsQuerySchema.safeParse({}).success && reportMemberApprovalsQuerySchema.safeParse({ status: 'PENDING', from: '2026-12-01' }).success && !reportMemberApprovalsQuerySchema.safeParse({ status: 'DONE' }).success, 'the Department Head\'s approval list filters');
 
 // review
 check(reportReviewSchema.safeParse({ decision: 'APPROVED' }).success, 'an approval needs no comment');

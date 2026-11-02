@@ -19,16 +19,16 @@ export const TeamCollectiveBox: React.FC<{ reloadKey: number; onOpen: (id: strin
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
-    setError('');
-    workReportsApi.teamBox(period.from, period.to).then(setBox, e => { setBox(null); setError(errText(e)); });
+    workReportsApi.teamBox(period.from, period.to).then(b => { setError(''); setBox(b); }, e => { setError(errText(e)); });
   }, [period.from, period.to]);
+  useEffect(() => { setBox(null); }, [period.from, period.to]);
   useEffect(load, [load, reloadKey]);
 
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-base font-bold text-slate-900">Team report box</h2>
+          <h2 className="text-base font-bold text-slate-900">By team member</h2>
           <p className="text-xs text-slate-500">{box ? <>{box.team ?? 'Your team'} - Team Lead {box.teamLead}</> : 'Your team, compiled from the members\' own reports.'}</p>
         </div>
         <PeriodBar value={period} onChange={setPeriod} />
@@ -39,11 +39,10 @@ export const TeamCollectiveBox: React.FC<{ reloadKey: number; onOpen: (id: strin
         <div className="space-y-3" data-testid="team-box">
           <div className="flex flex-wrap gap-1.5">
             <Chip label="team members" value={box.totalMembers} />
-            <Chip label="submitted" value={box.counts.submitted} tone="info" />
-            <Chip label="pending" value={box.counts.pending} tone={box.counts.pending ? 'warn' : 'neutral'} />
-            <Chip label="approved" value={box.counts.approved} tone="good" />
-            <Chip label="revision required" value={box.counts.revision} tone={box.counts.revision ? 'warn' : 'neutral'} />
-            <Chip label="rejected" value={box.counts.rejected} tone={box.counts.rejected ? 'bad' : 'neutral'} />
+            <Chip label="pending" value={box.counts.pendingTl ?? box.counts.pending} tone={(box.counts.pendingTl ?? box.counts.pending) ? 'warn' : 'neutral'} />
+            <Chip label="with Department Head" value={box.counts.pendingDh ?? 0} tone="info" />
+            <Chip label="fully approved" value={box.counts.approved} tone="good" />
+            <Chip label="revision / rejected" value={box.counts.revision + box.counts.rejected} tone={box.counts.revision + box.counts.rejected ? 'bad' : 'neutral'} />
           </div>
           {box.members.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No team members are assigned to you yet.</p> : (
             <div className="space-y-2">
@@ -55,13 +54,12 @@ export const TeamCollectiveBox: React.FC<{ reloadKey: number; onOpen: (id: strin
                   subtitle={m.designation ?? 'Team Member'}
                   chips={
                     <>
-                      <Chip label="submitted" value={m.counts.submitted} tone="info" />
-                      <Chip label="approved" value={m.counts.approved} tone="good" />
+                      <Chip label="fully approved" value={m.counts.approved} tone="good" />
                       <Chip label="pending" value={m.counts.pending} tone={m.counts.pending ? 'warn' : 'neutral'} />
                       {m.counts.revision ? <Chip label="revision" value={m.counts.revision} tone="warn" /> : null}
                     </>
                   }
-                  right={<StatusPill status={m.reports[0]?.status ?? null} />}
+                  right={<StatusPill status={m.reports[0]?.status ?? null} kind="MEMBER" />}
                 >
                   {m.reports.length === 0 ? <p className="text-xs text-slate-500">No report in this period yet.</p> : (
                     <ul className="space-y-2">{m.reports.map(r => <li key={r.id}><ReportRow r={r} onOpen={onOpen} /></li>)}</ul>
@@ -70,7 +68,7 @@ export const TeamCollectiveBox: React.FC<{ reloadKey: number; onOpen: (id: strin
               ))}
             </div>
           )}
-          <p className="text-[11px] text-slate-500">Only reports you approve are passed to your Department Head with your own individual report. Pending, returned and rejected reports stay here.</p>
+          <p className="text-[11px] text-slate-500">A report you approve goes to your Department Head, whose approval makes it fully approved.</p>
         </div>
       ) : null}
     </Card>
