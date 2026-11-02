@@ -4903,7 +4903,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(wa1.auth === 'Bearer wb-api-key-1' && wa1.body.to === '+919820000808' && wa1.body.template === 'invoice_paid' && wa1.body.language === 'en' && wa1.body.reference.startsWith('invoice-whatsapp:'),
     'invoice WhatsApp: the request has the key, the customer\'s number, the approved template and a reference', wa1.body);
   const aInv = (await api('accm', 'GET', `/invoices/${a.id}`)).json.data;
-  check(wa1.body.variables.invoiceNumber === aInv.number && wa1.body.variables.customerName === 'Paid Only Co' && /70,800\.00/.test(wa1.body.variables.amount), 'invoice WhatsApp: the number and amount are the invoice\'s own (70,800.00)', wa1.body.variables);
+  check(wa1.body.variables.invoiceNumber === aInv.number && wa1.body.variables.customerName === 'Paid Only' && /70,800\.00/.test(wa1.body.variables.amount), 'invoice WhatsApp: the customer is greeted by name (not the business) and the number and amount are the invoice\'s own (70,800.00)', wa1.body.variables);
   const docRes = await fetch(wa1.body.document.url);
   const docBytes = Buffer.from(await docRes.arrayBuffer());
   check(docRes.status === 200 && docBytes.equals(fake.objects.get(key(a.id, 'paid'))!.body) && docBytes.subarray(0, 5).toString() === '%PDF-', 'invoice WhatsApp: the link serves exactly the stored PAID invoice PDF');

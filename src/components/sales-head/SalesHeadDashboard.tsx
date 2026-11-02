@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Building2, Briefcase, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -25,10 +25,17 @@ import { SalesReports } from './SalesReports';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
+import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
+import { usePipelineCounts } from '../team-member/pipeline/shared';
 
 import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
 export { SALES_HEAD_BASE, parseSalesHeadPage };
 export type { SalesHeadNavigate, SalesHeadPage };
+
+const MY_SECTION: Record<'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments', PipelineSection> = {
+  'my-leads': 'leads', 'my-potential': 'potential', 'my-onboarding': 'onboarding', 'my-part-payments': 'part-payments'
+};
+const MY_PAGE: Record<PipelineSection, SalesHeadPage> = { leads: 'my-leads', potential: 'my-potential', onboarding: 'my-onboarding', 'part-payments': 'my-part-payments' };
 
 /**
  * The Sales Department Head dashboard: its own navigation, and every page reads the Sales teams of the department only (the database
@@ -46,6 +53,7 @@ export const SalesHeadDashboard: React.FC = () => {
   const [intent, setIntent] = useState<{ filter?: string; n: number }>({ n: 0 });
   const chatUnread = useChatNavBadge();
   const reportsBadge = useReportsBadge();
+  const { counts: pipelineCounts } = usePipelineCounts();
 
   useEffect(() => {
     const onPop = () => setPage(parseSalesHeadPage(window.location.pathname, home));
@@ -71,6 +79,8 @@ export const SalesHeadDashboard: React.FC = () => {
           ...(operationsHead ? [{ id: 'operations', label: 'Operations Dashboard', icon: Building2 }] : []),
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           { id: 'leads', label: 'Leads', icon: Target, children: [{ id: 'leads-list', label: 'Lead List' }, { id: 'leads-assign', label: 'Lead Assign' }] },
+          // the head's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
+          { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
@@ -122,6 +132,9 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'overview' && <SalesOverview go={go} />}
       {page === 'leads-list' && <LeadList key={intent.n} initialFilter={intent.filter} go={go} />}
       {page === 'leads-assign' && <LeadAssign />}
+      {(page === 'my-leads' || page === 'my-potential' || page === 'my-onboarding' || page === 'my-part-payments') && (
+        <PipelineWorkspace section={MY_SECTION[page]} counts={pipelineCounts} leadFilters resetKey={intent.n} onNavigate={s => go(MY_PAGE[s])} />
+      )}
       {page === 'tasks' && <SalesDailyTasks key={intent.n} initialFilter={intent.filter} />}
       {page === 'performance' && <SalesPerformance />}
       {page === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
