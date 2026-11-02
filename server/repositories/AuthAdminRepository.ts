@@ -119,6 +119,24 @@ export class AuthAdminRepository {
     }
   }
 
+  /** An employee chooses their own password (hashed by Supabase Auth; never stored, logged or returned by the CRM) and the welcome e-mail is closed. */
+  async setStaffPassword(userId: string, password: string): Promise<void> {
+    const { error } = await getServiceClient().auth.admin.updateUserById(userId, { password });
+    if (error) {
+      console.error('[api] auth.admin.updateUserById (staff password) failed', error.status ?? error.code);
+      throw new AppError('INTERNAL', 'Could not save the password.');
+    }
+    const { error: markError } = await getServiceClient().rpc('welcome_email_setup_done', { p_user: userId });
+    // the password is already saved; only the bookkeeping failed
+    if (markError) console.error('[api] welcome_email_setup_done failed', markError.message);
+  }
+
+  /** The account is completely created: its (held) welcome e-mail may go now. Never fails the creation. */
+  async releaseWelcomeEmail(userId: string): Promise<void> {
+    const { error } = await getServiceClient().rpc('welcome_email_release', { p_employee: userId });
+    if (error) console.error('[api] welcome_email_release failed', error.message);
+  }
+
   /** True when `password` already signs this e-mail in (so a client cannot "choose" the temporary password again). */
   async passwordSignsIn(email: string, password: string): Promise<boolean> {
     const { data, error } = await getAnonClient().auth.signInWithPassword({ email, password });

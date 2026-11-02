@@ -28,6 +28,8 @@ import { NotificationService } from './NotificationService.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
 import { WorkflowService } from './WorkflowService.js';
+import { WelcomeEmailRepository } from '../repositories/WelcomeEmailRepository.js';
+import { WelcomeEmailService } from './WelcomeEmailService.js';
 import { WorkflowRepository } from '../repositories/WorkflowRepository.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
@@ -93,6 +95,7 @@ export function createServices(db: SupabaseClient) {
     chat: new ChatService(new ChatRepository(db), new StorageRepository()),
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     workReports: new WorkReportService(new WorkReportRepository(db)),
+    welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };

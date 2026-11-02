@@ -9,6 +9,7 @@ import {
   userAssignSchema,
   technicalConsultantSchema,
   metaVerifierSchema,
+  ownPasswordSchema,
   userCreateSchema,
   userListQuerySchema,
   userStatusSchema,
@@ -21,6 +22,7 @@ import { AppError } from '../http/errors.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import type { HrRepository } from '../repositories/HrRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
+import { temporaryPassword } from '../automations/secrets.js';
 
 export class UserService {
   constructor(
@@ -105,7 +107,8 @@ export class UserService {
         }
       }
     }
-    const id = await this.authAdmin.createProvisionedUser({ ...account, operationsHead: !!operationsHead, provisionedBy: actor.id });
+    // nobody types or knows an employee's password: the account starts with a random one and the employee chooses their own from the welcome e-mail
+    const id = await this.authAdmin.createProvisionedUser({ ...account, password: account.password ?? temporaryPassword(28), operationsHead: !!operationsHead, provisionedBy: actor.id });
     if (wholeDepartments) {
       try {
         await this.profiles.assignOperationsDepartments(id, operationsDepartments);
@@ -143,7 +146,16 @@ export class UserService {
     }
     // Tell HR about the new member (once). A failed notification never fails the creation.
     await this.hr?.notifyMemberCreated(id).catch(() => undefined);
+    // the account is complete: the welcome e-mail (queued by the database, held while this ran) may go now
+    await this.authAdmin.releaseWelcomeEmail(id);
     return this.profiles.findById(id);
+  }
+
+  /** The employee chooses their own permanent password (after the e-mailed link signed them in for this one step). Never logged or returned. */
+  async setOwnPassword(actor: Actor, body: unknown): Promise<{ changed: true }> {
+    const { password } = parse(ownPasswordSchema, body);
+    await this.authAdmin.setStaffPassword(actor.id, password);
+    return { changed: true };
   }
 
   /** The Super Admin account is never changed from the application. A person who cannot even see the account gets the database's own answer. */
