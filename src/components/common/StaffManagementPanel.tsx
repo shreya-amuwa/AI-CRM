@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  UserPlus, Users, Eye, EyeOff, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
-  RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, KeyRound, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
+  UserPlus, Users, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
+  RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type DepartmentHeadAccess, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
 import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
@@ -84,13 +84,6 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: 'bg-slate-100 text-slate-600 border-slate-200'
 };
 
-function generatePassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
-  const bytes = new Uint32Array(14);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => chars[b % chars.length]).join('');
-}
-
 export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated }) => {
   const { profile } = useAuth();
   const { departments, allDepartments } = useDepartments();
@@ -112,8 +105,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // Create form
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [position, setPosition] = useState('');
   const [joiningDate, setJoiningDate] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -134,8 +125,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   useEffect(() => {
     if (formError) formErrorRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }, [formError]);
-  const [created, setCreated] = useState<{ profile: Profile; dashboard: string; password?: string } | null>(null);
-  const [showCreatedPassword, setShowCreatedPassword] = useState(false);
+  const [created, setCreated] = useState<{ profile: Profile; dashboard: string } | null>(null);
   const [actionNotice, setActionNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -314,7 +304,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const resetForm = () => {
     setFullName('');
     setEmail('');
-    setPassword('');
     setPosition('');
     setJoiningDate('');
     setDateOfBirth('');
@@ -325,7 +314,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setHeadFn('');
     setHeadDepts(departmentId ? [departmentId] : []);
     setOpsDepts([]);
-    setShowPassword(false);
   };
 
   /** Give an existing Sales member a Sales role (or clear it); the database lets only the Super Admin and the Department Head do it. */
@@ -381,7 +369,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     e.preventDefault();
     setFormError(null);
     setCreated(null);
-    setShowCreatedPassword(false);
     const todayIso = new Date().toISOString().slice(0, 10);
     if (dateOfBirth && dateOfBirth > todayIso) {
       setFormError('Date of birth cannot be in the future. Please enter the real date of birth.');
@@ -404,7 +391,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     const parsed = userCreateSchema.safeParse({
       email,
       fullName,
-      password,
       role,
       departmentId: headPlan ? headPlan.departmentId : undefined,
       departmentIds: operationsHead ? opsDepts : undefined,
@@ -425,12 +411,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setSaving(true);
     try {
       const newProfile = await usersApi.create(parsed.data);
-      // HR logins: the Super Admin sees the initial password once, here, to pass on. It is kept only in this panel's memory
-      // (never stored or logged) and disappears when the next account is started or the panel is closed.
-      setShowCreatedPassword(false);
       setCreated({
         profile: newProfile,
-        password: newProfile.department?.slug === 'hr' ? password : undefined,
         dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision, isMetaVerifier(newProfile), isOperationsHead(newProfile))
       });
       resetForm();
@@ -630,22 +612,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               <div className="flex items-center gap-1.5">
                 <LayoutDashboard className="w-3.5 h-3.5" /> Default dashboard: <strong>{created.dashboard}</strong>
               </div>
-              {created.password ? (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    Password: <span className="font-mono">{showCreatedPassword ? created.password : '••••••••••••'}</span>
-                    <button type="button" onClick={() => setShowCreatedPassword(v => !v)} className="inline-flex items-center text-emerald-700 hover:underline" title={showCreatedPassword ? 'Hide password' : 'Show password'} aria-label={showCreatedPassword ? 'Hide password' : 'Show password'}>
-                      {showCreatedPassword ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                    </button>
-                    <button type="button" onClick={() => navigator.clipboard?.writeText(created.password!)} className="inline-flex items-center text-emerald-700 hover:underline" title="Copy password" aria-label="Copy password">
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <div className="text-emerald-700">Shown only now, and not stored by the CRM. Give it to them privately (in person or a call, not in a group chat); they can change it after signing in.</div>
-                </div>
-              ) : (
-                <div className="text-emerald-700">Share the password securely; they can change it after signing in.</div>
-              )}
+              <div className="text-emerald-700">A welcome e-mail with a secure link to choose their own password is being sent to this address. No password is shown or stored. HR can see the e-mail status and resend it from Employee Requests.</div>
             </div>
           )}
 
@@ -659,28 +626,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <input type="email" className={`${inputClass} mt-1`} value={email} onChange={e => setEmail(e.target.value)} placeholder="kunal@amuwa.com" required />
           </label>
 
-          <label className="block text-xs font-semibold text-slate-700">
-            Password *
-            <div className="relative mt-1">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                className={`${inputClass} pr-20 font-mono`}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="min. 10 characters"
-                autoComplete="new-password"
-                required
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                <button type="button" title="Generate strong password" onClick={() => { setPassword(generatePassword()); setShowPassword(true); }} className="p-1 text-slate-400 hover:text-blue-600">
-                  <KeyRound className="w-4 h-4" />
-                </button>
-                <button type="button" title={showPassword ? 'Hide' : 'Show'} onClick={() => setShowPassword(s => !s)} className="p-1 text-slate-400 hover:text-slate-700">
-                  {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          </label>
+          <p className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-900">
+            No password is set here. The new employee is e-mailed a secure, one-time link to choose their own password and sign in.
+          </p>
 
           {role !== 'DEPARTMENT_HEAD' && (
             <label className="block text-xs font-semibold text-slate-700">

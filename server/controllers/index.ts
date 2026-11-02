@@ -5,6 +5,7 @@ import type { PaymentInvoiceOutcome, PaymentOverview } from '../../shared/contra
 import { AppError } from '../http/errors.js';
 import type { Handler } from '../http/types.js';
 import { createServices } from '../services/index.js';
+import { welcomeEmailQuietly } from '../automations/welcomeDispatcher.js';
 
 const svc = (ctx: Parameters<Handler>[0]) => createServices(ctx.db);
 
@@ -35,6 +36,7 @@ export const usersController = {
   list: (async ctx => ok(await svc(ctx).users.list(ctx.actor, ctx.req.query))) as Handler,
   get: (async ctx => ok(await svc(ctx).users.get(ctx.params.id))) as Handler,
   create: (async ctx => ok(await svc(ctx).users.create(ctx.actor, ctx.req.body), 201)) as Handler,
+  setOwnPassword: (async ctx => ok(await svc(ctx).users.setOwnPassword(ctx.actor, ctx.req.body))) as Handler,
   assign: (async ctx => ok(await svc(ctx).users.assign(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setStatus: (async ctx => ok(await svc(ctx).users.setStatus(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   setTechnicalConsultant: (async ctx => ok(await svc(ctx).users.setTechnicalConsultant(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
@@ -52,6 +54,12 @@ export const usersController = {
     await svc(ctx).users.delete(ctx.actor, ctx.params.id);
     return ok(null);
   }) as Handler
+};
+
+export const welcomeEmailsController = {
+  list: (async ctx => ok(await svc(ctx).welcomeEmails.list(ctx.req.query))) as Handler,
+  // the new link is made when the e-mail is sent: send it right away (the scheduler retries it if this request is cut short)
+  resend: (async ctx => { const r = await svc(ctx).welcomeEmails.resend(ctx.params.id); await welcomeEmailQuietly(); return ok(r); }) as Handler
 };
 
 export const employeesController = {

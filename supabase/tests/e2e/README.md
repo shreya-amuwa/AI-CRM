@@ -107,3 +107,7 @@ suspend / reactivate, the Department Head rule still refusing a second head, and
 assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
 a Department Head revision that starts both approvals again, the Team Lead's individual report without Download and History, and that every change appears on the
 other screens by itself with no duplicate cards (24 checks).
+
+`run-welcome-email.sh` drives the new-employee welcome e-mail end to end: HR submits (no password field), the Department Head approves, the backend queues exactly one welcome e-mail
+(nothing before approval), HR sees "Account: Active / Welcome email: <status>" and can resend, the employee opens the one-time link, chooses their own password, lands on the dashboard
+of their role, signs in again with it, the used link no longer works, and no link or password is left in any table (16 checks).

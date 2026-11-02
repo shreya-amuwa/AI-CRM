@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type {
+  WelcomeEmailItem, WelcomeEmailList,
   OperationsHeadReviewItem, OperationsOverviewRow,
   CustomerWorkflow, CustomerWorkflowStatuses, TcWorkflowStatus, MetaWorkflowStatus,
   PerformersDepartment, PerformersCompany, PerformerRecognition, PerformerEvaluationRun,
@@ -538,7 +539,7 @@ export const usersApi = {
   list: (q: { page?: number; pageSize?: number; status?: string; role?: Role; departmentId?: string; teamId?: string; division?: TeamDivision; search?: string } = {}) =>
     api.get<Paginated<Profile>>('/users', { ...q }),
   get: (id: string) => api.get<Profile>(`/users/${id}`),
-  create: (body: { email: string; fullName: string; password: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string | null; technicalConsultant?: boolean; details?: MemberDetailsInput }) =>
+  create: (body: { email: string; fullName: string; role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string; position?: string | null; technicalConsultant?: boolean; details?: MemberDetailsInput }) =>
     api.post<Profile>('/users', body),
   assign: (id: string, body: { role: Exclude<Role, 'SUPER_ADMIN'>; departmentId?: string; teamId?: string }) => api.patch<Profile>(`/users/${id}`, body),
   setStatus: (id: string, status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED', reason?: string) =>
@@ -933,6 +934,12 @@ export const workflowApi = {
 };
 
 /** Employee approval: HR submits, the right approver decides, the Operations Head's departments, and the Department Head's team assignment. */
+/** Welcome e-mail of new employees: status for HR / Super Admin / the employee's Department Head, and the secure resend (a fresh link is made when it is sent). */
+export const welcomeEmailsApi = {
+  list: (q: { status?: string; employee?: string } = {}) => api.get<WelcomeEmailList>('/welcome-emails', { ...q }),
+  resend: (employeeId: string) => api.post<WelcomeEmailItem>(`/welcome-emails/${employeeId}/resend`, {})
+};
+
 export const employeesApi = {
   submit: (body: unknown) => api.post<EmployeeRequest>('/employee-requests', body),
   list: (q: { status?: string; toDecide?: boolean } = {}) => api.get<EmployeeRequest[]>('/employee-requests', { status: q.status, toDecide: q.toDecide === undefined ? undefined : String(q.toDecide) }),

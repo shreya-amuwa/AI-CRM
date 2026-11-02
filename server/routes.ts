@@ -21,6 +21,7 @@ import {
   ticketFilesController as ticketFiles,
   employeeCasesController as employeeCases,
   workReportsController as workReports,
+  welcomeEmailsController as welcomeEmails,
   customersController as customers,
   documentsController as documents,
   hrController as hr,
@@ -44,6 +45,11 @@ const S = { rate: 'sensitive' } as const;
 export const routes: RouteDef[] = [
   { method: 'GET', path: '/me', handler: me.get, options: { allowInactive: true } },
   { method: 'PATCH', path: '/me', handler: me.update },
+  // the employee chooses their own password after the welcome e-mail's link signed them in for this one step
+  { method: 'POST', path: '/me/password', handler: users.setOwnPassword, options: S },
+  // welcome e-mail status (HR, Super Admin, the employee's Department Head) and the secure resend
+  { method: 'GET', path: '/welcome-emails', handler: welcomeEmails.list },
+  { method: 'POST', path: '/welcome-emails/:id/resend', handler: welcomeEmails.resend, options: S },
   { method: 'GET', path: '/me/department-scopes', handler: me.departmentScopes },
 
   { method: 'GET', path: '/users', handler: users.list },

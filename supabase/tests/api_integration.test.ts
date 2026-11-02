@@ -1561,7 +1561,9 @@ Object.assign(process.env, {
   EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
   WHATSAPP_WEBHOOK_URL: `${P}/wa`,
   AUTOMATION_SECRET_KEY: 'local-test-automation-secret',
-  AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789'
+  AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789',
+  // the welcome e-mails of the many fixture accounts would be sent by every live run below; the block that tests them switches this on
+  WELCOME_EMAIL: 'off'
 });
 const dispatch = (secret?: string) =>
   fetch(`${base}/internal/automations/dispatch`, { method: 'POST', headers: secret ? { authorization: `Bearer ${secret}` } : {} }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
@@ -8613,6 +8615,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     ('career.api.one@example.com',now(),' {"candidate_portal":true}'),('career.api.two@example.com',now(),'{"candidate_portal":true}') returning id`);
   tokens.set('career1',tokenFor(ids.rows[0].id)); tokens.set('career2',tokenFor(ids.rows[1].id));
   check((await db.query('select id from profiles where id=any($1::uuid[])',[ids.rows.map(x=>x.id)])).rowCount===0,'careers: applicants never become staff profiles');
+  check((await db.query('select id from employee_welcome_emails where employee_id=any($1::uuid[])',[ids.rows.map(x=>x.id)])).rowCount===0,'careers: applicant signup sends no employee welcome messages');
   let q=await api('career1','GET','/candidate/profile');
   check(q.status===200 && q.json.data.version===1,'careers: separate candidate session works',q);
   const profile={name:'API Applicant',phone:'9847650321',city:'Mumbai',state:'Maharashtra',education:'Graduate',experience:'Fresher',skills:'TypeScript',bio:'',version:1};
@@ -8715,6 +8718,186 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status===409,'careers: empty training evidence cannot approve placement',q);
   check((await db.query('select id from profiles where id=$1',[ids.rows[0].id])).rowCount===0,'careers: joining and induction grant no staff profile');
   await new Promise<void>(resolve=>fake.server.close(()=>resolve()));
+}
+
+// --- Welcome e-mail for new employees: queued by the database at activation, sent once with a one-time link, tracked, retried, resent ---
+{
+  const modeBefore = process.env.AUTOMATION_MODE;
+  // a mock of the e-mail provider of its own (the first one is closed by now): nothing real is sent
+  const outbox: { path: string; body: any }[] = [];
+  const failNext: Record<string, number[]> = {};
+  const mailMock = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      const path = (req.url || '').split('?')[0];
+      outbox.push({ path, body: raw ? JSON.parse(raw) : null });
+      const status = failNext[path]?.shift() ?? 200;
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(status < 300 ? { id: `welcome-msg-${outbox.length}` } : { message: 'Service busy' }));
+    });
+  });
+  await new Promise<void>(rs => mailMock.listen(0, rs));
+  const P = `http://127.0.0.1:${(mailMock.address() as any).port}`;
+  let lastRun: unknown = null;
+  const go = async () => { process.env.AUTOMATION_MODE = 'live'; const res = await dispatch('dispatch-secret-0123456789'); lastRun = res.json?.data?.welcomeEmails ?? res.json; process.env.AUTOMATION_MODE = 'off'; };
+  process.env.AUTOMATION_MODE = 'off';
+  process.env.WELCOME_EMAIL = 'on';
+  // earlier blocks changed the mail settings: this one needs the plain mock provider, the dispatch secret and no recipient restriction
+  Object.assign(process.env, { EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_test_key', EMAIL_API_BASE_URL: P, EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>', AUTOMATION_SECRET_KEY: 'local-test-automation-secret', AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789' });
+  delete process.env.AUTOMATION_TEST_RECIPIENTS;
+  // the fixture accounts made earlier have their own queued welcome e-mails: only the ones made here are tested
+  await db.query(`update public.employee_welcome_emails set status = 'SKIPPED', last_error = 'test fixture' where status in ('PENDING', 'RETRYING', 'DRY_RUN')`);
+  const welcomeTo = (email: string) => outbox.filter(o => o.path === '/emails' && /Welcome to Amuwa Corporation/.test(o.body.subject) && o.body.to?.[0] === email);
+  const rowOf = async (id: string) => (await db.query(`select * from public.employee_welcome_emails where employee_id = $1 order by created_at desc limit 1`, [id])).rows[0];
+  const tokenOf = (m: any) => /token_hash=([^&"<\s]+)/.exec(m.body.html)?.[1] ?? null;
+  const details = { designation: 'Team Member', joiningDate: '2026-01-05', dateOfBirth: '1992-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56789', emergencyContact: '+91 98765 43210' };
+  const request = (email: string, name: string, code: string) =>
+    api('hrmember', 'POST', '/employee-requests', { email, fullName: name, role: 'TEAM_MEMBER', departmentId: wab.id, division: 'SALES', employeeCode: code, details });
+
+  // ---- nothing is sent while the request is only submitted
+  r = await request('welcome.rahul@amuwa.com', 'Rahul Sharma', 'EMP-9001');
+  check(r.status === 201 && r.json.data.status === 'PENDING' && !JSON.stringify(r.json).match(/password/i), 'welcome e-mail: HR submits a request with no password field; the answer carries none', r);
+  const rahulReq = r.json.data.id as string; const rahulId = r.json.data.employee.id as string;
+  await go();
+  check((await db.query(`select count(*)::int n from public.employee_welcome_emails where employee_id = $1`, [rahulId])).rows[0].n === 0 && welcomeTo('welcome.rahul@amuwa.com').length === 0, 'welcome e-mail: a pending request queues and sends nothing');
+  r = await api('hrmember', 'POST', `/employee-requests/${rahulReq}/decide`, { approve: true });
+  check(r.status === 403 || r.status === 404, 'welcome e-mail: HR cannot approve (so cannot trigger it)', r);
+  check((await db.query(`select count(*)::int n from public.employee_welcome_emails where employee_id = $1`, [rahulId])).rows[0].n === 0, 'welcome e-mail: and a refused approval queues nothing');
+
+  // ---- approved: the account is active and the e-mail is queued once
+  r = await api('shd', 'POST', `/employee-requests/${rahulReq}/decide`, { approve: true });
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'welcome e-mail: the Department Head approves', r);
+  let row = await rowOf(rahulId);
+  check(row && row.status === 'PENDING' && row.trigger_event === 'EMPLOYEE_REQUEST_APPROVED' && row.recipient_email === 'welcome.rahul@amuwa.com' && row.approval_request_id === rahulReq, 'welcome e-mail: approval queued exactly one pending e-mail for the request', row);
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'EMPLOYEE_ACCOUNT_CREATED' and entity_id = $1`, [rahulId])).rows[0].n >= 1, 'welcome e-mail: HR is notified that the account was created');
+  await go();
+  const first = welcomeTo('welcome.rahul@amuwa.com');
+  check(first.length === 1, 'welcome e-mail: exactly one e-mail was sent', { sent: first.length, lastRun, row: await rowOf(rahulId) });
+  const mail = first[0].body;
+  check(mail.subject === 'Welcome to Amuwa Corporation – Your CRM Login Credentials', 'welcome e-mail: the subject', mail.subject);
+  check(/Rahul Sharma/.test(mail.html) && /EMP-9001/.test(mail.html) && /Wabastore/i.test(mail.html) && /Team Member/.test(mail.html) && /welcome\.rahul@amuwa\.com/.test(mail.html), 'welcome e-mail: it carries the real name, employee ID, department, designation and login ID');
+  check(/\/login/.test(mail.html) && /\/set-password\?token_hash=[^&"]+&(amp;)?type=recovery/.test(mail.html) && /amuwa-logo\.png/.test(mail.html), 'welcome e-mail: the login page, the one-time set-password link and the logo');
+  check(/choose your own password/i.test(mail.html) && /No password is sent/i.test(mail.html) && /first sign-in/i.test(mail.html), 'welcome e-mail: first-time and mandatory password instructions');
+  check(!/(temporary password|your password is)\s*[:=]/i.test(mail.html + mail.text), 'welcome e-mail: no password is written in it');
+  row = await rowOf(rahulId);
+  check(row.status === 'SENT' && row.sent_at && row.attempts === 1 && row.last_error === null, 'welcome e-mail: recorded as sent only after the provider accepted it', row);
+  const token = tokenOf(first[0]);
+  check(!!token && !JSON.stringify(row).includes(token) && !(await db.query(`select 1 from public.employee_welcome_email_attempts where detail like '%' || $1 || '%'`, [token])).rowCount
+    && !(await db.query(`select 1 from public.notifications where body like '%' || $1 || '%' or title like '%' || $1 || '%'`, [token])).rowCount
+    && !(await db.query(`select 1 from public.audit_logs where metadata::text like '%' || $1 || '%'`, [token])).rowCount, 'welcome e-mail: the link is in no table, attempt record, notification or audit entry');
+  await go();
+  check(welcomeTo('welcome.rahul@amuwa.com').length === 1, 'welcome e-mail: running the sender again sends no second e-mail');
+
+  // ---- status for HR, nobody else
+  r = await api('hrmember', 'GET', '/welcome-emails');
+  const item = r.json?.data?.items?.find((i: any) => i.employeeId === rahulId);
+  check(r.status === 200 && item && item.status === 'SENT' && item.accountStatus === 'ACTIVE' && item.employee === 'Rahul Sharma' && item.retryCount === 0 && !JSON.stringify(r.json).includes(token!), 'welcome e-mail: HR sees Account Active, Welcome e-mail Sent (and no link)', r.json);
+  r = await api('a', 'GET', '/welcome-emails');
+  check(r.status === 403, 'welcome e-mail: an ordinary employee cannot see the list', r);
+  r = await api('a', 'POST', `/welcome-emails/${rahulId}/resend`, {});
+  check(r.status === 403 || r.status === 404, 'welcome e-mail: nor resend', r);
+  r = await api(null, 'GET', '/welcome-emails');
+  check(r.status === 401, 'welcome e-mail: sign-in is needed', r);
+  r = await api('hrmember', 'POST', `/welcome-emails/${rahulId}/resend`, {});
+  check(r.status === 409, 'welcome e-mail: a resend right after a send is refused (no accidental duplicate)', r);
+
+  // ---- first sign-in: the employee chooses their own password
+  tokens.set('welcome_rahul', tokenFor(rahulId));
+  r = await api(null, 'POST', '/me/password', { password: 'My#NewPass-2026' });
+  check(r.status === 401, 'welcome e-mail: setting a password needs the sign-in the link made', r);
+  r = await api('welcome_rahul', 'POST', '/me/password', { password: 'short' });
+  check(r.status === 422, 'welcome e-mail: a short password is refused', r);
+  r = await api('welcome_rahul', 'POST', '/me/password', { password: 'My#NewPass-2026', userId: rahulId });
+  check(r.status === 422, 'welcome e-mail: nothing but the password can be sent', r);
+  r = await api('welcome_rahul', 'POST', '/me/password', { password: 'My#NewPass-2026' });
+  check(r.status === 200 && r.json.data.changed === true && !JSON.stringify(r.json).includes('My#NewPass-2026'), 'welcome e-mail: the employee sets their own password; it is not echoed', r);
+  const { AuthAdminRepository: AdminRepo } = await import('../../server/repositories/AuthAdminRepository');
+  check(await new AdminRepo().passwordSignsIn('welcome.rahul@amuwa.com', 'My#NewPass-2026'), 'welcome e-mail: the new password signs in');
+  row = await rowOf(rahulId);
+  check(row.setup_completed_at, 'welcome e-mail: the first-time setup is recorded');
+  r = await api('welcome_rahul', 'GET', '/me');
+  check(r.status === 200 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.defaultDashboard, 'welcome e-mail: they reach their own role\'s dashboard', r.json);
+  await db.query(`update public.employee_welcome_emails set sent_at = now() - interval '1 hour' where employee_id = $1`, [rahulId]);
+  r = await api('hrmember', 'POST', `/welcome-emails/${rahulId}/resend`, {});
+  check(r.status === 409, 'welcome e-mail: after they chose their own password no resend can reset it', r);
+
+  // ---- a temporary failure is retried, never marked sent in between
+  r = await request('welcome.retry@amuwa.com', 'Retry Person', 'EMP-9002');
+  const retryReq = r.json.data.id as string; const retryId = r.json.data.employee.id as string;
+  failNext['/emails'] = [503];
+  await api('shd', 'POST', `/employee-requests/${retryReq}/decide`, { approve: true });
+  await go();
+  row = await rowOf(retryId);
+  check(row.status === 'RETRYING' && row.attempts === 1 && !row.sent_at && /503/.test(row.last_error), 'welcome e-mail: a provider outage is recorded as retrying, not sent', row);
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'EMPLOYEE_WELCOME_EMAIL_FAILED' and entity_id = $1`, [retryId])).rows[0].n === 0, 'welcome e-mail: a temporary failure does not alarm HR yet');
+  await go();
+  check((await rowOf(retryId)).status === 'RETRYING', 'welcome e-mail: it waits for its retry time');
+  await db.query(`update public.employee_welcome_emails set next_attempt_at = now() - interval '1 minute' where employee_id = $1`, [retryId]);
+  await go();
+  row = await rowOf(retryId);
+  check(row.status === 'SENT' && row.attempts === 2 && row.sent_at, 'welcome e-mail: the retry delivers it (2 attempts)', row);
+  const posts = welcomeTo('welcome.retry@amuwa.com');
+  check(posts.length === 2 && tokenOf(posts[0]) !== tokenOf(posts[1]), 'welcome e-mail: each attempt carries a fresh one-time link', posts.map(tokenOf));
+  r = await api('hrmember', 'GET', '/welcome-emails?status=SENT');
+  check(r.status === 200 && r.json.data.items.find((i: any) => i.employeeId === retryId)?.retryCount === 1, 'welcome e-mail: the retry count is shown', r.json);
+
+  // ---- a permanent failure: the activation stays, HR is told, a secure resend works
+  r = await request('welcome.fail@amuwa.com', 'Failing Mailbox', 'EMP-9003');
+  const failReq = r.json.data.id as string; const failId = r.json.data.employee.id as string;
+  failNext['/emails'] = [400];
+  r = await api('shd', 'POST', `/employee-requests/${failReq}/decide`, { approve: true });
+  check(r.status === 200, 'welcome e-mail: the account is approved and activated', r);
+  await go();
+  row = await rowOf(failId);
+  check(row.status === 'FAILED' && !row.sent_at && row.last_error, 'welcome e-mail: a refused message is FAILED, never sent', row);
+  r = await api('sa', 'GET', `/users/${failId}`);
+  check(r.status === 200 && r.json.data.status === 'ACTIVE', 'welcome e-mail: a failed e-mail does not undo the activation', r);
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'EMPLOYEE_WELCOME_EMAIL_FAILED' and entity_id = $1`, [failId])).rows[0].n >= 1, 'welcome e-mail: HR is notified of the failure');
+  r = await api('hrmember', 'GET', '/welcome-emails?status=FAILED');
+  check(r.status === 200 && r.json.data.items.some((i: any) => i.employeeId === failId && i.canResend === true) && r.json.data.counts.FAILED >= 1, 'welcome e-mail: HR can list the failed ones', r.json);
+  r = await api('hrmember', 'POST', `/welcome-emails/${failId}/resend`, {});
+  check(r.status === 200 && r.json.data.status === 'PENDING' && r.json.data.resendCount === 1, 'welcome e-mail: HR resends it', r);
+  r = await api('hrmember', 'POST', `/welcome-emails/${failId}/resend`, {});
+  check(r.status === 409, 'welcome e-mail: a second click while it is queued is refused', r);
+  await go();
+  row = await rowOf(failId);
+  check(row.status === 'SENT' && row.resend_count === 1 && welcomeTo('welcome.fail@amuwa.com').filter(m => m.body.subject).length === 2, 'welcome e-mail: the resend is delivered with a fresh link', row);
+  check((await db.query(`select count(*)::int n from public.employee_welcome_email_attempts where email_id = $1 and kind = 'RESEND'`, [row.id])).rows[0].n >= 2, 'welcome e-mail: the resend and its result are recorded');
+  r = await api('hrmember', 'POST', `/welcome-emails/${failId}/resend`, {});
+  check(r.status === 409, 'welcome e-mail: just sent: no immediate second resend', r);
+
+  // ---- direct creation: Super Admin, Department Head, Team Lead: same e-mail after the account is complete, no typed password
+  for (const [who, email, name] of [['sa', 'welcome.direct.sa@amuwa.com', 'Direct By Admin'], ['shd', 'welcome.direct.dh@amuwa.com', 'Direct By Head'], ['th', 'welcome.direct.tl@amuwa.com', 'Direct By Lead']] as const) {
+    r = await api(who, 'POST', '/users', { email, fullName: name, role: 'TEAM_MEMBER', teamId: sales.id, details });
+    check(r.status === 201 && r.json.data.status === 'ACTIVE' && !JSON.stringify(r.json).match(/password/i), `welcome e-mail: ${who} creates an active account with no password typed or returned`, r);
+    const id = r.json.data.id as string;
+    row = await rowOf(id);
+    check(row && row.trigger_event === 'ACCOUNT_PROVISIONED' && row.status === 'PENDING' && new Date(row.next_attempt_at).getTime() <= Date.now() + 1000, `welcome e-mail: ${who}: queued once and released when the creation was complete`, row);
+    await go();
+    const m = welcomeTo(email);
+    check(m.length === 1 && /set-password\?token_hash=/.test(m[0].body.html) && (await rowOf(id)).status === 'SENT', `welcome e-mail: ${who}: the new employee gets exactly one welcome e-mail`, m.length);
+  }
+  r = await api('sa', 'POST', '/users', { email: 'welcome.legacy@amuwa.com', fullName: 'Legacy Typed', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(r.status === 201, 'welcome e-mail: an older client that still sends a password keeps working', r);
+  await go();
+  check(!/Sup3rSecret/.test(JSON.stringify(welcomeTo('welcome.legacy@amuwa.com'))), 'welcome e-mail: and that password is never put in the e-mail');
+
+  // ---- dry run: prepared, never sent, never claimed as sent
+  process.env.AUTOMATION_MODE = 'dry_run';
+  r = await api('sa', 'POST', '/users', { email: 'welcome.dry@amuwa.com', fullName: 'Dry Run', role: 'TEAM_MEMBER', teamId: sales.id });
+  const dryId = r.json.data.id as string;
+  const sentBefore = outbox.length;
+  await dispatch('dispatch-secret-0123456789');
+  row = await rowOf(dryId);
+  check(row.status === 'DRY_RUN' && !row.sent_at && outbox.length === sentBefore, 'welcome e-mail: in dry-run mode nothing leaves the server and it is not marked sent', row);
+  process.env.AUTOMATION_MODE = 'off';
+
+  check((await db.query(`select has_table_privilege('authenticated', 'public.employee_welcome_emails', 'select') as s`)).rows[0].s === false, 'welcome e-mail: the tracking table cannot be read directly');
+  process.env.WELCOME_EMAIL = 'off';
+  mailMock.close();
+  if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+
 }
 
 // --- Operations Head: created from the Super Admin form with several departments, even where every department has a Department Head ---
