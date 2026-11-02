@@ -17,6 +17,7 @@ create table if not exists public.career_interviews (
  recommendation text check(recommendation in ('PROCEED','REJECT','HOLD')), internal_feedback text,
  version integer not null default 1, created_at timestamptz not null default now()
 );
+create unique index if not exists career_interviews_slot_idx on public.career_interviews(application_id,round,scheduled_at) where status<>'CANCELLED';
 create index if not exists career_interviews_application_idx on public.career_interviews(application_id,scheduled_at);
 do $$ declare t text; begin
  foreach t in array array['career_tests','career_attempts','career_interviews'] loop
@@ -174,7 +175,13 @@ begin
  if c.stage<>'INTERVIEW' then raise exception 'CONFLICT: Move a qualified application to interviews first.'; end if;
  if p_data->>'id' is null then
   if p_data->>'round' not in ('HR','DEPARTMENT_HEAD','MANAGEMENT') or (p_data->>'scheduled_at')::timestamptz is null or length(btrim(coalesce(p_data->>'location',''))) not between 1 and 1000 then raise exception 'VALIDATION_ERROR: Enter the round, schedule and meeting details.'; end if;
-  insert into public.career_interviews(application_id,round,scheduled_at,location) values(c.id,p_data->>'round',(p_data->>'scheduled_at')::timestamptz,p_data->>'location') returning * into i;
+  insert into public.career_interviews(application_id,round,scheduled_at,location) values(c.id,p_data->>'round',(p_data->>'scheduled_at')::timestamptz,p_data->>'location')
+   on conflict(application_id,round,scheduled_at) where status<>'CANCELLED' do nothing returning * into i;
+  if i.id is null then
+   select * into i from public.career_interviews where application_id=c.id and round=p_data->>'round' and scheduled_at=(p_data->>'scheduled_at')::timestamptz and status<>'CANCELLED';
+   if i.location is distinct from p_data->>'location' then raise exception 'CONFLICT: An interview already exists for this round and time. Cancel it before rescheduling.'; end if;
+   return to_jsonb(i);
+  end if;
  else
   select * into i from public.career_interviews where id=(p_data->>'id')::uuid and application_id=c.id for update;
   if i.id is null then raise exception 'NOT_FOUND: Interview not found.'; end if;

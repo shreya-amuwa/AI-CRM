@@ -80,6 +80,8 @@ select test.must_fail($$select hr_career_stage((select v from cp where k='app'),
 select hr_career_stage((select v from cp where k='app'),'INTERVIEW',2,'Your assessment passed. Interview details will follow.');
 select test.must_fail($$select hr_career_stage((select v from cp where k='app'),'SELECTED',3,null)$$,'selection requires both interview outcomes','Complete the HR');
 select hr_career_interview((select v from cp where k='app'),jsonb_build_object('round','HR','scheduled_at',now()-interval '1 hour','location','Office reception'));
+select hr_career_interview((select v from cp where k='app'),jsonb_build_object('round','HR','scheduled_at',now()-interval '1 hour','location','Office reception'));
+select test.check(jsonb_array_length(hr_career_applications()->'items'->0->'interviews')=1,'retrying an interview schedule creates no duplicate round or notification');
 reset role;
 select test.check(not exists(select 1 from profiles where id=(select v from cp where k='one')),'assessment success grants no staff profile');
 rollback;
