@@ -91,7 +91,7 @@ const addMember = async (p, name, email, salesRole) => {
   if (salesRole) await p.locator('#staff-sales-role').selectOption(salesRole);
   await p.getByPlaceholder('e.g. Kunal Sharma').fill(name);
   await p.getByPlaceholder('kunal@amuwa.com').fill(email);
-  await p.getByPlaceholder('min. 10 characters').fill(pw);
+  await expect((await p.getByPlaceholder('min. 10 characters').count()) === 0 && (await p.locator('input[type="password"]').count()) === 0, 'the Add Member form has no password field (the employee chooses their own from the welcome e-mail)');
   await p.locator('input[type="date"]').first().fill('2025-01-10');
   await p.locator('input[type="date"]').nth(1).fill('1995-05-05');
   await p.locator('select').filter({ has: p.locator('option', { hasText: 'A+' }) }).first().selectOption('A+');
@@ -99,6 +99,8 @@ const addMember = async (p, name, email, salesRole) => {
   await p.getByPlaceholder('+91 98765 43210').fill('+91 98765 43210');
   await p.getByRole('button', { name: /Create|Add team member|Add member/i }).last().click();
   await p.getByText(`Team Member Added Successfully: ${name}`).first().waitFor({ timeout: 15000 }).catch(() => fail(`${name} was not added`));
+  // what the welcome e-mail's link does for the employee: they choose their own password (nobody else ever knows one)
+  await api(await idOf(email), 'POST', '/me/password', { password: pw });
 };
 const rows = [
   ['Tele Lead', `tele.${tag}@amuwa.com`, 'TELECALLER', 'telecaller'],
@@ -152,7 +154,7 @@ const submitFor = async (p, name, email, role = 'Team Member') => {
   await f.locator('select').nth(1).selectOption({ label: 'Wabastore' });
   await f.locator('input').nth(0).fill(name);
   await f.locator('input[type="email"]').fill(email);
-  await f.locator('input[type="password"]').fill(pw);
+  await expect((await f.locator('input[type="password"]').count()) === 0, 'the HR form has no password field');
   await f.locator('input[type="date"]').nth(0).fill('2025-02-01');
   await f.locator('input[type="date"]').nth(1).fill('1996-06-06');
   await f.locator('select').filter({ has: p.locator('option', { hasText: 'A+' }) }).first().selectOption('A+');

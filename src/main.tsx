@@ -7,6 +7,7 @@ import { installChunkReload } from './lib/chunkReload';
 import './index.css';
 
 const ClientApp = React.lazy(() => import('./client/ClientApp'));
+const StaffSetPassword = React.lazy(() => import('./components/auth/StaffSetPassword').then(m => ({ default: m.StaffSetPassword })));
 
 installChunkReload();
 
@@ -28,11 +29,15 @@ if (!/^\/client(\/|$)/.test(window.location.pathname) && /error_code=otp_expired
 }
 
 const isClientRoute = /^\/client(\/|$)/.test(window.location.pathname);
+// The new employee's welcome e-mail opens /set-password: one standalone page where they choose their own password (no staff sign-in needed first).
+const isStaffSetPassword = window.location.pathname.replace(/\/+$/, '') === '/set-password';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      {isCandidateRoute ? <CandidatePortal /> : isClientRoute ? (
+      {isCandidateRoute ? <CandidatePortal /> : isStaffSetPassword ? (
+        <React.Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}><StaffSetPassword /></React.Suspense>
+      ) : isClientRoute ? (
         <React.Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}><ClientApp /></React.Suspense>
       ) : <App />}
     </ErrorBoundary>

@@ -19,6 +19,7 @@ import { routes } from './routes.js';
 import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
+import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
 import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
 import { runPerformanceAutomation } from './performance/writer.js';
@@ -101,6 +102,18 @@ app.use('/pipeline/customers/*', async (c, next) => {
   if (c.req.method !== 'GET' && c.res.status < 300) await dispatchQuietly();
 });
 
+// New employees: the database queues the welcome e-mail when an account becomes active (a request approved, or an active account created);
+// it is sent right away, within the same request, so the employee has the e-mail in seconds. Never fails the request itself. The scheduler
+// below retries anything that could not be sent, so no Email Automation page has to be open.
+app.use('/employee-requests/*', async (c, next) => {
+  await next();
+  if (c.req.method !== 'GET' && c.res.status < 300) await welcomeEmailQuietly();
+});
+app.use('/users', async (c, next) => {
+  await next();
+  if (c.req.method === 'POST' && c.res.status < 300) await welcomeEmailQuietly();
+});
+
 // An expense (or a retry of a Department Head e-mail) in Accounts' finance pages: its e-mails go out right away.
 app.use('/accounts/finance/*', async (c, next) => {
   await next();
@@ -163,6 +176,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
   const hr = await runHrAutomation();
+  // Welcome e-mails of new employees: the retries (and anything left waiting).
+  const welcomeEmails = await runWelcomeEmailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Department Head e-mails about payments and expenses: the retries (and anything left waiting).
   const financeMail = await runFinanceMailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
@@ -178,7 +193,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const performance = await runPerformanceAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Top performers: recalculate the monthly scores from the task and approved report records, prepare the monthly recommendations, write the evaluations. Idempotent.
   const topPerformers = await runTopPerformersAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, training }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, training }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

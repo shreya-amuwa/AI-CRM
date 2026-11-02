@@ -48,6 +48,11 @@ select test.check((select count(*) = 4 from public.profiles where id in (test.id
 select test.check((select count(*) = 1 and bool_and(trigger_event = 'ACCOUNT_PROVISIONED' and status = 'PENDING' and recipient_email = 'we.tl@example.com' and attempts = 0 and sent_at is null)
                    from public.employee_welcome_emails where employee_id = test.id('we_tl')), 'a directly created Team Lead has one pending welcome e-mail to their own address');
 select test.check(test.wecount('we_hr') = 1 and test.wecount('we_dh') = 1, 'and so has everybody else, once');
+select test.check((select next_attempt_at > now() + interval '1 minute' from test.wemail('we_tl')), 'a directly created account''s e-mail is held for a moment while the API finishes creating it');
+select test.service();
+select public.welcome_email_release(test.id('we_tl'));
+select test.check((select next_attempt_at <= now() from test.wemail('we_tl')), 'and released when the creation is complete');
+reset role;
 select test.check((select count(*) = 0 from public.employee_welcome_emails where employee_id = test.id('sa')), 'the first Super Admin (nobody created them) gets none');
 select test.check(private.welcome_queue(test.id('we_tl'), 'ACCOUNT_PROVISIONED', 'PROVISIONED:' || test.id('we_tl')::text, null, test.id('sa')) is null and test.wecount('we_tl') = 1, 'the same activation never queues a second e-mail');
 

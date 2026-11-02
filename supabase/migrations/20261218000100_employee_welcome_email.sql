@@ -72,7 +72,7 @@ revoke all on public.employee_welcome_emails, public.employee_welcome_email_atte
 -- ---------------------------------------------------------------------------
 -- Queues the welcome e-mail of one active employee, once per activation event. A missing / invalid address is recorded as SKIPPED
 -- (and HR is told) instead of being silently ignored. Returns the new row id (null when this activation was already queued).
-create or replace function private.welcome_queue(p_profile uuid, p_event text, p_key text, p_request uuid, p_by uuid)
+create or replace function private.welcome_queue(p_profile uuid, p_event text, p_key text, p_request uuid, p_by uuid, p_hold interval default interval '0 seconds')
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   pr public.profiles;
@@ -87,8 +87,8 @@ begin
   end if;
   v_email := lower(btrim(coalesce(pr.email, '')));
   v_ok := v_email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' and length(v_email) <= 254;
-  insert into public.employee_welcome_emails (employee_id, recipient_email, trigger_event, event_key, approval_request_id, activated_by, status, last_error)
-  values (pr.id, v_email, p_event, p_key, p_request, p_by, case when v_ok then 'PENDING' else 'SKIPPED' end,
+  insert into public.employee_welcome_emails (employee_id, recipient_email, trigger_event, event_key, approval_request_id, activated_by, status, next_attempt_at, last_error)
+  values (pr.id, v_email, p_event, p_key, p_request, p_by, case when v_ok then 'PENDING' else 'SKIPPED' end, now() + coalesce(p_hold, interval '0 seconds'),
           case when v_ok then null else 'The employee has no valid e-mail address.' end)
   on conflict (event_key) do nothing
   returning id into v_id;
@@ -96,16 +96,19 @@ begin
     return null;
   end if;
   select d.name into v_dept from public.departments d where d.id = pr.department_id;
-  perform private.notify_hr('EMPLOYEE_ACCOUNT_CREATED', format('Account created: %s', pr.full_name),
-    format('%s (%s) is now active. Welcome e-mail: %s.', pr.full_name, coalesce(v_dept, 'no department'), case when v_ok then 'queued' else 'not sent (no valid e-mail address)' end),
-    'profile', pr.id);
+  -- a directly created account is already announced to HR by the member-created notification; an approved request is announced here
+  if p_event = 'EMPLOYEE_REQUEST_APPROVED' then
+    perform private.notify_hr('EMPLOYEE_ACCOUNT_CREATED', format('Account created: %s', pr.full_name),
+      format('%s (%s) is now active. Welcome e-mail: %s.', pr.full_name, coalesce(v_dept, 'no department'), case when v_ok then 'queued' else 'not sent (no valid e-mail address)' end),
+      'profile', pr.id);
+  end if;
   if not v_ok then
     perform private.notify_hr('EMPLOYEE_WELCOME_EMAIL_FAILED', format('Welcome e-mail not sent: %s', pr.full_name),
       'The employee has no valid e-mail address. Correct it, then use Resend welcome e-mail.', 'profile', pr.id, '{}'::jsonb, 'urgent');
   end if;
   return v_id;
 end $$;
-revoke all on function private.welcome_queue(uuid, text, text, uuid, uuid) from public, anon, authenticated;
+revoke all on function private.welcome_queue(uuid, text, text, uuid, uuid, interval) from public, anon, authenticated;
 
 -- A request approved (HR / Team Lead request): the account is active by now (the profile is updated before the request).
 create or replace function private.tg_welcome_after_request_approval()
@@ -123,12 +126,14 @@ create trigger approval_requests_welcome_email after update of status on public.
   for each row execute function private.tg_welcome_after_request_approval();
 
 -- An authorised person creates an active account directly (Super Admin, Department Head, Team Lead). The first Super Admin
--- (bootstrap: nobody approved it) and self-registrations (pending until approved) are not part of this.
+-- (bootstrap: nobody approved it) and self-registrations (pending until approved) are not part of this. The account row exists a moment
+-- before the API has finished the rest of the creation (details, roles; a failure removes the account again), so the e-mail is held for two
+-- minutes and released by the API (welcome_email_release) as soon as the creation is complete.
 create or replace function private.tg_welcome_after_provisioning()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   if new.status = 'ACTIVE' and new.approved_by is not null then
-    perform private.welcome_queue(new.id, 'ACCOUNT_PROVISIONED', 'PROVISIONED:' || new.id::text, null, new.approved_by);
+    perform private.welcome_queue(new.id, 'ACCOUNT_PROVISIONED', 'PROVISIONED:' || new.id::text, null, new.approved_by, interval '2 minutes');
   end if;
   return new;
 end $$;
@@ -230,6 +235,14 @@ begin
 end $$;
 revoke all on function public.welcome_email_finish(uuid, text, text, integer, text) from public, anon, authenticated;
 grant execute on function public.welcome_email_finish(uuid, text, text, integer, text) to service_role;
+
+-- The API finished creating the account: the held welcome e-mail may go now.
+create or replace function public.welcome_email_release(p_employee uuid)
+returns void language sql security definer set search_path = '' as $$
+  update public.employee_welcome_emails set next_attempt_at = now(), updated_at = now() where employee_id = p_employee and status = 'PENDING' and next_attempt_at > now()
+$$;
+revoke all on function public.welcome_email_release(uuid) from public, anon, authenticated;
+grant execute on function public.welcome_email_release(uuid) to service_role;
 
 -- The employee used the link and chose their own password: any open welcome e-mail is closed (it must not be sent again).
 create or replace function public.welcome_email_setup_done(p_user uuid)
