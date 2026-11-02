@@ -100,6 +100,8 @@ select test.check((select jsonb_array_length(j) = 1 from cl), 'a dry run claims 
 select test.check((select x ->> 'number' is not null and (x ->> 'total')::numeric = pg_temp.g('total')::numeric and x ->> 'to' = '+91' || right(pg_temp.g('phone'), 10)
                           and x #>> '{file,path}' like 'customers/%/invoices/%/paid.pdf' and x #>> '{template,name}' = 'invoice_paid' and (x #>> '{template,approved}')::boolean = false
                      from jsonb_array_elements((select j from cl)) x), 'the payload has the persisted total, the number, the stored paid PDF location and the template');
+select test.check((select x ->> 'customerName' = (select c.name from customers c join generated_invoices g on g.customer_id = c.id join invoice_whatsapp_dispatches d on d.invoice_id = g.invoice_id)
+                     from jsonb_array_elements((select j from cl)) x), 'the message greets the customer by name (customers.name), not the business name');
 select test.check((select not (x ? 'url') and not (x ? 'signedUrl') and not (x::text like '%http%') from jsonb_array_elements((select j from cl)) x), 'no link is ever stored or handed out by the database');
 select test.check((select status = 'PROCESSING' and attempts = 1 from invoice_whatsapp_dispatches), 'a claimed dispatch is PROCESSING');
 select test.must_fail($$select invoice_whatsapp_finish((select id from invoice_whatsapp_dispatches), 'SENT')$$, 'an unknown outcome is refused', 'Unknown outcome');

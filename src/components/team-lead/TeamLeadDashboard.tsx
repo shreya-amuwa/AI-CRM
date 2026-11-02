@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bell, ClipboardList, LayoutDashboard, LineChart, Navigation, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, ClipboardList, LayoutDashboard, LineChart, Navigation, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { ScopeOverviewPanel } from '../common/ScopeOverviewPanel';
@@ -17,8 +17,15 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { TeamCustomers } from './TeamCustomers';
+import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
+import { usePipelineCounts } from '../team-member/pipeline/shared';
 
-export type TeamLeadNav = 'overview' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+export type TeamLeadNav = 'overview' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+
+const MY_SECTION: Record<'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments', PipelineSection> = {
+  'my-leads': 'leads', 'my-potential': 'potential', 'my-onboarding': 'onboarding', 'my-part-payments': 'part-payments'
+};
+const MY_NAV: Record<PipelineSection, TeamLeadNav> = { leads: 'my-leads', potential: 'my-potential', onboarding: 'my-onboarding', 'part-payments': 'my-part-payments' };
 
 interface TeamLeadDashboardProps {
   currentUserId: string;
@@ -33,6 +40,9 @@ interface TeamLeadDashboardProps {
 export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }) => {
   const { profile, logout } = useAuth();
   const [nav, setNav] = useState<TeamLeadNav>('overview');
+  const { counts: pipelineCounts } = usePipelineCounts();
+  // bumped on every sidebar click so choosing a section again returns to its list
+  const [navNonce, setNavNonce] = useState(0);
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
@@ -41,7 +51,13 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
-      { items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }] },
+      {
+        items: [
+          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+          // the Team Lead's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
+          { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] }
+        ]
+      },
       {
         label: 'Team',
         items: [
@@ -72,11 +88,11 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       ariaLabel="Team Lead navigation"
       groups={groups}
       active={nav}
-      onSelect={id => setNav(id as TeamLeadNav)}
+      onSelect={id => { setNav(id as TeamLeadNav); setNavNonce(n => n + 1); }}
       user={{ name: userName || 'Team Lead', role: 'Team Lead' }}
       onSignOut={() => void logout()}
       flush={nav === 'chat'}
-      wide={nav === 'team-members'}
+      wide={nav === 'team-members' || nav.startsWith('my-')}
       topActions={
         <>
           <LeaveCenter />
@@ -89,6 +105,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
           <PageTitle title={`Hello, ${userName?.split(' ')[0] || 'there'}`} subtitle="Where your team's customers are, who is carrying what, and what is overdue." />
           <ScopeOverviewPanel heading="Your team" hint="Counted from your team's real records." />
         </div>
+      )}
+      {(nav === 'my-leads' || nav === 'my-potential' || nav === 'my-onboarding' || nav === 'my-part-payments') && (
+        <PipelineWorkspace section={MY_SECTION[nav]} counts={pipelineCounts} leadFilters resetKey={navNonce} onNavigate={s => setNav(MY_NAV[s])} />
       )}
       {nav === 'customers' && <TeamCustomers />}
       {nav === 'assigned-tasks' && <TeamLeadTasksView />}
