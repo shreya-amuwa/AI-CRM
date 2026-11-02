@@ -1,6 +1,7 @@
 import React, { useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { REPORT_STATUS_LABEL, type ReportPeriodType, type ReportStatus } from '../../../shared/reportFields';
+import { reportStatusLabel, type ReportKind, type ReportPeriodType, type ReportStatus } from '../../../shared/reportFields';
+import type { ReportStageStatus } from '../../../shared/contracts';
 import { inputCls, selectCls } from '../team-member/pipeline/shared';
 
 // ---------------------------------------------------------------------------------------------------- dates
@@ -41,14 +42,33 @@ const STATUS_TONE: Record<ReportStatus, string> = {
   REJECTED: 'bg-rose-50 text-rose-700 ring-rose-200',
   REVISION_REQUIRED: 'bg-amber-50 text-amber-800 ring-amber-200'
 };
-export const StatusPill: React.FC<{ status: ReportStatus | string | null | undefined }> = ({ status }) => {
+/** The status as a small pill. Pass the report's kind so a Team Member report names its approval stage ("Pending Team Lead Approval"). */
+export const StatusPill: React.FC<{ status: ReportStatus | string | null | undefined; kind?: ReportKind | null }> = ({ status, kind }) => {
   if (!status) return <span className="text-[11px] text-slate-400">Not submitted</span>;
   const known = status in STATUS_TONE;
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 whitespace-nowrap ${known ? STATUS_TONE[status as ReportStatus] : 'bg-slate-100 text-slate-600 ring-slate-200'}`}>
-      {known ? REPORT_STATUS_LABEL[status as ReportStatus] : status}
+      {known ? reportStatusLabel(status as ReportStatus, kind) : status}
     </span>
   );
+};
+
+const STEP_TONE: Record<ReportStageStatus, string> = {
+  PENDING: 'bg-slate-100 text-slate-500',
+  APPROVED: 'bg-emerald-50 text-emerald-700',
+  REJECTED: 'bg-rose-50 text-rose-700',
+  REVISION_REQUIRED: 'bg-amber-50 text-amber-800'
+};
+const STEP_WORD: Record<ReportStageStatus, string> = { PENDING: 'pending', APPROVED: 'approved', REJECTED: 'rejected', REVISION_REQUIRED: 'revision' };
+
+/** The two approvals of a Team Member report side by side: Team Lead, then Department Head. */
+export const ApprovalSteps: React.FC<{ tl?: ReportStageStatus | null; dh?: ReportStageStatus | null }> = ({ tl, dh }) => {
+  if (!tl) return null;
+  const step = (label: string, v: ReportStageStatus | null | undefined) => {
+    const st: ReportStageStatus = v ?? 'PENDING';
+    return <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${STEP_TONE[st]}`}>{label}: {v ? STEP_WORD[st] : 'waiting'}</span>;
+  };
+  return <span className="inline-flex flex-wrap gap-1" aria-label="Approval steps">{step('Team Lead', tl)}{step('Dept Head', dh)}</span>;
 };
 
 /** A small number with a label, for the collapsed header of a box. */

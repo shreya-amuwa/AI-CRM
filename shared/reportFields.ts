@@ -17,7 +17,7 @@ export interface ReportFieldDef {
 export const MEMBER_REPORT_FIELDS = [
   { key: 'tasksAssigned', label: 'Assigned tasks', hint: 'What you were given to do in this period.' },
   { key: 'tasksCompleted', label: 'Completed tasks', hint: 'The tasks you finished.' },
-  { key: 'workCompleted', label: 'Work completed', hint: 'A summary of the work you completed.', required: true },
+  { key: 'workCompleted', label: 'Work completed', hint: 'A summary of the work you completed.' },
   { key: 'todayActivities', label: "Today's activities", hint: 'What you did during the day.' },
   { key: 'pendingTasks', label: 'Pending tasks', hint: 'What is still open and why.' },
   { key: 'challenges', label: 'Challenges', hint: 'Anything that slowed you down or needs help.' },

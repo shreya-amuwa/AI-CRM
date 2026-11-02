@@ -1,34 +1,23 @@
 import React, { useMemo } from 'react';
 import type { TeamLeadBox, WorkReportDetail } from '../../../shared/contracts';
-import { ReportContentView } from './ReportContentView';
 import { ReportRow } from './ReportRow';
-import { Box, Chip, dateLabel, periodLabel, StatusPill } from './reportUi';
+import { Box, Chip, dateLabel, StatusPill } from './reportUi';
 
-/** One member's approved report, open in place: what was done, the Team Lead's decision and the dates. */
-const MemberReportCard: React.FC<{ r: WorkReportDetail; onOpen: (id: string) => void }> = ({ r, onOpen }) => (
-  <article className="rounded-xl border border-slate-200 bg-white p-3 space-y-2" aria-label={`Report ${r.title}`}>
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <div className="min-w-0">
-        <h5 className="text-sm font-semibold text-slate-900">{r.title}</h5>
-        <p className="text-[11px] text-slate-500">
-          {periodLabel(r.periodStart, r.periodEnd)} - submitted {dateLabel(r.submittedAt)}
-          {r.reviewedAt ? <> - approved {dateLabel(r.reviewedAt)}{r.reviewedBy ? ` by ${r.reviewedBy}` : ''}</> : null}
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <StatusPill status={r.status} />
-        <button type="button" className="text-xs font-semibold text-indigo-700 hover:underline" onClick={() => onOpen(r.id)}>Open full report</button>
-      </div>
-    </div>
-    {r.reviewComment ? <p className="text-xs text-indigo-900 bg-indigo-50/60 rounded-lg px-2.5 py-1.5"><b>Team Lead comment:</b> {r.reviewComment}</p> : null}
-    <ReportContentView kind={r.kind} content={r.content} compact />
-  </article>
-);
+// The statuses a Team Member report can be in, grouped the way a Department Head and an Operations Head read them
+const GROUPS: { id: string; title: string; statuses: string[]; tone: string }[] = [
+  { id: 'TL', title: 'Pending Team Lead Approval', statuses: ['SUBMITTED', 'UNDER_REVIEW'], tone: 'text-sky-700' },
+  { id: 'DH', title: 'Pending Department Head Approval', statuses: ['PENDING_DEPARTMENT_HEAD'], tone: 'text-violet-700' },
+  { id: 'OK', title: 'Fully Approved', statuses: ['APPROVED'], tone: 'text-emerald-700' },
+  { id: 'BACK', title: 'Rejected / Revision Required', statuses: ['REJECTED', 'REVISION_REQUIRED'], tone: 'text-amber-800' }
+];
 
 /**
- * A Team Lead's box, for the Department Head and the Operations Head: the counts on the header, and inside (A) the Team Lead's own
- * individual report(s) and (B) the Team Members' reports their Team Lead APPROVED, one expandable card per member. Pending, rejected
- * and returned reports are only counted: they are never shown as approved. Every report keeps its own identity (nothing is merged).
+ * A Team Lead's box, for the Department Head and the Operations Head: the counts on the header, and inside
+ *   A. the Team Lead's own individual report, and
+ *   B. the Team Members' reports, grouped by where they are in the two approvals.
+ * A report is only "Fully Approved" once the Team Lead and the Department Head both approved it; a Team Lead-approved report that
+ * still waits for the Department Head is shown as pending and is never counted as approved. The Department Head sees the reports their
+ * Team Leads approved; the Operations Head (`showAll`) also sees the ones still with the Team Lead. Every report keeps its identity.
  */
 export const TeamLeadBoxView: React.FC<{
   box: TeamLeadBox;
@@ -36,19 +25,16 @@ export const TeamLeadBoxView: React.FC<{
   /** False when the Operations Head has not been sent the package for this period: only counts are shown. */
   released?: boolean;
   level?: 1 | 2;
-}> = ({ box, onOpen, released = true, level = 2 }) => {
-  const byMember = useMemo(() => {
-    const m = new Map<string, { id: string; name: string; designation: string | null; reports: WorkReportDetail[] }>();
-    for (const r of box.memberReports) {
-      const k = r.authorId ?? r.author;
-      const e = m.get(k) ?? { id: k, name: r.author, designation: r.designation, reports: [] };
-      e.reports.push(r);
-      m.set(k, e);
-    }
-    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [box.memberReports]);
+  /** The Operations Head also sees the reports still waiting for the Team Lead. */
+  showAll?: boolean;
+}> = ({ box, onOpen, released = true, level = 2, showAll }) => {
+  const groups = useMemo(() => GROUPS.filter(g => showAll || g.id !== 'TL').map(g => ({
+    ...g,
+    reports: box.memberReports.filter((r: WorkReportDetail) => g.statuses.includes(r.status))
+  })), [box.memberReports, showAll]);
   const c = box.counts;
   const leadStatus = box.leadReportStatus ?? box.leadReports[0]?.status ?? null;
+  const shown = groups.reduce((n, g) => n + g.reports.length, 0);
   return (
     <Box
       level={level}
@@ -57,14 +43,13 @@ export const TeamLeadBoxView: React.FC<{
       chips={
         <>
           <Chip label="members" value={box.totalMembers} />
-          <Chip label="submitted" value={c.submitted} tone="info" />
-          <Chip label="approved" value={c.approved} tone="good" />
-          <Chip label="pending" value={c.pending} tone={c.pending ? 'warn' : 'neutral'} />
-          {c.revision ? <Chip label="revision" value={c.revision} tone="warn" /> : null}
-          {c.rejected ? <Chip label="rejected" value={c.rejected} tone="bad" /> : null}
+          {showAll && c.pendingTl ? <Chip label="with Team Lead" value={c.pendingTl} tone="info" /> : null}
+          <Chip label="pending Dept Head" value={c.pendingDh ?? 0} tone={c.pendingDh ? 'warn' : 'neutral'} />
+          <Chip label="fully approved" value={c.approved} tone="good" />
+          {c.revision + c.rejected ? <Chip label="rejected / revision" value={c.revision + c.rejected} tone="bad" /> : null}
         </>
       }
-      right={<span className="flex flex-col items-end gap-1"><span className="text-[10px] uppercase tracking-wide text-slate-400">Own report</span><StatusPill status={leadStatus} /></span>}
+      right={<span className="flex flex-col items-end gap-1"><span className="text-[10px] uppercase tracking-wide text-slate-400">Own report</span><StatusPill status={leadStatus} kind="TEAM_LEAD" /></span>}
     >
       {!released ? (
         <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">The reports of this team open once the Department Head sends the department package for this period. The counts above are live.</p>
@@ -77,21 +62,16 @@ export const TeamLeadBoxView: React.FC<{
             )}
           </section>
           <section aria-label={`${box.lead} team member reports`}>
-            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">B. Team Members' approved reports</h4>
-            {byMember.length === 0 ? (
-              <p className="text-xs text-slate-500">No approved Team Member reports in this period{c.pending ? ` (${c.pending} still waiting for the Team Lead)` : ''}.</p>
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">B. Team Member reports</h4>
+            {shown === 0 ? (
+              <p className="text-xs text-slate-500">No Team Member report to show in this period{!showAll && c.pendingTl ? ` (${c.pendingTl} still with the Team Lead)` : ''}.</p>
             ) : (
-              <div className="space-y-2">
-                {byMember.map(m => (
-                  <Box
-                    key={m.id}
-                    level={3}
-                    title={m.name}
-                    subtitle={m.designation ?? 'Team Member'}
-                    chips={<Chip label={m.reports.length === 1 ? 'approved report' : 'approved reports'} value={m.reports.length} tone="good" />}
-                  >
-                    <div className="space-y-2">{m.reports.map(r => <MemberReportCard key={r.id} r={r} onOpen={onOpen} />)}</div>
-                  </Box>
+              <div className="space-y-3">
+                {groups.filter(g => g.reports.length > 0).map(g => (
+                  <div key={g.id} data-testid={`group-${g.id}`}>
+                    <h5 className={`text-[11px] font-bold uppercase tracking-wide mb-1.5 ${g.tone}`}>{g.title} <span className="tabular-nums">({g.reports.length})</span></h5>
+                    <ul className="space-y-2">{g.reports.map(r => <li key={r.id}><ReportRow r={r} onOpen={onOpen} showAuthor /></li>)}</ul>
+                  </div>
                 ))}
               </div>
             )}

@@ -98,3 +98,8 @@ while the customer stays in the consultant's dashboard as Add-on Services Recomm
 "Insufficient Data" employee, individual cards with the evaluation, Team Leads compared, monthly recognition (recommended, not official; rejection needs a
 reason; only the Department Head approves), the ranking following changed task records, the read-only company view of an Operations Head, the Super Admin's
 access through the API, who has no page (Team Lead, Team Member) and the phone layout (35 checks).
+
+`run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
+assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
+a Department Head revision that starts both approvals again, the Team Lead's individual report without Download and History, and that every change appears on the
+other screens by itself with no duplicate cards (24 checks).

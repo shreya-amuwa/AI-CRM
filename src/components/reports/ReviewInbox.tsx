@@ -6,12 +6,23 @@ import { Card, ErrorBanner, inputCls, Spinner } from '../team-member/pipeline/sh
 import { ReportRow } from './ReportRow';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
-const FILTERS: { id: string; label: string; match: (r: WorkReportSummary) => boolean; count: (c: ReportInbox['counts']) => number }[] = [
+type InboxFilter = { id: string; label: string; match: (r: WorkReportSummary) => boolean; count: (c: ReportInbox['counts']) => number };
+const FILTERS: InboxFilter[] = [
   { id: 'PENDING', label: 'Pending', match: r => r.status === 'SUBMITTED' || r.status === 'UNDER_REVIEW', count: c => (c.SUBMITTED ?? 0) + (c.UNDER_REVIEW ?? 0) },
   { id: 'APPROVED', label: 'Approved', match: r => r.status === 'APPROVED', count: c => c.APPROVED ?? 0 },
   { id: 'REJECTED', label: 'Rejected', match: r => r.status === 'REJECTED', count: c => c.REJECTED ?? 0 },
   { id: 'REVISION_REQUIRED', label: 'Revision required', match: r => r.status === 'REVISION_REQUIRED', count: c => c.REVISION_REQUIRED ?? 0 },
   { id: 'ALL', label: 'All', match: () => true, count: c => Object.values(c).reduce((a, b) => a + (b ?? 0), 0) }
+];
+
+// A Team Lead's inbox of Team Member reports has two approvals behind it: waiting for the Team Lead, then for the Department Head
+const MEMBER_FILTERS: InboxFilter[] = [
+  FILTERS[0],
+  { id: 'WITH_DEPARTMENT_HEAD', label: 'With Department Head', match: r => r.status === 'PENDING_DEPARTMENT_HEAD', count: c => c.PENDING_DEPARTMENT_HEAD ?? 0 },
+  { id: 'APPROVED', label: 'Fully approved', match: r => r.status === 'APPROVED', count: c => c.APPROVED ?? 0 },
+  FILTERS[3],
+  FILTERS[2],
+  FILTERS[4]
 ];
 
 /**
@@ -25,19 +36,21 @@ export const ReviewInbox: React.FC<{
   reloadKey: number;
   onOpen: (id: string) => void;
   defaultFilter?: string;
-}> = ({ title, emptyText, period, reloadKey, onOpen, defaultFilter = 'PENDING' }) => {
+  /** Team Member reports (two approvals): the Team Lead's inbox. */
+  member?: boolean;
+}> = ({ title, emptyText, period, reloadKey, onOpen, defaultFilter = 'PENDING', member }) => {
   const [data, setData] = useState<ReportInbox | null>(null);
   const [filter, setFilter] = useState(defaultFilter);
   const [author, setAuthor] = useState('');
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
-    setError('');
-    workReportsApi.inbox({ from: period?.from, to: period?.to }).then(setData, e => { setData({ items: [], counts: {} }); setError(errText(e)); });
+    workReportsApi.inbox({ from: period?.from, to: period?.to }).then(d => { setError(''); setData(d); }, e => { setData(prev => prev ?? { items: [], counts: {} }); setError(errText(e)); });
   }, [period?.from, period?.to]);
   useEffect(load, [load, reloadKey]);
 
-  const active = FILTERS.find(f => f.id === filter) ?? FILTERS[0];
+  const filters = member ? MEMBER_FILTERS : FILTERS;
+  const active = filters.find(f => f.id === filter) ?? filters[0];
   const rows = useMemo(() => (data?.items ?? []).filter(active.match).filter(r => !author.trim() || r.author.toLowerCase().includes(author.trim().toLowerCase())), [data, active, author]);
 
   return (
@@ -47,7 +60,7 @@ export const ReviewInbox: React.FC<{
         <input className={`${inputCls} !w-52 !py-1.5`} placeholder="Search by name" aria-label="Search reports by author name" value={author} onChange={e => setAuthor(e.target.value)} />
       </div>
       <div className="flex flex-wrap gap-1.5 mb-3" role="group" aria-label="Filter by status">
-        {FILTERS.map(f => (
+        {filters.map(f => (
           <button
             key={f.id}
             type="button"
