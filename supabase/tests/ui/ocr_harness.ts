@@ -2,7 +2,7 @@ import { readShopPhoto } from '../../../src/lib/ocr/readShopPhoto';
 import { parseShopText } from '../../../src/lib/ocr/shopText';
 
 /** Draws a shop board like a phone photo of one (text on a coloured panel, optional tilt, dimness and noise) and reads it with the real engine. */
-async function board(opts: { tilt?: number; dim?: number; noise?: number }): Promise<Blob> {
+async function board(opts: { tilt?: number; dim?: number; noise?: number; seed?: number }): Promise<Blob> {
   const c = document.createElement('canvas');
   c.width = 1600;
   c.height = 1100;
@@ -32,9 +32,15 @@ async function board(opts: { tilt?: number; dim?: number; noise?: number }): Pro
     g.fillRect(0, 0, c.width, c.height);
   }
   if (opts.noise) {
+    // A repeatable image keeps OCR regressions attributable to code, not a new random fixture on every run.
+    let seed = opts.seed ?? 42;
+    const random = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
     const img = g.getImageData(0, 0, c.width, c.height);
     for (let i = 0; i < img.data.length; i += 4) {
-      const n = (Math.random() - 0.5) * opts.noise;
+      const n = (random() - 0.5) * opts.noise;
       img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n;
     }
     g.putImageData(img, 0, 0);
@@ -43,7 +49,7 @@ async function board(opts: { tilt?: number; dim?: number; noise?: number }): Pro
 }
 
 (window as any).__board = board;
-(window as any).scanBoard = async (opts: { tilt?: number; dim?: number; noise?: number }) => {
+(window as any).scanBoard = async (opts: { tilt?: number; dim?: number; noise?: number; seed?: number }) => {
   const t0 = performance.now();
   const stages: string[] = [];
   const read = await readShopPhoto(await board(opts), p => { if (!stages.includes(p.stage)) stages.push(p.stage); });

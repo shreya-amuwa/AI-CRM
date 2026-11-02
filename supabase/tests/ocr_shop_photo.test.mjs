@@ -69,7 +69,7 @@ check(f.pincode?.value === '122001', 'clean board: the pincode', f.pincode);
 check(f.address && /Main Market/i.test(f.address.value), 'clean board: the address', f.address);
 check(f.gstin && f.gstin.value.startsWith('06ABCDE1234F1'), 'clean board: the GSTIN (a character the engine drops is marked for checking)', f.gstin);
 check(f.category === 'Mobile & electronics', 'clean board: shop type');
-const again = await run({ tilt: 3, dim: 0.35, noise: 40 });
+const again = await run({ tilt: 3, dim: 0.35, noise: 40, seed: 42 });
 const g = again.scan;
 console.log('   tilted, dim, noisy ->', JSON.stringify({ name: g.shopName, phones: g.phones.map(p => p.value), pin: g.pincode?.value, ms: again.ms }));
 check(again.ms < 30000, 'a second photo is read with the loaded engine, in reasonable time', again.ms);
