@@ -4849,3 +4849,18 @@ export interface CareerUpload {
   file: CareerFile; bucket: string; path: string; provider: 'SUPABASE' | 'R2'; token?: string;
   upload?: { url: string; headers: Record<string,string> };
 }
+export interface CareerQuestion { prompt: string; options: string[]; correct?: number }
+export interface CareerTest { id: string; title: string; duration_minutes: number; pass_percent: number; question_count: number }
+export interface CareerAttempt {
+ id: string; application_id: string; title: string; available_until: string; duration_minutes?: number; question_count?: number;
+ started_at: string | null; deadline: string | null; submitted_at: string | null; score: number | null; passed: boolean | null;
+ version: number; answers?: Record<string,number>; questions?: CareerQuestion[]; server_time?: string;
+}
+export interface CareerInterview {
+ id: string; application_id: string; round: 'HR'|'DEPARTMENT_HEAD'|'MANAGEMENT'; scheduled_at: string; location: string;
+ status: 'SCHEDULED'|'COMPLETED'|'CANCELLED'; recommendation?: 'PROCEED'|'REJECT'|'HOLD'; internal_feedback?: string; version?: number;
+}
+export interface CareerStaffApplication extends CareerApplication { title: string; resume_id: string; hr_candidate_id: string; attempts: CareerAttempt[]; interviews: CareerInterview[]; offers:CareerOffer[]; documents:CareerDocument[] }
+export interface CareerOffer {id:string;application_id:string;title:string;terms:string;expires_at:string;joining_date:string;status:'DRAFT'|'RELEASED'|'ACCEPTED'|'DECLINED'|'EXPIRED'|'WITHDRAWN';version:number}
+export interface CareerDocument {id:string;application_id:string;title:string;file_id:string|null;status:'REQUESTED'|'UPLOADED'|'APPROVED'|'REJECTED';message:string|null;version:number}
+export interface CareerTraining {id:string;application_id:string;title:string;start_date:string;status:string;days:{day_no:number;title:string;topics:string[];trainer_name:string|null;attendance:string|null;assessment_result:string|null;completed:boolean|null}[]}

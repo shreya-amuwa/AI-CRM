@@ -2271,3 +2271,28 @@ export const careerPostingSchema = z.object({
 }).strict();
 export const careerUploadSchema = z.object({ file_name: trimmed(180).regex(/\.pdf$/i, 'Upload a PDF resume.'), size_bytes: z.number().int().min(1).max(10485760) }).strict();
 export const careerApplySchema = z.object({ posting_id: uuidSchema, resume_id: uuidSchema }).strict();
+export const careerTestSchema = z.object({ title:trimmed(160).min(2),duration_minutes:z.number().int().min(1).max(180),pass_percent:z.number().int().min(1).max(100),
+ questions:z.array(z.object({prompt:trimmed(2000).min(1),options:z.array(trimmed(500).min(1)).min(2).max(8),correct:z.number().int().min(0).max(7)}).strict().refine(q=>q.correct<q.options.length,'Choose a valid answer.')).min(1).max(100)
+}).strict();
+export const careerInviteSchema=z.object({application_id:uuidSchema,test_id:uuidSchema,available_until:z.string().datetime({offset:true})}).strict();
+export const careerAttemptSchema=z.discriminatedUnion('action',[
+ z.object({action:z.literal('START')}).strict(),
+ z.object({action:z.enum(['SAVE','SUBMIT']),version:z.number().int().positive(),answers:z.record(z.string().regex(/^(0|[1-9][0-9]{0,2})$/),z.number().int().min(0).max(7))}).strict()
+]);
+export const careerStageSchema=z.object({application_id:uuidSchema,stage:z.enum(['SCREENING','INTERVIEW','SELECTED','ON_HOLD','REJECTED']),version:z.number().int().positive(),message:trimmed(1000).nullable()}).strict();
+export const careerInterviewSchema=z.union([
+ z.object({application_id:uuidSchema,round:z.enum(['HR','DEPARTMENT_HEAD','MANAGEMENT']),scheduled_at:z.string().datetime({offset:true}),location:trimmed(1000).min(1)}).strict(),
+ z.object({application_id:uuidSchema,id:uuidSchema,version:z.number().int().positive(),status:z.enum(['COMPLETED','CANCELLED']),recommendation:z.enum(['PROCEED','REJECT','HOLD']).nullable(),internal_feedback:trimmed(3000)}).strict()
+]);
+export const careerOfferSchema=z.union([
+ z.object({application_id:uuidSchema,title:trimmed(160).min(2),terms:trimmed(15000).min(20),expires_at:z.string().datetime({offset:true}),joining_date:isoDate}).strict(),
+ z.object({application_id:uuidSchema,id:uuidSchema,version:z.number().int().positive(),action:z.enum(['RELEASE','WITHDRAW'])}).strict()
+]);
+export const careerOfferReplySchema=z.object({response:z.enum(['ACCEPTED','DECLINED']),version:z.number().int().positive()}).strict();
+export const careerDocumentRequestSchema=z.union([
+ z.object({application_id:uuidSchema,title:trimmed(160).min(2),message:trimmed(1000)}).strict(),
+ z.object({application_id:uuidSchema,id:uuidSchema,version:z.number().int().positive(),status:z.enum(['APPROVED','REJECTED']),message:trimmed(1000)}).strict()
+]);
+export const careerDocumentLinkSchema=z.object({file_id:uuidSchema}).strict();
+export const careerTrainingSchema=z.object({application_id:uuidSchema,program_id:uuidSchema.nullable(),complete:z.boolean()}).strict();
+export const careerTrainingInviteSchema=z.object({application_id:uuidSchema,test_id:uuidSchema,available_until:z.string().datetime({offset:true}),day:z.number().int().min(1).max(3)}).strict();

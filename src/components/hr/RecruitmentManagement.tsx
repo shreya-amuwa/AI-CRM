@@ -1,3 +1,4 @@
+import { CareerManagement } from './CareerManagement';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarClock, Plus, RefreshCw, Search } from 'lucide-react';
 import { recruitmentApi } from '../../lib/api/endpoints';
@@ -29,7 +30,7 @@ const CONFIRMATION: Record<RecruitmentConfirmation, { label: string; tone: Tone 
 const OUTCOME: Record<RecruitmentCallOutcome, string> = { ANSWERED: 'Answered', NO_ANSWER: 'No answer', CALL_BACK: 'Asked to call back', NOT_INTERESTED: 'Not interested', WRONG_NUMBER: 'Wrong number' };
 const ACTION_KIND: Record<RecruitmentActionKind, string> = { INTERVIEW: 'Interview', DOCUMENTS: 'Documents', ASSESSMENT: 'Assessment', BACKGROUND_CHECK: 'Background check', REFERENCE_CHECK: 'Reference check', OTHER: 'Other' };
 
-type Tab = 'candidates' | 'agenda' | 'positions';
+type Tab = 'candidates' | 'agenda' | 'positions' | 'portal';
 /** A position is chosen by its id; a designation found in the employee records (not a position yet) by its title, and it becomes a position when saved. */
 const posValue = (p: RecruitmentPosition) => (p.id ? p.id : `title:${p.title}`);
 const posBody = (v: string): { positionId?: string; positionTitle?: string } => (v.startsWith('title:') ? { positionTitle: v.slice(6) } : v ? { positionId: v } : {});
@@ -153,7 +154,7 @@ export const RecruitmentManagement: React.FC = () => {
       </div>
 
       <div className="flex flex-wrap gap-1 p-1 bg-slate-50 border border-slate-200 rounded-xl w-fit" role="tablist" aria-label="Recruitment sections">
-        {([['candidates', 'Candidates'], ['agenda', 'Calls & follow-ups'], ['positions', 'Positions']] as [Tab, string][]).map(([id, label]) => (
+        {([['candidates', 'Candidates'], ['agenda', 'Calls & follow-ups'], ['positions', 'Positions'], ['portal', 'Candidate portal']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
             className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-colors ${tab === id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>{label}</button>
         ))}
@@ -218,6 +219,7 @@ export const RecruitmentManagement: React.FC = () => {
       )}
 
       {tab === 'agenda' && <AgendaTab agenda={agenda} onOpen={setOpen} />}
+      {tab === 'portal' && <CareerManagement />}
       {tab === 'positions' && <PositionsTab positions={positions} onChanged={refresh} />}
 
       {open && <CandidateDialog id={open} positions={positions ?? []} recruiters={recruiters} onClose={() => setOpen(null)} onChanged={refresh} />}
