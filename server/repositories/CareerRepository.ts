@@ -1,3 +1,4 @@
+import { getServiceClient } from '../db/supabase.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   CareerApplication,
@@ -154,4 +155,9 @@ export class CareerRepository {
   async call<T>(name: string, args: Record<string, unknown>): Promise<T> {
     return unwrap(await this.db.rpc(name, args)) as T;
   }
+  /** Server-only completion after ownership and stored-content verification in the service. */
+  async recordVerifiedFile(id: string, size: number, path: string): Promise<CareerFile> {
+    return unwrap(await getServiceClient().rpc('career_file_verified', { p_id: id, p_size: size, p_path: path })) as CareerFile;
+  }
+
 }
