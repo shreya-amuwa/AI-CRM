@@ -245,7 +245,8 @@ select test.must_fail($$select customer_journey_status((select id from sj where 
 -- clients are kept apart
 select test.login('sj_c1');
 select test.check((select s ->> 'accountEmail' = 'calling.journey@example.com' from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'PAYMENT'), 'Scenario I: a client reads only their own journey');
-select test.check((select count(*) = 0 from jsonb_array_elements(client_service_progress()) p where p ->> 'code' in ('WHATSAPP_API', 'DS_META_ADS')), 'and only their own services');
+select test.must_fail($$select client_service_progress()$$, 'and the per-service progress stays closed until the services section opens (the gate is unchanged)', 'Available after');
+select test.check((select count(*) = 0 from jsonb_array_elements(client_onboarding_journey() -> 'stages' -> 3 -> 'services') x where x ->> 'code' in ('WHATSAPP_API', 'DS_META_ADS')), 'the services listed in their journey are only their own');
 select test.must_fail($$select count(*) from public.service_milestones$$, 'the milestone table is not readable directly', 'permission denied');
 select test.must_fail($$select count(*) from public.meta_verification_events$$, 'nor the Meta events', 'permission denied');
 select test.must_fail($$insert into public.customer_existing_blue_tick (customer_id, status) values ((select id from sj where name = 'W1'), 'CONFIRMED')$$, 'a direct write to the Blue Tick record is refused', 'permission denied');
@@ -253,12 +254,15 @@ select test.must_fail($$update public.customer_onboarding set meta_status = 'COM
 reset role;
 
 \echo '--- 117. Service journeys: customers who are already live keep everything'
--- "Prov One Co" is an imported customer outside the journey: every step is done, 100 percent, nothing was reset
-select test.check((select (private.client_journey(id) ->> 'completed')::boolean and (private.client_journey(id) -> 'progress' ->> 'percent')::int = 100
-                     from customers where company = 'Prov One Co'), 'a live customer shows 100 percent, completed');
-select test.check((select bool_and(p ->> 'status' = 'LIVE' and (p ->> 'percent')::int = 100)
-                     from customers c, customer_services cs, lateral private.client_service_progress_one(c.id, cs.service_code, true, now()) p
-                    where c.company = 'Prov One Co' and cs.customer_id = c.id), 'each of its services shows every step done');
-select test.check((select count(*) = 0 from customer_services cs where cs.customer_id in (select id from customers where company = 'Prov One Co') and cs.setup_auto),
-  'nothing of a live customer was started or changed by the automation');
+-- established customers from the earlier suites (a customer with live services and no onboarding journey): every step is done, nothing was reset
+create temp table sjl (id uuid);
+insert into sjl select id from customers where company in ('Nair Traders LLP', 'Multi Co') and lifecycle_stage = 'CUSTOMER' and not exists (select 1 from customer_onboarding o where o.customer_id = customers.id);
+select test.check((select count(*) >= 1 from sjl), 'there are established customers from the earlier suites');
+select test.check((select bool_and((private.client_journey(id) ->> 'completed')::boolean and (private.client_journey(id) -> 'progress' ->> 'percent')::int = 100) from sjl), 'a live customer shows 100 percent, completed');
+select test.check((select bool_and(p ->> 'status' = 'LIVE' and (p ->> 'percent')::int = 100 and (p ->> 'actionRequired')::boolean is false)
+                     from sjl l, customer_services cs, lateral private.client_service_progress_one(l.id, cs.service_code, true, now()) p
+                    where cs.customer_id = l.id), 'each of their services shows every step done');
+select test.check((select count(*) = 0 from customer_services cs where cs.customer_id in (select id from sjl) and (cs.setup_auto or cs.setup_status <> 'READY')),
+  'nothing of a live customer was started, reopened or changed by the automation');
 select test.check((select count(*) = (select count(distinct (customer_id, service_code)) from customer_services) from customer_services), 'no service row was duplicated');
+select test.check((select count(*) = 1 from crm_services where code = 'WHATSAPP_API_BLUE_TICK'), 'and the combined service still exists once, with its code');
