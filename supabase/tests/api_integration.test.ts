@@ -3721,7 +3721,7 @@ provider.close();
 {
   r = await api('sa', 'GET', '/departments');
   const hrDept = r.json.data.find((d: any) => d.slug === 'hr');
-  const details = { designation: 'Department Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56789', emergencyContact: '+91 98765 43210' };
+  const details = { designation: 'HR Admin Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56789', emergencyContact: '+91 98765 43210' };
   const hrBody = { email: 'hr.api@amuwa.com', fullName: 'HR Api', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id };
 
   // Add Member: the new details are validated before any account exists
@@ -3761,10 +3761,18 @@ provider.close();
   check(r.status === 409 && /already has a Department Head/i.test(r.json.error.message), 'a second HR Department Head is refused with a clear message', r);
   check((await db.query(`select 1 from public.profiles where email = 'hr.second@amuwa.com'`)).rowCount === 0, 'and no second account or login is left behind');
   const { rows: [hrTeam] } = await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id]);
-  r = await api('hr', 'POST', '/users', { email: 'hr.lead@amuwa.com', fullName: 'HR Lead', password: 'Sup3rSecret!', role: 'TEAM_HEAD', teamId: hrTeam.id, details: { ...details, designation: 'Team Lead' } });
-  check(r.status === 201 && r.json.data.role === 'TEAM_HEAD' && r.json.data.department.slug === 'hr', 'the HR head creates an HR Team Lead', r);
+  // the HR department has three designations only: a generic one, or one that does not match the role, is refused before any account exists
+  for (const [label, role, designation] of [['a Team Lead', 'TEAM_HEAD', 'Team Lead'], ['a generic Team Member', 'TEAM_MEMBER', 'Team Member'], ['an HR Assistant as a Team Lead', 'TEAM_HEAD', 'HR Assistant'], ['an HR Admin Head as a Team Member', 'TEAM_MEMBER', 'HR Admin Head']] as const) {
+    r = await api('sa', 'POST', '/users', { email: 'hr.bad@amuwa.com', fullName: 'HR Bad', password: 'Sup3rSecret!', role, teamId: hrTeam.id, details: { ...details, designation } });
+    check(r.status === 422, `HR: ${label} is refused`, r);
+  }
+  r = await api('sa', 'POST', '/users', { email: 'hr.bad@amuwa.com', fullName: 'HR Bad', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id });
+  check(r.status === 422, 'HR: an HR employee cannot be made without a designation', r);
+  check((await db.query(`select 1 from public.profiles where email = 'hr.bad@amuwa.com'`)).rowCount === 0, 'and no account is left behind by any of them');
+  r = await api('hr', 'POST', '/users', { email: 'hr.lead@amuwa.com', fullName: 'HR Lead', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id, details: { ...details, designation: 'HR Assistant' } });
+  check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department.slug === 'hr' && r.json.data.hrSubRole === 'HR_ASSISTANT', 'the HR head creates an HR Assistant', r);
   tokens.set('hrlead', tokenFor(r.json.data.id));
-  r = await api('sa', 'POST', '/users', { email: 'hr.member@amuwa.com', fullName: 'HR Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id, details: { ...details, designation: 'Team Member' } });
+  r = await api('sa', 'POST', '/users', { email: 'hr.member@amuwa.com', fullName: 'HR Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id, details: { ...details, designation: 'HR Assistant' } });
   check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department.slug === 'hr' && r.json.data.status === 'ACTIVE', 'the Super Admin creates an HR Team Member (active, in the HR department)', r);
   tokens.set('hrmember', tokenFor(r.json.data.id));
   check((await db.query(`select 1 from public.hr_employees where email in ('hr.lead@amuwa.com', 'hr.member@amuwa.com') and department_id = 'hr' and profile_id is not null`)).rowCount === 2, 'each of them has an HR employee record');
@@ -3777,13 +3785,13 @@ provider.close();
   r = await api('hrmember', 'POST', '/users', { email: 'x.hr@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id });
   check(r.status === 403, 'an HR Team Member cannot create accounts', r);
   r = await api('hrlead', 'POST', '/users', { email: 'x.head@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDept.id });
-  check(r.status === 403, 'an HR Team Lead cannot create a Department Head', r);
+  check(r.status === 403, 'an HR Assistant cannot create a Department Head', r);
   r = await api('hrlead', 'POST', '/users', { email: 'x.wab@amuwa.com', fullName: 'X', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: sales.id });
   check(r.status === 403, 'nor can the HR team create people in another department', r);
   r = await api('a', 'GET', '/hr/attendance');
   check(r.status === 403, 'a Sales member still cannot open the HR data', r);
   r = await api('hr', 'GET', '/hr/personal-details');
-  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.contactNumber === '+919123456789' && d.joiningDate === '2026-01-05' && d.designation === 'Department Head'), 'HR can read the details that were collected', r);
+  check(r.status === 200 && r.json.data.some((d: any) => d.profileId === hrId && d.bloodGroup === 'B+' && d.emergencyContact === '+91 98765 43210' && d.contactNumber === '+919123456789' && d.joiningDate === '2026-01-05' && d.designation === 'HR Admin Head'), 'HR can read the details that were collected', r);
   r = await api('a', 'GET', '/hr/personal-details');
   check(r.status === 403, 'an ordinary employee cannot read employee details', r);
   // --- employee approval hierarchy: HR submits, the right approver decides, the Department Head assigns the team ---
@@ -3882,7 +3890,7 @@ provider.close();
   }
   // international and 10-digit numbers
   for (const [label, input, stored] of [['an international number', '+44 7911 123456', '+447911123456'], ['a 10-digit Indian number', '98765 11111', '+919876511111'], ['a number with a leading 0', '098765 22222', '+919876522222'], ['a +1 number', '+1 (415) 555-2671', '+14155552671']] as const) {
-    r = await api('sa', 'POST', '/users', { ...hrBody, email: `intl.${stored.slice(-6)}@amuwa.com`, details: { ...details, designation: 'Team Member', contactNumber: input }, role: 'TEAM_MEMBER', departmentId: undefined, teamId: (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id])).rows[0].id });
+    r = await api('sa', 'POST', '/users', { ...hrBody, email: `intl.${stored.slice(-6)}@amuwa.com`, details: { ...details, designation: 'HR Assistant', contactNumber: input }, role: 'TEAM_MEMBER', departmentId: undefined, teamId: (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDept.id])).rows[0].id });
     check(r.status === 201 && (await db.query(`select 1 from public.employee_personal_details where profile_id = $1 and contact_number = $2`, [r.json.data.id, stored])).rowCount === 1, `Add Member accepts ${label} and stores ${stored}`, r);
   }
   r = await api('dh', 'GET', '/hr/personal-details');
@@ -8114,7 +8122,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
   // ---- HR: never a direct creation, always a request the Department Head approves
   r = await api('hrlead', 'POST', '/users', { email: 'hr.direct1@amuwa.com', fullName: 'HR Direct', password: pw, role: 'TEAM_MEMBER', teamId: (await db.query(`select team_id from public.profiles where email = 'hr.lead@amuwa.com'`)).rows[0].team_id });
-  check(r.status === 403 && /request/i.test(r.json.error.message), 'an HR Team Lead cannot create a person directly: HR sends a request', r);
+  check(r.status === 403 && /request/i.test(r.json.error.message), 'an HR Assistant cannot create a person directly: HR sends a request', r);
   r = await api('hrmember', 'POST', '/users', mk('hr.direct2@amuwa.com'));
   check(r.status === 403, 'nor an HR member (and not into another department)', r);
   check(Number((await db.query(`select count(*) c from public.profiles where email like 'hr.direct%'`)).rows[0].c) === 0, 'no account was made');
@@ -9364,6 +9372,32 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
   r = await api('rrec1', 'GET', '/recruiter/reports');
   check(r.status === 200 && r.json.data.scope === 'OWN', 'recruiter: reports are scoped to the Recruiter', r);
+
+  // The HR department's designations through the employee request workflow and direct API calls: the department decides, the database enforces
+  {
+    const reqDetails = (designation: string, n: number) => ({ designation, joiningDate: '2026-01-05', dateOfBirth: '1993-05-06', bloodGroup: 'B+', contactNumber: `+91 9123456${String(800 + n)}`, emergencyContact: '+91 98765 43299' });
+    const reqBody = (email: string, role: string, departmentId: string, designation: string, n: number, division = 'GENERAL') => ({ email, fullName: 'Req ' + n, password: 'Sup3rSecret!', role, departmentId, division, details: reqDetails(designation, n) });
+    const { rows: [wabDept] } = await db.query(`select id from public.departments where slug = 'wabastore'`);
+    r = await api('hr', 'POST', '/employee-requests', reqBody('hrd.req1@amuwa.com', 'TEAM_MEMBER', hrDeptId, 'Team Member', 1));
+    check(r.status === 422, 'HR designations: a request for an HR employee with the generic Team Member designation is refused', r);
+    r = await api('hr', 'POST', '/employee-requests', reqBody('hrd.req2@amuwa.com', 'TEAM_HEAD', hrDeptId, 'Team Lead', 2));
+    check(r.status === 422, 'HR designations: nor a Team Lead', r);
+    r = await api('hr', 'POST', '/employee-requests', reqBody('hrd.req3@amuwa.com', 'TEAM_MEMBER', wabDept.id, 'HR Recruiter', 3, 'SALES'));
+    check(r.status === 422, 'HR designations: an HR designation is refused for another department', r);
+    r = await api('hr', 'POST', '/employee-requests', reqBody('hrd.req4@amuwa.com', 'TEAM_MEMBER', hrDeptId, 'HR Admin Head', 4));
+    check(r.status === 422, 'HR designations: HR Admin Head does not fit the Team Member role', r);
+    check((await db.query(`select 1 from public.profiles where email like 'hrd.req%@amuwa.com'`)).rowCount === 0, 'HR designations: and none of them left an account behind');
+    r = await api('hr', 'POST', '/employee-requests', reqBody('hrd.req5@amuwa.com', 'TEAM_MEMBER', hrDeptId, 'HR Recruiter', 5));
+    check(r.status === 201 && r.json.data.status === 'PENDING', 'HR designations: an HR Recruiter request is accepted and waits for its approver', r);
+    check((await db.query(`select 1 from public.profiles p join public.employee_personal_details d on d.profile_id = p.id where p.email = 'hrd.req5@amuwa.com' and d.designation = 'HR Recruiter' and p.status = 'PENDING'`)).rowCount === 1, 'HR designations: with its designation saved and no access yet');
+    // a Super Admin creating the Department Head of HR directly: only the HR Admin Head designation fits, and HR already has one
+    r = await api('sa', 'POST', '/users', { email: 'hrd.head@amuwa.com', fullName: 'Second Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDeptId, details: reqDetails('Department Head', 6) });
+    check(r.status === 409 || r.status === 422, 'HR designations: a generic Department Head designation is refused for HR (and HR already has its head)', r);
+    check((await db.query(`select 1 from public.profiles where email = 'hrd.head@amuwa.com'`)).rowCount === 0, 'HR designations: no account was made');
+    // HR Admin Head is the existing Department Head: no Super Admin power
+    r = await api('hr', 'GET', '/recruitment-emails');
+    check(r.status === 403, 'HR designations: the HR Admin Head cannot use Super Admin technical routes', r);
+  }
   if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
 }
 

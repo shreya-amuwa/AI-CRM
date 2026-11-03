@@ -11,12 +11,32 @@ Migrations to run, in this order, in the Supabase SQL editor (each is safe to ru
 
 ## 1. Roles and login
 
-* Creating an HR Team Member or Team Lead (Add Member, or an employee request) shows an **HR designation** dropdown: *HR Assistant* or *HR Recruiter*. The designation is saved with the
+* Creating an HR employee (Add Member, or an employee request) shows the **Role / Designation** dropdown with *HR Assistant*, *HR Recruiter* and *HR Admin Head* (see below). The designation is saved with the
   employee's details (`employee_personal_details.designation`); a database trigger turns it into `profiles.hr_sub_role` and the stored `default_dashboard`
-  (`hr-recruiter`). The Super Admin or the Department Head of HR can change it later with `set_hr_sub_role` (audited). The HR designations are refused for any other department or role.
+  (`hr-recruiter`). The Super Admin or the Department Head of HR can change it later with `set_hr_sub_role` (audited). The HR designations are refused for any other department or for a role they do not fit.
 * Sign-in routes a Recruiter to `/hr-recruiter/dashboard/:userId`. Navigation is convenience only: every function checks the caller itself.
 * A Recruiter is **not** HR staff in the database (`private.is_hr_staff()` is false for them): the HR Assistant's pages (directory, leave review, issues, e-mail automation, recruitment
   management) answer FORBIDDEN, and an HR Assistant is refused the recruiter functions. The Super Admin and the Department Head of HR ("HR leadership") use both.
+
+### HR department designations (migration `20261222000500_hr_department_designations.sql`)
+
+The HR department has exactly three designations for new employees, shown as the **Role / Designation** dropdown whenever the HR department is selected in *Add Team Member*
+(and in HR's *New employee request* form): **HR Assistant**, **HR Recruiter**, **HR Admin Head**. Team Member, Team Lead, Department Head and Operations Head are not offered for HR.
+
+| Designation | Existing role it maps to | Dashboard | Notes |
+| --- | --- | --- | --- |
+| HR Assistant | Team Member of HR | existing HR dashboard | all existing HR Assistant permissions, unchanged |
+| HR Recruiter | Team Member of HR | HR Recruiter dashboard | recruitment modules only |
+| HR Admin Head | Department Head of HR (no new role) | existing HR Department Head dashboard (`hr-head`) | HR-wide oversight (`private.is_hr_leadership`); one per department; created directly only by the Super Admin; through an employee request it still needs the usual approver; no Super Admin or Operations Head permission |
+
+Enforcement is in the database, not the dropdown: `private.designation_problem` is the single rule. It is used by the trigger on `employee_personal_details` (so any way of saving a designation is
+checked), by a trigger on `profiles` (a role or department change cannot leave an HR designation on someone it no longer fits), and by `public.assert_designation_allowed`, which the server calls before
+any account or employee request is made (so a wrong combination leaves nothing behind, and an HR employee cannot be made without a designation). A designation that does not belong to the department
+(for example HR Recruiter in Sales) or does not match the role (HR Assistant as a Team Lead) is refused. Existing employee records are not changed, and saving an older record without changing its
+designation is not blocked. Operations Heads keep their company-wide designation wherever they are homed.
+
+Other departments are unchanged: their Role dropdown, Sales roles (Telecaller, Business Associate, ...) and designations work as before. Existing HR Team Leads and HR employees with an older generic
+designation keep working; only new HR employees follow the three-designation rule.
 
 ## 2. Sidebar (exactly this)
 

@@ -29,6 +29,8 @@ export class EmployeeApprovalService {
 
   async create(actor: Actor, input: EmployeeRequestInput): Promise<EmployeeRequest> {
     await this.repo.assertCanSubmit({ email: input.email, role: input.role, departmentId: input.departmentId, division: input.division });
+    // an HR request carries one of the three HR designations that matches its role (HR Admin Head = Department Head, still approved by the usual approver)
+    await this.repo.assertDesignationAllowed({ role: input.role, departmentId: input.departmentId, designation: input.details.designation });
     const id = await this.authAdmin.createEmployeeRequestUser({
       email: input.email, password: input.password ?? temporaryPassword(28), fullName: input.fullName, position: input.details.designation, role: DB_ROLE[input.role],
       operationsHead: input.role === 'OPERATIONS_HEAD', departmentId: input.departmentId, division: input.division, employeeCode: input.employeeCode, requestedBy: actor.id

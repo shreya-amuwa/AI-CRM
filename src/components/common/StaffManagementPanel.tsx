@@ -4,7 +4,7 @@ import {
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type DepartmentHeadAccess, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
-import { BLOOD_GROUPS, DESIGNATIONS, HR_DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
+import { BLOOD_GROUPS, DESIGNATIONS, HR_DESIGNATIONS, HR_DESIGNATION_ROLE, designationProblem, isHrDesignation, userCreateSchema, type HrDesignation } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
@@ -113,6 +113,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [contactNumber, setContactNumber] = useState('');
   const [designation, setDesignation] = useState<string>('Team Member');
   const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
+  // The HR department has its own three designations instead of the generic roles (see hrMode below).
+  const [hrChoice, setHrChoice] = useState<HrDesignation>('HR Assistant');
   const [teamId, setTeamId] = useState('');
   const [salesSubRole, setSalesSubRole] = useState<SalesSubRole | ''>('');
   const [formOpen, setFormOpen] = useState(false);
@@ -171,22 +173,34 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     () => [...allowedRoles, ...(canCreateConsultant ? (['META_VERIFIER', 'TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])],
     [canCreateConsultant, canCreateOperationsHead, allowedRoles]
   );
-  const consultant = choice === 'TECHNICAL_CONSULTANT';
-  const metaVerifier = choice === 'META_VERIFIER';
-  const operationsHead = choice === 'OPERATIONS_HEAD';
-  const role: StaffRole = consultant || metaVerifier ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : choice;
+  // HR department: the Role dropdown shows exactly HR Assistant / HR Recruiter / HR Admin Head (the ones the person creating may make) and nothing generic.
+  // The choice IS the designation; it maps to the existing role (Team Member, or Department Head for HR Admin Head), so no new role system exists.
+  const hrMode = departmentSlug === 'hr';
+  const hrOptions = useMemo(() => HR_DESIGNATIONS.filter(d => allowedRoles.includes(HR_DESIGNATION_ROLE[d])), [allowedRoles]);
+  const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : choice;
+  const consultant = effectiveChoice === 'TECHNICAL_CONSULTANT';
+  const metaVerifier = effectiveChoice === 'META_VERIFIER';
+  const operationsHead = effectiveChoice === 'OPERATIONS_HEAD';
+  const role: StaffRole = consultant || metaVerifier ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : effectiveChoice;
   // The designation starts as the matching one for the role (they stay separate fields: the role decides access).
-  // HR staff (Team Members and Team Leads of the HR department) choose between the two HR designations; the database turns the choice into the HR sub-role.
-  const hrStaff = departmentSlug === 'hr' && (role === 'TEAM_MEMBER' || role === 'TEAM_HEAD') && !consultant && !metaVerifier;
   useEffect(() => {
     setDesignation(
-      operationsHead ? OPERATIONS_HEAD_LABEL : hrStaff ? 'HR Assistant' : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'
+      hrMode ? hrChoice : operationsHead ? OPERATIONS_HEAD_LABEL : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'
     );
-  }, [role, operationsHead, hrStaff]);
+  }, [role, operationsHead, hrMode, hrChoice, departmentSlug]);
+  // A choice that does not belong to the department (the department was changed, or the person may not create it) is cleared at once.
+  useEffect(() => {
+    if (hrMode && hrOptions.length && !hrOptions.includes(hrChoice)) setHrChoice(hrOptions[0]);
+  }, [hrMode, hrOptions, hrChoice]);
+  // changing the department starts the HR choice again (nothing chosen for another department is carried back into HR)
+  useEffect(() => { setHrChoice('HR Assistant'); }, [departmentSlug]);
+  useEffect(() => {
+    if (!hrMode && isHrDesignation(designation)) setDesignation('Team Member');
+  }, [hrMode, designation]);
 
   useEffect(() => {
-    if (!choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
-  }, [choices, allowedRoles, choice]);
+    if (!hrMode && !choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
+  }, [choices, allowedRoles, choice, hrMode]);
 
   // A Technical Consultant and a Meta Verifier always belong to a support team.
   useEffect(() => {
@@ -384,6 +398,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
         setFormError('Choose at least one department for the Operations Head.');
         return;
       }
+    } else if (role === 'DEPARTMENT_HEAD' && hrMode) {
+      // HR Admin Head: the Department Head of the HR department itself (HR has no Sales / Support side to choose)
+      if (!departmentId) {
+        setFormError('The HR department could not be found.');
+        return;
+      }
+      headPlan = { departmentId, additionalAccess: [] };
     } else if (role === 'DEPARTMENT_HEAD') {
       const plan = buildHeadAssignment({ fn: headFn, selectedIds: headDepts, departments: assignable, teams: assignTeams });
       if (!plan.ok) {
@@ -391,6 +412,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
         return;
       }
       headPlan = plan;
+    }
+    const mismatch = designationProblem({ departmentSlug, role, designation, operationsHead });
+    if (mismatch) {
+      setFormError(mismatch);
+      return;
     }
     const parsed = userCreateSchema.safeParse({
       email,
@@ -417,7 +443,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       const newProfile = await usersApi.create(parsed.data);
       setCreated({
         profile: newProfile,
-        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision, isMetaVerifier(newProfile), isOperationsHead(newProfile))
+        dashboard: defaultDashboardLabel(newProfile.role, newProfile.team?.division, newProfile.department?.name, isTechnicalConsultant(newProfile), newProfile.department?.slug, newProfile.salesSubRole, newProfile.headDivision, isMetaVerifier(newProfile), isOperationsHead(newProfile), newProfile.hrSubRole)
       });
       resetForm();
       onCreated?.(newProfile);
@@ -634,7 +660,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             No password is set here. The new employee is e-mailed a secure, one-time link to choose their own password and sign in.
           </p>
 
-          {role !== 'DEPARTMENT_HEAD' && (
+          {(role !== 'DEPARTMENT_HEAD' || hrMode) && (
             <label className="block text-xs font-semibold text-slate-700">
               Department
               <input className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={department?.name || departmentSlug} readOnly aria-readonly="true" />
@@ -643,17 +669,36 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           )}
 
           <label className="block text-xs font-semibold text-slate-700">
-            Role *
-            <select
-              id="staff-role"
-              className={`${inputClass} mt-1 cursor-pointer`}
-              value={choice}
-              onChange={e => setChoice(e.target.value as StaffChoice)}
-            >
-              {choices.map(r => (
-                <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'META_VERIFIER' ? META_VERIFIER_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r]}</option>
-              ))}
-            </select>
+            {hrMode ? 'Role / Designation *' : 'Role *'}
+            {hrMode ? (
+              <select
+                id="staff-role"
+                className={`${inputClass} mt-1 cursor-pointer`}
+                value={hrChoice}
+                onChange={e => setHrChoice(e.target.value as HrDesignation)}
+                data-testid="hr-designation"
+              >
+                {hrOptions.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            ) : (
+              <select
+                id="staff-role"
+                className={`${inputClass} mt-1 cursor-pointer`}
+                value={choice}
+                onChange={e => setChoice(e.target.value as StaffChoice)}
+              >
+                {choices.map(r => (
+                  <option key={r} value={r}>{r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'META_VERIFIER' ? META_VERIFIER_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r]}</option>
+                ))}
+              </select>
+            )}
+            {hrMode && (
+              <span className="block mt-1 font-normal text-slate-500">
+                {hrChoice === 'HR Assistant' && 'Opens the HR dashboard.'}
+                {hrChoice === 'HR Recruiter' && 'Opens the HR Recruiter dashboard (vacancies, candidate applications, pipeline, calls, interviews and selection).'}
+                {hrChoice === 'HR Admin Head' && 'The Department Head of HR: opens the HR Department Head dashboard. One per department; it gives no Super Admin or Operations Head access.'}
+              </span>
+            )}
           </label>
 
           {needsTeam && (
@@ -675,7 +720,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           {operationsHead && <OperationsDepartmentsField departments={operationsChoices} selected={opsDepts} onSelected={setOpsDepts} />}
 
-          {role === 'DEPARTMENT_HEAD' && !operationsHead && (
+          {role === 'DEPARTMENT_HEAD' && !operationsHead && !hrMode && (
             <>
               <HeadDepartmentsField
                 fn={headFn}
@@ -710,13 +755,14 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </label>
           )}
 
-          <label className="block text-xs font-semibold text-slate-700">
-            Designation *
-            <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
-              {(hrStaff ? HR_DESIGNATIONS : DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d))).map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            {hrStaff && <span className="block mt-1 font-normal text-slate-500">HR Assistant opens the HR dashboard. HR Recruiter opens the Recruiter dashboard (vacancies, applications, interviews and selection).</span>}
-          </label>
+          {!hrMode && (
+            <label className="block text-xs font-semibold text-slate-700">
+              Designation *
+              <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
+                {DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d)).map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </label>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block text-xs font-semibold text-slate-700">
@@ -752,7 +798,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, operationsHead ? undefined : department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' && !operationsHead ? headDivision || null : null, metaVerifier, operationsHead)}</strong>
+            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, operationsHead ? undefined : department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' && !operationsHead ? headDivision || null : null, metaVerifier, operationsHead, hrMode && hrChoice === 'HR Recruiter' ? 'HR_RECRUITER' : null)}</strong>
           </div>
 
           {role === 'DEPARTMENT_HEAD' && !operationsHead && existingHead && (
@@ -764,6 +810,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </div>
           )}
 
+          {hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0 && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>HR already has an HR Admin Head (<strong>{existingHeads[0].fullName}</strong>). A department can have only one Department Head.</span>
+            </div>
+          )}
+
           {formError && (
             <div ref={formErrorRef} role="alert" className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" /> <span>{formError}</span>
@@ -772,7 +825,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <button
             type="submit"
-            disabled={saving || !departmentId || (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && (!headFn || headDepts.length === 0 || !!existingHead))}
+            disabled={saving || !departmentId || (hrMode && hrOptions.length === 0) || (hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0) || (!hrMode && (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && (!headFn || headDepts.length === 0 || !!existingHead)))}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}
@@ -969,7 +1022,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                           {new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </td>
                       )}
-                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision, isMetaVerifier(m), isOperationsHead(m))}</td>}
+                      {manage && <td className="py-2.5 pr-3 text-slate-600">{defaultDashboardLabel(m.role, m.team?.division, undefined, isTechnicalConsultant(m), m.department?.slug, m.salesSubRole, m.headDivision, isMetaVerifier(m), isOperationsHead(m), m.hrSubRole)}</td>}
                       <td className="py-2.5 pr-3">
                         <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${STATUS_STYLES[m.status] || ''}`}>{m.status}</span>
                       </td>

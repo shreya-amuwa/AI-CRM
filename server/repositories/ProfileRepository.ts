@@ -85,6 +85,12 @@ export class ProfileRepository {
       p_head_division: headDivision ?? null
     }));
   }
+  /** The database refuses a designation that does not belong to the department / role (and an HR employee without one) BEFORE any account exists. */
+  async assertDesignationAllowed(i: { role: Role; departmentId?: string; teamId?: string; designation?: string | null; operationsHead?: boolean }): Promise<void> {
+    unwrap(await this.db.rpc('assert_designation_allowed', {
+      p_department: i.departmentId ?? null, p_team: i.teamId ?? null, p_role: i.role, p_designation: i.designation ?? null, p_operations_head: !!i.operationsHead
+    }));
+  }
   /** An Operations Head is its own role: the Super Admin only, and the Department Head one-per-side rule does not apply to it. */
   async assertCanCreateOperationsHead(departmentId: string): Promise<void> {
     unwrap(await this.db.rpc('assert_can_create_operations_head', { p_department_id: departmentId }));
