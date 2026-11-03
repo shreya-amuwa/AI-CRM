@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'business-associate' | 'sales-role' | 'sales-head' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -41,6 +41,12 @@ export const parseCurrentRoute = (): ParsedRoute => {
       type: 'support-lead',
       paramId: slMatch[1]
     };
+  }
+
+  // 1a2a. /hr-recruiter/dashboard/:id[/:page[/:recordId]] - HR Recruiters only
+  const hrrMatch = path.match(/^\/hr-recruiter\/dashboard\/([^/]+)(?:\/[^/]+){0,2}$/);
+  if (hrrMatch) {
+    return { path, type: 'hr-recruiter', paramId: hrrMatch[1] };
   }
 
   // 1a2b. /telecaller/dashboard/:id[/:page] - Sales Telecallers only
@@ -167,6 +173,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
       return `/team-lead/dashboard/${user.id}`;
     case 'support-lead':
       return `/support-lead/dashboard/${user.id}`;
+    case 'hr-recruiter':
+      return `/hr-recruiter/dashboard/${user.id}`;
     case 'telecaller':
       return `/telecaller/dashboard/${user.id}`;
     case 'business-associate':
@@ -261,6 +269,14 @@ export const validateRouteAccess = (
     return { allowed: false, redirectTo: `/support-lead/dashboard/${user.id}` };
   }
 
+  // An HR Recruiter opens only their own Recruiter dashboard (never the HR dashboard, another recruiter's, or any other role's).
+  if (user.role === 'hr-recruiter') {
+    if (route.type === 'hr-recruiter' && route.paramId === user.id) {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: `/hr-recruiter/dashboard/${user.id}` };
+  }
+
   // A Telecaller opens only their own Telecaller dashboard (never a Sales member's or anyone else's).
   if (user.role === 'telecaller') {
     if (route.type === 'telecaller' && route.paramId === user.id) {
@@ -303,7 +319,7 @@ export const validateRouteAccess = (
 
   // If user is admin:
   if (user.role === 'admin') {
-    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head') {
+    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head') {
       return { allowed: false, redirectTo: `/admin/dashboard/${user.departmentId || 'wabastore'}` };
     }
     return { allowed: true };

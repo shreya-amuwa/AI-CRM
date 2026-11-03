@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import type { EmployeeRequest } from '../../../shared/contracts';
-import { BLOOD_GROUPS, EMPLOYEE_REQUEST_ROLES, employeeRequestSchema, type EmployeeRequestRole } from '../../../shared/validation';
+import { BLOOD_GROUPS, EMPLOYEE_REQUEST_ROLES, HR_DESIGNATIONS, employeeRequestSchema, type EmployeeRequestRole } from '../../../shared/validation';
 import { useDepartments } from '../../context/DepartmentContext';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi } from '../../lib/api/endpoints';
@@ -31,6 +31,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
   const roles = EMPLOYEE_REQUEST_ROLES;
   const [role, setRole] = useState<EmployeeRequestRole>('TEAM_MEMBER');
   const [departmentId, setDepartmentId] = useState('');
+  const [hrDesignation, setHrDesignation] = useState<(typeof HR_DESIGNATIONS)[number]>('HR Assistant');
   const [division, setDivision] = useState<'SALES' | 'SUPPORT' | 'GENERAL' | ''>('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -44,6 +45,9 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
   const [done, setDone] = useState<EmployeeRequest | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // HR Team Members / Team Leads are an HR Assistant or an HR Recruiter (the database turns the choice into the HR sub-role and the dashboard).
+  const isHrStaff = usable.find(d => d.dbId === departmentId)?.id === 'hr' && (role === 'TEAM_MEMBER' || role === 'TEAM_HEAD');
+
   const reset = () => {
     setFullName(''); setEmail(''); setEmployeeCode(''); setJoiningDate(''); setDateOfBirth(''); setBloodGroup(''); setContactNumber(''); setEmergencyContact('');
   };
@@ -54,7 +58,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
     setDone(null);
     const parsed = employeeRequestSchema.safeParse({
       email, fullName, role, departmentId: departmentId || undefined, division: division || undefined, employeeCode: employeeCode || undefined,
-      details: { designation: ROLE_LABEL[role], joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
+      details: { designation: isHrStaff ? hrDesignation : ROLE_LABEL[role], joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
     });
     if (!parsed.success) return setError(parsed.error.issues[0]?.message || 'Please check the form.');
     setSaving(true);
@@ -87,6 +91,13 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
             {roles.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
           </select>
         </label>
+        {isHrStaff && (
+          <label className={label}>HR designation
+            <select className={`${inputCls} mt-1`} value={hrDesignation} onChange={e => setHrDesignation(e.target.value as typeof hrDesignation)}>
+              {HR_DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+        )}
         <label className={label}>{role === 'OPERATIONS_HEAD' ? 'Home department' : 'Department'}
           <select className={`${inputCls} mt-1`} value={departmentId} onChange={e => setDepartmentId(e.target.value)} required>
             <option value="">Choose a department</option>

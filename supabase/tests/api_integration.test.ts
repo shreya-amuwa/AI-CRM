@@ -9218,6 +9218,119 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await db.query(`select count(*)::int n from public.hr_performance_reviews where package_id = $1 and rating is not null`, [pkgId])).rows[0].n === 3, 'company reporting: the HR ratings are unchanged by the analysis');
 }
 
+// HR Recruiter workspace: designation, scoped lists, one decision per application, and the backend-only candidate e-mail outbox.
+{
+  const modeBefore = process.env.AUTOMATION_MODE;
+  process.env.AUTOMATION_MODE = 'dry_run'; // the decision runs the sender in the same request: dry run prepares the e-mail and sends nothing
+  r = await api('sa', 'GET', '/departments');
+  const hrDeptId = r.json.data.find((d: any) => d.slug === 'hr').id;
+  const { rows: [rrTeam] } = await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [hrDeptId]);
+  const rrDetails = (designation: string) => ({ designation, joiningDate: '2026-01-05', dateOfBirth: '1992-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56781', emergencyContact: '+91 98765 43211' });
+  r = await api('sa', 'POST', '/users', { email: 'rr.rec1@amuwa.com', fullName: 'Recruiter One', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: rrTeam.id, details: rrDetails('HR Recruiter') });
+  check(r.status === 201 && r.json.data.hrSubRole === 'HR_RECRUITER' && r.json.data.defaultDashboard === 'hr-recruiter', 'recruiter: choosing the HR Recruiter designation makes a Recruiter who opens the recruiter dashboard', r);
+  tokens.set('rrec1', tokenFor(r.json.data.id)); const rrec1Id = r.json.data.id;
+  r = await api('sa', 'POST', '/users', { email: 'rr.rec2@amuwa.com', fullName: 'Recruiter Two', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: rrTeam.id, details: { ...rrDetails('HR Recruiter'), contactNumber: '+91 91234 56782' } });
+  tokens.set('rrec2', tokenFor(r.json.data.id));
+  r = await api('sa', 'POST', '/users', { email: 'rr.asst@amuwa.com', fullName: 'Assistant One', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: rrTeam.id, details: { ...rrDetails('HR Assistant'), contactNumber: '+91 91234 56783' } });
+  check(r.status === 201 && r.json.data.hrSubRole === 'HR_ASSISTANT' && r.json.data.defaultDashboard !== 'hr-recruiter', 'recruiter: an HR Assistant keeps the HR dashboard', r);
+  tokens.set('rasst', tokenFor(r.json.data.id));
+  r = await api('sa', 'POST', '/users', { email: 'rr.bad@amuwa.com', fullName: 'Not HR', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: hrDeptId, details: rrDetails('HR Recruiter') });
+  check(r.status === 422 || r.status === 409, 'recruiter: an HR designation cannot go with a Department Head', r);
+
+  r = await api('rrec1', 'GET', '/recruiter/context');
+  check(r.status === 200 && r.json.data.isRecruiter === true && r.json.data.isLeadership === false, 'recruiter: the workspace opens for a Recruiter', r);
+  r = await api('rasst', 'GET', '/recruiter/context');
+  check(r.status === 403, 'recruiter: an HR Assistant cannot open the recruiter workspace', r);
+  r = await api('rrec1', 'GET', '/hr/recruitment/careers/postings');
+  check(r.status === 403, 'recruiter: a Recruiter cannot use the HR Assistant recruitment screens', r);
+  r = await api(null, 'GET', '/recruiter/context');
+  check(r.status === 401, 'recruiter: signed-out requests are refused', r);
+
+  // two vacancies: one for each Recruiter
+  const { rows: [rrPos] } = await db.query(`insert into public.hr_positions(title, department_id, is_open) values ('RR API Engineer', $1, true) returning id`, [hrDeptId]);
+  const mkJob = async (title: string, recruiter: string, openings: number) => {
+    const q = await api('hr', 'POST', '/hr/recruitment/careers/postings', { position_id: rrPos.id, title, description: 'An engineering opportunity for the recruiter integration test.', location: 'Mumbai', employment_type: 'FULL_TIME', published: true, closes_at: null, openings, vacancy_status: 'OPEN', responsible_id: recruiter });
+    check(q.status === 200, `recruiter: HR publishes ${title} and allocates it`, q);
+    return q.json.data.find((j: { title: string }) => j.title === title).id as string;
+  };
+  const rrJobA = await mkJob('RR API Job A', rrec1Id, 1);
+  const rrJobB = await mkJob('RR API Job B', (await db.query(`select id from public.profiles where email = 'rr.rec2@amuwa.com'`)).rows[0].id, 1);
+  r = await api('rasst', 'POST', '/hr/recruitment/careers/postings', { id: rrJobA, version: 2, position_id: rrPos.id, title: 'RR API Job A', description: 'An engineering opportunity for the recruiter integration test.', location: 'Mumbai', employment_type: 'FULL_TIME', published: true, closes_at: null, responsible_id: (await db.query(`select id from public.profiles where email = 'rr.rec2@amuwa.com'`)).rows[0].id });
+  check(r.status === 403, 'recruiter: an HR Assistant cannot allocate a vacancy', r);
+  r = await api('rrec1', 'GET', '/recruiter/vacancies');
+  check(r.status === 200 && r.json.data.some((v: any) => v.id === rrJobA) && !r.json.data.some((v: any) => v.id === rrJobB), 'recruiter: a Recruiter sees their own vacancy and not another Recruiter\'s', r);
+
+  // a candidate applies to both vacancies (through the same database function the portal uses)
+  const cand = (await db.query(`insert into auth.users(email, email_confirmed_at, raw_user_meta_data) values ('rr.cand@example.com', now(), '{"candidate_portal":true}') returning id`)).rows[0].id;
+  {
+    const c = await db.connect();
+    try {
+      await c.query(`select set_config('request.jwt.claims', $1, false)`, [JSON.stringify({ sub: cand, role: 'authenticated' })]);
+      await c.query(`select career_profile($1::jsonb)`, [JSON.stringify({ name: 'Riya Candidate', phone: '9847650355', city: 'Mumbai', state: 'Maharashtra', education: 'Graduate', experience: 'Fresher', skills: 'TypeScript', bio: '', version: 1 })]);
+      await c.query(`insert into public.career_files(applicant_id, file_name, size_bytes, status, storage_provider, storage_path) values ($1, 'resume.pdf', 100, 'READY', 'SUPABASE', $2)`, [cand, `${cand}/rr.pdf`]);
+      const f = (await c.query(`select id from public.career_files where applicant_id = $1`, [cand])).rows[0].id;
+      await c.query(`select career_apply($1, $2)`, [rrJobA, f]);
+      await c.query(`select career_apply($1, $2)`, [rrJobB, f]);
+    } finally { c.release(); }
+  }
+  r = await api('rrec1', 'GET', '/recruiter/applications');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].name === 'Riya Candidate' && r.json.data.items[0].stage === 'NEW_APPLICATION', 'recruiter: a Recruiter sees only the application to their vacancy', r);
+  const appA = r.json.data.items[0].applicationId;
+  r = await api('rrec2', 'GET', `/recruiter/applications/${appA}`);
+  check(r.status === 404, 'recruiter: another Recruiter cannot open it', r);
+  r = await api('rrec1', 'GET', `/recruiter/applications/${appA}`);
+  check(r.status === 200 && r.json.data.submitted.name === 'Riya Candidate' && Array.isArray(r.json.data.notes) && r.json.data.can.decide === true, 'recruiter: the profile keeps the candidate\'s submitted data apart from the recruiter\'s records', r);
+  r = await api('rrec1', 'GET', '/recruiter/applications?stage=NOT_A_STAGE');
+  check(r.status === 422, 'recruiter: filters are validated', r);
+
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/calls`, { action: 'RECORD' });
+  check(r.status === 422, 'recruiter: a call cannot be completed without its outcome', r);
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/calls`, { action: 'RECORD', outcome: 'INTERESTED', note: 'Keen' });
+  check(r.status === 200 && r.json.data.outcome === 'INTERESTED', 'recruiter: a call is recorded with its outcome', r);
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/notes`, { kind: 'NOTE', body: 'Good communication' });
+  check(r.status === 200, 'recruiter: an internal note is saved', r);
+
+  // the decision: once; the e-mail event is created with it and the browser has no way to touch it
+  r = await api('rrec2', 'POST', `/recruiter/applications/${appA}/decision`, { decision: 'SELECTED' });
+  check(r.status === 404, 'recruiter: another Recruiter cannot decide it', r);
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/decision`, { decision: 'SELECTED', candidateEmail: 'other@example.com' });
+  check(r.status === 422, 'recruiter: a decision request cannot carry an e-mail address', r);
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/decision`, { decision: 'SELECTED' });
+  check(r.status === 200 && r.json.data.decision === 'SELECTED' && r.json.data.alreadyRecorded === false, 'recruiter: the candidate is selected', r);
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/decision`, { decision: 'SELECTED' });
+  check(r.status === 200 && r.json.data.alreadyRecorded === true, 'recruiter: repeating the request records nothing new', r);
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/decision`, { decision: 'REJECTED', category: 'OTHER' });
+  check(r.status === 409, 'recruiter: a recorded decision cannot be flipped by a Recruiter', r);
+  {
+    const { rows } = await db.query(`select e.status, e.email_type, e.trigger_event, e.recipient_email from public.recruitment_decision_emails e where e.application_id = $1`, [appA]);
+    check(rows.length === 1 && rows[0].email_type === 'SELECTION' && rows[0].recipient_email === 'rr.cand@example.com' && ['DRY_RUN', 'PENDING', 'SENT'].includes(rows[0].status), 'recruiter: exactly one selection e-mail event exists for the decision', rows);
+    const grants = await db.query(`select has_table_privilege('authenticated', 'public.recruitment_decision_emails', 'select') as s, has_table_privilege('authenticated', 'public.recruitment_decision_emails', 'insert') as i, has_table_privilege('authenticated', 'public.recruiter_decisions', 'update') as u`);
+    check(grants.rows[0].s === false && grants.rows[0].i === false && grants.rows[0].u === false, 'recruiter: the decision and e-mail tables cannot be read or changed directly by users');
+  }
+  // the same candidate's other application is untouched
+  const appB = (await db.query(`select id, stage from public.career_applications where posting_id = $1`, [rrJobB])).rows[0];
+  check(appB.stage === 'SUBMITTED', 'recruiter: the same candidate\'s application to another vacancy is independent');
+  r = await api('rrec1', 'GET', '/recruitment-emails');
+  check(r.status === 403, 'recruiter: a Recruiter cannot see delivery records', r);
+  r = await api('hr', 'GET', '/recruitment-emails');
+  check(r.status === 403, 'recruiter: HR leadership has no delivery screen either', r);
+  r = await api('sa', 'GET', '/recruitment-emails');
+  check(r.status === 200 && r.json.data.length >= 1 && !JSON.stringify(r.json.data).match(/api[_-]?key|password|secret|token/i), 'recruiter: the Super Admin\'s technical list has no secrets', r);
+  // a correction is HR leadership's, keeps the earlier decision, and has its own event
+  r = await api('rrec1', 'POST', `/recruiter/applications/${appA}/decision/correction`, { decision: 'REJECTED', reason: 'Background check failed' });
+  check(r.status === 403, 'recruiter: a Recruiter cannot correct a decision', r);
+  r = await api('hr', 'POST', `/recruiter/applications/${appA}/decision/correction`, { decision: 'REJECTED', reason: 'Background check failed' });
+  check(r.status === 200 && r.json.data.decision === 'REJECTED', 'recruiter: HR leadership corrects it with a reason', r);
+  {
+    const { rows } = await db.query(`select count(*)::int n, count(*) filter (where is_current)::int c from public.recruiter_decisions where application_id = $1`, [appA]);
+    const ev = await db.query(`select count(*)::int n from public.recruitment_decision_emails where application_id = $1`, [appA]);
+    check(rows[0].n === 2 && rows[0].c === 1 && ev.rows[0].n === 2, 'recruiter: both decisions are kept, one is current, each has its own e-mail event', { rows, ev: ev.rows });
+  }
+  r = await api('rrec1', 'GET', '/recruiter/reports');
+  check(r.status === 200 && r.json.data.scope === 'OWN', 'recruiter: reports are scoped to the Recruiter', r);
+  if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

@@ -4,7 +4,7 @@ import {
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type DepartmentHeadAccess, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
-import { BLOOD_GROUPS, DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
+import { BLOOD_GROUPS, DESIGNATIONS, HR_DESIGNATIONS, userCreateSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
@@ -176,9 +176,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const operationsHead = choice === 'OPERATIONS_HEAD';
   const role: StaffRole = consultant || metaVerifier ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : choice;
   // The designation starts as the matching one for the role (they stay separate fields: the role decides access).
+  // HR staff (Team Members and Team Leads of the HR department) choose between the two HR designations; the database turns the choice into the HR sub-role.
+  const hrStaff = departmentSlug === 'hr' && (role === 'TEAM_MEMBER' || role === 'TEAM_HEAD') && !consultant && !metaVerifier;
   useEffect(() => {
-    setDesignation(operationsHead ? OPERATIONS_HEAD_LABEL : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member');
-  }, [role, operationsHead]);
+    setDesignation(
+      operationsHead ? OPERATIONS_HEAD_LABEL : hrStaff ? 'HR Assistant' : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'
+    );
+  }, [role, operationsHead, hrStaff]);
 
   useEffect(() => {
     if (!choices.includes(choice) && allowedRoles.length) setChoice(allowedRoles[allowedRoles.length - 1]);
@@ -709,8 +713,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           <label className="block text-xs font-semibold text-slate-700">
             Designation *
             <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
-              {DESIGNATIONS.map(d => <option key={d} value={d}>{d}</option>)}
+              {(hrStaff ? HR_DESIGNATIONS : DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d))).map(d => <option key={d} value={d}>{d}</option>)}
             </select>
+            {hrStaff && <span className="block mt-1 font-normal text-slate-500">HR Assistant opens the HR dashboard. HR Recruiter opens the Recruiter dashboard (vacancies, applications, interviews and selection).</span>}
           </label>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
