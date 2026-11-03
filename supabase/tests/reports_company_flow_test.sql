@@ -242,6 +242,7 @@ select test.login('rc_m1');
 select test.must_fail($$select work_report_weekly_save(test.rcweek(), 'x y z', null, null, null, true)$$, 'a Team Member cannot submit a weekly report', 'FORBIDDEN');
 select test.login('rc_tl1');
 select test.must_fail($$select work_reports_weekly(test.rcweek())$$, 'nor a Team Lead', 'FORBIDDEN');
+select test.must_fail($$select work_report_package_submit(current_date, current_date, 'DAILY', null)$$, 'the older package call checks who is asking before it looks at the dates', 'FORBIDDEN');
 select test.login('rc_dha');
 select test.check((work_report_weekly_save(test.rcweek(), 'Week 1 - Alpha', 'Assigned overview', 'Completed overview', 'Good week', true) ->> 'status') = 'PENDING_OPERATIONS_HEAD', 'submitted to the Operations Head');
 select test.must_fail($$select work_report_weekly_save(test.rcweek(), 'Again', null, null, null, true)$$, 'a submitted week cannot be changed or sent twice', 'already submitted');

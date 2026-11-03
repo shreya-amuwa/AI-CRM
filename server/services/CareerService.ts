@@ -222,10 +222,10 @@ export class CareerService {
       throw e;
     }
   }
-  async fileUrl(id: string, hr = false) {
+  async fileUrl(id: string, scope: boolean | 'RECRUITER' = false) {
     const f = await this.repo.file(
       parse(uuidSchema, id),
-      hr ? { action: 'READ_HR' } : null,
+      scope === 'RECRUITER' ? { action: 'READ_RECRUITER' } : scope ? { action: 'READ_HR' } : null,
     );
     if (f.status !== 'READY')
       throw new AppError('NOT_FOUND', 'Resume not available.');
