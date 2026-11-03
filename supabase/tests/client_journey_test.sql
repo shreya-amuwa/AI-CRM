@@ -302,8 +302,8 @@ select test.must_fail($$select set_service_setup((select id from jy where name =
 select test.check((select set_service_setup((select id from jy where name = 'A'), 'AI_CALLING', 'IN_PROGRESS', 'Number registered') ->> 'status' = 'IN_PROGRESS'), 'the responsible team starts a service');
 select test.login('jy_a');
 select test.check((select s ->> 'status' = 'IN_PROGRESS' and (select count(*) = 1 from jsonb_array_elements(s -> 'services') x where x ->> 'code' = 'AI_CALLING' and x ->> 'status' = 'IN_PROGRESS' and x ->> 'note' = 'Number registered')
-                          and (select count(*) = 1 from jsonb_array_elements(s -> 'services') x where x ->> 'code' = 'WHATSAPP_API_BLUE_TICK' and x ->> 'status' = 'PENDING')
-                     from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'SERVICE_SETUP'), 'the client sees each service on its own');
+                          and (select count(*) = 1 from jsonb_array_elements(s -> 'services') x where x ->> 'code' = 'WHATSAPP_API_BLUE_TICK' and x ->> 'status' = 'IN_PROGRESS' and x ->> 'note' is null)
+                     from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'SERVICE_SETUP'), 'the client sees each service on its own (both started once the Relationship Manager was assigned; only the AI Calling note was typed by a person)');
 select test.must_fail($$select client_services()$$, 'nothing is open until a service is ready', 'Available after service setup is completed');
 select test.login('sup_b');
 select test.check((select set_service_setup((select id from jy where name = 'A'), 'WHATSAPP_API_BLUE_TICK', 'READY', null) ->> 'status' = 'READY'), 'the WhatsApp service is made ready (its documents were authorized)');
