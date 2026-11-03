@@ -581,7 +581,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               ) : (
                 <>
                   {subDeptLabel} &bull; signed in as <strong>{ROLE_LABELS[profile.role]}</strong> - you can create:{' '}
-                  {choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'META_VERIFIER' ? META_VERIFIER_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r])).join(', ')}
+                  {hrMode ? hrOptions.join(', ') : choices.map(r => (r === 'TECHNICAL_CONSULTANT' ? TECHNICAL_CONSULTANT_LABEL : r === 'META_VERIFIER' ? META_VERIFIER_LABEL : r === 'OPERATIONS_HEAD' ? OPERATIONS_HEAD_LABEL : ROLE_LABELS[r])).join(', ')}
                 </>
               )}
             </p>
