@@ -103,6 +103,11 @@ access through the API, who has no page (Team Lead, Team Member) and the phone l
 each signs in and sees only their own departments on one dashboard (with the department filter), a department is added (same account) and one removed (access revoked, nothing deleted),
 suspend / reactivate, the Department Head rule still refusing a second head, and the existing Department Head still signing in (36 checks).
 
+`run-hr-designations.sh` drives the Super Admin's Add Team Member form for the HR department: the Role dropdown follows the department chosen at the top (HR shows
+exactly HR Assistant, HR Recruiter and HR Admin Head; Wabastore / Accounts keep their own roles and the Sales roles), switching departments clears a role that does not
+belong to the new one, one employee per HR designation is created through the form and checked in the database, the API refuses wrong department / designation pairs,
+and each new employee signs in to their dashboard (HR dashboard, HR Recruiter dashboard, HR Department Head dashboard without Super Admin pages) (20 checks).
+
 `run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
 assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
 a Department Head revision that starts both approvals again, the Team Lead's individual report without Download and History, and that every change appears on the
