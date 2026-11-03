@@ -11,7 +11,7 @@ reset role;
 \i supabase/migrations/20261209000100_client_onboarding_journey.sql
 \i supabase/migrations/20261209000200_client_stage_chat.sql
 -- the later migration that extends the journey (service-specific steps, automatic setup start): the file above re-applied the older definitions
-\i supabase/migrations/20261222000100_service_specific_journeys.sql
+\i supabase/migrations/20261222000400_service_specific_journeys.sql
 
 \echo '--- 80. Journey: a new customer, from payment to a login'
 create temp table jy (name text primary key, id uuid);

@@ -2,7 +2,7 @@
 
 Every purchased service follows its own onboarding track, the client sees only the steps that apply to what they bought, and the
 client-visible status is **derived from stored business facts**: nobody types a status a second time. Migration:
-`20261222000100_service_specific_journeys.sql` (additive, safe to run twice). Run it after `20261120000100_whatsapp_api_and_blue_tick_services.sql`.
+`20261222000400_service_specific_journeys.sql` (additive, safe to run twice). Run it after `20261120000100_whatsapp_api_and_blue_tick_services.sql`.
 
 ## 1. What was found before changing anything
 
@@ -125,7 +125,7 @@ chat history are not touched, and the original combined service keeps its code a
 ## 7. Rollout and rollback
 
 1. Run `20261120000100_whatsapp_api_and_blue_tick_services.sql` if the catalogue has 31 services (skip when `WHATSAPP_API` and `BLUE_TICK` exist).
-2. Run `20261222000100_service_specific_journeys.sql`. Until it is run the new routes answer with an error and the screens fall back to the old behaviour (every new field is optional).
+2. Run `20261222000400_service_specific_journeys.sql`. Until it is run the new routes answer with an error and the screens fall back to the old behaviour (every new field is optional).
 3. Deploy the application.
 4. Rollback keeps the data: re-run the previous definitions (`20261205000400` for `client_service_progress_one`, `20261209000100` for `client_journey` and `set_service_setup` /
    `customer_journey_status`, then `20261210000200` for `set_service_setup`) and `drop trigger customer_onboarding_auto_setup on public.customer_onboarding;`. The tables

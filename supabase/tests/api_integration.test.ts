@@ -7002,7 +7002,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 
-// --- service-specific journeys: the existing Blue Tick and the Meta decision (migration 20261222000100) -----------------------
+// --- service-specific journeys: the existing Blue Tick and the Meta decision (migration 20261222000400) -----------------------
 {
   const apiOnly = (await db.query(`select id from public.customers where company = 'WHATSAPP_API Co'`)).rows[0].id as string;
   const tickOnly = (await db.query(`select id from public.customers where company = 'BLUE_TICK Co'`)).rows[0].id as string;

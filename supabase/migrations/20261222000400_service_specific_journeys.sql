@@ -29,7 +29,7 @@
 --   8. customer_journey_status: the live status for the team (steps per service, what is outstanding, whether the last change was
 --      automatic) so a verifier no longer mirrors statuses by hand.
 --
--- Run after 20261221000400_performance_leaderboard.sql. Safe to run again.
+-- Run after 20261222000300_recruiter_workspace.sql (and after 20261120000100 if the catalogue still has 31 services). Safe to run again.
 
 -- ---------------------------------------------------------------------------
 -- 1. The track of a service comes from the service itself

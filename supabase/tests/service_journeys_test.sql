@@ -1,5 +1,5 @@
 -- =============================================================================
--- Service-specific onboarding journeys (migration 20261222000100): every service on its own track, the standalone WhatsApp API journey
+-- Service-specific onboarding journeys (migration 20261222000400): every service on its own track, the standalone WhatsApp API journey
 -- (no Blue Tick application, an optional "existing Blue Tick" check), steps derived from stored facts, the authoritative Meta decision
 -- (idempotent, with evidence), the automatic start of service setup, and legacy customers left alone.
 -- Runs after the other suites on the same database and reuses their staff.
@@ -8,8 +8,8 @@
 \set QUIET 1
 reset role;
 -- earlier suites re-apply older migrations (to prove they are re-runnable): put the newest definitions back on top, twice (it must re-run)
-\i supabase/migrations/20261222000100_service_specific_journeys.sql
-\i supabase/migrations/20261222000100_service_specific_journeys.sql
+\i supabase/migrations/20261222000400_service_specific_journeys.sql
+\i supabase/migrations/20261222000400_service_specific_journeys.sql
 
 \echo '--- 111. Service journeys: each service follows its own track'
 create temp table sj (name text primary key, id uuid);
