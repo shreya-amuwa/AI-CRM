@@ -113,6 +113,8 @@ export const workTasksApi = {
       p_priority: input.priority,
       p_due: input.dueDate || null
     }),
+  /** The Team Lead's own team members (ordinary ones are the ones a task may be given to). Everyone else's people never arrive: the database decides. */
+  myTeamMembers: () => rpc<{ id: string; fullName: string; position: string | null; ordinary: boolean }[]>('my_team_members', {}),
   /** Team lead → team members directly (optionally about a customer). */
   assignTeamTask: (input: { title: string; description?: string; priority: TaskPriority; dueDate?: string | null; customerId?: string | null; memberIds: string[] }) =>
     rpc<number>('assign_team_task', {
@@ -222,3 +224,24 @@ export function summarize(list: WorkTask[]) {
 /** A task a team lead gave straight to a team member (no department-head task above it). */
 export const isDirectMemberTask = (t: WorkTask, people: Person[]) =>
   t.parentId === null && people.find(p => p.id === t.assignedBy)?.role === 'TEAM_HEAD';
+
+export interface TeamMember { id: string; fullName: string; position: string | null; ordinary: boolean }
+
+/**
+ * The signed-in Team Lead's own team members, from the database (direct reports only, specialists flagged). A failure is returned, never turned into an empty
+ * list: a roster that silently comes back empty looks like "I have no team".
+ */
+export function useMyTeamMembers(): { members: TeamMember[]; loading: boolean; error: string | null; reload: () => void } {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const reload = useCallback(() => {
+    setLoading(true);
+    workTasksApi.myTeamMembers().then(
+      rows => { setMembers(rows ?? []); setError(null); setLoading(false); },
+      e => { setError(cleanError(e instanceof Error ? e.message : String(e))); setLoading(false); }
+    );
+  }, []);
+  useEffect(reload, [reload]);
+  return { members, loading, error, reload };
+}
