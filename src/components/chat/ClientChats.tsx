@@ -1,11 +1,56 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Loader2, RefreshCw, Share2 } from 'lucide-react';
 import type { ChatConversation, ChatMyClient } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { chatApi, staffTransport } from '../../lib/chat/api';
 import { useChatLive } from '../../lib/chat/useChatLive';
 import { Avatar, ConversationItem, Split } from './ChatBits';
 import { ChatThread } from './ChatThread';
+
+/** Share this client with the people of the client's own team (Team Member, Team Lead, Meta Verifier). A notification only: the conversation is not copied or changed. */
+const ShareWithTeam: React.FC<{ conversationId: string }> = ({ conversationId }) => {
+  const [open, setOpen] = useState(false);
+  const [people, setPeople] = useState<{ id: string; name: string; role: string }[] | null>(null);
+  const [target, setTarget] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    if (!open || people) return;
+    chatApi.clientTeam(conversationId).then(setPeople, e => setMsg({ ok: false, text: errorMessage(e) }));
+  }, [open, people, conversationId]);
+  const send = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const r = await chatApi.escalate(conversationId, { targetId: target, note: note.trim() || null });
+      setMsg({ ok: true, text: `Shared with ${r.sentTo}. They were notified.` }); setNote(''); setTarget('');
+    } catch (e) { setMsg({ ok: false, text: errorMessage(e) }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="ch-locked" role="group" aria-label="Share this client with their team" style={{ borderTop: 0, borderBottom: '1px solid var(--ch-border)', display: 'block' }}>
+      <button type="button" className="ch-btn" aria-expanded={open} onClick={() => setOpen(o => !o)}><Share2 size={13} aria-hidden /> Share with this client&apos;s team</button>
+      {open && (
+        <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+          {people && people.length === 0 ? <p>Nobody else is assigned to this client yet.</p> : (
+            <>
+              <label>Share with
+                <select value={target} onChange={e => setTarget(e.target.value)} style={{ marginLeft: 6 }}>
+                  <option value="">Choose…</option>
+                  {(people ?? []).map(p => <option key={p.id} value={p.id}>{p.name} ({p.role})</option>)}
+                </select>
+              </label>
+              <label>Note (optional)
+                <input value={note} maxLength={500} onChange={e => setNote(e.target.value)} style={{ marginLeft: 6, width: '70%' }} />
+              </label>
+              <div><button type="button" className="ch-btn" disabled={!target || busy} onClick={() => void send()}>{busy ? 'Sending…' : 'Send'}</button></div>
+            </>
+          )}
+          {msg && <p role={msg.ok ? 'status' : 'alert'}>{msg.text}</p>}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /** The customers this employee looks after (as Team Member or Team Lead), each with the shared chat the client sees. */
 export const ClientChats: React.FC<{ active: boolean; onUnreadChange: () => void; initialCustomer?: string | null }> = ({ active, onUnreadChange, initialCustomer }) => {
@@ -94,6 +139,7 @@ export const ClientChats: React.FC<{ active: boolean; onUnreadChange: () => void
       ) : (
         <>
           {row && !row.hasLogin && <div className="ch-locked" role="note" style={{ borderTop: 0, borderBottom: '1px solid var(--ch-border)' }}><AlertCircle size={16} aria-hidden /> This customer has no dashboard login yet, so they cannot see messages until one is created.</div>}
+          {conv && conv.access === 'STAFF' && <ShareWithTeam conversationId={conv.id} />}
           <ChatThread key={transport.key} transport={transport} active={active} header={header} onConversation={patch} showNames
             emptyTitle="No messages yet" emptyText="Write to the client. Your co-worker on this account will see the conversation too."
             readOnlyText={() => 'You can read this chat, but only the assigned Team Member and Team Lead can write in it.'} />

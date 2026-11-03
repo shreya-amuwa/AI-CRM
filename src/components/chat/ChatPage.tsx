@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { chatApi } from '../../lib/chat/api';
 import { useFillViewport } from '../../lib/chat/useFillViewport';
 import type { ChatUnreadSummary } from '../../../shared/contracts';
@@ -19,7 +20,9 @@ const ChatPage: React.FC<{ summary?: ChatUnreadSummary; refresh?: () => void }> 
   const [tab, setTab] = useState<ChatTab>(initial.tab || (initial.customerId || initial.clientConversationId ? 'clients' : 'messages'));
   const [customerId, setCustomerId] = useState<string | null>(initial.customerId ?? null);
   const [resolved, setResolved] = useState(!initial.clientConversationId);
-  const [hasClients, setHasClients] = useState(false);
+  // the 'My clients' tab belongs to the people who can have clients; the SERVER says so (not the length of a list), and a failed call never hides it
+  const [clientTab, setClientTab] = useState<'unknown' | 'yes' | 'no'>('unknown');
+  const { profile } = useAuth();
   const [canReview, setCanReview] = useState(false);
   const [version, setVersion] = useState(0);
   const page = useFillViewport<HTMLDivElement>();
@@ -42,7 +45,11 @@ const ChatPage: React.FC<{ summary?: ChatUnreadSummary; refresh?: () => void }> 
   // which tabs this person has: found out from the server (it decides, not the screen)
   useEffect(() => {
     let live = true;
-    chatApi.myClients().then(l => { if (live) setHasClients(l.length > 0); }, () => undefined);
+    chatApi.clientTab().then(
+      r => { if (live) setClientTab(r.eligible ? 'yes' : 'no'); },
+      // could not ask: a Team Member or Team Lead keeps the tab (it shows its own error and a retry), anybody else has none
+      () => { if (live) setClientTab(profile?.role === 'TEAM_MEMBER' || profile?.role === 'TEAM_HEAD' ? 'yes' : 'no'); }
+    );
     chatApi.review(undefined, 1, 1).then(() => { if (live) setCanReview(true); }, () => undefined);
     return () => { live = false; };
   }, []);
@@ -54,7 +61,7 @@ const ChatPage: React.FC<{ summary?: ChatUnreadSummary; refresh?: () => void }> 
     chatApi.detail(initial.clientConversationId).then(
       c => {
         if (!live) return;
-        if (c.customer?.id) { setCustomerId(c.customer.id); setHasClients(true); setTab(c.access === 'REVIEWER' ? 'review' : 'clients'); }
+        if (c.customer?.id) { setCustomerId(c.customer.id); setClientTab('yes'); setTab(c.access === 'REVIEWER' ? 'review' : 'clients'); }
         setResolved(true);
       },
       () => { if (live) { setTab('messages'); setResolved(true); } }
@@ -65,7 +72,7 @@ const ChatPage: React.FC<{ summary?: ChatUnreadSummary; refresh?: () => void }> 
   const noop = () => undefined;
   const tabs: { id: ChatTab; label: string; n: number }[] = [
     { id: 'messages', label: 'Messages', n: summary?.internal ?? 0 },
-    ...(hasClients ? [{ id: 'clients' as ChatTab, label: 'My clients', n: summary?.clients ?? 0 }] : []),
+    ...(clientTab === 'yes' ? [{ id: 'clients' as ChatTab, label: 'My clients', n: summary?.clients ?? 0 }] : []),
     ...(canReview ? [{ id: 'review' as ChatTab, label: 'Client conversations', n: 0 }] : [])
   ];
 

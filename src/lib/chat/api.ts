@@ -114,6 +114,11 @@ export const chatKeysApi = {
 export const chatApi = {
   internal: (q?: string) => api.get<ChatConversation[]>('/chat/internal', { q }),
   myClients: (q?: string) => api.get<ChatMyClient[]>('/chat/my-clients', { q }),
+  /** Whether the client conversations tab belongs to this person (the server decides) and how many they have. */
+  clientTab: () => api.get<{ eligible: boolean; count: number }>('/chat/client-tab'),
+  clientTeam: (conversationId: string) => api.get<{ id: string; name: string; role: string }[]>(`/chat/conversations/${conversationId}/client-team`),
+  escalate: (conversationId: string, body: { messageId?: string | null; targetId: string; note?: string | null }) =>
+    api.post<{ sentTo: string; conversationId: string }>(`/chat/conversations/${conversationId}/escalate`, body),
   review: (q: string | undefined, page: number, pageSize = 30) => api.get<ChatReviewList>('/chat/review', { q, page, pageSize }),
   unread: () => api.get<ChatUnreadSummary>('/chat/unread'),
   clientUnread: () => api.get<ChatUnreadSummary>('/client/chat/unread'),

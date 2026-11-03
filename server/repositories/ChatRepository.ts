@@ -47,6 +47,11 @@ export class ChatRepository {
   customerConversation(customerId: string, channel?: string | null) { return this.rpc<ChatConversation>('chat_customer_conversation', { p_customer: customerId, p_channel: channel ?? null }); }
   detail(id: string) { return this.rpc<ChatConversation>('chat_conversation_detail', { p_conversation: id }); }
   myClients(q: string | null) { return this.rpc<ChatMyClient[]>('chat_my_clients', { p_search: q }); }
+  clientTab() { return this.rpc<{ eligible: boolean; count: number }>('chat_client_tab', {}); }
+  clientTeam(conversationId: string) { return this.rpc<{ id: string; name: string; role: string }[]>('chat_client_team', { p_conversation: conversationId }); }
+  escalate(conversationId: string, messageId: string | null, targetId: string, note: string | null) {
+    return this.rpc<{ sentTo: string; conversationId: string }>('chat_escalate_client_message', { p_conversation: conversationId, p_message: messageId, p_target: targetId, p_note: note });
+  }
   internalList(q: string | null) { return this.rpc<ChatConversation[]>('chat_internal_list', { p_search: q }); }
   reviewList(q: string | null, limit: number, offset: number) { return this.rpc<ChatReviewList>('chat_review_list', { p_search: q, p_limit: limit, p_offset: offset }); }
   async reviewOpen(id: string) { await this.rpc<null>('chat_review_open', { p_conversation: id }); }

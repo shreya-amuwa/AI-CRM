@@ -107,6 +107,9 @@ export const routes: RouteDef[] = [
   // caller may not open is simply "not found": the database decides, not the route.
   { method: 'GET', path: '/chat/internal', handler: chat.internalList },
   { method: 'GET', path: '/chat/my-clients', handler: chat.myClients },
+  { method: 'GET', path: '/chat/client-tab', handler: chat.clientTab },
+  { method: 'GET', path: '/chat/conversations/:id/client-team', handler: chat.clientTeam },
+  { method: 'POST', path: '/chat/conversations/:id/escalate', handler: chat.escalateClientMessage, options: S },
   { method: 'GET', path: '/chat/review', handler: chat.review },
   { method: 'GET', path: '/chat/unread', handler: chat.unread },
   { method: 'GET', path: '/chat/directory', handler: chat.directory },
