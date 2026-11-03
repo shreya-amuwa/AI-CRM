@@ -71,6 +71,8 @@ import type {
   ClientDocumentQueueItem,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
+  ExistingBlueTick,
+  MetaOutcomeResult,
   SubscriptionList,
   SubscriptionOverview,
   ClientLoginOutcome,
@@ -279,6 +281,13 @@ export const pipelineApi = {
   journeyStatus: (id: string) => api.get<CustomerJourneyStatus>(`/pipeline/customers/${id}/journey-status`),
   setMetaVerification: (id: string, body: { status: 'IN_PROGRESS' | 'DOCUMENTS_REQUIRED' | 'REJECTED' | 'COMPLETED'; feedback?: string | null }) =>
     api.post<CustomerJourneyStatus>(`/pipeline/customers/${id}/meta-verification`, body),
+  /** The authoritative Meta decision (idempotent by event key; Approved needs the Meta reference). */
+  recordMetaOutcome: (id: string, body: { outcome: 'APPROVED' | 'REJECTED' | 'NEEDS_INFO'; eventKey: string; reference?: string | null; note?: string | null }) =>
+    api.post<MetaOutcomeResult>(`/pipeline/customers/${id}/meta-outcome`, body),
+  /** A customer who already holds a Blue Tick and bought WhatsApp API only. */
+  existingBlueTick: (id: string) => api.get<ExistingBlueTick>(`/pipeline/customers/${id}/existing-blue-tick`),
+  setExistingBlueTick: (id: string, body: { status: 'NOT_PROVIDED' | 'CUSTOMER_REPORTED' | 'CONFIRMED' | 'COULD_NOT_CONFIRM'; reference?: string | null; note?: string | null }) =>
+    api.post<ExistingBlueTick>(`/pipeline/customers/${id}/existing-blue-tick`, body),
   /** Subscriptions: the terms Sales sets (never a date), the activation the team confirms (the expiry is calculated), corrections and renewals. */
   subscriptionsList: (q: { search?: string; status?: string; page?: number; pageSize?: number } = {}) => api.get<SubscriptionList>('/pipeline/subscriptions', { ...q }),
   subscriptions: (id: string) => api.get<SubscriptionOverview>(`/pipeline/customers/${id}/subscriptions`),

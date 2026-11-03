@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Clock, Loader2, ShieldCheck, UserRound, Wrench } from 'lucide-react';
-import type { CustomerJourneyStatus, MetaStatus, ServiceSetupStatus } from '../../../shared/contracts';
+import { BadgeCheck, CheckCircle2, Clock, Loader2, ShieldCheck, UserRound, Wrench } from 'lucide-react';
+import type { CustomerJourneyStatus, ExistingBlueTick, ExistingBlueTickStatus, MetaStatus, ServiceSetupStatus } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 
@@ -18,13 +18,24 @@ const META_TONE: Record<MetaStatus, string> = {
   REJECTED: 'bg-rose-50 text-rose-700 border-rose-200',
   COMPLETED: 'bg-emerald-50 text-emerald-700 border-emerald-200'
 };
-const NEXT: Record<MetaStatus, ('IN_PROGRESS' | 'DOCUMENTS_REQUIRED' | 'REJECTED' | 'COMPLETED')[]> = {
-  PENDING: ['IN_PROGRESS'],
-  IN_PROGRESS: ['DOCUMENTS_REQUIRED', 'REJECTED', 'COMPLETED'],
-  DOCUMENTS_REQUIRED: ['IN_PROGRESS', 'REJECTED'],
+// The status moves by itself (documents reach the verifier -> in progress; a document sent back -> documents required; corrected -> in
+// progress). A person only records what the system cannot see: asking for something, or resuming after a rejection. The Meta decision
+// itself (approved / rejected / needs information) is recorded below, once, with its evidence.
+const NEXT: Record<MetaStatus, ('IN_PROGRESS' | 'DOCUMENTS_REQUIRED')[]> = {
+  PENDING: [],
+  IN_PROGRESS: ['DOCUMENTS_REQUIRED'],
+  DOCUMENTS_REQUIRED: ['IN_PROGRESS'],
   REJECTED: ['IN_PROGRESS'],
   COMPLETED: []
 };
+const BLUE_TICK_LABEL: Record<ExistingBlueTickStatus, string> = {
+  NOT_PROVIDED: 'Not provided', CUSTOMER_REPORTED: 'Customer reports existing verification', CONFIRMED: 'Verification confirmed', COULD_NOT_CONFIRM: 'Could not be confirmed'
+};
+const STEP_STATE: Record<string, string> = {
+  NOT_STARTED: 'Not started', IN_PROGRESS: 'In progress', WAITING_FOR_CUSTOMER: 'Waiting for the customer', UNDER_REVIEW: 'Under review',
+  ACTION_REQUIRED: 'Action required', COMPLETED: 'Completed', NOT_APPLICABLE: 'Not applicable'
+};
+const newEventKey = (): string => (globalThis.crypto?.randomUUID?.() ?? `evt-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
 const SERVICE_TONE: Record<ServiceSetupStatus, { label: string; cls: string }> = {
   PENDING: { label: 'Not started', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
   IN_PROGRESS: { label: 'Setting up', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -39,7 +50,13 @@ export const CustomerJourneyAdmin: React.FC<{ customerId: string; onChanged?: ()
   const [hidden, setHidden] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [next, setNext] = useState<'IN_PROGRESS' | 'DOCUMENTS_REQUIRED' | 'REJECTED' | 'COMPLETED' | ''>('');
+  const [next, setNext] = useState<'IN_PROGRESS' | 'DOCUMENTS_REQUIRED' | ''>('');
+  const [decision, setDecision] = useState<'APPROVED' | 'REJECTED' | 'NEEDS_INFO' | ''>('');
+  const [decisionRef, setDecisionRef] = useState('');
+  const [decisionNote, setDecisionNote] = useState('');
+  // one key per decision form: a double click or a retry after a network error is the same event, so it cannot be applied twice
+  const [eventKey, setEventKey] = useState(newEventKey);
+  const [tick, setTick] = useState<{ status: ExistingBlueTickStatus; reference: string; note: string }>({ status: 'CUSTOMER_REPORTED', reference: '', note: '' });
   const [feedback, setFeedback] = useState('');
   const [candidates, setCandidates] = useState<{ id: string; fullName: string }[] | null>(null);
   const [pick, setPick] = useState('');
@@ -64,13 +81,29 @@ export const CustomerJourneyAdmin: React.FC<{ customerId: string; onChanged?: ()
     }
   };
 
+  const runTick = async (key: string, fn: () => Promise<ExistingBlueTick>) => {
+    setBusy(key);
+    setError(null);
+    try {
+      await fn();
+      load();
+      onChanged?.();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (hidden) return null;
   if (!data) return <div className="bg-white rounded-2xl border border-slate-200/80 p-5 text-xs text-slate-500" role="status"><Loader2 className="inline w-4 h-4 animate-spin mr-1" aria-hidden="true" />Loading the onboarding journey…</div>;
   if (!data.applies && !data.completedAt) return null;
 
   const m = data.meta;
   const options = NEXT[m.status];
-  const needsFeedback = next === 'DOCUMENTS_REQUIRED' || next === 'REJECTED';
+  const needsFeedback = next === 'DOCUMENTS_REQUIRED';
+  const bt = data.existingBlueTick;
+  const decisionOk = decision !== '' && (decision === 'APPROVED' ? decisionRef.trim().length > 0 : decisionNote.trim().length > 0);
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-5" aria-labelledby={`jr-${customerId}`}>
@@ -91,7 +124,14 @@ export const CustomerJourneyAdmin: React.FC<{ customerId: string; onChanged?: ()
               {pill(META_TONE[m.status], META_LABEL[m.status])}
               {m.startedAt && <span className="text-slate-500">started {when(m.startedAt)}</span>}
               {m.status === 'COMPLETED' && m.completedAt && <span className="text-slate-500">completed {when(m.completedAt)}</span>}
+              {m.changedAt && <span className="text-slate-500">last change {when(m.changedAt)} - {m.auto ? 'by the system (automatic)' : 'recorded by a person'}</span>}
             </div>
+            {m.status !== 'COMPLETED' && (m.outstanding?.length ?? 0) > 0 && (
+              <div className="text-xs text-slate-700 bg-slate-50 rounded-xl px-3 py-2">
+                <b>Still to authorize ({m.outstanding?.length}):</b>{' '}
+                {m.outstanding?.map(o => `${o.label}${o.status === 'REJECTED' ? ' (sent back)' : o.status === 'SAVED' ? ' (to review)' : ' (missing)'}`).join(', ')}
+              </div>
+            )}
             {m.feedback && <p className="text-xs text-slate-700 bg-slate-50 rounded-xl px-3 py-2"><b>Shown to the client:</b> {m.feedback}</p>}
             <p className="text-xs text-slate-600 flex flex-wrap items-center gap-2">
               <UserRound className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" /> Meta Verifier: <b>{m.verifier?.fullName ?? 'not assigned yet'}</b>
@@ -119,13 +159,11 @@ export const CustomerJourneyAdmin: React.FC<{ customerId: string; onChanged?: ()
               <form className="space-y-2 border-t border-slate-100 pt-3" onSubmit={e => { e.preventDefault(); if (next) void run('meta', () => pipelineApi.setMetaVerification(customerId, { status: next, feedback: feedback.trim() || null }), () => { setNext(''); setFeedback(''); }); }}>
                 <div className="flex flex-wrap items-end gap-2">
                   <label className="text-xs text-slate-600">
-                    <span className="block font-semibold mb-1">Change the status to</span>
+                    <span className="block font-semibold mb-1">Record</span>
                     <select className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs min-w-[11rem]" value={next} onChange={e => setNext(e.target.value as typeof next)}>
                       <option value="">Choose…</option>
                       {options.map(o => (
-                        <option key={o} value={o} disabled={o === 'COMPLETED' && !m.readyToComplete}>
-                          {META_LABEL[o]}{o === 'COMPLETED' && !m.readyToComplete ? ' (authorize every document first)' : ''}
-                        </option>
+                        <option key={o} value={o}>{META_LABEL[o]}</option>
                       ))}
                     </select>
                   </label>
@@ -133,18 +171,81 @@ export const CustomerJourneyAdmin: React.FC<{ customerId: string; onChanged?: ()
                     {busy === 'meta' ? 'Saving…' : 'Update status'}
                   </button>
                 </div>
-                {(needsFeedback || next === 'COMPLETED' || next === 'IN_PROGRESS') && (
+                {(needsFeedback || next === 'IN_PROGRESS') && (
                   <label className="block text-xs text-slate-600">
                     <span className="block font-semibold mb-1">{needsFeedback ? 'What the client needs to do (shown to them)' : 'Note (not shown)'}</span>
                     <textarea className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs" rows={2} maxLength={1000} value={feedback} onChange={e => setFeedback(e.target.value)} />
                   </label>
                 )}
-                {!m.readyToComplete && <p className="text-[11px] text-slate-500">Completing needs every document and detail (including the WABA ID) authorized. Uploading a document never completes it.</p>}
+              </form>
+            )}
+            {m.canChange && m.status !== 'COMPLETED' && m.status !== 'PENDING' && (
+              <form className="space-y-2 border-t border-slate-100 pt-3" aria-label="Record the Meta decision"
+                onSubmit={e => { e.preventDefault(); if (decisionOk) void run('decision', () => pipelineApi.recordMetaOutcome(customerId, { outcome: decision as 'APPROVED' | 'REJECTED' | 'NEEDS_INFO', eventKey, reference: decisionRef.trim() || null, note: decisionNote.trim() || null }).then(() => pipelineApi.journeyStatus(customerId)), () => { setDecision(''); setDecisionRef(''); setDecisionNote(''); setEventKey(newEventKey()); }); }}>
+                <p className="text-xs font-semibold text-slate-800">Record the Meta decision</p>
+                <p className="text-[11px] text-slate-500">Uploading or authorizing documents never completes Meta verification. Record Meta&apos;s actual answer here, once, with the reference that shows it. Recording the same answer again changes nothing.</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-xs text-slate-600">
+                    <span className="block font-semibold mb-1">Meta&apos;s answer</span>
+                    <select className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs min-w-[11rem]" value={decision} onChange={e => setDecision(e.target.value as typeof decision)}>
+                      <option value="">Choose…</option>
+                      <option value="APPROVED" disabled={!m.readyToComplete}>Approved{!m.readyToComplete ? ' (authorize every document first)' : ''}</option>
+                      <option value="NEEDS_INFO">Needs more information</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+                  </label>
+                  {decision === 'APPROVED' && (
+                    <label className="text-xs text-slate-600">
+                      <span className="block font-semibold mb-1">Meta reference</span>
+                      <input className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs w-56" maxLength={300} value={decisionRef} onChange={e => setDecisionRef(e.target.value)} placeholder="Case or business account ID" />
+                    </label>
+                  )}
+                  <button type="submit" className={`${btnCls} border-blue-600 bg-blue-600 text-white`} disabled={!decisionOk || busy !== null}>{busy === 'decision' ? 'Saving…' : 'Record decision'}</button>
+                </div>
+                {decision && decision !== 'APPROVED' && (
+                  <label className="block text-xs text-slate-600">
+                    <span className="block font-semibold mb-1">What the client needs to do, or why it was rejected (shown to them)</span>
+                    <textarea className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs" rows={2} maxLength={1000} value={decisionNote} onChange={e => setDecisionNote(e.target.value)} />
+                  </label>
+                )}
               </form>
             )}
           </>
         )}
       </div>
+
+      {bt?.applies && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5"><BadgeCheck className="w-4 h-4 text-slate-400" aria-hidden="true" /> Existing Blue Tick</h3>
+          <p className="text-xs text-slate-600">
+            <b>{BLUE_TICK_LABEL[bt.status]}</b>
+            {bt.reference ? <> · reference: {bt.reference}</> : null}
+            {bt.reviewedAt ? <> · checked by {bt.reviewer ?? 'the verifier'} on {when(bt.reviewedAt)}</> : null}
+          </p>
+          <p className="text-[11px] text-slate-500">This customer bought WhatsApp API only. An existing Blue Tick is recorded here; it does not sell Blue Tick again and does not skip the number and WABA checks.</p>
+          {(bt.status === 'NOT_PROVIDED' || bt.status === 'CUSTOMER_REPORTED' || bt.canReview) && (
+            <form className="flex flex-wrap items-end gap-2" aria-label="Existing Blue Tick"
+              onSubmit={e => { e.preventDefault(); void runTick('tick', () => pipelineApi.setExistingBlueTick(customerId, { status: tick.status, reference: tick.reference.trim() || null, note: tick.note.trim() || null })); }}>
+              <label className="text-xs text-slate-600">
+                <span className="block font-semibold mb-1">Set to</span>
+                <select className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs min-w-[14rem]" value={tick.status} onChange={e => setTick(t => ({ ...t, status: e.target.value as ExistingBlueTickStatus }))}>
+                  <option value="NOT_PROVIDED">{BLUE_TICK_LABEL.NOT_PROVIDED}</option>
+                  <option value="CUSTOMER_REPORTED">{BLUE_TICK_LABEL.CUSTOMER_REPORTED}</option>
+                  {bt.canReview && <option value="CONFIRMED">{BLUE_TICK_LABEL.CONFIRMED}</option>}
+                  {bt.canReview && <option value="COULD_NOT_CONFIRM">{BLUE_TICK_LABEL.COULD_NOT_CONFIRM}</option>}
+                </select>
+              </label>
+              {(tick.status === 'CONFIRMED' || tick.status === 'CUSTOMER_REPORTED') && (
+                <label className="text-xs text-slate-600">
+                  <span className="block font-semibold mb-1">{tick.status === 'CONFIRMED' ? 'Reference you checked' : 'Reference (optional)'}</span>
+                  <input className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs w-56" maxLength={300} value={tick.reference} onChange={e => setTick(t => ({ ...t, reference: e.target.value }))} />
+                </label>
+              )}
+              <button type="submit" className={`${btnCls} border-slate-300 bg-white text-slate-700`} disabled={busy !== null || (tick.status === 'CONFIRMED' && !tick.reference.trim())}>{busy === 'tick' ? 'Saving…' : 'Save'}</button>
+            </form>
+          )}
+        </div>
+      )}
 
       <div className="space-y-1">
         <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5"><UserRound className="w-4 h-4 text-slate-400" aria-hidden="true" /> Relationship Manager</h3>
@@ -159,7 +260,13 @@ export const CustomerJourneyAdmin: React.FC<{ customerId: string; onChanged?: ()
               <li key={s.code} className="p-3 flex flex-col lg:flex-row lg:items-center gap-2">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-slate-900">{s.name}</p>
-                  <p className="text-[11px] text-slate-500">{s.status === 'READY' && s.readyAt ? `Ready ${when(s.readyAt)}` : s.updatedAt ? `Updated ${when(s.updatedAt)}` : 'Not started'}{s.note ? ` · ${s.note}` : ''}</p>
+                  <p className="text-[11px] text-slate-500">{s.status === 'READY' && s.readyAt ? `Ready ${when(s.readyAt)}` : s.updatedAt ? `Updated ${when(s.updatedAt)}${s.auto ? ' (started automatically)' : ''}` : 'Not started'}{s.note ? ` · ${s.note}` : ''}</p>
+                  {s.progress && s.status !== 'READY' && (
+                    <p className="text-[11px] text-slate-500">
+                      {s.progress.percent ?? 0}% · now: {s.progress.headline ?? '-'}
+                      {s.progress.steps.find(x => x.state === 'CURRENT')?.clientState ? ` (${STEP_STATE[s.progress.steps.find(x => x.state === 'CURRENT')?.clientState ?? ''] ?? ''})` : ''}
+                    </p>
+                  )}
                 </div>
                 {pill(SERVICE_TONE[s.status].cls, SERVICE_TONE[s.status].label)}
                 {s.canChange && s.status !== 'READY' && (

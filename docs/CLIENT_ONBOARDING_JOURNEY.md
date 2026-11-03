@@ -84,3 +84,10 @@ Staff: `GET /pipeline/customers/:id/journey-status`, `POST .../meta-verification
 
 `supabase/tests/client_journey_test.sql` (state machine, gating, RLS isolation, chat channels, backfill), the "client journey over the API"
 block in `api_integration.test.ts`, and `ui_client_journey.test.mjs` (Playwright: locked items, typed URL, stage states, chat tabs, phone/tablet/desktop).
+
+## Service-specific steps and automatic status
+The five stages above stay the overall summary, but each purchased service now has its own steps and track (Meta, Technical Consultant or direct delivery, from the
+service's own catalogue flags), the verification stage is called "Meta verification" only when Meta verifies a purchased service (otherwise "Verification by our team"), every step's
+state is derived from stored facts, the overall percentage counts only the applicable required steps, and service setup starts by itself once payment, verification and the Relationship Manager
+are done ("ready" stays a person's authorised action). The Meta decision itself is recorded once, idempotently and with its Meta reference (`record_meta_outcome`); it is never inferred from documents.
+See `docs/SERVICE_SPECIFIC_JOURNEYS.md`.

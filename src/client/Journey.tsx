@@ -12,6 +12,16 @@ export const STAGE_TITLE: Record<JourneyStage['key'], string> = {
   COMPLETED: 'Onboarding completed'
 };
 
+/** The verification stage is "Meta verification" only when Meta verifies a purchased service; otherwise our own team does it. */
+export const stageTitle = (s: JourneyStage): string =>
+  s.key === 'META_VERIFICATION' && s.external === false ? 'Verification by our team' : STAGE_TITLE[s.key];
+const isTeamVerification = (j: ClientJourney): boolean => j.stages.some(s => s.key === 'META_VERIFICATION' && s.external === false);
+/** Overall progress: the server's figure from the applicable steps of the purchased services; the old stage count for an older server. */
+const overallPercent = (j: ClientJourney): number => {
+  if (j.progress) return j.progress.percent;
+  return Math.round((j.stages.filter(s => s.status === 'COMPLETED').length / j.stages.length) * 100);
+};
+
 const STATUS: Record<JourneyStageStatus, { label: string; tone: Tone }> = {
   COMPLETED: { label: 'Completed', tone: 'success' },
   IN_PROGRESS: { label: 'In progress', tone: 'info' },
@@ -48,11 +58,16 @@ export function nextStep(j: ClientJourney): string {
   switch (j.stage) {
     case 'PAYMENT': return 'We are confirming your payment. Your journey starts as soon as it is confirmed.';
     case 'META_VERIFICATION':
+      if (meta?.external === false) {
+        return meta.status === 'ACTION_REQUIRED' ? 'Action needed: send the documents listed below so our team can finish verifying them.'
+          : meta.status === 'IN_PROGRESS' ? 'Our team is verifying your documents. We will tell you if anything is needed.'
+          : 'Our team starts verifying as soon as your documents are complete. Message us with any question.';
+      }
       if (meta?.status === 'ACTION_REQUIRED') return 'Action needed: send the documents listed below so your Meta verification can continue.';
       if (meta?.status === 'REJECTED') return 'Meta did not approve this submission. Read the feedback below and send the corrections to your Meta Verifier.';
       if (meta?.status === 'IN_PROGRESS') return 'Your Meta Verifier is working on your verification. It usually takes about 2-3 weeks. We will tell you if anything is needed.';
       return 'Your Meta verification is about to start. Make sure your documents are complete, and message your Meta Verifier with any question.';
-    case 'RELATIONSHIP_MANAGER': return 'Meta verification is done. We are assigning your Relationship Manager, who will guide you from here.';
+    case 'RELATIONSHIP_MANAGER': return `${isTeamVerification(j) ? 'Verification' : 'Meta verification'} is done. We are assigning your Relationship Manager, who will guide you from here.`;
     case 'SERVICE_SETUP': {
       const ready = svc?.services.filter(s => s.status === 'READY').length ?? 0;
       return `Our team is setting up your services: ${ready} of ${svc?.services.length ?? 0} ready.`;
@@ -81,10 +96,16 @@ const StageBody: React.FC<{ s: JourneyStage; j: ClientJourney; go: (to: string) 
     case 'META_VERIFICATION': {
       if (!s.required) return <p>Your services do not need Meta verification, so this step is done.</p>;
       const tone = s.status === 'REJECTED' ? 'danger' : 'attention';
+      const ours = s.external === false;
       return (
         <>
           <p>
-            {s.metaStatus === 'COMPLETED' ? 'Your Meta verification is complete.'
+            {ours ? (s.metaStatus === 'COMPLETED' ? 'Our team has verified your documents.'
+              : s.metaStatus === 'DOCUMENTS_REQUIRED' ? 'We need something from you before the verification can continue.'
+              : s.metaStatus === 'REJECTED' ? 'Your documents were not accepted. Read the feedback below and send the corrections.'
+              : s.metaStatus === 'IN_PROGRESS' ? 'Our team is verifying your documents.'
+              : 'Verification starts once your documents reach our Technical Consultant.')
+              : s.metaStatus === 'COMPLETED' ? 'Your Meta verification is complete.'
               : s.metaStatus === 'DOCUMENTS_REQUIRED' ? 'We need something from you before the verification can continue.'
               : s.metaStatus === 'REJECTED' ? 'Meta did not approve this submission. Your Meta Verifier will resubmit once you send the corrections.'
               : s.metaStatus === 'IN_PROGRESS' ? 'Your Meta verification is being processed. It usually takes about 2-3 weeks.'
@@ -94,7 +115,7 @@ const StageBody: React.FC<{ s: JourneyStage; j: ClientJourney; go: (to: string) 
           {s.feedback ? (
             <div className={`cd-banner ${tone}`} role="note" style={{ marginTop: 12 }}>
               <AlertTriangle size={18} aria-hidden style={{ flexShrink: 0 }} />
-              <span><b>Feedback from your Meta Verifier:</b> {s.feedback}</span>
+              <span><b>{ours ? 'Feedback from our team:' : 'Feedback from your Meta Verifier:'}</b> {s.feedback}</span>
             </div>
           ) : null}
           {s.outstanding.length > 0 ? (
@@ -112,7 +133,7 @@ const StageBody: React.FC<{ s: JourneyStage; j: ClientJourney; go: (to: string) 
             </div>
           ) : null}
           {s.verifier ? (
-            <Person title="Your Meta Verifier" person={s.verifier}
+            <Person title={ours ? 'Your verifier' : 'Your Meta Verifier'} person={s.verifier}
               action={s.status !== 'COMPLETED' ? <Button small variant="outline" onClick={() => go(dashboardPath('chat', '/meta'))}><MessageCircle size={15} aria-hidden /> Message</Button> : (
                 <Button small variant="outline" onClick={() => go(dashboardPath('chat', '/meta'))}>View chat</Button>)} />
           ) : s.status !== 'COMPLETED' ? <p className="cd-small cd-muted" style={{ marginTop: 10 }}>A Meta Verifier will be assigned to you soon.</p> : null}
@@ -148,7 +169,10 @@ const StageBody: React.FC<{ s: JourneyStage; j: ClientJourney; go: (to: string) 
                     <p style={{ fontWeight: 600 }}>{x.name}</p>
                     <p className="cd-small cd-muted">
                       {x.status === 'READY' ? `Ready${x.readyAt ? ` since ${fmtDate(x.readyAt)}` : ''}` : x.waitingFor ? `Waiting for ${x.waitingFor}` : 'Our team is setting it up'}
+                      {x.status !== 'READY' && x.headline ? ` · Now: ${x.headline}` : ''}
+                      {x.status !== 'READY' && typeof x.percent === 'number' ? ` · ${x.percent}% of its steps done` : ''}
                     </p>
+                    {x.actionRequired ? <p className="cd-small" style={{ fontWeight: 600 }}>We need something from you for this service. Open Documents.</p> : null}
                     {x.note ? <p className="cd-small cd-muted">{x.note}</p> : null}
                   </div>
                   <Badge tone={st.tone}>{st.label}</Badge>
@@ -176,8 +200,7 @@ const STAGE_ICON: Record<JourneyStage['key'], React.ReactNode> = {
 };
 
 export const JourneyView: React.FC<{ j: ClientJourney; go: (to: string) => void }> = ({ j, go }) => {
-  const done = j.stages.filter(s => s.status === 'COMPLETED').length;
-  const pct = Math.round((done / j.stages.length) * 100);
+  const pct = overallPercent(j);
   const currentIndex = Math.max(0, j.stages.findIndex(s => s.current));
   return (
     <div className="cd-stack" style={{ gap: 20 }}>
@@ -185,7 +208,7 @@ export const JourneyView: React.FC<{ j: ClientJourney; go: (to: string) => void 
         <div className="cd-between" style={{ gap: 12, flexWrap: 'wrap' }}>
           <div>
             <span className="eyebrow">{j.completed ? 'All done' : `Step ${currentIndex + 1} of ${j.stages.length}`}</span>
-            <h2 style={{ fontSize: 20, fontWeight: 800 }}>{j.completed ? 'Your onboarding is complete' : STAGE_TITLE[j.stage]}</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 800 }}>{j.completed ? 'Your onboarding is complete' : stageTitle(j.stages.find(s => s.key === j.stage) ?? j.stages[0])}</h2>
           </div>
           <Badge tone={j.completed ? 'success' : 'info'}>{j.completed ? 'Completed' : `${pct}% done`}</Badge>
         </div>
@@ -202,7 +225,7 @@ export const JourneyView: React.FC<{ j: ClientJourney; go: (to: string) => void 
               <span className="cd-jr-dot" aria-hidden><Dot status={s.status} /></span>
               <div className="cd-jr-card">
                 <div className="cd-between" style={{ gap: 10, flexWrap: 'wrap' }}>
-                  <h3 className="cd-jr-title"><span className="cd-muted cd-small">Stage {i + 1}</span>{STAGE_ICON[s.key]} {STAGE_TITLE[s.key]}</h3>
+                  <h3 className="cd-jr-title"><span className="cd-muted cd-small">Stage {i + 1}</span>{STAGE_ICON[s.key]} {stageTitle(s)}</h3>
                   <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {s.current && !j.completed ? <Badge tone="new">Current stage</Badge> : null}
                     <Badge tone={st.tone}>{s.key === 'META_VERIFICATION' && s.required ? META_LABEL[s.metaStatus] : st.label}</Badge>
@@ -220,21 +243,20 @@ export const JourneyView: React.FC<{ j: ClientJourney; go: (to: string) => void 
 
 /** The compact version for the overview: where the client is and what comes next. */
 export const JourneySummary: React.FC<{ j: ClientJourney; go: (to: string) => void }> = ({ j, go }) => {
-  const done = j.stages.filter(s => s.status === 'COMPLETED').length;
-  const pct = Math.round((done / j.stages.length) * 100);
+  const pct = overallPercent(j);
   const attention = j.stages.some(s => s.status === 'ACTION_REQUIRED' || s.status === 'REJECTED');
   return (
     <section className="cd-jr-summary cd-jr-hero" aria-label="Onboarding journey" data-attention={attention ? 'true' : undefined}>
       <div className="cd-between" style={{ gap: 12, flexWrap: 'wrap' }}>
         <div>
           <span className="eyebrow">Onboarding journey</span>
-          <h2 style={{ fontSize: 20, fontWeight: 800 }}>{STAGE_TITLE[j.stage]}</h2>
+          <h2 style={{ fontSize: 20, fontWeight: 800 }}>{stageTitle(j.stages.find(s => s.key === j.stage) ?? j.stages[0])}</h2>
         </div>
         <Button small onClick={() => go(dashboardPath('journey'))}>View journey <ArrowRight size={15} aria-hidden /></Button>
       </div>
       <div role="progressbar" aria-label="Onboarding progress" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} className="cd-jr-bar"><i style={{ width: `${pct}%` }} /></div>
       <ol className="cd-jr-mini" aria-hidden>
-        {j.stages.map(s => <li key={s.key} data-status={s.status} data-current={s.current ? 'true' : undefined}><span /><small>{STAGE_TITLE[s.key].split(' ')[0]}</small></li>)}
+        {j.stages.map(s => <li key={s.key} data-status={s.status} data-current={s.current ? 'true' : undefined}><span /><small>{stageTitle(s).split(' ')[0]}</small></li>)}
       </ol>
       <p style={{ marginTop: 10 }}>{nextStep(j)}</p>
     </section>

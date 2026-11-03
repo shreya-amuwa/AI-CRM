@@ -7002,6 +7002,42 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 
+// --- service-specific journeys: the existing Blue Tick and the Meta decision (migration 20261222000100) -----------------------
+{
+  const apiOnly = (await db.query(`select id from public.customers where company = 'WHATSAPP_API Co'`)).rows[0].id as string;
+  const tickOnly = (await db.query(`select id from public.customers where company = 'BLUE_TICK Co'`)).rows[0].id as string;
+  r = await api('a', 'GET', `/pipeline/customers/${apiOnly}/existing-blue-tick`);
+  check(r.status === 200 && r.json.data.applies === true && r.json.data.status === 'NOT_PROVIDED', 'service journeys: a WhatsApp API customer starts with no existing Blue Tick recorded', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/existing-blue-tick`, { status: 'MAYBE' });
+  check(r.status === 422, 'service journeys: an unknown Blue Tick status is refused', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/existing-blue-tick`, { status: 'CUSTOMER_REPORTED', somethingElse: 1 });
+  check(r.status === 422, 'service journeys: unknown fields are refused', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/existing-blue-tick`, { status: 'CUSTOMER_REPORTED', reference: 'Seen on the WhatsApp profile' });
+  check(r.status === 200 && r.json.data.status === 'CUSTOMER_REPORTED', 'service journeys: Sales records that the customer reports an existing Blue Tick', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/existing-blue-tick`, { status: 'CONFIRMED', reference: 'Business ID 1' });
+  check(r.status === 403, 'service journeys: Sales cannot confirm it (a checkbox is not evidence)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${tickOnly}/existing-blue-tick`, { status: 'CUSTOMER_REPORTED' });
+  check(r.status === 409, 'service journeys: it applies only to a customer who bought WhatsApp API on its own', r);
+  check(Number((await db.query(`select count(*) n from public.customer_services where customer_id = $1`, [apiOnly])).rows[0].n) === 1, 'service journeys: recording it sells nothing: still one service');
+  r = await api('a', 'GET', `/pipeline/customers/${apiOnly}/journey-status`);
+  check(r.status === 200 && r.json.data.existingBlueTick?.status === 'CUSTOMER_REPORTED' && r.json.data.services[0].track === 'META'
+        && r.json.data.services[0].progress.steps.some((x: any) => x.key === 'BLUE_TICK' && x.required === false)
+        && !r.json.data.services[0].progress.steps.some((x: any) => x.key === 'VERIFICATION'), 'service journeys: the team sees the standalone WhatsApp API steps, with the optional Blue Tick check', r.json.data?.services?.[0]?.progress?.steps);
+  // the Meta decision: validated, authorised, never by Sales or a client
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/meta-outcome`, { outcome: 'APPROVED', eventKey: 'meta-evt-api-1' });
+  check(r.status === 422, 'service journeys: an approval without the Meta reference is refused', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/meta-outcome`, { outcome: 'REJECTED', eventKey: 'meta-evt-api-2' });
+  check(r.status === 422, 'service journeys: a rejection without the words the client will see is refused', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/meta-outcome`, { outcome: 'APPROVED', eventKey: 'short', reference: 'META-1' });
+  check(r.status === 422, 'service journeys: an event key must be a real key', r);
+  r = await api('a', 'POST', `/pipeline/customers/${apiOnly}/meta-outcome`, { outcome: 'APPROVED', eventKey: 'meta-evt-api-3', reference: 'META-1' });
+  check(r.status === 404, 'service journeys: Sales cannot record a Meta decision', r);
+  r = await api(null, 'POST', `/pipeline/customers/${apiOnly}/meta-outcome`, { outcome: 'APPROVED', eventKey: 'meta-evt-api-3', reference: 'META-1' });
+  check(r.status === 401, 'service journeys: nor a request without a session', r);
+  check(Number((await db.query(`select count(*) n from public.meta_verification_events where customer_id = $1`, [apiOnly])).rows[0].n) === 0, 'service journeys: no Meta event was stored by any refused call');
+}
+
+
 // --- Department Heads in several departments / functions (migration 20261123000100) ---------------------------------------
 {
   const deps = (await api('sa', 'GET', '/departments')).json.data as any[];

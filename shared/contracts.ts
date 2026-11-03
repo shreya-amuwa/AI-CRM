@@ -1711,11 +1711,20 @@ export interface ClientServiceStep {
   key: string;
   label: string;
   state: 'DONE' | 'CURRENT' | 'UPCOMING';
+  /** The client-facing state of the step (derived by the database from stored facts, never typed by staff). Older servers omit it. */
+  clientState?: ServiceStepClientState;
+  /** Who the step waits on. */
+  owner?: 'CUSTOMER' | 'TEAM' | 'META';
+  description?: string | null;
+  /** An optional step (for example an existing Blue Tick check) does not hold the others back and is not counted in the percent. */
+  required?: boolean;
   /** When it was reached (done steps that have a date). */
   at: string | null;
   /** What is happening now / what the client may need to do (the current step only). */
   hint: string | null;
 }
+export type ServiceStepClientState = 'NOT_STARTED' | 'IN_PROGRESS' | 'WAITING_FOR_CUSTOMER' | 'UNDER_REVIEW' | 'ACTION_REQUIRED' | 'COMPLETED' | 'NOT_APPLICABLE';
+export type ServiceTrack = 'META' | 'TECHNICAL' | 'DIRECT';
 export interface ClientServiceProgress {
   code: string;
   name: string;
@@ -1724,6 +1733,14 @@ export interface ClientServiceProgress {
   /** The key of the current step; null when the service is live. */
   current: string | null;
   headline: string | null;
+  /** How this service is onboarded: verified by Meta, by our Technical Consultant, or delivered directly. */
+  track?: ServiceTrack;
+  /** Applicable required steps only; 100 only when the service is live. */
+  percent?: number;
+  stepsDone?: number;
+  stepsTotal?: number;
+  actionRequired?: boolean;
+  updatedAt?: string | null;
 }
 export interface ClientServiceUsage {
   kind: 'WHATSAPP' | 'AI_CALLING' | 'RCS' | 'VOICE';
@@ -1982,10 +1999,16 @@ export interface JourneyServiceStatus {
   name: string;
   category: string;
   status: ServiceSetupStatus;
-  /** What this service is waiting for ("Meta verification", "Relationship Manager assignment"); null when nothing blocks it. */
+  /** What this service is waiting for ("Meta verification", "Verification by our team", "Relationship Manager assignment"); null when nothing blocks it. */
   waitingFor: string | null;
   readyAt: string | null;
   note: string | null;
+  track?: ServiceTrack;
+  headline?: string | null;
+  percent?: number;
+  actionRequired?: boolean;
+  stepsDone?: number;
+  stepsTotal?: number;
 }
 export type JourneyStage =
   | { key: 'PAYMENT'; status: JourneyStageStatus; current: boolean; completedAt: string | null; accountCreatedAt: string | null; accountEmail: string | null }
@@ -1994,6 +2017,9 @@ export type JourneyStage =
       status: JourneyStageStatus;
       current: boolean;
       required: boolean;
+      /** True when a service of the customer is verified by Meta; false when our own team does the verification (the stage is then not called "Meta"). */
+      external?: boolean;
+      title?: string;
       metaStatus: MetaStatus | 'NOT_REQUIRED';
       startedAt: string | null;
       completedAt: string | null;
@@ -2010,14 +2036,32 @@ export interface ClientJourney {
   stage: JourneyStageKey;
   completed: boolean;
   completedAt: string | null;
+  /** From the applicable required steps of the purchased services; 100 only when onboarding is complete. */
+  progress?: { done: number; total: number; percent: number };
   stages: JourneyStage[];
   chat: { active: ChatChannel; channels: { channel: ChatChannel; label: string; open: boolean; visible: boolean; with: JourneyPerson | null }[] };
   access: Record<ClientSectionKey, ClientSectionAccess>;
 }
 /** What the team sees of a customer's journey (Meta verification, verifier, Relationship Manager, each service). */
+export type ExistingBlueTickStatus = 'NOT_PROVIDED' | 'CUSTOMER_REPORTED' | 'CONFIRMED' | 'COULD_NOT_CONFIRM';
+/** A customer who already holds a Blue Tick and bought WhatsApp API only. It never changes the sale, the invoice or the badge. */
+export interface ExistingBlueTick {
+  applies: boolean;
+  status: ExistingBlueTickStatus;
+  reference: string | null;
+  note: string | null;
+  recordedAt: string | null;
+  reviewedAt: string | null;
+  reviewer: string | null;
+  canReview: boolean;
+}
+export interface MetaOutcomeResult { status: MetaStatus; duplicate: boolean; outcome: 'APPROVED' | 'REJECTED' | 'NEEDS_INFO'; result: 'APPLIED' | 'ALREADY_COMPLETED' }
 export interface CustomerJourneyStatus {
   applies: boolean;
   metaRequired: boolean;
+  /** A service of the customer is verified by Meta (the verification is Meta's, not only our team's). */
+  metaExternal?: boolean;
+  existingBlueTick?: ExistingBlueTick | null;
   meta: {
     status: MetaStatus;
     feedback: string | null;
@@ -2028,10 +2072,20 @@ export interface CustomerJourneyStatus {
     canChange: boolean;
     canAssign: boolean;
     readyToComplete: boolean;
+    /** The last status change was made by the database (documents sent, a document sent back, corrected), not by a person. */
+    auto?: boolean;
+    /** Required documents and details not yet authorized. */
+    outstanding?: { code: string; label: string; status: 'MISSING' | 'SAVED' | 'REJECTED' }[];
   };
   relationshipManager: { id: string; fullName: string } | null;
   completedAt: string | null;
-  services: { code: string; name: string; status: ServiceSetupStatus; note: string | null; updatedAt: string | null; readyAt: string | null; canChange: boolean }[];
+  services: {
+    code: string; name: string; status: ServiceSetupStatus; note: string | null; updatedAt: string | null; readyAt: string | null; canChange: boolean;
+    /** The setup was started by the database (payment, verification and the Relationship Manager done). */
+    auto?: boolean;
+    track?: ServiceTrack;
+    progress?: ClientServiceProgress | null;
+  }[];
 }
 // ---- Subscriptions: duration chosen by Sales, dates confirmed when the panel is activated, expiry calculated by the database ----
 export const SUBSCRIPTION_DURATIONS = ['1M', '2M', '3M', '6M', '1Y', '2Y', 'CUSTOM'] as const;
