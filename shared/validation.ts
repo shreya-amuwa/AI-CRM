@@ -1578,6 +1578,15 @@ export const chatMessagesQuerySchema = z
   })
   .refine(v => v.before === undefined || v.after === undefined, { message: 'Use either "before" or "after", not both.' });
 export const chatReadSchema = z.object({ seq: z.coerce.number().int().min(0).optional() }).strict();
+/** Offboarding: the colleague who takes the work (optional: without one the items wait in the Reassignment Required queue) and how the account is closed. */
+export const offboardSchema = z
+  .object({
+    replacementId: uuidSchema.nullish(),
+    status: z.enum(['SUSPENDED', 'REVOKED']).default('REVOKED'),
+    reason: z.string().trim().max(500, 'The reason can have at most 500 characters.').nullish()
+  })
+  .strict();
+export const reassignResolveSchema = z.object({ toId: uuidSchema.nullish() }).strict();
 /** The EXTRA departments a Meta Verifier verifies for (the home department is implicit). The database checks who may and that the person is a Meta Verifier. */
 export const verifierDepartmentsSchema = z.object({ departmentIds: z.array(uuidSchema).max(40, 'Choose at most 40 departments.') }).strict();
 /** Share a client message with the client's own Team Member, Team Lead or Meta Verifier (the database decides who is allowed). */

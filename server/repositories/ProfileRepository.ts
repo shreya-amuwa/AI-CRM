@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, VerifierDepartments, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile, Role } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, VerifierDepartments, OffboardingImpact, OffboardingResult, ReassignmentItem, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
@@ -98,6 +98,22 @@ export class ProfileRepository {
   /** The departments a new Operations Head supervises (Super Admin only; the database checks). */
   async assignOperationsDepartments(id: string, departmentIds: string[]): Promise<void> {
     unwrap(await this.db.rpc('operations_head_assign_new', { p_profile: id, p_departments: departmentIds }));
+  }
+
+  async offboardingImpact(id: string): Promise<OffboardingImpact> {
+    return unwrap(await this.db.rpc('offboarding_impact', { p_profile: id })) as OffboardingImpact;
+  }
+
+  async offboard(id: string, replacementId: string | null, status: string, reason: string | null): Promise<OffboardingResult> {
+    return unwrap(await this.db.rpc('offboard_employee', { p_profile: id, p_replacement: replacementId, p_status: status, p_reason: reason })) as OffboardingResult;
+  }
+
+  async reassignmentQueue(): Promise<ReassignmentItem[]> {
+    return unwrap(await this.db.rpc('reassignment_queue_list', {})) as ReassignmentItem[];
+  }
+
+  async reassignmentResolve(item: string, toId: string | null): Promise<{ resolved: string; to: string | null }> {
+    return unwrap(await this.db.rpc('reassignment_resolve', { p_item: item, p_to: toId })) as { resolved: string; to: string | null };
   }
 
   async verifierDepartments(id: string): Promise<VerifierDepartments> {
