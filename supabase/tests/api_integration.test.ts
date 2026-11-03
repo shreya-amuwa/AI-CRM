@@ -7054,7 +7054,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
 // --- Team Lead ownership, client chat sharing and Meta Verifier departments (migrations 20261223000100-300) --------------------
 {
-  const member = (await db.query(`select id from public.profiles where role = 'TEAM_MEMBER' and status = 'ACTIVE' and not is_meta_verifier order by created_at limit 1`)).rows[0].id as string;
+  const callerA = (await api('a', 'GET', '/me')).json.data.id as string;
+  // somebody OTHER than the caller (reading your own scope is allowed)
+  const member = (await db.query(`select id from public.profiles where role = 'TEAM_MEMBER' and status = 'ACTIVE' and not is_meta_verifier and id <> $1 order by created_at limit 1`, [callerA])).rows[0].id as string;
   r = await api('sa', 'POST', `/users/${member}/verifier-departments`, { departmentIds: 'nope' });
   check(r.status === 422, 'verifier departments: a malformed body is refused', r);
   r = await api('sa', 'POST', `/users/${member}/verifier-departments`, { departmentIds: [], extra: 1 });
