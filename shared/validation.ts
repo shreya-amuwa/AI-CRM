@@ -1578,6 +1578,8 @@ export const chatMessagesQuerySchema = z
   })
   .refine(v => v.before === undefined || v.after === undefined, { message: 'Use either "before" or "after", not both.' });
 export const chatReadSchema = z.object({ seq: z.coerce.number().int().min(0).optional() }).strict();
+/** The EXTRA departments a Meta Verifier verifies for (the home department is implicit). The database checks who may and that the person is a Meta Verifier. */
+export const verifierDepartmentsSchema = z.object({ departmentIds: z.array(uuidSchema).max(40, 'Choose at most 40 departments.') }).strict();
 /** Share a client message with the client's own Team Member, Team Lead or Meta Verifier (the database decides who is allowed). */
 export const chatEscalateSchema = z
   .object({ messageId: uuidSchema.nullish(), targetId: uuidSchema, note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })

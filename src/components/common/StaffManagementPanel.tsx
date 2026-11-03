@@ -12,6 +12,7 @@ import { errorMessage } from '../../lib/api/client';
 import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
 import { OperationsDepartmentsField } from './OperationsDepartmentsField';
+import { VerifierDepartmentsDialog } from '../scope/VerifierDepartmentsDialog';
 import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, type HeadFunction } from '../../lib/scope/headAssignment';
 import {
   META_VERIFIER_LABEL, OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isMetaVerifier, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
@@ -133,6 +134,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [total, setTotal] = useState(0);
   const [confirmBox, setConfirmBox] = useState<ConfirmRequest | null>(null);
   const [accessFor, setAccessFor] = useState<Profile | null>(null);
+  const [verifierFor, setVerifierFor] = useState<Profile | null>(null);
   // Search and filters of the member list (role and status; the department is the one chosen for the panel).
   const [search, setSearch] = useState('');
   const [searchApplied, setSearchApplied] = useState('');
@@ -979,6 +981,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             {isMetaVerifier(m) ? 'Make team member' : 'Make Meta Verifier'}
                           </button>
                         )}
+                        {isMetaVerifier(m) && m.status === 'ACTIVE' && (profile?.role === 'SUPER_ADMIN' || isOperationsHead(profile)) && (
+                          <button type="button" onClick={() => setVerifierFor(m)} className="mt-1 mr-2 text-[11px] font-semibold text-blue-600 hover:text-blue-700" aria-label={`Verification departments: ${m.fullName}`}>
+                            Verification departments
+                          </button>
+                        )}
                         {act && m.role === 'TEAM_MEMBER' && m.team?.division === 'SUPPORT' && allowedRoles.includes('TEAM_MEMBER') && m.status === 'ACTIVE' && !isMetaVerifier(m) && (
                           <button
                             type="button"
@@ -1100,6 +1107,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           }}
         />
       )}
+      {verifierFor && <VerifierDepartmentsDialog member={verifierFor} departments={operationsChoices} onClose={() => { setVerifierFor(null); void loadMembers(); }} />}
       {confirmBox && <ConfirmDialog request={confirmBox} onClose={() => setConfirmBox(null)} />}
     </div>
   );

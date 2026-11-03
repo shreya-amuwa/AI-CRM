@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile, Role } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepartmentScopes, VerifierDepartments, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile, Role } from '../../shared/contracts.js';
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
@@ -98,6 +98,14 @@ export class ProfileRepository {
   /** The departments a new Operations Head supervises (Super Admin only; the database checks). */
   async assignOperationsDepartments(id: string, departmentIds: string[]): Promise<void> {
     unwrap(await this.db.rpc('operations_head_assign_new', { p_profile: id, p_departments: departmentIds }));
+  }
+
+  async verifierDepartments(id: string): Promise<VerifierDepartments> {
+    return unwrap(await this.db.rpc('verifier_departments_get', { p_profile: id })) as VerifierDepartments;
+  }
+
+  async setVerifierDepartments(id: string, departmentIds: string[]): Promise<VerifierDepartments> {
+    return unwrap(await this.db.rpc('verifier_departments_set', { p_profile: id, p_departments: departmentIds })) as VerifierDepartments;
   }
 
   async myDepartmentScopes(): Promise<MyDepartmentScopes> {

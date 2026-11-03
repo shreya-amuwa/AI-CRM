@@ -167,6 +167,14 @@ export interface MyDepartmentScopes {
   activeDivision: HeadDivision | null;
 }
 /** What the Super Admin sees when giving a Department Head more departments / functions. */
+/** The departments a Meta Verifier verifies for: the home department plus the extras an Operations Head / the Super Admin gave. */
+export interface VerifierDepartments {
+  isMetaVerifier: boolean;
+  home: { id: string; name: string } | null;
+  extra: { id: string; name: string }[];
+  canEdit: boolean;
+  reassigned?: number;
+}
 export interface DepartmentAccessInfo {
   profileId: string;
   name: string;

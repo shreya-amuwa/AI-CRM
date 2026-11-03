@@ -1,4 +1,4 @@
-import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, VerifierDepartments, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile } from '../../shared/contracts.js';
 import {
   departmentAccessApplySchema,
   departmentAccessSchema,
@@ -13,7 +13,8 @@ import {
   userCreateSchema,
   userListQuerySchema,
   userStatusSchema,
-  uuidSchema
+  uuidSchema,
+  verifierDepartmentsSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
 import { assertCanAssignRole, assertManager, assertNotSuperAdminTarget } from '../authz/policies.js';
@@ -213,6 +214,16 @@ export class UserService {
   async departmentHeads(actor: Actor, departmentId: unknown): Promise<DepartmentHeadAccess[]> {
     assertManager(actor);
     return this.profiles.departmentHeads(parse(uuidSchema, departmentId));
+  }
+
+  /** The departments a Meta Verifier verifies for. Readable by the person, the Super Admin and the Operations Head who owns it; the database decides. */
+  verifierDepartments(id: string): Promise<VerifierDepartments> {
+    return this.profiles.verifierDepartments(parse(uuidSchema, id));
+  }
+
+  /** Save a Meta Verifier's EXTRA departments (Super Admin, or the Operations Head who owns the verifier's department and every department added - the database checks). */
+  setVerifierDepartments(id: string, body: unknown): Promise<VerifierDepartments> {
+    return this.profiles.setVerifierDepartments(parse(uuidSchema, id), parse(verifierDepartmentsSchema, body).departmentIds);
   }
 
   /** The Super Admin sees which departments and functions a Department Head is authorised for. */
