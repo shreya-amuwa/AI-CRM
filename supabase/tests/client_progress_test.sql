@@ -8,6 +8,7 @@
 \echo '--- 73. Client service progress'
 reset role;
 \i supabase/migrations/20261205000400_client_service_progress.sql
+\i supabase/migrations/20261222000400_service_specific_journeys.sql
 
 create temp table cg (name text primary key, id uuid);
 grant all on cg to authenticated, service_role;
@@ -110,4 +111,5 @@ select test.must_fail($$select client_service_progress()$$, 'and no one without 
 reset role;
 \echo '   running the migration again changes nothing'
 \i supabase/migrations/20261205000400_client_service_progress.sql
+\i supabase/migrations/20261222000400_service_specific_journeys.sql
 select test.check((select count(*) = 1 from client_notifications where customer_id = (select id from cg where name = 'direct') and type = 'PROGRESS_LIVE'), 'no notification was repeated');

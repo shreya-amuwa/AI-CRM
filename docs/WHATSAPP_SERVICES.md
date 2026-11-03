@@ -21,3 +21,10 @@ If a document is later added to the combined service's checklist, add it to the 
 
 ## Tests
 `supabase/tests/whatsapp_services_test.sql` (section 59) and the "three WhatsApp services" block of `api_integration.test.ts`.
+
+## Standalone WhatsApp API: journey and an existing Blue Tick
+`WHATSAPP_API` is sold, invoiced, activated and renewed as its own service: nothing adds the combined service or Blue Tick beside it, and a customer who bought the
+combined service keeps that code. If the service picker shows only the combined service, the migration above has not been run on that database (31 services instead of 33): run it,
+it adds nothing twice. WhatsApp API alone follows its own steps (details, number and WABA eligibility, Meta approval of the WhatsApp Business account, provisioning, live) with **no** Blue Tick
+application, and a customer who already holds a Blue Tick is recorded as such (reported by the customer, confirmed by the verifier with a reference) without changing the sale or the badge.
+Blue Tick alone shows only the verification steps and no message package. See `docs/SERVICE_SPECIFIC_JOURNEYS.md` (migration `20261222000400_service_specific_journeys.sql`).

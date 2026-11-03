@@ -1931,6 +1931,29 @@ export const serviceSetupSchema = z
   .strict();
 export const chatChannelSchema = z.enum(['META', 'RM']);
 
+// ---- Service-specific journeys: existing Blue Tick, the authoritative Meta decision --------------------------------------------------
+export const EXISTING_BLUE_TICK_STATUSES = ['NOT_PROVIDED', 'CUSTOMER_REPORTED', 'CONFIRMED', 'COULD_NOT_CONFIRM'] as const;
+export const existingBlueTickSchema = z
+  .object({
+    status: z.enum(EXISTING_BLUE_TICK_STATUSES),
+    reference: z.string().trim().max(300, 'The reference can have at most 300 characters.').nullish(),
+    note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish()
+  })
+  .strict();
+/** The Meta decision. The event key makes a retry (or a replayed message) change nothing; Approved needs the Meta reference. */
+export const metaOutcomeSchema = z
+  .object({
+    outcome: z.enum(['APPROVED', 'REJECTED', 'NEEDS_INFO']),
+    eventKey: z.string().trim().min(8, 'The event key must be 8 to 100 characters.').max(100, 'The event key must be 8 to 100 characters.'),
+    reference: z.string().trim().max(300, 'The reference can have at most 300 characters.').nullish(),
+    note: z.string().trim().max(1000, 'The note can have at most 1000 characters.').nullish()
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.outcome === 'APPROVED' && !v.reference) ctx.addIssue({ code: 'custom', path: ['reference'], message: 'Enter the Meta reference that shows the approval.' });
+    if (v.outcome !== 'APPROVED' && !v.note) ctx.addIssue({ code: 'custom', path: ['note'], message: 'Tell the client what is needed or why it was rejected.' });
+  });
+
 // ---- Meta Verifier workflow -----------------------------------------------------------------------------------------------------------
 export const verificationNoteSchema = z
   .object({ body: trimmed(2000).min(1, 'Write the note.'), outcome: z.enum(['NOTE', 'PENDING', 'NEEDS_CORRECTION', 'VERIFIED']).default('NOTE') })

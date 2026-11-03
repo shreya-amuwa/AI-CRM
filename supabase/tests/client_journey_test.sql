@@ -10,6 +10,8 @@ reset role;
 -- earlier suites re-apply older migrations (to prove they are re-runnable): put the journey back on top, which also proves it re-runs
 \i supabase/migrations/20261209000100_client_onboarding_journey.sql
 \i supabase/migrations/20261209000200_client_stage_chat.sql
+-- the later migration that extends the journey (service-specific steps, automatic setup start): the file above re-applied the older definitions
+\i supabase/migrations/20261222000400_service_specific_journeys.sql
 
 \echo '--- 80. Journey: a new customer, from payment to a login'
 create temp table jy (name text primary key, id uuid);
@@ -72,8 +74,8 @@ select test.check((select s ->> 'status' = 'PENDING' and s ->> 'metaStatus' = 'P
                      from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'META_VERIFICATION'), 'stage 2: Meta verification is current, pending, with its verifier named');
 select test.check((select s ->> 'status' = 'PENDING' and s -> 'manager' = 'null'::jsonb from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'RELATIONSHIP_MANAGER'),
   'stage 3: the Relationship Manager stage waits, no manager is shown yet');
-select test.check((select s ->> 'status' = 'PENDING' and jsonb_array_length(s -> 'services') = 2 and (select bool_and(x ->> 'status' = 'PENDING' and x ->> 'waitingFor' = 'Meta verification') from jsonb_array_elements(s -> 'services') x)
-                     from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'SERVICE_SETUP'), 'stage 4: each purchased service is listed on its own and waits');
+select test.check((select s ->> 'status' = 'PENDING' and jsonb_array_length(s -> 'services') = 2 and (select bool_and(x ->> 'status' = 'PENDING' and x ->> 'waitingFor' = case when x ->> 'code' = 'WHATSAPP_API_BLUE_TICK' then 'Meta verification' else 'Verification by our team' end) from jsonb_array_elements(s -> 'services') x)
+                     from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'SERVICE_SETUP'), 'stage 4: each purchased service is listed on its own and waits for its own verification (Meta for WhatsApp, our team for AI Calling)');
 select test.check((select s ->> 'status' = 'PENDING' from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'COMPLETED'), 'stage 5: not complete');
 
 -- sections: the onboarding and the permitted chat stay open, everything else is visibly closed with a reason
@@ -300,8 +302,8 @@ select test.must_fail($$select set_service_setup((select id from jy where name =
 select test.check((select set_service_setup((select id from jy where name = 'A'), 'AI_CALLING', 'IN_PROGRESS', 'Number registered') ->> 'status' = 'IN_PROGRESS'), 'the responsible team starts a service');
 select test.login('jy_a');
 select test.check((select s ->> 'status' = 'IN_PROGRESS' and (select count(*) = 1 from jsonb_array_elements(s -> 'services') x where x ->> 'code' = 'AI_CALLING' and x ->> 'status' = 'IN_PROGRESS' and x ->> 'note' = 'Number registered')
-                          and (select count(*) = 1 from jsonb_array_elements(s -> 'services') x where x ->> 'code' = 'WHATSAPP_API_BLUE_TICK' and x ->> 'status' = 'PENDING')
-                     from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'SERVICE_SETUP'), 'the client sees each service on its own');
+                          and (select count(*) = 1 from jsonb_array_elements(s -> 'services') x where x ->> 'code' = 'WHATSAPP_API_BLUE_TICK' and x ->> 'status' = 'IN_PROGRESS' and x ->> 'note' is null)
+                     from jsonb_array_elements(client_onboarding_journey() -> 'stages') s where s ->> 'key' = 'SERVICE_SETUP'), 'the client sees each service on its own (both started once the Relationship Manager was assigned; only the AI Calling note was typed by a person)');
 select test.must_fail($$select client_services()$$, 'nothing is open until a service is ready', 'Available after service setup is completed');
 select test.login('sup_b');
 select test.check((select set_service_setup((select id from jy where name = 'A'), 'WHATSAPP_API_BLUE_TICK', 'READY', null) ->> 'status' = 'READY'), 'the WhatsApp service is made ready (its documents were authorized)');

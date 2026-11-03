@@ -3,6 +3,8 @@ import type {
   ClientLoginOutcome,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
+  ExistingBlueTick,
+  MetaOutcomeResult,
   SubscriptionList,
   SubscriptionOverview,
   DeliveryQueueItem,
@@ -74,6 +76,8 @@ import {
   assignToMemberSchema,
   backOutSchema,
   metaVerificationSchema,
+  metaOutcomeSchema,
+  existingBlueTickSchema,
   journeyVerifierSchema,
   subscriptionActivationSchema,
   subscriptionListQuerySchema,
@@ -838,6 +842,22 @@ export class PipelineService {
     const input = parse(metaVerificationSchema, body);
     await this.repo.setMetaVerification(customerId, input.status, input.feedback ?? null);
     return this.repo.journeyStatus(customerId);
+  }
+
+  existingBlueTick(id: string): Promise<ExistingBlueTick> {
+    return this.repo.existingBlueTick(parse(uuidSchema, id));
+  }
+
+  /** A customer who already holds a Blue Tick and bought WhatsApp API only. Recording it never changes the sale or the badge. */
+  async setExistingBlueTick(id: string, body: unknown): Promise<ExistingBlueTick> {
+    const input = parse(existingBlueTickSchema, body);
+    return this.repo.setExistingBlueTick(parse(uuidSchema, id), input.status, input.reference ?? null, input.note ?? null);
+  }
+
+  /** The Meta decision, once per event key. The database repeats every check (who may, which moves are allowed, the evidence). */
+  async recordMetaOutcome(id: string, body: unknown): Promise<MetaOutcomeResult> {
+    const input = parse(metaOutcomeSchema, body);
+    return this.repo.recordMetaOutcome(parse(uuidSchema, id), input.outcome, input.eventKey, input.reference ?? null, input.note ?? null);
   }
 
   /** A Technical Consultant takes the verification (no verifier given) or a head names one. */

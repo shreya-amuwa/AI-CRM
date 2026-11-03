@@ -1,15 +1,23 @@
 import React, { useState } from 'react';
 import { LifeBuoy, Megaphone, Package } from 'lucide-react';
-import type { ClientService, ClientServiceProgress } from '../../shared/contracts';
+import type { ClientService, ClientServiceProgress, ServiceStepClientState } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useClientLive, useLoad } from './hooks';
 import { dashboardPath, useShell } from './shell';
 import { Badge, Button, Card, EmptyState, Modal, PageHeader, Query, UsageMeter, fmtDate, inr, serviceDetails, hueOf, serviceStatus, tagOf, usageBar } from './ui';
 
+const STEP_STATE: Record<ServiceStepClientState, { label: string; tone: 'neutral' | 'info' | 'attention' | 'success' | 'danger' }> = {
+  NOT_STARTED: { label: 'Not started', tone: 'neutral' }, IN_PROGRESS: { label: 'In progress', tone: 'info' },
+  WAITING_FOR_CUSTOMER: { label: 'Waiting for you', tone: 'attention' }, UNDER_REVIEW: { label: 'Under review', tone: 'info' },
+  ACTION_REQUIRED: { label: 'Action required', tone: 'danger' }, COMPLETED: { label: 'Completed', tone: 'success' }, NOT_APPLICABLE: { label: 'Not applicable', tone: 'neutral' }
+};
+
 /** Where one purchased service is on its journey (words written for the client; the server sends nothing internal). */
 const ProgressSteps: React.FC<{ p: ClientServiceProgress | undefined; detailed?: boolean }> = ({ p, detailed }) => {
   if (!p || p.steps.length === 0) return null;
-  const hint = p.steps.find(s => s.state === 'CURRENT')?.hint;
+  const current = p.steps.find(s => s.state === 'CURRENT');
+  const hint = current?.hint;
+  const cs = current?.clientState ? STEP_STATE[current.clientState] : null;
   return (
     <div style={{ marginTop: detailed ? 0 : 14 }}>
       <ol className="cd-steps" aria-label={`Progress of ${p.name}`} style={detailed ? { marginTop: 0 } : undefined}>
@@ -20,7 +28,12 @@ const ProgressSteps: React.FC<{ p: ClientServiceProgress | undefined; detailed?:
           </li>
         ))}
       </ol>
-      {hint ? <p className="cd-small cd-muted" style={{ marginTop: 8 }}>{hint}</p> : null}
+      {hint ? (
+        <p className="cd-small cd-muted" style={{ marginTop: 8 }}>
+          {cs ? <><Badge tone={cs.tone}>{cs.label}</Badge>{' '}</> : null}{hint}
+        </p>
+      ) : null}
+      {detailed && typeof p.percent === 'number' && p.status !== 'LIVE' ? <p className="cd-small cd-muted" style={{ marginTop: 4 }}>{p.percent}% of the steps for this service are done.</p> : null}
     </div>
   );
 };

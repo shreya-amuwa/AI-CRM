@@ -39,7 +39,9 @@ const server = (scenario) => {
   const person = (name, position) => ({ name, position });
   const stage = (key, status, extra = {}) => ({ key, status, current: false, ...extra });
   const done = scenario === 'done';
-  const meta = scenario === 'docs' ? 'DOCUMENTS_REQUIRED' : scenario === 'rejected' ? 'REJECTED' : scenario === 'progress' ? 'IN_PROGRESS' : done || scenario === 'rm' ? 'COMPLETED' : 'PENDING';
+  // 'team': the customer's services are verified by our own team, not by Meta (a newer server sends external:false, the service's own progress and a figure)
+  const team = scenario === 'team';
+  const meta = scenario === 'docs' ? 'DOCUMENTS_REQUIRED' : scenario === 'rejected' ? 'REJECTED' : scenario === 'progress' || team ? 'IN_PROGRESS' : done || scenario === 'rm' ? 'COMPLETED' : 'PENDING';
   const metaDone = meta === 'COMPLETED';
   const closedReason = !metaDone ? 'Available after Meta verification is completed.' : 'Available after service setup is completed.';
   const open = done;
@@ -53,7 +55,7 @@ const server = (scenario) => {
   const stages = [
     stage('PAYMENT', 'COMPLETED', { completedAt: '2026-10-20T09:00:00Z', accountCreatedAt: '2026-10-20T09:05:00Z', accountEmail: 'client@example.com' }),
     stage('META_VERIFICATION', metaDone ? 'COMPLETED' : meta === 'DOCUMENTS_REQUIRED' ? 'ACTION_REQUIRED' : meta === 'REJECTED' ? 'REJECTED' : meta === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'PENDING', {
-      required: true, metaStatus: meta, startedAt: meta === 'PENDING' ? null : '2026-10-21T09:00:00Z', completedAt: metaDone ? '2026-10-25T09:00:00Z' : null,
+      required: true, ...(team ? { external: false, title: 'Verification by our team' } : {}), metaStatus: meta, startedAt: meta === 'PENDING' ? null : '2026-10-21T09:00:00Z', completedAt: metaDone ? '2026-10-25T09:00:00Z' : null,
       feedback: meta === 'DOCUMENTS_REQUIRED' ? '1 document was sent back for correction.' : meta === 'REJECTED' ? 'Meta asked for a clearer business proof' : null,
       updatedAt: '2026-10-22T09:00:00Z',
       outstanding: meta === 'DOCUMENTS_REQUIRED' ? [{ code: 'CUSTOMER_NAME', label: 'Business name proof', status: 'REJECTED', note: 'The name does not match the certificate' }] : [],
@@ -61,13 +63,15 @@ const server = (scenario) => {
     stage('RELATIONSHIP_MANAGER', done ? 'COMPLETED' : metaDone ? 'IN_PROGRESS' : 'PENDING', { required: true, completedAt: done ? '2026-10-26T09:00:00Z' : null,
       manager: done ? person('Ravi Manager', 'Relationship Manager') : null, teamLead: done ? person('Tara Lead', 'Team Lead') : null }),
     stage('SERVICE_SETUP', done ? 'COMPLETED' : 'PENDING', { completedAt: done ? '2026-10-28T09:00:00Z' : null, services: [
-      { code: 'AI_CALLING', name: 'AI Calling', category: 'Messaging & AI', status: done ? 'READY' : 'PENDING', waitingFor: done ? null : metaDone ? 'Relationship Manager assignment' : 'Meta verification', readyAt: done ? '2026-10-28T09:00:00Z' : null, note: null }] }),
+      { code: 'AI_CALLING', name: 'AI Calling', category: 'Messaging & AI', status: done ? 'READY' : 'PENDING', waitingFor: done ? null : metaDone ? 'Relationship Manager assignment' : team ? 'Verification by our team' : 'Meta verification', readyAt: done ? '2026-10-28T09:00:00Z' : null, note: null,
+        ...(team ? { track: 'TECHNICAL', headline: 'Verification by our team', percent: 40, actionRequired: true } : {}) }] }),
     stage('COMPLETED', done ? 'COMPLETED' : 'PENDING', { completedAt: done ? '2026-10-28T09:00:00Z' : null })
   ];
   const cur = done ? 'COMPLETED' : metaDone ? (scenario === 'rm' ? 'RELATIONSHIP_MANAGER' : 'SERVICE_SETUP') : 'META_VERIFICATION';
   stages.forEach(s => { s.current = s.key === cur; });
   const journey = {
     stage: cur, completed: done, completedAt: done ? '2026-10-28T09:00:00Z' : null, stages,
+    ...(team ? { progress: { done: 2, total: 5, percent: 40 } } : {}),
     chat: { active: metaDone ? 'RM' : 'META', channels: [
       { channel: 'META', label: 'Meta verification', open: !metaDone, visible: true, with: person('Vera Verifier', 'Technical Consultant') },
       { channel: 'RM', label: 'Relationship Manager', open: done, visible: metaDone, with: done ? person('Ravi Manager', 'Relationship Manager') : null }] },
@@ -253,6 +257,18 @@ for (const [name, vp] of [['phone', { width: 360, height: 740 }], ['tablet', { w
     const tabs = await page.$$eval('.cd-tabbar button', els => els.map(e => e.textContent.trim()));
     check(tabs.join('|').includes('Journey') && tabs.join('|').includes('Documents') && tabs.every(t => !/Services|Tickets|Campaigns/.test(t)), 'phone: the bottom bar offers only what is open while onboarding', tabs);
   }
+  await page.close();
+}
+// ---- a customer whose services our own team verifies (not Meta), and one service's own progress
+{
+  const page = await open('team', { width: 1280, height: 900 }, '/client/dashboard/journey');
+  await page.waitForSelector('.cd-jr');
+  const stages = await page.$$eval('.cd-jr-step', els => els.map(e => ({ status: e.getAttribute('data-status'), current: e.getAttribute('data-current') === 'true', text: e.textContent.replace(/\s+/g, ' ').trim() })));
+  check(/Verification by our team/.test(stages[1].text) && !/Meta/.test(stages[1].text.replace(/Verification by our team/g, '')), 'a customer verified by our own team is not told it waits for Meta', stages[1].text);
+  check(/Verification by our team/.test(await page.textContent('.cd-jr-summary')) && !/Meta Verifier/.test(await page.textContent('.cd-jr-summary')), 'the summary says the same');
+  check(stages[3].status === 'PENDING' && /Waiting for Verification by our team/.test(stages[3].text) && /40% of its steps done/.test(stages[3].text), 'the service shows what it waits for and its own progress', stages[3].text);
+  check(/We need something from you for this service/.test(stages[3].text), 'and that the customer must act');
+  check(await page.getAttribute('.cd-jr-bar', 'aria-valuenow') === '40', 'the overall bar follows the server\'s figure from the services\' steps, not the stage count');
   await page.close();
 }
 await browser.close();

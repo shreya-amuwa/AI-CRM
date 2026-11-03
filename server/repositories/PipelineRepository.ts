@@ -4,6 +4,8 @@ import type {
   ProvisioningQueue,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
+  ExistingBlueTick,
+  MetaOutcomeResult,
   DeliveryQueueItem,
   ServiceJourneySetting,
   AccountsConfirmation,
@@ -724,6 +726,19 @@ export class PipelineRepository {
 
   async setMetaVerification(customerId: string, status: string, feedback: string | null): Promise<void> {
     unwrap(await this.db.rpc('set_meta_verification', { p_customer: customerId, p_status: status, p_feedback: feedback }));
+  }
+
+  async existingBlueTick(customerId: string): Promise<ExistingBlueTick> {
+    return unwrap(await this.db.rpc('customer_existing_blue_tick', { p_customer: customerId })) as ExistingBlueTick;
+  }
+
+  async setExistingBlueTick(customerId: string, status: string, reference: string | null, note: string | null): Promise<ExistingBlueTick> {
+    return unwrap(await this.db.rpc('set_existing_blue_tick', { p_customer: customerId, p_status: status, p_reference: reference, p_note: note })) as ExistingBlueTick;
+  }
+
+  async recordMetaOutcome(customerId: string, outcome: string, eventKey: string, reference: string | null, note: string | null): Promise<MetaOutcomeResult> {
+    return unwrap(await this.db.rpc('record_meta_outcome', {
+      p_customer: customerId, p_outcome: outcome, p_event_key: eventKey, p_reference: reference, p_note: note })) as MetaOutcomeResult;
   }
 
   async assignMetaVerifier(customerId: string, verifierId: string | null): Promise<void> {
