@@ -515,6 +515,8 @@ declare
   f jsonb := private.client_facts(p_customer);
   c public.customers;
   r record;
+  v_names text[] := '{}';
+  v_codes text[] := '{}';
 begin
   if not coalesce((f ->> 'applies')::boolean, false) or not coalesce((f ->> 'payment')::boolean, false)
      or not coalesce((f ->> 'metaDone')::boolean, false) or not coalesce((f ->> 'rmDone')::boolean, false) then
@@ -529,9 +531,16 @@ begin
      where customer_id = p_customer and service_code = r.service_code;
     perform private.log_customer_activity(p_customer, 'SERVICE_SETUP', format('%s setup started automatically (payment, verification and the Relationship Manager are done)', r.name));
     perform private.write_audit('SERVICE_SETUP_AUTO_STARTED', 'customer', p_customer, c.department_id, c.team_id, jsonb_build_object('service', r.service_code));
-    perform private.client_notify(p_customer, 'SERVICE_SETUP', format('%s setup has started', r.name), 'Our team is setting it up.', 'service', null,
-      format('SETUPAUTO|%s|%s', p_customer, r.service_code));
+    v_names := v_names || r.name;
+    v_codes := v_codes || r.service_code;
   end loop;
+  -- one notification for the services started together (the key names them, so the same start is announced once)
+  if cardinality(v_codes) > 0 then
+    perform private.client_notify(p_customer, 'SERVICE_SETUP',
+      case when cardinality(v_names) = 1 then format('%s setup has started', v_names[1]) else 'Setup of your services has started' end,
+      case when cardinality(v_names) = 1 then 'Our team is setting it up.' else left('Our team is setting up: ' || array_to_string(v_names, ', ') || '.', 1000) end,
+      'service', null, format('SETUPAUTO|%s|%s', p_customer, array_to_string(v_codes, ',')));
+  end if;
 end $$;
 revoke all on function private.auto_start_service_setup(uuid) from public, anon, authenticated;
 
