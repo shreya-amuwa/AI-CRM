@@ -1,6 +1,6 @@
 import { CareerJoining } from './CareerJoining';
 import { careerDateTimeLocal } from '../../../shared/careerTime';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type {
   CareerJob,
   CareerStaffApplication,
@@ -16,6 +16,7 @@ import {
 } from '../../../shared/validation';
 import { api } from '../../lib/api/client';
 import { recruitmentApi } from '../../lib/api/endpoints';
+import { recruiterApi } from '../../lib/api/recruiter';
 import {
   Card,
   Field,
@@ -119,7 +120,7 @@ const PostingManager: React.FC = () => {
         r.data.jobs.map((j) => (
           <Card key={j.id} title={j.title}>
             <p className="text-sm text-slate-500">
-              {j.location} · {j.published ? 'Published' : 'Draft / paused'}
+              {j.location} · {j.vacancy_status ? j.vacancy_status.replace('_', ' ').toLowerCase() : j.published ? 'Published' : 'Draft / paused'}{j.openings ? ` · ${j.openings} opening${j.openings === 1 ? '' : 's'}` : ''}
             </p>
             <button
               className={`${secondary} mt-3`}
@@ -149,7 +150,22 @@ const PostingForm: React.FC<{
     employment_type: initial?.employment_type ?? 'FULL_TIME',
     published: initial?.published ?? false,
     closes_at: initial?.closes_at ? careerDateTimeLocal(initial.closes_at) : '',
+    openings: initial?.openings ?? 1,
+    vacancy_status: initial?.vacancy_status ?? (initial?.published ? 'OPEN' : 'DRAFT'),
+    responsible_id: initial?.responsible_id ?? '',
+    qualifications: initial?.qualifications ?? '',
+    skills: initial?.skills ?? '',
+    experience: initial?.experience ?? '',
+    required_steps: initial?.required_steps ?? ([] as ('CALL' | 'ASSESSMENT' | 'INTERVIEW')[]),
   });
+  // Only the Super Admin and the Department Head of HR may allocate a vacancy to a Recruiter (the database refuses everyone else); the list of
+  // Recruiters is theirs alone, so for anyone else the field simply does not appear.
+  const [recruiters, setRecruiters] = useState<{ id: string; name: string }[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    recruiterApi.directory().then(r => { if (live) setRecruiters(r); }, () => { if (live) setRecruiters(null); });
+    return () => { live = false; };
+  }, []);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const save = async (e: React.FormEvent) => {
@@ -159,6 +175,11 @@ const PostingForm: React.FC<{
     try {
       const body = validated(careerPostingSchema, {
         ...form,
+        published: form.vacancy_status === 'OPEN',
+        responsible_id: recruiters ? form.responsible_id || null : undefined,
+        qualifications: form.qualifications || null,
+        skills: form.skills || null,
+        experience: form.experience || null,
         closes_at: form.closes_at
           ? new Date(form.closes_at).toISOString()
           : null,
@@ -232,14 +253,74 @@ const PostingForm: React.FC<{
             onChange={(e) => setForm({ ...form, closes_at: e.target.value })}
           />
         </Field>
-        <label className="flex gap-2 text-sm">
+        <Field label="Number of openings" id="job-openings">
           <input
-            type="checkbox"
-            checked={form.published}
-            onChange={(e) => setForm({ ...form, published: e.target.checked })}
+            id="job-openings"
+            type="number"
+            min={1}
+            max={500}
+            className={textInput}
+            required
+            value={form.openings}
+            onChange={(e) => setForm({ ...form, openings: Number(e.target.value) })}
           />
-          Publish on careers page
-        </label>
+        </Field>
+        <Field label="Vacancy status" id="job-status">
+          <select
+            id="job-status"
+            className={textInput}
+            value={form.vacancy_status}
+            onChange={(e) => setForm({ ...form, vacancy_status: e.target.value as typeof form.vacancy_status })}
+          >
+            <option value="DRAFT">Draft</option>
+            <option value="PENDING_APPROVAL">Pending approval</option>
+            <option value="OPEN">Open (shown on the careers page)</option>
+            <option value="ON_HOLD">On hold</option>
+            <option value="CLOSED">Closed</option>
+            <option value="FILLED">Filled</option>
+          </select>
+        </Field>
+        {recruiters && (
+          <Field label="Responsible recruiter" id="job-recruiter">
+            <select
+              id="job-recruiter"
+              className={textInput}
+              value={form.responsible_id}
+              onChange={(e) => setForm({ ...form, responsible_id: e.target.value })}
+            >
+              <option value="">Unassigned (waiting for a recruiter)</option>
+              {recruiters.map((r) => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </Field>
+        )}
+        {(['qualifications', 'skills', 'experience'] as const).map((k) => (
+          <Field key={k} label={stageName(k)} id={`job-${k}`}>
+            <textarea
+              id={`job-${k}`}
+              className={textInput}
+              rows={2}
+              value={form[k]}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+            />
+          </Field>
+        ))}
+        <fieldset className="space-y-1">
+          <legend className="text-sm font-medium">Required before a candidate can be selected</legend>
+          {([['CALL', 'A completed call'], ['ASSESSMENT', 'A passed assessment'], ['INTERVIEW', 'A completed interview']] as const).map(([k, label]) => (
+            <label key={k} className="flex gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.required_steps.includes(k)}
+                onChange={(e) =>
+                  setForm({ ...form, required_steps: e.target.checked ? [...form.required_steps, k] : form.required_steps.filter((x) => x !== k) })
+                }
+              />
+              {label}
+            </label>
+          ))}
+        </fieldset>
         {error && <Notice error>{error}</Notice>}
         <button className={button} disabled={busy}>
           {busy ? 'Saving…' : 'Save posting'}

@@ -25,6 +25,7 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
+import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
 import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
 import { runPerformanceAutomation } from './performance/writer.js';
@@ -184,6 +185,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const hr = await runHrAutomation();
   // Welcome e-mails of new employees: the retries (and anything left waiting).
   const welcomeEmails = await runWelcomeEmailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  // Candidate selection / rejection e-mails (queued by the database with each recruiter decision): the retries and anything left waiting. Backend only.
+  const recruitmentEmails = await runDecisionEmailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Department Head e-mails about payments and expenses: the retries (and anything left waiting).
   const financeMail = await runFinanceMailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
@@ -202,7 +205,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const topPerformers = await runTopPerformersAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Company report analysis: write the analysis of every consolidated week HR submitted that is still waiting for it. Idempotent.
   const reportAnalysis = await runReportAnalysisAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".

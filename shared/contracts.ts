@@ -62,6 +62,8 @@ export type DefaultDashboard =
   | 'meta-verifier'
   | 'telecaller'
   | 'business-associate'
+  /** An HR Recruiter (a designation of the HR department's staff): opens the recruiter dashboard. */
+  | 'hr-recruiter'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -124,6 +126,8 @@ export interface Profile {
   isOperationsHead?: boolean;
   /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
   salesSubRole?: SalesSubRole | null;
+  /** HR designation of an HR employee: HR Assistant (the existing HR dashboard) or HR Recruiter (the recruiter dashboard); null for everybody else. */
+  hrSubRole?: 'HR_ASSISTANT' | 'HR_RECRUITER' | null;
   /** Sales or Support side of a Department Head (null when not specified or not a Department Head). */
   headDivision?: HeadDivision | null;
   /** Stored default dashboard (resolved by the database from role + team division). */
@@ -4857,6 +4861,9 @@ export interface CareerProfile {
 export interface CareerJob {
   id: string; title: string; description: string; location: string; employment_type: 'FULL_TIME' | 'PART_TIME' | 'INTERNSHIP' | 'CONTRACT';
   closes_at: string | null; position_id?: string; published?: boolean; version?: number;
+  /** Vacancy fields (the HR Recruiter workspace); present on staff reads. */
+  openings?: number; vacancy_status?: VacancyStatus; responsible_id?: string | null; qualifications?: string | null; skills?: string | null; experience?: string | null;
+  required_steps?: ('CALL' | 'ASSESSMENT' | 'INTERVIEW')[];
 }
 export interface CareerFile {
   id: string; file_name: string; size_bytes: number; created_at: string;
@@ -5038,3 +5045,106 @@ export interface ReportAnalysis {
   status: 'OK' | 'FAILED' | 'NOT_CONFIGURED'; model: string | null; error: string | null; createdAt: string;
 }
 export interface ReportAnalysisView { facts: AnalysisFacts; analysis: ReportAnalysis | null; aiConfigured: boolean }
+
+// ---- HR Recruiter workspace ----------------------------------------------------------------------------------------------------------
+export type RecruiterStage =
+  | 'NEW_APPLICATION' | 'INITIAL_SCREENING' | 'CALL_SCHEDULED' | 'CALL_COMPLETED' | 'TEST_PENDING' | 'TEST_COMPLETED' | 'INTERVIEW_SCHEDULED'
+  | 'INTERVIEW_COMPLETED' | 'SELECTION_REVIEW' | 'SELECTED' | 'REJECTED' | 'ON_HOLD' | 'WITHDRAWN';
+export type VacancyStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'OPEN' | 'ON_HOLD' | 'CLOSED' | 'FILLED';
+export interface RecruiterContext {
+  id: string; name: string; email: string; designation: string; isRecruiter: boolean; isLeadership: boolean;
+  newApplications: number; overdueFollowUps: number; vacanciesInQueue: number;
+}
+export interface RecruiterPerson { id: string; name: string }
+/** One application as a list row or a pipeline card. */
+export interface RecruiterApplicationRow {
+  applicationId: string; candidateId: string | null; postingId: string; vacancy: string; department: string | null; designation: string | null;
+  name: string; email: string; phone: string | null; appliedAt: string; status: string; version: number; stage: RecruiterStage;
+  testStatus: 'NONE' | 'PENDING' | 'PASSED' | 'FAILED'; testScore: number | null; interviewStatus: 'NONE' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+  callStatus: 'NONE' | 'SCHEDULED' | 'COMPLETED'; nextAt: string | null; nextKind: 'INTERVIEW' | 'CALL' | 'TEST' | null;
+  recruiterId: string | null; recruiter: string | null; decision: 'SELECTED' | 'REJECTED' | null; decidedAt: string | null;
+}
+export interface RecruiterApplicationPage { total: number; page: number; pageSize: number; items: RecruiterApplicationRow[]; counts: Partial<Record<RecruiterStage, number>> }
+export interface RecruiterVacancy {
+  id: string; title: string; designation: string | null; departmentId: string | null; department: string | null; location: string; employmentType: string;
+  openings: number; status: VacancyStatus; createdAt: string; closesAt: string | null; approvedAt: string | null; responsibleId: string | null;
+  responsible: string | null; queue: boolean; applications: number; screening: number; interviewsScheduled: number; selected: number; remaining: number;
+  requiredSteps: ('CALL' | 'ASSESSMENT' | 'INTERVIEW')[];
+}
+export interface RecruiterVacancyDetail extends RecruiterVacancy {
+  description: string; qualifications: string | null; skills: string | null; experience: string | null; statusNote: string | null;
+  canManage: boolean; canAct: boolean; candidates: RecruiterApplicationRow[];
+}
+export interface RecruiterOverview {
+  kpis: {
+    vacancies: number; applied: number; newApplications: number; callsPending: number; callsCompleted: number; testsPending: number;
+    interviewsScheduled: number; interviewsCompleted: number; selected: number; rejected: number;
+  };
+  byVacancy: { postingId: string; vacancy: string; applications: number }[];
+  byStage: Partial<Record<RecruiterStage, number>>;
+  vacancyProgress: { postingId: string; vacancy: string; openings: number; applications: number; screening: number; interviews: number; selected: number; rejected: number }[];
+  calls: { completed: number; pending: number };
+  interviews: { completed: number; scheduled: number };
+  recent: RecruiterApplicationRow[];
+}
+export interface RecruiterPipeline { stages: Partial<Record<RecruiterStage, { count: number; cards: RecruiterApplicationRow[] }>> }
+export interface RecruiterCall {
+  id: string; scheduledAt: string | null; calledAt: string | null; outcome: string | null; note: string | null; followUpDate: string | null; recruiter: string | null;
+}
+export interface RecruiterInterview {
+  id: string; round: 'HR' | 'DEPARTMENT_HEAD' | 'MANAGEMENT'; scheduledAt: string; location: string; mode: string | null; interviewer: string | null;
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'; confirmedAt: string | null; bookedBy: 'HR' | 'CANDIDATE'; result: string | null; feedback: string | null;
+  version: number; rescheduledFrom?: string | null;
+}
+export interface RecruiterDecisionRecord {
+  id: string; seq: number; decision: 'SELECTED' | 'REJECTED'; category: string | null; reason: string | null; by: string | null; at: string; current: boolean; correctionReason: string | null;
+}
+export interface RecruiterApplicationDetail {
+  summary: RecruiterApplicationRow;
+  /** What the candidate submitted, as it was. Never edited by the recruiter. */
+  submitted: {
+    applicantId: string; name: string; email: string | null; phone: string | null; city: string | null; state: string | null; education: string | null;
+    experience: string | null; skills: string | null; bio: string | null; candidateMessage: string | null; appliedAt: string; applicationId: string;
+    candidateRecordId: string | null; resume: { id: string; fileName: string; sizeBytes: number } | null;
+  };
+  vacancy: RecruiterVacancy & { qualifications: string | null; skills: string | null; experience: string | null };
+  documents: { id: string; title: string; status: string }[];
+  assessments: { id: string; title: string; status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'; invitedUntil: string; startedAt: string | null; completedAt: string | null; score: number | null; passed: boolean | null; passPercent: number }[];
+  calls: RecruiterCall[];
+  interviews: RecruiterInterview[];
+  history: { at: string; previous: string | null; new: string; by: string | null; comment: string | null }[];
+  /** The recruiter's own internal notes and evaluations (apart from the candidate's data). */
+  notes: { id: string; kind: 'NOTE' | 'EVALUATION'; body: string; author: string | null; at: string }[];
+  decisions: RecruiterDecisionRecord[];
+  review: { missingSteps: string[]; selectionReview: boolean; openings: number; selected: number; remaining: number };
+  can: { decide: boolean; correct: boolean; current: 'SELECTED' | 'REJECTED' | null };
+}
+export interface RecruiterCallLists {
+  upcoming: { id: string; applicationId: string; candidate: string; phone: string | null; vacancy: string; scheduledAt: string; overdue: boolean }[];
+  followUps: { id: string; applicationId: string; candidate: string; phone: string | null; vacancy: string; followUpDate: string; overdue: boolean; outcome: string | null }[];
+  recent: { id: string; applicationId: string; candidate: string; vacancy: string; calledAt: string; outcome: string; note: string | null; recruiter: string | null }[];
+}
+export interface RecruiterInterviewListItem extends RecruiterInterview { applicationId: string; candidate: string; vacancy: string }
+export interface RecruiterDecisionListItem extends RecruiterApplicationRow {
+  sortAt: string; missingSteps: string[]; openings: number; category: string | null; reason: string | null; decidedBy: string | null;
+}
+export interface RecruiterReports {
+  totals: {
+    vacancies: number; openVacancies: number; closedVacancies: number; applications: number; screened: number; callsCompleted: number;
+    interviewsScheduled: number; interviewsCompleted: number; selected: number; rejected: number; onHold: number;
+  };
+  byStage: Partial<Record<RecruiterStage, number>>;
+  vacancyProgress: { postingId: string; vacancy: string; department: string | null; status: VacancyStatus; openings: number; applications: number; selected: number; rejected: number; inProgress: number }[];
+  recruiters: { recruiterId: string | null; recruiter: string | null; applications: number; selected: number; rejected: number; avgDaysToDecision: number | null }[];
+  scope: 'OWN' | 'COMPANY';
+}
+export interface RecruiterFilterOptions {
+  vacancies: { id: string; title: string }[]; departments: { id: string; name: string }[]; designations: string[]; recruiters: RecruiterPerson[]; people: RecruiterPerson[];
+}
+export interface RecruiterDecisionResult { id: string; decision: 'SELECTED' | 'REJECTED'; decidedAt: string; alreadyRecorded?: boolean; vacancyFilled?: boolean }
+/** Technical outbox row (Super Admin API only; there is no screen for it). Never carries a message body, a credential or a token. */
+export interface RecruitmentEmailRecord {
+  id: string; decisionId: string; applicationId: string; candidateId: string | null; recipient: string; type: 'SELECTION' | 'REJECTION'; triggerEvent: string;
+  recruiterId: string | null; status: string; attempts: number; createdAt: string; processedAt: string | null; sentAt: string | null;
+  providerStatus: string | null; deliveryStatus: string | null; lastError: string | null; nextAttemptAt: string | null;
+}

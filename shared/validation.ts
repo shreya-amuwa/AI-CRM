@@ -169,7 +169,9 @@ export const customerActivityCreateSchema = z
 export const assignableRoleSchema = z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']);
 
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member'] as const;
+export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member', 'HR Assistant', 'HR Recruiter'] as const;
+/** The two designations of the HR department's staff (the role stays Team Member / Team Lead; the database also checks the department). */
+export const HR_DESIGNATIONS = ['HR Assistant', 'HR Recruiter'] as const;
 
 /** A real calendar date (YYYY-MM-DD) as days since 1970, or null. */
 function dayNumber(v: string): number | null {
@@ -2127,7 +2129,11 @@ export const employeeRequestSchema = z
     details: memberDetailsSchema
   })
   .strict()
-  .refine(r => r.details.designation === DESIGNATION_OF_ROLE[r.role], { message: 'The designation must match the role.', path: ['details', 'designation'] });
+  .refine(
+    r => r.details.designation === DESIGNATION_OF_ROLE[r.role]
+      || ((HR_DESIGNATIONS as readonly string[]).includes(r.details.designation) && (r.role === 'TEAM_MEMBER' || r.role === 'TEAM_HEAD')),
+    { message: 'The designation must match the role.', path: ['details', 'designation'] }
+  );
 export type EmployeeRequestInput = z.infer<typeof employeeRequestSchema>;
 
 // ---- Welcome e-mail of a new employee (status list for HR / administrators, resend) and the employee's own first password ----
@@ -2269,7 +2275,13 @@ export const careerJobQuerySchema = z.object({ page: z.coerce.number().int().min
 export const careerPostingSchema = z.object({
   id: uuidSchema.optional(), position_id: uuidSchema, title: trimmed(160).min(2), description: trimmed(15000).min(20),
   location: trimmed(200).min(1), employment_type: z.enum(['FULL_TIME','PART_TIME','INTERNSHIP','CONTRACT']),
-  published: z.boolean(), closes_at: z.string().datetime({ offset: true }).nullable(), version: z.number().int().positive().optional()
+  published: z.boolean(), closes_at: z.string().datetime({ offset: true }).nullable(), version: z.number().int().positive().optional(),
+  // vacancy fields of the HR Recruiter workspace (all optional: an older form still saves)
+  openings: z.number().int().min(1).max(500).optional(),
+  vacancy_status: z.enum(['DRAFT', 'PENDING_APPROVAL', 'OPEN', 'ON_HOLD', 'CLOSED', 'FILLED']).optional(),
+  responsible_id: uuidSchema.nullable().optional(),
+  qualifications: trimmed(4000).nullable().optional(), skills: trimmed(4000).nullable().optional(), experience: trimmed(2000).nullable().optional(),
+  required_steps: z.array(z.enum(['CALL', 'ASSESSMENT', 'INTERVIEW'])).max(3).optional()
 }).strict();
 export const careerUploadSchema = z.object({ file_name: trimmed(180).regex(/\.pdf$/i, 'Upload a PDF resume.'), size_bytes: z.number().int().min(1).max(10485760) }).strict();
 export const careerApplySchema = z.object({ posting_id: uuidSchema, resume_id: uuidSchema }).strict();
@@ -2387,4 +2399,108 @@ export const reportSettingsSchema = z
     minExpectedReports: z.number().int().min(1).max(100),
     workingDays: z.array(z.number().int().min(1).max(7)).min(1).max(7)
   })
+  .strict();
+
+
+// ---- HR Recruiter workspace ----------------------------------------------------------------------------------------------------------
+export const RECRUITER_STAGES = [
+  'NEW_APPLICATION', 'INITIAL_SCREENING', 'CALL_SCHEDULED', 'CALL_COMPLETED', 'TEST_PENDING', 'TEST_COMPLETED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED',
+  'SELECTION_REVIEW', 'SELECTED', 'REJECTED', 'ON_HOLD'
+] as const;
+export const VACANCY_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'OPEN', 'ON_HOLD', 'CLOSED', 'FILLED'] as const;
+export const CALL_OUTCOMES = ['ANSWERED', 'NO_ANSWER', 'CALL_BACK', 'NOT_INTERESTED', 'WRONG_NUMBER', 'INTERESTED', 'UNREACHABLE'] as const;
+export const INTERVIEW_ROUNDS = ['HR', 'DEPARTMENT_HEAD', 'MANAGEMENT'] as const;
+export const INTERVIEW_MODES = ['IN_PERSON', 'PHONE', 'VIDEO', 'OTHER'] as const;
+export const INTERVIEW_RESULTS = ['PROCEED', 'SHORTLIST', 'REJECT', 'HOLD', 'FURTHER_EVALUATION'] as const;
+export const REJECTION_CATEGORIES = ['SKILLS_MISMATCH', 'EXPERIENCE', 'ASSESSMENT', 'INTERVIEW', 'NOT_INTERESTED', 'POSITION_FILLED', 'OTHER'] as const;
+
+const recruiterText = (max: number) => z.string().trim().max(max, `Keep this under ${max} characters.`);
+/** The filters every recruiter list shares; the database applies them (and the caller's own scope). */
+export const recruiterFiltersSchema = z
+  .object({
+    posting: uuidSchema.optional(),
+    department: uuidSchema.optional(),
+    designation: recruiterText(120).optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    search: recruiterText(120).optional(),
+    stage: z.enum(RECRUITER_STAGES).optional(),
+    status: z.enum(['SUBMITTED', 'SCREENING', 'ASSESSMENT', 'INTERVIEW', 'ON_HOLD', 'SELECTED', 'REJECTED', 'WITHDRAWN', 'JOINING', 'TRAINING', 'COMPLETED']).optional(),
+    assessment: z.enum(['NONE', 'PENDING', 'PASSED', 'FAILED']).optional(),
+    interview: z.enum(['NONE', 'SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
+    recruiter: uuidSchema.optional(),
+    result: z.enum(['SELECTED', 'REJECTED', 'ON_HOLD', 'PENDING']).optional(),
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .strict();
+export type RecruiterFilters = z.infer<typeof recruiterFiltersSchema>;
+export const recruiterVacanciesQuerySchema = z.object({ status: z.enum(VACANCY_STATUSES).optional() }).strict();
+export const recruiterPipelineQuerySchema = z.object({ posting: uuidSchema.optional() }).strict();
+export const recruiterDecisionsQuerySchema = z.object({ view: z.enum(['READY', 'DECIDED']).default('READY') }).strict();
+export const recruiterVacancyAssignSchema = z.object({ recruiter: uuidSchema.nullable() }).strict();
+export const recruiterVacancyStatusSchema = z.object({ status: z.enum(VACANCY_STATUSES), note: recruiterText(500).optional() }).strict();
+export const recruiterNoteSchema = z
+  .object({ kind: z.enum(['NOTE', 'EVALUATION']).default('NOTE'), body: recruiterText(2000).min(1, 'Write the note.') })
+  .strict();
+export const recruiterStageSchema = z
+  .object({ action: z.enum(['SCREEN', 'HOLD', 'RESUME', 'REQUEST_REVIEW', 'CLEAR_REVIEW']), comment: recruiterText(1000).optional() })
+  .strict()
+  .refine(v => v.action !== 'HOLD' || (v.comment ?? '').length >= 3, { message: 'Write the reason for putting the application on hold.', path: ['comment'] });
+export const recruiterCallSchema = z
+  .discriminatedUnion('action', [
+    z.object({ action: z.literal('SCHEDULE'), scheduledAt: z.string().datetime({ offset: true }), note: recruiterText(1000).optional() }).strict(),
+    z
+      .object({
+        action: z.literal('RECORD'),
+        callId: uuidSchema.optional(),
+        outcome: z.enum(CALL_OUTCOMES, { errorMap: () => ({ message: 'A call is completed only with its outcome. Choose one.' }) }),
+        note: recruiterText(1000).optional(),
+        followUpDate: isoDate.optional()
+      })
+      .strict()
+  ])
+  .superRefine((v, ctx) => {
+    if (v.action === 'RECORD' && v.outcome === 'CALL_BACK' && !v.followUpDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose the follow-up date for a call-back.', path: ['followUpDate'] });
+    }
+  });
+export const recruiterInterviewSchema = z
+  .discriminatedUnion('action', [
+    z
+      .object({
+        action: z.enum(['SCHEDULE', 'RESCHEDULE']),
+        id: uuidSchema.optional(),
+        round: z.enum(INTERVIEW_ROUNDS),
+        scheduledAt: z.string().datetime({ offset: true }),
+        location: recruiterText(1000).min(1, 'Enter where or how the interview takes place.'),
+        mode: z.enum(INTERVIEW_MODES).optional(),
+        interviewer: recruiterText(120).optional(),
+        interviewerId: uuidSchema.optional()
+      })
+      .strict(),
+    z.object({ action: z.enum(['CONFIRM', 'CANCEL']), id: uuidSchema, version: z.number().int().min(1) }).strict(),
+    z
+      .object({
+        action: z.literal('COMPLETE'),
+        id: uuidSchema,
+        version: z.number().int().min(1),
+        result: z.enum(INTERVIEW_RESULTS, { errorMap: () => ({ message: 'Record the interview result.' }) }),
+        feedback: recruiterText(3000).optional()
+      })
+      .strict()
+  ])
+  .superRefine((v, ctx) => {
+    if (v.action === 'RESCHEDULE' && !v.id) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Choose the interview to reschedule.', path: ['id'] });
+  });
+export const recruiterInviteSchema = z.object({ testId: uuidSchema, until: z.string().datetime({ offset: true }) }).strict();
+export const recruiterDecisionSchema = z
+  .object({ decision: z.enum(['SELECTED', 'REJECTED']), category: z.enum(REJECTION_CATEGORIES).optional(), reason: recruiterText(1000).optional() })
+  .strict()
+  .refine(v => v.decision !== 'REJECTED' || !!v.category || !!v.reason, { message: 'Choose a rejection category or write the reason.', path: ['category'] });
+export const recruiterDecisionCorrectionSchema = z
+  .object({ decision: z.enum(['SELECTED', 'REJECTED']), reason: recruiterText(1000).min(5, 'Write why the decision is corrected (at least 5 characters).') })
+  .strict();
+export const recruitmentEmailAdminQuerySchema = z
+  .object({ status: z.enum(['PENDING', 'PROCESSING', 'RETRYING', 'SENT', 'DELIVERED', 'FAILED', 'SKIPPED', 'DRY_RUN']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50) })
   .strict();

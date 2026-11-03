@@ -3,7 +3,7 @@ import type { DepartmentAccessInfo, DepartmentHeadAccess, HeadDivision, MyDepart
 import type { UserListQuery } from '../../shared/validation.js';
 import { compact, likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, is_meta_verifier, is_operations_head, sales_sub_role, head_division, default_dashboard, status, status_reason,
+const COLUMNS = `id, email, full_name, avatar_url, phone, position, role, is_technical_consultant, is_meta_verifier, is_operations_head, sales_sub_role, hr_sub_role, head_division, default_dashboard, status, status_reason,
   department_id, team_id, approved_at, created_at,
   department:departments!profiles_department_id_fkey(id, slug, name),
   team:teams!profiles_team_in_department(id, name, division)`;
@@ -21,6 +21,7 @@ export function mapProfile(row: any): Profile {
     isMetaVerifier: !!row.is_meta_verifier,
     isOperationsHead: !!row.is_operations_head,
     salesSubRole: row.sales_sub_role ?? null,
+    hrSubRole: row.hr_sub_role ?? null,
     headDivision: row.head_division ?? null,
     defaultDashboard: row.default_dashboard ?? null,
     status: row.status,

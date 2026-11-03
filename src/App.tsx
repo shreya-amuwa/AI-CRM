@@ -50,6 +50,7 @@ const EduTrainingPanel = lazy(() => import('./components/departments/edutraining
 const AccountsDepartmentPanel = lazy(() => import('./components/departments/accounts/AccountsDepartmentPanel').then(m => ({ default: m.AccountsDepartmentPanel })));
 const DepartmentAccountsBillingView = lazy(() => import('./components/departments/shared/DepartmentAccountsBillingView').then(m => ({ default: m.DepartmentAccountsBillingView })));
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
+const RecruiterDashboard = lazy(() => import('./components/hr-recruiter/RecruiterDashboard').then(m => ({ default: m.RecruiterDashboard })));
 const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
 const BusinessAssociateDashboard = lazy(() => import('./components/business-associate/BusinessAssociateDashboard').then(m => ({ default: m.BusinessAssociateDashboard })));
 import { DepartmentPicker } from './components/scope/DepartmentPicker';
@@ -145,6 +146,13 @@ const MainAppContent: React.FC = () => {
         navigateTo(base);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'hr-recruiter') {
+      // /hr-recruiter/dashboard/:id and its pages (…/applications/:applicationId, …) stay where they are.
+      const base = `/hr-recruiter/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(base);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'telecaller') {
       // /telecaller/dashboard/:id and its pages (…/tasks, …/leads) stay where they are.
       const base = `/telecaller/dashboard/${user.id}`;
@@ -198,7 +206,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'hr-recruiter' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -276,6 +284,14 @@ const MainAppContent: React.FC = () => {
   }
 
   // Step 1.57: Sales Telecaller dashboard (own route and sidebar), or the notice page of a Sales role that has no dashboard yet
+  // The HR Recruiter's own dashboard (vacancies, applications, interviews, selection); the HR Assistant keeps the HR dashboard
+  if (user.role === 'hr-recruiter') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <RecruiterDashboard />
+      </Suspense>
+    );
+  }
   if (user.role === 'telecaller') {
     return (
       <Suspense fallback={<ScreenLoader />}>

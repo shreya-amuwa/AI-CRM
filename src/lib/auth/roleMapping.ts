@@ -9,6 +9,13 @@ import type { AuthUser } from '../../types/crm';
 export function toAuthUser(profile: Profile): AuthUser {
   const departmentSlug = profile.department?.slug;
   let role: AuthUser['role'];
+  // An HR Recruiter opens the recruiter dashboard, never the HR Assistant's one (the database refuses them the HR Assistant's data as well).
+  if (isHrRecruiter(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'hr-recruiter',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
   switch (profile.role) {
     case 'SUPER_ADMIN':
       role = 'superadmin';
@@ -88,6 +95,11 @@ export function isAccountsStaff(p: Pick<Profile, 'role' | 'department'>): boolea
  * What they may do inside it is decided by their own role (and enforced by the API and database): HR staff
  * see HR data; only a Department Head can publish client notices; only leads and heads can add members.
  */
+/** An HR employee whose designation is HR Recruiter (the role stays Team Member / Team Lead; the department is HR). */
+export function isHrRecruiter(p: Pick<Profile, 'role' | 'department' | 'hrSubRole'>): boolean {
+  return isHrStaff(p) && p.hrSubRole === 'HR_RECRUITER';
+}
+
 export function isHrStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
   return (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.department?.slug === 'hr';
 }
@@ -178,7 +190,8 @@ export function defaultDashboardLabel(
   salesSubRole?: SalesSubRole | null,
   headDivision?: HeadDivision | null,
   metaVerifier = false,
-  operationsHead = false
+  operationsHead = false,
+  hrSubRole?: Profile['hrSubRole']
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
   // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
@@ -186,6 +199,7 @@ export function defaultDashboardLabel(
     return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;
   }
   // HR and Accounts staff open their department's own dashboard.
+  if (departmentSlug === 'hr' && hrSubRole === 'HR_RECRUITER' && role !== 'SUPER_ADMIN') return `HR Recruiter Dashboard${dept}`;
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   switch (role) {
     case 'SUPER_ADMIN':

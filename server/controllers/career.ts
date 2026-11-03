@@ -43,6 +43,7 @@ export const careerController = {
   completeUpload: handle((s, c) => s.completeUpload(c.params.id)),
   fileUrl: handle((s, c) => s.fileUrl(c.params.id)),
   hrFileUrl: handle((s, c) => s.fileUrl(c.params.id, true)),
+  recruiterFileUrl: handle((s, c) => s.fileUrl(c.params.id, 'RECRUITER')),
   applications: handle((s) => s.applications()),
   apply: handle((s, c) => s.apply(c.req.body)),
   postings: handle((s) => s.postings()),
