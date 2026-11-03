@@ -3772,6 +3772,12 @@ provider.close();
   r = await api('hr', 'POST', '/users', { email: 'hr.lead@amuwa.com', fullName: 'HR Lead', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id, details: { ...details, designation: 'HR Assistant' } });
   check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department.slug === 'hr' && r.json.data.hrSubRole === 'HR_ASSISTANT', 'the HR head creates an HR Assistant', r);
   tokens.set('hrlead', tokenFor(r.json.data.id));
+  // an older HR Team Lead account (made before the HR designations existed; such accounts keep working) for the checks about what HR may not create directly
+  {
+    const { rows: [legacy] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ('hr.legacy.lead@amuwa.com', '{"full_name":"Legacy HR Lead"}', $1::jsonb) returning id`,
+      [JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, provisioned_role: 'TEAM_HEAD', provisioned_department_id: hrDept.id, provisioned_team_id: hrTeam.id })]);
+    tokens.set('hrlegacy', tokenFor(legacy.id));
+  }
   r = await api('sa', 'POST', '/users', { email: 'hr.member@amuwa.com', fullName: 'HR Member', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: hrTeam.id, details: { ...details, designation: 'HR Assistant' } });
   check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department.slug === 'hr' && r.json.data.status === 'ACTIVE', 'the Super Admin creates an HR Team Member (active, in the HR department)', r);
   tokens.set('hrmember', tokenFor(r.json.data.id));
@@ -8121,8 +8127,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status >= 400, 'a Team Lead cannot give a Sales role to themselves', r);
 
   // ---- HR: never a direct creation, always a request the Department Head approves
-  r = await api('hrlead', 'POST', '/users', { email: 'hr.direct1@amuwa.com', fullName: 'HR Direct', password: pw, role: 'TEAM_MEMBER', teamId: (await db.query(`select team_id from public.profiles where email = 'hr.lead@amuwa.com'`)).rows[0].team_id });
-  check(r.status === 403 && /request/i.test(r.json.error.message), 'an HR Assistant cannot create a person directly: HR sends a request', r);
+  r = await api('hrlegacy', 'POST', '/users', { email: 'hr.direct1@amuwa.com', fullName: 'HR Direct', password: pw, role: 'TEAM_MEMBER', teamId: (await db.query(`select team_id from public.profiles where email = 'hr.lead@amuwa.com'`)).rows[0].team_id });
+  check(r.status === 403 && /request/i.test(r.json.error.message), 'an older HR Team Lead account cannot create a person directly: HR sends a request', r);
   r = await api('hrmember', 'POST', '/users', mk('hr.direct2@amuwa.com'));
   check(r.status === 403, 'nor an HR member (and not into another department)', r);
   check(Number((await db.query(`select count(*) c from public.profiles where email like 'hr.direct%'`)).rows[0].c) === 0, 'no account was made');
@@ -9067,7 +9073,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const tlId = await mk('tl', { role: 'TEAM_HEAD', teamId: teamA });
   const m1Id = await mk('m1', { role: 'TEAM_MEMBER', teamId: teamA });
   const m2Id = await mk('m2', { role: 'TEAM_MEMBER', teamId: teamA });
-  await mk('hr1', { role: 'TEAM_MEMBER', teamId: hrTeam });
+  // an HR employee always has one of the HR designations (a request without one is refused)
+  await mk('hr1', { role: 'TEAM_MEMBER', teamId: hrTeam, details: { designation: 'HR Assistant', joiningDate: '2026-01-05', dateOfBirth: '1992-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56770', emergencyContact: '+91 98765 43270' } });
   r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [dId('rcx-a')], primaryDepartmentIds: [dId('rcx-a')] });
   check(r.status === 200, 'company reporting: the Operations Head is given the department', r);
 
