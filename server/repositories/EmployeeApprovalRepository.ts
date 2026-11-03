@@ -21,6 +21,13 @@ export class EmployeeApprovalRepository {
     }));
   }
 
+  /** The department / role / designation combination is checked by the database before any account or request is made. */
+  async assertDesignationAllowed(i: { role: EmployeeRequestInput['role']; departmentId: string; designation: string }): Promise<void> {
+    unwrap(await this.db.rpc('assert_designation_allowed', {
+      p_department: i.departmentId, p_team: null, p_role: DB_ROLE[i.role], p_designation: i.designation, p_operations_head: i.role === 'OPERATIONS_HEAD'
+    }));
+  }
+
   async list(status: string | null, toDecide: boolean): Promise<EmployeeRequest[]> {
     return unwrap(await this.db.rpc('employee_requests_list', { p_status: status, p_to_decide: toDecide, p_limit: 300 })) as EmployeeRequest[];
   }

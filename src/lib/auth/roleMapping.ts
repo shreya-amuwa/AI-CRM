@@ -200,6 +200,7 @@ export function defaultDashboardLabel(
   }
   // HR and Accounts staff open their department's own dashboard.
   if (departmentSlug === 'hr' && hrSubRole === 'HR_RECRUITER' && role !== 'SUPER_ADMIN') return `HR Recruiter Dashboard${dept}`;
+  if (departmentSlug === 'hr' && role === 'DEPARTMENT_HEAD') return `HR Department Head Dashboard${dept}`;
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   switch (role) {
     case 'SUPER_ADMIN':

@@ -72,6 +72,9 @@ export class UserService {
     assertCanAssignRole(actor, input.role, homeDepartment, input.teamId);
     if (input.operationsHead) await this.profiles.assertCanCreateOperationsHead(homeDepartment!);
     else await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
+    // The department decides the designations: an HR employee is an HR Assistant, an HR Recruiter or an HR Admin Head (the Department Head of HR) and nothing
+    // else, and an HR designation is refused anywhere else. Checked by the database BEFORE the account exists (and again when the details are saved).
+    await this.profiles.assertDesignationAllowed({ role: input.role, departmentId: homeDepartment, teamId: input.teamId, designation: input.details?.designation, operationsHead: input.operationsHead });
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }

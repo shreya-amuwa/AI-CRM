@@ -169,9 +169,31 @@ export const customerActivityCreateSchema = z
 export const assignableRoleSchema = z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']);
 
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member', 'HR Assistant', 'HR Recruiter'] as const;
-/** The two designations of the HR department's staff (the role stays Team Member / Team Lead; the database also checks the department). */
-export const HR_DESIGNATIONS = ['HR Assistant', 'HR Recruiter'] as const;
+export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member', 'HR Assistant', 'HR Recruiter', 'HR Admin Head'] as const;
+/**
+ * The three designations of the HR department, and the existing role each one is (no new role system): HR Assistant and HR Recruiter are Team Members of HR,
+ * HR Admin Head is the Department Head of HR. The database enforces the same rule (private.designation_problem); this copy lets the forms and the server say it first.
+ */
+export const HR_DESIGNATIONS = ['HR Assistant', 'HR Recruiter', 'HR Admin Head'] as const;
+export type HrDesignation = (typeof HR_DESIGNATIONS)[number];
+export const HR_DESIGNATION_ROLE: Record<HrDesignation, 'TEAM_MEMBER' | 'DEPARTMENT_HEAD'> = {
+  'HR Assistant': 'TEAM_MEMBER', 'HR Recruiter': 'TEAM_MEMBER', 'HR Admin Head': 'DEPARTMENT_HEAD'
+};
+/**
+ * Whether a designation fits a department and role. Mirrors private.designation_problem in the database (which is the authority): an HR employee is an HR Assistant,
+ * an HR Recruiter or an HR Admin Head (the Department Head of HR) and nothing else, and those three exist in no other department. Returns the message, or null.
+ */
+export function designationProblem(a: { departmentSlug?: string | null; role: string; designation?: string | null; operationsHead?: boolean }): string | null {
+  const { departmentSlug, role, designation, operationsHead } = a;
+  if (!designation) return departmentSlug === 'hr' && !operationsHead ? 'Choose HR Assistant, HR Recruiter or HR Admin Head for an HR employee.' : null;
+  if (isHrDesignation(designation)) {
+    if (departmentSlug !== 'hr') return 'HR Assistant, HR Recruiter and HR Admin Head are designations of the HR department only.';
+    if (designation === 'HR Admin Head') return role === 'DEPARTMENT_HEAD' && !operationsHead ? null : 'HR Admin Head is the designation of the Department Head of the HR department.';
+    return role === 'TEAM_MEMBER' ? null : `${designation} is a designation of a Team Member of the HR department.`;
+  }
+  return departmentSlug === 'hr' && !operationsHead ? 'Choose HR Assistant, HR Recruiter or HR Admin Head for an HR employee.' : null;
+}
+export const isHrDesignation = (d: string | null | undefined): d is HrDesignation => !!d && (HR_DESIGNATIONS as readonly string[]).includes(d);
 
 /** A real calendar date (YYYY-MM-DD) as days since 1970, or null. */
 function dayNumber(v: string): number | null {
@@ -2153,8 +2175,9 @@ export const employeeRequestSchema = z
   })
   .strict()
   .refine(
-    r => r.details.designation === DESIGNATION_OF_ROLE[r.role]
-      || ((HR_DESIGNATIONS as readonly string[]).includes(r.details.designation) && (r.role === 'TEAM_MEMBER' || r.role === 'TEAM_HEAD')),
+    r => (isHrDesignation(r.details.designation)
+      ? HR_DESIGNATION_ROLE[r.details.designation] === r.role
+      : r.details.designation === DESIGNATION_OF_ROLE[r.role]),
     { message: 'The designation must match the role.', path: ['details', 'designation'] }
   );
 export type EmployeeRequestInput = z.infer<typeof employeeRequestSchema>;
