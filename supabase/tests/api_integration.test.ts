@@ -9073,7 +9073,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const tlId = await mk('tl', { role: 'TEAM_HEAD', teamId: teamA });
   const m1Id = await mk('m1', { role: 'TEAM_MEMBER', teamId: teamA });
   const m2Id = await mk('m2', { role: 'TEAM_MEMBER', teamId: teamA });
-  await mk('hr1', { role: 'TEAM_MEMBER', teamId: hrTeam });
+  // an HR employee always has one of the HR designations (a request without one is refused)
+  await mk('hr1', { role: 'TEAM_MEMBER', teamId: hrTeam, details: { designation: 'HR Assistant', joiningDate: '2026-01-05', dateOfBirth: '1992-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56770', emergencyContact: '+91 98765 43270' } });
   r = await api('sa', 'POST', `/operations/heads/${ohId}/scope`, { departmentIds: [dId('rcx-a')], primaryDepartmentIds: [dId('rcx-a')] });
   check(r.status === 200, 'company reporting: the Operations Head is given the department', r);
 
