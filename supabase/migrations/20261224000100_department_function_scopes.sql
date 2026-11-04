@@ -172,6 +172,10 @@ begin
   if p.is_operations_head then
     return new;                         -- an Operations Head supervises; the one-head rule is for Department Heads
   end if;
+  -- a head placed in this department with no side already covers both functions: ticking them only makes both views selectable (Group B)
+  if p.head_division is null and private.base_department(new.department_id) = private.base_department(p.department_id) then
+    return new;
+  end if;
   select coalesce(d.facet_division, new.division), d.name into v_div, v_name from public.departments d where d.id = new.department_id;
   v_other := private.department_function_holder(new.department_id, v_div, new.profile_id);
   if v_other.id is not null then

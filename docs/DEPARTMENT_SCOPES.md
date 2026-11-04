@@ -114,3 +114,7 @@ The same can be done through the API: `GET /api/v1/users/:id/department-access`,
 * **Support heads** with a side now read Support-team rows only (previously a labelled Support head's database scope was unchanged); heads with no side keep whole-department access.
 * A Group B head's first view is Sales unless they previously chose Support.
 * The unsaved-form guard watches all form inputs (the app had no common form convention).
+
+## Sales / Support function and several departments (migration 20261224000100)
+
+An Operations Head's departments now follow their function (Sales, Support or both), and a Department Head may be given another department's function when nobody heads it. See [FUNCTION_SCOPES.md](FUNCTION_SCOPES.md).

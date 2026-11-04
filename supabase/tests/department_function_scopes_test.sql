@@ -205,6 +205,15 @@ select test.check((select count(*) = 1 from jsonb_array_elements(department_acce
                      jsonb_build_array(jsonb_build_object('departmentId', test.dept('fs-tw'), 'division', 'SUPPORT'))) -> 'grants')), 'saving the same grant again is fine (not re-checked against itself)');
 reset role;
 select test.check((select count(*) = 1 from department_access where profile_id = test.id('fs_dhas')) is not true, 'nothing was stored for the refused head');
+-- a head with no side in their own department already covers both sides: ticking them there only makes both views selectable (no conflict),
+-- while a one-side head of the same department cannot take the other side that the no-side head covers
+select test.fsmk('fs_dhbs', 'DEPARTMENT_HEAD', 'fs-b', 'SALES') where test.id('fs_dhbs') is null;
+set role authenticated;
+select test.login('sa');
+select test.check((select jsonb_array_length(department_access_set(test.id('fs_rut'), test.dept('fs-b'), 'SALES', true) -> 'grants') >= 1), 'the no-side head of FS Beta can tick FS Beta Sales');
+select test.must_fail($$select department_access_set(test.id('fs_dhbs'), test.dept('fs-b'), 'SUPPORT', true)$$, 'FS Beta''s Sales head cannot take FS Beta Support (the no-side head holds it)', 'FS rut');
+select department_access_set(test.id('fs_rut'), test.dept('fs-b'), 'SALES', false);
+reset role;
 
 \echo '   what the second-department head can and cannot do'
 set role authenticated;

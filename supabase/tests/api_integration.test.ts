@@ -2608,6 +2608,8 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
 }
 // --- Chat: client chat, reviewers, internal direct messages, groups and files -------------------------------------
 {
+  // these checks are for the end-to-end encrypted mode, which stays available; the company-readable mode (20261224000200) is checked at the end
+  await db.query(`update public.chat_settings set internal_mode = 'E2EE'`);
   const cust = (await db.query(`select id from public.customers where phone = '9000000201'`)).rows[0].id as string;
   const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
   const smId = await idOf('sm@amuwa.com'), tm2Id = await idOf('tm.delivery@amuwa.com'), tl2Id = await idOf('tl.delivery@amuwa.com'), aId = await idOf('a@amuwa.com');
@@ -7163,8 +7165,15 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('accounts').id, division: 'SALES', granted: true });
   check(r.status === 422 && /no Sales team/.test(r.json.error.message), 'scopes: a department with no such team is refused', r);
   // several departments belong to an Operations Head: the Super Admin makes one first (the database refuses the grant otherwise)
+  // (20261224000100) a Department Head may head another department's function that nobody heads yet; they stay a Department Head.
+  // A department/function that already has a head is refused (department_function_scopes_test.sql). The grant is withdrawn again here.
   r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'SALES', granted: true });
-  check(r.status === 422 && /Operations Head/.test(r.json.error.message), 'operations head: a Department Head who is not an Operations Head cannot be given another department', r);
+  check(r.status === 200 && (r.json.data.grants as any[]).some(g => g.departmentId === dep('mpillar').id && g.division === 'SALES') && r.json.data.role === 'DEPARTMENT_HEAD',
+    'department heads: a Department Head can be given another department where that function has no head', r);
+  const gsFlag = await db.query(`select is_operations_head from public.profiles where id = $1`, [gsId]);
+  check(gsFlag.rows[0].is_operations_head === false, 'department heads: ... and is not made an Operations Head by it');
+  r = await api('sa', 'POST', `/users/${gsId}/department-access`, { departmentId: dep('mpillar').id, division: 'SALES', granted: false });
+  check(r.status === 200 && !(r.json.data.grants as any[]).some(g => g.departmentId === dep('mpillar').id), 'department heads: and the Super Admin can take it back', r);
   r = await api('gs', 'POST', `/users/${gsId}/operations-head`, { value: true });
   check(r.status === 403, 'operations head: a Department Head cannot make themselves one', r);
   r = await api('a', 'POST', `/users/${gsId}/operations-head`, { value: true });
@@ -9450,6 +9459,53 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   if (modeBefore === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeBefore;
 }
 
+// --- Department x function scopes and company-readable internal chat (migrations 20261224000100-200) ---------------
+{
+  const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0].id as string;
+  const smId = await idOf('sm@amuwa.com'), tm2Id = await idOf('tm.delivery@amuwa.com');
+  let r = await api('sm', 'GET', '/chat/settings');
+  check(r.status === 200 && ['STANDARD', 'E2EE'].includes(r.json.data.mode), 'chat mode: any employee can read how internal messages are sent', r);
+  r = await api('sm', 'POST', '/chat/settings', { mode: 'STANDARD' });
+  check(r.status === 403, 'chat mode: only the Super Admin can change it', r);
+  r = await api('sa', 'POST', '/chat/settings', { mode: 'OPEN' });
+  check(r.status === 422, 'chat mode: only STANDARD or E2EE', r);
+  r = await api('sa', 'POST', '/chat/settings', { mode: 'STANDARD' });
+  check(r.status === 200 && r.json.data.mode === 'STANDARD', 'chat mode: the Super Admin switches to the company-readable mode', r);
+  r = await api('sm', 'POST', '/chat/direct', { profileId: tm2Id });
+  const dm = r.json.data.id as string;
+  r = await api('sm', 'POST', `/chat/conversations/${dm}/messages`, { body: 'Readable, no key needed', clientMsgId: crypto.randomUUID() });
+  check(r.status === 201 && r.json.data.encrypted === false && r.json.data.body === 'Readable, no key needed', 'chat: a direct message is sent without any key or passphrase', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 200 && (r.json.data.messages as any[]).some(m => m.body === 'Readable, no key needed'), 'chat: the colleague reads it', r);
+  check((r.json.data.messages as any[]).some(m => m.encrypted === true), 'chat: the earlier encrypted messages are still in the same history', r);
+  r = await api('a', 'GET', `/chat/conversations/${dm}/messages`);
+  check(r.status === 404, 'chat: nobody outside the conversation reads it', r);
+  const logged = await db.query(`select count(*)::int as n from public.audit_logs where metadata::text like '%Readable, no key needed%'`);
+  check(logged.rows[0].n === 0, 'chat: the message text is not written to the audit log');
+
+  r = await api('sm', 'GET', '/operations/function-scope-review');
+  check(r.status === 403, 'function scopes: only the Super Admin reads the impact report', r);
+  r = await api('sa', 'GET', '/operations/function-scope-review');
+  check(r.status === 200 && Array.isArray(r.json.data.operationsHeads) && Array.isArray(r.json.data.departmentHeads), 'function scopes: the Super Admin reads it', r);
+  const ops = (await db.query(`select p.id, array_agg(o.department_id) as depts from public.profiles p join public.operations_head_departments o on o.profile_id = p.id
+                                where p.is_operations_head and p.status = 'ACTIVE' group by p.id limit 1`)).rows[0] as { id: string; depts: string[] } | undefined;
+  if (ops) {
+    const body = { function: 'SUPPORT', departments: ops.depts.map(d => ({ departmentId: d, division: null, primary: false })) };
+    r = await api('sm', 'POST', `/operations/heads/${ops.id}/function-scope`, body);
+    check(r.status === 403, 'function scopes: only the Super Admin sets an Operations Head’s function', r);
+    r = await api('sa', 'POST', `/operations/heads/${ops.id}/function-scope`, { function: 'GENERAL', departments: body.departments });
+    check(r.status === 422, 'function scopes: Sales, Support or both only', r);
+    r = await api('sa', 'POST', `/operations/heads/${ops.id}/function-scope`, { function: 'SUPPORT', departments: [] });
+    check(r.status === 422, 'function scopes: at least one department', r);
+    r = await api('sa', 'POST', `/operations/heads/${ops.id}/function-scope`, body);
+    check(r.status === 200 && r.json.data.function === 'SUPPORT' && (r.json.data.departments as any[]).every(d => d.function === 'SUPPORT'),
+      'function scopes: the Super Admin makes an Operations Head a Support Operations Head; every department becomes Support only', r);
+    const scopes = await db.query(`select count(*) filter (where division is distinct from 'SUPPORT')::int as other from private.scopes_of($1)`, [ops.id]);
+    check(scopes.rows[0].other === 0, 'function scopes: the database scope has no Sales (or whole-department) entry left');
+  } else {
+    check(true, 'function scopes: (no Operations Head in the fixture data; covered by department_function_scopes_test.sql)');
+  }
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

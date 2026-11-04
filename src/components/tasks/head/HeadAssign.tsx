@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown, Plus, Search } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { isOverdue, localDateKey, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
-import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../TaskParts';
+import { DueLabel, EmptyState, fmtDate, fmtDateTime, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../TaskParts';
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, Tabs, textareaCls } from './headParts';
 
 type Filter = 'all' | 'progress' | 'completed' | 'overdue';
@@ -189,39 +189,54 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
           <ProgressBar value={task.progress} label={`Progress of ${task.title}`} />
         </div>
         <span className="text-xs font-bold text-slate-700 whitespace-nowrap">{task.progress}%</span>
-        <span className="text-xs text-slate-500 whitespace-nowrap">{children.length ? `${done}/${children.length} members done` : 'Not yet assigned to members'}</span>
+        <span className="text-xs text-slate-500 whitespace-nowrap">{children.length ? `${done}/${children.length} members done` : 'Not yet assigned to Team Members'}</span>
       </div>
       {task.lastUpdateNote && (
         <p className="mt-3 text-[13px] text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
           <strong>Latest:</strong> {task.lastUpdateNote}
         </p>
       )}
+      {/* Department Head -> Team Lead -> Team Members: who got which part, read from the stored member tasks (never generated here) */}
+      <section className="mt-4" aria-label={`Assigned to Team Members: ${task.title}`} data-testid="delegated-members">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h4 className="text-[13px] font-extrabold text-slate-900">Assigned to Team Members</h4>
+          <span className="text-xs font-semibold text-slate-500">{children.length} member{children.length === 1 ? '' : 's'}</span>
+        </div>
+        {children.length === 0 ? (
+          <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">Not yet assigned to Team Members.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+            {children.map(c => (
+              <li key={c.id} className="p-3 text-[13px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900">{nameOf(data.people, c.assigneeId)}</span>
+                  <span className="flex items-center gap-2"><PriorityPill priority={c.priority} /><StatusPill status={c.status} /></span>
+                </div>
+                <p className="mt-1 text-slate-700">{c.assignmentNote || <span className="text-slate-500">The whole task</span>}</p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <div className="flex-1"><ProgressBar value={c.progress} label={`Progress of ${nameOf(data.people, c.assigneeId)}`} /></div>
+                  <span className="text-xs font-bold text-slate-700">{c.progress}%</span>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Assigned by {nameOf(data.people, c.assignedBy)} on {fmtDate(c.createdAt)}
+                  {c.dueDate ? ` · due ${fmtDate(c.dueDate)}` : ''}
+                  {c.completedAt ? ` · completed ${fmtDate(c.completedAt)}` : ''}
+                </p>
+                {c.lastUpdateNote && <p className="mt-1 text-xs text-slate-600"><strong>Latest:</strong> {c.lastUpdateNote}{c.lastUpdateAt ? ` (${fmtDateTime(c.lastUpdateAt)})` : ''}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="mt-3 inline-flex items-center gap-1 text-[13px] font-bold text-blue-700 hover:text-blue-800">
         <ChevronDown className={`w-4 h-4 transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
-        {open ? 'Hide team progress' : 'Show team progress'}
+        {open ? 'Hide update history' : 'Show update history'}
       </button>
       {open && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="p-4 rounded-xl border border-slate-200">
-            <div className="text-[13px] font-extrabold text-slate-900 mb-2">Team members</div>
-            {children.length === 0 ? (
-              <p className="text-xs text-slate-500">The team lead has not assigned it to anyone yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {children.map(c => (
-                  <li key={c.id} className="text-[13px]">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-slate-900">{nameOf(data.people, c.assigneeId)}</span>
-                      <StatusPill status={c.status} />
-                    </div>
-                    <div className="mt-1.5">
-                      <ProgressBar value={c.progress} label={`Progress of ${nameOf(data.people, c.assigneeId)}`} />
-                    </div>
-                    {c.lastUpdateNote && <p className="mt-1 text-xs text-slate-500">{c.lastUpdateNote}</p>}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <div className="text-[13px] font-extrabold text-slate-900 mb-2">Updates from the team members</div>
+            <UpdateTimeline updates={data.updates.filter(u => children.some(c => c.id === u.taskId))} people={data.people} empty="No update from the team members yet." />
           </div>
           <div className="p-4 rounded-xl border border-slate-200">
             <div className="text-[13px] font-extrabold text-slate-900 mb-2">Updates from the team lead</div>

@@ -1,6 +1,11 @@
 # Internal chat encryption: assessment and decision needed
 
-**Status: no code change in this PR.** The request was to remove the internal-chat E2EE "requirement". The assessment below shows that the routine barrier is already gone, and that removing the encryption itself
+> **Update (migration `20261224000200_chat_company_readable.sql`): option B was chosen by the product owner and is implemented.** New direct and
+> group messages are stored readable by the company (TLS in transit, encryption at rest, the same membership checks); no key, passphrase or
+> set-up is needed. Existing encrypted messages are kept as they are and stay readable on a device that holds the key. The Super Admin can
+> switch back (`POST /chat/settings {"mode":"E2EE"}`, audited). See the "Company-readable internal chat" section of `CHAT.md`.
+
+**Status at the time of writing (superseded by the update above): no code change in this PR.** The request was to remove the internal-chat E2EE "requirement". The assessment below shows that the routine barrier is already gone, and that removing the encryption itself
 would be an irreversible security downgrade for existing messages that needs an explicit human decision. Nothing is removed, converted or hidden.
 
 ## 1. Does the existing automatic-key system already remove the barrier?

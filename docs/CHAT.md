@@ -165,3 +165,36 @@ Internal chats are end-to-end encrypted, messages can be deleted for me / for ev
 * **Sharing a message** (`POST /chat/conversations/:id/escalate`, `GET .../client-team`): an employee with access to a client conversation can share it with that client's Team Member, Team Lead or Meta Verifier (never with anybody else, never with
   themselves). It is a notification that opens the conversation (and an audit entry): nothing is copied, so the original thread stays the single source.
 * Tests: `supabase/tests/client_chat_access_test.sql` (two Team Leads on one team, lead/member visibility, same thread, denial for the other lead and unrelated staff, sharing, reassignment, suspension).
+
+## Company-readable internal chat (migration 20261224000200)
+
+**What changed for people:** every employee can write in a direct or group chat immediately after signing in, on any device. There is no
+"Turn on secure messaging", no recovery passphrase, no "Secure messaging could not be set up automatically" bar and no locked composer.
+
+**Why the old screens blocked:** in the end-to-end mode the browser had to make and publish a key before the first message, and the database
+refused readable messages in direct and group chats. When the key could not be registered (on production most likely because
+`20261216000100_chat_automatic_keys.sql` is not applied, so `chat_key_register` does not exist - check with
+`supabase/maintenance/verify_production_migrations.sql`; also a private window or a new device), the composer stayed locked and only the
+passphrase set-up was offered.
+
+**How it works now**
+* `chat_settings.internal_mode` = `STANDARD` (default after the migration) or `E2EE`. The app asks `GET /chat/settings` once; an older API or
+  database that does not answer keeps the encrypted behaviour, so the app never sends what the database would refuse.
+* In STANDARD mode direct and group messages and files go through the same path as client chats (`chat_send_message`, `chat_begin_upload`):
+  membership checked by the database, rate limits, replies, emoji, files (5 MB, image / PDF / text / CSV / Word / Excel, content checked),
+  read receipts, unread counts, Delete for me / for everyone, notifications and live updates are unchanged.
+* Encrypted messages are still accepted (an older open tab keeps working), so mixed histories are normal.
+* **Older encrypted messages** are never converted, emptied or deleted. A device that still holds the key opens them as before; elsewhere
+  they show "Sent while chats were end-to-end encrypted. It can only be read on a device that kept your earlier secure-messaging key." -
+  without blocking anything. No new key is made automatically.
+* Client chats are unchanged (they were never end-to-end encrypted).
+
+**Privacy change (stated, not hidden):** new internal messages are readable by the server. Anybody with database or backend operator access
+(Supabase project owners, people with the service key) can technically read them. The app's access rules are unchanged: only the members of a
+conversation see it, a Department Head does not read employees' direct messages, no message text is written to logs or the audit trail.
+
+**Rollback lever:** the Super Admin can set `E2EE` again (`POST /chat/settings`, audited `CHAT_INTERNAL_MODE_SET`); new messages are then
+sealed again (keys are made at sign-in as before). Messages sent in STANDARD mode stay readable.
+
+Tests: `supabase/tests/chat_company_readable_test.sql` (new employee without a key, mixed history, groups, files, outsiders refused, Delete for
+everyone, the mode switch); the API block at the end of `api_integration.test.ts`; the older E2EE suites pin the E2EE mode explicitly.

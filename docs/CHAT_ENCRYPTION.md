@@ -1,5 +1,9 @@
 # Internal chat: end-to-end encryption, "Delete for me / for everyone", emoji
 
+> **Since migration `20261224000200` new internal messages are NOT end-to-end encrypted.** They are readable by the company (see the
+> "Company-readable internal chat" section of `CHAT.md`). This page describes the end-to-end mode, which stays available behind the Super
+> Admin switch and is still used to read the older encrypted history.
+
 Migration: `supabase/migrations/20261206000300_chat_deletion_and_e2ee.sql` (paste-able bundle:
 `supabase/run_these_4_migrations_hierarchy_contact_secure_chat.sql`, which also holds Super Admin protection and the member
 contact number). Applies on top of `20261108000100_chat.sql`; safe to run again; nothing is deleted or rewritten.
