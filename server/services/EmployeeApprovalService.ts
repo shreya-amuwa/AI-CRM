@@ -1,6 +1,6 @@
 import type { DepartmentEmployeeDirectory, EmployeeRequest, OperationsActivityEntry, OperationsDashboard, OperationsDepartmentDetail, OperationsHeadAdmin, OperationsHeadsAdmin, TeamAssignmentRecord } from '../../shared/contracts.js';
 import {
-  assignLeadSchema, employeeDecisionSchema, employeeRequestListQuerySchema, employeeRequestSchema, employeeResubmitSchema, operationsScopeSchema, uuidSchema,
+  assignLeadSchema, employeeDecisionSchema, employeeRequestListQuerySchema, employeeRequestSchema, employeeResubmitSchema, operationsScopeApplySchema, operationsScopeSchema, uuidSchema,
   type EmployeeRequestInput
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
@@ -89,6 +89,15 @@ export class EmployeeApprovalService {
     this.requireSuperAdmin(actor);
     const input = parse(operationsScopeSchema, body);
     return this.repo.setScope(parse(uuidSchema, id), input.departmentIds, input.primaryDepartmentIds ?? null);
+  }
+  applyScope(actor: Actor, id: string, body: unknown): Promise<OperationsHeadAdmin> {
+    this.requireSuperAdmin(actor);
+    const input = parse(operationsScopeApplySchema, body);
+    return this.repo.applyScope(parse(uuidSchema, id), input.function, input.departments);
+  }
+  functionScopeReview(actor: Actor): Promise<Record<string, unknown>> {
+    this.requireSuperAdmin(actor);
+    return this.repo.functionScopeReview();
   }
   headActivity(actor: Actor, id: string): Promise<OperationsActivityEntry[]> {
     this.requireSuperAdmin(actor);

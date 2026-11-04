@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Building2, History, RefreshCw } from 'lucide-react';
-import type { OperationsActivityEntry, OperationsHeadAdmin, OperationsHeadsAdmin } from '../../../shared/contracts';
+import type { OperationsActivityEntry, OperationsFunction, OperationsHeadAdmin, OperationsHeadsAdmin } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi, usersApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
@@ -68,6 +68,7 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
                 <div className="flex-1 min-w-[14rem]">
                   <div className="font-bold text-slate-900 text-sm">{h.name} {h.status !== 'ACTIVE' && <Pill tone="red">{h.status.toLowerCase()}</Pill>}</div>
                   <div className="text-xs text-slate-500 break-all">{h.email} · home: {h.homeDepartment?.name ?? '-'}{h.lastLoginAt ? ` · last sign-in ${longDateTime(h.lastLoginAt)}` : ''}</div>
+                  {h.function !== undefined && <div className="text-xs font-semibold text-blue-800" data-testid={`operations-function-${h.id}`}>{FUNCTION_LABEL[h.function ?? 'BOTH']}</div>}
                 </div>
                 {h.pendingApprovals > 0 && <Pill tone="orange">{h.pendingApprovals} waiting</Pill>}
                 <button type="button" className={btn.secondary} onClick={() => setHistory(h)}><History className="w-3.5 h-3.5" aria-hidden="true" /> Activity</button>
@@ -76,7 +77,7 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {h.departments.length === 0 && <span className="text-xs text-slate-500">No department assigned.</span>}
-                {h.departments.map(d => <span key={d.id} className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${d.primary ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`} title={d.primary ? 'Approves Department Heads of this department' : 'Oversees this department'}>{d.name}{d.primary ? ' · approves heads' : ''}</span>)}
+                {h.departments.map(d => <span key={d.id} className={`px-2 py-0.5 rounded-md text-[11px] font-semibold ${d.primary ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}`} title={d.primary ? 'Approves Department Heads of this department' : 'Oversees this department'}>{d.name}{d.function !== undefined ? ` · ${sideLabel(d.function)}` : ''}{d.primary ? ' · approves heads' : ''}</span>)}
               </div>
             </li>
           ))}
@@ -88,19 +89,48 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
   );
 };
 
+/** How an operations function is called on screen. */
+export const FUNCTION_LABEL: Record<'SALES' | 'SUPPORT' | 'BOTH', string> = { SALES: 'Sales Operations Head', SUPPORT: 'Support Operations Head', BOTH: 'Sales & Support Operations Head' };
+const sideLabel = (f: OperationsFunction | undefined) => (f === 'SALES' ? 'Sales' : f === 'SUPPORT' ? 'Support' : 'Sales & Support');
+
 const ScopeDialog: React.FC<{ head: OperationsHeadAdmin; all: OperationsHeadsAdmin['departments']; onClose: () => void; onSaved: () => void }> = ({ head, all, onClose, onSaved }) => {
   const [scope, setScope] = useState<string[]>(head.departments.map(d => d.id));
   const [primary, setPrimary] = useState<string[]>(head.departments.filter(d => d.primary).map(d => d.id));
+  // the operations function (Sales / Support / both) and an optional narrower side per department; absent on a database without 20261224000100
+  const functional = head.function !== undefined;
+  const [fn, setFn] = useState<OperationsFunction>(head.function ?? null);
+  const [narrow, setNarrow] = useState<Record<string, OperationsFunction>>(Object.fromEntries(head.departments.map(d => [d.id, d.narrowed ?? null])));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const flip = (list: string[], id: string) => (list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
   const save = async () => {
     setBusy(true); setError(null);
-    try { await employeesApi.setScope(head.id, { departmentIds: scope, primaryDepartmentIds: primary.filter(p => scope.includes(p)) }); onSaved(); }
+    try {
+      if (functional) {
+        await employeesApi.applyScope(head.id, {
+          function: fn,
+          departments: scope.map(id => ({ departmentId: id, division: fn ? null : narrow[id] ?? null, primary: primary.includes(id) }))
+        });
+      } else {
+        await employeesApi.setScope(head.id, { departmentIds: scope, primaryDepartmentIds: primary.filter(p => scope.includes(p)) });
+      }
+      onSaved();
+    }
     catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   };
   return (
     <Dialog title={`Departments managed by ${head.name}`} description="Removing a department takes it off their dashboard at once; what they already approved stays in the history." onClose={onClose} wide>
+      {functional && (
+        <label className="block text-xs font-semibold text-slate-700">
+          Operations function
+          <select className="mt-1 block w-full sm:w-80 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" value={fn ?? 'BOTH'} onChange={e => setFn(e.target.value === 'BOTH' ? null : (e.target.value as 'SALES' | 'SUPPORT'))} data-testid="operations-function-select">
+            <option value="SUPPORT">{FUNCTION_LABEL.SUPPORT}: the Support side of each department</option>
+            <option value="SALES">{FUNCTION_LABEL.SALES}: the Sales side of each department</option>
+            <option value="BOTH">{FUNCTION_LABEL.BOTH}: both sides, where assigned</option>
+          </select>
+          <span className="block mt-1 font-normal text-slate-500">They see and manage only this side: customers, people, tasks, reports, approvals and counts of the other side are not shown to them.</span>
+        </label>
+      )}
       <div className="grid sm:grid-cols-2 gap-1 max-h-72 overflow-y-auto">
         {all.map(d => {
           const otherOwner = d.owner && d.owner.id !== head.id ? d.owner.name : null;
@@ -108,8 +138,14 @@ const ScopeDialog: React.FC<{ head: OperationsHeadAdmin; all: OperationsHeadsAdm
             <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs">
               <label className="flex items-center gap-2"><input type="checkbox" checked={scope.includes(d.id)} onChange={() => { setScope(flip(scope, d.id)); if (scope.includes(d.id)) setPrimary(primary.filter(p => p !== d.id)); }} /> {d.name}</label>
               <label className="flex items-center gap-1 text-[11px] text-slate-500" title={otherOwner ? `Now approved by ${otherOwner}` : undefined}>
-                <input type="checkbox" disabled={!scope.includes(d.id)} checked={primary.includes(d.id)} onChange={() => setPrimary(flip(primary, d.id))} /> approves heads{otherOwner ? ` (now ${otherOwner})` : ''}
+                <input type="checkbox" disabled={!scope.includes(d.id)} checked={primary.includes(d.id)} onChange={() => setPrimary(flip(primary, d.id))} /> approves {fn ? sideLabel(fn) : ''} heads{otherOwner ? ` (now ${otherOwner})` : ''}
               </label>
+              {functional && fn === null && scope.includes(d.id) && (
+                <select aria-label={`Side of ${d.name}`} className="rounded border border-slate-300 px-1 py-0.5 text-[11px]" value={narrow[d.id] ?? 'BOTH'}
+                  onChange={e => setNarrow({ ...narrow, [d.id]: e.target.value === 'BOTH' ? null : (e.target.value as 'SALES' | 'SUPPORT') })}>
+                  <option value="BOTH">Both sides</option><option value="SALES">Sales only</option><option value="SUPPORT">Support only</option>
+                </select>
+              )}
             </div>
           );
         })}

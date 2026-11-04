@@ -34,19 +34,6 @@ export function cellReason(dep: Dept, division: HeadDivision): string | null {
   return `${dep.name} has no ${division === 'SUPPORT' ? 'Support' : 'Sales'} team`;
 }
 
-/**
- * Is this department another department than the head's own? The other function of the head's own department (Sales / Support, with a Support
- * side such as Wabatalk counting as part of D Talk) is not. Another DEPARTMENT is for an Operations Head only (the database enforces it too).
- */
-export function isOtherDepartment(info: DepartmentAccessInfo, dep: Dept): boolean {
-  const home = info.departments.find(d => d.id === info.homeDepartmentId);
-  if (!home || dep.id === home.id) return false;
-  const same = [home.supportDepartment, home.salesDepartment].includes(dep.name) || [dep.supportDepartment, dep.salesDepartment].includes(home.name);
-  return !same;
-}
-
-export const SEVERAL_DEPARTMENTS_REASON = 'A Department Head works in one department. Make this person an Operations Head to give other departments.';
-
 /** What Save sends: every ticked cell except the locked home cell (the database keeps the placement itself). */
 export function pairsToSave(draft: Set<string>, info: DepartmentAccessInfo): { departmentId: string; division: HeadDivision }[] {
   const locked = lockedCell(info);

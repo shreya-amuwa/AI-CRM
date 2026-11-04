@@ -4,7 +4,8 @@ import { getSupabase } from '../../services/supabaseClient';
 import { ApiError, errorMessage } from '../api/client';
 import type { ChatTransport } from './api';
 import { SecureSendError } from './secureChat';
-import { useSecureChat, useSecureSnapshot } from './useSecureChat';
+import { useInternalChatMode, useSecureChat, useSecureSnapshot } from './useSecureChat';
+import { internalChatMode } from './chatMode';
 
 const FIRST_PAGE = 30;
 
@@ -91,10 +92,19 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
   }, []);
   const secureRef = useRef(secure);
   secureRef.current = secure;
+  const mode = useInternalChatMode();
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   /** Encrypted messages are opened here, in the browser; everything else passes through unchanged. */
   const unseal = useCallback(async (c: ChatConversation | null, list: ChatMessage[]): Promise<ChatMessage[]> => {
     const s = secureRef.current;
-    if (!c || !isSecureKind(c) || !s || !list.some(m => m.kind === 'TEXT')) return list;
+    if (!c || !isSecureKind(c) || !list.some(m => m.kind === 'TEXT')) return list;
+    if (!s) {
+      // company-readable mode and no secure-messaging client on this device: an older encrypted message is shown as not available here
+      // (never as an empty bubble, and it blocks nothing); readable messages pass through
+      if (modeRef.current !== 'STANDARD') return list;
+      return list.map(m => (m.kind === 'TEXT' && !m.deleted && m.encrypted && m.e2ee ? { ...m, body: '', attachments: [], secure: { state: 'failed', reason: 'locked' } } : m));
+    }
     return s.open(c.id, list);
   }, []);
 
@@ -256,7 +266,9 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     try {
       const c = conv.current;
       let sent: ChatMessage;
-      if (isSecureKind(c)) {
+      // company-readable mode: direct and group messages go the same way as client messages (no key, no passphrase)
+      const sealIt = isSecureKind(c) && (modeRef.current ?? (await internalChatMode())) !== 'STANDARD';
+      if (sealIt) {
         // the message is encrypted HERE; the server is given the envelope only
         const s = secureRef.current;
         if (!s || !tp.current.sendSecure) throw new SecureSendError('LOCKED', 'Secure messaging is not available. Reload the page.');

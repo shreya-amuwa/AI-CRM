@@ -52,7 +52,8 @@ select test.login('sa');
 select test.must_fail($$select department_access_set(test.id('ds_s'), test.dept('digitree'), 'SALES', true)$$, 'only a Department Head can be given more', 'Only an active Department Head');
 select test.must_fail($$select department_access_set(test.id('ga_s'), test.dept('accounts'), 'SALES', true)$$, 'a department with no Sales team cannot be granted', 'no Sales team');
 select test.must_fail($$select department_access_set(test.id('ga_s'), test.dept('digitree'), 'GENERAL', true)$$, 'only Sales or Support', 'Choose Sales or Support');
-select test.must_fail($$select department_access_set(test.id('ga_s'), test.dept('digitree'), 'SALES', true)$$, 'a Department Head who is not an Operations Head cannot be given another department (the database refuses it, not only the screen)', 'Operations Head');
+-- (migration 20261224000100) a Department Head MAY now be given another department, but never one whose function already has a head
+select test.must_fail($$select department_access_set(test.id('ga_s'), test.dept('digitree'), 'SALES', true)$$, 'a Department Head cannot be given a department/function that already has a Department Head (the database refuses it, not only the screen)', 'already has a Sales Department Head');
 select set_operations_head(test.id('ga_s'), true);
 select set_operations_head(test.id('ga_p'), true);
 select department_access_set(test.id('ga_s'), test.dept('digitree'), 'SALES', true);

@@ -80,6 +80,8 @@ export class SecureChatClient {
   private readonly peerKeys = new Map<string, ChatPublicKey | null>();
   private readonly opened = new Map<string, { payload: SecurePayload }>();
   private myPublicRaw = new Map<number, string>();
+  /** Make the first key by itself (end-to-end mode). Off in the company-readable mode. */
+  private autoProvision = true;
 
   constructor(private readonly myId: string, private readonly api: SecureChatApi, private readonly store: KeyStore) {
     this.snap = { status: 'loading', recovery: null, setupReason: null, hasBackup: false, error: '', version: null, fingerprint: null, persistent: store.persistent, revision: 0 };
@@ -97,10 +99,12 @@ export class SecureChatClient {
    * Looks at the server and at this device and decides. A person with no key yet gets one made here without being asked (see provision);
    * a person whose key exists but is not on this device is "locked"; a person whose key is on this device is "ready".
    */
-  async init(): Promise<void> {
+  async init(opts: { autoProvision?: boolean } = {}): Promise<void> {
+    if (opts.autoProvision !== undefined) this.autoProvision = opts.autoProvision;
     try {
       const status = await this.api.keyStatus();
-      if (!status.hasKey && this.store.persistent) {
+      // in the company-readable mode no key is needed to chat: one is never made by itself (this device may still hold an older one to read old messages)
+      if (!status.hasKey && this.store.persistent && this.autoProvision) {
         this.set({ status: 'preparing', error: '' });
         try {
           await this.provision();

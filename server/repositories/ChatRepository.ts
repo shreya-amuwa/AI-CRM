@@ -6,6 +6,7 @@ import type {
   ChatKeyBackup,
   ChatKeyBackupBlob,
   ChatKeyStatus,
+  ChatInternalMode,
   ChatMemberKey,
   ChatMessage,
   ChatMessagePage,
@@ -75,6 +76,9 @@ export class ChatRepository {
 
   // ---- end-to-end encryption keys (public keys and the passphrase-encrypted private-key backup; no secret is ever in these calls)
   keyStatus() { return this.rpc<ChatKeyStatus>('chat_key_status'); }
+  /** How new direct / group messages are sent: STANDARD (readable by the company) or E2EE (sealed in the browser). */
+  internalMode() { return this.rpc<ChatInternalMode>('chat_internal_mode', {}); }
+  setInternalMode(mode: ChatInternalMode['mode']) { return this.rpc<ChatInternalMode>('chat_set_internal_mode', { p_mode: mode }); }
   keySetup(publicKey: string, backup: ChatKeyBackupBlob) { return this.rpc<{ version: number; fingerprint: string }>('chat_key_setup', { p_public: publicKey, p_backup: backup }); }
   keyRegister(publicKey: string) { return this.rpc<{ version: number; fingerprint: string; created: boolean }>('chat_key_register', { p_public: publicKey }); }
   keyRotate(publicKey: string) { return this.rpc<{ version: number; fingerprint: string; created: boolean }>('chat_key_rotate', { p_public: publicKey }); }

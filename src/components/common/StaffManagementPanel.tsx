@@ -738,7 +738,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 multi={false}
               />
               <p className="text-[11px] text-slate-500">
-                A department has one Sales head and one Support head (the department the head is placed in is checked for this). {operationsHead ? 'An Operations Head oversees every department ticked above.' : 'A Department Head works in one department (and may handle both its Sales and Support); to oversee several departments choose Operations Head.'}
+                A department has one Sales head and one Support head (the department the head is placed in is checked for this). {operationsHead ? 'An Operations Head oversees every department ticked above.' : 'A Department Head is created in one department (and may handle both its Sales and Support); a second department or function is given afterwards in Access Control.'}
                 {unlabelledHead && ` ${unlabelledHead.fullName} has no side set yet — set it in the list below.`}
               </p>
             </>

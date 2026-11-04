@@ -112,7 +112,7 @@ export const HeadDepartmentsField: React.FC<{
         <span className="block mt-1 font-normal text-slate-500">
           {multi
             ? 'The first department is the home department. The Operations Head signs in once and switches between these departments inside the dashboard; the Super Admin can change them later in Access Control.'
-            : 'A Department Head works in one department. To oversee several departments, create an Operations Head instead.'}
+            : 'A Department Head is created in one department. To give them a second department or function, use Access Control after saving (one head per department and function).'}
         </span>
       </fieldset>
     </div>

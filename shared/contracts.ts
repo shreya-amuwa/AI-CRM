@@ -4478,7 +4478,10 @@ export interface OperationsHeadAdmin {
   email: string;
   status: string;
   homeDepartment: { id: string; name: string } | null;
-  departments: { id: string; name: string; slug: string; primary: boolean }[];
+  /** The operations function (20261224000100): SALES, SUPPORT, or null = both. Absent on an older database. */
+  function?: OperationsFunction;
+  /** `function`: what the person reaches in that department; `narrowed`: a narrower side set for that department only. */
+  departments: { id: string; name: string; slug: string; primary: boolean; function?: OperationsFunction; narrowed?: OperationsFunction }[];
   pendingApprovals: number;
   lastLoginAt: string | null;
 }
@@ -5218,3 +5221,10 @@ export interface RecruitmentEmailRecord {
   recruiterId: string | null; status: string; attempts: number; createdAt: string; processedAt: string | null; sentAt: string | null;
   providerStatus: string | null; deliveryStatus: string | null; lastError: string | null; nextAttemptAt: string | null;
 }
+
+// --- Department x function scopes, company-readable internal chat, delegated task detail (migrations 20261224000100-300) ---------------
+/** STANDARD: new internal messages are readable by the company (TLS, encryption at rest, membership checks). E2EE: sealed in the browser. */
+export interface ChatInternalMode { mode: 'STANDARD' | 'E2EE' }
+/** SALES / SUPPORT, or null = both (the whole department). */
+export type OperationsFunction = 'SALES' | 'SUPPORT' | null;
+export interface OperationsScopeItem { departmentId: string; division: OperationsFunction; primary: boolean }
