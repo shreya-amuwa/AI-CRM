@@ -37,6 +37,13 @@ export class HrRepository {
   decideAsHr(id: string, approve: boolean, note: string | null) {
     return this.rpc<LeaveRequest>('decide_leave_hr', { p_id: id, p_approve: approve, p_note: note });
   }
+  /** One step of the multi-level chain (20261225000200): the database checks the caller is the current approver. */
+  decideLeave(id: string, decision: 'APPROVE' | 'REJECT' | 'REVISE', note: string | null) {
+    return this.rpc<LeaveRequest>('decide_leave', { p_id: id, p_decision: decision, p_note: note });
+  }
+  resubmitLeave(id: string, reason: string) { return this.rpc<LeaveRequest>('resubmit_leave_request', { p_id: id, p_reason: reason }); }
+  setLeaveWorkflow(workflow: 'MULTI_LEVEL' | 'TWO_STEP') { return this.rpc<{ workflow: string }>('set_leave_workflow', { p_workflow: workflow }); }
+  setSupportDesk(on: boolean) { return this.rpc<{ supportDeskDepartmentWide: boolean }>('set_support_desk_department_wide', { p_on: on }); }
   monthlySummary(month: string | null) { return this.rpc<LeaveMonthlySummary>('leave_monthly_summary', { p_month: month }); }
 
   // HR e-mail automation (birthdays, anniversaries, probation reminders, confirmation). Every function checks HR staff itself.

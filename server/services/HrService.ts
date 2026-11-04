@@ -8,6 +8,10 @@ import {
   hrEmployeeDatesSchema,
   attendanceQuerySchema,
   leaveDecisionSchema,
+  leaveResubmitSchema,
+  leaveStageDecisionSchema,
+  leaveWorkflowSchema,
+  supportDeskSchema,
   leaveMonthQuerySchema,
   leaveSubmitSchema,
   manualPunchSchema,
@@ -44,6 +48,15 @@ export class HrService {
     const i = parse(leaveDecisionSchema, body);
     return this.repo.decideAsDepartmentHead(parse(uuidSchema, id), i.approve, i.note ?? null);
   }
+  decideLeave(id: string, body: unknown): Promise<LeaveRequest> {
+    const i = parse(leaveStageDecisionSchema, body);
+    return this.repo.decideLeave(parse(uuidSchema, id), i.decision, i.note ?? null);
+  }
+  resubmitLeave(id: string, body: unknown): Promise<LeaveRequest> {
+    return this.repo.resubmitLeave(parse(uuidSchema, id), parse(leaveResubmitSchema, body).reason);
+  }
+  setLeaveWorkflow(body: unknown) { return this.repo.setLeaveWorkflow(parse(leaveWorkflowSchema, body).workflow); }
+  setSupportDesk(body: unknown) { return this.repo.setSupportDesk(parse(supportDeskSchema, body).departmentWide); }
   decideAsHr(id: string, body: unknown): Promise<LeaveRequest> {
     const i = parse(leaveDecisionSchema, body);
     return this.repo.decideAsHr(parse(uuidSchema, id), i.approve, i.note ?? null);

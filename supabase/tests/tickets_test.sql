@@ -27,8 +27,9 @@ insert into customer_onboarding (customer_id, forwarded_to_support_at, stage, ha
                                  to_department_head_at, passed_to_team_lead_at, assigned_to_member_at)
 values ((select id from tk where name = 'R'), now(), 'SETUP', 'TEAM_MEMBER', test.id('sup_th'), test.id('sup_b'), now(), now(), now())
 on conflict (customer_id) do update set handover_stage = 'TEAM_MEMBER', team_lead_id = test.id('sup_th'), team_member_id = test.id('sup_b');
-insert into customer_onboarding (customer_id, forwarded_to_support_at, stage) values ((select id from tk where name = 'N'), now(), 'SETUP')
-on conflict (customer_id) do nothing;
+-- N was handed to the Support Lead but nobody works on it yet (20261225000100: a ticket's lead is the named one, never "the first lead of the team")
+insert into customer_onboarding (customer_id, forwarded_to_support_at, stage, team_lead_id) values ((select id from tk where name = 'N'), now(), 'SETUP', test.id('sup_th'))
+on conflict (customer_id) do update set team_lead_id = test.id('sup_th');
 
 -- ---------------------------------------------------------------- SLA settings
 select test.check((select rm_response_minutes > 0 and tl_response_minutes > 0 from ticket_sla_settings where department_id is null), 'a default SLA exists (configurable, not in code)');
@@ -73,6 +74,13 @@ select test.check((select assignee_id is null and escalation_level = 'TL' and es
                       and (select role = 'TEAM_HEAD' and team_id = t.team_id from profiles where id = t.escalated_to)
                       and sla_due_at between now() + interval '59 minutes' and now() + interval '61 minutes'
                     from support_tickets t where id = (select id from tk where name = 'N1')), 'without an RM the ticket starts with a Team Lead, on the Team Lead SLA');
+select test.check((select escalated_to = test.id('sup_th') from support_tickets where id = (select id from tk where name = 'N1')), 'the lead the customer was handed to');
+-- with nobody named in a team of several leads, no lead is guessed (the ticket escalates to the Department Head instead)
+update customer_onboarding set team_lead_id = null where customer_id = (select id from tk where name = 'N');
+select test.check((select (select count(*) from profiles p where p.team_id = t.team_id and p.role = 'TEAM_HEAD' and p.status = 'ACTIVE') > 1
+                      and private.ticket_team_lead(t.id) is null from support_tickets t where id = (select id from tk where name = 'N1')),
+  'in a team of several leads with no named lead, no Team Lead is guessed');
+update customer_onboarding set team_lead_id = test.id('sup_th') where customer_id = (select id from tk where name = 'N');
 select test.check((select count(*) = 1 from notifications where recipient_id = (select escalated_to from support_tickets where id = (select id from tk where name = 'N1'))
                       and type = 'TICKET_FROM_CLIENT' and entity_id = (select id from tk where name = 'N1')), 'that Team Lead is notified');
 set role authenticated;

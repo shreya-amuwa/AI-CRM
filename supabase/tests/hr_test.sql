@@ -6,6 +6,10 @@
 \set QUIET 1
 
 \echo '--- 31. HR: attendance, leave approval, monthly totals, notifications'
+-- These leave checks are for the two-step flow (Department Head -> HR), which stays available behind the Super Admin's switch; the multi-level
+-- chain of migration 20261225000200 (the default) is checked in leave_multi_level_test.sql.
+reset role;
+do $$ begin if to_regclass('public.leave_settings') is not null then update public.leave_settings set workflow = 'TWO_STEP'; end if; end $$;
 reset role;
 create temp table hrn as select 0 as n;
 grant all on hrn to authenticated, service_role;

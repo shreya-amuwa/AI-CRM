@@ -797,6 +797,9 @@ export const hrApi = {
     api.post<LeaveRequest>('/leave', body),
   decideAsDepartmentHead: (id: string, approve: boolean, note?: string) => api.post<LeaveRequest>(`/leave/${id}/department-head-decision`, { approve, note: note || undefined }),
   decideAsHr: (id: string, approve: boolean, note?: string) => api.post<LeaveRequest>(`/leave/${id}/hr-decision`, { approve, note: note || undefined }),
+  /** One step of the multi-level chain: the server checks the caller decides the waiting step. */
+  decideLeave: (id: string, decision: 'APPROVE' | 'REJECT' | 'REVISE', note?: string) => api.post<LeaveRequest>(`/leave/${id}/decision`, { decision, note: note || undefined }),
+  resubmitLeave: (id: string, reason: string) => api.post<LeaveRequest>(`/leave/${id}/resubmit`, { reason }),
   monthlySummary: (month: string) => api.get<LeaveMonthlySummary>('/leave/monthly-summary', { month }),
 
   // E-mail automation (birthdays, work anniversaries, probation reminders, employment confirmation) - HR staff only

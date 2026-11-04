@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { chatApi } from '../../lib/chat/api';
 import { useChatUnread } from '../../lib/chat/useChatUnread';
+import { useChatSoundOnIncrease } from '../../lib/chat/chatSound';
 
 // the chat screens are only downloaded when somebody opens the Chat page
 const ChatPage = lazy(() => import('./ChatPage'));
@@ -12,7 +13,10 @@ export const CHAT_NAV = { id: 'chat', label: 'Chat', icon: MessageCircle } as co
 /** The unread count for the Chat menu item (live; no timer). */
 export function useChatNavBadge(): number {
   const { summary } = useChatUnread(chatApi.unread);
-  return summary.internal + summary.clients;
+  const count = summary.internal + summary.clients;
+  // a subtle chime for a new incoming message (once per message, never for your own; see lib/chat/chatSound.ts)
+  useChatSoundOnIncrease(count);
+  return count;
 }
 
 /** The Chat page for a dashboard's content area. */
