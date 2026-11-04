@@ -5,6 +5,11 @@
 \set ON_ERROR_STOP 1
 \set QUIET 1
 \echo '--- Chat: automatic keys'
+-- These checks are for the end-to-end encrypted mode, which stays available (chat_set_internal_mode). The company-readable mode of
+-- migration 20261224000200 is checked in chat_company_readable_test.sql.
+reset role;
+do $$ begin if to_regclass('public.chat_settings') is not null then update public.chat_settings set internal_mode = 'E2EE'; end if; end $$;
+
 reset role;
 \i supabase/migrations/20261216000100_chat_automatic_keys.sql
 create function pg_temp.pub(p_name text) returns text language sql immutable as $$

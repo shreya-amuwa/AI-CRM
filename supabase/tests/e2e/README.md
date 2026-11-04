@@ -20,6 +20,11 @@ PGHOST=/var/lib/pgcrm PGPORT=54329 PGUSER=postgres POSTGREST_BIN=/path/to/postgr
   E2E_CHROMIUM=/path/to/chrome supabase/tests/e2e/run-chat.sh ./chat-screenshots
 ```
 
+Since migration `20261224000200` the default is the company-readable mode; `run-chat.sh` switches its scratch database to the end-to-end mode
+first. `run-chat-readable.sh` (same stack, `chat-readable.e2e.mjs`) checks the default: two browsers that never held a key chat at once with no
+secure-messaging bar, button or passphrase, a group works the same way, an older encrypted message is shown as not available without blocking
+the composer, the database holds the new messages readable and the old envelope untouched, no key is made, and outsiders are refused.
+
 ## Dashboards and the security log
 
 `run-dashboards.sh` uses the same throw-away stack (other ports) and signs in as the Super Admin, a Department Head, a Team Lead and a Team

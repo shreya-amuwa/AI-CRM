@@ -93,10 +93,12 @@ const open = async (vp) => {
   check(await page.isDisabled('[data-testid="cell-wabatalk-sales"]') && await page.isDisabled('[data-testid="cell-accounts-sales"]') && await page.isDisabled('[data-testid="cell-accounts-support"]'), 'a function a department does not have cannot be ticked');
   check(await page.isDisabled('[data-testid="access-save"]') && await page.isHidden('[data-testid="unsaved-badge"]').catch(() => true), 'nothing changed: Save is disabled');
   check(await page.isVisible('[data-testid="operations-head-box"]') && /Operations Head/.test(await page.textContent('[data-testid="operations-head-box"]')), 'an Operations Head is shown as one, with the button to remove the role');
-  // a plain Department Head: another department cannot be ticked (the database refuses it too), the other function of their own can
+  // a plain Department Head (20261224000100): another department CAN be ticked - they stay a Department Head; the database refuses a
+  // department/function that already has another head when it is saved, and the screen says so up front
   await page.selectOption('[data-testid="access-employee"]', 'h3');
   await page.waitForSelector('[data-testid="cell-wabastar-support"]');
-  check(await page.isDisabled('[data-testid="cell-wabastar-support"]') && (await page.getAttribute('[data-testid="cell-wabastar-support"]', 'title')).includes('Operations Head'), 'a Department Head who is not an Operations Head cannot be given another department');
+  check(!(await page.isDisabled('[data-testid="cell-wabastar-support"]')), 'a Department Head who is not an Operations Head can be given another department');
+  check(/cannot be given to a second one/.test(await page.textContent('body')), 'and the screen says one department/function cannot have two heads');
   check(!(await page.isDisabled('[data-testid="cell-whatsbox-sales"]')), 'but can still handle the other function of their own department');
   check(/Make Operations Head/.test(await page.textContent('[data-testid="operations-head-toggle"]')), 'and the Super Admin can make them an Operations Head from here');
   await page.selectOption('[data-testid="access-employee"]', 'h1');

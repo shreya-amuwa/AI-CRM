@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, Home, Loader2, ShieldCheck } from 'lucide-
 import type { DepartmentAccessInfo, OperationsHeadReviewItem, Profile } from '../../../shared/contracts';
 import { usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
-import { DIVISIONS, SEVERAL_DEPARTMENTS_REASON, cellAvailable, cellKey, cellReason, isDirty, isOtherDepartment, lockedCell, pairsToSave, savedSet, summary } from '../../lib/scope/accessMatrix';
+import { DIVISIONS, cellAvailable, cellKey, cellReason, isDirty, lockedCell, pairsToSave, savedSet, summary } from '../../lib/scope/accessMatrix';
 
 /**
  * Access Control (Super Admin): pick an existing employee, then tick the departments and functions (Sales / Support) they work in.
@@ -159,7 +159,9 @@ export const AccessControlTab: React.FC<{
             {profileId && !selected && <option value={profileId}>(selected employee)</option>}
           </select>
           <span className="block mt-1 font-normal text-slate-500">
-            Only an Operations Head works in several departments. A Department Head works in one department (and may handle both Sales and Support of it); other roles keep the one department they were created in.
+            A Department Head can head more than one department: tick each department and the function (Sales or Support) they are responsible for there. They stay a Department Head
+            (no Operations Head role). A department and function that already has a Department Head cannot be given to a second one: saving is refused and names the other head, so
+            decide who is responsible first. Other roles keep the one department they were created in.
           </span>
         </label>
         {headsError && <p role="alert" className="text-xs text-rose-600">{headsError}</p>}
@@ -167,10 +169,10 @@ export const AccessControlTab: React.FC<{
 
       {review.some(r => r.needsDecision) && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 space-y-2" role="status" data-testid="operations-head-review">
-          <p className="font-bold">Decision needed: Department Heads who work in several departments</p>
+          <p className="font-bold">Please check: Department Heads who work in several departments</p>
           <p>
-            These heads were given other departments before the Operations Head role existed. Nothing was taken away: they keep their access until you decide. Make each one an
-            Operations Head, or untick the extra departments.
+            These heads were given other departments earlier. That is allowed: a Department Head may head several departments (one function each). Open each one and confirm the
+            ticked departments and functions are still right; nothing changes until you save.
           </p>
           <ul className="flex flex-wrap gap-2">
             {review.filter(r => r.needsDecision).map(r => (
@@ -186,7 +188,7 @@ export const AccessControlTab: React.FC<{
       {selected && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-xs" data-testid="operations-head-box">
           <p className="text-slate-700">
-            <strong>{selected.fullName}</strong> is {selected.isOperationsHead ? 'an Operations Head: oversees the departments ticked below.' : 'a Department Head: works in one department.'}
+            <strong>{selected.fullName}</strong> is {selected.isOperationsHead ? 'an Operations Head: oversees the departments ticked below (their Sales / Support function is set under Operations Heads).' : 'a Department Head: heads the departments and functions ticked below.'}
           </p>
           <button
             type="button"
@@ -249,8 +251,8 @@ export const AccessControlTab: React.FC<{
                     </th>
                     {DIVISIONS.map(d => {
                       const key = cellKey(dep.id, d);
-                      // another department is for an Operations Head; one already given (kept from before) can still be taken back
-                      const reason = cellReason(dep, d) || (!selected?.isOperationsHead && isOtherDepartment(info, dep) && !saved.has(key) ? SEVERAL_DEPARTMENTS_REASON : null);
+                      // any department and function may be ticked (20261224000100); the database refuses one that already has another head and says who
+                      const reason = cellReason(dep, d);
                       const isLocked = key === locked;
                       return (
                         <td key={d} className="py-2.5 px-3 text-center">

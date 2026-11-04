@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   DepartmentEmployeeDirectory, EmployeeRequest, OperationsActivityEntry, OperationsDashboard, OperationsDepartmentDetail, OperationsHeadAdmin, OperationsHeadsAdmin,
-  TeamAssignmentRecord
+  OperationsFunction, OperationsScopeItem, TeamAssignmentRecord
 } from '../../shared/contracts.js';
 import type { EmployeeRequestInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
@@ -49,6 +49,12 @@ export class EmployeeApprovalRepository {
   async setScope(profileId: string, departmentIds: string[], primaryIds: string[] | null): Promise<OperationsHeadAdmin> {
     return unwrap(await this.db.rpc('operations_head_scope_set', { p_profile: profileId, p_departments: departmentIds, p_primary: primaryIds })) as OperationsHeadAdmin;
   }
+  /** Function, departments, a narrower side per department and who approves, in one transaction (20261224000100). */
+  async applyScope(profileId: string, fn: OperationsFunction, items: OperationsScopeItem[]): Promise<OperationsHeadAdmin> {
+    return unwrap(await this.db.rpc('operations_head_scope_apply', { p_profile: profileId, p_function: fn, p_items: items })) as OperationsHeadAdmin;
+  }
+  /** Read-only: what each Operations Head and multi-department Department Head reaches, and the conflicts to decide. */
+  async functionScopeReview(): Promise<Record<string, unknown>> { return unwrap(await this.db.rpc('function_scope_review')) as Record<string, unknown>; }
   async headActivity(profileId: string): Promise<OperationsActivityEntry[]> {
     return unwrap(await this.db.rpc('operations_head_activity', { p_profile: profileId, p_limit: 100 })) as OperationsActivityEntry[];
   }

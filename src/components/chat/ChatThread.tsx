@@ -4,7 +4,7 @@ import type { ChatAttachment, ChatConversation, ChatMessage } from '../../../sha
 import { errorMessage } from '../../lib/api/client';
 import type { ChatTransport } from '../../lib/chat/api';
 import { useChatThread, type PendingMessage } from '../../lib/chat/useChatThread';
-import { useSecureChat, useSecureSnapshot } from '../../lib/chat/useSecureChat';
+import { useInternalChatMode, useSecureChat, useSecureSnapshot } from '../../lib/chat/useSecureChat';
 import type { PeerInfo } from '../../lib/chat/secureChat';
 import { uploadToTicket } from '../../lib/uploadToTicket';
 import { looksLike } from '../../lib/checklistUpload';
@@ -77,6 +77,9 @@ const FAILED_TEXT: Record<string, string> = {
   'unknown-sender': 'The sender of this message could not be checked.'
 };
 
+/** Company-readable mode: an older end-to-end encrypted message that this device cannot open. It blocks nothing. */
+const OLD_ENCRYPTED_TEXT = 'Sent while chats were end-to-end encrypted. It can only be read on a device that kept your earlier secure-messaging key.';
+
 const Bubble: React.FC<{
   m: ChatMessage;
   showName: boolean;
@@ -103,7 +106,7 @@ const Bubble: React.FC<{
       {m.deleted ? (
         <p className="ch-deleted" data-testid="message-deleted"><Ban size={14} aria-hidden /> This message was deleted</p>
       ) : m.secure?.state === 'failed' ? (
-        <p className="ch-locked-msg" data-testid="message-undecryptable" data-reason={m.secure.reason}><Lock size={14} aria-hidden style={{ flex: 'none', marginTop: 2 }} /> <span><b>Encrypted message.</b> {FAILED_TEXT[m.secure.reason]}</span></p>
+        <p className="ch-locked-msg" data-testid="message-undecryptable" data-reason={m.secure.reason}><Lock size={14} aria-hidden style={{ flex: 'none', marginTop: 2 }} /> <span><b>Encrypted message.</b> {secureKind ? FAILED_TEXT[m.secure.reason] : OLD_ENCRYPTED_TEXT}</span></p>
       ) : (
         <>
           {m.replyTo && (
@@ -188,12 +191,15 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
   useEffect(() => { setText(''); setStaged([]); setReplyTo(null); setFileError(''); setFresh(0); setEmojiOpen(false); setMenuId(null); stick.current = true; lastCount.current = 0; }, [transport.key]);
 
   const secureKind = c?.kind === 'DIRECT' || c?.kind === 'GROUP';
+  // end-to-end mode only (20261224000200): in the company-readable mode direct and group chats need no key, no passphrase and no set-up
+  const chatMode = useInternalChatMode();
+  const e2ee = secureKind && chatMode === 'E2EE';
   const memberKey = (c?.members ?? []).map(x => x.id).join(',');
   // who is in the chat and whether their keys are the ones this device trusts (checked again when the people or the keys change)
   const refreshPeers = useCallback(() => {
-    if (!secure || !c || !secureKind || secureState.status !== 'ready') { setPeers([]); return; }
+    if (!secure || !c || !e2ee || secureState.status !== 'ready') { setPeers([]); return; }
     secure.peers(c.id).then(setPeers, () => setPeers([]));
-  }, [secure, c?.id, secureKind, secureState.status, secureState.revision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [secure, c?.id, e2ee, secureState.status, secureState.revision]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(refreshPeers, [refreshPeers, memberKey, c?.lastSeq]);
   const changedPeers = peers.filter(p => p.changed);
   const missingPeers = peers.filter(p => !p.me && !p.fingerprint);
@@ -296,7 +302,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
 
   const sending = pending.some(p => p.status === 'sending');
   const busy = uploading.length > 0;
-  const secureBlock = secureKind && c?.canWrite
+  const secureBlock = e2ee && c?.canWrite
     ? secureState.status === 'preparing' ? 'Secure messaging is being set up. You can send in a moment.'
       : secureState.status === 'setup' ? 'Secure messaging is not available in this browser yet. See the message above.'
       : secureState.status === 'locked' ? (secureState.recovery === 'passphrase' ? 'Unlock secure messaging to send messages in this chat.' : 'Set up this device for secure messaging to send messages in this chat.')
@@ -339,7 +345,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
         if (!(await looksLike(file, mime)) && ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'text/csv', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'].includes(mime)) {
           throw new Error(`${file.name} is not a real ${ext.toUpperCase()} file.`);
         }
-        if (secureKind) {
+        if (e2ee) {
           // encrypted here, with its own key; the server only ever stores an opaque envelope
           if (!secure || secureState.status !== 'ready') throw new Error('Unlock secure messaging first.');
           const sealed = await secure.encryptAttachment(new Uint8Array(await file.arrayBuffer()));
@@ -424,8 +430,8 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
         <div className="ch-head"><button type="button" className="ch-icon" onClick={onBack} aria-label="Back to conversations"><ArrowLeft size={18} /></button></div>
       ) : null}
 
-      {secureKind && !loading && secure && <SecureStateNotice client={secure} variant="thread" onDialog={setSecureDialog} onSecurity={() => setSecurityOpen(true)} />}
-      {secureKind && changedPeers.length > 0 && (
+      {e2ee && !loading && secure && <SecureStateNotice client={secure} variant="thread" onDialog={setSecureDialog} onSecurity={() => setSecurityOpen(true)} />}
+      {e2ee && changedPeers.length > 0 && (
         <div className="ch-secure-bar bad" role="alert" data-testid="key-changed-bar">
           <ShieldAlert size={15} aria-hidden /> <span>The security key of {changedPeers.map(p => p.name).join(', ')} changed. Check it before you send anything.</span>
           <button type="button" className="ch-link" onClick={() => setSecurityOpen(true)}>Review</button>
@@ -490,7 +496,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
                   onOpen={a => void openFile(a)}
                   opening={opening}
                   canDelete={secureKind && c?.access === 'MEMBER'}
-                  secureKind={secureKind}
+                  secureKind={e2ee}
                   menuOpen={menuId === m.id}
                   onMenu={open => setMenuId(open ? m.id : null)}
                   onDelete={mode => { setDeleteError(''); setConfirm({ m, mode }); }}
@@ -559,7 +565,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
             <p className="ch-note">The message is removed from your chat only, on all your devices. The other people in this chat still see it.</p>
           ) : (
             <>
-              <p className="ch-note">The message is removed for every person in this chat and the server deletes its encrypted copy{confirm.m.attachments.length ? ' and its files' : ''}. People will see "This message was deleted".</p>
+              <p className="ch-note">The message is removed for every person in this chat and the server deletes {confirm.m.encrypted ? 'its encrypted copy' : 'its text'}{confirm.m.attachments.length ? ' and its files' : ''}. People will see "This message was deleted".</p>
               <p className="ch-note warn">Deleting cannot take back a screenshot, a copy somebody made, or a message that already reached a phone that is offline and was opened there.</p>
             </>
           )}

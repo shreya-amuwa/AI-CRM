@@ -45,6 +45,9 @@ for i in $(seq 1 120); do
 done
 [ "$ready" = 1 ] || { echo "the local stack did not start" >&2; tail -20 "$WORK"/*.log >&2; exit 1; }
 
+# chat.e2e.mjs is the end-to-end encrypted mode (kept behind the Super Admin switch); chat-readable.e2e.mjs the default company-readable mode
+SCRIPT="${CHAT_E2E:-chat.e2e.mjs}"
+if [ "$SCRIPT" = "chat.e2e.mjs" ]; then $PSQL -c "update public.chat_settings set internal_mode = 'E2EE'"; fi
 E2E_PASSWORDS="$(node supabase/tests/e2e/seed.mjs | tail -1)" SUPABASE_ANON_KEY="$ANON" \
-  node supabase/tests/e2e/chat.e2e.mjs "$OUT"
+  node "supabase/tests/e2e/$SCRIPT" "$OUT"
 echo "screenshots: $OUT"

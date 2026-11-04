@@ -61,6 +61,8 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
   const team = roster.members.filter(p => p.ordinary);
   const available = team.filter(p => !assigned.has(p.id));
   const [picked, setPicked] = useState<string[]>([]);
+  // each member's part of the work ("Follow up with 40 customers"), optional
+  const [shares, setShares] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const memberUpdates = data.updates.filter(u => children.some(c => c.id === u.taskId));
@@ -70,9 +72,10 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
     setBusy(true);
     setNotice(null);
     try {
-      const n = await workTasksApi.assignToMembers(task.id, picked);
+      const n = await workTasksApi.delegate(task.id, picked.map(id => ({ memberId: id, work: shares[id] })));
       setNotice({ ok: true, text: `Assigned to ${n} team member${n === 1 ? '' : 's'}.` });
       setPicked([]);
+      setShares({});
       await data.reload();
     } catch (err) {
       setNotice({ ok: false, text: err instanceof Error ? err.message : 'Could not assign.' });
@@ -130,6 +133,28 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
                     );
                   })}
                 </div>
+                {picked.length > 0 && (
+                  <div className="mt-2.5 space-y-1.5">
+                    <p className="text-[11px] text-slate-500">Their part of the work (optional). Leave empty to give the whole task.</p>
+                    {picked.map(id => {
+                      const name = available.find(p => p.id === id)?.fullName ?? 'Team member';
+                      return (
+                        <label key={id} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs">
+                          <span className="font-semibold text-slate-700 sm:w-36 shrink-0">{name}</span>
+                          <input
+                            type="text"
+                            maxLength={500}
+                            value={shares[id] ?? ''}
+                            onChange={e => setShares(v => ({ ...v, [id]: e.target.value }))}
+                            placeholder="e.g. Follow up with 40 customers"
+                            aria-label={`Part of the work for ${name}`}
+                            className="flex-1 min-w-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={assign}
@@ -155,6 +180,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
                       <span className="font-semibold text-slate-800">{nameOf(data.people, c.assigneeId)}</span>
                       <StatusPill status={c.status} />
                     </div>
+                    {c.assignmentNote && <p className="text-[11px] text-slate-600 mt-0.5">{c.assignmentNote}</p>}
                     <div className="mt-1">
                       <ProgressBar value={c.progress} label={`Progress of ${nameOf(data.people, c.assigneeId)}`} />
                     </div>

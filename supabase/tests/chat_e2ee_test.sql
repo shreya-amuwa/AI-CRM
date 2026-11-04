@@ -6,6 +6,11 @@
 \set ON_ERROR_STOP 1
 \set QUIET 1
 \echo '--- Chat: encryption keys, encrypted messages, deleting messages'
+-- These checks are for the end-to-end encrypted mode, which stays available (chat_set_internal_mode). The company-readable mode of
+-- migration 20261224000200 is checked in chat_company_readable_test.sql.
+reset role;
+do $$ begin if to_regclass('public.chat_settings') is not null then update public.chat_settings set internal_mode = 'E2EE'; end if; end $$;
+
 reset role;
 create function pg_temp.pub(p_name text) returns text language sql immutable as $$
   select translate(encode('\x04'::bytea || decode(repeat(md5(p_name), 4), 'hex'), 'base64'), E'\n', '')

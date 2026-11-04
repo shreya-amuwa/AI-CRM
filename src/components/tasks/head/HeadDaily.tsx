@@ -12,7 +12,9 @@ const shift = (key: string, days: number) => {
 
 export const HeadDaily: React.FC<{ data: WorkTaskData }> = ({ data }) => {
   const [day, setDay] = useState(localDateKey());
-  const dueThatDay = data.tasks.filter(t => t.dueDate === day);
+  // a Team Lead's task and the member tasks delegated from it are ONE piece of work: count the Team Lead's task only (its members' parts are
+  // shown under it on the Assign page), and a member task that has no parent of the head's (a Team Lead's own task) on its own
+  const dueThatDay = data.tasks.filter(t => t.dueDate === day && (t.parentId === null || !data.tasks.some(p => p.id === t.parentId)));
   const s = summarize(dueThatDay);
   const updatesThatDay = data.updates.filter(u => localDateKey(new Date(u.createdAt)) === day);
   const completedThatDay = data.tasks.filter(t => t.completedAt && localDateKey(new Date(t.completedAt)) === day);

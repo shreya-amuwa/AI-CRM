@@ -30,6 +30,8 @@ export interface WorkTask {
   lastUpdateAt: string | null;
   completedAt: string | null;
   createdAt: string;
+  /** A Team Member's share of the Team Lead's task (20261224000300), set by the Team Lead; null = the whole task. */
+  assignmentNote: string | null;
 }
 
 export interface WorkTaskUpdate {
@@ -74,7 +76,8 @@ const toTask = (r: any): WorkTask => ({
   lastUpdateNote: r.last_update_note,
   lastUpdateAt: r.last_update_at,
   completedAt: r.completed_at,
-  createdAt: r.created_at
+  createdAt: r.created_at,
+  assignmentNote: r.assignment_note ?? null
 });
 
 const toUpdate = (r: any): WorkTaskUpdate => ({
@@ -126,6 +129,17 @@ export const workTasksApi = {
       p_members: input.memberIds
     }),
   assignToMembers: (taskId: string, memberIds: string[]) => rpc<number>('assign_task_to_members', { p_task: taskId, p_members: memberIds }),
+  /** The Team Lead hands the task to their own members, each with an optional share of the work. A database without 20261224000300 gets the
+   *  plain delegation (no shares) instead, so the button keeps working before the migration is run. */
+  delegate: async (taskId: string, assignments: { memberId: string; work?: string }[]): Promise<number> => {
+    const clean = assignments.map(a => ({ memberId: a.memberId, ...(a.work?.trim() ? { work: a.work.trim() } : {}) }));
+    const { data, error } = await db().rpc('delegate_task_to_members', { p_task: taskId, p_assignments: clean });
+    if (!error) return data as number;
+    if (/delegate_task_to_members|PGRST202|schema cache/i.test(`${error.code ?? ''} ${error.message}`)) {
+      return rpc<number>('assign_task_to_members', { p_task: taskId, p_members: clean.map(a => a.memberId) });
+    }
+    throw new Error(cleanError(error.message));
+  },
   submitUpdate: (taskId: string, input: { status: TaskStatus; progress: number; note?: string }) =>
     rpc<void>('submit_task_update', { p_task: taskId, p_status: input.status, p_progress: input.progress, p_note: input.note || null })
 };

@@ -5,13 +5,16 @@ import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
 import { chatApi, staffTransport } from '../../lib/chat/api';
 import { useChatLive } from '../../lib/chat/useChatLive';
-import { SecureChatProvider, useHasSecureChatProvider, useSecureChat, useSecureSnapshot } from '../../lib/chat/useSecureChat';
+import { SecureChatProvider, useHasSecureChatProvider, useInternalChatMode, useSecureChat, useSecureSnapshot } from '../../lib/chat/useSecureChat';
 import { NewKeyDialog, SecureSetupDialog, SecureStateNotice, SecuritySettingsDialog, type SecureDialogMode } from './SecureDialogs';
 import { Avatar, ConversationItem, Split, previewOf } from './ChatBits';
 import { ChatThread } from './ChatThread';
 import { GroupInfoDialog, NewChatDialog } from './ChatDialogs';
 
-/** Direct messages and groups between employees: end-to-end encrypted (the keys live in this browser; see lib/chat/secureChat.ts). */
+/**
+ * Direct messages and groups between employees. In the company-readable mode (20261224000200, the default) they need no key and no passphrase;
+ * in the end-to-end mode they are sealed in this browser (see lib/chat/secureChat.ts).
+ */
 export const InternalChats: React.FC<{ active: boolean; onUnreadChange: () => void; initialId?: string | null }> = props => {
   const { profile } = useAuth();
   const provided = useHasSecureChatProvider();
@@ -32,7 +35,8 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
   const secure = useSecureChat();
   const [secureDialog, setSecureDialog] = useState<SecureDialogMode | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const secureReady = useSecureSnapshot(secure).status === 'ready';
+  const e2ee = useInternalChatMode() === 'E2EE';
+  const secureReady = useSecureSnapshot(secure).status === 'ready' && e2ee;
 
   const load = useCallback(() => {
     chatApi.internal(term.trim() || undefined).then(
@@ -60,7 +64,7 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
 
   const list = (
     <>
-      {secure && <SecureStateNotice client={secure} variant="list" onDialog={setSecureDialog} />}
+      {secure && e2ee && <SecureStateNotice client={secure} variant="list" onDialog={setSecureDialog} />}
       <div className="ch-search">
         <input type="search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
         {secureReady && <button type="button" className="ch-icon" onClick={() => setSettingsOpen(true)} aria-label="Secure messaging settings" title="Secure messaging settings" data-testid="secure-settings-open"><ShieldCheck size={18} aria-hidden /></button>}

@@ -46,6 +46,7 @@ export const MemberTasksView: React.FC = () => {
                 <p className="text-xs text-slate-500 mt-0.5">
                   From <strong className="text-slate-700">{nameOf(data.people, task.assignedBy)}</strong> · <DueLabel task={task} />
                 </p>
+                {task.assignmentNote && <p className="text-xs font-semibold text-blue-800 mt-1.5" data-testid="member-share">Your part: {task.assignmentNote}</p>}
                 {task.description && <p className="text-xs text-slate-600 mt-1.5 whitespace-pre-line">{task.description}</p>}
               </div>
               <StatusPill status={task.status} />

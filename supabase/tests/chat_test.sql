@@ -7,6 +7,11 @@
 \set QUIET 1
 
 \echo '--- 31. Chat: client conversation, reviewers, internal direct messages and groups'
+-- These checks are for the end-to-end encrypted mode, which stays available (chat_set_internal_mode). The company-readable mode of
+-- migration 20261224000200 is checked in chat_company_readable_test.sql.
+reset role;
+do $$ begin if to_regclass('public.chat_settings') is not null then update public.chat_settings set internal_mode = 'E2EE'; end if; end $$;
+
 reset role;
 create temp table ch (k text primary key, v text);
 grant all on ch to authenticated, service_role;

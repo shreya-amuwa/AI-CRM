@@ -16,6 +16,7 @@ import {
   chatReviewQuerySchema,
   chatSearchQuerySchema,
   chatSendEncryptedSchema,
+  chatInternalModeSchema,
   chatSendSchema,
   chatUploadSchema,
   clientFileQuerySchema,
@@ -117,6 +118,8 @@ export class ChatService {
 
   // ---------------------------------------------------------------- keys for end-to-end encryption
   keyStatus() { return this.repo.keyStatus(); }
+  internalMode() { return this.repo.internalMode(); }
+  setInternalMode(body: unknown) { return this.repo.setInternalMode(parse(chatInternalModeSchema, body).mode); }
   keySetup(body: unknown) { const i = parse(chatKeySetupSchema, body); return this.repo.keySetup(i.publicKey, i.backup); }
   keyRegister(body: unknown) { return this.repo.keyRegister(parse(chatKeyRegisterSchema, body).publicKey); }
   keyRotate(body: unknown) { return this.repo.keyRotate(parse(chatKeyRegisterSchema, body).publicKey); }

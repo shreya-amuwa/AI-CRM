@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import { chatKeysApi } from './api';
+import { internalChatMode, type InternalChatMode } from './chatMode';
 import { openKeyStore } from './keyStore';
 import type { SecureChatApi, SecureChatClient, SecureSnapshot } from './secureChat';
 
@@ -16,6 +17,9 @@ const secureApi: SecureChatApi = {
 };
 
 const Ctx = createContext<SecureChatClient | null>(null);
+/** How new internal messages are sent (null while it is being asked). */
+const ModeCtx = createContext<InternalChatMode | null>(null);
+export const useInternalChatMode = () => useContext(ModeCtx);
 /** True under a SecureChatProvider (even while its client is still starting), so a screen does not start a second one. */
 const ProvidedCtx = createContext(false);
 export const useHasSecureChatProvider = () => useContext(ProvidedCtx);
@@ -27,19 +31,25 @@ export const useHasSecureChatProvider = () => useContext(ProvidedCtx);
  */
 export const SecureChatProvider: React.FC<{ userId: string | null; children: React.ReactNode }> = ({ userId, children }) => {
   const [client, setClient] = useState<SecureChatClient | null>(null);
+  const [mode, setMode] = useState<InternalChatMode | null>(null);
   useEffect(() => {
     let live = true;
     setClient(null);
     if (!userId) return undefined;
-    // the cryptography (hpke-js) is loaded here, after the page has opened, not with the first screen
-    void Promise.all([openKeyStore(userId), import('./secureChat')]).then(async ([store, { SecureChatClient: Client }]) => {
-      const c = new Client(userId, secureApi, store);
-      await c.init();
-      if (live) setClient(c);
-    }).catch(() => undefined);
+    void internalChatMode().then(m => {
+      if (!live) return;
+      setMode(m);
+      // the cryptography (hpke-js) is loaded here, after the page has opened, not with the first screen. In the company-readable mode it is still
+      // started (without making a key) so a device that holds an older key can read the older encrypted messages.
+      void Promise.all([openKeyStore(userId), import('./secureChat')]).then(async ([store, { SecureChatClient: Client }]) => {
+        const c = new Client(userId, secureApi, store);
+        await c.init({ autoProvision: m !== 'STANDARD' });
+        if (live) setClient(c);
+      }).catch(() => undefined);
+    });
     return () => { live = false; };
   }, [userId]);
-  return <ProvidedCtx.Provider value><Ctx.Provider value={client}>{children}</Ctx.Provider></ProvidedCtx.Provider>;
+  return <ProvidedCtx.Provider value><ModeCtx.Provider value={mode}><Ctx.Provider value={client}>{children}</Ctx.Provider></ModeCtx.Provider></ProvidedCtx.Provider>;
 };
 
 /** The secure-messaging client, or null where there is none (client chats, or before it has started). */

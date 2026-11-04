@@ -38,3 +38,7 @@ Super Admin: everything (creates, edits departments, suspends/reactivates, sees 
 ## Tests
 
 `supabase/tests/operations_head_creation_test.sql`, `api_integration.test.ts` ("Operations Head: created from the Super Admin form..."), `supabase/tests/e2e/run-operations-head.sh` (the scenario of the task in a real browser).
+
+## Sales / Support function and several departments (migration 20261224000100)
+
+An Operations Head's departments now follow their function (Sales, Support or both), and a Department Head may be given another department's function when nobody heads it. See [FUNCTION_SCOPES.md](FUNCTION_SCOPES.md).

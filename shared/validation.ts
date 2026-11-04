@@ -2565,3 +2565,27 @@ export const recruiterDecisionCorrectionSchema = z
 export const recruitmentEmailAdminQuerySchema = z
   .object({ status: z.enum(['PENDING', 'PROCESSING', 'RETRYING', 'SENT', 'DELIVERED', 'FAILED', 'SKIPPED', 'DRY_RUN']).optional(), limit: z.coerce.number().int().min(1).max(200).default(50) })
   .strict();
+
+// --- Department x function scopes, company-readable internal chat, delegated task detail (migrations 20261224000100-300) ---------------
+/** How new internal (direct / group) chat messages are stored. Super Admin only. */
+export const chatInternalModeSchema = z.object({ mode: z.enum(['STANDARD', 'E2EE'], { errorMap: () => ({ message: 'Choose STANDARD or E2EE.' }) }) }).strict();
+const opsDivision = z.enum(['SALES', 'SUPPORT']).nullable();
+/** An Operations Head's whole scope in one save: the operations function, the departments, a narrower function per department, who approves. */
+export const operationsScopeApplySchema = z
+  .object({
+    function: opsDivision,
+    departments: z
+      .array(z.object({ departmentId: z.string().uuid(), division: opsDivision.default(null), primary: z.boolean().default(false) }).strict())
+      .min(1, 'An Operations Head needs at least one department.')
+      .max(40, 'Too many departments.')
+  })
+  .strict();
+/** A Team Lead hands a Department Head's task to their own Team Members, each with their own share of the work (optional). */
+export const taskDelegateSchema = z
+  .object({
+    assignments: z
+      .array(z.object({ memberId: z.string().uuid(), work: z.string().trim().max(500, 'Keep each member’s share under 500 characters.').optional() }).strict())
+      .min(1, 'Choose at least one team member.')
+      .max(50, 'Too many team members at once.')
+  })
+  .strict();
