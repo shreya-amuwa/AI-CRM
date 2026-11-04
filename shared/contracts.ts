@@ -167,6 +167,22 @@ export interface MyDepartmentScopes {
   activeDivision: HeadDivision | null;
 }
 /** What the Super Admin sees when giving a Department Head more departments / functions. */
+export interface OffboardingImpact {
+  employee: { id: string; name: string; status: string; role: Role; isMetaVerifier: boolean; isTechnicalConsultant: boolean; department: string | null; team: string | null };
+  counts: { customersAsMember: number; customersAsLead: number; customersAsVerifier: number; customersOwned: number; openTasks: number; directReports: number; reportsToReview: number; conversations: number };
+  needsInterimHead: boolean;
+  candidates: { id: string; name: string; role: string }[];
+}
+export interface OffboardingResult { status: 'SUSPENDED' | 'REVOKED'; moved: { customers: number; verifications: number; tasks: number; members: number; reports: number }; queued: number }
+export interface ReassignmentItem { id: string; kind: 'CUSTOMER_MEMBER' | 'CUSTOMER_LEAD' | 'CUSTOMER_VERIFIER' | 'MEMBER_LEAD' | 'TASK' | 'DEPARTMENT_HEAD'; entityId: string; label: string | null; reason: string | null; createdAt: string; department: string | null; departmentId: string | null; from: string | null }
+/** The departments a Meta Verifier verifies for: the home department plus the extras an Operations Head / the Super Admin gave. */
+export interface VerifierDepartments {
+  isMetaVerifier: boolean;
+  home: { id: string; name: string } | null;
+  extra: { id: string; name: string }[];
+  canEdit: boolean;
+  reassigned?: number;
+}
 export interface DepartmentAccessInfo {
   profileId: string;
   name: string;

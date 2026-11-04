@@ -12,6 +12,7 @@ import {
   chatKeySetupSchema,
   chatKeyRegisterSchema,
   chatReadSchema,
+  chatEscalateSchema,
   chatReviewQuerySchema,
   chatSearchQuerySchema,
   chatSendEncryptedSchema,
@@ -50,6 +51,14 @@ export class ChatService {
   // ---------------------------------------------------------------- employees
   internalList(query: unknown) { return this.repo.internalList(parse(chatSearchQuerySchema, query ?? {}).q || null); }
   myClients(query: unknown) { return this.repo.myClients(parse(chatSearchQuerySchema, query ?? {}).q || null); }
+  /** Whether this person can have client conversations (the database decides) and how many they have now. */
+  clientTab() { return this.repo.clientTab(); }
+  clientTeam(id: string) { return this.repo.clientTeam(parse(uuidSchema, id)); }
+  /** Shares a client message with the people of that client's team: a notification only, the conversation is not copied or changed. */
+  escalate(id: string, body: unknown) {
+    const input = parse(chatEscalateSchema, body);
+    return this.repo.escalate(parse(uuidSchema, id), input.messageId ?? null, input.targetId, input.note ?? null);
+  }
   review(query: unknown) {
     const { q, page, pageSize } = parse(chatReviewQuerySchema, query ?? {});
     return this.repo.reviewList(q || null, pageSize, (page - 1) * pageSize);

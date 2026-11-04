@@ -1,4 +1,4 @@
-import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile } from '../../shared/contracts.js';
+import type { DepartmentAccessInfo, DepartmentHeadAccess, MyDepartmentScopes, VerifierDepartments, OffboardingImpact, OffboardingResult, ReassignmentItem, OperationsHeadReviewItem, OperationsOverviewRow, Paginated, Profile } from '../../shared/contracts.js';
 import {
   departmentAccessApplySchema,
   departmentAccessSchema,
@@ -13,7 +13,10 @@ import {
   userCreateSchema,
   userListQuerySchema,
   userStatusSchema,
-  uuidSchema
+  uuidSchema,
+  verifierDepartmentsSchema,
+  offboardSchema,
+  reassignResolveSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
 import { assertCanAssignRole, assertManager, assertNotSuperAdminTarget } from '../authz/policies.js';
@@ -213,6 +216,43 @@ export class UserService {
   async departmentHeads(actor: Actor, departmentId: unknown): Promise<DepartmentHeadAccess[]> {
     assertManager(actor);
     return this.profiles.departmentHeads(parse(uuidSchema, departmentId));
+  }
+
+  /** What is attached to a person before they leave (read-only). The database decides who may ask. */
+  offboardingImpact(id: string): Promise<OffboardingImpact> {
+    return this.profiles.offboardingImpact(parse(uuidSchema, id));
+  }
+
+  /**
+   * One transaction in the database: the work moves to the chosen colleague (or waits in the Reassignment Required queue), the account is suspended or revoked, and it is audited.
+   * Then the sign-in is blocked, as for any status change.
+   */
+  async offboard(actor: Actor, id: string, body: unknown): Promise<OffboardingResult> {
+    assertManager(actor);
+    const userId = parse(uuidSchema, id);
+    const input = parse(offboardSchema, body);
+    await this.refuseSuperAdminTarget(userId);
+    const result = await this.profiles.offboard(userId, input.replacementId ?? null, input.status, input.reason ?? null);
+    await this.authAdmin.setSignInBlocked(userId, true);
+    return result;
+  }
+
+  reassignmentQueue(): Promise<ReassignmentItem[]> {
+    return this.profiles.reassignmentQueue();
+  }
+
+  reassignmentResolve(item: string, body: unknown) {
+    return this.profiles.reassignmentResolve(parse(uuidSchema, item), parse(reassignResolveSchema, body ?? {}).toId ?? null);
+  }
+
+  /** The departments a Meta Verifier verifies for. Readable by the person, the Super Admin and the Operations Head who owns it; the database decides. */
+  verifierDepartments(id: string): Promise<VerifierDepartments> {
+    return this.profiles.verifierDepartments(parse(uuidSchema, id));
+  }
+
+  /** Save a Meta Verifier's EXTRA departments (Super Admin, or the Operations Head who owns the verifier's department and every department added - the database checks). */
+  setVerifierDepartments(id: string, body: unknown): Promise<VerifierDepartments> {
+    return this.profiles.setVerifierDepartments(parse(uuidSchema, id), parse(verifierDepartmentsSchema, body).departmentIds);
   }
 
   /** The Super Admin sees which departments and functions a Department Head is authorised for. */

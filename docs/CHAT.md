@@ -153,3 +153,15 @@ Internal chats are end-to-end encrypted, messages can be deleted for me / for ev
    `supabase/run_these_4_migrations_hierarchy_contact_secure_chat.sql`). For encrypted files the R2 bucket's CORS rule must also allow `GET`
    from the app's origin.
 4. Supabase Realtime must be enabled for the project (it is by default).
+
+## Client conversations for the assigned Team Member and Team Lead (migration `20261223000200_client_chat_access.sql`)
+
+* **Who reaches a client conversation:** the client; the customer's **Team Member** (`support_member_of`); the customer's **Team Lead**, which is the hand-over lead, else the **direct Team Lead of that Team Member**
+  (`team_lead_ownership`, see `docs/TEAM_LEAD_OWNERSHIP.md`), else the Team Lead who owns the customer; the Meta Verifier on the META channel; the Department Head / Super Admin review-only. Access is computed live, so a reassignment or a
+  suspension changes it at once, and an unrelated employee or the other Team Lead of the same team gets "not found". Conversations, messages and history are never copied or deleted.
+* **Fixed:** the Team Lead used to be "one Team Lead of the owner's team, the earliest" (the member's own lead could be left out); a Team Lead can now hand a client only to their own Team Members.
+* **The "My clients" tab** is shown when the server says the person can have clients (`GET /chat/client-tab`: a Support Team Member or Team Lead, a Meta Verifier, a Technical Consultant) - not because a list happened to be non-empty. An empty list
+  shows an empty state; a failed call keeps the tab (with its own error and "Try again") for Team Members and Team Leads instead of hiding it.
+* **Sharing a message** (`POST /chat/conversations/:id/escalate`, `GET .../client-team`): an employee with access to a client conversation can share it with that client's Team Member, Team Lead or Meta Verifier (never with anybody else, never with
+  themselves). It is a notification that opens the conversation (and an audit entry): nothing is copied, so the original thread stays the single source.
+* Tests: `supabase/tests/client_chat_access_test.sql` (two Team Leads on one team, lead/member visibility, same thread, denial for the other lead and unrelated staff, sharing, reassignment, suspension).

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { summarize, useWorkTasks, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
+import { summarize, useMyTeamMembers, useWorkTasks, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
 import { useCustomerOptions } from '../../lib/support';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
 
@@ -54,10 +54,11 @@ const Mini: React.FC<{ label: string; value: number; tone?: string }> = ({ label
 );
 
 const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data }) => {
-  const { profile } = useAuth();
   const children = data.tasks.filter(c => c.parentId === task.id);
   const assigned = new Set(children.map(c => c.assigneeId));
-  const team = data.people.filter(p => p.role === 'TEAM_MEMBER' && p.status === 'ACTIVE' && p.teamId === profile?.teamId);
+  // the lead's OWN ordinary members from the database (not another lead's, no Technical Consultant, no Meta Verifier); the database checks it again on assign
+  const roster = useMyTeamMembers();
+  const team = roster.members.filter(p => p.ordinary);
   const available = team.filter(p => !assigned.has(p.id));
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -103,7 +104,9 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
               <UserPlus className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" /> Assign to team members
             </div>
             {available.length === 0 ? (
-              <p className="text-[11px] text-slate-400">{team.length === 0 ? 'Your team has no active members yet.' : 'Every team member already has this task.'}</p>
+              <p className="text-[11px] text-slate-400" role={roster.error ? 'alert' : undefined}>
+                {roster.loading ? 'Loading your team…' : roster.error ? `Your team could not be loaded: ${roster.error}` : team.length === 0 ? 'No team members are assigned to you yet. Ask your Department Head to assign them.' : 'Every team member already has this task.'}
+              </p>
             ) : (
               <>
                 <div className="flex flex-wrap gap-1.5">
@@ -189,9 +192,9 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
 
 /** Team Lead → Team Members: your own task, optionally about a customer. */
 const AssignDirectForm: React.FC<{ data: WorkTaskData }> = ({ data }) => {
-  const { profile } = useAuth();
   const customers = useCustomerOptions();
-  const team = data.people.filter(p => p.role === 'TEAM_MEMBER' && p.status === 'ACTIVE' && p.teamId === profile?.teamId);
+  const roster = useMyTeamMembers();
+  const team = roster.members.filter(p => p.ordinary);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
@@ -262,7 +265,9 @@ const AssignDirectForm: React.FC<{ data: WorkTaskData }> = ({ data }) => {
       <fieldset>
         <legend className="text-[11px] font-medium text-slate-600 mb-1.5">Team members *</legend>
         {team.length === 0 ? (
-          <p className="text-[11px] text-slate-400">Your team has no active members yet.</p>
+          <p className="text-[11px] text-slate-400" role={roster.error ? 'alert' : undefined}>
+            {roster.loading ? 'Loading your team…' : roster.error ? `Your team could not be loaded: ${roster.error}` : 'No team members are assigned to you yet. Ask your Department Head to assign them.'}
+          </p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {team.map(p => {

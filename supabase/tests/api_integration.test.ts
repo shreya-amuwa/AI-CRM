@@ -7052,6 +7052,48 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 
+// --- Team Lead ownership, client chat sharing and Meta Verifier departments (migrations 20261223000100-300) --------------------
+{
+  const callerA = (await api('a', 'GET', '/me')).json.data.id as string;
+  // somebody OTHER than the caller (reading your own scope is allowed)
+  const member = (await db.query(`select id from public.profiles where role = 'TEAM_MEMBER' and status = 'ACTIVE' and not is_meta_verifier and id <> $1 order by created_at limit 1`, [callerA])).rows[0].id as string;
+  r = await api('sa', 'POST', `/users/${member}/verifier-departments`, { departmentIds: 'nope' });
+  check(r.status === 422, 'verifier departments: a malformed body is refused', r);
+  r = await api('sa', 'POST', `/users/${member}/verifier-departments`, { departmentIds: [], extra: 1 });
+  check(r.status === 422, 'verifier departments: unknown fields are refused', r);
+  r = await api('sa', 'POST', `/users/${member}/verifier-departments`, { departmentIds: [] });
+  check(r.status === 422 && /Meta Verifier/.test(r.json.error.message), 'verifier departments: only a Meta Verifier can have departments', r);
+  r = await api('a', 'POST', `/users/${member}/verifier-departments`, { departmentIds: [] });
+  check(r.status === 404, 'verifier departments: a Sales Team Member cannot change the scope of another person', r);
+  r = await api('a', 'GET', `/users/${member}/verifier-departments`);
+  check(r.status === 404, 'verifier departments: nor read the scope of another person', r);
+  r = await api(null, 'POST', `/users/${member}/verifier-departments`, { departmentIds: [] });
+  check(r.status === 401, 'verifier departments: nor a visitor', r);
+  r = await api('a', 'POST', `/chat/conversations/${crypto.randomUUID()}/escalate`, { targetId: crypto.randomUUID() });
+  check(r.status === 404, 'chat: sharing a client message of a conversation you cannot open is "not found"', r);
+  r = await api('a', 'POST', `/chat/conversations/${crypto.randomUUID()}/escalate`, { targetId: 'nope' });
+  check(r.status === 422, 'chat: a malformed share request is refused', r);
+  r = await api('a', 'GET', `/chat/conversations/${crypto.randomUUID()}/client-team`);
+  check(r.status === 404, 'chat: nor can the team of that client be listed', r);
+  r = await api('a', 'GET', `/users/${member}/offboarding-impact`);
+  check(r.status === 404, 'offboarding: a Sales Team Member cannot read what is attached to a colleague', r);
+  r = await api('a', 'POST', `/users/${member}/offboard`, { status: 'REVOKED' });
+  check(r.status === 403 || r.status === 404, 'offboarding: nor offboard one', r);
+  r = await api('sa', 'POST', `/users/${member}/offboard`, { status: 'DELETED' });
+  check(r.status === 422, 'offboarding: an unknown status is refused', r);
+  r = await api('sa', 'POST', `/users/${member}/offboard`, { status: 'REVOKED', unknown: 1 });
+  check(r.status === 422, 'offboarding: unknown fields are refused', r);
+  r = await api(null, 'POST', `/users/${member}/offboard`, { status: 'REVOKED' });
+  check(r.status === 401, 'offboarding: a visitor cannot', r);
+  r = await api('a', 'GET', '/reassignment-queue');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'offboarding: the Reassignment Required queue is empty for a Sales Team Member', r);
+  r = await api('sa', 'POST', `/reassignment-queue/${crypto.randomUUID()}/resolve`, { toId: crypto.randomUUID() });
+  check(r.status === 404, 'offboarding: an unknown queue item is "not found"', r);
+  r = await api('a', 'GET', '/chat/client-tab');
+  check(r.status === 200 && r.json.data.eligible === false, 'chat: a Sales Team Member has no client conversations tab (the server decides)', r);
+}
+
+
 // --- Department Heads in several departments / functions (migration 20261123000100) ---------------------------------------
 {
   const deps = (await api('sa', 'GET', '/departments')).json.data as any[];

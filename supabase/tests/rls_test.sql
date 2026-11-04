@@ -1583,7 +1583,13 @@ select test.check((select count(*) >= 1 from customer_activities where customer_
 -- Tasks from the team lead
 create temp table sk (name text primary key, id uuid);
 grant all on sk to authenticated;
+-- Two Team Leads share this team (sup_th and tm_b) and tm_b added sup_plain: a task may only go to the caller's OWN members, so sup_th is refused until the
+-- Department Head names sup_th as sup_plain's lead (migration 20261223000100; the strict-ownership rules are tested in team_lead_ownership_test.sql)
 set role authenticated;
+select test.login('sup_th');
+select test.must_fail($$select assign_team_task('Not mine', null, 'LOW', null, null, array[test.id('sup_plain')])$$, 'a team lead cannot give a task to the other lead''s member', 'not an active member');
+select test.login('dh_wab');
+select assign_direct_lead(test.id('sup_plain'), test.id('sup_th'));
 select test.login('sup_th');
 select test.check((select assign_team_task('Call back the customer', 'Confirm the template fix', 'HIGH', current_date + 2,
   (select id from sc where name = 'cust'), array[test.id('sup_plain'), test.id('sup_b')]) = 2), 'team lead assigns a task to two members');

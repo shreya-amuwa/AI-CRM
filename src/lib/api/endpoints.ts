@@ -13,7 +13,7 @@ import type {
   SalesSubRole,
   HeadDivision,
   MyDepartmentScopes,
-  DepartmentAccessInfo, DepartmentHeadAccess,
+  DepartmentAccessInfo, DepartmentHeadAccess, VerifierDepartments, OffboardingImpact, OffboardingResult, ReassignmentItem,
   SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
@@ -563,6 +563,14 @@ export const usersApi = {
   /** Department Heads who work in a department (own or authorised), with all their departments. */
   departmentHeads: (departmentId: string) => api.get<DepartmentHeadAccess[]>('/users/department-heads', { departmentId }),
   departmentAccess: (id: string) => api.get<DepartmentAccessInfo>(`/users/${id}/department-access`),
+  /** The departments a Meta Verifier verifies for (home + extras), and saving the extras. */
+  verifierDepartments: (id: string) => api.get<VerifierDepartments>(`/users/${id}/verifier-departments`),
+  /** Offboarding: what is attached to a person, the one-step offboarding, and the Reassignment Required queue. */
+  offboardingImpact: (id: string) => api.get<OffboardingImpact>(`/users/${id}/offboarding-impact`),
+  offboard: (id: string, body: { replacementId?: string | null; status: 'SUSPENDED' | 'REVOKED'; reason?: string | null }) => api.post<OffboardingResult>(`/users/${id}/offboard`, body),
+  reassignmentQueue: () => api.get<ReassignmentItem[]>('/reassignment-queue'),
+  reassignmentResolve: (item: string, toId: string | null) => api.post<{ resolved: string; to: string | null }>(`/reassignment-queue/${item}/resolve`, { toId }),
+  setVerifierDepartments: (id: string, departmentIds: string[]) => api.post<VerifierDepartments>(`/users/${id}/verifier-departments`, { departmentIds }),
   /** Save the whole matrix of extra (department, function) pairs of a Department Head in one step (Super Admin). */
   applyDepartmentAccess: (id: string, pairs: { departmentId: string; division: HeadDivision }[]) => api.post<DepartmentAccessInfo>(`/users/${id}/department-access/apply`, { pairs }),
   setDepartmentAccess: (id: string, body: { departmentId: string; division: HeadDivision; granted: boolean }) => api.post<DepartmentAccessInfo>(`/users/${id}/department-access`, body),
