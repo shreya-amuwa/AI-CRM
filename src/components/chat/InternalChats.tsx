@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Info, Loader2, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Bell, BellOff, Info, Loader2, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
+import { setChatSoundEnabled, useChatSoundEnabled } from '../../lib/chat/chatSound';
 import type { ChatConversation } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { errorMessage } from '../../lib/api/client';
@@ -36,6 +37,7 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
   const [secureDialog, setSecureDialog] = useState<SecureDialogMode | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const e2ee = useInternalChatMode() === 'E2EE';
+  const sound = useChatSoundEnabled();
   const secureReady = useSecureSnapshot(secure).status === 'ready' && e2ee;
 
   const load = useCallback(() => {
@@ -68,6 +70,10 @@ const InternalChatsInner: React.FC<{ active: boolean; onUnreadChange: () => void
       <div className="ch-search">
         <input type="search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Search chats" aria-label="Search chats" />
         {secureReady && <button type="button" className="ch-icon" onClick={() => setSettingsOpen(true)} aria-label="Secure messaging settings" title="Secure messaging settings" data-testid="secure-settings-open"><ShieldCheck size={18} aria-hidden /></button>}
+        <button type="button" className="ch-icon" onClick={() => setChatSoundEnabled(!sound)} aria-pressed={sound}
+          aria-label={sound ? 'Mute the new-message sound' : 'Turn on the new-message sound'} title={sound ? 'New-message sound: on' : 'New-message sound: off'} data-testid="chat-sound-toggle">
+          {sound ? <Bell size={18} aria-hidden /> : <BellOff size={18} aria-hidden />}
+        </button>
         <button type="button" className="ch-btn primary" onClick={() => setCreating(true)}><Plus size={14} aria-hidden /> New</button>
       </div>
       {error ? (

@@ -13,8 +13,22 @@ const inputCls = 'w-full px-3 py-2 rounded-xl border border-slate-200 focus:bord
 const dates = (r: LeaveRequest) => (r.endDate === r.startDate ? formatDay(r.startDate) : `${formatDay(r.startDate)} to ${formatDay(r.endDate)}`);
 const length = (r: LeaveRequest) => (r.leaveType === 'HALF_DAY' ? `Half day (${r.halfDayShift === 'AFTERNOON' ? 'afternoon' : 'morning'})` : `${r.days} day${r.days === 1 ? '' : 's'}`);
 
-/** Who decided what, in order: the audit trail shown on each request. */
-const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (
+const STAGE_LABEL: Record<string, string> = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', SUBMITTED: 'Requested', RESUBMITTED: 'Changed and sent again' };
+const DECISION_LABEL: Record<string, string> = { APPROVED: 'approved', REJECTED: 'rejected', REVISION_REQUESTED: 'asked for changes', SUBMITTED: '' };
+const when = (at: string) => new Date(at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+
+/** Who decided what, in order: the audit trail shown on each request (the multi-level chain has a full timeline). */
+const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (r.timeline && r.timeline.length > 0 ? (
+  <ol className="mt-2 space-y-0.5 text-[11px] text-slate-500" aria-label="Approval timeline">
+    {r.timeline.map((t, i) => (
+      <li key={i}>
+        {when(t.at)} · {STAGE_LABEL[t.stage] ?? t.stage}{t.by ? ` (${t.by})` : ''}{DECISION_LABEL[t.decision] ? `: ${DECISION_LABEL[t.decision]}` : ''}
+        {t.onBehalf ? ' (Super Admin, nobody else could decide this step)' : ''}{t.note ? ` - "${t.note}"` : ''}
+      </li>
+    ))}
+    {r.currentStage && <li className="font-semibold text-slate-600">Waiting for {STAGE_LABEL[r.currentStage]}{r.waitingFor?.length ? ` (${r.waitingFor.join(', ')})` : ''}</li>}
+  </ol>
+) : (
   <ul className="mt-2 space-y-0.5 text-[11px] text-slate-500">
     <li>Requested {new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</li>
     {r.departmentHead && (
@@ -30,7 +44,7 @@ const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (
       </li>
     )}
   </ul>
-);
+));
 
 const RequestForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [leaveType, setLeaveType] = useState<'FULL_DAY' | 'HALF_DAY'>('FULL_DAY');
@@ -65,7 +79,7 @@ const RequestForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   return (
     <form onSubmit={submit} className="p-5 space-y-3 border-b border-slate-100">
       <h3 className="text-sm font-bold text-slate-900">Request leave</h3>
-      <p className="text-[11px] text-slate-500">Your Department Head reviews it first, then HR gives the final approval.</p>
+      <p className="text-[11px] text-slate-500">It goes up your reporting line (your Team Lead, Department Head and Operations Head, as they apply to you), then HR gives the final approval.</p>
       {error && <div role="alert" className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">{error}</div>}
       <div className="grid grid-cols-2 gap-3">
         <label className="text-xs font-semibold text-slate-700 col-span-2">
@@ -105,18 +119,45 @@ const RequestForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   );
 };
 
+/** A request sent back for changes: the employee rewrites the reason and it starts the chain again. */
+const Resubmit: React.FC<{ r: LeaveRequest; onDone: () => void }> = ({ r, onDone }) => {
+  const [reason, setReason] = useState(r.reason);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const send = async () => {
+    setBusy(true); setError('');
+    try { await hrApi.resubmitLeave(r.id, reason); onDone(); } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-2 space-y-1.5">
+      {r.revisionNote && <p className="text-[11px] text-orange-800 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1">Asked to change: {r.revisionNote}</p>}
+      <label className="block text-[11px] font-semibold text-slate-700">
+        Reason
+        <textarea className={`${inputCls} mt-1`} rows={2} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} />
+      </label>
+      {error && <p role="alert" className="text-[11px] text-rose-600">{error}</p>}
+      <button type="button" disabled={busy || reason.trim().length < 3} onClick={() => void send()} className="w-full py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold disabled:opacity-50 cursor-pointer">
+        {busy ? 'Sending…' : 'Send again'}
+      </button>
+    </div>
+  );
+};
+
 const ReviewCard: React.FC<{ r: LeaveRequest; onChanged: () => void }> = ({ r, onChanged }) => {
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const asHr = r.status === 'PENDING_HR';
+  const chain = (r.workflowVersion ?? 1) >= 2;
+  const [mode, setMode] = useState<'REJECT' | 'REVISE'>('REJECT');
 
   const decide = async (approve: boolean) => {
     setError('');
     setBusy(true);
     try {
-      if (asHr) await hrApi.decideAsHr(r.id, approve, note);
+      if (chain) await hrApi.decideLeave(r.id, approve ? 'APPROVE' : mode, note);
+      else if (asHr) await hrApi.decideAsHr(r.id, approve, note);
       else await hrApi.decideAsDepartmentHead(r.id, approve, note);
       onChanged();
     } catch (err) {
@@ -140,22 +181,28 @@ const ReviewCard: React.FC<{ r: LeaveRequest; onChanged: () => void }> = ({ r, o
       <p className="text-[11px] text-slate-500 mt-1 break-words">{r.reason}</p>
       <Trail r={r} />
       {error && <p role="alert" className="mt-2 text-[11px] text-rose-600">{error}</p>}
-      {(r.status === 'PENDING_DEPARTMENT_HEAD' || r.status === 'PENDING_HR') && (
+      {r.status.startsWith('PENDING_') && (
         rejecting ? (
           <div className="mt-3 space-y-2">
+            {chain && (
+              <div className="flex gap-3 text-[11px] text-slate-700" role="radiogroup" aria-label="What to do">
+                <label className="inline-flex items-center gap-1"><input type="radio" checked={mode === 'REJECT'} onChange={() => setMode('REJECT')} /> Reject</label>
+                <label className="inline-flex items-center gap-1"><input type="radio" checked={mode === 'REVISE'} onChange={() => setMode('REVISE')} /> Send back for changes</label>
+              </div>
+            )}
             <label className="block text-[11px] font-semibold text-slate-700">
-              Reason for rejecting *
+              {mode === 'REVISE' && chain ? 'What should be changed *' : 'Reason for rejecting *'}
               <textarea className={`${inputCls} mt-1`} rows={2} maxLength={1000} value={note} onChange={e => setNote(e.target.value)} />
             </label>
             <div className="flex gap-2">
-              <button type="button" disabled={busy || note.trim().length < 3} onClick={() => void decide(false)} className="flex-1 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer">Reject</button>
+              <button type="button" disabled={busy || note.trim().length < 3} onClick={() => void decide(false)} className="flex-1 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer">{mode === 'REVISE' && chain ? 'Send back' : 'Reject'}</button>
               <button type="button" disabled={busy} onClick={() => setRejecting(false)} className="flex-1 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold cursor-pointer">Cancel</button>
             </div>
           </div>
         ) : (
           <div className="mt-3 flex gap-2">
             <button type="button" disabled={busy} onClick={() => void decide(true)} className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer">
-              {asHr ? 'Give final approval' : 'Approve and send to HR'}
+              {asHr ? 'Give final approval' : chain ? `Approve (${STAGE_LABEL[r.currentStage ?? ''] ?? 'your step'})` : 'Approve and send to HR'}
             </button>
             <button type="button" disabled={busy} onClick={() => setRejecting(true)} className="flex-1 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-semibold hover:bg-rose-50 cursor-pointer">Reject</button>
           </div>
@@ -218,7 +265,7 @@ export const LeaveCenter: React.FC = () => {
   const { mine, review, error, loading, reload } = useLeaveData();
   const load = reload;
 
-  const canReview = !!review && (review.canReviewAsDepartmentHead || review.canReviewAsHr);
+  const canReview = !!review && (review.canReviewAsDepartmentHead || review.canReviewAsHr || !!review.canReview || review.awaiting.length > 0);
   const waiting = review?.awaiting.length ?? 0;
 
   return (
@@ -237,7 +284,7 @@ export const LeaveCenter: React.FC = () => {
         )}
       </button>
       {open && (
-        <SideDrawer title="Leave" subtitle="Team Member, then Department Head, then HR" onClose={() => setOpen(false)}>
+        <SideDrawer title="Leave" subtitle="Team Lead, Department Head, Operations Head, then HR" onClose={() => setOpen(false)}>
           {canReview && (
             <div className="flex gap-1 p-2 border-b border-slate-100" role="tablist">
               {([['mine', 'My leave'], ['review', `To review${waiting ? ` (${waiting})` : ''}`]] as const).map(([id, label]) => (
@@ -267,6 +314,7 @@ export const LeaveCenter: React.FC = () => {
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1 break-words">{r.reason}</p>
                       <Trail r={r} />
+                      {r.status === 'REVISION_REQUIRED' && <Resubmit r={r} onDone={() => void load()} />}
                     </li>
                   ))}
                 </ul>

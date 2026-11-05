@@ -34,7 +34,8 @@ select test.check((select count(*) = 1 from customers where id = (select id from
 select test.check(private.can_assign_customer_owner(test.id('dl_dh')), 'a head may own leads');
 select test.check((select lead_status = 'NEW' from customers where id = (select id from dl where name = 'head')), 'a normal new lead');
 select test.login('dl_tl');
-select test.check((select count(*) = 1 from customers where id = (select id from dl where name = 'head')), 'the Team Lead of that Sales team sees it too');
+-- 20261225000100 (strict hierarchy): a Team Lead sees their own and their direct members' customers, not their head's own leads
+select test.check((select count(*) = 0 from customers where id = (select id from dl where name = 'head')), 'the Team Lead of that Sales team does not see the head''s own lead');
 insert into dl select 'lead', create_lead('{"name":"DL Lead Lead","company":"DL Lead Co","email":"dl.ll@example.com","phone":"9819930002","whatsapp":"9819930002","leadSource":"Walk-in"}', array['AI_CALLING']);
 select test.check((select owner_id = test.id('dl_tl') and team_id = (select team_id from profiles where id = test.id('dl_tl')) from customers where id = (select id from dl where name = 'lead')), 'a Team Lead adds a lead of their own in their team (unchanged)');
 select test.must_fail($$select create_lead('{"name":"X","company":"DL Y","phone":"9819930003","whatsapp":"9819930003","leadSource":"Walk-in","ownerId":"00000000-0000-0000-0000-000000000000"}', array['AI_CALLING'])$$, 'an unknown owner is still refused', 'owner');

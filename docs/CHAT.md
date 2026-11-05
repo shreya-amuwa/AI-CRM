@@ -198,3 +198,11 @@ sealed again (keys are made at sign-in as before). Messages sent in STANDARD mod
 
 Tests: `supabase/tests/chat_company_readable_test.sql` (new employee without a key, mixed history, groups, files, outsiders refused, Delete for
 everyone, the mode switch); the API block at the end of `api_integration.test.ts`; the older E2EE suites pin the E2EE mode explicitly.
+
+## New-message sound
+
+A short, quiet two-note chime when a new message arrives for you (`src/lib/chat/chatSound.ts`). It follows the live unread count, which the
+database computes without your own messages, so: no sound for your own message, one chime per rise of the count (a reconnect that re-reads the
+same count plays nothing), at most one chime every 4 seconds in a burst, none while the chat is on screen and in focus. The bell button next to
+**New** in the chat list mutes / unmutes it (remembered in this browser). Browsers allow sound only after the page was touched once; until then
+the badge and the list still update. No polling and no second chat system: it uses the existing Realtime-driven unread count.

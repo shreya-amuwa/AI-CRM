@@ -1534,6 +1534,13 @@ reset role;
 select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('sup_th')), 'team lead notified of the member''s new customer');
 select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ASSIGNED' and recipient_id = test.id('sup_b')), 'member notified of the assigned customer');
 
+-- (20261225000100) two Team Leads share this Support team (sup_th and tm_b): a Team Lead works on their OWN members' tickets and tasks only,
+-- so the Department Head names sup_th as sup_plain's lead before the ticket and task checks below
+set role authenticated;
+select test.login('dh_wab');
+select assign_direct_lead(test.id('sup_plain'), test.id('sup_th'));
+reset role;
+
 -- Tickets
 create temp table st (name text primary key, id uuid);
 grant all on st to authenticated;
@@ -1583,13 +1590,11 @@ select test.check((select count(*) >= 1 from customer_activities where customer_
 -- Tasks from the team lead
 create temp table sk (name text primary key, id uuid);
 grant all on sk to authenticated;
--- Two Team Leads share this team (sup_th and tm_b) and tm_b added sup_plain: a task may only go to the caller's OWN members, so sup_th is refused until the
--- Department Head names sup_th as sup_plain's lead (migration 20261223000100; the strict-ownership rules are tested in team_lead_ownership_test.sql)
+-- Two Team Leads share this team (sup_th and tm_b); the Department Head named sup_th as sup_plain's lead above: a task may only go to the
+-- caller's OWN members, so tm_b is refused (migration 20261223000100; the strict-ownership rules are tested in team_lead_ownership_test.sql)
 set role authenticated;
-select test.login('sup_th');
+select test.login('tm_b');
 select test.must_fail($$select assign_team_task('Not mine', null, 'LOW', null, null, array[test.id('sup_plain')])$$, 'a team lead cannot give a task to the other lead''s member', 'not an active member');
-select test.login('dh_wab');
-select assign_direct_lead(test.id('sup_plain'), test.id('sup_th'));
 select test.login('sup_th');
 select test.check((select assign_team_task('Call back the customer', 'Confirm the template fix', 'HIGH', current_date + 2,
   (select id from sc where name = 'cust'), array[test.id('sup_plain'), test.id('sup_b')]) = 2), 'team lead assigns a task to two members');
@@ -1849,7 +1854,8 @@ set role authenticated;
 select test.login('th_wab');
 select test.check((select count(*) = 0 from work_tasks w where w.team_id = test.team('wabastore', 'Sales')
                       and test.id('th_wab') not in (w.assignee_id, w.assigned_by)), 'and no longer reads the Sales team''s tasks (only their own)');
-select test.check((select count(*) > 0 from work_tasks where title = 'Support only task'), 'but now reads the Support team''s tasks');
+-- 20261225000100: a lead reads only their own members' tasks; sup_plain's named lead is sup_th.
+select test.check((select count(*) = 0 from work_tasks where title = 'Support only task'), 'nor the Support tasks of another lead''s member');
 reset role;
 update profiles set team_id = test.team('wabastore', 'Sales') where id = test.id('th_wab');
 select test.check((select default_dashboard = 'sales-lead' from profiles where id = test.id('th_wab'))

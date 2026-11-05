@@ -3948,6 +3948,8 @@ provider.close();
   delete process.env.BIOMETRIC_INGEST_SECRET;
 
   // Leave: Team Member -> Department Head -> HR
+  // this block tests the two-step flow (20261225000200 makes the reporting chain the default; leave_multi_level block below)
+  await db.query(`update public.leave_settings set workflow = 'TWO_STEP' where id`);
   r = await api('a', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2026-11-02', endDate: '2026-11-04', reason: 'Family function' });
   check(r.status === 201 && r.json.data.status === 'PENDING_DEPARTMENT_HEAD' && r.json.data.days === 3, 'a team member submits leave: it waits for the Department Head', r);
   const leaveId = r.json.data.id;
@@ -9506,6 +9508,41 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     check(true, 'function scopes: (no Operations Head in the fixture data; covered by department_function_scopes_test.sql)');
   }
 }
+// --- Team Lead direct members and leave in the reporting chain (migrations 20261225000100-200) ----------------------
+{
+  let r = await api('sm', 'POST', '/access/support-desk', { departmentWide: false });
+  check(r.status === 403, 'support desk: only the Super Admin changes who in Support reads the department’s customers', r);
+  r = await api('sa', 'POST', '/access/support-desk', { departmentWide: 'no' });
+  check(r.status === 422, 'support desk: true or false only', r);
+  r = await api('sa', 'POST', '/access/support-desk', { departmentWide: true });
+  check(r.status === 200, 'support desk: the Super Admin keeps it department-wide', r);
+
+  r = await api('a', 'POST', '/leave/workflow', { workflow: 'MULTI_LEVEL' });
+  check(r.status === 403, 'leave workflow: only the Super Admin switches it', r);
+  r = await api('sa', 'POST', '/leave/workflow', { workflow: 'ANY' });
+  check(r.status === 422, 'leave workflow: MULTI_LEVEL or TWO_STEP only', r);
+  r = await api('sa', 'POST', '/leave/workflow', { workflow: 'MULTI_LEVEL' });
+  check(r.status === 200, 'leave workflow: the Super Admin turns on the reporting chain', r);
+
+  r = await api('a', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2027-03-01', endDate: '2027-03-01', reason: 'Chain check' });
+  check(r.status === 201 && String(r.json.data.status).startsWith('PENDING_') && r.json.data.workflowVersion === 2, 'leave chain: a new request follows the reporting chain', r);
+  const id = r.json.data.id as string;
+  const first = r.json.data.status as string;
+  r = await api('a', 'POST', `/leave/${id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 404 || r.status === 403, 'leave chain: nobody approves their own leave', r);
+  r = await api('sm', 'POST', `/leave/${id}/decision`, { decision: 'APPROVE' });
+  check(r.status === 404 || r.status === 403, 'leave chain: an unrelated employee cannot decide it', r);
+  r = await api('hr', 'POST', `/leave/${id}/decision`, { decision: 'MAYBE' });
+  check(r.status === 422, 'leave chain: approve, reject or send back only', r);
+  r = await api('a', 'GET', '/leave/mine');
+  const mine = (r.json.data as any[] | undefined)?.find(x => x.id === id);
+  check(r.status === 200 && mine && mine.status === first && Array.isArray(mine.timeline) && mine.timeline.length >= 1, 'leave chain: the employee sees the waiting step and the timeline', r);
+  r = await api('a', 'POST', `/leave/${id}/resubmit`, { reason: 'x' });
+  check(r.status === 409 || r.status === 422 || r.status === 404, 'leave chain: only a request sent back can be resubmitted', r);
+
+  await db.query(`update public.leave_settings set workflow = 'TWO_STEP' where id`);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

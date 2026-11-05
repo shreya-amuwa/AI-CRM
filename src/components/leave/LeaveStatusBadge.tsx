@@ -7,7 +7,12 @@ export const LEAVE_STATUS_LABEL: Record<LeaveStatus, string> = {
   PENDING_HR: 'Pending HR Approval',
   APPROVED: 'Approved',
   REJECTED_BY_DEPARTMENT_HEAD: 'Rejected by Department Head',
-  REJECTED_BY_HR: 'Rejected by HR'
+  REJECTED_BY_HR: 'Rejected by HR',
+  PENDING_TEAM_LEAD: 'Pending Team Lead Approval',
+  PENDING_OPERATIONS_HEAD: 'Pending Operations Head Approval',
+  REJECTED_BY_TEAM_LEAD: 'Rejected by Team Lead',
+  REJECTED_BY_OPERATIONS_HEAD: 'Rejected by Operations Head',
+  REVISION_REQUIRED: 'Changes requested'
 };
 
 const STYLE: Record<LeaveStatus, string> = {
@@ -15,7 +20,12 @@ const STYLE: Record<LeaveStatus, string> = {
   PENDING_HR: 'bg-sky-50 border-sky-200 text-sky-800',
   APPROVED: 'bg-emerald-50 border-emerald-200 text-emerald-800',
   REJECTED_BY_DEPARTMENT_HEAD: 'bg-rose-50 border-rose-200 text-rose-800',
-  REJECTED_BY_HR: 'bg-rose-50 border-rose-200 text-rose-800'
+  REJECTED_BY_HR: 'bg-rose-50 border-rose-200 text-rose-800',
+  PENDING_TEAM_LEAD: 'bg-amber-50 border-amber-200 text-amber-800',
+  PENDING_OPERATIONS_HEAD: 'bg-violet-50 border-violet-200 text-violet-800',
+  REJECTED_BY_TEAM_LEAD: 'bg-rose-50 border-rose-200 text-rose-800',
+  REJECTED_BY_OPERATIONS_HEAD: 'bg-rose-50 border-rose-200 text-rose-800',
+  REVISION_REQUIRED: 'bg-orange-50 border-orange-200 text-orange-800'
 };
 
 /** The approval status as a pill: an icon and words, so it never relies on colour alone. */

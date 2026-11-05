@@ -2391,7 +2391,9 @@ export interface PersonalDetails {
   bloodGroup: string | null;
   emergencyContact: string | null;
 }
-export type LeaveStatus = 'PENDING_DEPARTMENT_HEAD' | 'PENDING_HR' | 'APPROVED' | 'REJECTED_BY_DEPARTMENT_HEAD' | 'REJECTED_BY_HR';
+export type LeaveStatus = 'PENDING_DEPARTMENT_HEAD' | 'PENDING_HR' | 'APPROVED' | 'REJECTED_BY_DEPARTMENT_HEAD' | 'REJECTED_BY_HR'
+  // the multi-level chain (20261225000200)
+  | 'PENDING_TEAM_LEAD' | 'PENDING_OPERATIONS_HEAD' | 'REJECTED_BY_TEAM_LEAD' | 'REJECTED_BY_OPERATIONS_HEAD' | 'REVISION_REQUIRED';
 export interface LeaveDecision {
   name: string | null;
   at: string;
@@ -2413,12 +2415,35 @@ export interface LeaveRequest {
   createdAt: string;
   departmentHead: LeaveDecision | null;
   hr: LeaveDecision | null;
+  /** The multi-level chain (20261225000200); absent on an older database. 1 = Department Head -> HR, 2 = the chain below. */
+  workflowVersion?: number;
+  stages?: LeaveStage[];
+  /** The step waiting now (null once decided). */
+  currentStage?: LeaveStage | null;
+  /** Who can decide the waiting step (names only). */
+  waitingFor?: string[] | null;
+  revisionNote?: string | null;
+  teamLead?: LeaveDecision | null;
+  operationsHead?: LeaveDecision | null;
+  timeline?: LeaveTimelineEntry[];
+}
+export type LeaveStage = 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'HR';
+export interface LeaveTimelineEntry {
+  stage: LeaveStage | 'SUBMITTED' | 'RESUBMITTED';
+  decision: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'REVISION_REQUESTED';
+  at: string;
+  note: string | null;
+  by: string | null;
+  /** SUPER_ADMIN_EXCEPTION: nobody else could decide this step. */
+  onBehalf: string | null;
 }
 export interface LeaveReview {
   awaiting: LeaveRequest[];
   decided: LeaveRequest[];
   canReviewAsDepartmentHead: boolean;
   canReviewAsHr: boolean;
+  /** Anyone who can be a step of somebody's chain (absent on an older database). */
+  canReview?: boolean;
 }
 export interface LeaveMonthEmployee {
   profileId: string;

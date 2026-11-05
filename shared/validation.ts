@@ -2589,3 +2589,15 @@ export const taskDelegateSchema = z
       .max(50, 'Too many team members at once.')
   })
   .strict();
+
+// --- Team Lead direct scope and the multi-level leave chain (migrations 20261225000100-200) -----------------------------------
+/** One step of a leave request: approve, reject (a reason is required) or send back for changes (a reason is required). */
+export const leaveStageDecisionSchema = z
+  .object({ decision: z.enum(['APPROVE', 'REJECT', 'REVISE']), note: optionalText(1000) })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (!!v.note && v.note.length >= 3), { message: 'Give a reason.', path: ['note'] });
+export const leaveResubmitSchema = z.object({ reason: trimmed(1000).min(3, 'Enter the reason for the leave.') }).strict();
+/** Super Admin only: new requests follow the multi-level chain or the earlier two-step flow. */
+export const leaveWorkflowSchema = z.object({ workflow: z.enum(['MULTI_LEVEL', 'TWO_STEP']) }).strict();
+/** Super Admin only: the department-wide Support desk read of post-sale customers (off by default). */
+export const supportDeskSchema = z.object({ departmentWide: z.boolean() }).strict();

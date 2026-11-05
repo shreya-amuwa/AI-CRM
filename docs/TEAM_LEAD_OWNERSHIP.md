@@ -40,3 +40,30 @@ the author's direct lead. `hierarchy_report(true)` corrects **only** the verifia
 
 `supabase/tests/team_lead_ownership_test.sql` (section 120): TL A / TL B on one team, members each lead added, a Technical Consultant, a Meta Verifier, a member nobody named, guessed ids, foreign and crafted requests, report routing and notifications,
 inbox / team box isolation, the two-level approval, transfer, the impact report, suspension. It also caught that `head_may_manage` ignores the caller's role (a Team Lead could have called `assign_direct_lead`); the helper now checks the Department Head role itself.
+
+## A Team Lead sees only their own members (migration 20261225000100)
+
+**Root cause of "Team Workload" listing other leads' members.** `team_lead_dashboard()` (20261009100000) built the workload list from every
+active Team Member whose `team_id` equals the lead's, and `team_lead_scope()` put every customer of that team in the lead's scope. When two or
+more Team Leads share one team, each saw (and could count, filter, open tickets of, and reassign) the other lead's members and customers. The
+same "same `team_id`" rule was used for a Team Lead by the row-level rules on customers, tasks and tickets, `can_view_customer`,
+`can_view_profile`, the performance reports and the overview counts. `profiles.manager_id` / `private.direct_lead_of()` (20261223000100) is the
+authoritative relationship but these places never used it.
+
+**Now** every one of them also requires that the person a row belongs to (customer owner, task or ticket assignee, profile) is the lead or one
+of their direct members (`private.led_by`, `private.lead_sees`). Rows that belong to nobody (an unassigned ticket of the team) stay visible to
+the team's leads. A team with a single Team Lead behaves exactly as before. A member nobody is named for, in a team with several leads, is
+visible to no Team Lead until the Department Head names one (`hierarchy_report()`, `assign_direct_lead`) - the Department Head always sees them.
+Customers handed to a Team Lead (`customer_onboarding.team_lead_id`) stay in that lead's scope. Team Members see colleagues under the same
+lead only. Ticket escalation and its notifications go to the assignee's own lead (`private.ticket_team_lead`), never "the first lead of the team".
+
+| Who | Sees / manages |
+| --- | --- |
+| Team Lead | their own direct members, their customers, tickets, tasks, reports; customers handed to them |
+| Team Member | their own customers, tasks, reports and leave; colleagues under the same lead (names) |
+| Department Head | every team of the departments and functions they head (FUNCTION_SCOPES.md) |
+
+**The Support desk (decision for the owner).** Since 20261009000100 every Support Team Lead and Team Member reads ALL post-sale customers of
+their department; Support raises tickets for any of them this way. It is kept ON so live Support work does not break, and it now has a switch:
+`POST /api/v1/access/support-desk {"departmentWide": false}` (Super Admin, audited) turns it off for strict ownership - then Support can raise
+tickets only for their own (or their members') customers. `docs` and tests: `team_lead_direct_scope_test.sql` checks both settings.

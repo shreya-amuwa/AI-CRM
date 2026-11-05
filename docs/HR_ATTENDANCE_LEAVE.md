@@ -70,3 +70,35 @@ Employee records that have no CRM account (the Amuwa HQ demo roster is kept in t
 The bell with a side panel is in the shared header (HR, Super Admin, Department Heads, Consultants) next to the existing bells. Events: leave
 awaiting Department Head, forwarded to HR, decided (employee, Department Head), attendance discrepancy, new team member. Each event notifies a
 person once (`data.dedupeKey`); you are never notified of your own action. Rows are private to the recipient.
+
+## Leave in the reporting chain (migration 20261225000200)
+
+New requests follow the requester's reporting line, one step at a time, then HR:
+
+| Requester | Steps |
+| --- | --- |
+| Team Member | Team Lead -> Department Head -> Operations Head -> HR |
+| Team Lead | Department Head -> Operations Head -> HR |
+| Department Head | Operations Head -> HR |
+| Operations Head | Super Admin -> HR |
+| Super Admin / others | HR |
+
+* **Who decides each step** is resolved from the live hierarchy when it is acted on: the member's direct Team Lead (`direct_lead_of`); a
+  Department Head of that department AND the member's function (`head_covers`); the Operations Head accountable for that department and function
+  (`operations_owner_for`); HR staff who did not decide an earlier step. A reassignment or a departure moves the waiting step automatically.
+* **Nobody to decide** (e.g. a member with no named lead, a department nobody supervises): the Super Admin decides that step (recorded as an
+  exception in the timeline). A step is never skipped or approved by itself.
+* **Statuses**: `PENDING_TEAM_LEAD`, `PENDING_DEPARTMENT_HEAD`, `PENDING_OPERATIONS_HEAD`, `PENDING_HR`, `APPROVED`, `REJECTED_BY_<STEP>`,
+  `REVISION_REQUIRED` (sent back: the employee changes the reason and it starts again). A rejection or sending back needs a reason.
+* **Enforced in the database** (`decide_leave`): only the current approver of the waiting step, in order, once (the row is locked: a double
+  click or two approvers at once cannot both act); nobody decides their own leave; nothing can be written to the table directly.
+* **Timeline**: `leave_request_events` - every submission, approval, rejection and send-back with who, when and the note.
+* **Balance**: there is no separate balance table; summaries count APPROVED requests only, so a request counts once, when HR approves it.
+* **Queues**: "Leave" in the header shows "To review" to anyone who decides a step now; `leave_monthly_summary` also serves a Team Lead
+  (their members) and an Operations Head (their departments and function).
+* **Existing requests** keep the rules they were made under (Department Head -> HR); no new step is marked as done.
+* **Switch back** (Super Admin): `POST /api/v1/leave/workflow {"workflow": "TWO_STEP"}` - new requests then go Department Head -> HR again.
+* **Offboarding**: the impact summary counts the leave steps the person decides now (`leaveApprovalsWaiting`).
+
+Tests: `supabase/tests/leave_multi_level_test.sql` (the whole chain, wrong approvers, order, rejection, send back, the exception, old requests,
+a departing approver, the switch); `hr_test.sql` keeps testing the two-step flow with the switch set to it.
