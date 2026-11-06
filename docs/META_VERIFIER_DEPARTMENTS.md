@@ -23,6 +23,18 @@ Migration: `20261223000300_meta_verifier_departments.sql` (additive, safe to run
   are notified) or are left unassigned for a head to assign; nothing is deleted and the verification history stays.
 * API: `GET|POST /users/:id/verifier-departments` (`{ departmentIds }`, extras only). UI: *Verification departments* on a Meta Verifier row (Super Admin, Operations Head), the multi-select reuses the Operations Head department picker.
 
+## Choosing the departments when the verifier is created, and Sales of those departments
+
+Migration: `20261227000100_meta_verifier_cross_department_routing.sql` (safe to run twice).
+
+* **Add Team Member:** the *Department* field is a drop-down of the departments (the same list as the selector at the top right) for the Super Admin. When the role is **Meta Verifier**, the Super Admin or an Operations Head
+  also gets *Other departments this Meta Verifier verifies for*: the chosen department is the home department, every department ticked there is added in the same step (`POST /users` with `verifierDepartmentIds`;
+  refused for anybody who is not a Meta Verifier, and the account is removed again if the departments cannot be saved).
+* **Sales sending a customer on:** `private.forward_to_consultant` and `onboarding_handoff_info` now look for an active Meta Verifier who **verifies for** the customer's department (`private.verifier_covers`),
+  wherever the verifier is placed. Before, Sales of a department whose verifier sits in another department was refused with "This department has no active Meta Verifier". Every verifier covering the
+  department is notified, plus the department's Support Team Leads, as before. The Technical Consultant route is unchanged.
+* Tests: `supabase/tests/meta_verifier_routing_test.sql`, and the "verifier creation" block of `api_integration.test.ts`.
+
 ## Tests
 
 `supabase/tests/meta_verifier_departments_test.sql` (section 122): home-only before; who may change it (verifier, Sales, a plain Department Head, an Operations Head who does not own a department, a non-verifier); access after (Meta customers of

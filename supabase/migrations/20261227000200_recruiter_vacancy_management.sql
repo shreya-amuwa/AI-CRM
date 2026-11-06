@@ -18,7 +18,7 @@
 --   4. public.recruiter_vacancy(p_id): the detail also returns the fields the edit form needs (version, responsibilities, work mode, department id).
 --   5. public.recruiter_filter_options(): departments come from the departments table (every department, not the "side" records of another).
 --
--- Run after 20261226000200_career_job_catalogue.sql. Safe to run again.
+-- Run after 20261227000100_meta_verifier_cross_department_routing.sql. Safe to run again.
 -- =============================================================================
 
 -- the HR people who are told about a vacancy a Recruiter creates or publishes (the same people the approval request went to)

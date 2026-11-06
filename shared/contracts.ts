@@ -5181,7 +5181,7 @@ export interface RecruiterVacancy {
 }
 export interface RecruiterVacancyDetail extends RecruiterVacancy {
   description: string; qualifications: string | null; skills: string | null; experience: string | null; statusNote: string | null;
-  /** Edit-form fields (migration 20261226000300; absent before it runs). */
+  /** Edit-form fields (migration 20261227000200; absent before it runs). */
   responsibilities?: string | null; workMode?: 'ONSITE' | 'HYBRID' | 'REMOTE' | null; version?: number; code?: string | null;
   canManage: boolean; canAct: boolean; candidates: RecruiterApplicationRow[];
 }

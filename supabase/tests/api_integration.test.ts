@@ -9636,7 +9636,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sa', 'GET', `/users?departmentId=${dept}&role=TEAM_MEMBER`);
   check(r.status === 200 && r.json.data.total === 3, 'team lead isolation: the Super Admin still sees all three members', r);
 }
-// --- HR Recruiter: create / edit / publish vacancies and the department filter (migration 20261226000300) ------------------------------------
+// --- HR Recruiter: create / edit / publish vacancies and the department filter (migration 20261227000200) ------------------------------------
 {
   const dept = async (slug: string) => (await db.query(`select id from public.departments where slug = $1`, [slug])).rows[0].id as string;
   const acc = await dept('accounts');
@@ -9677,6 +9677,23 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 403, 'recruiter vacancies: an employee outside recruitment cannot create one', r);
   r = await api('sa', 'GET', '/recruiter/vacancies');
   check(r.status === 200 && r.json.data.some((v: any) => v.id === id), 'recruiter vacancies: HR leadership sees the Recruiter’s vacancy', r);
+}
+
+// --- A Meta Verifier created with the departments they verify for (migration 20261227000100) ----------------------------------
+{
+  r = await api('sa', 'POST', '/users', { email: 'mvx.plain@amuwa.com', fullName: 'Not a verifier', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, verifierDepartmentIds: [wbx.id] });
+  check(r.status === 422, 'verifier creation: only a Meta Verifier can be given other departments', r);
+  r = await api('sa', 'POST', '/users', { email: 'mvx.bad@amuwa.com', fullName: 'Bad ids', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, metaVerifier: true, verifierDepartmentIds: ['nope'] });
+  check(r.status === 422, 'verifier creation: malformed department ids are refused', r);
+  r = await api('a', 'POST', '/users', { email: 'mvx.a@amuwa.com', fullName: 'By sales', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, metaVerifier: true, verifierDepartmentIds: [wbx.id] });
+  check(r.status === 403, 'verifier creation: a Sales Team Member cannot create one', r);
+  r = await api('sa', 'POST', '/users', { email: 'mvx@amuwa.com', fullName: 'Cross Verifier', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: support.id, metaVerifier: true, verifierDepartmentIds: [wbx.id, wbx.id] });
+  check(r.status === 201 || r.status === 200, 'verifier creation: the Super Admin creates a Meta Verifier with another department', r);
+  const mvx = r.json?.data?.id as string;
+  r = await api('sa', 'GET', `/users/${mvx}/verifier-departments`);
+  check(r.status === 200 && r.json.data.isMetaVerifier && r.json.data.home?.id === wab.id
+        && r.json.data.extra.length === 1 && r.json.data.extra[0].id === wbx.id, 'verifier creation: home department plus the ticked one, once', r);
+  check(Number((await db.query(`select count(*) n from public.profiles where email like 'mvx.%'`)).rows[0].n) === 0, 'verifier creation: no account was left behind by a refused request');
 }
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();

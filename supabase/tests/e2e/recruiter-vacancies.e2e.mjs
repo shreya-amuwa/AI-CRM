@@ -1,4 +1,4 @@
-// The HR Recruiter dashboard in a real browser (migration 20261226000300): the sidebar sections (Work / Recruitment / Management, collapsible), creating,
+// The HR Recruiter dashboard in a real browser (migration 20261227000200): the sidebar sections (Work / Recruitment / Management, collapsible), creating,
 // editing and changing the status of a vacancy, the Department filter (real departments, filtering by department, a genuine empty result), the data
 // surviving a reload, and an HR Assistant still landing on the HR dashboard. Local stack only; passwords are made up per run.
 // See supabase/tests/e2e/README.md (run-recruiter-vacancies.sh).

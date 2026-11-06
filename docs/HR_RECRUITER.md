@@ -118,7 +118,7 @@ Recruiter marks Selected / Rejected  ->  database function checks the caller, th
 * Calls HR logged before this feature (no `application_id`) show on every application of that candidate.
 * The recruiter sidebar is exactly the ten items specified, so the company daily-report page (COMPANY_REPORTING.md) is not in it. If recruiters must also submit daily reports, a Reports entry needs to be added to the sidebar (a one-line change); this was left out because the sidebar was specified exactly.
 
-## 10. Vacancy management by the Recruiter, sidebar sections, department filter (migration `20261226000300_recruiter_vacancy_management.sql`)
+## 10. Vacancy management by the Recruiter, sidebar sections, department filter (migration `20261227000200_recruiter_vacancy_management.sql`)
 
 **Sidebar.** The Recruiter's menu has three collapsible sections, like the other dashboards' labelled sections: **Work** (Dashboard, Call Management:
 calls and follow-ups, Interview Management: the interview schedule), **Recruitment** (Vacancies, Candidate Applications, Candidate Pipeline,
@@ -147,4 +147,4 @@ Tests: `recruiter_vacancy_management_test.sql`, the "HR Recruiter: create / edit
 browser test `supabase/tests/e2e/run-recruiter-vacancies.sh`.
 
 Note: re-running the older `20261222000300_recruiter_workspace.sql` after this migration would restore the one-argument `recruiter_vacancies`
-beside the new one; run `20261226000300` again afterwards if that ever happens.
+beside the new one; run `20261227000200` again afterwards if that ever happens.

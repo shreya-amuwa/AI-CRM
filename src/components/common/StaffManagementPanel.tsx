@@ -55,6 +55,9 @@ interface StaffManagementPanelProps {
   onCreated?: (profile: Profile) => void;
   /** The Access Control tab: when given, "Edit Access" opens it for that person; otherwise a small editor opens here. */
   onEditAccess?: (member: Profile) => void;
+  /** Team Member Management (Super Admin): the departments the form's Department list offers, and what to do when another one is chosen there. */
+  departmentOptions?: { id: string; name: string }[];
+  onDepartmentChange?: (slug: string) => void;
   /** Changes when access was saved elsewhere: the lists reload. */
   refreshToken?: number;
 }
@@ -87,7 +90,7 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: 'bg-slate-100 text-slate-600 border-slate-200'
 };
 
-export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated }) => {
+export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated, departmentOptions, onDepartmentChange }) => {
   const { profile } = useAuth();
   const { departments, allDepartments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
@@ -155,6 +158,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [headDeptsInit, setHeadDeptsInit] = useState(false);
   // Operations Head account: the departments the ONE account supervises (whole departments; no side, no Department Head rule).
   const [opsDepts, setOpsDepts] = useState<string[]>([]);
+  // a Meta Verifier: the OTHER departments they verify for (the department they are placed in is always included)
+  const [verifierDepts, setVerifierDepts] = useState<string[]>([]);
   const [assignTeams, setAssignTeams] = useState<AssignableTeam[]>([]);
   const [headAccess, setHeadAccess] = useState<DepartmentHeadAccess[]>([]);
   const headDivision: HeadDivision | '' = headFn === 'SALES' || headFn === 'SUPPORT' ? headFn : '';
@@ -248,11 +253,18 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setHeadDeptsInit(true);
     }
   }, [departmentId, headDeptsInit]);
+  useEffect(() => {
+    if (!departmentId) return;
+    setHeadDepts(ds => (ds.length <= 1 ? [departmentId] : ds));
+    setVerifierDepts(ds => ds.filter(id => id !== departmentId));
+    setTeamId('');
+  }, [departmentId]);
   // The functions each department has teams for (a head can only be given a function the department really has).
   useEffect(() => {
     if (profile?.role !== 'SUPER_ADMIN' || !allowedRoles.includes('DEPARTMENT_HEAD')) return;
     organizationApi.teams().then(ts => setAssignTeams(ts.map(t => ({ departmentId: t.departmentId, division: t.division }))), () => setAssignTeams([]));
   }, [profile?.role, allowedRoles]);
+  const canGiveVerifierDepts = profile?.role === 'SUPER_ADMIN' || (!!profile && isOperationsHead(profile));
   const operationsChoices = useMemo(() => assignable.filter(d => !d.facetOf).map(d => ({ id: d.id, name: d.name })), [assignable]);
   // The department the head is placed in (the first one chosen; a side department such as Wabatalk is placed in its base department).
   const headHome = headDepts[0] ? assignable.find(d => d.id === headDepts[0]) : undefined;
@@ -338,6 +350,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setHeadFn('');
     setHeadDepts(departmentId ? [departmentId] : []);
     setOpsDepts([]);
+    setVerifierDepts([]);
   };
 
   /** Give an existing Sales member a Sales role (or clear it); the database lets only the Super Admin and the Department Head do it. */
@@ -434,6 +447,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       position: position || undefined,
       technicalConsultant: consultant || undefined,
       metaVerifier: metaVerifier || undefined,
+      verifierDepartmentIds: metaVerifier && canGiveVerifierDepts && verifierDepts.length ? verifierDepts.filter(id => id !== departmentId) : undefined,
       salesSubRole: showSalesRole && salesSubRole ? salesSubRole : undefined,
       headDivision: headPlan?.headDivision,
       operationsHead: operationsHead || undefined,
@@ -669,8 +683,16 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           {(role !== 'DEPARTMENT_HEAD' || hrMode) && (
             <label className="block text-xs font-semibold text-slate-700">
               Department
-              <input className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={department?.name || departmentSlug} readOnly aria-readonly="true" />
-              <span className="block mt-1 font-normal text-slate-500">The department chosen at the top of this window.</span>
+              {departmentOptions && onDepartmentChange ? (
+                <select id="staff-department" className={`${inputClass} mt-1 cursor-pointer`} value={departmentSlug} onChange={e => onDepartmentChange(e.target.value)} data-testid="staff-department">
+                  {departmentOptions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              ) : (
+                <input className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={department?.name || departmentSlug} readOnly aria-readonly="true" />
+              )}
+              <span className="block mt-1 font-normal text-slate-500">
+                {metaVerifier ? 'The department the Meta Verifier is placed in (their home department).' : 'The department the new member is placed in.'}
+              </span>
             </label>
           )}
 
@@ -725,6 +747,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           )}
 
           {operationsHead && <OperationsDepartmentsField departments={operationsChoices} selected={opsDepts} onSelected={setOpsDepts} />}
+
+          {metaVerifier && canGiveVerifierDepts && (
+            <OperationsDepartmentsField
+              departments={operationsChoices.filter(d => d.id !== departmentId)}
+              selected={verifierDepts}
+              onSelected={setVerifierDepts}
+              legend="Other departments this Meta Verifier verifies for"
+              hint={`${department?.name || 'The home department'} is always included. Sales of every department ticked here sends its Meta verification customers to this verifier. It gives no approval, employee or finance permissions.`}
+              allowEmpty
+            />
+          )}
 
           {role === 'DEPARTMENT_HEAD' && !operationsHead && !hrMode && (
             <>

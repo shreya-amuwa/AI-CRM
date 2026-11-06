@@ -1,5 +1,5 @@
 -- =============================================================================
--- HR Recruiter vacancy management (migration 20261226000300): a Recruiter creates, edits, publishes, holds, closes, marks filled and reopens their
+-- HR Recruiter vacancy management (migration 20261227000200): a Recruiter creates, edits, publishes, holds, closes, marks filled and reopens their
 -- own vacancies; the department list of the filters is the real department list; the vacancy list filters by department in the database.
 -- Uses the people of recruiter_workflow_test.sql (rr_rec1, rr_rec2, rr_asst) and the shared fixture (sa, hr_head). Vacancies are prefixed 'RVM'.
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 94. HR Recruiter: create / edit / publish vacancies, department filter'
 reset role;
-\i supabase/migrations/20261226000300_recruiter_vacancy_management.sql
-\i supabase/migrations/20261226000300_recruiter_vacancy_management.sql
+\i supabase/migrations/20261227000200_recruiter_vacancy_management.sql
+\i supabase/migrations/20261227000200_recruiter_vacancy_management.sql
 
 create temp table rvm (k text primary key, v jsonb);
 grant all on rvm to authenticated;

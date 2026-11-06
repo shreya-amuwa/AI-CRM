@@ -23,7 +23,7 @@ export class RecruiterRepository {
   filterOptions() { return this.rpc<RecruiterFilterOptions>('recruiter_filter_options'); }
   overview(filters: Omit<RecruiterFilters, 'page' | 'pageSize'>) { return this.rpc<RecruiterOverview>('recruiter_overview', { p_filters: filters }); }
   vacancies(status?: string, department?: string) {
-    // the department argument exists from migration 20261226000300; without it, the older one-argument call keeps working
+    // the department argument exists from migration 20261227000200; without it, the older one-argument call keeps working
     return this.rpc<RecruiterVacancy[]>('recruiter_vacancies', department ? { p_status: status ?? null, p_department: department } : { p_status: status ?? null });
   }
   saveVacancy(data: Record<string, unknown>) { return this.rpc<RecruiterVacancy>('recruiter_vacancy_save', { p_data: data }); }
