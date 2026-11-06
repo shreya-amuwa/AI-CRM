@@ -140,6 +140,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/careers_test.sql
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/careers_catalogue_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/recruiter_workflow_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/recruiter_vacancy_management_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_chat_integration_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_designations_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meta_verifier_routing_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/field_visit_tracking_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

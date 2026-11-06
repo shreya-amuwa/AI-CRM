@@ -91,7 +91,10 @@ export class ChatRepository {
   markRead(id: string, seq?: number) { return this.rpc<{ readSeq: number }>('chat_mark_read', { p_conversation: id, p_seq: seq ?? null }); }
 
   // ---- people, direct messages, groups
-  directory(q: string | null, limit: number) { return this.rpc<ChatDirectoryPerson[]>('chat_directory', { p_search: q, p_limit: limit }); }
+  // p_department exists from migration 20261228000300; without a department filter the older two-argument call keeps working
+  directory(q: string | null, limit: number, department: string | null = null) {
+    return this.rpc<ChatDirectoryPerson[]>('chat_directory', department ? { p_search: q, p_limit: limit, p_department: department } : { p_search: q, p_limit: limit });
+  }
   openDirect(profileId: string) { return this.rpc<ChatConversation>('chat_open_direct', { p_profile: profileId }); }
   createGroup(title: string, memberIds: string[]) { return this.rpc<ChatConversation>('chat_create_group', { p_title: title, p_members: memberIds }); }
   renameGroup(id: string, title: string) { return this.rpc<ChatConversation>('chat_group_rename', { p_conversation: id, p_title: title }); }

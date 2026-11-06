@@ -174,6 +174,7 @@ span.ch-file { cursor: default; }
 .ch-modal footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ch-border); }
 .ch-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 700; }
 .ch-field input { font: inherit; font-weight: 500; font-size: 14px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--ch-border); background: #fff; color: var(--ch-text); }
+.ch-field select { font: inherit; font-weight: 500; font-size: 14px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--ch-border); background: #fff; color: var(--ch-text); }
 .ch-person { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-radius: 10px; width: 100%; background: transparent; border: 0; font: inherit; color: inherit; text-align: left; }
 button.ch-person { cursor: pointer; }
 button.ch-person:hover { background: var(--ch-surface); }

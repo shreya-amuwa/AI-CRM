@@ -9790,6 +9790,25 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.trackingStatus === 'STOPPED', 'tracking API: the finished visit stays stopped', r);
 }
 
+// --- HR in the company chat: the directory's designation and department filter (migration 20261228000300) ------------------------------
+{
+  const wabId = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  let r = await api('rrec1', 'GET', '/chat/directory?limit=100');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length > 0 && r.json.data.every((p: any) => 'designation' in p && 'departmentId' in p && !('email' in p) && !('phone' in p)),
+    'hr chat: an HR Recruiter reads the company directory, with designation and department, without e-mail or phone', r);
+  r = await api('rrec1', 'GET', `/chat/directory?limit=100&department=${wabId}`);
+  check(r.status === 200 && r.json.data.length > 0 && r.json.data.every((p: any) => p.departmentId === wabId), 'hr chat: the department filter is applied by the server', r);
+  r = await api('rrec1', 'GET', '/chat/directory?department=not-a-uuid');
+  check(r.status === 422, 'hr chat: a malformed department is refused', r);
+  const other = (await db.query(`select p.id from public.profiles p join public.teams t on t.id = p.team_id where t.division = 'SALES' and p.role = 'TEAM_MEMBER' and p.status = 'ACTIVE' order by p.created_at limit 1`)).rows[0].id as string;
+  r = await api('rrec1', 'POST', '/chat/direct', { profileId: other });
+  const convId = r.json.data?.id as string;
+  check(r.status === 200 && !!convId, 'hr chat: the HR Recruiter opens a direct chat with a Sales Team Member', r);
+  const recruiterId = (await db.query(`select profile_id from public.chat_members where conversation_id = $1 and profile_id <> $2`, [convId, other])).rows[0].profile_id as string;
+  tokens.set('hrc_other', tokenFor(other));
+  r = await api('hrc_other', 'POST', '/chat/direct', { profileId: recruiterId });
+  check(r.status === 200 && r.json.data.id === convId, 'hr chat: the Team Member opening the chat back gets the same conversation', r);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

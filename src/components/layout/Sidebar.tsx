@@ -351,10 +351,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'hr_email', 'client_notices', 'chat', 'notifications'];
+  // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
+  const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
   const navSections = groupNavItems(navItems, [
     { ids: navItems.slice(0, 1).map(i => i.id) },
     { label: 'Work', ids: navItems.slice(1).map(i => i.id).filter(id => !TEAM_IDS.includes(id)) },
-    { label: 'Team', ids: TEAM_IDS.filter(id => navItems.some(i => i.id === id)) }
+    { label: 'Team', ids: TEAM_IDS.filter(id => !COMMUNICATION_IDS.includes(id) && navItems.some(i => i.id === id)) },
+    ...(COMMUNICATION_IDS.length ? [{ label: 'Communication', ids: COMMUNICATION_IDS.filter(id => navItems.some(i => i.id === id)) }] : [])
   ]);
   const deptTitle = activeDepartment?.name || 'Department';
 

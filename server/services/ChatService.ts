@@ -15,6 +15,7 @@ import {
   chatEscalateSchema,
   chatReviewQuerySchema,
   chatSearchQuerySchema,
+  chatDirectoryQuerySchema,
   chatSendEncryptedSchema,
   chatInternalModeSchema,
   chatSendSchema,
@@ -75,8 +76,8 @@ export class ChatService {
   }
   detail(id: string): Promise<ChatConversation> { return this.repo.detail(parse(uuidSchema, id)); }
   directory(query: unknown) {
-    const { q, limit } = parse(chatSearchQuerySchema, query ?? {});
-    return this.repo.directory(q || null, limit);
+    const { q, limit, department } = parse(chatDirectoryQuerySchema, query ?? {});
+    return this.repo.directory(q || null, limit, department ?? null);
   }
   openDirect(body: unknown) { return this.repo.openDirect(parse(chatDirectSchema, body).profileId); }
   createGroup(body: unknown) {

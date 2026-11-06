@@ -121,6 +121,11 @@ figures, the breadcrumb, the information sections and skill chips, the "No Candi
 career_apply) in the candidates table with a working search / clear and View profile, the layout (three equal information columns side by side and the five figures in one row at 1366 / 1440 / 1920 px, the page as wide as the
 content area with no 1400px cap, two columns on a tablet, stacked on a phone) and no horizontal scroll at 390 / 820 / 1280 / 1920 px (49 checks).
 
+`run-hr-chat.sh` drives HR in the company chat with two browsers signed in at once: the HR Recruiter's Communication > Chat, the Department filter of
+New message, a message to a Sales Team Member that the Team Member sees unread in their own Chat and answers, the answer reaching the Recruiter live,
+one conversation with two messages in the database, the HR Assistant's and HR Admin Head's Communication > Chat, and privacy (the Assistant neither
+sees nor can open the pair's conversation) (16 checks).
+
 `run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
 assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
 a Department Head revision that starts both approvals again, the Team Lead's individual report without Download and History, and that every change appears on the

@@ -3,10 +3,11 @@ import { Loader2, LogOut, Pencil, ShieldCheck, ShieldOff, UserMinus, UserPlus, X
 import type { ChatConversation, ChatDirectoryPerson } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { chatApi } from '../../lib/chat/api';
+import { organizationApi } from '../../lib/api/endpoints';
 import { Avatar, ChatModal } from './ChatBits';
 
 /** People the person can chat with: name, role, department. Nothing confidential comes back from the server. */
-function usePeople(term: string, enabled = true) {
+function usePeople(term: string, enabled = true, department = '') {
   const [people, setPeople] = useState<ChatDirectoryPerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -15,18 +16,18 @@ function usePeople(term: string, enabled = true) {
     let live = true;
     setLoading(true);
     const t = setTimeout(() => {
-      chatApi.directory(term.trim() || undefined).then(
+      chatApi.directory(term.trim() || undefined, 30, department || undefined).then(
         p => { if (live) { setPeople(p); setError(''); setLoading(false); } },
         e => { if (live) { setError(errorMessage(e)); setLoading(false); } }
       );
     }, term ? 250 : 0);
     return () => { live = false; clearTimeout(t); };
-  }, [term, enabled]);
+  }, [term, enabled, department]);
   return { people, loading, error };
 }
 
 const PersonLine: React.FC<{ p: ChatDirectoryPerson }> = ({ p }) => (
-  <span className="ch-person-main"><b>{p.name}</b><small>{[p.position || p.label, p.department].filter(Boolean).join(' - ')}</small></span>
+  <span className="ch-person-main"><b>{p.name}</b><small>{[p.designation || p.position || p.label, p.department].filter(Boolean).join(' - ')}</small></span>
 );
 
 export const NewChatDialog: React.FC<{ onClose: () => void; onOpened: (c: ChatConversation) => void }> = ({ onClose, onOpened }) => {
@@ -36,7 +37,15 @@ export const NewChatDialog: React.FC<{ onClose: () => void; onOpened: (c: ChatCo
   const [picked, setPicked] = useState<ChatDirectoryPerson[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const { people, loading, error: listError } = usePeople(term);
+  const [department, setDepartment] = useState('');
+  // the departments of the company, to narrow the list (the server filters; the list itself is only names)
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let live = true;
+    organizationApi.departments().then(d => { if (live) setDepartments(d.filter(x => !x.facetOf).map(x => ({ id: x.id, name: x.name })).sort((a, b) => a.name.localeCompare(b.name))); }, () => undefined);
+    return () => { live = false; };
+  }, []);
+  const { people, loading, error: listError } = usePeople(term, true, department);
 
   const run = async (fn: () => Promise<ChatConversation>) => {
     setBusy(true); setError('');
@@ -72,11 +81,19 @@ export const NewChatDialog: React.FC<{ onClose: () => void; onOpened: (c: ChatCo
         </div>
       )}
       <label className="ch-field">Find a colleague
-        <input value={term} onChange={e => setTerm(e.target.value)} placeholder="Search by name" autoComplete="off" />
+        <input value={term} onChange={e => setTerm(e.target.value)} placeholder="Search by name, designation or department" autoComplete="off" />
       </label>
+      {departments.length > 0 && (
+        <label className="ch-field">Department
+          <select value={department} onChange={e => setDepartment(e.target.value)} data-testid="chat-department-filter">
+            <option value="">All departments</option>
+            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </label>
+      )}
       {(error || listError) && <p className="ch-error" role="alert">{error || listError}</p>}
       <div role="list" aria-label="Colleagues">
-        {loading ? <p className="ch-note"><Loader2 size={14} className="ch-spin" aria-hidden /> Searching</p> : people.length === 0 ? <p className="ch-note">Nobody matches that name.</p> : people.map(p => {
+        {loading ? <p className="ch-note"><Loader2 size={14} className="ch-spin" aria-hidden /> Searching</p> : people.length === 0 ? <p className="ch-note">{department ? 'Nobody in this department matches.' : 'Nobody matches that name.'}</p> : people.map(p => {
           const on = picked.some(x => x.id === p.id);
           return (
             <button key={p.id} type="button" role="listitem" className="ch-person" disabled={busy} aria-pressed={mode === 'group' ? on : undefined}
