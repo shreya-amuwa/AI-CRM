@@ -482,6 +482,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/recruiter/vacancies/:id', handler: recruiter.vacancy },
   { method: 'POST', path: '/recruiter/vacancies/:id/recruiter', handler: recruiter.assignVacancy, options: S },
   { method: 'POST', path: '/recruiter/vacancies/:id/status', handler: recruiter.vacancyStatus, options: S },
+  { method: 'POST', path: '/recruiter/vacancies', handler: recruiter.createVacancy, options: S },
+  { method: 'PATCH', path: '/recruiter/vacancies/:id', handler: recruiter.updateVacancy, options: S },
   { method: 'GET', path: '/recruiter/applications', handler: recruiter.applications },
   { method: 'GET', path: '/recruiter/applications/:id', handler: recruiter.application },
   { method: 'POST', path: '/recruiter/applications/:id/notes', handler: recruiter.addNote, options: S },

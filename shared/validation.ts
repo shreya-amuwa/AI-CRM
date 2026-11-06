@@ -2509,7 +2509,7 @@ export const recruiterFiltersSchema = z
   })
   .strict();
 export type RecruiterFilters = z.infer<typeof recruiterFiltersSchema>;
-export const recruiterVacanciesQuerySchema = z.object({ status: z.enum(VACANCY_STATUSES).optional() }).strict();
+export const recruiterVacanciesQuerySchema = z.object({ status: z.enum(VACANCY_STATUSES).optional(), department: uuidSchema.optional() }).strict();
 export const recruiterPipelineQuerySchema = z.object({ posting: uuidSchema.optional() }).strict();
 export const recruiterDecisionsQuerySchema = z.object({ view: z.enum(['READY', 'DECIDED']).default('READY') }).strict();
 export const recruiterVacancyAssignSchema = z.object({ recruiter: uuidSchema.nullable() }).strict();
@@ -2614,3 +2614,29 @@ export const leaveResubmitSchema = z.object({ reason: trimmed(1000).min(3, 'Ente
 export const leaveWorkflowSchema = z.object({ workflow: z.enum(['MULTI_LEVEL', 'TWO_STEP']) }).strict();
 /** Super Admin only: the department-wide Support desk read of post-sale customers (off by default). */
 export const supportDeskSchema = z.object({ departmentWide: z.boolean() }).strict();
+
+// --- HR Recruiter: create / edit a vacancy (migration 20261227000200) ----------------------------------------------------------------
+export const VACANCY_EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'CONTRACT'] as const;
+export const VACANCY_WORK_MODES = ['ONSITE', 'HYBRID', 'REMOTE'] as const;
+const vacancyOptional = (max: number) => recruiterText(max).optional().transform(v => (v ? v : undefined));
+/** The vacancy form of the HR Recruiter page; the database checks the same rules again (and the department, the caller and the version). */
+export const recruiterVacancySaveSchema = z
+  .object({
+    title: recruiterText(120).min(2, 'Enter the job title / designation.'),
+    departmentId: uuidSchema,
+    openings: z.coerce.number().int('Enter a whole number of openings.').min(1, 'At least one opening.').max(500, 'At most 500 openings.'),
+    description: recruiterText(15000).min(20, 'Describe the job in at least 20 characters.'),
+    responsibilities: vacancyOptional(4000),
+    skills: vacancyOptional(4000),
+    qualifications: vacancyOptional(4000),
+    experience: vacancyOptional(2000),
+    employmentType: z.enum(VACANCY_EMPLOYMENT_TYPES, { message: 'Choose the employment type.' }),
+    workMode: z.enum(VACANCY_WORK_MODES).optional(),
+    location: recruiterText(200).min(1, 'Enter the job location.'),
+    closesAt: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter the application deadline as a date.').optional(),
+    status: z.enum(['DRAFT', 'OPEN']).optional(),
+    responsibleId: uuidSchema.optional(),
+    version: z.coerce.number().int().min(1).optional()
+  })
+  .strict();
+export type RecruiterVacancySaveInput = z.infer<typeof recruiterVacancySaveSchema>;

@@ -113,6 +113,11 @@ exactly HR Assistant, HR Recruiter and HR Admin Head; Wabastore / Accounts keep 
 belong to the new one, one employee per HR designation is created through the form and checked in the database, the API refuses wrong department / designation pairs,
 and each new employee signs in to their dashboard (HR dashboard, HR Recruiter dashboard, HR Department Head dashboard without Super Admin pages) (20 checks).
 
+`run-recruiter-vacancies.sh` drives the HR Recruiter dashboard: the Work / Recruitment / Management sidebar sections (collapse and expand), the
+Department filter listing every department, creating and publishing a vacancy through the form (checked in the database), editing it, putting it on
+hold, closing and reopening it, filtering the list by department (including a genuinely empty result), the vacancy surviving a reload, and an HR
+Assistant still opening the HR dashboard and being refused by the recruiter API (25 checks).
+
 `run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
 assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
 a Department Head revision that starts both approvals again, the Team Lead's individual report without Download and History, and that every change appears on the

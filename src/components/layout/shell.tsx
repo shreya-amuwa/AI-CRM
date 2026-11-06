@@ -29,6 +29,8 @@ export interface ShellNavItem {
 export interface ShellNavGroup {
   label?: string;
   items: ShellNavItem[];
+  /** The section heading opens and closes the section (open by default; it stays open while one of its pages is open). Off unless set. */
+  collapsible?: boolean;
 }
 
 /**
@@ -36,10 +38,10 @@ export interface ShellNavGroup {
  * Work / Customers / Team ...). `spec` names each section's entries by id, in the order to show them; an entry that no
  * section names goes into the last section, so a new page is never lost.
  */
-export function groupNavItems<T extends { id: string }>(items: T[], spec: { label?: string; ids: string[] }[]): { label?: string; items: T[] }[] {
+export function groupNavItems<T extends { id: string }>(items: T[], spec: { label?: string; ids: string[]; collapsible?: boolean }[]): { label?: string; items: T[]; collapsible?: boolean }[] {
   const byId = new Map(items.map(i => [i.id, i]));
   const named = new Set(spec.flatMap(s => s.ids));
-  const groups = spec.map(s => ({ label: s.label, items: s.ids.map(id => byId.get(id)).filter((i): i is T => Boolean(i)) }));
+  const groups = spec.map(s => ({ label: s.label, collapsible: s.collapsible, items: s.ids.map(id => byId.get(id)).filter((i): i is T => Boolean(i)) }));
   const rest = items.filter(i => !named.has(i.id));
   if (rest.length && groups.length) groups[groups.length - 1].items.push(...rest);
   return groups.filter(g => g.items.length > 0);
@@ -137,6 +139,20 @@ export const NavParent: React.FC<{
 
 export const NavGroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">{children}</div>
+);
+
+/** A section heading that opens and closes its section (same look as NavGroupLabel, plus a chevron). */
+export const CollapsibleGroupLabel: React.FC<{ label: string; open: boolean; onToggle: () => void; controls: string }> = ({ label, open, onToggle, controls }) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    aria-expanded={open}
+    aria-controls={controls}
+    className="flex items-center justify-between px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded"
+  >
+    {label}
+    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
+  </button>
 );
 
 /** The hamburger that lives in the sidebar, to the right of the brand: collapses the sidebar on desktop, closes the drawer on small screens. */
@@ -334,6 +350,13 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   flush = false,
   children
 }) => {
+  // only sections marked collapsible use this; the others are always open as before
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set());
+  const toggleGroup = (label: string) => setClosedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(label)) next.delete(label); else next.add(label);
+    return next;
+  });
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex antialiased">
       <SidebarFrame
@@ -348,7 +371,12 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
         <nav className="flex flex-col gap-5" aria-label={`${ariaLabel} pages`}>
           {groups.map((g, i) => (
             <div key={g.label || i} className="flex flex-col gap-0.5">
-              {g.label && <NavGroupLabel>{g.label}</NavGroupLabel>}
+              {g.label && (g.collapsible
+                ? <CollapsibleGroupLabel label={g.label} open={!closedGroups.has(g.label) || g.items.some(it => it.id === active)} onToggle={() => toggleGroup(g.label as string)} controls={`nav-group-${i}`} />
+                : <NavGroupLabel>{g.label}</NavGroupLabel>)}
+              {/* a closed section renders nothing (a CSS display class would override the hidden attribute) */}
+              {!(g.collapsible && g.label && closedGroups.has(g.label) && !g.items.some(it => it.id === active)) && (
+              <div id={`nav-group-${i}`} className="flex flex-col gap-0.5">
               {g.items.map(it =>
                 it.children?.length ? (
                   <NavParent
@@ -374,6 +402,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                   }}
                 />
                 )
+              )}
+              </div>
               )}
             </div>
           ))}

@@ -24,10 +24,13 @@ export type RecruiterPage = 'dashboard' | 'vacancies' | 'applications' | 'pipeli
 export interface RecruiterTarget { applicationId?: string; vacancyId?: string; stage?: RecruiterQuery['stage'] }
 export type RecruiterGo = (page: RecruiterPage, target?: RecruiterTarget) => void;
 
-/** The sidebar of the HR Recruiter, in this order. There is no e-mail page: candidate messages are sent by the server on its own. */
+/**
+ * The sidebar of the HR Recruiter (pages listed here; the sections are in RECRUITER_SECTIONS). There is no e-mail page: candidate messages are
+ * sent by the server on its own.
+ */
 const NAV: { id: RecruiterPage; label: string; icon: React.ElementType; segment: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, segment: '' },
-  { id: 'vacancies', label: 'Available Vacancies', icon: Briefcase, segment: 'vacancies' },
+  { id: 'vacancies', label: 'Vacancies', icon: Briefcase, segment: 'vacancies' },
   { id: 'applications', label: 'Candidate Applications', icon: Users, segment: 'applications' },
   { id: 'pipeline', label: 'Candidate Pipeline', icon: Workflow, segment: 'pipeline' },
   { id: 'calls', label: 'Call Management', icon: Phone, segment: 'calls' },
@@ -36,6 +39,12 @@ const NAV: { id: RecruiterPage; label: string; icon: React.ElementType; segment:
   { id: 'decisions', label: 'Selection & Rejection', icon: Scale, segment: 'selection' },
   { id: 'reports', label: 'Recruitment Reports', icon: BarChart3, segment: 'reports' },
   { id: 'settings', label: 'Settings', icon: Settings, segment: 'settings' }
+];
+/** Work = the day's work (the overview, calls and follow-ups, the interview schedule); Recruitment = vacancies and candidates; Management. */
+const RECRUITER_SECTIONS: { label: string; ids: RecruiterPage[]; collapsible: boolean }[] = [
+  { label: 'Work', ids: ['dashboard', 'calls', 'interviews'], collapsible: true },
+  { label: 'Recruitment', ids: ['vacancies', 'applications', 'pipeline', 'assessments', 'decisions'], collapsible: true },
+  { label: 'Management', ids: ['reports', 'settings'], collapsible: true }
 ];
 export const RECRUITER_BASE = (userId: string) => `/hr-recruiter/dashboard/${userId}`;
 
@@ -77,7 +86,7 @@ export const RecruiterDashboard: React.FC = () => {
   const displayName = profile?.fullName || user?.name || 'HR Recruiter';
   const c = ctx.data;
   const items = NAV.map(n => ({ id: n.id, label: n.label, icon: n.icon, badge: n.id === 'applications' && c?.newApplications ? c.newApplications : undefined, count: undefined }));
-  const groups = groupNavItems(items, [{ ids: NAV.map(n => n.id) }]);
+  const groups = groupNavItems(items, RECRUITER_SECTIONS);
 
   return (
     <DashboardShell
