@@ -9755,9 +9755,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 409, 'tracking API: no location before the visit has started', r);
   r = await api('ba1', 'POST', `/field-visits/${visitId}/start`, { latitude: 18.52, longitude: 73.85, accuracyMeters: 12 });
   check(r.status === 200 && r.json.data.status === 'IN_PROGRESS', 'tracking API: the visit starts', r);
-  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/start`, { latitude: 18.52, longitude: 73.85, accuracyMeters: 12, recordedAt: at(0) });
+  // positions are taken in the recent past, as a phone sends them: a time in the future is stored as "now" (a phone clock running ahead),
+  // so two future positions would both become "now" and the second would be dropped as a duplicate (less than 15 s apart)
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/start`, { latitude: 18.52, longitude: 73.85, accuracyMeters: 12, recordedAt: at(-90) });
   check(r.status === 200 && r.json.data.trackingStatus === 'ACTIVE' && r.json.data.points === 1, 'tracking API: the employee starts sharing their location', r);
-  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 18.521, longitude: 73.851, accuracyMeters: 20, recordedAt: at(30) }, { latitude: 18.522, longitude: 73.852, accuracyMeters: 20, recordedAt: at(60) }] });
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 18.521, longitude: 73.851, accuracyMeters: 20, recordedAt: at(-60) }, { latitude: 18.522, longitude: 73.852, accuracyMeters: 20, recordedAt: at(-30) }] });
   check(r.status === 200 && r.json.data.saved === 2 && r.json.data.lastLocation.latitude === 18.522, 'tracking API: positions are stored and the last one is returned', r);
   r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 123, longitude: 73.8, accuracyMeters: 20, recordedAt: at(90) }] });
   check(r.status === 422, 'tracking API: an impossible position is refused', r);
