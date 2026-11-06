@@ -118,7 +118,8 @@ Department filter listing every department, creating and publishing a vacancy th
 hold, closing and reopening it, filtering the list by department (including a genuinely empty result), the vacancy surviving a reload, and an HR
 Assistant still opening the HR dashboard and being refused by the recruiter API; and the vacancy detail page: the five metric cards with the vacancy's
 figures, the breadcrumb, the information sections and skill chips, the "No Candidates Yet" state, a real application (made with the portal's own
-career_apply) in the candidates table with a working search / clear and View profile, and no horizontal scroll at 390 / 820 / 1280 / 1920 px (42 checks).
+career_apply) in the candidates table with a working search / clear and View profile, the layout (three equal information columns side by side and the five figures in one row at 1366 / 1440 / 1920 px, the page as wide as the
+content area with no 1400px cap, two columns on a tablet, stacked on a phone) and no horizontal scroll at 390 / 820 / 1280 / 1920 px (49 checks).
 
 `run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
 assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,

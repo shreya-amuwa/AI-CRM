@@ -153,18 +153,23 @@ beside the new one; run `20261227000200` again afterwards if that ever happens.
 
 `src/components/hr-recruiter/VacancyDetail.tsx` (the dialogs it opens are in `VacancyDialogs.tsx`). No data, API or permission change.
 
-* **Toolbar:** "All vacancies", the breadcrumb (HR Department > Recruitment > Vacancy Details), and on the right Allocate (leadership), Edit vacancy,
-  Change status (primary). It wraps on narrow screens.
-* **Overview:** the title, the department, designation (when it differs from the title), employment type and work mode, the status badge at the top
-  right, and five metric cards: Openings, Selected, Remaining (worked out by the database from the openings and the selected candidates), Posted,
-  Closes. The cards use 5 columns on wide screens, 3 on tablets and 2 on phones.
-* **Job information:** two columns (stacked on a tablet or phone), each card only as tall as its content.
-  * **Left:** description, responsibilities as a bulleted list (one per line, or separated by ";"), requirements before selection.
-  * **Right:** qualifications, skills as chips (separated by commas), experience, and additional information (location, employment type, work mode,
-    job code, responsible recruiter).
-  * An empty optional field shows "Not specified" (qualifications, skills, experience) or nothing (responsibilities).
-* **Candidates:** the real number of applications.
-  * **Filters:** search, recruitment stage, assessment status and interview status, all run by the database through the Candidate Applications query
-    limited to this vacancy.
-  * **List:** a table on tablet and desktop, compact cards on a phone; View opens the candidate profile.
-  * **Empty and no-match:** "No Candidates Yet" when nobody has applied, and "No candidates match these filters" when the filters hide everyone.
+**Width.** The Vacancies pages use the full content area beside the sidebar. The recruiter workspace kept every page in a 1400px column
+(`RecruiterDashboard.tsx`); that cap now applies to the other recruiter pages only. The page is a CSS container (`container-type: inline-size`) and its
+columns change with container queries. The page therefore follows the width it actually has, not the window width with the 264px sidebar included,
+which is what made the earlier version fall back to narrow stacked columns.
+
+**Layout, top to bottom:**
+
+* **Toolbar:** All vacancies and the breadcrumb on the left; Allocate (leadership), Edit vacancy and Change status (primary) on the right.
+* **Overview:** the title, the department, designation, employment type and work mode, and the status at the top right.
+* **Figures:** Openings, Selected, Remaining, Posted, Closes in one row from a 40rem-wide page; 2 per row on a phone.
+* **Information:** three equal columns in one bordered block, separated by 1px lines. They are 3 columns from a 60rem page, 2 (with the third full
+  width) from 42rem, and 1 below that.
+  * **Job overview:** description, responsibilities as bullets.
+  * **Candidate requirements:** qualifications, skills as chips, experience ("Not specified" when empty).
+  * **Recruitment information:** requirements before selection, and the vacancy information (department, designation, location, employment type,
+    work mode, job code, responsible recruiter).
+* **Candidates:** full width.
+  * **Count and filters:** the real application count; search, stage, assessment and interview filters run in the database.
+  * **List:** a table (name, e-mail, contact, applied, assessment, interview, stage, actions) from a 48rem page, compact cards below.
+  * **Empty and no-match:** a small "No Candidates Yet" or "No candidates match these filters".

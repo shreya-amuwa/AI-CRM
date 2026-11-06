@@ -160,7 +160,30 @@ const fig = async label => (await main.locator('dl[aria-label="Vacancy figures"]
 await expect((await fig('Openings')) === '3' && (await fig('Selected')) === '0' && (await fig('Remaining')) === '3', 'the figures come from the vacancy (3 openings, 0 selected, 3 remaining)');
 await expect(/Breadcrumb/.test(await p.getByRole('navigation', { name: 'Breadcrumb' }).getAttribute('aria-label')) && /Vacancy Details/.test(await p.getByRole('navigation', { name: 'Breadcrumb' }).innerText()), 'breadcrumb: HR Department > Recruitment > Vacancy Details');
 const text = await main.innerText();
-await expect(['JOB DESCRIPTION', 'RESPONSIBILITIES', 'REQUIREMENTS BEFORE SELECTION', 'QUALIFICATIONS', 'REQUIRED SKILLS', 'EXPERIENCE', 'ADDITIONAL INFORMATION'].every(h => text.toUpperCase().includes(h)), 'the information sections are shown');
+await expect(['JOB OVERVIEW', 'JOB DESCRIPTION', 'RESPONSIBILITIES', 'CANDIDATE REQUIREMENTS', 'QUALIFICATIONS', 'SKILLS', 'EXPERIENCE', 'RECRUITMENT INFORMATION', 'REQUIREMENTS BEFORE SELECTION', 'VACANCY INFORMATION'].every(h => text.toUpperCase().includes(h)), 'the information sections are shown');
+// layout: the three columns side by side, the five figures in one row, the page across the whole content area
+const boxes = async sel => main.locator(sel).evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width) }; }));
+const layout = async () => ({
+  cols: await boxes('[data-testid="vacancy-info"] > section'),
+  figs: await boxes('dl[aria-label="Vacancy figures"] dt'),
+  page: (await boxes('[data-testid="vacancy-detail"]'))[0],
+  main: await p.evaluate(() => { const m = document.querySelector('main'); const cs = getComputedStyle(m); return m.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); })
+});
+let L = await layout();
+await expect(L.cols.length === 3 && new Set(L.cols.map(c => c.y)).size === 1 && Math.max(...L.cols.map(c => c.w)) - Math.min(...L.cols.map(c => c.w)) <= 2,
+  '1440px: three balanced information columns side by side (same top, same width)', L.cols);
+await expect(L.figs.length === 5 && new Set(L.figs.map(f => f.y)).size === 1, '1440px: the five figures in one row', L.figs);
+await expect(Math.abs(L.page.w - L.main) <= 2, '1440px: the page uses the whole content area beside the sidebar', { page: L.page.w, main: L.main });
+await p.setViewportSize({ width: 1920, height: 1080 });
+await p.waitForTimeout(400);
+L = await layout();
+await expect(L.page.w > 1400 && Math.abs(L.page.w - L.main) <= 2 && new Set(L.cols.map(c => c.y)).size === 1, '1920px: still the full content width (no 1400px cap), three columns', { page: L.page.w, main: L.main });
+await p.setViewportSize({ width: 1366, height: 768 });
+await p.waitForTimeout(400);
+L = await layout();
+await expect(new Set(L.cols.map(c => c.y)).size === 1 && new Set(L.figs.map(f => f.y)).size === 1, '1366px (the reported screen): three columns and one row of figures', { cols: L.cols, figs: L.figs });
+await p.screenshot({ path: `${OUT}/recruiter-7-detail-1366.png`, fullPage: true });
+await p.setViewportSize({ width: 1440, height: 900 });
 await expect((await main.locator('li', { hasText: /^Tally$/ }).count()) === 1 && (await main.locator('li', { hasText: /^Excel$/ }).count()) === 1, 'skills are shown as chips (Tally, Excel)');
 await expect((await p.getByTestId('candidates-empty').count()) === 1 && /No Candidates Yet/.test(text), 'no candidates yet: the empty state, not an empty box');
 
@@ -197,6 +220,8 @@ for (const [w, h, name] of [[390, 844, 'phone'], [820, 1180, 'tablet'], [1280, 8
   const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   await expect(over <= 1, `${name} (${w}px): no horizontal scroll`, over);
   if (name === 'phone') await expect((await main.locator('ul[aria-label^="Candidates of"] li').count()) === 1, 'phone: candidates as compact cards');
+  if (name === 'phone') { const c = await boxes('[data-testid="vacancy-info"] > section'); await expect(new Set(c.map(x => x.y)).size === 3, 'phone: the information columns stack', c); }
+  if (name === 'tablet') { const c = await boxes('[data-testid="vacancy-info"] > section'); await expect(c[0].y === c[1].y && c[2].y > c[0].y && c[2].w > c[0].w * 1.8, 'tablet: two columns, the third full width below', c); }
   await p.screenshot({ path: `${OUT}/recruiter-6-detail-${name}.png`, fullPage: true });
 }
 await p.setViewportSize({ width: 1440, height: 900 });

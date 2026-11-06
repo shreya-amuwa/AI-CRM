@@ -1,24 +1,29 @@
 import React, { useState } from 'react';
-import {
-  ArrowLeft, Briefcase, CalendarClock, CalendarPlus, ChevronRight, ClipboardList, Eye, FileText, GraduationCap, Hourglass, Info, ListChecks, Pencil,
-  RefreshCw, Search, Sparkles, UserCheck, UserCog, UserSearch, Users
-} from 'lucide-react';
+import { ArrowLeft, ChevronRight, Eye, Pencil, RefreshCw, Search, UserCog, UserSearch } from 'lucide-react';
 import type { RecruiterApplicationPage, RecruiterContext, RecruiterFilterOptions, RecruiterPerson, RecruiterVacancyDetail } from '../../../shared/contracts';
 import { recruiterApi, type RecruiterQuery } from '../../lib/api/recruiter';
-import { btn, Card, ErrorBanner, Spinner, inputCls, selectCls } from '../team-member/pipeline/shared';
+import { btn, ErrorBanner, Spinner, inputCls, selectCls } from '../team-member/pipeline/shared';
 import type { RecruiterGo } from './RecruiterDashboard';
 import { STAGE_LABEL, STAGE_ORDER, STEP_LABEL, StagePill, VacancyPill, fmtDate, useLoad } from './ui';
 import { AssignDialog, EMPLOYMENT_LABEL, StatusDialog, VacancyForm, WORK_MODE_LABEL } from './VacancyDialogs';
 
 /*
- * The vacancy detail page of the HR Recruiter: a toolbar (back, breadcrumb, actions), the overview with five metric cards, the job information in two
- * columns that only show what the vacancy actually has, and the candidates of the vacancy (searched and filtered by the database, opened as a profile).
+ * The vacancy detail page of the HR Recruiter, one workspace across the full content width:
+ *   toolbar (back, breadcrumb | actions) / overview (title, meta, status, five figures in one row) / three information columns
+ *   (Job overview | Candidate requirements | Recruitment information) / the candidates of the vacancy.
+ *
+ * The layout answers to the width of the page itself, not of the browser window: the root is a CSS container (container-type: inline-size) and
+ * every column change is a container query, so the 264px sidebar never makes the page think it has more room than it does.
+ *   figures      2 columns, 5 in one row from a 40rem-wide page
+ *   information  1 column, 2 from 42rem, 3 from 60rem
+ *   candidates   cards, a table from 48rem
  */
 
 const TEST_LABEL: Record<string, string> = { NONE: 'Not invited', PENDING: 'Pending', PASSED: 'Passed', FAILED: 'Failed' };
 const INTERVIEW_LABEL: Record<string, string> = { NONE: 'None', SCHEDULED: 'Scheduled', COMPLETED: 'Completed', CANCELLED: 'Cancelled' };
 const TEST_TONE: Record<string, string> = { NONE: 'text-slate-500', PENDING: 'text-amber-700', PASSED: 'text-emerald-700', FAILED: 'text-rose-700' };
 const CANDIDATES_PAGE = 10;
+const NAVY = 'text-[#0f2547]';
 
 /** Lines of a free-text field as list items: one per line, or the parts of a single line separated by ";" (a leading "-", "*" or "•" is dropped). */
 export const toItems = (text: string | null | undefined): string[] => {
@@ -31,25 +36,30 @@ export const toItems = (text: string | null | undefined): string[] => {
 export const toChips = (text: string | null | undefined): string[] =>
   Array.from(new Set((text ?? '').split(/[,;\n]/).map(x => x.replace(/^\s*(?:[-*•])\s*/, '').trim()).filter(Boolean)));
 
-const Metric: React.FC<{ icon: React.ElementType; label: string; value: React.ReactNode; tone: string; className?: string }> = ({ icon: Icon, label, value, tone, className = '' }) => (
-  <div className={`flex items-center gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-3 sm:px-3.5 min-w-0 ${className}`}>
-    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`} aria-hidden="true"><Icon className="h-[18px] w-[18px]" /></span>
-    <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="whitespace-nowrap text-base font-bold leading-tight text-slate-900 tabular-nums">{value}</dd>
-    </div>
+/** One figure of the overview row. */
+const Figure: React.FC<{ label: string; value: React.ReactNode; accent?: string }> = ({ label, value, accent = NAVY }) => (
+  <div className="min-w-0 bg-white px-4 py-3">
+    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
+    <dd className={`mt-0.5 whitespace-nowrap text-lg font-bold leading-tight tabular-nums ${accent}`}>{value}</dd>
   </div>
 );
 
-const Section: React.FC<{ icon: React.ElementType; title: string; children: React.ReactNode }> = ({ icon: Icon, title, children }) => (
-  <section className="space-y-2">
-    <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500"><Icon className="h-4 w-4 text-slate-400" aria-hidden="true" />{title}</h3>
-    <div className="text-sm leading-relaxed text-slate-700">{children}</div>
+/** One information column: a short title, then its sub-sections. */
+const Column: React.FC<{ title: string; className?: string; children: React.ReactNode }> = ({ title, className = '', children }) => (
+  <section className={`min-w-0 space-y-4 bg-white p-4 sm:p-5 ${className}`} aria-label={title}>
+    <h3 className={`text-sm font-bold ${NAVY}`}>{title}</h3>
+    {children}
   </section>
 );
-const NotSpecified: React.FC = () => <p className="text-sm italic text-slate-400">Not specified</p>;
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="space-y-1">
+    <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</h4>
+    <div className="break-words text-sm leading-relaxed text-slate-700">{children}</div>
+  </div>
+);
+const NotSpecified: React.FC = () => <p className="italic text-slate-400">Not specified</p>;
 const Bullets: React.FC<{ items: string[] }> = ({ items }) => (
-  <ul className="space-y-1.5">{items.map((x, i) => <li key={i} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" aria-hidden="true" /><span>{x}</span></li>)}</ul>
+  <ul className="space-y-1">{items.map((x, i) => <li key={i} className="flex gap-2"><span className="mt-[0.55rem] h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400" aria-hidden="true" /><span>{x}</span></li>)}</ul>
 );
 
 /** The candidates of one vacancy: search and filters run in the database (the same query as Candidate Applications, limited to this vacancy). */
@@ -67,33 +77,33 @@ const VacancyCandidates: React.FC<{ vacancy: RecruiterVacancyDetail; ctx: Recrui
   const set = (patch: RecruiterQuery) => setQ(x => ({ ...x, ...patch, page: 1 }));
   const data = list.data;
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
-  const lbl = 'sr-only';
   const open = (id: string) => go('applications', { applicationId: id });
+  const sel = `${selectCls} w-full min-w-0 [@container(min-width:48rem)]:w-auto`;
 
   return (
-    <Card className="overflow-hidden">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-label="Candidates">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
-        <h2 className="flex items-center gap-2 text-base font-bold text-slate-900">
+        <h2 className={`flex items-center gap-2 text-base font-bold ${NAVY}`}>
           Candidates
-          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700 tabular-nums" aria-label={`${vacancy.applications} applications`}>{vacancy.applications}</span>
+          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700 tabular-nums" aria-label={`${vacancy.applications} applications`}>{vacancy.applications}</span>
         </h2>
         {!hidden && vacancy.applications > 0 && (
-          <form className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center lg:w-auto" role="search" aria-label="Filter candidates" onSubmit={e => e.preventDefault()}>
-            <div className="relative col-span-2 min-w-0 sm:flex-1 lg:w-56 lg:flex-none">
-              <label htmlFor="vc-search" className={lbl}>Search candidates</label>
+          <form className="grid w-full grid-cols-2 gap-2 [@container(min-width:48rem)]:flex [@container(min-width:48rem)]:w-auto [@container(min-width:48rem)]:items-center" role="search" aria-label="Filter candidates" onSubmit={e => e.preventDefault()}>
+            <div className="relative col-span-2 min-w-0 [@container(min-width:48rem)]:w-60">
+              <label htmlFor="vc-search" className="sr-only">Search candidates</label>
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" aria-hidden="true" />
               <input id="vc-search" className={`${inputCls} !pl-8`} placeholder="Search name or e-mail" value={search} onChange={e => setSearch(e.target.value)} maxLength={120} />
             </div>
-            <label htmlFor="vc-stage" className={lbl}>Recruitment stage</label>
-            <select id="vc-stage" className={`${selectCls} col-span-2 w-full min-w-0 sm:col-span-1 sm:w-auto`} value={q.stage ?? ''} onChange={e => set({ stage: (e.target.value || undefined) as RecruiterQuery['stage'] })}>
+            <label htmlFor="vc-stage" className="sr-only">Application status</label>
+            <select id="vc-stage" className={`${sel} col-span-2 [@container(min-width:48rem)]:col-span-1`} value={q.stage ?? ''} onChange={e => set({ stage: (e.target.value || undefined) as RecruiterQuery['stage'] })}>
               <option value="">All stages</option>{STAGE_ORDER.map(s => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}
             </select>
-            <label htmlFor="vc-assess" className={lbl}>Assessment status</label>
-            <select id="vc-assess" className={`${selectCls} w-full min-w-0 sm:w-auto`} value={q.assessment ?? ''} onChange={e => set({ assessment: (e.target.value || undefined) as RecruiterQuery['assessment'] })}>
+            <label htmlFor="vc-assess" className="sr-only">Assessment status</label>
+            <select id="vc-assess" className={sel} value={q.assessment ?? ''} onChange={e => set({ assessment: (e.target.value || undefined) as RecruiterQuery['assessment'] })}>
               <option value="">Any assessment</option>{Object.entries(TEST_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <label htmlFor="vc-int" className={lbl}>Interview status</label>
-            <select id="vc-int" className={`${selectCls} w-full min-w-0 sm:w-auto`} value={q.interview ?? ''} onChange={e => set({ interview: (e.target.value || undefined) as RecruiterQuery['interview'] })}>
+            <label htmlFor="vc-int" className="sr-only">Interview status</label>
+            <select id="vc-int" className={sel} value={q.interview ?? ''} onChange={e => set({ interview: (e.target.value || undefined) as RecruiterQuery['interview'] })}>
               <option value="">Any interview</option>{Object.entries(INTERVIEW_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </form>
@@ -101,55 +111,56 @@ const VacancyCandidates: React.FC<{ vacancy: RecruiterVacancyDetail; ctx: Recrui
       </div>
 
       {hidden ? (
-        <p className="px-5 py-6 text-sm text-slate-500">Candidates of an unallocated vacancy are visible once it is allocated to a recruiter.</p>
+        <p className="px-5 py-5 text-sm text-slate-500">Candidates of an unallocated vacancy are visible once it is allocated to a recruiter.</p>
       ) : list.error ? (
         <div className="p-4"><ErrorBanner message={list.error} onRetry={list.reload} /></div>
       ) : list.loading && !data ? (
-        <div className="p-6"><Spinner /></div>
+        <div className="p-5"><Spinner /></div>
       ) : !data || data.total === 0 ? (
         filtered ? (
-          <div className="px-5 py-8 text-center">
-            <p className="text-sm font-semibold text-slate-700">No candidates match these filters</p>
-            <button type="button" className="mt-2 text-xs font-semibold text-indigo-700 hover:underline" onClick={() => { setSearch(''); setQ({ page: 1, pageSize: CANDIDATES_PAGE }); }}>Clear filters</button>
+          <div className="px-5 py-6 text-center">
+            <p className={`text-sm font-semibold ${NAVY}`}>No candidates match these filters</p>
+            <button type="button" className="mt-1.5 text-xs font-semibold text-blue-700 hover:underline" onClick={() => { setSearch(''); setQ({ page: 1, pageSize: CANDIDATES_PAGE }); }}>Clear filters</button>
           </div>
         ) : (
-          <div className="flex flex-col items-center px-5 py-10 text-center" data-testid="candidates-empty">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-600" aria-hidden="true"><UserSearch className="h-6 w-6" /></span>
-            <p className="mt-3 text-sm font-bold text-slate-900">No Candidates Yet</p>
-            <p className="mt-1 max-w-md text-xs leading-relaxed text-slate-500">
-              No applications have been received for this vacancy yet. Candidate applications will appear here automatically when applicants apply through the Candidate Portal.
+          <div className="flex flex-col items-center px-5 py-6 text-center" data-testid="candidates-empty">
+            <UserSearch className="h-6 w-6 text-blue-500" aria-hidden="true" />
+            <p className={`mt-2 text-sm font-bold ${NAVY}`}>No Candidates Yet</p>
+            <p className="mt-1 max-w-lg text-xs leading-relaxed text-slate-500">
+              No applications have been received for this vacancy yet. Applications will appear here automatically when candidates apply through the Candidate Portal.
             </p>
           </div>
         )
       ) : (
         <>
-          {/* tablet and desktop: a table; phone: compact cards */}
-          <div className="hidden overflow-x-auto md:block">
+          {/* a table when the page is at least 48rem wide; compact cards below */}
+          <div className="hidden overflow-x-auto [@container(min-width:48rem)]:block">
             <table className="w-full text-xs">
               <caption className="sr-only">Candidates of {vacancy.title}</caption>
-              <thead><tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                <th scope="col" className="px-4 py-2.5">Candidate</th><th scope="col" className="hidden px-3 lg:table-cell">Contact</th><th scope="col" className="px-3">Applied</th>
+              <thead><tr className="border-b border-slate-100 bg-slate-50/70 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <th scope="col" className="px-5 py-2.5">Candidate</th><th scope="col" className="px-3">Email</th><th scope="col" className="px-3">Contact</th><th scope="col" className="px-3">Applied</th>
                 <th scope="col" className="px-3">Assessment</th><th scope="col" className="px-3">Interview</th><th scope="col" className="px-3">Stage</th>
-                <th scope="col" className="px-4 text-right"><span className="sr-only">Actions</span></th>
+                <th scope="col" className="px-5 text-right">Actions</th>
               </tr></thead>
               <tbody>{data.items.map(a => (
-                <tr key={a.applicationId} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/70">
-                  <th scope="row" className="px-4 py-3 text-left font-semibold text-slate-900">{a.name}<span className="block max-w-[220px] truncate text-[11px] font-normal text-slate-500">{a.email}</span>{a.phone && <span className="block text-[11px] font-normal text-slate-500 lg:hidden">{a.phone}</span>}</th>
-                  <td className="hidden px-3 whitespace-nowrap text-slate-600 lg:table-cell">{a.phone || '–'}</td>
+                <tr key={a.applicationId} className="border-b border-slate-100 last:border-0 hover:bg-blue-50/30">
+                  <th scope="row" className={`px-5 py-3 text-left font-semibold ${NAVY}`}>{a.name}</th>
+                  <td className="max-w-[16rem] truncate px-3 text-slate-600" title={a.email}>{a.email}</td>
+                  <td className="px-3 whitespace-nowrap text-slate-600">{a.phone || '–'}</td>
                   <td className="px-3 whitespace-nowrap text-slate-600">{fmtDate(a.appliedAt)}</td>
                   <td className={`px-3 whitespace-nowrap font-medium ${TEST_TONE[a.testStatus]}`}>{TEST_LABEL[a.testStatus]}{a.testScore !== null && a.testStatus !== 'PENDING' ? ` (${a.testScore})` : ''}</td>
                   <td className="px-3 whitespace-nowrap text-slate-600">{INTERVIEW_LABEL[a.interviewStatus]}</td>
                   <td className="px-3"><StagePill stage={a.stage} /></td>
-                  <td className="px-4 text-right"><button type="button" className={btn.secondary} onClick={() => open(a.applicationId)} aria-label={`View profile of ${a.name}`}><Eye className="h-3.5 w-3.5" aria-hidden="true" /> View</button></td>
+                  <td className="px-5 text-right"><button type="button" className={btn.secondary} onClick={() => open(a.applicationId)} aria-label={`View profile of ${a.name}`}><Eye className="h-3.5 w-3.5" aria-hidden="true" /> View</button></td>
                 </tr>
               ))}</tbody>
             </table>
           </div>
-          <ul className="divide-y divide-slate-100 md:hidden" aria-label={`Candidates of ${vacancy.title}`}>{data.items.map(a => (
+          <ul className="divide-y divide-slate-100 [@container(min-width:48rem)]:hidden" aria-label={`Candidates of ${vacancy.title}`}>{data.items.map(a => (
             <li key={a.applicationId}>
-              <button type="button" onClick={() => open(a.applicationId)} className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300">
+              <button type="button" onClick={() => open(a.applicationId)} className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-300">
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-slate-900">{a.name}</span>
+                  <span className={`block truncate text-sm font-semibold ${NAVY}`}>{a.name}</span>
                   <span className="block truncate text-[11px] text-slate-500">{a.email}{a.phone ? ` · ${a.phone}` : ''}</span>
                   <span className="mt-1 block text-[11px] text-slate-500">Applied {fmtDate(a.appliedAt)} · Test: {TEST_LABEL[a.testStatus]} · Interview: {INTERVIEW_LABEL[a.interviewStatus]}</span>
                 </span>
@@ -169,16 +180,14 @@ const VacancyCandidates: React.FC<{ vacancy: RecruiterVacancyDetail; ctx: Recrui
           )}
         </>
       )}
-    </Card>
+    </section>
   );
 };
 
 export const VacancyDetail: React.FC<{ id: string; ctx: RecruiterContext; people: RecruiterPerson[]; departments: RecruiterFilterOptions['departments']; go: RecruiterGo; onBack: () => void; onChanged: () => void }> = ({ id, ctx, people, departments, go, onBack, onChanged }) => {
   const { data: v, error, loading, reload } = useLoad<RecruiterVacancyDetail>(() => recruiterApi.vacancy(id), [id]);
   const [dialog, setDialog] = useState<'assign' | 'status' | 'edit' | null>(null);
-  const back = (
-    <button type="button" className={btn.secondary} onClick={onBack}><ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> All vacancies</button>
-  );
+  const back = <button type="button" className={btn.secondary} onClick={onBack}><ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> All vacancies</button>;
   if (loading && !v) return <Spinner />;
   if (error || !v) return <div className="space-y-3">{back}<ErrorBanner message={error ?? 'Vacancy not found.'} onRetry={reload} /></div>;
   const done = () => { setDialog(null); reload(); onChanged(); };
@@ -187,7 +196,10 @@ export const VacancyDetail: React.FC<{ id: string; ctx: RecruiterContext; people
   const skills = toChips(v.skills);
   const employment = EMPLOYMENT_LABEL[v.employmentType as keyof typeof EMPLOYMENT_LABEL] ?? v.employmentType.replace('_', ' ').toLowerCase();
   const workMode = v.workMode ? WORK_MODE_LABEL[v.workMode] : null;
-  const facts = [
+  const designation = v.designation && v.designation.toLowerCase() !== v.title.toLowerCase() ? v.designation : null;
+  const vacancyInfo = [
+    { label: 'Department', value: v.department },
+    { label: 'Designation', value: v.designation },
     { label: 'Location', value: v.location },
     { label: 'Employment type', value: employment },
     { label: 'Work mode', value: workMode },
@@ -196,16 +208,17 @@ export const VacancyDetail: React.FC<{ id: string; ctx: RecruiterContext; people
   ].filter(f => f.value);
 
   return (
-    <div className="space-y-4">
-      {/* toolbar: back + breadcrumb on the left, the actions on the right (they wrap below on a narrow screen) */}
+    // the page is a container: every column change below follows ITS width (the content area beside the sidebar), not the window's
+    <div className="w-full space-y-4 [container-type:inline-size]" data-testid="vacancy-detail">
+      {/* toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           {back}
           <nav aria-label="Breadcrumb" className="min-w-0">
             <ol className="flex flex-wrap items-center gap-1 text-xs text-slate-500">
               <li>HR Department</li><li aria-hidden="true"><ChevronRight className="h-3.5 w-3.5" /></li>
-              <li><button type="button" className="hover:text-indigo-700 hover:underline" onClick={onBack}>Recruitment</button></li><li aria-hidden="true"><ChevronRight className="h-3.5 w-3.5" /></li>
-              <li aria-current="page" className="font-semibold text-slate-700">Vacancy Details</li>
+              <li><button type="button" className="hover:text-blue-700 hover:underline" onClick={onBack}>Recruitment</button></li><li aria-hidden="true"><ChevronRight className="h-3.5 w-3.5" /></li>
+              <li aria-current="page" className={`font-semibold ${NAVY}`}>Vacancy Details</li>
             </ol>
           </nav>
         </div>
@@ -216,58 +229,60 @@ export const VacancyDetail: React.FC<{ id: string; ctx: RecruiterContext; people
         </div>
       </div>
 
-      {/* overview */}
-      <Card className="p-4 sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 sm:flex" aria-hidden="true"><Briefcase className="h-5 w-5" /></span>
-            <div className="min-w-0">
-              <h2 className="break-words text-xl font-bold leading-tight text-slate-900">{v.title}</h2>
-              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                {[v.department, v.designation && v.designation.toLowerCase() !== v.title.toLowerCase() ? v.designation : null, employment, workMode].filter(Boolean).map((x, i) => (
-                  <React.Fragment key={i}>{i > 0 && <span className="text-slate-300" aria-hidden="true">|</span>}<span className={i === 0 ? 'font-semibold text-slate-700' : ''}>{x}</span></React.Fragment>
-                ))}
-              </p>
-            </div>
+      {/* overview: title, meta, status, then the five figures in ONE row (2 columns only on a very narrow page) */}
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-label="Vacancy overview">
+        <div className="flex items-start justify-between gap-3 px-4 py-4 sm:px-5">
+          <div className="min-w-0">
+            <h2 className={`break-words text-xl font-bold leading-tight ${NAVY}`}>{v.title}</h2>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+              {[v.department, designation, employment, workMode].filter(Boolean).map((x, i) => (
+                <React.Fragment key={i}>{i > 0 && <span className="text-slate-300" aria-hidden="true">|</span>}<span className={i === 0 ? 'font-semibold text-slate-700' : ''}>{x}</span></React.Fragment>
+              ))}
+            </p>
           </div>
           <div className="shrink-0"><VacancyPill status={v.status} /></div>
         </div>
-        {v.statusNote && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{v.statusNote}</p>}
-        {v.status === 'FILLED' && <p className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-800">All positions are filled. This vacancy is ready for closure.</p>}
-        <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5" aria-label="Vacancy figures">
-          <Metric icon={Users} label="Openings" value={v.openings} tone="bg-indigo-50 text-indigo-600" />
-          <Metric icon={UserCheck} label="Selected" value={v.selected} tone="bg-emerald-50 text-emerald-600" />
-          <Metric icon={Hourglass} label="Remaining" value={v.remaining} tone="bg-amber-50 text-amber-600" />
-          <Metric icon={CalendarPlus} label="Posted" value={fmtDate(v.createdAt)} tone="bg-sky-50 text-sky-600" />
-          <Metric icon={CalendarClock} label="Closes" value={v.closesAt ? fmtDate(v.closesAt) : 'No deadline'} tone="bg-rose-50 text-rose-600" className="col-span-2 sm:col-span-1" />
+        {(v.statusNote || v.status === 'FILLED') && (
+          <div className="space-y-2 px-4 pb-3 sm:px-5">
+            {v.statusNote && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">{v.statusNote}</p>}
+            {v.status === 'FILLED' && <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800">All positions are filled. This vacancy is ready for closure.</p>}
+          </div>
+        )}
+        {/* 1px lines between the figures come from the gap over a light background */}
+        <dl className="grid grid-cols-2 gap-px border-t border-slate-200 bg-slate-200 [@container(min-width:40rem)]:grid-cols-5" aria-label="Vacancy figures">
+          <Figure label="Openings" value={v.openings} />
+          <Figure label="Selected" value={v.selected} accent="text-emerald-700" />
+          <Figure label="Remaining" value={v.remaining} accent="text-blue-700" />
+          <Figure label="Posted" value={fmtDate(v.createdAt)} />
+          <div className="col-span-2 grid [@container(min-width:40rem)]:col-span-1"><Figure label="Closes" value={v.closesAt ? fmtDate(v.closesAt) : 'No deadline'} /></div>
         </dl>
-      </Card>
+      </section>
 
-      {/* job information: what the vacancy has, in two columns; nothing is drawn for an empty optional field */}
-      <div className="grid items-start gap-4 lg:grid-cols-5">
-        <Card className="space-y-5 p-4 sm:p-5 lg:col-span-3">
-          <Section icon={FileText} title="Job description"><p className="whitespace-pre-wrap break-words">{v.description}</p></Section>
-          {responsibilities.length > 0 && <Section icon={ClipboardList} title="Responsibilities"><Bullets items={responsibilities} /></Section>}
-          <Section icon={ListChecks} title="Requirements before selection">
+      {/* three balanced information columns in one bordered block (two on a medium page, the third spanning; one on a narrow page) */}
+      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 [@container(min-width:42rem)]:grid-cols-2 [@container(min-width:60rem)]:grid-cols-3" data-testid="vacancy-info">
+        <Column title="Job overview">
+          <Field label="Job description"><p className="whitespace-pre-wrap">{v.description}</p></Field>
+          {responsibilities.length > 0 && <Field label="Responsibilities"><Bullets items={responsibilities} /></Field>}
+        </Column>
+        <Column title="Candidate requirements">
+          <Field label="Qualifications">{qualifications.length > 1 ? <Bullets items={qualifications} /> : qualifications.length ? <p>{qualifications[0]}</p> : <NotSpecified />}</Field>
+          <Field label="Skills">
+            {skills.length ? <ul className="flex flex-wrap gap-1.5">{skills.map(s => <li key={s} className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{s}</li>)}</ul> : <NotSpecified />}
+          </Field>
+          <Field label="Experience">{v.experience ? <p className="whitespace-pre-wrap">{v.experience}</p> : <NotSpecified />}</Field>
+        </Column>
+        <Column title="Recruitment information" className="[@container(min-width:42rem)]:col-span-2 [@container(min-width:60rem)]:col-span-1">
+          <Field label="Requirements before selection">
             {v.requiredSteps.length ? (
-              <ul className="flex flex-wrap gap-2">{v.requiredSteps.map(s => <li key={s} className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">{STEP_LABEL[s].replace(/^a /, '').replace(/^./, c => c.toUpperCase())}</li>)}</ul>
-            ) : <p className="text-sm text-slate-500">No fixed steps: the recruiter decides.</p>}
-          </Section>
-        </Card>
-        <Card className="space-y-5 p-4 sm:p-5 lg:col-span-2">
-          <Section icon={GraduationCap} title="Qualifications">{qualifications.length > 1 ? <Bullets items={qualifications} /> : qualifications.length ? <p className="break-words">{qualifications[0]}</p> : <NotSpecified />}</Section>
-          <Section icon={Sparkles} title="Required skills">
-            {skills.length ? <ul className="flex flex-wrap gap-1.5">{skills.map(s => <li key={s} className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">{s}</li>)}</ul> : <NotSpecified />}
-          </Section>
-          <Section icon={Briefcase} title="Experience">{v.experience ? <p className="whitespace-pre-wrap break-words">{v.experience}</p> : <NotSpecified />}</Section>
-          {facts.length > 0 && (
-            <Section icon={Info} title="Additional information">
-              <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1.5 text-sm">
-                {facts.map(f => <React.Fragment key={f.label}><dt className="text-slate-500">{f.label}</dt><dd className="break-words font-medium text-slate-800">{f.value}</dd></React.Fragment>)}
-              </dl>
-            </Section>
-          )}
-        </Card>
+              <ul className="flex flex-wrap gap-1.5">{v.requiredSteps.map(s => <li key={s} className="rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700">{STEP_LABEL[s].replace(/^a /, '').replace(/^./, c => c.toUpperCase())}</li>)}</ul>
+            ) : <p className="text-slate-500">No fixed steps: the recruiter decides.</p>}
+          </Field>
+          <Field label="Vacancy information">
+            <dl className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-1">
+              {vacancyInfo.map(f => <React.Fragment key={f.label}><dt className="text-slate-500">{f.label}</dt><dd className={`min-w-0 break-words font-medium ${NAVY}`}>{f.value}</dd></React.Fragment>)}
+            </dl>
+          </Field>
+        </Column>
       </div>
 
       <VacancyCandidates vacancy={v} ctx={ctx} go={go} />
