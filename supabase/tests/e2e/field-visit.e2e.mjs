@@ -345,7 +345,7 @@ await r1.getByText('No visit is planned').waitFor({ timeout: 15000 }).catch(() =
 ok("Sales Team Member: another person's visits are not shown");
 await fvNav(r1, 'Add Lead');
 await r1.locator('#lead-name').waitFor({ timeout: 10000 });
-await expect((await r1.locator('#lead-leadSource').inputValue().catch(async () => r1.locator('select').filter({ hasText: 'Field visit' }).first().inputValue())) === 'Field visit', 'Sales Team Member: Add Lead is the dashboard\'s own form with the source "Field visit" chosen');
+await expect((await r1.locator('#lead-leadSource').getAttribute('data-value')) === 'Field visit', 'Sales Team Member: Add Lead is the dashboard\'s own form with the source "Field visit" chosen');
 await r1.screenshot({ path: `${OUT}/fv-6-member-add.png`, fullPage: true });
 
 // ------------------------------------------------------------------ 5. Permissions

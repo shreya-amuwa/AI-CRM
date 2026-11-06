@@ -3713,6 +3713,10 @@ export interface LeadVisit {
   assignmentId: string | null;
   employee: { id: string; fullName: string };
   taskId: string | null;
+  /** Live location for this visit (migration 20261228000100); absent before it runs. */
+  trackingStatus?: VisitTrackingStatus;
+  trackingStartedAt?: string | null;
+  trackingStoppedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -5269,3 +5273,82 @@ export interface ChatInternalMode { mode: 'STANDARD' | 'E2EE' }
 /** SALES / SUPPORT, or null = both (the whole department). */
 export type OperationsFunction = 'SALES' | 'SUPPORT' | null;
 export interface OperationsScopeItem { departmentId: string; division: OperationsFunction; primary: boolean }
+
+// --- Field Visit: live location, Field Visit leads -> Department Head -> Telecaller (migration 20261228000100) --------------------------------
+export type VisitTrackingStatus = 'OFF' | 'ACTIVE' | 'STOPPED';
+export type VisitTrackingIssue = 'PERMISSION_DENIED' | 'POSITION_UNAVAILABLE' | 'TIMEOUT';
+export interface TrackedPosition {
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  /** When the phone took the position. */
+  recordedAt: string;
+  receivedAt?: string;
+}
+export interface VisitTrackingState {
+  visitId: string;
+  visitStatus: LeadVisitStatus;
+  trackingStatus: VisitTrackingStatus;
+  trackingStartedAt: string | null;
+  trackingStoppedAt: string | null;
+  stopReason: 'STOPPED_BY_EMPLOYEE' | 'VISIT_ENDED' | 'PERMISSION_DENIED' | null;
+  issue: VisitTrackingIssue | null;
+  issueAt: string | null;
+  lastLocation: TrackedPosition | null;
+  points: number;
+  /** Only in answers to a batch of positions: how many were stored (the rest were too close in time, or outside the visit). */
+  saved?: number;
+}
+export interface TrackingBoardItem extends VisitTrackingState {
+  employee: { id: string; fullName: string; phone: string | null };
+  department: string | null;
+  team: string | null;
+  teamLead: string | null;
+  lead: { id: string; name: string; company: string | null; address: string | null };
+  purpose: string;
+  visitDate: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  checkin: { latitude: number; longitude: number; accuracyMeters: number | null; at: string | null } | null;
+}
+export interface TrackingBoard {
+  date: string;
+  serverTime: string;
+  items: TrackingBoardItem[];
+}
+export interface TrackingTrail extends VisitTrackingState {
+  locations: TrackedPosition[];
+  events: { event: 'STARTED' | 'STOPPED' | 'VISIT_ENDED' | VisitTrackingIssue; at: string }[];
+}
+export interface FieldVisitLeadRoute {
+  leadId: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  email: string | null;
+  city: string | null;
+  address: string | null;
+  businessCategory: string | null;
+  leadSource: string | null;
+  notes: string | null;
+  stage: string;
+  department: string | null;
+  services: string[];
+  status: 'PENDING' | 'ASSIGNED';
+  createdAt: string;
+  createdBy: { id: string; fullName: string; role: string } | null;
+  assignedTo: { id: string; fullName: string } | null;
+  assignedBy: string | null;
+  assignedAt: string | null;
+  history: { assignedTo: string | null; assignedBy: string | null; at: string; note: string | null }[];
+  changed?: boolean;
+}
+export interface FieldVisitLeadQueue {
+  total: number;
+  page: number;
+  pageSize: number;
+  pending: number;
+  items: FieldVisitLeadRoute[];
+}
+export interface FieldVisitTelecaller { id: string; name: string; team: string; openLeads: number }

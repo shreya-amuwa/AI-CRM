@@ -38,6 +38,7 @@ const StaffManagementPanel = lazy(() => import('./components/common/StaffManagem
 const AmuwaHqPanel = lazy(() => import('./components/departments/amuwa/AmuwaHqPanel').then(m => ({ default: m.AmuwaHqPanel })));
 const AmuwaSettingsPanel = lazy(() => import('./components/departments/amuwa/AmuwaSettingsPanel').then(m => ({ default: m.AmuwaSettingsPanel })));
 const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews'));
+const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
 const SupportSuperAdminDashboard = lazy(() => import('./components/departments/wabastore/superadmin/SupportSuperAdminDashboard').then(m => ({ default: m.SupportSuperAdminDashboard })));
@@ -511,6 +512,8 @@ const MainAppContent: React.FC = () => {
               <EmployeeIssuesManagement />
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
               <MeetingRequestsManagement />
+            ) : currentActiveTab === 'hr_field_tracking' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><ActiveFieldVisits audience="hr" /></Suspense>
             ) : currentActiveTab === 'hr_reviews' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><PerformanceReviews /></Suspense>
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (

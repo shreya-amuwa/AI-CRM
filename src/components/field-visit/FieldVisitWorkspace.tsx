@@ -13,6 +13,7 @@ import {
 import { errorMessage } from '../../lib/api/client';
 import { fieldVisitApi } from '../../lib/api/endpoints';
 import { listenToTables } from '../../lib/realtimeShared';
+import { visitTracker } from '../../services/fieldVisitTracking';
 import { PageTitle } from '../layout/shell';
 import { WorkflowBadge } from '../payments/PaymentBits';
 import { Card, ErrorBanner, Pager, Pill, Spinner, btn, inputCls, selectCls, useDebounced, type Tone } from '../team-member/pipeline/shared';
@@ -28,6 +29,7 @@ import {
   timeText,
   type VisitLead
 } from './FieldVisitDialogs';
+import { VisitTrackingPanel } from './VisitTrackingPanel';
 
 /**
  * Field Visit, inside the Sales member's own dashboard (Sales Team Member, Telecaller, Business Associate): ten pages under one sidebar group.
@@ -189,6 +191,12 @@ function useVisitDialogs() {
     }
   };
 
+  // a finished or cancelled visit stops this phone collecting its location at once (the database has already ended tracking)
+  const endTracking = (visitId: string, then: (v?: LeadVisit) => void) => (v?: LeadVisit) => {
+    if (visitTracker.isCollecting(visitId)) void visitTracker.stop('visit-ended');
+    then(v);
+  };
+
   const element = (
     <>
       {notice && (
@@ -200,8 +208,8 @@ function useVisitDialogs() {
       {dialog?.kind === 'schedule' && <ScheduleVisitDialog lead={dialog.lead} onClose={() => setDialog(null)} onSaved={saved('The visit was scheduled.')} />}
       {dialog?.kind === 'edit' && <ScheduleVisitDialog lead={dialog.lead} visit={dialog.visit} onClose={() => setDialog(null)} onSaved={saved('The visit plan was updated.')} />}
       {dialog?.kind === 'start' && <StartVisitDialog visit={dialog.visit} onClose={() => setDialog(null)} onSaved={saved('The visit has started.')} />}
-      {dialog?.kind === 'complete' && <CompleteVisitDialog visit={dialog.visit} onClose={() => setDialog(null)} onSaved={saved('The visit outcome was saved.')} />}
-      {dialog?.kind === 'cancel' && <CancelVisitDialog visit={dialog.visit} onClose={() => setDialog(null)} onSaved={saved('The visit was cancelled.')} />}
+      {dialog?.kind === 'complete' && <CompleteVisitDialog visit={dialog.visit} onClose={() => setDialog(null)} onSaved={endTracking(dialog.visit.id, saved('The visit outcome was saved.'))} />}
+      {dialog?.kind === 'cancel' && <CancelVisitDialog visit={dialog.visit} onClose={() => setDialog(null)} onSaved={endTracking(dialog.visit.id, saved('The visit was cancelled.'))} />}
       {dialog?.kind === 'history' && <VisitHistoryDialog lead={dialog.lead} onClose={() => setDialog(null)} />}
     </>
   );
@@ -575,6 +583,7 @@ const VisitList: React.FC<{ mode: 'OPEN' | 'HISTORY'; tick: number; dialogs: Dia
                       </div>
                     </div>
                     <p className="text-sm text-slate-800">{v.purpose}</p>
+                    {v.status === 'IN_PROGRESS' && <VisitTrackingPanel visit={v} />}
                     <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-x-6 gap-y-1.5 text-xs">
                       {(
                         [

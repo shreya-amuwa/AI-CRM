@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, Mail, MessageSquareWarning, CalendarClock, ClipboardCheck } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, Mail, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -76,6 +76,7 @@ export type ActiveTab =
   | 'hr_issues'
   | 'hr_meetings'
   | 'hr_reviews'
+  | 'hr_field_tracking'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -324,6 +325,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'hr_email' as ActiveTab, label: 'Email Automation', icon: Mail },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },
     { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
+    // work-related field visit location records (the database decides: HR staff, not recruiters)
+    { id: 'hr_field_tracking' as ActiveTab, label: 'Field Visit Tracking', icon: MapPin },
     // weekly department reports approved by the Operations Head: individual reviews and the consolidated report (the Super Admin has her own page)
     ...(user?.role !== 'superadmin' ? [{ id: 'hr_reviews' as ActiveTab, label: 'Performance Reviews', icon: ClipboardCheck }] : []),
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),

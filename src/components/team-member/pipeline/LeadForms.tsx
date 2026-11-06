@@ -30,6 +30,10 @@ import {
   useServiceCatalog
 } from './shared';
 import { WhatsAppField } from './WhatsAppField';
+import { ListSelect } from '../../common/ListSelect';
+import { ShopPhotoScan } from '../../common/ShopPhotoScan';
+import type { ShopScan } from '../../../lib/ocr/shopText';
+import { leadOffers, planLeadFill, type LeadFillField, type LeadFlags } from '../../../lib/ocr/scanFill';
 import { JourneyStrip, useJourney } from '../../journey/JourneyPanel';
 import { SubscriptionPanel } from '../../journey/SubscriptionPanel';
 import { checkTerms, emptyTerms, TermsFields, type TermsDraft, type TermsErrors } from '../../journey/SubscriptionTerms';
@@ -235,9 +239,31 @@ const EMPTY = {
   notes: ''
 };
 
+const FILL_LABEL: Record<LeadFillField, string> = {
+  company: 'Business name', phone: 'Mobile number', address: 'Business address', email: 'Email', businessCategory: 'Business category', notes: 'Notes'
+};
+const CATEGORY_OPTIONS = [{ value: '', label: 'Select…' }, ...BUSINESS_CATEGORIES.map(c => ({ value: c, label: c }))];
+const SOURCE_OPTIONS = LEAD_SOURCES.map(c => ({ value: c, label: c }));
+
+/** "From photo" next to a field still holding what the photo showed (it disappears once the person edits the field). */
+const PhotoTag: React.FC<{ id: string; check?: boolean }> = ({ id, check }) => (
+  <p id={id} className={`mt-1 text-[11px] font-semibold ${check ? 'text-amber-700' : 'text-indigo-700'}`} data-testid="from-photo">
+    {check ? 'From photo - please check' : 'From photo'}
+  </p>
+);
+
 export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string) => void; /** The lead source to start with (e.g. 'Field visit' when added from the Field Visit pages). */ defaultSource?: string }> = ({ onCancel, onSaved, defaultSource }) => {
   const { items: services, error: catalogError } = useServiceCatalog();
   const [form, setForm] = useState(() => (defaultSource ? { ...EMPTY, leadSource: defaultSource } : EMPTY));
+  // Field Visit > Add Lead: a photo can fill the form, the source stays "Field visit" and the lead goes to the Sales Department Head
+  const fieldVisitMode = defaultSource === 'Field visit';
+  // one id per form: a retry or a double click returns the lead the first request made (the server keeps it), never a second lead
+  const [requestId] = useState(() => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined));
+  const [scan, setScan] = useState<ShopScan | null>(null);
+  const [fromPhoto, setFromPhoto] = useState<LeadFlags>({});
+  const [photoCheck, setPhotoCheck] = useState<LeadFlags>({});
+  const [conflicts, setConflicts] = useState<{ field: LeadFillField; value: string }[]>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
   // Ticked: the WhatsApp number follows the mobile number. Only the final number is saved.
   const [sameWhatsapp, setSameWhatsapp] = useState(false);
   // "Other" opens a text box right under the dropdown so the member types the value in place.
@@ -250,11 +276,52 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }));
+  // typing in a field makes it the person's own: a later photo never replaces it without asking
+  const setValue = (k: keyof typeof EMPTY, value: string) => {
+    setForm(f => ({ ...f, [k]: value }));
+    if (k in FILL_LABEL && fromPhoto[k as LeadFillField]) setFromPhoto(p => ({ ...p, [k]: false }));
+  };
+  const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setValue(k, e.target.value);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const fillValues = (values: Partial<Record<LeadFillField, string>>) => {
+    setForm(f => ({ ...f, ...values }));
+    const cat = values.businessCategory;
+    if (cat !== undefined && cat !== 'Other') setOtherCategory('');
+  };
+  const applyScan = (next: ShopScan) => {
+    setScan(next);
+    const plan = planLeadFill(
+      leadOffers(next, BUSINESS_CATEGORIES),
+      { company: form.company, phone: form.phone, address: form.address, email: form.email, businessCategory: form.businessCategory, notes: form.notes },
+      fromPhoto
+    );
+    fillValues(plan.values);
+    setFromPhoto(plan.fromPhoto);
+    setPhotoCheck(c => ({ ...c, ...plan.check }));
+    setConflicts(plan.conflicts);
+  };
+  // one tap on another value the photo showed (a name or a number): the person chose it
+  const pickFromScan = (field: 'name' | 'address' | 'phone', value: string) => {
+    const k: LeadFillField = field === 'name' ? 'company' : field;
+    fillValues({ [k]: value });
+    setFromPhoto(p => ({ ...p, [k]: true }));
+    setPhotoCheck(c => ({ ...c, [k]: false }));
+    setConflicts(cs => cs.filter(c => c.field !== k));
+  };
+  const resolveConflict = (field: LeadFillField, use: boolean) => {
+    const c = conflicts.find(x => x.field === field);
+    if (use && c) {
+      fillValues({ [field]: c.value });
+      setFromPhoto(p => ({ ...p, [field]: true }));
+      setPhotoCheck(x => ({ ...x, [field]: true }));
+    }
+    setConflicts(cs => cs.filter(x => x.field !== field));
+  };
+  const photoFields = (Object.keys(FILL_LABEL) as LeadFillField[]).filter(k => fromPhoto[k]);
+  const photoTag = (k: LeadFillField) => (fromPhoto[k] ? <PhotoTag id={`lead-${k}-photo`} check={photoCheck[k]} /> : null);
+
+  const submit = async (e?: React.FormEvent, reviewed = false) => {
+    e?.preventDefault();
     if (form.leadSource === 'Other' && !otherSource.trim()) {
       setErrors({ leadSource: 'Type the lead source.' });
       setError('Please fix the highlighted fields.');
@@ -289,9 +356,15 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
     }
     setErrors({});
     setError(null);
+    // values read from a photo are a guess: the employee reviews (and can correct) them once more before the lead is saved
+    if (fieldVisitMode && !reviewed && photoFields.length > 0) {
+      setReviewOpen(true);
+      return;
+    }
+    setReviewOpen(false);
     setSaving(true);
     try {
-      const lead = await pipelineApi.createLead(parsed.data);
+      const lead = await pipelineApi.createLead({ ...parsed.data, ...(requestId ? { clientRequestId: requestId } : {}) });
       notifyPipelineChanged();
       onSaved(lead.id);
     } catch (err) {
@@ -323,6 +396,36 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
       </div>
       {error && <ErrorBanner message={error} />}
 
+      {fieldVisitMode && (
+        <>
+          <p className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-xs" data-testid="fv-lead-routing-note">
+            A lead you add here goes to your Sales Department Head, who assigns it to a Telecaller for follow-up. You stay recorded as the person who found it.
+          </p>
+          <ShopPhotoScan scan={scan} onScan={applyScan} onPick={pickFromScan} purpose="lead" />
+          {scan && <p className="text-[11px] text-slate-500">The customer's own name is not read from a photo: type it in Customer Name.</p>}
+          {conflicts.length > 0 && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2" role="status" data-testid="scan-conflicts">
+              <p className="font-bold">The new photo shows something different from what you entered. Your entries are kept unless you choose otherwise:</p>
+              <ul className="space-y-1.5">
+                {conflicts.map(c => (
+                  <li key={c.field} className="flex flex-wrap items-center gap-2">
+                    <span>
+                      {FILL_LABEL[c.field]}: <b className="break-all">{c.value}</b>
+                    </span>
+                    <button type="button" className={btn.secondary} onClick={() => resolveConflict(c.field, true)} data-testid={`scan-conflict-use-${c.field}`}>
+                      Use the photo's value
+                    </button>
+                    <button type="button" className={btn.secondary} onClick={() => resolveConflict(c.field, false)} data-testid={`scan-conflict-keep-${c.field}`}>
+                      Keep mine
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </>
+      )}
+
       <Card className="p-5">
         <h2 className="text-sm font-bold text-slate-900 mb-3">Customer details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -331,9 +434,11 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
           </Field>
           <Field label="Business name" required htmlFor="lead-company" error={errors.company}>
             {input('company', { autoComplete: 'organization', required: true })}
+            {photoTag('company')}
           </Field>
           <Field label="Mobile number" required htmlFor="lead-phone" error={errors.phone}>
             {input('phone', { type: 'tel', placeholder: '+91', autoComplete: 'tel', required: true })}
+            {photoTag('phone')}
           </Field>
           <WhatsAppField
             id="lead-whatsapp"
@@ -348,20 +453,18 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
           />
           <Field label="Email" htmlFor="lead-email" error={errors.email}>
             {input('email', { type: 'email', placeholder: 'name@business.com', autoComplete: 'email' })}
+            {photoTag('email')}
           </Field>
           <Field label="City" htmlFor="lead-city" error={errors.city}>
             {input('city', { placeholder: 'e.g. Mumbai' })}
           </Field>
           <Field label="Business address" htmlFor="lead-address" error={errors.address}>
             {input('address', { placeholder: 'Shop / office address', autoComplete: 'street-address' })}
+            {photoTag('address')}
           </Field>
           <Field label="Business category" htmlFor="lead-businessCategory">
-            <select id="lead-businessCategory" className={inputCls} value={form.businessCategory} onChange={set('businessCategory')}>
-              <option value="">Select…</option>
-              {BUSINESS_CATEGORIES.map(c => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
+            <ListSelect id="lead-businessCategory" value={form.businessCategory} options={CATEGORY_OPTIONS} onChange={v => setValue('businessCategory', v)} />
+            {photoTag('businessCategory')}
             {form.businessCategory === 'Other' && (
               <input
                 id="lead-businessCategory-other"
@@ -376,11 +479,20 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
             )}
           </Field>
           <Field label="Lead source" required htmlFor="lead-leadSource" error={errors.leadSource}>
-            <select id="lead-leadSource" className={inputCls} value={form.leadSource} onChange={set('leadSource')}>
-              {LEAD_SOURCES.map(c => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
+            <ListSelect
+              id="lead-leadSource"
+              value={form.leadSource}
+              options={SOURCE_OPTIONS}
+              onChange={v => setValue('leadSource', v)}
+              disabled={fieldVisitMode}
+              invalid={!!errors.leadSource}
+              describedBy={fieldVisitMode ? 'lead-leadSource-fixed' : errors.leadSource ? 'lead-leadSource-error' : undefined}
+            />
+            {fieldVisitMode && (
+              <p id="lead-leadSource-fixed" className="mt-1 text-[11px] text-slate-500">
+                Leads added on a field visit keep the source Field visit.
+              </p>
+            )}
             {form.leadSource === 'Other' && (
               <input
                 id="lead-leadSource-other"
@@ -461,6 +573,7 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
               onChange={set('notes')}
               placeholder="What did the customer ask for? Any timeline or objections?"
             />
+            {photoTag('notes')}
           </Field>
         </div>
       </Card>
@@ -470,9 +583,47 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
           Cancel
         </button>
         <button type="submit" className={btn.primary} disabled={saving}>
-          {saving ? 'Saving…' : 'Save lead'}
+          {saving ? 'Saving…' : fieldVisitMode && photoFields.length > 0 ? 'Review & save lead' : 'Save lead'}
         </button>
       </div>
+      {reviewOpen && (
+        <Dialog title="Review & edit details" description="These details were read from the photo. Correct anything that is wrong; what you see here is what is saved." onClose={() => setReviewOpen(false)} wide>
+          <div className="space-y-3" data-testid="lead-review">
+            {(['name', 'company', 'phone', 'whatsapp', 'email', 'city', 'address', 'businessCategory', 'notes'] as (keyof typeof EMPTY)[]).map(k => {
+              const label = k === 'name' ? 'Customer Name' : k === 'whatsapp' ? 'WhatsApp number' : k === 'city' ? 'City' : FILL_LABEL[k as LeadFillField];
+              const photo = k in FILL_LABEL && fromPhoto[k as LeadFillField];
+              const value = k === 'whatsapp' ? whatsappValue(sameWhatsapp, form.phone, form.whatsapp) : form[k];
+              return (
+                <div key={k} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 items-start">
+                  <label htmlFor={`review-${k}`} className="text-xs font-medium text-slate-600 pt-2">
+                    {label}
+                    {photo && <span className={`ml-1.5 text-[11px] font-semibold ${photoCheck[k as LeadFillField] ? 'text-amber-700' : 'text-indigo-700'}`}>· From photo</span>}
+                  </label>
+                  <div className="sm:col-span-2">
+                    {k === 'businessCategory' ? (
+                      <ListSelect id={`review-${k}`} value={form.businessCategory} options={CATEGORY_OPTIONS} onChange={v => setValue('businessCategory', v)} />
+                    ) : k === 'notes' || k === 'address' ? (
+                      <textarea id={`review-${k}`} rows={k === 'notes' ? 3 : 2} className={inputCls} value={value} onChange={set(k)} />
+                    ) : k === 'whatsapp' ? (
+                      <p id={`review-${k}`} className="pt-2 text-sm text-slate-800">{value || 'Not given'}</p>
+                    ) : (
+                      <input id={`review-${k}`} className={inputCls} value={value} onChange={set(k)} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex flex-wrap justify-end gap-2 pt-2">
+              <button type="button" className={btn.secondary} onClick={() => setReviewOpen(false)} disabled={saving}>
+                Back to the form
+              </button>
+              <button type="button" className={btn.primary} onClick={() => void submit(undefined, true)} disabled={saving} data-testid="lead-review-confirm">
+                {saving ? 'Saving…' : 'Confirm and save'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </form>
   );
 };

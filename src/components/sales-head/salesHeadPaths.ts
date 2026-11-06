@@ -1,6 +1,6 @@
 /** The pages of the Sales Department Head dashboard and their addresses (kept apart from the component so they can be tested without a browser). */
 export type SalesHeadPage =
-  | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'tasks' | 'performance' | 'top-performers' | 'income' | 'reports' | 'work-reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications';
+  | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'tasks' | 'performance' | 'top-performers' | 'income' | 'reports' | 'work-reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications' | 'field-visit-leads' | 'field-tracking';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -28,7 +28,9 @@ export const PATHS: Record<SalesHeadPage, string> = {
   team: 'team',
   chat: 'chat',
   'raise-issue': 'raise-issue',
-  notifications: 'notifications'
+  notifications: 'notifications',
+  'field-visit-leads': 'field-visit-leads',
+  'field-tracking': 'field-tracking'
 };
 export const SALES_HEAD_BASE = (userId: string) => `/sales-head/dashboard/${userId}`;
 export function parseSalesHeadPage(path: string, home: SalesHeadPage = 'overview'): SalesHeadPage {

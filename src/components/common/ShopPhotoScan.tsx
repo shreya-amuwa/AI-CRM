@@ -12,7 +12,9 @@ export const ShopPhotoScan: React.FC<{
   /** Lets the person put another detected value into the form with one tap. */
   onPick: (field: 'name' | 'address' | 'phone', value: string) => void;
   scan: ShopScan | null;
-}> = ({ onScan, onPick, scan }) => {
+  /** Where the details go: a trip (the default, its own words) or a new lead (Field Visit > Add Lead). */
+  purpose?: 'visit' | 'lead';
+}> = ({ onScan, onPick, scan, purpose = 'visit' }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
@@ -61,8 +63,12 @@ export const ShopPhotoScan: React.FC<{
           <ScanText className="w-5 h-5" aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-indigo-900">Fill from a photo of the shop</p>
-          <p className="text-[11px] text-indigo-800/80">Photograph the shop board. The name, phone and address are read on this phone and filled in below; check them before starting.</p>
+          <p className="text-xs font-bold text-indigo-900">{purpose === 'lead' ? 'Take or upload a photo of the shop board or visiting card' : 'Fill from a photo of the shop'}</p>
+          <p className="text-[11px] text-indigo-800/80">
+            {purpose === 'lead'
+              ? 'The business name, phone, address and e-mail are read on this phone (the photo is not uploaded or kept) and filled in below. Check and correct them: you can change every field.'
+              : 'Photograph the shop board. The name, phone and address are read on this phone and filled in below; check them before starting.'}
+          </p>
         </div>
       </div>
       <input
@@ -125,7 +131,7 @@ export const ShopPhotoScan: React.FC<{
           )}
           {(scan.email || scan.website || scan.gstin || scan.category) && (
             <p className="text-slate-500">
-              Also read (saved with the visit):{' '}
+              {purpose === 'lead' ? 'Also read (added to the notes for you to check):' : 'Also read (saved with the visit):'}{' '}
               {[scan.category, scan.email?.value, scan.website?.value, scan.gstin ? `GSTIN ${scan.gstin.value}${scan.gstin.check ? ' (check)' : ''}` : null].filter(Boolean).join(' · ')}
             </p>
           )}
