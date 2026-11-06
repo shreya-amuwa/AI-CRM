@@ -1531,7 +1531,9 @@ select test.must_fail($$select create_support_customer('Sales Lead Made', null, 
 select test.login('dh_wab');
 select test.check((select count(*) = 2 from customers where id in (select id from sc where name in ('mine', 'forb'))), 'department head sees support customers');
 reset role;
-select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('sup_th')), 'team lead notified of the member''s new customer');
+-- (20261226000100) the team has two leads; sup_plain joined while tm_b was its only lead, so tm_b is sup_plain's lead: only tm_b hears of the customer
+select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('tm_b')), 'the member''s own Team Lead is notified of the new customer');
+select test.check((select count(*) = 0 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('sup_th')), 'another Team Lead of the same team is not notified');
 select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ASSIGNED' and recipient_id = test.id('sup_b')), 'member notified of the assigned customer');
 
 -- (20261225000100) two Team Leads share this Support team (sup_th and tm_b): a Team Lead works on their OWN members' tickets and tasks only,
@@ -1539,7 +1541,11 @@ select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER
 set role authenticated;
 select test.login('dh_wab');
 select assign_direct_lead(test.id('sup_plain'), test.id('sup_th'));
+select test.login('sup_plain');
+select create_support_customer('Named Lead Customer', null, '+91 98450 88888', null, 'RETAIL', 'ACTIVE', null, null, null, null, null);
 reset role;
+select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('sup_th')), 'team lead notified of the member''s new customer');
+select test.check((select count(*) = 1 from notifications where type = 'CUSTOMER_ADDED' and recipient_id = test.id('tm_b')), 'after the Department Head named sup_th, tm_b is no longer notified');
 
 -- Tickets
 create temp table st (name text primary key, id uuid);
@@ -1888,6 +1894,11 @@ select test.login('rm_member');
 create temp table rmc (id uuid);
 grant all on rmc to authenticated;
 insert into rmc select create_support_customer('Owned By Removed', null, '+91 93333 44444', null, 'RETAIL', 'ACTIVE', null, null, null, null, null);
+-- (20261226000100) the Support team has several leads and nobody named rm_member's: no Team Lead may remove them until the Department Head names one
+select test.login('rm_lead');
+select test.must_fail($$select delete_user(test.id('rm_member'))$$, 'a Team Lead cannot remove a member who is not theirs', 'below you in the hierarchy');
+select test.login('dh_wab');
+select assign_direct_lead(test.id('rm_member'), test.id('rm_lead'));
 select test.login('rm_lead');
 select delete_user(test.id('rm_member'));
 reset role;
