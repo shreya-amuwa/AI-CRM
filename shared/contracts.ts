@@ -4962,6 +4962,16 @@ export interface CareerJob {
   /** Vacancy fields (the HR Recruiter workspace); present on staff reads. */
   openings?: number; vacancy_status?: VacancyStatus; responsible_id?: string | null; qualifications?: string | null; skills?: string | null; experience?: string | null;
   required_steps?: ('CALL' | 'ASSESSMENT' | 'INTERVIEW')[];
+  /** Job catalogue (public): a stable code, the team, how the work is done, pay, lists (one item per line) and when the job first went live. */
+  code?: string; team?: string | null; work_mode?: CareerWorkMode | null; salary_text?: string | null;
+  responsibilities?: string | null; benefits?: string | null; published_at?: string | null;
+}
+export type CareerWorkMode = 'REMOTE' | 'HYBRID' | 'ONSITE';
+/** The values that exist among the open jobs, with how many jobs each has - for filter chips. */
+export interface CareerJobFacet { value: string; count: number }
+export interface CareerJobList {
+  items: CareerJob[]; total: number;
+  facets?: { teams: CareerJobFacet[]; locations: CareerJobFacet[]; modes: CareerJobFacet[] };
 }
 export interface CareerFile {
   id: string; file_name: string; size_bytes: number; created_at: string;

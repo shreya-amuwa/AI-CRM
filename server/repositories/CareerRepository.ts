@@ -4,6 +4,7 @@ import type {
   CareerApplication,
   CareerFile,
   CareerJob,
+  CareerJobList,
   CareerProfile,
   CareerTest,
   CareerAttempt,
@@ -23,8 +24,17 @@ export class CareerRepository {
   jobs(
     page: number,
     search: string,
-  ): Promise<{ items: CareerJob[]; total: number }> {
-    return this.call('career_jobs', { p_page: page, p_search: search });
+    filters: { team?: string; mode?: string; location?: string } = {},
+  ): Promise<CareerJobList> {
+    const args: Record<string, unknown> = { p_page: page, p_search: search };
+    // Only send the filters that are set, so a plain list still works on a database that has not had the catalogue migration yet.
+    if (filters.team) args.p_team = filters.team;
+    if (filters.mode) args.p_mode = filters.mode;
+    if (filters.location) args.p_location = filters.location;
+    return this.call('career_jobs', args);
+  }
+  job(id: string): Promise<CareerJob> {
+    return this.call('career_job', { p_id: id });
   }
   postings(data: unknown = null): Promise<CareerJob[]> {
     return this.call('hr_career_posting', { p_data: data });

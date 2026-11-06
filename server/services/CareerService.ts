@@ -42,7 +42,10 @@ export class CareerService {
   }
   jobs(query: unknown) {
     const q = parse(careerJobQuerySchema, query);
-    return this.repo.jobs(q.page, q.search);
+    return this.repo.jobs(q.page, q.search, { team: q.team, mode: q.mode, location: q.location });
+  }
+  job(id: string) {
+    return this.repo.job(parse(uuidSchema, id));
   }
   postings(body?: unknown) {
     return this.repo.postings(

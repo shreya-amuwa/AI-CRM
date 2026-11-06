@@ -2332,7 +2332,11 @@ export const careerProfileSchema = z.object({
   name: trimmed(160).min(2), phone: mobileSchema, city: trimmed(120), state: trimmed(120),
   education: trimmed(2000), experience: trimmed(2000), skills: trimmed(2000), bio: trimmed(2000), version: z.number().int().positive()
 }).strict();
-export const careerJobQuerySchema = z.object({ page: z.coerce.number().int().min(1).max(10000).default(1), search: trimmed(120).default('') });
+export const careerJobQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1), search: trimmed(120).default(''),
+  // catalogue filters (public list); empty = no filter
+  team: trimmed(80).default(''), mode: z.enum(['', 'REMOTE', 'HYBRID', 'ONSITE']).default(''), location: trimmed(200).default('')
+});
 export const careerPostingSchema = z.object({
   id: uuidSchema.optional(), position_id: uuidSchema, title: trimmed(160).min(2), description: trimmed(15000).min(20),
   location: trimmed(200).min(1), employment_type: z.enum(['FULL_TIME','PART_TIME','INTERNSHIP','CONTRACT']),
@@ -2342,7 +2346,10 @@ export const careerPostingSchema = z.object({
   vacancy_status: z.enum(['DRAFT', 'PENDING_APPROVAL', 'OPEN', 'ON_HOLD', 'CLOSED', 'FILLED']).optional(),
   responsible_id: uuidSchema.nullable().optional(),
   qualifications: trimmed(4000).nullable().optional(), skills: trimmed(4000).nullable().optional(), experience: trimmed(2000).nullable().optional(),
-  required_steps: z.array(z.enum(['CALL', 'ASSESSMENT', 'INTERVIEW'])).max(3).optional()
+  required_steps: z.array(z.enum(['CALL', 'ASSESSMENT', 'INTERVIEW'])).max(3).optional(),
+  // catalogue fields (all optional: an older form still saves; an empty value clears the field)
+  team: trimmed(80).nullable().optional(), work_mode: z.enum(['REMOTE', 'HYBRID', 'ONSITE']).nullable().optional(),
+  salary_text: trimmed(120).nullable().optional(), responsibilities: trimmed(4000).nullable().optional(), benefits: trimmed(4000).nullable().optional()
 }).strict();
 export const careerUploadSchema = z.object({ file_name: trimmed(180).regex(/\.pdf$/i, 'Upload a PDF resume.'), size_bytes: z.number().int().min(1).max(10485760) }).strict();
 export const careerApplySchema = z.object({ posting_id: uuidSchema, resume_id: uuidSchema }).strict();

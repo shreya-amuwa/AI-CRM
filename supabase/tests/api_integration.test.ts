@@ -9543,6 +9543,46 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`update public.leave_settings set workflow = 'TWO_STEP' where id`);
 }
 
+// Job catalogue: the public list (filters, facets), one open job by id, and HR saving the new fields.
+{
+  const pos = (await db.query(`insert into hr_positions(title,is_open) values ('Catalogue API Position',true) returning id`)).rows[0].id;
+  const save = (body: Record<string, unknown>) => api('hr', 'POST', '/hr/recruitment/careers/postings', {
+    position_id: pos, description: 'A catalogue job created by the API integration test.', location: 'Catalogue City', employment_type: 'FULL_TIME', published: true, closes_at: null, ...body });
+  let r = await save({ title: 'Catalogue API Engineer', team: 'Catalogue Team', work_mode: 'HYBRID', salary_text: 'Competitive', responsibilities: 'Ship\nReview', benefits: 'Insurance', skills: 'SQL', qualifications: 'B.Tech' });
+  check(r.status === 200, 'catalogue: HR saves a job with the catalogue fields', r);
+  const jobId = (r.json.data as { id: string; title: string }[]).find(j => j.title === 'Catalogue API Engineer')!.id;
+  r = await save({ title: 'Catalogue API Draft', team: 'Catalogue Team', published: false });
+  const draftId = (r.json.data as { id: string; title: string }[]).find(j => j.title === 'Catalogue API Draft')!.id;
+  check((await save({ title: 'Catalogue API Bad', work_mode: 'SOMETIMES' })).status === 422, 'catalogue: an invalid work mode is refused');
+  check((await save({ title: 'Catalogue API Bad', code: 'JOB-9999' })).status === 422, 'catalogue: the job code cannot be set from outside');
+
+  r = await api(null, 'GET', '/careers/jobs?team=Catalogue%20Team');
+  const listed = r.json.data?.items as Record<string, unknown>[] | undefined;
+  check(r.status === 200 && r.json.data.total === 1 && listed?.[0]?.id === jobId, 'catalogue: the public list filters by team', r);
+  check(listed?.[0]?.work_mode === 'HYBRID' && listed?.[0]?.salary_text === 'Competitive' && /^JOB-\d{4,}$/.test(String(listed?.[0]?.code)) && !!listed?.[0]?.published_at, 'catalogue: the public job carries code, work mode, pay and published date', r);
+  check(!['responsible_id', 'openings', 'vacancy_status', 'status_note', 'approved_at', 'position_id', 'version', 'published'].some(k => k in (listed?.[0] ?? {})), 'catalogue: no internal recruitment field is public', r);
+  check((await api(null, 'GET', '/careers/jobs?team=Catalogue%20Team&mode=REMOTE')).json.data.total === 0, 'catalogue: filters combine');
+  check((await api(null, 'GET', '/careers/jobs?mode=SOMETIMES')).status === 422, 'catalogue: an invalid mode filter is refused');
+  check((await api(null, 'GET', '/careers/jobs?search=%25')).json.data.total === 0, 'catalogue: a % in the search is literal');
+  r = await api(null, 'GET', '/careers/jobs');
+  check(r.status === 200 && r.json.data.facets.teams.some((t: { value: string; count: number }) => t.value === 'Catalogue Team' && t.count === 1)
+    && r.json.data.facets.modes.some((m: { value: string }) => m.value === 'HYBRID'), 'catalogue: facets list the teams and work modes of open jobs', r);
+
+  r = await api(null, 'GET', `/careers/jobs/${jobId}`);
+  check(r.status === 200 && r.json.data.id === jobId && r.json.data.responsibilities === 'Ship\nReview' && r.json.data.skills === 'SQL' && !('responsible_id' in r.json.data), 'catalogue: one open job is readable by id without signing in', r);
+  check((await api('career1', 'GET', `/careers/jobs/${jobId}`)).status === 200, 'catalogue: a signed-in candidate can read it too');
+  check((await api(null, 'GET', `/careers/jobs/${draftId}`)).status === 404, 'catalogue: an unpublished job is not found');
+  check((await api(null, 'GET', '/careers/jobs/00000000-0000-4000-8000-0000000000ff')).status === 404, 'catalogue: an unknown id is not found');
+  check((await api(null, 'GET', '/careers/jobs/not-a-uuid')).status === 422, 'catalogue: a malformed id is refused before the database');
+
+  const codeBefore = (await db.query('select code, published_at from career_postings where id=$1', [jobId])).rows[0];
+  const version = (await db.query('select version from career_postings where id=$1', [jobId])).rows[0].version;
+  r = await save({ id: jobId, version, title: 'Catalogue API Engineer 2' });
+  const after = (await db.query('select code, published_at, team, work_mode from career_postings where id=$1', [jobId])).rows[0];
+  check(r.status === 200 && after.code === codeBefore.code && String(after.published_at) === String(codeBefore.published_at) && after.team === 'Catalogue Team' && after.work_mode === 'HYBRID',
+    'catalogue: editing keeps the code, the published date and the catalogue fields', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

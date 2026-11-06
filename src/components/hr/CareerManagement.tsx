@@ -157,6 +157,11 @@ const PostingForm: React.FC<{
     skills: initial?.skills ?? '',
     experience: initial?.experience ?? '',
     required_steps: initial?.required_steps ?? ([] as ('CALL' | 'ASSESSMENT' | 'INTERVIEW')[]),
+    team: initial?.team ?? '',
+    work_mode: (initial?.work_mode ?? '') as '' | 'REMOTE' | 'HYBRID' | 'ONSITE',
+    salary_text: initial?.salary_text ?? '',
+    responsibilities: initial?.responsibilities ?? '',
+    benefits: initial?.benefits ?? '',
   });
   // Only the Super Admin and the Department Head of HR may allocate a vacancy to a Recruiter (the database refuses everyone else); the list of
   // Recruiters is theirs alone, so for anyone else the field simply does not appear.
@@ -180,6 +185,11 @@ const PostingForm: React.FC<{
         qualifications: form.qualifications || null,
         skills: form.skills || null,
         experience: form.experience || null,
+        team: form.team || null,
+        work_mode: form.work_mode || null,
+        salary_text: form.salary_text || null,
+        responsibilities: form.responsibilities || null,
+        benefits: form.benefits || null,
         closes_at: form.closes_at
           ? new Date(form.closes_at).toISOString()
           : null,
@@ -244,6 +254,39 @@ const PostingForm: React.FC<{
             ))}
           </select>
         </Field>
+        <Field label="Team or department shown to candidates (optional)" id="job-team">
+          <input
+            id="job-team"
+            className={textInput}
+            maxLength={80}
+            placeholder="e.g. Engineering"
+            value={form.team}
+            onChange={(e) => setForm({ ...form, team: e.target.value })}
+          />
+        </Field>
+        <Field label="Work mode (optional)" id="job-work-mode">
+          <select
+            id="job-work-mode"
+            className={textInput}
+            value={form.work_mode}
+            onChange={(e) => setForm({ ...form, work_mode: e.target.value as typeof form.work_mode })}
+          >
+            <option value="">Not specified</option>
+            <option value="REMOTE">Remote</option>
+            <option value="HYBRID">Hybrid</option>
+            <option value="ONSITE">On-site</option>
+          </select>
+        </Field>
+        <Field label="Pay shown to candidates (optional)" id="job-salary">
+          <input
+            id="job-salary"
+            className={textInput}
+            maxLength={120}
+            placeholder="e.g. Competitive, or ₹6–8 LPA"
+            value={form.salary_text}
+            onChange={(e) => setForm({ ...form, salary_text: e.target.value })}
+          />
+        </Field>
         <Field label="Application deadline (optional)" id="job-deadline">
           <input
             id="job-deadline"
@@ -301,6 +344,21 @@ const PostingForm: React.FC<{
               id={`job-${k}`}
               className={textInput}
               rows={2}
+              value={form[k]}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+            />
+          </Field>
+        ))}
+        <p className="text-xs text-slate-500">
+          Qualifications, skills and experience above, and the responsibilities and benefits below, are shown to candidates on the public careers page. Do not put internal notes in them.
+        </p>
+        {(['responsibilities', 'benefits'] as const).map((k) => (
+          <Field key={k} label={`${stageName(k)} (one per line, optional)`} id={`job-${k}`}>
+            <textarea
+              id={`job-${k}`}
+              className={textInput}
+              rows={3}
+              maxLength={4000}
               value={form[k]}
               onChange={(e) => setForm({ ...form, [k]: e.target.value })}
             />
