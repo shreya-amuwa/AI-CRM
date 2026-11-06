@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP 1
--- Candidate careers portal: the job catalogue (migration 20261226000100_career_job_catalogue.sql).
+-- Candidate careers portal: the job catalogue (migration 20261226000200_career_job_catalogue.sql).
 begin;
 reset role;
 create temp table cp(k text primary key,v uuid);

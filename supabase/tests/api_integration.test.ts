@@ -9583,6 +9583,59 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     'catalogue: editing keeps the code, the published date and the catalogue fields', r);
 }
 
+// --- Strict Team Lead isolation through the API (migration 20261226000100): two Team Leads share one team ---------------------------------------
+{
+  const dept = (await db.query(`insert into public.departments (slug, name) values ('tli-api', 'TLI API') returning id`)).rows[0].id as string;
+  const team = (await db.query(`insert into public.teams (department_id, name, division) values ($1, 'Sales', 'SALES') returning id`, [dept])).rows[0].id as string;
+  const mk = async (who: string, by: string, name: string, body: Record<string, unknown>) => {
+    const res = await api(by, 'POST', '/users', { email: `tli.${name}@amuwa.com`, fullName: `TLI ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `team lead isolation: ${name} account created by ${by}`, res);
+    tokens.set(who, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  await mk('tli_dh', 'sa', 'dh', { role: 'DEPARTMENT_HEAD', departmentId: dept });
+  const lA = await mk('tli_lA', 'sa', 'lead.a', { role: 'TEAM_HEAD', teamId: team });
+  const lB = await mk('tli_lB', 'sa', 'lead.b', { role: 'TEAM_HEAD', teamId: team });
+  const a1 = await mk('tli_a1', 'tli_lA', 'a1', { role: 'TEAM_MEMBER', teamId: team });
+  const b1 = await mk('tli_b1', 'tli_lB', 'b1', { role: 'TEAM_MEMBER', teamId: team });
+  const m0 = await mk('tli_m0', 'sa', 'm0', { role: 'TEAM_MEMBER', teamId: team });
+  const lead = async (id: string) => (await db.query(`select private.direct_lead_of($1) as l`, [id])).rows[0].l as string | null;
+  check((await lead(a1)) === lA && (await lead(b1)) === lB && (await lead(m0)) === null,
+    'team lead isolation: a member a Team Lead adds is theirs at once (the browser cannot name another lead); one the Super Admin adds to a two-lead team has none yet');
+
+  let r = await api('tli_lA', 'GET', `/users?departmentId=${dept}&teamId=${team}&role=TEAM_MEMBER`);
+  check(r.status === 200 && r.json.data.items.map((x: any) => x.id).join() === a1 && r.json.data.total === 1, 'team lead isolation: lead A lists only a1 and the total is 1', r);
+  r = await api('tli_lA', 'GET', `/users?departmentId=${dept}&search=${encodeURIComponent('TLI b1')}`);
+  check(r.status === 200 && r.json.data.total === 0, 'team lead isolation: searching for lead B’s member returns nothing', r);
+  r = await api('tli_lA', 'GET', `/users/${b1}`);
+  check(r.status === 404, 'team lead isolation: lead A cannot open lead B’s member by id', r);
+  r = await api('tli_lA', 'POST', `/users/${b1}/status`, { status: 'SUSPENDED', reason: 'not mine' });
+  check(r.status >= 400, 'team lead isolation: lead A cannot suspend lead B’s member', r);
+  r = await api('tli_lA', 'DELETE', `/users/${b1}`);
+  check(r.status >= 400, 'team lead isolation: lead A cannot remove lead B’s member', r);
+  check((await db.query(`select status from public.profiles where id = $1`, [b1])).rows[0].status === 'ACTIVE', 'team lead isolation: b1 is untouched');
+  r = await api('tli_lA', 'POST', `/users/${a1}/status`, { status: 'SUSPENDED', reason: 'own member' });
+  check(r.status === 200, 'team lead isolation: lead A still manages their own member', r);
+  r = await api('tli_lA', 'POST', `/users/${a1}/status`, { status: 'ACTIVE' });
+  check(r.status === 200, 'team lead isolation: and reactivates them', r);
+  r = await api('tli_lB', 'GET', `/users?departmentId=${dept}&teamId=${team}&role=TEAM_MEMBER`);
+  check(r.status === 200 && r.json.data.items.map((x: any) => x.id).join() === b1, 'team lead isolation: lead B lists only b1', r);
+
+  r = await api('tli_dh', 'GET', '/department/employees');
+  const byId = (id: string) => (r.json.data.members as any[]).find(x => x.id === id);
+  check(r.status === 200 && byId(a1)?.lead?.id === lA && byId(b1)?.lead?.id === lB && byId(m0)?.state === 'AWAITING_ASSIGNMENT',
+    'team lead isolation: the Department Head sees every member with their own Team Lead, and the unassigned one awaiting a lead', r);
+  r = await api('tli_lA', 'POST', `/department/employees/${m0}/assign-lead`, { leadId: lA });
+  check(r.status === 403, 'team lead isolation: a Team Lead cannot claim the unassigned member', r);
+  r = await api('tli_dh', 'POST', `/department/employees/${m0}/assign-lead`, { leadId: lB, note: 'same team' });
+  check(r.status === 200, 'team lead isolation: the Department Head assigns the member to lead B within the same team', r);
+  r = await api('tli_lB', 'GET', `/users/${m0}`);
+  check(r.status === 200, 'team lead isolation: lead B now opens m0', r);
+  r = await api('tli_lA', 'GET', `/users/${m0}`);
+  check(r.status === 404, 'team lead isolation: lead A still does not', r);
+  r = await api('sa', 'GET', `/users?departmentId=${dept}&role=TEAM_MEMBER`);
+  check(r.status === 200 && r.json.data.total === 3, 'team lead isolation: the Super Admin still sees all three members', r);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

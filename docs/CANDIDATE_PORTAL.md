@@ -43,7 +43,7 @@ The initial release uses HR-managed panel scheduling/outcome capture; a dedicate
 
 ## Job catalogue increment
 
-Migration `20261226000100_career_job_catalogue.sql` (additive, safe to run twice). Run it after the three migrations above.
+Migration `20261226000200_career_job_catalogue.sql` (additive, safe to run twice). Run it after the three migrations above.
 
 **What a candidate sees of a job.** `career_postings` gains a stable `code` (`JOB-0001`, assigned once, never changes), `team`, `work_mode` (`REMOTE` / `HYBRID` / `ONSITE`), `salary_text` (free text, e.g. "Competitive"), `responsibilities` and `benefits` (one item per line) and `published_at` (the first time the job went live; unpublishing and republishing keeps it). Existing jobs are given a code in creation order and a published date from when they were created. HR enters the new fields in Recruitment → Candidate portal → job form; all are optional, and an older form that does not send them leaves them unchanged (sending an empty value clears just that field).
 
@@ -59,3 +59,14 @@ Both return the same job shape (`CareerJob` in `shared/contracts.ts`): id, code,
 **Compatibility.** `career_jobs(page, search)` keeps working (the new arguments have defaults), and the API only sends a filter when one is set, so the plain list works on a database that has not had this migration yet. The single-job route and the HR fields need the migration. The anonymous-callable function list in `supabase/tests/security_test.sql` now includes `career_job`: that is the one deliberate widening of what signed-out visitors can call.
 
 **Tests.** `supabase/tests/careers_catalogue_test.sql` (codes, published date, filters, facets, literal search, public shape, single read, HR validation and permissions), unit checks in `careers_validation.test.ts`, and a block at the end of `api_integration.test.ts`.
+
+## Removed from the CRM domain (November 2026)
+
+The candidate portal (`/candidate`) and the public careers pages (`/careers`) are no longer served by the CRM web app (for example
+`https://crm.amuwacorporation.com/candidate`). Both addresses, and old links to them, now open the CRM's own home page. The candidate
+screens (`src/candidate/*` except `parts.tsx`, which the HR screens share) and their browser test were deleted.
+
+Not changed: the database (`career_*` tables and functions), the API (`/api/v1/careers/*`, `/api/v1/candidate/*`) and its tests, and the HR
+Recruitment screens (jobs, tests, applications, interviews, offers, joining). A candidate portal on a separate domain can keep using the API.
+The HR "Open public careers page" button appears only when `VITE_CAREERS_URL` is set to that site's address. If the portal is moved to its
+own domain, add that domain's `/candidate` address to the Supabase Auth redirect URLs and add it to `API_ALLOWED_ORIGINS` for the API.
