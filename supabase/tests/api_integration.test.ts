@@ -9636,6 +9636,48 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sa', 'GET', `/users?departmentId=${dept}&role=TEAM_MEMBER`);
   check(r.status === 200 && r.json.data.total === 3, 'team lead isolation: the Super Admin still sees all three members', r);
 }
+// --- HR Recruiter: create / edit / publish vacancies and the department filter (migration 20261226000300) ------------------------------------
+{
+  const dept = async (slug: string) => (await db.query(`select id from public.departments where slug = $1`, [slug])).rows[0].id as string;
+  const acc = await dept('accounts');
+  const wab = await dept('wabastore');
+  const body = { title: 'RVA Accounts Executive', departmentId: acc, openings: 2, description: 'Keeps the books of the company in order.', employmentType: 'FULL_TIME',
+    location: 'Pune', workMode: 'ONSITE', skills: 'Tally', qualifications: 'B.Com', experience: '2 years', responsibilities: 'Ledgers' };
+  let r = await api('rrec1', 'GET', '/recruiter/filter-options');
+  const deptCount = (await db.query(`select count(*)::int n from public.departments where facet_of is null`)).rows[0].n;
+  check(r.status === 200 && r.json.data.departments.length === deptCount && r.json.data.departments.some((d: any) => d.id === acc),
+    'recruiter vacancies: the Department filter lists every department', r);
+  r = await api('rrec1', 'POST', '/recruiter/vacancies', { ...body, description: 'short' });
+  check(r.status === 422, 'recruiter vacancies: the form rules are checked by the API', r);
+  r = await api('rrec1', 'POST', '/recruiter/vacancies', { ...body, role: 'SUPER_ADMIN' });
+  check(r.status === 422, 'recruiter vacancies: unknown fields are refused', r);
+  r = await api('rrec1', 'POST', '/recruiter/vacancies', { ...body, closesAt: '2099-12-31' });
+  check(r.status === 200 && r.json.data.status === 'OPEN' && r.json.data.departmentId === acc && r.json.data.openings === 2 && r.json.data.closesAt,
+    'recruiter vacancies: the Recruiter creates and publishes a vacancy', r);
+  const id = r.json.data.id as string;
+  r = await api('rrec1', 'GET', `/recruiter/vacancies/${id}`);
+  check(r.status === 200 && r.json.data.canAct && r.json.data.workMode === 'ONSITE' && r.json.data.responsibilities === 'Ledgers' && typeof r.json.data.version === 'number',
+    'recruiter vacancies: the detail carries the edit fields', r);
+  const version = r.json.data.version as number;
+  r = await api('rrec1', 'PATCH', `/recruiter/vacancies/${id}`, { ...body, openings: 3 });
+  check(r.status === 422, 'recruiter vacancies: an edit needs the version it was loaded with', r);
+  r = await api('rrec1', 'PATCH', `/recruiter/vacancies/${id}`, { ...body, openings: 3, version });
+  check(r.status === 200 && r.json.data.openings === 3, 'recruiter vacancies: the Recruiter edits it', r);
+  r = await api('rrec1', 'PATCH', `/recruiter/vacancies/${id}`, { ...body, openings: 4, version });
+  check(r.status === 409, 'recruiter vacancies: an edit on an old copy is refused', r);
+  for (const st of ['ON_HOLD', 'CLOSED', 'OPEN', 'FILLED']) {
+    r = await api('rrec1', 'POST', `/recruiter/vacancies/${id}/status`, { status: st });
+    check(r.status === 200 && r.json.data.status === st, `recruiter vacancies: the Recruiter sets it to ${st}`, r);
+  }
+  r = await api('rrec1', 'GET', `/recruiter/vacancies?department=${acc}`);
+  check(r.status === 200 && r.json.data.some((v: any) => v.id === id) && r.json.data.every((v: any) => v.departmentId === acc), 'recruiter vacancies: the department filter returns that department only', r);
+  r = await api('rrec1', 'GET', `/recruiter/vacancies?department=${wab}`);
+  check(r.status === 200 && !r.json.data.some((v: any) => v.id === id), 'recruiter vacancies: another department does not list it', r);
+  r = await api('a', 'POST', '/recruiter/vacancies', body);
+  check(r.status === 403, 'recruiter vacancies: an employee outside recruitment cannot create one', r);
+  r = await api('sa', 'GET', '/recruiter/vacancies');
+  check(r.status === 200 && r.json.data.some((v: any) => v.id === id), 'recruiter vacancies: HR leadership sees the Recruiter’s vacancy', r);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

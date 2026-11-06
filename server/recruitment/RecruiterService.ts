@@ -6,8 +6,9 @@ import type {
 import {
   recruiterCallSchema, recruiterDecisionCorrectionSchema, recruiterDecisionSchema, recruiterDecisionsQuerySchema, recruiterFiltersSchema,
   recruiterInterviewSchema, recruiterInviteSchema, recruiterNoteSchema, recruiterPipelineQuerySchema, recruiterStageSchema, recruiterVacanciesQuerySchema,
-  recruiterVacancyAssignSchema, recruiterVacancyStatusSchema, recruitmentEmailAdminQuerySchema, uuidSchema
+  recruiterVacancyAssignSchema, recruiterVacancySaveSchema, recruiterVacancyStatusSchema, recruitmentEmailAdminQuerySchema, uuidSchema
 } from '../../shared/validation.js';
+import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import type { RecruiterRepository } from './RecruiterRepository.js';
 
@@ -22,7 +23,16 @@ export class RecruiterService {
     const { page: _page, pageSize: _size, ...filters } = parse(recruiterFiltersSchema, query ?? {});
     return this.repo.overview(filters);
   }
-  vacancies(query: unknown): Promise<RecruiterVacancy[]> { return this.repo.vacancies(parse(recruiterVacanciesQuerySchema, query ?? {}).status); }
+  vacancies(query: unknown): Promise<RecruiterVacancy[]> {
+    const q = parse(recruiterVacanciesQuerySchema, query ?? {});
+    return this.repo.vacancies(q.status, q.department);
+  }
+  /** Create (no id) or edit a vacancy. The deadline is the end of the chosen day in India time. */
+  saveVacancy(id: string | null, body: unknown): Promise<RecruiterVacancy> {
+    const b = parse(recruiterVacancySaveSchema, body);
+    if (id && b.version === undefined) throw new AppError('VALIDATION_ERROR', 'Reload the vacancy before saving.');
+    return this.repo.saveVacancy({ ...b, id: id ? parse(uuidSchema, id) : undefined, closesAt: b.closesAt ? `${b.closesAt}T23:59:59+05:30` : undefined });
+  }
   vacancy(id: string): Promise<RecruiterVacancyDetail> { return this.repo.vacancy(parse(uuidSchema, id)); }
   assignVacancy(id: string, body: unknown): Promise<RecruiterVacancy> { return this.repo.assignVacancy(parse(uuidSchema, id), parse(recruiterVacancyAssignSchema, body).recruiter); }
   vacancyStatus(id: string, body: unknown): Promise<RecruiterVacancy> {

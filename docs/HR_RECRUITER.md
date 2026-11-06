@@ -117,3 +117,34 @@ Recruiter marks Selected / Rejected  ->  database function checks the caller, th
 * If the server dies between the provider accepting a message and the result being recorded, the lease expires and the row is retried (at-least-once for that rare case).
 * Calls HR logged before this feature (no `application_id`) show on every application of that candidate.
 * The recruiter sidebar is exactly the ten items specified, so the company daily-report page (COMPANY_REPORTING.md) is not in it. If recruiters must also submit daily reports, a Reports entry needs to be added to the sidebar (a one-line change); this was left out because the sidebar was specified exactly.
+
+## 10. Vacancy management by the Recruiter, sidebar sections, department filter (migration `20261226000300_recruiter_vacancy_management.sql`)
+
+**Sidebar.** The Recruiter's menu has three collapsible sections, like the other dashboards' labelled sections: **Work** (Dashboard, Call Management:
+calls and follow-ups, Interview Management: the interview schedule), **Recruitment** (Vacancies, Candidate Applications, Candidate Pipeline,
+Assessment & Test Results, Selection & Rejection) and **Management** (Recruitment Reports, Settings). Every page is unchanged and reachable; a
+section that holds the open page stays open. Other dashboards are not affected (`collapsible` is an opt-in flag of the shared sidebar).
+
+**Add / edit a vacancy.** Vacancies → **+ Add Vacancy**: job title / designation, department (from the departments table), openings, employment
+type, location, work mode, application deadline (end of that day, India time), description, responsibilities, skills, qualifications, experience.
+"Publish vacancy" opens it on the careers portal at once; "Save as draft" keeps it private. The creation date is set automatically. A Recruiter
+becomes responsible for what they create and edits it with **Edit vacancy** (an edit made on an old copy is refused: reload first).
+`recruiter_vacancy_save(p_data)` checks every field, the department, the caller and the version; the job title becomes the HR position
+(designation) of the chosen department, re-using an existing one.
+
+**Status.** The responsible Recruiter sets their own vacancy to Open, On hold, Closed or Filled and reopens it (owner decision, 6 Nov 2026: Recruiters
+publish directly; before, a Recruiter's vacancy needed HR leadership's approval to open). It never goes back to a Draft. HR leadership (Super Admin,
+Department Head of HR) is notified when a Recruiter creates, publishes or reopens a vacancy, keeps every change, and sees all vacancies. Every change
+is in the audit log (`RECRUITER_VACANCY_CREATED / _UPDATED / _STATUS`).
+
+**Department filter.** `recruiter_filter_options()` now lists every department (the departments table, without the Sales / Support "side" records of
+another department). Before, it listed only the departments of the caller's own vacancies, so it was empty until a vacancy existed. The Vacancies
+page filters by department in the database (`GET /recruiter/vacancies?department=`); the dashboard and application filters use the vacancy's
+department (`hr_positions.department_id`).
+
+API: `POST /api/v1/recruiter/vacancies` (create), `PATCH /api/v1/recruiter/vacancies/:id` (edit, with `version`), `POST .../:id/status`.
+Tests: `recruiter_vacancy_management_test.sql`, the "HR Recruiter: create / edit / publish vacancies" block of `api_integration.test.ts`, and the
+browser test `supabase/tests/e2e/run-recruiter-vacancies.sh`.
+
+Note: re-running the older `20261222000300_recruiter_workspace.sql` after this migration would restore the one-argument `recruiter_vacancies`
+beside the new one; run `20261226000300` again afterwards if that ever happens.
