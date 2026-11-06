@@ -11,6 +11,8 @@ reset role;
 \i supabase/migrations/20261222000100_hr_recruiter_role.sql
 \i supabase/migrations/20261222000200_recruitment_decision_email.sql
 \i supabase/migrations/20261222000300_recruiter_workspace.sql
+-- the vacancy rules and list of 20261227000200 replace the ones above (re-applied so the suite tests what is deployed)
+\i supabase/migrations/20261227000200_recruiter_vacancy_management.sql
 
 create or replace function test.service() returns void language sql as $$ select set_config('request.jwt.claims', '{"role":"service_role"}', false) $$;
 grant usage on schema test to service_role;
@@ -112,7 +114,9 @@ select test.check(exists (select 1 from audit_logs where action = 'RECRUITER_VAC
 
 set role authenticated;
 select test.login('rr_rec1');
-select test.must_fail($$select recruiter_vacancy_status((select v from rr where k = 'ja'), 'CLOSED')$$, 'a Recruiter cannot close an open vacancy', 'FORBIDDEN');
+-- (20261227000200) the responsible Recruiter publishes, holds, closes and reopens their own vacancy, but never turns it back into a draft
+select test.must_fail($$select recruiter_vacancy_status((select v from rr where k = 'ja'), 'DRAFT')$$, 'a Recruiter cannot turn a published vacancy back into a draft', 'FORBIDDEN');
+select test.must_fail($$select recruiter_vacancy_status((select v from rr where k = 'jb'), 'CLOSED')$$, 'a Recruiter cannot change another Recruiter''s vacancy', 'NOT_FOUND');
 select recruiter_vacancy_status((select v from rr where k = 'ja'), 'ON_HOLD', 'Budget review');
 reset role;
 select test.check((select vacancy_status = 'ON_HOLD' and not published from career_postings where id = (select v from rr where k = 'ja')), 'a vacancy on hold is not open to the portal');

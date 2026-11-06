@@ -3,7 +3,7 @@ import type {
   RecruiterFilterOptions, RecruiterInterview, RecruiterInterviewListItem, RecruiterOverview, RecruiterPerson, RecruiterPipeline, RecruiterReports,
   RecruiterVacancy, RecruiterVacancyDetail, VacancyStatus
 } from '../../../shared/contracts';
-import type { RecruiterFilters } from '../../../shared/validation';
+import type { RecruiterFilters, RecruiterVacancySaveInput } from '../../../shared/validation';
 import { api } from './client';
 
 export type RecruiterQuery = Partial<Omit<RecruiterFilters, 'page' | 'pageSize'>> & { page?: number; pageSize?: number };
@@ -19,7 +19,9 @@ export const recruiterApi = {
   directory: () => api.get<RecruiterPerson[]>('/recruiter/directory'),
   filterOptions: () => api.get<RecruiterFilterOptions>('/recruiter/filter-options'),
   overview: (q: RecruiterQuery = {}) => api.get<RecruiterOverview>('/recruiter/overview', clean(q)),
-  vacancies: (status?: VacancyStatus) => api.get<RecruiterVacancy[]>('/recruiter/vacancies', clean({ status } as RecruiterQuery)),
+  vacancies: (status?: VacancyStatus, department?: string) => api.get<RecruiterVacancy[]>('/recruiter/vacancies', clean({ status, department } as RecruiterQuery)),
+  createVacancy: (body: RecruiterVacancySaveInput) => api.post<RecruiterVacancy>('/recruiter/vacancies', body),
+  updateVacancy: (id: string, body: RecruiterVacancySaveInput) => api.patch<RecruiterVacancy>(`/recruiter/vacancies/${id}`, body),
   vacancy: (id: string) => api.get<RecruiterVacancyDetail>(`/recruiter/vacancies/${id}`),
   assignVacancy: (id: string, recruiter: string | null) => api.post<RecruiterVacancy>(`/recruiter/vacancies/${id}/recruiter`, { recruiter }),
   vacancyStatus: (id: string, status: VacancyStatus, note?: string) => api.post<RecruiterVacancy>(`/recruiter/vacancies/${id}/status`, { status, note: note || undefined }),
