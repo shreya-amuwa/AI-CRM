@@ -1,5 +1,5 @@
 -- =============================================================================
--- Leave: the approval chain depends on who asks (migration 20261228000100).
+-- Leave: the approval chain depends on who asks (migration 20261228000200).
 -- Reuses leave_multi_level_test.sql (tds-a: Team Lead lA with member a1, Department Head tds_dh, Support Operations Head tds_ops) and
 -- hr_test.sql's HR head (hr_head). Adds lvc-n, a department with NO Operations Head, a Meta Verifier in tds-a and an HR member.
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 131. Leave: the chain by requester'
 reset role;
-\i supabase/migrations/20261228000100_leave_chain_by_requester.sql
-\i supabase/migrations/20261228000100_leave_chain_by_requester.sql
+\i supabase/migrations/20261228000200_leave_chain_by_requester.sql
+\i supabase/migrations/20261228000200_leave_chain_by_requester.sql
 update public.leave_settings set workflow = 'MULTI_LEVEL';
 delete from leave_requests where employee_id in (select id from profiles where email like 'tds.%@example.com' or email like 'lvc.%@example.com' or email = 'hr.head@amuwa.com');
 delete from auth.users where email like 'lvc.%@example.com';

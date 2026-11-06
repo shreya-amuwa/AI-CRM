@@ -100,7 +100,7 @@ New requests follow the requester's reporting line, one step at a time, then HR:
 * **Switch back** (Super Admin): `POST /api/v1/leave/workflow {"workflow": "TWO_STEP"}` - new requests then go Department Head -> HR again.
 * **Offboarding**: the impact summary counts the leave steps the person decides now (`leaveApprovalsWaiting`).
 
-## Leave chain by requester (migration 20261228000100)
+## Leave chain by requester (migration 20261228000200)
 
 New requests (`workflow_version` 3) follow the chain of the person who asks. It replaces the table above for new requests:
 
