@@ -89,8 +89,14 @@ export class UserService {
       if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD' && actor.role !== 'TEAM_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin, the Department Head or the Team Lead can set a Sales role.');
       if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
     }
-    const { details, salesSubRole, additionalAccess: requestedAccess, operationsHead, departmentIds: _departmentIds, ...account } = input;
+    const { details, salesSubRole, additionalAccess: requestedAccess, operationsHead, departmentIds: _departmentIds, verifierDepartmentIds, ...account } = input;
     void _departmentIds;
+    // A Meta Verifier who verifies for several departments: the Super Admin (or the Operations Head who owns them) gives them in the same step; the database
+    // re-checks who may, and the account is not left half-made if it refuses.
+    const verifierDepartments = [...new Set(verifierDepartmentIds ?? [])];
+    if (verifierDepartments.length && actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD') {
+      throw new AppError('FORBIDDEN', 'Only the Super Admin or an Operations Head can give a Meta Verifier other departments.');
+    }
     if (operationsHead && actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Only the Super Admin can make an Operations Head.');
     // Whole departments are set by operations_head_assign_new; (department, function) pairs are for the older request shape and for a Department Head.
     const additionalAccess = wholeDepartments ? undefined : requestedAccess;
@@ -128,6 +134,15 @@ export class UserService {
         await this.profiles.setDepartmentAccess(id, a.departmentId, a.division, true);
       } catch (err) {
         // Never leave a head without the departments that were asked for.
+        await this.authAdmin.deleteUser(id).catch(() => undefined);
+        throw err;
+      }
+    }
+    if (verifierDepartments.length) {
+      try {
+        await this.profiles.setVerifierDepartments(id, verifierDepartments);
+      } catch (err) {
+        // Never leave a verifier without the departments that were asked for.
         await this.authAdmin.deleteUser(id).catch(() => undefined);
         throw err;
       }

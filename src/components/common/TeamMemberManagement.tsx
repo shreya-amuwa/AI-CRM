@@ -180,10 +180,13 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
         <div role="tabpanel" id="staff-panel-add" aria-labelledby="staff-tab-add" hidden={tab !== 'add'}>
           {slug && (
             <StaffManagementPanel
-              key={`add-${slug}`}
+              // one form for every department: choosing another department in the form (or at the top) keeps what was already typed
+              key="add"
               departmentSlug={slug}
               subDept={subDept}
               view="add"
+              departmentOptions={isSuperAdmin ? usable.map(d => ({ id: d.id, name: d.name })) : undefined}
+              onDepartmentChange={isSuperAdmin ? setSlug : undefined}
               onCreated={p => {
                 setJustAdded(p);
                 setRefreshToken(t => t + 1);
