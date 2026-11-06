@@ -148,3 +148,28 @@ browser test `supabase/tests/e2e/run-recruiter-vacancies.sh`.
 
 Note: re-running the older `20261222000300_recruiter_workspace.sql` after this migration would restore the one-argument `recruiter_vacancies`
 beside the new one; run `20261227000200` again afterwards if that ever happens.
+
+## 11. Vacancy detail page (layout)
+
+`src/components/hr-recruiter/VacancyDetail.tsx` (the dialogs it opens are in `VacancyDialogs.tsx`). No data, API or permission change.
+
+**Width.** The Vacancies pages use the full content area beside the sidebar. The recruiter workspace kept every page in a 1400px column
+(`RecruiterDashboard.tsx`); that cap now applies to the other recruiter pages only. The page is a CSS container (`container-type: inline-size`) and its
+columns change with container queries. The page therefore follows the width it actually has, not the window width with the 264px sidebar included,
+which is what made the earlier version fall back to narrow stacked columns.
+
+**Layout, top to bottom:**
+
+* **Toolbar:** All vacancies and the breadcrumb on the left; Allocate (leadership), Edit vacancy and Change status (primary) on the right.
+* **Overview:** the title, the department, designation, employment type and work mode, and the status at the top right.
+* **Figures:** Openings, Selected, Remaining, Posted, Closes in one row from a 40rem-wide page; 2 per row on a phone.
+* **Information:** three equal columns in one bordered block, separated by 1px lines. They are 3 columns from a 60rem page, 2 (with the third full
+  width) from 42rem, and 1 below that.
+  * **Job overview:** description, responsibilities as bullets.
+  * **Candidate requirements:** qualifications, skills as chips, experience ("Not specified" when empty).
+  * **Recruitment information:** requirements before selection, and the vacancy information (department, designation, location, employment type,
+    work mode, job code, responsible recruiter).
+* **Candidates:** full width.
+  * **Count and filters:** the real application count; search, stage, assessment and interview filters run in the database.
+  * **List:** a table (name, e-mail, contact, applied, assessment, interview, stage, actions) from a 48rem page, compact cards below.
+  * **Empty and no-match:** a small "No Candidates Yet" or "No candidates match these filters".

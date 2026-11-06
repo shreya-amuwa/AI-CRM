@@ -102,7 +102,8 @@ export const RecruiterDashboard: React.FC = () => {
       topActions={<><LeaveCenter /><NotificationBell /></>}
       wide
     >
-      <div className="mx-auto w-full max-w-[1400px]">
+      {/* the Vacancies pages use the full content width (the vacancy detail lays out three columns across it); the other pages keep the calm column */}
+      <div className={route.page === 'vacancies' ? 'w-full' : 'mx-auto w-full max-w-[1400px]'}>
         {ctx.loading && !c ? <Spinner /> : ctx.error || !c ? (
           <ErrorBanner message={ctx.error ?? 'The recruiter workspace could not be opened.'} onRetry={ctx.reload} />
         ) : (
