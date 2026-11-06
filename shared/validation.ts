@@ -2614,3 +2614,24 @@ export const leaveResubmitSchema = z.object({ reason: trimmed(1000).min(3, 'Ente
 export const leaveWorkflowSchema = z.object({ workflow: z.enum(['MULTI_LEVEL', 'TWO_STEP']) }).strict();
 /** Super Admin only: the department-wide Support desk read of post-sale customers (off by default). */
 export const supportDeskSchema = z.object({ departmentWide: z.boolean() }).strict();
+
+// --- Field Visit: live location, Field Visit leads -> Department Head -> Telecaller, retry-safe lead create (migration 20261228000100) ------
+/** The existing lead create, with an optional id the browser makes once per form: sending the same id again returns the first lead. */
+export const leadCreateRequestSchema = leadCreateSchema.extend({ clientRequestId: uuidSchema.optional() }).strict();
+export type LeadCreateRequestInput = z.infer<typeof leadCreateRequestSchema>;
+const trackPoint = z
+  .object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    accuracyMeters: z.number().int().min(0).max(100_000),
+    recordedAt: z.string().datetime({ offset: true })
+  })
+  .strict();
+export const fieldVisitTrackingStartSchema = trackPoint;
+export const fieldVisitTrackingPointsSchema = z.object({ points: z.array(trackPoint).min(1).max(50) }).strict();
+export const fieldVisitTrackingIssueSchema = z.object({ issue: z.enum(['PERMISSION_DENIED', 'POSITION_UNAVAILABLE', 'TIMEOUT']) }).strict();
+export const fieldVisitTrackingBoardQuerySchema = z.object({ date: isoDate.optional() }).strict();
+export const fieldVisitLeadQueueQuerySchema = z
+  .object({ status: z.enum(['PENDING', 'ASSIGNED', 'ALL']).default('PENDING'), search: trimmed(120).optional(), ...pageParams })
+  .strict();
+export const fieldVisitLeadAssignSchema = z.object({ telecallerId: uuidSchema, note: optionalText(500) }).strict();

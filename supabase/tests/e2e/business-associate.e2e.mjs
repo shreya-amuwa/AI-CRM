@@ -447,7 +447,8 @@ await b1.getByRole('button', { name: /Add lead/i }).first().click();
 await b1.locator('#lead-name').fill('Ravi Menon');
 await b1.locator('#lead-company').fill('Menon Cafe');
 await b1.locator('#lead-phone').fill('9811234567');
-await b1.locator('#lead-leadSource').selectOption('Instagram');
+await b1.locator('#lead-leadSource').click();
+await b1.locator('#lead-leadSource-listbox [role="option"]', { hasText: 'Instagram' }).click(); // an accessible list, not a native select
 await b1.locator('fieldset input[type="checkbox"]').first().check();
 // the plan, duration and amount of the selected service (Sales never enters a start or an expiry date)
 const terms = b1.locator('[data-testid^="terms-"]').first();

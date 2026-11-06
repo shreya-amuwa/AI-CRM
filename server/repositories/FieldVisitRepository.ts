@@ -1,5 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { FieldVisitAssignedList, FieldVisitLeadList, FieldVisitOverview, LeadVisit, LeadVisitList, SalesVisitAssignee } from '../../shared/contracts.js';
+import type {
+  FieldVisitAssignedList, FieldVisitLeadList, FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitOverview, FieldVisitTelecaller, LeadVisit, LeadVisitList, SalesVisitAssignee,
+  TrackingBoard, TrackingTrail, VisitTrackingState
+} from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** Field Visit for the Sales employees, and the Sales Department Head's assignments. Who may do what is decided in the database. */
@@ -50,4 +53,25 @@ export class FieldVisitRepository {
     });
   }
   cancelAssignment(leadId: string) { return this.rpc<{ id: string; leadId: string }>('sales_visit_assignment_cancel', { p_lead: leadId }); }
+
+  // live location of a visit in progress (the employee), and the board / trail (the people allowed to track them)
+  trackingStart(id: string, p: { latitude: number; longitude: number; accuracyMeters: number; recordedAt: string }) {
+    return this.rpc<VisitTrackingState>('field_visit_tracking_start', { p_id: id, p_lat: p.latitude, p_lng: p.longitude, p_accuracy: p.accuracyMeters, p_at: p.recordedAt });
+  }
+  trackingPoints(id: string, points: { latitude: number; longitude: number; accuracyMeters: number; recordedAt: string }[]) {
+    return this.rpc<VisitTrackingState>('field_visit_tracking_points', { p_id: id, p_points: points });
+  }
+  trackingIssue(id: string, issue: string) { return this.rpc<VisitTrackingState>('field_visit_tracking_issue', { p_id: id, p_issue: issue }); }
+  trackingStop(id: string) { return this.rpc<VisitTrackingState>('field_visit_tracking_stop', { p_id: id }); }
+  trackingBoard(date?: string) { return this.rpc<TrackingBoard>('field_visit_tracking_board', { p_date: date ?? null }); }
+  trackingTrail(id: string) { return this.rpc<TrackingTrail>('field_visit_tracking_trail', { p_id: id }); }
+
+  // Field Visit leads waiting for the Sales Department Head, and the assignment to a Telecaller
+  leadQueue(i: { status: string; search?: string; page: number; pageSize: number }) {
+    return this.rpc<FieldVisitLeadQueue>('field_visit_lead_queue', { p_status: i.status, p_search: i.search || null, p_page: i.page, p_page_size: i.pageSize });
+  }
+  leadTelecallers(leadId: string) { return this.rpc<FieldVisitTelecaller[]>('field_visit_lead_telecallers', { p_lead: leadId }); }
+  leadAssign(leadId: string, i: { telecallerId: string; note?: string | null }) {
+    return this.rpc<FieldVisitLeadRoute>('field_visit_lead_assign', { p_lead: leadId, p_telecaller: i.telecallerId, p_note: i.note ?? null });
+  }
 }

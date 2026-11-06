@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, Briefcase, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Building2, Briefcase, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -25,6 +25,8 @@ import { SalesReports } from './SalesReports';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
+import { ActiveFieldVisits } from '../field-visit/ActiveFieldVisits';
+import { FieldVisitLeadQueuePage } from '../field-visit/FieldVisitLeadQueue';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
@@ -81,6 +83,11 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'leads', label: 'Leads', icon: Target, children: [{ id: 'leads-list', label: 'Lead List' }, { id: 'leads-assign', label: 'Lead Assign' }] },
           // the head's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
           { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] },
+          // Field visits: the Department Head assigns the leads found on visits; both the head and the Sales Operations Head see visits live
+          {
+            id: 'field-visits-group', label: 'Field Visits', icon: MapPin,
+            children: [...(operationsHead ? [] : [{ id: 'field-visit-leads', label: 'Field Visit Leads - Pending Assignment' }]), { id: 'field-tracking', label: 'Active Field Visits' }]
+          },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
@@ -136,6 +143,8 @@ export const SalesHeadDashboard: React.FC = () => {
         <PipelineWorkspace section={MY_SECTION[page]} counts={pipelineCounts} leadFilters resetKey={intent.n} onNavigate={s => go(MY_PAGE[s])} />
       )}
       {page === 'tasks' && <SalesDailyTasks key={intent.n} initialFilter={intent.filter} />}
+      {page === 'field-visit-leads' && !operationsHead && <FieldVisitLeadQueuePage />}
+      {page === 'field-tracking' && <ActiveFieldVisits audience="manager" />}
       {page === 'performance' && <SalesPerformance />}
       {page === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {page === 'income' && <SalesIncomePage />}

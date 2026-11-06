@@ -9653,6 +9653,99 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
         && r.json.data.extra.length === 1 && r.json.data.extra[0].id === wbx.id, 'verifier creation: home department plus the ticked one, once', r);
   check(Number((await db.query(`select count(*) n from public.profiles where email like 'mvx.%'`)).rows[0].n) === 0, 'verifier creation: no account was left behind by a refused request');
 }
+// --- Field Visit: live location, field visit leads -> Department Head -> Telecaller, retry-safe lead create (migration 20261228000100) ---
+{
+  const who = async (token: string) => (await api(token, 'GET', '/me')).json.data.id as string;
+  const tcId = await who('tca');
+  const baId = await who('ba1');
+  const service = (await db.query(`select code from crm_services where is_active order by sort_order limit 1`)).rows[0].code as string;
+  const day = (offset: number) => new Date(Date.now() + 5.5 * 3600e3 + offset * 86400e3).toISOString().slice(0, 10);
+  const lead = (name: string, leadSource: string) => ({ name, company: `${name} Co`, phone: '9811234588', leadSource, services: [service] });
+
+  // the Add Lead form of the Field Visit pages: one request id per form, a retry makes no second lead
+  const rid = crypto.randomUUID();
+  let r = await api('ba1', 'POST', '/pipeline/leads', { ...lead('FVT Api Signboard', 'Field visit'), clientRequestId: rid });
+  check(r.status === 201 && r.json.data.leadSource === 'Field visit', 'field visit leads API: the employee adds a field visit lead', r);
+  const fvLead = r.json.data.id as string;
+  r = await api('ba1', 'POST', '/pipeline/leads', { ...lead('FVT Api Signboard', 'Field visit'), clientRequestId: rid });
+  check(r.status === 201 && r.json.data.id === fvLead, 'field visit leads API: the same request again returns the same lead', r);
+  check(Number((await db.query(`select count(*) from customers where name = 'FVT Api Signboard'`)).rows[0].count) === 1, 'field visit leads API: one lead, not two');
+  r = await api('ba1', 'POST', '/pipeline/leads', { ...lead('FVT Api Bad', 'Field visit'), clientRequestId: 'not-an-id' });
+  check(r.status === 422, 'field visit leads API: the request id must be an id', r);
+  check((await db.query(`select status, created_by from field_visit_lead_routes where lead_id = $1`, [fvLead])).rows[0]?.status === 'PENDING', 'field visit leads API: it waits for the Sales Department Head');
+
+  // only the Sales Department Head sees the queue and assigns a Telecaller
+  for (const t of ['ba1', 'tca', 'a', 'th', 'sm']) {
+    r = await api(t, 'GET', '/field-visits/lead-queue');
+    check(r.status === 403, `field visit leads API: ${t} has no queue`, r);
+    r = await api(t, 'POST', `/field-visits/lead-queue/${fvLead}/assign`, { telecallerId: tcId });
+    check(r.status === 403, `field visit leads API: ${t} cannot assign`, r);
+  }
+  r = await api('sh', 'GET', '/field-visits/lead-queue');
+  const queued = r.status === 200 && (r.json.data.items as any[]).some(x => x.leadId === fvLead);
+  if (queued) {
+    check(r.json.data.pending >= 1, 'field visit leads API: the Sales Department Head sees the lead in the pending queue', r);
+    r = await api('sh', 'GET', `/field-visits/lead-queue/${fvLead}/telecallers`);
+    check(r.status === 200 && (r.json.data as any[]).some(x => x.id === tcId) && !(r.json.data as any[]).some(x => x.id === baId), 'field visit leads API: Telecallers of the department can be chosen, nobody else', r);
+    r = await api('sh', 'POST', `/field-visits/lead-queue/${fvLead}/assign`, { telecallerId: baId });
+    check(r.status === 422, 'field visit leads API: only a Telecaller', r);
+    r = await api('sh', 'POST', `/field-visits/lead-queue/${fvLead}/assign`, { telecallerId: tcId, note: 'Call today', extra: 1 });
+    check(r.status === 422, 'field visit leads API: unknown fields are refused', r);
+    r = await api('sh', 'POST', `/field-visits/lead-queue/${fvLead}/assign`, { telecallerId: tcId, note: 'Call today' });
+    check(r.status === 200 && r.json.data.status === 'ASSIGNED' && r.json.data.assignedTo.id === tcId && r.json.data.changed === true, 'field visit leads API: the head assigns it to the Telecaller', r);
+    r = await api('sh', 'POST', `/field-visits/lead-queue/${fvLead}/assign`, { telecallerId: tcId, note: 'Call today' });
+    check(r.status === 200 && r.json.data.changed === false, 'field visit leads API: a retry changes nothing', r);
+    const row = (await db.query(`select owner_id, created_by from customers where id = $1`, [fvLead])).rows[0];
+    check(row.owner_id === tcId && row.created_by === baId, 'field visit leads API: the Telecaller owns it, the creator is kept');
+    r = await api('tca', 'GET', '/telecaller/leads?pageSize=100');
+    check(r.status === 200 && (r.json.data.items as any[]).some(x => x.id === fvLead), 'field visit leads API: the lead is in the Telecaller’s leads', r);
+  } else {
+    check(false, 'field visit leads API: the Sales head and the Business Associate share a department (test setup)', r);
+  }
+
+  // live location: only while the employee's own visit is in progress, seen only by the people allowed to
+  r = await api('ba1', 'POST', '/pipeline/leads', { ...lead('FVT Api Visit Shop', 'Walk-in'), clientRequestId: crypto.randomUUID() });
+  const ownLead = r.json.data.id as string;
+  r = await api('ba1', 'POST', '/field-visits', { leadId: ownLead, visitDate: day(0), purpose: 'Live location check', clientRequestId: crypto.randomUUID() });
+  const visitId = r.json.data.id as string;
+  const at = (s: number) => new Date(Date.now() + s * 1000).toISOString();
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/start`, { latitude: 18.52, longitude: 73.85, accuracyMeters: 12, recordedAt: at(0) });
+  check(r.status === 409, 'tracking API: no location before the visit has started', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/start`, { latitude: 18.52, longitude: 73.85, accuracyMeters: 12 });
+  check(r.status === 200 && r.json.data.status === 'IN_PROGRESS', 'tracking API: the visit starts', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/start`, { latitude: 18.52, longitude: 73.85, accuracyMeters: 12, recordedAt: at(0) });
+  check(r.status === 200 && r.json.data.trackingStatus === 'ACTIVE' && r.json.data.points === 1, 'tracking API: the employee starts sharing their location', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 18.521, longitude: 73.851, accuracyMeters: 20, recordedAt: at(30) }, { latitude: 18.522, longitude: 73.852, accuracyMeters: 20, recordedAt: at(60) }] });
+  check(r.status === 200 && r.json.data.saved === 2 && r.json.data.lastLocation.latitude === 18.522, 'tracking API: positions are stored and the last one is returned', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 123, longitude: 73.8, accuracyMeters: 20, recordedAt: at(90) }] });
+  check(r.status === 422, 'tracking API: an impossible position is refused', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/issue`, { issue: 'SOMETHING' });
+  check(r.status === 422, 'tracking API: an unknown problem is refused', r);
+  r = await api('a', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 18.5, longitude: 73.8, accuracyMeters: 20, recordedAt: at(90) }] });
+  check(r.status === 404, 'tracking API: nobody sends positions for someone else’s visit', r);
+  r = await api('sh', 'GET', '/field-visits/tracking/board');
+  check(r.status === 200 && (r.json.data.items as any[]).some(x => x.visitId === visitId && x.lastLocation && x.employee.id === baId), 'tracking API: the Sales Department Head sees the visit live', r);
+  r = await api('sh', 'GET', `/field-visits/${visitId}/tracking`);
+  check(r.status === 200 && r.json.data.locations.length === 3 && r.json.data.events.length >= 1, 'tracking API: and its location history', r);
+  r = await api('hr', 'GET', '/field-visits/tracking/board');
+  check(r.status === 200 && (r.json.data.items as any[]).some(x => x.visitId === visitId), 'tracking API: HR sees the work tracking record', r);
+  for (const t of ['a', 'tca', 'sm']) {
+    r = await api(t, 'GET', '/field-visits/tracking/board');
+    check(r.status === 403, `tracking API: ${t} has no tracking board`, r);
+    r = await api(t, 'GET', `/field-visits/${visitId}/tracking`);
+    check(r.status === 404, `tracking API: ${t} cannot open the trail`, r);
+  }
+  r = await api('sh', 'GET', '/field-visits/tracking/board?date=2020-01-01');
+  check(r.status === 422, 'tracking API: the board covers the last two years', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/stop`);
+  check(r.status === 200 && r.json.data.trackingStatus === 'STOPPED', 'tracking API: the employee stops sharing', r);
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/tracking/points`, { points: [{ latitude: 18.53, longitude: 73.86, accuracyMeters: 20, recordedAt: at(120) }] });
+  check(r.status === 409, 'tracking API: no position is accepted after stopping', r);
+  check(Number((await db.query(`select count(*) from lead_visit_locations where visit_id = $1`, [visitId])).rows[0].count) === 3, 'tracking API: nothing was stored after stopping');
+  r = await api('ba1', 'POST', `/field-visits/${visitId}/complete`, { status: 'COMPLETED', outcome: 'Done' });
+  check(r.status === 200 && r.json.data.trackingStatus === 'STOPPED', 'tracking API: the finished visit stays stopped', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

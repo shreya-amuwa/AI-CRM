@@ -376,6 +376,11 @@ export class PipelineRepository {
     return unwrap(await this.db.rpc('create_lead', { p_fields: leadPayload(input), p_services: input.services })) as string;
   }
 
+  /** The same create, once per (person, request id): a retry gets the first lead back (`existing`). */
+  async createLeadOnce(input: LeadCreateInput, requestId: string): Promise<{ id: string; existing: boolean }> {
+    return unwrap(await this.db.rpc('create_lead_once', { p_fields: leadPayload(input), p_services: input.services, p_request: requestId })) as { id: string; existing: boolean };
+  }
+
   // ---- subscriptions: terms (Sales), activation / correction / renewal (the team) ----
   async subscriptionsList(q: { search?: string; status?: string; page: number; pageSize: number }): Promise<SubscriptionList> {
     return unwrap(await this.db.rpc('subscriptions_list', { p_search: q.search ?? null, p_status: q.status ?? null, p_page: q.page, p_page_size: q.pageSize })) as SubscriptionList;
