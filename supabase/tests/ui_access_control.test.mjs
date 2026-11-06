@@ -122,6 +122,8 @@ const open = async (vp) => {
   check(/no Sales team/.test(await page.textContent('[role="alert"]')) && await page.isChecked('[data-testid="cell-wabastore-support"]') && await page.isVisible('[data-testid="unsaved-badge"]'), 'a refused save shows the database reason and keeps the unsaved ticks');
   await page.click('[data-testid="access-save"]');
   await page.waitForSelector('[role="status"]:has-text("Saved")');
+  // the "Saved" message and the cleared form are separate renders: wait (briefly) for the form to settle before checking it
+  await page.waitForFunction(() => document.querySelector('[data-testid="access-save"]')?.disabled && !document.querySelector('[data-testid="unsaved-badge"]'), null, { timeout: 5000 }).catch(() => {});
   const body = await page.evaluate(() => window.__calls.filter(c => c.startsWith('POST')).length);
   check(body === 2 && await page.isHidden('[data-testid="unsaved-badge"]').catch(() => true) && await page.isDisabled('[data-testid="access-save"]'), 'Save succeeds: the badge goes, Save is disabled again');
   check((await page.textContent('#saves')) === '1', 'the lists are told to refresh (onSaved)');
