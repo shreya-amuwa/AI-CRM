@@ -38,6 +38,7 @@ export const careerController = {
   profile: handle((s) => s.profile()),
   saveProfile: handle((s, c) => s.saveProfile(c.req.body)),
   jobs: handle((s, c) => s.jobs(c.req.query)),
+  job: handle((s, c) => s.job(c.params.id)),
   files: handle((s) => s.files()),
   beginUpload: handle((s, c) => s.beginUpload(c.req.body)),
   completeUpload: handle((s, c) => s.completeUpload(c.params.id)),

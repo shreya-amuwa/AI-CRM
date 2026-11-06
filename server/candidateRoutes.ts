@@ -14,6 +14,7 @@ interface CandidateRoute {
 }
 export const candidateRoutes: CandidateRoute[] = [
   { method: 'GET', path: '/careers/jobs', public: true, handler: career.jobs },
+  { method: 'GET', path: '/careers/jobs/:id', public: true, handler: career.job },
   {
     method: 'GET',
     path: '/candidate/assessments',

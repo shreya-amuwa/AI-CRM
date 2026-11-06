@@ -41,6 +41,25 @@ Supabase Storage gets a private `career-resumes` bucket limited to PDFs/10 MB. R
 
 The initial release uses HR-managed panel scheduling/outcome capture; a dedicated interviewer self-service dashboard, calendar-provider sync, AI resume ranking, video proctoring and automatic staff activation are not included. HR interview outcomes explicitly record the HR actor and remain internal. Assessment results are immediately visible to their owner; selection remains a separate HR decision. These choices keep the candidate journey operational without changing existing employee or financial authorization.
 
+## Job catalogue increment
+
+Migration `20261226000200_career_job_catalogue.sql` (additive, safe to run twice). Run it after the three migrations above.
+
+**What a candidate sees of a job.** `career_postings` gains a stable `code` (`JOB-0001`, assigned once, never changes), `team`, `work_mode` (`REMOTE` / `HYBRID` / `ONSITE`), `salary_text` (free text, e.g. "Competitive"), `responsibilities` and `benefits` (one item per line) and `published_at` (the first time the job went live; unpublishing and republishing keeps it). Existing jobs are given a code in creation order and a published date from when they were created. HR enters the new fields in Recruitment → Candidate portal → job form; all are optional, and an older form that does not send them leaves them unchanged (sending an empty value clears just that field).
+
+**Public API** (no sign-in, rate limits as for the other public route):
+
+| Route | What |
+| --- | --- |
+| `GET /careers/jobs?page&search&team&mode&location` | open jobs, 20 per page, newest first. `search` matches title, code, team and location and treats `%` / `_` literally. `team` and `location` are case-insensitive exact matches, `mode` is `REMOTE`/`HYBRID`/`ONSITE`. Returns `{ items, total, facets }`; `facets` lists the teams, locations and work modes of **all** open jobs with counts (so filter chips stay complete while a filter is active). |
+| `GET /careers/jobs/:id` | one open job. An unpublished, closed or expired job is `404` — it does not reveal that it exists. |
+
+Both return the same job shape (`CareerJob` in `shared/contracts.ts`): id, code, title, description, location, employment type, close date, published date, team, work mode, pay, responsibilities, benefits, **and the vacancy's skills, qualifications and experience**. Those last three were not public before; they are the candidate-facing requirements of the vacancy, so HR should not put internal notes in them (the form says so). Nothing else from the vacancy — responsible recruiter, number of openings, status note, approval, required steps — is ever public. The shape is built in one place (`private.career_job_public`).
+
+**Compatibility.** `career_jobs(page, search)` keeps working (the new arguments have defaults), and the API only sends a filter when one is set, so the plain list works on a database that has not had this migration yet. The single-job route and the HR fields need the migration. The anonymous-callable function list in `supabase/tests/security_test.sql` now includes `career_job`: that is the one deliberate widening of what signed-out visitors can call.
+
+**Tests.** `supabase/tests/careers_catalogue_test.sql` (codes, published date, filters, facets, literal search, public shape, single read, HR validation and permissions), unit checks in `careers_validation.test.ts`, and a block at the end of `api_integration.test.ts`.
+
 ## Removed from the CRM domain (November 2026)
 
 The candidate portal (`/candidate`) and the public careers pages (`/careers`) are no longer served by the CRM web app (for example
