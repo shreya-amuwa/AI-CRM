@@ -291,6 +291,8 @@ export const userCreateSchema = z
     operationsHead: z.boolean().optional(),
     /** The departments a NEW Operations Head supervises (one account, several departments; the first is where the person is placed). Operations Head only. */
     departmentIds: z.array(uuidSchema).min(1, 'Choose at least one department.').max(40).optional(),
+    /** A Meta Verifier: the OTHER departments they verify for, besides the department they are placed in (Super Admin or the owning Operations Head). */
+    verifierDepartmentIds: z.array(uuidSchema).max(40, 'Choose at most 40 departments.').optional(),
     /** More (department, function) pairs the head works in, besides their own department and side. Another DEPARTMENT is for an Operations Head only. Super Admin only. */
     additionalAccess: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(40).optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
@@ -316,6 +318,10 @@ export const userCreateSchema = z
   .refine(u => !u.metaVerifier || u.role === 'TEAM_MEMBER', {
     message: 'A Meta Verifier is created as a team member of a support team.',
     path: ['role']
+  })
+  .refine(u => !u.verifierDepartmentIds?.length || u.metaVerifier === true, {
+    message: 'Only a Meta Verifier verifies for other departments.',
+    path: ['verifierDepartmentIds']
   })
   .refine(u => !(u.metaVerifier && u.technicalConsultant), {
     message: 'A person is either a Meta Verifier or a Technical Consultant.',
