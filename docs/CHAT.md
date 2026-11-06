@@ -206,3 +206,28 @@ database computes without your own messages, so: no sound for your own message, 
 same count plays nothing), at most one chime every 4 seconds in a burst, none while the chat is on screen and in focus. The bell button next to
 **New** in the chat list mutes / unmutes it (remembered in this browser). Browsers allow sound only after the page was touched once; until then
 the badge and the list still update. No polling and no second chat system: it uses the existing Realtime-driven unread count.
+
+## HR in the company chat (migration `20261228000300_chat_directory_departments.sql`)
+
+HR uses this same chat. There is no HR-only system: the same `chat_conversations`, `chat_members` and `chat_messages`, the same Realtime updates,
+unread counts and new-message sound, and the same rules.
+
+* **HR Recruiter:** the dashboard has a **Communication** section with **Chat** (with the live unread badge) and **Notifications**. A chat
+  notification opens the Chat page.
+* **HR Assistant and HR Admin Head:** they already had Chat in the HR department menu. For HR, Chat and the Notification Center now sit in their own
+  **Communication** section. Other departments' menus are unchanged.
+* **Who may message whom:** unchanged (`private.chat_may_message`): any two ACTIVE employees, except the existing Sales-head rule.
+* **One conversation per pair:** a direct conversation has one `direct_key` per pair of people, so HR and a Team Member always share ONE
+  conversation, whichever dashboard either of them opens it from.
+* **Privacy:** a conversation is readable only by its members. HR Assistants, the HR Admin Head and everyone else get NOT_FOUND for other people's
+  conversations, through the API or by id.
+* **Groups:** by membership. Only a group admin adds people.
+* **Directory (New message):**
+  * every person now shows their **designation** (the recorded designation, else their position);
+  * search matches the name, designation, position, department or team;
+  * a **Department** filter narrows the list, applied by `chat_directory(p_search, p_limit, p_department)` in the database;
+  * it never shows an e-mail or a phone number.
+
+Tests: `supabase/tests/hr_chat_integration_test.sql`, the "HR in the company chat" block of `api_integration.test.ts`, and the browser test
+`supabase/tests/e2e/run-hr-chat.sh` (Recruiter and Team Member signed in at once writing to each other live; the HR Assistant and HR Admin Head
+menus; privacy).

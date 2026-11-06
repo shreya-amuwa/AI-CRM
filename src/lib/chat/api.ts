@@ -122,7 +122,7 @@ export const chatApi = {
   review: (q: string | undefined, page: number, pageSize = 30) => api.get<ChatReviewList>('/chat/review', { q, page, pageSize }),
   unread: () => api.get<ChatUnreadSummary>('/chat/unread'),
   clientUnread: () => api.get<ChatUnreadSummary>('/client/chat/unread'),
-  directory: (q: string | undefined, limit = 30) => api.get<ChatDirectoryPerson[]>('/chat/directory', { q, limit }),
+  directory: (q: string | undefined, limit = 30, department?: string) => api.get<ChatDirectoryPerson[]>('/chat/directory', department ? { q, limit, department } : { q, limit }),
   openDirect: (profileId: string) => api.post<ChatConversation>('/chat/direct', { profileId }),
   createGroup: (title: string, memberIds: string[]) => api.post<ChatConversation>('/chat/groups', { title, memberIds }),
   customer: (customerId: string) => api.get<ChatConversation>(`/chat/customers/${customerId}`),

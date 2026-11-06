@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Briefcase, CalendarClock, ClipboardCheck, LayoutDashboard, Phone, Scale, Settings, Users, Workflow } from 'lucide-react';
+import { BarChart3, Bell, Briefcase, CalendarClock, ClipboardCheck, LayoutDashboard, Phone, Scale, Settings, Users, Workflow } from 'lucide-react';
+import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
+import { useOpenChatRequest } from '../chat/chatEvents';
 import { useAuth } from '../../context/AuthContext';
 import { recruiterApi, type RecruiterQuery } from '../../lib/api/recruiter';
 import { navigateTo } from '../../utils/router';
@@ -20,7 +22,7 @@ import { Reports } from './Reports';
 import { Vacancies } from './Vacancies';
 import { useLoad } from './ui';
 
-export type RecruiterPage = 'dashboard' | 'vacancies' | 'applications' | 'pipeline' | 'calls' | 'interviews' | 'assessments' | 'decisions' | 'reports' | 'settings' | 'notifications';
+export type RecruiterPage = 'dashboard' | 'vacancies' | 'applications' | 'pipeline' | 'calls' | 'interviews' | 'assessments' | 'decisions' | 'reports' | 'settings' | 'chat' | 'notifications';
 export interface RecruiterTarget { applicationId?: string; vacancyId?: string; stage?: RecruiterQuery['stage'] }
 export type RecruiterGo = (page: RecruiterPage, target?: RecruiterTarget) => void;
 
@@ -38,13 +40,17 @@ const NAV: { id: RecruiterPage; label: string; icon: React.ElementType; segment:
   { id: 'assessments', label: 'Assessment & Test Results', icon: ClipboardCheck, segment: 'assessments' },
   { id: 'decisions', label: 'Selection & Rejection', icon: Scale, segment: 'selection' },
   { id: 'reports', label: 'Recruitment Reports', icon: BarChart3, segment: 'reports' },
-  { id: 'settings', label: 'Settings', icon: Settings, segment: 'settings' }
+  { id: 'settings', label: 'Settings', icon: Settings, segment: 'settings' },
+  // the company Chat (the same conversations as every other dashboard) and the notifications page
+  { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon, segment: 'chat' },
+  { id: 'notifications', label: 'Notifications', icon: Bell, segment: 'notifications' }
 ];
 /** Work = the day's work (the overview, calls and follow-ups, the interview schedule); Recruitment = vacancies and candidates; Management. */
 const RECRUITER_SECTIONS: { label: string; ids: RecruiterPage[]; collapsible: boolean }[] = [
   { label: 'Work', ids: ['dashboard', 'calls', 'interviews'], collapsible: true },
   { label: 'Recruitment', ids: ['vacancies', 'applications', 'pipeline', 'assessments', 'decisions'], collapsible: true },
-  { label: 'Management', ids: ['reports', 'settings'], collapsible: true }
+  { label: 'Management', ids: ['reports', 'settings'], collapsible: true },
+  { label: 'Communication', ids: ['chat', 'notifications'], collapsible: true }
 ];
 export const RECRUITER_BASE = (userId: string) => `/hr-recruiter/dashboard/${userId}`;
 
@@ -85,7 +91,11 @@ export const RecruiterDashboard: React.FC = () => {
 
   const displayName = profile?.fullName || user?.name || 'HR Recruiter';
   const c = ctx.data;
-  const items = NAV.map(n => ({ id: n.id, label: n.label, icon: n.icon, badge: n.id === 'applications' && c?.newApplications ? c.newApplications : undefined, count: undefined }));
+  const chatUnread = useChatNavBadge();
+  // a notification about a chat message (or any "open chat" request) opens the Chat page
+  useOpenChatRequest(useCallback(() => go('chat'), [go]));
+  const badgeOf = (id: RecruiterPage) => (id === 'applications' && c?.newApplications ? c.newApplications : id === 'chat' && chatUnread ? chatUnread : undefined);
+  const items = NAV.map(n => ({ id: n.id, label: n.label, icon: n.icon, badge: badgeOf(n.id), count: undefined }));
   const groups = groupNavItems(items, RECRUITER_SECTIONS);
 
   return (
@@ -94,14 +104,18 @@ export const RecruiterDashboard: React.FC = () => {
       subtitle="Recruiter"
       ariaLabel="HR Recruiter navigation"
       groups={groups}
-      active={route.page === 'notifications' ? '' : route.page}
+      active={route.page}
       onSelect={id => go(id as RecruiterPage)}
       user={{ name: displayName, role: c?.isLeadership ? 'HR leadership' : 'HR Recruiter' }}
       onSignOut={() => void logout()}
       topLeft={<div className="hidden lg:block text-sm text-slate-500" title={profile?.email}>{profile?.department?.name || 'HR'} · Recruitment</div>}
       topActions={<><LeaveCenter /><NotificationBell /></>}
       wide
+      flush={route.page === 'chat'}
     >
+      {/* Chat does not depend on the recruitment data: it opens even if that fails to load */}
+      {route.page === 'chat' ? <ChatRoute /> : (
+      <>
       {/* the Vacancies pages use the full content width (the vacancy detail lays out three columns across it); the other pages keep the calm column */}
       <div className={route.page === 'vacancies' ? 'w-full' : 'mx-auto w-full max-w-[1400px]'}>
         {ctx.loading && !c ? <Spinner /> : ctx.error || !c ? (
@@ -122,6 +136,8 @@ export const RecruiterDashboard: React.FC = () => {
           </>
         )}
       </div>
+      </>
+      )}
     </DashboardShell>
   );
 };

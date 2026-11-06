@@ -2661,3 +2661,6 @@ export const fieldVisitLeadQueueQuerySchema = z
   .object({ status: z.enum(['PENDING', 'ASSIGNED', 'ALL']).default('PENDING'), search: trimmed(120).optional(), ...pageParams })
   .strict();
 export const fieldVisitLeadAssignSchema = z.object({ telecallerId: uuidSchema, note: optionalText(500) }).strict();
+
+// --- Company chat directory: department filter (migration 20261228000300) ----------------------------------------------------------------
+export const chatDirectoryQuerySchema = chatSearchQuerySchema.extend({ department: uuidSchema.optional() });

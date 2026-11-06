@@ -2989,6 +2989,9 @@ export interface ChatDirectoryPerson {
   position: string | null;
   department: string | null;
   team: string | null;
+  /** The employee's designation (or position); from migration 20261228000300, absent before it. */
+  designation?: string | null;
+  departmentId?: string | null;
 }
 export interface ChatMyClient {
   customerId: string;
