@@ -19,7 +19,7 @@ for t in careers_time careers_validation accounts_profile api_client_cache realt
   rm -f "./.unit_$t.tmp.mjs"
 done
 # Browser tests: the "Same as mobile number" checkbox, and the scrolling of pop-ups / the page lock (need Playwright + Chromium, skipped when they are missing)
-for ui in ui_candidate_portal docs_navigation ui_whatsapp ui_scroll ui_head_departments ui_access_control ui_audit_location ui_client_logins ui_client_journey ui_accounts_finance ui_employee_hierarchy ocr_shop_photo ui_mobile_chat ui_hr_designations; do
+for ui in docs_navigation ui_whatsapp ui_scroll ui_head_departments ui_access_control ui_audit_location ui_client_logins ui_client_journey ui_accounts_finance ui_employee_hierarchy ocr_shop_photo ui_mobile_chat ui_hr_designations; do
   [ -f "supabase/tests/$ui.test.mjs" ] || continue
   echo "=== $ui"
   node "supabase/tests/$ui.test.mjs" || status=1

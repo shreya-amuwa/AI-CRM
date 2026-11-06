@@ -40,3 +40,14 @@ Each script is rerunnable and uses no cross-statement temporary state. Deploy mi
 Supabase Storage gets a private `career-resumes` bucket limited to PDFs/10 MB. R2 installations use the existing driver/configuration and must permit direct browser PUT from the application origin through bucket CORS. Completion checks size/signature and copies to a new sealed object; original upload URLs can never modify the sealed object. The dispatcher removes temporary copies and expired reservations after successful storage deletion. A PDF signature check is not a malware scan; enable a document-scanning service before accepting sensitive documents in a production rollout that requires malware screening. No scanner or external AI service is silently installed or represented as available.
 
 The initial release uses HR-managed panel scheduling/outcome capture; a dedicated interviewer self-service dashboard, calendar-provider sync, AI resume ranking, video proctoring and automatic staff activation are not included. HR interview outcomes explicitly record the HR actor and remain internal. Assessment results are immediately visible to their owner; selection remains a separate HR decision. These choices keep the candidate journey operational without changing existing employee or financial authorization.
+
+## Removed from the CRM domain (November 2026)
+
+The candidate portal (`/candidate`) and the public careers pages (`/careers`) are no longer served by the CRM web app (for example
+`https://crm.amuwacorporation.com/candidate`). Both addresses, and old links to them, now open the CRM's own home page. The candidate
+screens (`src/candidate/*` except `parts.tsx`, which the HR screens share) and their browser test were deleted.
+
+Not changed: the database (`career_*` tables and functions), the API (`/api/v1/careers/*`, `/api/v1/candidate/*`) and its tests, and the HR
+Recruitment screens (jobs, tests, applications, interviews, offers, joining). A candidate portal on a separate domain can keep using the API.
+The HR "Open public careers page" button appears only when `VITE_CAREERS_URL` is set to that site's address. If the portal is moved to its
+own domain, add that domain's `/candidate` address to the Supabase Auth redirect URLs and add it to `API_ALLOWED_ORIGINS` for the API.

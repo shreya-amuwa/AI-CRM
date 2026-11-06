@@ -222,7 +222,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       const listTeamId = isTeamLead ? profile?.teamId || undefined : bySubDept ? undefined : scope === 'subdept' ? defaultTeam?.id : undefined;
       const result = await usersApi.list({
         departmentId, teamId: listTeamId, division: bySubDept ? division : undefined, page, pageSize: MEMBERS_PAGE_SIZE,
-        search: searchApplied || undefined, role: roleFilter || undefined, status: statusFilter || undefined
+        // a Team Lead's list is their own Team Members (the database returns only those; the other Team Leads of a shared team are not "members")
+        search: searchApplied || undefined, role: isTeamLead ? 'TEAM_MEMBER' : roleFilter || undefined, status: statusFilter || undefined
       });
       setMembers(result.items.filter(m => m.id !== profile?.id));
       setTotal(result.total);
@@ -872,7 +873,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               />
               <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as Role | '')} aria-label="Filter by role" className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white cursor-pointer" data-testid="member-role-filter">
                 <option value="">All roles</option>
-                {(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER'] as Role[]).map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                {((isTeamLead ? ['TEAM_MEMBER'] : ['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']) as Role[]).map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as typeof statusFilter)} aria-label="Filter by account status" className="px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white cursor-pointer" data-testid="member-status-filter">
                 <option value="">All statuses</option>
@@ -891,7 +892,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           {listError && <div className="p-2.5 rounded-xl text-xs border bg-rose-50 border-rose-200 text-rose-700">{listError}</div>}
 
           {!loading && rows.length === 0 && !listError ? (
-            <p className="text-xs text-slate-500 py-8 text-center">{directory ? (searchApplied || roleFilter || statusFilter ? 'Nobody matches these filters.' : 'No members yet. Use the Add Team Member tab to create the first account.') : view === 'manage' ? 'No members yet. Use Add Member to create the first account.' : manage ? 'No members yet. Create the first account using the form.' : 'No members yet. Use Add Team Member to create the first account.'}</p>
+            <p className="text-xs text-slate-500 py-8 text-center">{isTeamLead && !(searchApplied || roleFilter || statusFilter) ? 'No Team Members are currently assigned to your team.' : directory ? (searchApplied || roleFilter || statusFilter ? 'Nobody matches these filters.' : 'No members yet. Use the Add Team Member tab to create the first account.') : view === 'manage' ? 'No members yet. Use Add Member to create the first account.' : manage ? 'No members yet. Create the first account using the form.' : 'No members yet. Use Add Team Member to create the first account.'}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className={`w-full text-xs ${directory ? 'min-w-[960px]' : ''}`}>

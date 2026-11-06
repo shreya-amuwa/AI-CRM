@@ -33,6 +33,7 @@ import {
 } from '../../candidate/parts';
 import type { z } from 'zod';
 const root = '/hr/recruitment/careers';
+const CAREERS_URL: string | undefined = import.meta.env.VITE_CAREERS_URL || undefined;
 function validated<T>(schema: z.ZodType<T>, body: unknown): T {
   const p = schema.safeParse(body);
   if (!p.success)
@@ -57,14 +58,17 @@ export const CareerManagement: React.FC = () => {
             {stageName(t)}
           </button>
         ))}
-        <a
-          href="/careers"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={secondary}
-        >
-          Open public careers page
-        </a>
+        {/* the careers site is no longer part of the CRM domain; the button shows only when its address is configured */}
+        {CAREERS_URL && (
+          <a
+            href={CAREERS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={secondary}
+          >
+            Open public careers page
+          </a>
+        )}
       </div>
       {tab === 'jobs' ? (
         <PostingManager />

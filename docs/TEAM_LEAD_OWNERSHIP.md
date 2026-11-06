@@ -67,3 +67,41 @@ lead only. Ticket escalation and its notifications go to the assignee's own lead
 their department; Support raises tickets for any of them this way. It is kept ON so live Support work does not break, and it now has a switch:
 `POST /api/v1/access/support-desk {"departmentWide": false}` (Super Admin, audited) turns it off for strict ownership - then Support can raise
 tickets only for their own (or their members') customers. `docs` and tests: `team_lead_direct_scope_test.sql` checks both settings.
+
+## Strict isolation, part 2 (migration 20261226000100)
+
+20261225000100 scoped the lists, reports, tasks, customers and tickets to the direct lead. These checks still allowed "anyone of the same
+team" for a Team Lead and now also require the person to be the lead's own member (`private.led_by` / `lead_sees` / `direct_lead_of`):
+
+| Area | Function / rule | Before (two leads in one team) | Now |
+| --- | --- | --- | --- |
+| Edit, suspend, revoke, remove, change role | `private.actor_can_manage_profile` (behind `can_manage_profile`, `delete_user`, status / role changes) | Lead A could act on Lead B's members | own members only |
+| Performance page | `public.performance_people` | listed every member of the team with metrics | own members only |
+| Person-owned rows, customers | `can_view_owner`, `can_access_customer`, `may_update_support_customer`, `update_support_customer`, `subscriptions_list`, `customers_insert/update/delete` | team-wide | own members' rows |
+| Handing work to a person | `can_assign_ticket_to`, `can_assign_customer_owner` | any member of the team | self or own members |
+| Invoice requests, audit log | `invoice_requests_select`, `audit_logs_select` | team-wide | own members' lines (a line about a person: only own members) |
+| Notifications | `broadcast_announcement`, `create_support_ticket`, `create_support_customer`, `update_support_ticket`, `request_invoice`, `report_audience`, `hr_reporting_manager` | every lead of the team | the person's own lead (all leads only for an unassigned ticket) |
+| Assigning a member to a lead | `assign_member_to_team_lead` ("Assign to Team Lead") | moved the team only; refused a second lead of the same team; a team with two leads left the member with none | names the lead (same team or another); pending stage-1 reports move with the member; history in `team_assignments` + audit |
+| Department Head directory, leaderboard | `department_employee_directory`, `private.person_score_rows` | "first lead of the team by name" | the member's own lead; a member with no lead shows "Awaiting a Team Lead" |
+
+The Team Lead's Team Members screen lists Team Members only (not the other Team Lead of a shared team), the role filter offers only Team
+Member, and an empty list says "No Team Members are currently assigned to your team." Department Head, Operations Head and Super Admin are
+unchanged. A team with a single Team Lead behaves exactly as before. Tests: `team_lead_strict_isolation_test.sql` and the
+"Strict Team Lead isolation through the API" block of `api_integration.test.ts`.
+
+**Existing data.** Nothing is moved or guessed. To list the active Team Members who have no Team Lead, run this read-only query in the Supabase
+SQL editor. "0 active leads" means the team has no Team Lead at all (the Department Head manages them); "2 active leads" means somebody must
+choose: assign each such member with "Assign to Team Lead" (Team Members → Employee Directory). Until then they are visible to the Department
+Head and Super Admin and to no Team Lead.
+
+```sql
+select d.name as department, t.name as team, m.full_name as member, m.email,
+       case when m.manager_id is null then 'NO TEAM LEAD NAMED (team has ' || (select count(*) from public.profiles l where l.team_id = m.team_id and l.role = 'TEAM_HEAD' and l.status = 'ACTIVE') || ' active leads)'
+            else 'NAMED LEAD IS NO LONGER AN ACTIVE LEAD OF THIS TEAM' end as problem
+  from public.profiles m
+  join public.teams t on t.id = m.team_id
+  join public.departments d on d.id = m.department_id
+ where m.role = 'TEAM_MEMBER' and m.status = 'ACTIVE' and not t.is_pool
+   and private.direct_lead_of(m.id) is null
+ order by d.name, t.name, m.full_name;
+```
