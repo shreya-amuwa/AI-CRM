@@ -1,7 +1,12 @@
-import type { FieldVisitAssignedList, FieldVisitLeadList, FieldVisitOverview, LeadVisit, LeadVisitList, SalesVisitAssignee } from '../../shared/contracts.js';
+import type {
+  FieldVisitAssignedList, FieldVisitLeadList, FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitOverview, FieldVisitTelecaller, LeadVisit, LeadVisitList, SalesVisitAssignee,
+  TrackingBoard, TrackingTrail, VisitTrackingState
+} from '../../shared/contracts.js';
 import {
   fieldVisitAssignedQuerySchema, fieldVisitCancelSchema, fieldVisitCompleteSchema, fieldVisitLeadsQuerySchema, fieldVisitListQuerySchema, fieldVisitScheduleSchema,
-  fieldVisitStartSchema, fieldVisitUpdateSchema, salesVisitAssignSchema, uuidSchema
+  fieldVisitStartSchema, fieldVisitUpdateSchema, salesVisitAssignSchema, uuidSchema,
+  fieldVisitLeadAssignSchema, fieldVisitLeadQueueQuerySchema, fieldVisitTrackingBoardQuerySchema, fieldVisitTrackingIssueSchema,
+  fieldVisitTrackingPointsSchema, fieldVisitTrackingStartSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
 import type { FieldVisitRepository } from '../repositories/FieldVisitRepository.js';
@@ -22,4 +27,15 @@ export class FieldVisitService {
   assignees(): Promise<SalesVisitAssignee[]> { return this.repo.assignees(); }
   assign(body: unknown) { return this.repo.assign(parse(salesVisitAssignSchema, body)); }
   cancelAssignment(leadId: string) { return this.repo.cancelAssignment(parse(uuidSchema, leadId)); }
+
+  trackingStart(id: string, body: unknown): Promise<VisitTrackingState> { return this.repo.trackingStart(parse(uuidSchema, id), parse(fieldVisitTrackingStartSchema, body)); }
+  trackingPoints(id: string, body: unknown): Promise<VisitTrackingState> { return this.repo.trackingPoints(parse(uuidSchema, id), parse(fieldVisitTrackingPointsSchema, body).points); }
+  trackingIssue(id: string, body: unknown): Promise<VisitTrackingState> { return this.repo.trackingIssue(parse(uuidSchema, id), parse(fieldVisitTrackingIssueSchema, body).issue); }
+  trackingStop(id: string): Promise<VisitTrackingState> { return this.repo.trackingStop(parse(uuidSchema, id)); }
+  trackingBoard(query: unknown): Promise<TrackingBoard> { return this.repo.trackingBoard(parse(fieldVisitTrackingBoardQuerySchema, query).date); }
+  trackingTrail(id: string): Promise<TrackingTrail> { return this.repo.trackingTrail(parse(uuidSchema, id)); }
+
+  leadQueue(query: unknown): Promise<FieldVisitLeadQueue> { return this.repo.leadQueue(parse(fieldVisitLeadQueueQuerySchema, query)); }
+  leadTelecallers(leadId: string): Promise<FieldVisitTelecaller[]> { return this.repo.leadTelecallers(parse(uuidSchema, leadId)); }
+  leadAssign(leadId: string, body: unknown): Promise<FieldVisitLeadRoute> { return this.repo.leadAssign(parse(uuidSchema, leadId), parse(fieldVisitLeadAssignSchema, body)); }
 }

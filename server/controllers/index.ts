@@ -597,7 +597,16 @@ export const fieldVisitController = {
   cancel: (async ctx => ok(await svc(ctx).fieldVisit.cancel(ctx.params.id, ctx.req.body))) as Handler,
   assignees: (async ctx => ok(await svc(ctx).fieldVisit.assignees())) as Handler,
   assign: (async ctx => ok(await svc(ctx).fieldVisit.assign(ctx.req.body), 201)) as Handler,
-  cancelAssignment: (async ctx => ok(await svc(ctx).fieldVisit.cancelAssignment(ctx.params.leadId))) as Handler
+  cancelAssignment: (async ctx => ok(await svc(ctx).fieldVisit.cancelAssignment(ctx.params.leadId))) as Handler,
+  trackingStart: (async ctx => ok(await svc(ctx).fieldVisit.trackingStart(ctx.params.id, ctx.req.body))) as Handler,
+  trackingPoints: (async ctx => ok(await svc(ctx).fieldVisit.trackingPoints(ctx.params.id, ctx.req.body))) as Handler,
+  trackingIssue: (async ctx => ok(await svc(ctx).fieldVisit.trackingIssue(ctx.params.id, ctx.req.body))) as Handler,
+  trackingStop: (async ctx => ok(await svc(ctx).fieldVisit.trackingStop(ctx.params.id))) as Handler,
+  trackingBoard: (async ctx => ok(await svc(ctx).fieldVisit.trackingBoard(ctx.req.query))) as Handler,
+  trackingTrail: (async ctx => ok(await svc(ctx).fieldVisit.trackingTrail(ctx.params.id))) as Handler,
+  leadQueue: (async ctx => ok(await svc(ctx).fieldVisit.leadQueue(ctx.req.query))) as Handler,
+  leadTelecallers: (async ctx => ok(await svc(ctx).fieldVisit.leadTelecallers(ctx.params.leadId))) as Handler,
+  leadAssign: (async ctx => ok(await svc(ctx).fieldVisit.leadAssign(ctx.params.leadId, ctx.req.body))) as Handler
 };
 
 export const salesHeadController = {

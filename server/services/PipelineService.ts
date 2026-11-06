@@ -66,7 +66,7 @@ import {
   addonInvoiceUploadSchema,
   invoiceReplaceSchema,
   invoiceUploadSchema,
-  leadCreateSchema,
+  leadCreateRequestSchema,
   leadUpdateSchema,
   moveToPotentialSchema,
   onboardingUpdateSchema,
@@ -196,14 +196,18 @@ export class PipelineService {
   }
 
   async createLead(actor: Actor, body: unknown): Promise<PipelineCustomer> {
-    const input = parse(leadCreateSchema, body);
+    const { clientRequestId, ...input } = parse(leadCreateRequestSchema, body);
     if (actor.role === 'TEAM_MEMBER' && input.ownerId && input.ownerId !== actor.id) {
       throw new AppError('FORBIDDEN', 'You can only add leads to your own pipeline.');
     }
     if (!input.ownerId && !actor.teamId) {
       throw new AppError('VALIDATION_ERROR', 'Choose a lead owner who belongs to a team.', [{ path: 'ownerId', message: 'Required' }]);
     }
-    const customerId = await this.repo.createLead(input);
+    // with a request id (the browser makes one per form), a retry returns the lead the first request made, and its terms are not set twice
+    const { id: customerId, existing } = clientRequestId
+      ? await this.repo.createLeadOnce(input, clientRequestId)
+      : { id: await this.repo.createLead(input), existing: false };
+    if (existing) return this.repo.get(customerId);
     // the plan, duration, amount and credits chosen for each service (validated above: there is no date in them)
     for (const { service, ...terms } of input.subscriptions ?? []) {
       await this.repo.setSubscriptionTerms(customerId, service, this.termsPayload(terms));

@@ -2,6 +2,7 @@
  * Typed API endpoints, grouped by resource. Components and hooks call these;
  * they never call fetch() or Supabase tables directly.
  */
+import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
 import type {
   WelcomeEmailItem, WelcomeEmailList,
   OperationsHeadReviewItem, OperationsOverviewRow,
@@ -179,7 +180,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -269,7 +270,7 @@ export const pipelineApi = {
     api.get<DivisionLeadsOverview>('/pipeline/division-overview', { departmentId, division }),
   list: (q: PipelineQuery) => api.get<Paginated<PipelineCustomer>>('/pipeline/customers', { ...q }),
   get: (id: string) => api.get<PipelineCustomerDetail>(`/pipeline/customers/${id}`),
-  createLead: (body: LeadCreateInput) => api.post<PipelineCustomer>('/pipeline/leads', body),
+  createLead: (body: LeadCreateRequestInput) => api.post<PipelineCustomer>('/pipeline/leads', body),
   updateLead: (id: string, body: LeadUpdateInput) => api.patch<PipelineCustomer>(`/pipeline/leads/${id}`, body),
   moveToPotential: (id: string, body: { dealAmount: number; paymentDueDate: string }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
@@ -658,7 +659,18 @@ export const fieldVisitApi = {
   cancel: (id: string, reason?: string | null) => api.post<LeadVisit>(`/field-visits/${id}/cancel`, { reason: reason || null }),
   assignees: () => api.get<SalesVisitAssignee[]>('/field-visits/assignees'),
   assign: (body: { leadId: string; assigneeId: string; priority: VisitPriority; instructions?: string | null }) => api.post<{ id: string; leadId: string; assignee: string; reassigned: boolean }>('/field-visits/assignments', body),
-  cancelAssignment: (leadId: string) => api.delete<{ id: string; leadId: string }>(`/field-visits/assignments/${leadId}`)
+  cancelAssignment: (leadId: string) => api.delete<{ id: string; leadId: string }>(`/field-visits/assignments/${leadId}`),
+  // live location while a visit is in progress (the employee), and the board / trail (Team Lead, Department Head, Operations Head, HR)
+  trackingStart: (id: string, p: TrackedPosition) => api.post<VisitTrackingState>(`/field-visits/${id}/tracking/start`, p),
+  trackingPoints: (id: string, points: TrackedPosition[]) => api.post<VisitTrackingState>(`/field-visits/${id}/tracking/points`, { points }),
+  trackingIssue: (id: string, issue: VisitTrackingIssue) => api.post<VisitTrackingState>(`/field-visits/${id}/tracking/issue`, { issue }),
+  trackingStop: (id: string) => api.post<VisitTrackingState>(`/field-visits/${id}/tracking/stop`, {}),
+  trackingBoard: (date?: string) => api.get<TrackingBoard>('/field-visits/tracking/board', date ? { date } : {}),
+  trackingTrail: (id: string) => api.get<TrackingTrail>(`/field-visits/${id}/tracking`),
+  // Field Visit leads waiting for the Sales Department Head
+  leadQueue: (q: { status?: 'PENDING' | 'ASSIGNED' | 'ALL'; search?: string; page?: number; pageSize?: number } = {}) => api.get<FieldVisitLeadQueue>('/field-visits/lead-queue', q),
+  leadTelecallers: (leadId: string) => api.get<FieldVisitTelecaller[]>(`/field-visits/lead-queue/${leadId}/telecallers`),
+  leadAssign: (leadId: string, body: { telecallerId: string; note?: string | null }) => api.post<FieldVisitLeadRoute>(`/field-visits/lead-queue/${leadId}/assign`, body)
 };
 
 /** The five filters of the Lead section: All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts. */

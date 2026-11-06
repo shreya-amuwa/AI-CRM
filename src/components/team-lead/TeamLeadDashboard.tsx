@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Bell, Briefcase, ClipboardList, LayoutDashboard, LineChart, Navigation, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
+import { ActiveFieldVisits } from '../field-visit/ActiveFieldVisits';
 import { ScopeOverviewPanel } from '../common/ScopeOverviewPanel';
 import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
@@ -112,7 +113,13 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       {nav === 'customers' && <TeamCustomers />}
       {nav === 'assigned-tasks' && <TeamLeadTasksView />}
       {nav === 'performance' && <PerformanceManagement mode="TEAM_LEAD" />}
-      {nav === 'field-visits' && <FieldVisitTrackerView viewerRole="team-lead" userName={userName} />}
+      {nav === 'field-visits' && (
+        <div className="space-y-8">
+          {/* visits of the lead's own Team Members, live (Field Visit pages); the earlier trip tracker stays below */}
+          <ActiveFieldVisits audience="manager" />
+          <FieldVisitTrackerView viewerRole="team-lead" userName={userName} />
+        </div>
+      )}
       {nav === 'team-members' && (
         <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept={profile?.team?.division === 'SALES' ? 'sales' : profile?.team?.division === 'SUPPORT' ? 'support' : null} />
       )}
