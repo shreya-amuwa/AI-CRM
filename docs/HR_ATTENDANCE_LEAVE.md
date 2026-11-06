@@ -100,5 +100,30 @@ New requests follow the requester's reporting line, one step at a time, then HR:
 * **Switch back** (Super Admin): `POST /api/v1/leave/workflow {"workflow": "TWO_STEP"}` - new requests then go Department Head -> HR again.
 * **Offboarding**: the impact summary counts the leave steps the person decides now (`leaveApprovalsWaiting`).
 
+## Leave chain by requester (migration 20261228000100)
+
+New requests (`workflow_version` 3) follow the chain of the person who asks. It replaces the table above for new requests:
+
+| Requester | Steps |
+| --- | --- |
+| Team Member | Team Lead -> Department Head -> Operations Head -> HR |
+| Meta Verifier | Department Head -> Operations Head -> HR (no Team Lead step) |
+| Team Lead | Department Head -> Operations Head -> HR |
+| Department Head | Operations Head -> HR |
+| Operations Head | HR |
+| HR (anyone placed in the HR department) | Super Admin |
+| Super Admin | HR |
+
+* **No Operations Head** for the department (and the requester's function): that step is left out, so the Department Head's approval goes
+  straight to HR, and a Department Head of that department applies straight to HR. A Department Head who heads both functions goes to the
+  department's Operations Head of either function (`leave_operations_head`).
+* **HR's own leave**: status `PENDING_SUPER_ADMIN`, then `APPROVED` or `REJECTED_BY_SUPER_ADMIN`; the decision is stored in `sa_decided_by/at/note`
+  and shown as `superAdmin`. Another HR person cannot approve it.
+* A step that is already waiting is never skipped: if the Operations Head leaves while their step waits, the Super Admin decides it (the exception).
+  Steps not reached yet follow the hierarchy at that moment.
+* Requests made before this migration keep their chain (version 1: Department Head -> HR; version 2: the table above).
+
+Tests: `supabase/tests/leave_chain_by_requester_test.sql`.
+
 Tests: `supabase/tests/leave_multi_level_test.sql` (the whole chain, wrong approvers, order, rejection, send back, the exception, old requests,
 a departing approver, the switch); `hr_test.sql` keeps testing the two-step flow with the switch set to it.

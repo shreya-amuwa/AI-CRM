@@ -9525,7 +9525,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200, 'leave workflow: the Super Admin turns on the reporting chain', r);
 
   r = await api('a', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2027-03-01', endDate: '2027-03-01', reason: 'Chain check' });
-  check(r.status === 201 && String(r.json.data.status).startsWith('PENDING_') && r.json.data.workflowVersion === 2, 'leave chain: a new request follows the reporting chain', r);
+  check(r.status === 201 && String(r.json.data.status).startsWith('PENDING_') && r.json.data.workflowVersion === 3, 'leave chain: a new request follows the reporting chain', r);
   const id = r.json.data.id as string;
   const first = r.json.data.status as string;
   r = await api('a', 'POST', `/leave/${id}/decision`, { decision: 'APPROVE' });

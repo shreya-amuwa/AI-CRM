@@ -2393,7 +2393,9 @@ export interface PersonalDetails {
 }
 export type LeaveStatus = 'PENDING_DEPARTMENT_HEAD' | 'PENDING_HR' | 'APPROVED' | 'REJECTED_BY_DEPARTMENT_HEAD' | 'REJECTED_BY_HR'
   // the multi-level chain (20261225000200)
-  | 'PENDING_TEAM_LEAD' | 'PENDING_OPERATIONS_HEAD' | 'REJECTED_BY_TEAM_LEAD' | 'REJECTED_BY_OPERATIONS_HEAD' | 'REVISION_REQUIRED';
+  | 'PENDING_TEAM_LEAD' | 'PENDING_OPERATIONS_HEAD' | 'REJECTED_BY_TEAM_LEAD' | 'REJECTED_BY_OPERATIONS_HEAD' | 'REVISION_REQUIRED'
+  // HR's own leave is approved by the Super Admin (20261228000100)
+  | 'PENDING_SUPER_ADMIN' | 'REJECTED_BY_SUPER_ADMIN';
 export interface LeaveDecision {
   name: string | null;
   at: string;
@@ -2425,9 +2427,11 @@ export interface LeaveRequest {
   revisionNote?: string | null;
   teamLead?: LeaveDecision | null;
   operationsHead?: LeaveDecision | null;
+  /** The Super Admin's decision on HR's own leave (20261228000100). */
+  superAdmin?: LeaveDecision | null;
   timeline?: LeaveTimelineEntry[];
 }
-export type LeaveStage = 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'HR';
+export type LeaveStage = 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'HR' | 'SUPER_ADMIN';
 export interface LeaveTimelineEntry {
   stage: LeaveStage | 'SUBMITTED' | 'RESUBMITTED';
   decision: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'REVISION_REQUESTED';
