@@ -13,7 +13,7 @@ const inputCls = 'w-full px-3 py-2 rounded-xl border border-slate-200 focus:bord
 const dates = (r: LeaveRequest) => (r.endDate === r.startDate ? formatDay(r.startDate) : `${formatDay(r.startDate)} to ${formatDay(r.endDate)}`);
 const length = (r: LeaveRequest) => (r.leaveType === 'HALF_DAY' ? `Half day (${r.halfDayShift === 'AFTERNOON' ? 'afternoon' : 'morning'})` : `${r.days} day${r.days === 1 ? '' : 's'}`);
 
-const STAGE_LABEL: Record<string, string> = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', SUBMITTED: 'Requested', RESUBMITTED: 'Changed and sent again' };
+const STAGE_LABEL: Record<string, string> = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', SUPER_ADMIN: 'Super Admin', SUBMITTED: 'Requested', RESUBMITTED: 'Changed and sent again' };
 const DECISION_LABEL: Record<string, string> = { APPROVED: 'approved', REJECTED: 'rejected', REVISION_REQUESTED: 'asked for changes', SUBMITTED: '' };
 const when = (at: string) => new Date(at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
@@ -150,6 +150,8 @@ const ReviewCard: React.FC<{ r: LeaveRequest; onChanged: () => void }> = ({ r, o
   const [error, setError] = useState('');
   const asHr = r.status === 'PENDING_HR';
   const chain = (r.workflowVersion ?? 1) >= 2;
+  // the last step of the chain (HR, or the Super Admin for HR's own leave) gives the final approval
+  const isFinal = chain ? !!r.currentStage && r.stages?.[r.stages.length - 1] === r.currentStage : asHr;
   const [mode, setMode] = useState<'REJECT' | 'REVISE'>('REJECT');
 
   const decide = async (approve: boolean) => {
@@ -202,7 +204,7 @@ const ReviewCard: React.FC<{ r: LeaveRequest; onChanged: () => void }> = ({ r, o
         ) : (
           <div className="mt-3 flex gap-2">
             <button type="button" disabled={busy} onClick={() => void decide(true)} className="flex-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50 cursor-pointer">
-              {asHr ? 'Give final approval' : chain ? `Approve (${STAGE_LABEL[r.currentStage ?? ''] ?? 'your step'})` : 'Approve and send to HR'}
+              {isFinal ? 'Give final approval' : chain ? `Approve (${STAGE_LABEL[r.currentStage ?? ''] ?? 'your step'})` : 'Approve and send to HR'}
             </button>
             <button type="button" disabled={busy} onClick={() => setRejecting(true)} className="flex-1 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-xs font-semibold hover:bg-rose-50 cursor-pointer">Reject</button>
           </div>
@@ -257,7 +259,7 @@ export const LeaveReviewList: React.FC<{ review: LeaveReview | null; onChanged: 
 
 /**
  * "Leave" in the header: request leave, follow your requests, and (for Department Heads and HR) the requests that
- * wait for you. Team Member -> Department Head -> HR; the database enforces the order and who may decide.
+ * wait for you. The chain depends on who asks (Team Lead, Department Head, Operations Head, HR; HR's own leave: the Super Admin); the database enforces the order and who may decide.
  */
 export const LeaveCenter: React.FC = () => {
   const [open, setOpen] = useState(false);
@@ -284,7 +286,7 @@ export const LeaveCenter: React.FC = () => {
         )}
       </button>
       {open && (
-        <SideDrawer title="Leave" subtitle="Team Lead, Department Head, Operations Head, then HR" onClose={() => setOpen(false)}>
+        <SideDrawer title="Leave" subtitle="Approved step by step up your reporting line, then HR" onClose={() => setOpen(false)}>
           {canReview && (
             <div className="flex gap-1 p-2 border-b border-slate-100" role="tablist">
               {([['mine', 'My leave'], ['review', `To review${waiting ? ` (${waiting})` : ''}`]] as const).map(([id, label]) => (

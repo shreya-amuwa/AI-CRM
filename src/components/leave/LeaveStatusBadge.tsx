@@ -12,7 +12,9 @@ export const LEAVE_STATUS_LABEL: Record<LeaveStatus, string> = {
   PENDING_OPERATIONS_HEAD: 'Pending Operations Head Approval',
   REJECTED_BY_TEAM_LEAD: 'Rejected by Team Lead',
   REJECTED_BY_OPERATIONS_HEAD: 'Rejected by Operations Head',
-  REVISION_REQUIRED: 'Changes requested'
+  REVISION_REQUIRED: 'Changes requested',
+  PENDING_SUPER_ADMIN: 'Pending Super Admin Approval',
+  REJECTED_BY_SUPER_ADMIN: 'Rejected by Super Admin'
 };
 
 const STYLE: Record<LeaveStatus, string> = {
@@ -25,7 +27,9 @@ const STYLE: Record<LeaveStatus, string> = {
   PENDING_OPERATIONS_HEAD: 'bg-violet-50 border-violet-200 text-violet-800',
   REJECTED_BY_TEAM_LEAD: 'bg-rose-50 border-rose-200 text-rose-800',
   REJECTED_BY_OPERATIONS_HEAD: 'bg-rose-50 border-rose-200 text-rose-800',
-  REVISION_REQUIRED: 'bg-orange-50 border-orange-200 text-orange-800'
+  REVISION_REQUIRED: 'bg-orange-50 border-orange-200 text-orange-800',
+  PENDING_SUPER_ADMIN: 'bg-indigo-50 border-indigo-200 text-indigo-800',
+  REJECTED_BY_SUPER_ADMIN: 'bg-rose-50 border-rose-200 text-rose-800'
 };
 
 /** The approval status as a pill: an icon and words, so it never relies on colour alone. */
