@@ -148,3 +148,23 @@ browser test `supabase/tests/e2e/run-recruiter-vacancies.sh`.
 
 Note: re-running the older `20261222000300_recruiter_workspace.sql` after this migration would restore the one-argument `recruiter_vacancies`
 beside the new one; run `20261227000200` again afterwards if that ever happens.
+
+## 11. Vacancy detail page (layout)
+
+`src/components/hr-recruiter/VacancyDetail.tsx` (the dialogs it opens are in `VacancyDialogs.tsx`). No data, API or permission change.
+
+* **Toolbar:** "All vacancies", the breadcrumb (HR Department > Recruitment > Vacancy Details), and on the right Allocate (leadership), Edit vacancy,
+  Change status (primary). It wraps on narrow screens.
+* **Overview:** the title, the department, designation (when it differs from the title), employment type and work mode, the status badge at the top
+  right, and five metric cards: Openings, Selected, Remaining (worked out by the database from the openings and the selected candidates), Posted,
+  Closes. The cards use 5 columns on wide screens, 3 on tablets and 2 on phones.
+* **Job information:** two columns (stacked on a tablet or phone), each card only as tall as its content.
+  * **Left:** description, responsibilities as a bulleted list (one per line, or separated by ";"), requirements before selection.
+  * **Right:** qualifications, skills as chips (separated by commas), experience, and additional information (location, employment type, work mode,
+    job code, responsible recruiter).
+  * An empty optional field shows "Not specified" (qualifications, skills, experience) or nothing (responsibilities).
+* **Candidates:** the real number of applications.
+  * **Filters:** search, recruitment stage, assessment status and interview status, all run by the database through the Candidate Applications query
+    limited to this vacancy.
+  * **List:** a table on tablet and desktop, compact cards on a phone; View opens the candidate profile.
+  * **Empty and no-match:** "No Candidates Yet" when nobody has applied, and "No candidates match these filters" when the filters hide everyone.

@@ -150,8 +150,64 @@ await p.getByRole('button', { name: 'Update status' }).click();
 await expect(!!(await until(async () => (await q(`select vacancy_status from career_postings where id = $1`, [row.id]))[0].vacancy_status === 'OPEN')), 'closed and reopened by the Recruiter');
 await p.screenshot({ path: `${OUT}/recruiter-3-detail.png`, fullPage: true });
 
+// ------------------------------------------------------------------ 4b. the redesigned detail page: metrics, sections, candidates
+await p.reload();
+await p.getByRole('heading', { name: TITLE }).waitFor({ timeout: 20000 });
+const main = p.locator('main');
+const metrics = await main.locator('dl[aria-label="Vacancy figures"] dt').allInnerTexts();
+await expect(JSON.stringify(metrics.map(t => t.trim().toLowerCase())) === JSON.stringify(['openings', 'selected', 'remaining', 'posted', 'closes']), 'five metric cards: Openings, Selected, Remaining, Posted, Closes', metrics);
+const fig = async label => (await main.locator('dl[aria-label="Vacancy figures"] div', { has: p.locator('dt', { hasText: new RegExp(`^${label}$`, 'i') }) }).locator('dd').innerText()).trim();
+await expect((await fig('Openings')) === '3' && (await fig('Selected')) === '0' && (await fig('Remaining')) === '3', 'the figures come from the vacancy (3 openings, 0 selected, 3 remaining)');
+await expect(/Breadcrumb/.test(await p.getByRole('navigation', { name: 'Breadcrumb' }).getAttribute('aria-label')) && /Vacancy Details/.test(await p.getByRole('navigation', { name: 'Breadcrumb' }).innerText()), 'breadcrumb: HR Department > Recruitment > Vacancy Details');
+const text = await main.innerText();
+await expect(['JOB DESCRIPTION', 'RESPONSIBILITIES', 'REQUIREMENTS BEFORE SELECTION', 'QUALIFICATIONS', 'REQUIRED SKILLS', 'EXPERIENCE', 'ADDITIONAL INFORMATION'].every(h => text.toUpperCase().includes(h)), 'the information sections are shown');
+await expect((await main.locator('li', { hasText: /^Tally$/ }).count()) === 1 && (await main.locator('li', { hasText: /^Excel$/ }).count()) === 1, 'skills are shown as chips (Tally, Excel)');
+await expect((await p.getByTestId('candidates-empty').count()) === 1 && /No Candidates Yet/.test(text), 'no candidates yet: the empty state, not an empty box');
+
+// a candidate applies through the portal's own database function (the same one the Candidate Portal calls)
+const cand = (await q(`insert into auth.users (email, email_confirmed_at, raw_user_meta_data) values ($1, now(), '{"candidate_portal":true}') returning id`, [`cand.${tag}@example.com`]))[0].id;
+const c = await db.connect();
+try {
+  await c.query('begin');
+  await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: cand, role: 'authenticated' })]);
+  await c.query(`select public.career_profile($1::jsonb)`, [JSON.stringify({ name: 'Neha Applicant', phone: '9847650399', city: 'Pune', state: 'Maharashtra', education: 'B.Com', experience: '1 year', skills: 'Tally', bio: '', version: 1 })]);
+  await c.query('commit');
+  await c.query(`insert into career_files (id, applicant_id, file_name, size_bytes, status, storage_provider, storage_path) values (gen_random_uuid(), $1::uuid, 'resume.pdf', 1000, 'READY', 'SUPABASE', $1::text || '/r.pdf')`, [cand]);
+  await c.query('begin');
+  await c.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ sub: cand, role: 'authenticated' })]);
+  await c.query(`select public.career_apply($1::uuid, (select id from career_files where applicant_id = $2::uuid limit 1))`, [row.id, cand]);
+  await c.query('commit');
+} catch (e) { await c.query('rollback').catch(() => {}); await fail(`the test application could not be made: ${e.message}`); } finally { c.release(); }
+await p.reload();
+await p.getByRole('heading', { name: TITLE }).waitFor({ timeout: 20000 });
+await expect(!!(await until(async () => (await main.locator('table tbody tr', { hasText: 'Neha Applicant' }).count()) === 1)), 'the application appears in the candidates table');
+await expect((await main.locator('h2', { hasText: 'Candidates' }).innerText()).includes('1'), 'the Candidates heading shows the real count (1)');
+const rowText = await main.locator('table tbody tr', { hasText: 'Neha Applicant' }).innerText();
+await expect(/9847650399/.test(rowText) && /Not invited/.test(rowText) && /New Application|Initial Screening/.test(rowText), 'the row shows contact, assessment and stage', rowText);
+await p.getByLabel('Search candidates').fill('nobody-matches-this');
+await expect(!!(await until(async () => (await main.getByText('No candidates match these filters').count()) === 1)), 'a search with no match says so (database filter)');
+await main.getByRole('button', { name: 'Clear filters' }).click();
+await expect(!!(await until(async () => (await main.locator('table tbody tr', { hasText: 'Neha Applicant' }).count()) === 1)), 'clearing the filters shows the candidate again');
+await p.screenshot({ path: `${OUT}/recruiter-5-detail-candidates.png`, fullPage: true });
+
+// responsive: no horizontal page scroll on phone, tablet and desktop widths
+for (const [w, h, name] of [[390, 844, 'phone'], [820, 1180, 'tablet'], [1280, 800, 'laptop'], [1920, 1080, 'wide']]) {
+  await p.setViewportSize({ width: w, height: h });
+  await p.waitForTimeout(400);
+  const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  await expect(over <= 1, `${name} (${w}px): no horizontal scroll`, over);
+  if (name === 'phone') await expect((await main.locator('ul[aria-label^="Candidates of"] li').count()) === 1, 'phone: candidates as compact cards');
+  await p.screenshot({ path: `${OUT}/recruiter-6-detail-${name}.png`, fullPage: true });
+}
+await p.setViewportSize({ width: 1440, height: 900 });
+await main.getByRole('button', { name: 'View profile of Neha Applicant' }).click();
+await expect(!!(await until(async () => /\/applications\/[0-9a-f-]{36}/.test(p.url()))), 'View opens the candidate profile');
+await p.goBack();
+await p.getByRole('heading', { name: TITLE }).waitFor({ timeout: 20000 }).catch(() => undefined);
+await nav.getByRole('button', { name: 'Vacancies' }).click();
+
 // ------------------------------------------------------------------ 5. department filter on the list, empty state, reload
-await p.getByRole('button', { name: '← All vacancies' }).click();
+// (already back on the Vacancies list through the sidebar)
 await vDept.waitFor();
 await until(async () => (await vDept.locator('option').count()) > 1);
 await vDept.selectOption(accounts.id);

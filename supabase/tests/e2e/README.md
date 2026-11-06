@@ -116,7 +116,9 @@ and each new employee signs in to their dashboard (HR dashboard, HR Recruiter da
 `run-recruiter-vacancies.sh` drives the HR Recruiter dashboard: the Work / Recruitment / Management sidebar sections (collapse and expand), the
 Department filter listing every department, creating and publishing a vacancy through the form (checked in the database), editing it, putting it on
 hold, closing and reopening it, filtering the list by department (including a genuinely empty result), the vacancy surviving a reload, and an HR
-Assistant still opening the HR dashboard and being refused by the recruiter API (25 checks).
+Assistant still opening the HR dashboard and being refused by the recruiter API; and the vacancy detail page: the five metric cards with the vacancy's
+figures, the breadcrumb, the information sections and skill chips, the "No Candidates Yet" state, a real application (made with the portal's own
+career_apply) in the candidates table with a working search / clear and View profile, and no horizontal scroll at 390 / 820 / 1280 / 1920 px (42 checks).
 
 `run-reports-approval.sh` drives the Reports page at every level with five people signed in at once and never reloaded: the four-field Team Member form (title, date,
 assigned and completed tasks from the member's own task records), the Team Lead's first approval, the Department Head's independent second approval, Fully Approved,
