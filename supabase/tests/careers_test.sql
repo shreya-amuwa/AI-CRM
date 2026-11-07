@@ -36,6 +36,8 @@ reset role;
 select set_config('request.jwt.claims',jsonb_build_object('sub',(select v from cp where k='one'),'role','authenticated')::text,true);
 set role authenticated;
 select test.check(career_profile()->>'name'='','empty candidate profile is real, not seeded');
+-- the dashboard loads the candidate's requested joining documents on every visit: with none requested it must be an empty list, not an error (migration 20261229000200)
+select test.check(career_documents()='[]'::jsonb,'a candidate with no document requests gets an empty list');
 select career_profile('{"name":"Portal Candidate","phone":"9847650321","city":"Mumbai","state":"Maharashtra","education":"Graduate","experience":"Fresher","skills":"TypeScript","bio":"","version":1}');
 select test.must_fail($$select career_profile('{"name":"Conflict","phone":"9847650321","version":1}')$$,'stale edits cannot overwrite profile','CONFLICT');
 insert into cp select 'file',(career_file(null,'{"file_name":"resume.pdf","size_bytes":10,"storage_provider":"SUPABASE"}')->>'id')::uuid;
@@ -134,7 +136,12 @@ select career_file_verified((select v from cp where k='docfile'),10,(select v::t
 reset role;
 set role authenticated;
 select career_documents((select v from cp where k='doc'),(select v from cp where k='docfile'));
+select test.check(jsonb_array_length(career_documents())=1 and career_documents()->0->>'title'='Education certificate' and career_documents()->0->>'status'='UPLOADED','the candidate lists their own requested documents');
 select test.check(jsonb_array_length(career_file())=1,'joining document is excluded from resume picker');
+reset role;
+select set_config('request.jwt.claims',jsonb_build_object('sub',(select v from cp where k='two'),'role','authenticated')::text,true);
+set role authenticated;
+select test.check(career_documents()='[]'::jsonb,'another candidate never sees them');
 select test.login('hr_head');
 select hr_career_documents((select v from cp where k='app'),jsonb_build_object('id',(select v from cp where k='doc'),'version',2,'status','APPROVED','message','Verified'));
 insert into cp select 'enrollment',(hr_career_training((select v from cp where k='app'),(select v from cp where k='program'),false)->>'enrollment_id')::uuid;
