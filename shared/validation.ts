@@ -2678,3 +2678,40 @@ export const candidateRegisterSchema = z
   })
   .strict();
 export type CandidateRegisterInput = z.infer<typeof candidateRegisterSchema>;
+
+// --- HR documents: NDA and Experience Letter (migration 20261229000200) -------------------------------------------------------------------
+// The letters are drawn on the official templates by the server (server/hrDocuments). The browser sends only the values HR may edit; the
+// employee, the joining date and the employee code always come from the HR record in the database.
+export const HR_DOC_TYPES = ['NDA', 'EXPERIENCE'] as const;
+export const HR_DOC_TITLES = ['Mr.', 'Miss', 'Mrs.', 'Ms.'] as const;
+const hrDocDate = (label: string) =>
+  isoDate.refine(v => { const d = new Date(`${v}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; }, `Enter a real date for ${label}.`);
+/** Letters only (the documents are printed in a standard Latin font), so a name that cannot be printed is refused here, not silently changed. */
+const hrDocName = (label: string) =>
+  z.string().trim().min(2, `Enter ${label}.`).max(100, `${label} is too long.`)
+    .transform(v => v.replace(/\s+/g, ' '))
+    .refine(v => /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'\-]*$/.test(v), `${label} may contain letters, spaces, full stops, apostrophes and hyphens only.`);
+const hrDocLine = (label: string, max: number) =>
+  z.string().trim().min(2, `Enter ${label}.`).max(max, `${label} is too long.`)
+    .transform(v => v.replace(/\s+/g, ' '))
+    .refine(v => /^[A-Za-z0-9À-ÖØ-öø-ÿ][A-Za-z0-9À-ÖØ-öø-ÿ .,'&()/\-]*$/.test(v), `${label} contains a character that cannot be printed.`);
+export const hrDocTypeSchema = z.enum(HR_DOC_TYPES);
+export const hrDocEmployeeKeySchema = z.string().trim().min(3).max(80).regex(/^(HR:[A-Za-z0-9_.\-]+|[0-9a-fA-F-]{36})$/, 'Choose an employee from the list.');
+export const hrDocPrefillQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema, type: hrDocTypeSchema }).strict();
+export const hrNdaFieldsSchema = z.object({ letterDate: hrDocDate('the agreement date'), employeeName: hrDocName('the employee name') }).strict();
+export const hrExperienceFieldsSchema = z
+  .object({
+    letterDate: hrDocDate('the letter date'),
+    title: z.enum(HR_DOC_TITLES, { errorMap: () => ({ message: 'Choose Mr., Miss, Mrs. or Ms.' }) }),
+    employeeName: hrDocName('the employee name'),
+    designation: hrDocLine('the designation', 80),
+    lastWorkingDate: hrDocDate('the last working date'),
+    signatoryName: hrDocName('the signatory name'),
+    signatoryTitle: hrDocLine('the signatory title', 60)
+  })
+  .strict();
+export const hrDocRequestSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('NDA'), employeeKey: hrDocEmployeeKeySchema, fields: hrNdaFieldsSchema }).strict(),
+  z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: hrExperienceFieldsSchema }).strict()
+]);
+export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema.optional(), type: hrDocTypeSchema.optional() }).strict();

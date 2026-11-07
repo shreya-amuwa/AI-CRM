@@ -254,6 +254,14 @@ export const hrController = {
   }) as Handler
 };
 
+export const hrDocumentController = {
+  prefill: (async ctx => ok(await svc(ctx).hrDocuments.prefill(ctx.req.query))) as Handler,
+  preview: (async ctx => ok(await svc(ctx).hrDocuments.preview(ctx.req.body))) as Handler,
+  generate: (async ctx => ok(await svc(ctx).hrDocuments.generate(ctx.req.body), 201)) as Handler,
+  list: (async ctx => ok(await svc(ctx).hrDocuments.list(ctx.req.query))) as Handler,
+  download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler
+};
+
 export const performanceController = {
   people: (async ctx => ok(await svc(ctx).performance.people(ctx.req.query))) as Handler,
   report: (async ctx => ok(await svc(ctx).performance.report(ctx.req.query))) as Handler,

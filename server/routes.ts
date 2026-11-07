@@ -28,6 +28,7 @@ import {
   customersController as customers,
   documentsController as documents,
   hrController as hr,
+  hrDocumentController as hrDocs,
   generatedInvoiceController as generatedInvoices,
   workflowController as workflow,
   meController as me,
@@ -635,6 +636,12 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/hr/email-automation/data-issues', handler: hr.emailDataIssues },
   { method: 'POST', path: '/hr/email-automation/employee-dates', handler: hr.setEmployeeDates, options: S },
   { method: 'POST', path: '/hr/email-automation/run', handler: hr.runEmailAutomation, options: S },
+  // HR documents: NDA and Experience Letter on the official templates (HR staff only; the database checks)
+  { method: 'GET', path: '/hr/documents/prefill', handler: hrDocs.prefill },
+  { method: 'POST', path: '/hr/documents/preview', handler: hrDocs.preview },
+  { method: 'GET', path: '/hr/documents', handler: hrDocs.list },
+  { method: 'POST', path: '/hr/documents', handler: hrDocs.generate, options: S },
+  { method: 'GET', path: '/hr/documents/:id/download', handler: hrDocs.download },
 
   { method: 'GET', path: '/audit-logs', handler: audit.list },
   // Security & Audit Logs viewer (read-only; scoped by the table's row-level security) and the record of browser-side exports

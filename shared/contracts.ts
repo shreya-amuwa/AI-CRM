@@ -5355,3 +5355,55 @@ export interface FieldVisitLeadQueue {
   items: FieldVisitLeadRoute[];
 }
 export interface FieldVisitTelecaller { id: string; name: string; team: string; openLeads: number }
+
+// --- HR documents: NDA and Experience Letter (migration 20261229000200) ------------------------------------------------------------------
+export type HrDocType = 'NDA' | 'EXPERIENCE';
+export type HrDocTitle = 'Mr.' | 'Miss' | 'Mrs.' | 'Ms.';
+export interface HrDocNdaFields { letterDate: string; employeeName: string }
+export interface HrDocExperienceFields {
+  letterDate: string;
+  title: HrDocTitle;
+  employeeName: string;
+  designation: string;
+  lastWorkingDate: string;
+  signatoryName: string;
+  signatoryTitle: string;
+}
+export type HrDocRequest =
+  | { type: 'NDA'; employeeKey: string; fields: HrDocNdaFields }
+  | { type: 'EXPERIENCE'; employeeKey: string; fields: HrDocExperienceFields };
+/** What the HR record says about the employee (the database decides; the browser only shows it). */
+export interface HrDocPrefill {
+  employee: {
+    key: string;
+    code: string;
+    name: string;
+    email: string | null;
+    department: string | null;
+    designation: string | null;
+    joiningDate: string | null;
+    lastWorkingDate: string | null;
+    status: string;
+    separated: boolean;
+  };
+  /** Details the letter needs that the record does not have (empty = the letter can be made). */
+  problems: { code: string; message: string }[];
+  ready: boolean;
+  /** Today in India, and the letter's signatory as printed on the template: the starting values of the form. */
+  today: string;
+  signatory: { name: string; title: string };
+}
+export interface HrDocPreview { fileName: string; pdfBase64: string }
+export interface HrDocument {
+  id: string;
+  type: HrDocType;
+  employeeKey: string;
+  employeeCode: string;
+  employeeName: string;
+  fileName: string;
+  sizeBytes: number;
+  fields: HrDocNdaFields | HrDocExperienceFields;
+  generatedBy: string | null;
+  createdAt: string;
+}
+export interface HrDocumentDownload { url: string; fileName: string }

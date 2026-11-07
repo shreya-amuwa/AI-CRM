@@ -16,6 +16,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { Employee } from '../../../types/amuwaHq';
+import { HrDocumentStudio } from './HrDocumentStudio';
 
 interface AutomatedLetterGeneratorWorkspaceProps {
   initialTab?: 'offer' | 'experience' | 'nda';
@@ -49,40 +50,6 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
   // Computed Annual CTC
   const monthlyNum = parseInt(offerMonthlySalary.replace(/[^0-9]/g, ''), 10) || 0;
   const annualCtcStr = `₹${((monthlyNum * 12) / 100000).toFixed(2)} LPA`;
-
-  // 2. EXPERIENCE LETTER STATE
-  const [expEmployeeName, setExpEmployeeName] = useState('Alexander Wright');
-  const [expDesignation, setExpDesignation] = useState('Operations Lead');
-  const [expDepartment, setExpDepartment] = useState('Amuwa Operations');
-  const [expJoiningDate, setExpJoiningDate] = useState('01-08-2024');
-  const [expRelievingDate, setExpRelievingDate] = useState('28-09-2026');
-  const [expTenure, setExpTenure] = useState('2 Years, 1 Month, 27 Days');
-  const [expPerformanceRating, setExpPerformanceRating] = useState('Exemplary & Outstanding');
-  const [expRefNumber, setExpRefNumber] = useState('AMU/EXP/2026/142');
-
-  // Auto-calculate tenure when dates change
-  const handleExpDateChange = (joining: string, relieving: string) => {
-    setExpJoiningDate(joining);
-    setExpRelievingDate(relieving);
-    try {
-      const d1 = new Date(joining);
-      const d2 = new Date(relieving);
-      if (!isNaN(d1.getTime()) && !isNaN(d2.getTime()) && d2 > d1) {
-        const diffMonths = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
-        const years = Math.floor(diffMonths / 12);
-        const months = diffMonths % 12;
-        setExpTenure(`${years > 0 ? `${years} Year${years > 1 ? 's' : ''}, ` : ''}${months} Month${months !== 1 ? 's' : ''}`);
-      }
-    } catch {}
-  };
-
-  // 3. NDA LETTER STATE
-  const [ndaPartyName, setNdaPartyName] = useState('Priya Sharma');
-  const [ndaRole, setNdaRole] = useState('Senior HR Partner & Data Custodian');
-  const [ndaEffectiveDate, setNdaEffectiveDate] = useState('28th September 2026');
-  const [ndaDurationYears, setNdaDurationYears] = useState('3 Years Post Separation');
-  const [ndaJurisdiction, setNdaJurisdiction] = useState('Gurgaon / New Delhi, India');
-  const [ndaRefNumber, setNdaRefNumber] = useState('AMU/NDA/2026/67');
 
   const handleCopyText = (content: string) => {
     navigator.clipboard.writeText(content);
@@ -155,7 +122,11 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
         </div>
       </div>
 
+      {/* NDA and Experience Letter: drawn by the server on the official templates, stored per employee (HrDocumentStudio) */}
+      {activeTab !== 'offer' && <HrDocumentStudio key={activeTab} type={activeTab === 'nda' ? 'NDA' : 'EXPERIENCE'} employees={employees} onSuccessToast={onSuccessToast} />}
+
       {/* Main Workspace Split: Controls Form on Left (5 cols), Live Document Letterhead on Right (7 cols) */}
+      {activeTab === 'offer' && (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
         {/* ========================================================================= */}
@@ -165,11 +136,7 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-blue-600" />
-              <span>
-                {activeTab === 'offer' && 'Automate Offer Letter'}
-                {activeTab === 'experience' && 'Automate Experience Certificate'}
-                {activeTab === 'nda' && 'Automate Legal NDA Agreement'}
-              </span>
+              <span>Automate Offer Letter</span>
             </h3>
             <span className="text-[11px] font-mono text-slate-400">Live Auto-Update</span>
           </div>
@@ -304,177 +271,6 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
             </div>
           )}
 
-          {/* TAB 2: EXPERIENCE LETTER INPUTS */}
-          {activeTab === 'experience' && (
-            <div className="space-y-4 text-xs font-mono">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Select from Roster or Enter Custom Name</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={expEmployeeName}
-                    onChange={(e) => setExpEmployeeName(e.target.value)}
-                    placeholder="Employee Name"
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                  />
-                  {employees.length > 0 && (
-                    <select
-                      onChange={(e) => {
-                        const target = employees.find(emp => emp.name === e.target.value);
-                        if (target) {
-                          setExpEmployeeName(target.name);
-                          setExpDesignation(target.designation);
-                          if (target.joiningDate) {
-                            handleExpDateChange(target.joiningDate, expRelievingDate);
-                          }
-                        }
-                      }}
-                      className="px-2 py-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-700"
-                    >
-                      <option value="">Choose Staff...</option>
-                      {employees.map(e => (
-                        <option key={e.id} value={e.name}>{e.name} ({e.designation})</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Designation *</label>
-                  <input
-                    type="text"
-                    value={expDesignation}
-                    onChange={(e) => setExpDesignation(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={expDepartment}
-                    onChange={(e) => setExpDepartment(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Date of Joining *</label>
-                  <input
-                    type="text"
-                    value={expJoiningDate}
-                    onChange={(e) => handleExpDateChange(e.target.value, expRelievingDate)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Relieving Date (LWD) *</label>
-                  <input
-                    type="text"
-                    value={expRelievingDate}
-                    onChange={(e) => handleExpDateChange(expJoiningDate, e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Computed Work Tenure (Auto-Calculated)</label>
-                <input
-                  type="text"
-                  value={expTenure}
-                  onChange={(e) => setExpTenure(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 font-bold text-purple-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Performance &amp; Conduct Rating</label>
-                <select
-                  value={expPerformanceRating}
-                  onChange={(e) => setExpPerformanceRating(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200"
-                >
-                  <option value="Exemplary & Outstanding">Exemplary &amp; Outstanding</option>
-                  <option value="Highly Commendable & Dedicated">Highly Commendable &amp; Dedicated</option>
-                  <option value="Satisfactory & Professional">Satisfactory &amp; Professional</option>
-                </select>
-              </div>
-
-              <div className="p-3 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 text-[11px] font-sans leading-relaxed">
-                📜 <strong>Service Certification:</strong> Certifies that all dues are cleared, company property has been returned in good condition, and relieves the employee with goodwill.
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: NDA LETTER INPUTS */}
-          {activeTab === 'nda' && (
-            <div className="space-y-4 text-xs font-mono">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Disclosee / Recipient Full Name *</label>
-                <input
-                  type="text"
-                  value={ndaPartyName}
-                  onChange={(e) => setNdaPartyName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Role / Capacity of Access *</label>
-                <input
-                  type="text"
-                  value={ndaRole}
-                  onChange={(e) => setNdaRole(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Effective Date *</label>
-                  <input
-                    type="text"
-                    value={ndaEffectiveDate}
-                    onChange={(e) => setNdaEffectiveDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Confidentiality Term</label>
-                  <select
-                    value={ndaDurationYears}
-                    onChange={(e) => setNdaDurationYears(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200"
-                  >
-                    <option value="2 Years Post Separation">2 Years Post Separation</option>
-                    <option value="3 Years Post Separation">3 Years Post Separation</option>
-                    <option value="5 Years Post Separation">5 Years Post Separation</option>
-                    <option value="Perpetual (Trade Secrets)">Perpetual (Trade Secrets)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Legal Jurisdiction</label>
-                <input
-                  type="text"
-                  value={ndaJurisdiction}
-                  onChange={(e) => setNdaJurisdiction(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:outline-blue-500"
-                />
-              </div>
-
-              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-sans leading-relaxed">
-                🛡️ <strong>Legal Covenants:</strong> Covers trade secrets, proprietary algorithms, client lists, customer leads, pricing matrices, source code, and non-solicitation of company personnel.
-              </div>
-            </div>
-          )}
-
           {/* Quick Actions Footer */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
             <button
@@ -506,7 +302,7 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="text-xs font-mono font-bold text-slate-700">
-                Official Letterhead &bull; {activeTab === 'offer' ? 'Offer Letter' : activeTab === 'experience' ? 'Experience Certificate' : 'Non-Disclosure Agreement'}
+                Official Letterhead &bull; Offer Letter
               </span>
             </div>
 
@@ -646,123 +442,6 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
               </div>
             )}
 
-            {/* DOCUMENT 2: EXPERIENCE CERTIFICATE */}
-            {activeTab === 'experience' && (
-              <div className="space-y-6 animate-fade-in">
-                <div className="flex items-center justify-between font-mono text-xs text-slate-500">
-                  <span>Certificate Ref: <strong>{expRefNumber}</strong></span>
-                  <span>Date of Issue: <strong>{new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</strong></span>
-                </div>
-
-                <div className="text-center py-3 border-y-2 border-slate-800">
-                  <h2 className="text-base sm:text-lg font-black tracking-widest text-slate-900 uppercase">
-                    EXPERIENCE &amp; RELIEVING CERTIFICATE
-                  </h2>
-                  <p className="text-[11px] font-mono text-slate-500 mt-0.5">
-                    TO WHOMSOEVER IT MAY CONCERN
-                  </p>
-                </div>
-
-                <p className="text-justify leading-relaxed">
-                  This is to formally certify that <strong>{expEmployeeName}</strong> was employed with <strong>Amuwa Corporation</strong> from <strong>{expJoiningDate}</strong> to <strong>{expRelievingDate}</strong>, completing an active service tenure of <strong>{expTenure}</strong>. At the time of separation, their official designation was <strong>{expDesignation}</strong> in the <strong>{expDepartment}</strong> division.
-                </p>
-
-                <p className="text-justify leading-relaxed">
-                  During their tenure with our organization, {expEmployeeName} demonstrated sincere dedication, high professional standards, and strong collaborative execution. Their overall performance and moral conduct were evaluated as <strong>{expPerformanceRating}</strong>.
-                </p>
-
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <h4 className="font-bold text-slate-900 font-mono text-xs uppercase">No-Dues &amp; Relieving Confirmation</h4>
-                  <p className="text-slate-600 text-xs">
-                    We hereby confirm that all official financial settlements, handovers, and return of corporate assets have been completed satisfactorily. {expEmployeeName} has been formally relieved from all organizational duties with effect from the close of business hours on <strong>{expRelievingDate}</strong>.
-                  </p>
-                </div>
-
-                <p>
-                  We thank them for their valuable contributions and wish them immense success and growth in all their future personal and professional endeavors.
-                </p>
-
-                {/* Seal & Signatory */}
-                <div className="pt-10 flex items-center justify-between font-mono text-xs">
-                  <div>
-                    <div className="w-16 h-16 rounded-full border-2 border-dashed border-purple-400 bg-purple-50 text-purple-700 flex items-center justify-center text-[10px] font-bold rotate-12 mb-2">
-                      OFFICIAL SEAL
-                    </div>
-                    <div className="text-[10px] text-slate-400">Amuwa Corp HR Vault</div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="font-bold text-slate-900">For Amuwa Corporation</div>
-                    <div className="mt-8 pt-2 border-t border-slate-300 w-48 ml-auto">
-                      <div className="font-bold">Authorized Signatory</div>
-                      <div className="text-[10px] text-slate-500">Human Resources &amp; People Operations</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* DOCUMENT 3: NDA AGREEMENT */}
-            {activeTab === 'nda' && (
-              <div className="space-y-5 animate-fade-in">
-                <div className="flex items-center justify-between font-mono text-xs text-slate-500">
-                  <span>Agreement Ref: <strong>{ndaRefNumber}</strong></span>
-                  <span>Effective Date: <strong>{ndaEffectiveDate}</strong></span>
-                </div>
-
-                <div className="text-center py-3 border-y-2 border-slate-800">
-                  <h2 className="text-base sm:text-lg font-black tracking-widest text-slate-900 uppercase">
-                    MUTUAL NON-DISCLOSURE &amp; CONFIDENTIALITY AGREEMENT
-                  </h2>
-                </div>
-
-                <p className="text-justify leading-relaxed">
-                  This Non-Disclosure Agreement (the "Agreement") is entered into on <strong>{ndaEffectiveDate}</strong> by and between <strong>Amuwa Corporation</strong> ("Disclosing Party"), having its registered corporate office at Corporate Tower, Sector 28, Gurgaon, and <strong>{ndaPartyName}</strong> ("Receiving Party"), engaged in the capacity of <strong>{ndaRole}</strong>.
-                </p>
-
-                <div className="space-y-3 text-xs leading-relaxed text-slate-700">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <strong className="text-slate-900 block font-mono text-xs mb-1">1. Definition of Confidential Information:</strong>
-                    <span>"Confidential Information" encompasses all proprietary algorithms, AI models, CRM client databases, WhatsApp business integration code, pricing structures, lead records, and technical trade secrets disclosed by the Disclosing Party.</span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <strong className="text-slate-900 block font-mono text-xs mb-1">2. Non-Disclosure &amp; Security Obligations:</strong>
-                    <span>The Receiving Party agrees to safeguard Confidential Information with strict care, not disclose it to any unauthorized third party, and strictly refrain from duplicating proprietary data for personal or competing commercial benefit.</span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <strong className="text-slate-900 block font-mono text-xs mb-1">3. Duration &amp; Non-Compete Period:</strong>
-                    <span>These confidentiality covenants shall remain in full force throughout engagement and for a binding term of <strong>{ndaDurationYears}</strong> following any formal separation.</span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <strong className="text-slate-900 block font-mono text-xs mb-1">4. Governing Jurisdiction:</strong>
-                    <span>This Agreement is governed strictly under the legal jurisdiction of the courts of <strong>{ndaJurisdiction}</strong>.</span>
-                  </div>
-                </div>
-
-                {/* Signatures */}
-                <div className="pt-8 grid grid-cols-2 gap-8 font-mono text-xs">
-                  <div>
-                    <div className="font-bold text-slate-900">Disclosing Party (Amuwa Corp)</div>
-                    <div className="mt-8 pt-2 border-t border-slate-300 w-48">
-                      <div className="font-bold">Legal &amp; Compliance Officer</div>
-                      <div className="text-[10px] text-slate-500">Corporate Seal Affixed</div>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="font-bold text-slate-900">Receiving Party (Acknowledge)</div>
-                    <div className="mt-8 pt-2 border-t border-slate-300 w-48 ml-auto">
-                      <div className="font-bold">{ndaPartyName}</div>
-                      <div className="text-[10px] text-slate-500">{ndaRole}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Official Footer Notice */}
             <div className="pt-6 border-t border-slate-200 text-center text-[10px] font-mono text-slate-400">
               Digitally certified by Amuwa Corporate HR &bull; Document hash: SHA256-AMU-{Date.now().toString().slice(-8)}
@@ -772,6 +451,7 @@ export const AutomatedLetterGeneratorWorkspace: React.FC<AutomatedLetterGenerato
         </div>
 
       </div>
+      )}
     </div>
   );
 };
