@@ -74,3 +74,11 @@ own domain, add that domain's `/candidate` address to the Supabase Auth redirect
 ## Registration without verification
 
 Candidates register and are signed in at once: no verification e-mail, OTP or approval. See [CANDIDATE_REGISTRATION.md](CANDIDATE_REGISTRATION.md) for the endpoint, the migration (`20261229000100_candidate_direct_registration`), the removed gates and the security trade-offs.
+
+## Fix: dashboard "We hit a snag" for every candidate (migration `20261229000200_fix_career_documents_list`)
+
+`public.career_documents()` (the list of joining documents HR requested, loaded by the candidate dashboard on every visit) referred to table aliases that did
+not exist in its list branch since it was first written, so PostgreSQL answered `42P01 missing FROM-clause entry for table "appl"`. The API reports `42P01` as
+"This feature needs a database update that has not been applied yet" (503), so the whole dashboard failed for every candidate, with or without a verified e-mail,
+and the message pointed at the wrong cause. The migration corrects only that list branch (the upload branch and the grants are unchanged) and is safe to run twice.
+`supabase/tests/careers_test.sql` now lists documents for a candidate with none, with one, and for another candidate.
