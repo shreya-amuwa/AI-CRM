@@ -21,7 +21,17 @@ select test.must_fail($$select * from career_applicants$$,'anonymous cannot read
 reset role;
 select set_config('request.jwt.claims',jsonb_build_object('sub',(select v from cp where k='unverified'),'role','authenticated')::text,true);
 set role authenticated;
-select test.must_fail($$select career_profile()$$,'email verification is required','Verify your email');
+-- registration needs no e-mail verification (migration 20261229000100): an unverified candidate-portal account works...
+select test.check(career_profile()->>'name'='','a candidate whose e-mail was never verified can use the portal');
+select test.check(jsonb_typeof(career_notifications())='array','...and read their own updates');
+reset role;
+select test.check((select count(*)=1 from career_applicants where id=(select v from cp where k='unverified')),'...and gets their own applicant record, linked to their account');
+-- ...but an account that is not a candidate-portal account is still refused, verified or not
+insert into auth.users(email,email_confirmed_at,raw_user_meta_data) values ('career.notcandidate@example.com',now(),'{}');
+set constraints all immediate;
+select set_config('request.jwt.claims',jsonb_build_object('sub',(select id from auth.users where email='career.notcandidate@example.com'),'role','authenticated')::text,true);
+set role authenticated;
+select test.must_fail($$select career_profile()$$,'a non-candidate account is still refused','not registered for the candidate portal');
 reset role;
 select set_config('request.jwt.claims',jsonb_build_object('sub',(select v from cp where k='one'),'role','authenticated')::text,true);
 set role authenticated;

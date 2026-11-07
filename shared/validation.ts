@@ -2664,3 +2664,17 @@ export const fieldVisitLeadAssignSchema = z.object({ telecallerId: uuidSchema, n
 
 // --- Company chat directory: department filter (migration 20261228000300) ----------------------------------------------------------------
 export const chatDirectoryQuerySchema = chatSearchQuerySchema.extend({ department: uuidSchema.optional() });
+
+// ---------------------------------------------------------------------------
+// Candidate portal: direct registration (no e-mail verification) - POST /candidate-auth/register
+// ---------------------------------------------------------------------------
+/** The same rules as the portal's sign-up form: the password is 10-72 characters, the mobile number a real Indian mobile. */
+export const candidateRegisterSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Enter your full name.').max(160, 'Use at most 160 characters.'),
+    email: emailSchema,
+    phone: mobileSchema,
+    password: z.string().min(10, 'Use at least 10 characters.').max(72, 'Use at most 72 characters.')
+  })
+  .strict();
+export type CandidateRegisterInput = z.infer<typeof candidateRegisterSchema>;

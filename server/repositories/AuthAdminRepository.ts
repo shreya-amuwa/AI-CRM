@@ -54,6 +54,29 @@ export class AuthAdminRepository {
   }
 
   /**
+   * A candidate-portal account (public registration). Created already confirmed, with the `candidate_portal` marker the database uses to
+   * recognise a candidate. It carries NO app_metadata, so it can never be provisioned as staff or as a client: the database trigger skips
+   * staff provisioning for it. Nothing about the caller is trusted except what the schema validated.
+   */
+  async createCandidateUser(input: { email: string; password: string; name: string; phone: string }): Promise<string> {
+    const { data, error } = await getServiceClient().auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: { candidate_portal: true, name: input.name, full_name: input.name, phone: input.phone }
+    });
+    if (error || !data.user) {
+      if (/already (been )?registered|exists/i.test(error?.message || '') || error?.code === 'email_exists') {
+        throw new AppError('CONFLICT', 'An account with this e-mail already exists. Sign in instead.');
+      }
+      if (error?.code === 'weak_password') throw new AppError('VALIDATION_ERROR', 'Choose a stronger password.');
+      console.error('[api] auth.admin.createUser (candidate) failed', error?.status ?? error?.code);
+      throw new AppError('INTERNAL', 'Could not create your account. Please try again.');
+    }
+    return data.user.id;
+  }
+
+  /**
    * An employee submitted for approval: the sign-in exists (so the person is one identity from the start) but the database creates only a PENDING profile
    * and an approval request for it, never an active account. `request_*` in app_metadata is writable only with the service key; the trigger re-validates it.
    */
