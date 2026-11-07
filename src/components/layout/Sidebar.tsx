@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, Mail, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -70,7 +70,7 @@ export type ActiveTab =
   | 'staff_add'
   | 'hr_requests'
   | 'client_notices'
-  | 'hr_email'
+  | 'hr_probation'
   | 'hr_recruitment'
   | 'hr_training'
   | 'hr_issues'
@@ -322,7 +322,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ...baseNavItems.slice(1, -1),
     { id: 'hr_recruitment' as ActiveTab, label: 'Recruitment Management', icon: Briefcase },
     { id: 'hr_training' as ActiveTab, label: 'Training', icon: GraduationCap },
-    { id: 'hr_email' as ActiveTab, label: 'Email Automation', icon: Mail },
+    // the HR e-mails (birthday, anniversary, confirmation reminders) run on the server by themselves; only the approval is a person's job
+    { id: 'hr_probation' as ActiveTab, label: 'Probation Confirmations', icon: ClipboardCheck },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },
     { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
     // work-related field visit location records (the database decides: HR staff, not recruiters)
@@ -350,7 +351,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const lastTab = departmentNav[departmentNav.length - 1];
   const navItems: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
-  const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'hr_email', 'client_notices', 'chat', 'notifications'];
+  const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
   const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
   const navSections = groupNavItems(navItems, [

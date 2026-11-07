@@ -1,7 +1,8 @@
 # HR e-mail automation
 
 Birthday greetings, work-anniversary e-mails, probation reminders and employment-confirmation e-mails, sent automatically from the
-existing employee data and the CRM's existing mail setup. Monitoring is in **HR dashboard > Email Automation**.
+existing employee data and the CRM's existing mail setup. **It runs entirely on the backend**: there is no Email Automation page, button
+or counter in the HR dashboard, and nobody has to sign in, open a page or press anything for the e-mails to go out (see "Backend only" below).
 
 Migration: `supabase/migrations/20261107000100_hr_email_automation.sql` (additive, safe to rerun; needs the HR migrations
 `20261027000100` and `20261103000100` to be applied first).
@@ -29,7 +30,9 @@ Nothing marks anybody permanent by itself. If the confirmation is still pending 
 * **E-mail address**: the account e-mail (or the HR record's).
 * **HR recipients**: every active member of the HR department, plus any addresses in `crm_settings` key `hr.notify_emails` (a JSON array, e.g.
   `["hr@amuwa.com"]`). An employee is never sent the HR copy about themselves.
-* Missing or invalid dates / e-mail addresses are listed in **Email Automation > Dates to fix**, where HR can fill in the dates.
+* Missing or invalid e-mail addresses are recorded as `SKIPPED` ("No valid e-mail address for the recipient.") in `hr_email_events`; an employee
+  without a date of birth / joining date simply gets no birthday / anniversary / reminder until the date is entered in their HR record.
+  `GET /api/v1/hr/email-automation/data-issues` (HR staff) lists them.
 
 Dates use Indian time (Asia/Kolkata). 29 February birthdays and anniversaries are celebrated on 28 February in a common year.
 
@@ -39,8 +42,8 @@ Probation = 6 months from the joining date (14 Sep -> 14 Mar). A confirmation cy
 ago and for everyone whose HR status is `Training / Probation`; interns have none; people who joined long ago are treated as already confirmed (nothing is
 sent for them). HR can close a cycle that does not apply ("Close", with a reason).
 
-**Approval**: the HR Department Head / Team Lead, the employee's Department Head, or the Super Admin approves in HR dashboard > Email Automation >
-Probation confirmations (nobody can approve their own). The approval stores who and when, the effective date (default: the probation end date) and an
+**Approval**: the HR Department Head / Team Lead, the employee's Department Head, or the Super Admin approves in HR dashboard >
+**Probation Confirmations** (nobody can approve their own). This is a person's decision, not an e-mail control, so it keeps its own page. The approval stores who and when, the effective date (default: the probation end date) and an
 optional note; it queues the two confirmation e-mails (sent on the end date, or at once if it has passed), and an HR record that says
 `Training / Probation` becomes `Full-Time`.
 
@@ -50,7 +53,7 @@ optional note; it queues the two confirmation e-mails (sent on the end date, or 
   `PROBATION_REMINDER_EMPLOYEE:<cycle>`, ...). The daily check can run any number of times: an occasion is queued once.
 * Statuses: `PENDING`, `SENDING`, `RETRY`, `SENT`, `FAILED`, `SKIPPED`, `DRY_RUN`, with attempts, timestamps and the last error.
 * Two senders never take the same e-mail (row locks). Temporary failures (network, 4xx/5xx SMTP, 429) are retried after 5, 15, 60 and 240 minutes and
-  then marked `FAILED` after 5 attempts; permanent refusals fail at once. HR can **Retry** a failed e-mail. A crashed sender's e-mail is taken again after
+  then marked `FAILED` after 5 attempts; permanent refusals fail at once. A failed e-mail can be re-queued with `POST /api/v1/hr/email-automation/events/<id>/retry` (HR staff). A crashed sender's e-mail is taken again after
   10 minutes. (SMTP gives no idempotency key, so a crash in the milliseconds between "accepted by the mail server" and "recorded" could send one duplicate.)
 * A missed run still sends birthdays / anniversaries up to 2 days late; later than that they are skipped.
 * Passwords and credentials are never stored or logged; the audit log only keeps the e-mail kind and attempts.
@@ -92,9 +95,10 @@ select cron.schedule('hr-email-automation', '*/15 * * * *', $$
 
 E-mails are timed for 09:00 India time on their day (`send_after`), whatever the run frequency.
 
-## The three automation cards (migration `20261115000100_hr_email_cards.sql`)
+## The three automation cards (migration `20261115000100_hr_email_cards.sql`) - no longer shown in the dashboard
 
-HR Dashboard > Email Automation shows one card per automation: **Birthday Emails**, **Work Anniversary Emails** and **Employee Confirmation Reminders**.
+The HR dashboard page that showed these cards was removed (see "Backend only"); the API `GET /api/v1/hr/email-automation/cards` still returns them. It
+had one card per automation: **Birthday Emails**, **Work Anniversary Emails** and **Employee Confirmation Reminders**.
 Each card has the status (Active = sending, Active (dry run) = prepared but not sent, Inactive = `AUTOMATION_MODE=off`), the number of e-mails sent / waiting /
 failed, the **next execution** (the next occasion and who it is for, 9:00 AM India time), the **last execution** with its real outcome and error, and a
 **Preview e-mail template** (the approved wording, rendered by the server with a sample employee). The confirmation card also lists the upcoming reminders
@@ -111,10 +115,12 @@ migration is reported as exactly that (HTTP 503 with a set-up message). Run the 
 1. Run the migration in the Supabase SQL editor.
 2. Set the e-mail variables above. Leave `AUTOMATION_MODE=dry_run` first: the daily check prepares and logs everything (**Email history**, status
    "Not sent (dry run)") without sending.
-3. Check **Dates to fix** and fill in the missing dates of birth / joining dates; set `hr.notify_emails` if HR should have a shared mailbox.
+3. Check the employees without dates (`GET /api/v1/hr/email-automation/data-issues` as an HR user) and fill in the missing dates of birth /
+   joining dates in their HR records; set `hr.notify_emails` if HR should have a shared mailbox.
 4. Send yourself a test: add your own address to `AUTOMATION_TEST_RECIPIENTS`, set `AUTOMATION_MODE=live`, and give a test employee record
-   (HR-only) your e-mail with today's date of birth; press **Run the check now** and confirm the e-mail arrives. Only listed addresses are e-mailed in
-   this mode.
+   (HR-only) your e-mail with today's date of birth; call the scheduler once
+   (`curl -H "Authorization: Bearer $CRON_SECRET" https://<your-app>/api/v1/internal/automations/dispatch`) and confirm the e-mail arrives and appears in
+   the provider's own log (Gmail "Sent" of the SMTP account, or the Resend / Brevo dashboard). Only listed addresses are e-mailed in this mode.
 5. Remove `AUTOMATION_TEST_RECIPIENTS` to go live. Dry-run e-mails that are still relevant (birthdays within 2 days, pending probation reminders) are sent
    then, once.
 
@@ -122,4 +128,28 @@ migration is reported as exactly that (HTTP 503 with a set-up message). Run the 
 
 `npm run test:db` (section "HR e-mail automation": dates, Feb 29, once-per-year, 7-day reminder, overdue, approval rules, queue, retries, permissions),
 `npm run test:api` (scheduler endpoint with a mock mail provider: delivery, duplicates, 503 retry, 422 failure, dry run, test mode, approval, HR API
-permissions) and `npm run test:unit` (`hr_email_templates.test.ts`: the approved subjects and wording) and the browser test `supabase/tests/e2e/run-hr-email.sh` (the three cards with live data, template preview, "Dates to fix", phone width). No real e-mail is sent by the tests.
+permissions) and `npm run test:unit` (`hr_email_templates.test.ts`: the approved subjects and wording) and the browser test `supabase/tests/e2e/run-hr-email.sh` (the scheduler endpoint queues the birthday, anniversary and both confirmation reminders
+with nobody signed in and no duplicates on a second run; the HR menu has no Email Automation entry; the Probation Confirmations page works, also at phone width). No real e-mail is sent by the tests.
+
+## Backend only (no dashboard page)
+
+The HR dashboard no longer has an **Email Automation** entry, page, Refresh / "Run the check now" buttons, sent / waiting / failed counts or template
+previews. Only the frontend was removed; everything that sends is unchanged and server-side:
+
+| What | Where |
+| --- | --- |
+| Daily run, 09:00 Asia/Kolkata | Vercel Cron in `vercel.json` (`30 3 * * *` UTC) calls `/api/v1/internal/automations/dispatch` with `CRON_SECRET`; the second daily cron (`0 5 * * *`) is a retry pass. Optional pg_cron every 15 minutes for faster retries (above). |
+| What is due (birthdays, anniversaries, 7-day confirmation reminders to employee + HR) | `public.hr_schedule_emails()` in the database, from the real employee records, once per occasion (unique event key) |
+| Sending | `server/automations/hrDispatcher.ts` -> `sendEmail()` in `server/automations/providers.ts`: the **same** provider, `EMAIL_FROM` sender and credentials as the client onboarding / welcome / invoice e-mails |
+| Delivery log, retries, failures | `public.hr_email_events` (status, attempts, last error, provider response code / reference, sent time) and `public.hr_automation_state` (key `last_schedule`: the last daily run) |
+| Approval of a confirmation | HR dashboard > **Probation Confirmations** (kept: it is a decision, not an e-mail control) |
+
+To look at the log without a page (Supabase SQL editor):
+
+```sql
+select kind, recipient_email, status, attempts, last_error, sent_at, send_after
+  from public.hr_email_events order by created_at desc limit 50;
+```
+
+The HR API routes under `/api/v1/hr/email-automation/*` (overview, history, cards, retry, run, data-issues) are kept for scripts and support; no screen calls
+them except the probation list / approve / close.

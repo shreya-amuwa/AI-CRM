@@ -10,7 +10,7 @@ import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
 import { SuperAdminDashboard } from './components/superadmin/SuperAdminDashboard';
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
-import { EmailAutomation } from './components/hr/EmailAutomation';
+import { ProbationConfirmations } from './components/hr/ProbationConfirmations';
 import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
 import { EmployeeIssuesManagement } from './components/hr/EmployeeIssuesManagement';
 import { HrEmployeeRequestsPage } from './components/employees/HrEmployeeRequestsPage';
@@ -506,8 +506,8 @@ const MainAppContent: React.FC = () => {
               <RecruitmentManagement />
             ) : currentActiveTab === 'hr_training' && currentDeptId === 'hr' ? (
               <TrainingWorkspace />
-            ) : currentActiveTab === 'hr_email' && currentDeptId === 'hr' ? (
-              <EmailAutomation />
+            ) : currentActiveTab === 'hr_probation' && currentDeptId === 'hr' ? (
+              <ProbationConfirmations />
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (
               <EmployeeIssuesManagement />
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
