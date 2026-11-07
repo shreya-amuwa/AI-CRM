@@ -82,13 +82,6 @@ import type {
   DeliveryQueueItem,
   ServiceJourneySetting,
   AttendanceDay,
-  HrEmailDataIssue,
-  HrEmailHistory,
-  HrEmailKind,
-  HrEmailCards,
-  HrEmailOverview,
-  HrEmailRunSummary,
-  HrEmailStatus,
   HrProbationCycle,
   LeaveMonthlySummary,
   LeaveRequest,
@@ -814,17 +807,10 @@ export const hrApi = {
   resubmitLeave: (id: string, reason: string) => api.post<LeaveRequest>(`/leave/${id}/resubmit`, { reason }),
   monthlySummary: (month: string) => api.get<LeaveMonthlySummary>('/leave/monthly-summary', { month }),
 
-  // E-mail automation (birthdays, work anniversaries, probation reminders, employment confirmation) - HR staff only
-  emailOverview: () => api.get<HrEmailOverview>('/hr/email-automation/overview'),
-  emailHistory: (q: { status?: HrEmailStatus; kind?: HrEmailKind; limit?: number; offset?: number } = {}) => api.get<HrEmailHistory>('/hr/email-automation/history', { ...q }),
-  emailCards: () => api.get<HrEmailCards>('/hr/email-automation/cards'),
+  // Probation confirmation approvals (HR staff only). The HR e-mails themselves are sent by the server's daily scheduler.
   probation: () => api.get<HrProbationCycle[]>('/hr/email-automation/probation'),
   confirmProbation: (id: string, body: { effectiveDate?: string; note?: string } = {}) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/confirm`, body),
-  dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note }),
-  retryEmail: (id: string) => api.post<{ id: string; status: string }>(`/hr/email-automation/events/${id}/retry`, {}),
-  emailDataIssues: () => api.get<HrEmailDataIssue[]>('/hr/email-automation/data-issues'),
-  setEmployeeDates: (body: { employeeKey: string; dateOfBirth?: string; joiningDate?: string }) => api.post<{ employeeKey: string }>('/hr/email-automation/employee-dates', body),
-  runEmailAutomation: () => api.post<HrEmailRunSummary>('/hr/email-automation/run', {})
+  dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note })
 };
 
 /** Tells the server a sign-in was refused, so it can note the attempt with the address and place the hosting platform reports. Never throws. */

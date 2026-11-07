@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Browser test of HR Dashboard > Email Automation (the three automation cards, template preview, history) against a throw-away local stack.
+# Browser test: the HR e-mails run from the backend scheduler only (no Email Automation page), and the probation approval page, against a throw-away local stack.
 # See run-dashboards.sh for what the stack is.
 # Postgres database + PostgREST + the local gateway (auth, storage and a Realtime stand-in) + the web app.
 # No Docker, no Supabase project, no production data. Passwords are made up on every run.
@@ -38,6 +38,8 @@ CONF
 SEED_PASSWORDS="root@amuwa.com=$SA_PASSWORD" GATEWAY_PORT=54430 POSTGREST_URL=http://127.0.0.1:54431 node supabase/tests/local-gateway.mjs > "$WORK/gateway.log" 2>&1 &
 # the limits are per IP and every browser here shares one: raise them for the test only
 export RATE_LIMIT_IP_PER_MIN=5000 RATE_LIMIT_USER_PER_MIN=2000
+# the scheduler endpoint's secret (made up per run); AUTOMATION_MODE stays dry_run, so nothing is e-mailed
+export AUTOMATION_DISPATCH_SECRET="$(node -e "console.log(require('node:crypto').randomBytes(24).toString('base64url'))")"
 SUPABASE_URL=http://localhost:54430 SUPABASE_ANON_KEY="$ANON" SUPABASE_SERVICE_ROLE_KEY="$SERVICE" \
   VITE_SUPABASE_URL=http://localhost:54430 VITE_SUPABASE_ANON_KEY="$ANON" npx vite --port 3030 > "$WORK/web.log" 2>&1 &
 ready=0

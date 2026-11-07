@@ -1,7 +1,8 @@
-// HR Dashboard > Email Automation, in real browsers against the local stack (Postgres + PostgREST + gateway + the web app).
-//   - the Super Admin lands on the NEW company dashboard (not the old department hub), with figures that equal the database
-//   - a Department Head and a Team Lead land on their own dashboards, with scoped figures, and cannot reach the company view
-//   - the Security & Audit Logs page shows refused requests, filters, details and has nothing to edit or delete
+// HR e-mail automation runs on the backend only, checked in real browsers against the local stack (Postgres + PostgREST + gateway + the web app).
+//   - the HR dashboard has no "Email Automation" page or controls anywhere in its menu
+//   - the probation approval step (a person's decision, not an e-mail control) is on its own page and still works
+//   - the server's scheduler (the Vercel Cron endpoint) queues and processes the birthday, anniversary and 7-day confirmation e-mails
+//     with nobody signed in, once per occasion
 // See supabase/tests/e2e/README.md. Passwords come from E2E_PASSWORDS (made up by the runner); nothing is stored.
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -77,49 +78,59 @@ const num = s => Number(String(s).replace(/[^0-9.-]/g, ''));
 
 
 // ------------------------------------------------------------------ fixture: an HR Department Head and employees with dates
+// Rahul: birthday and 3rd work anniversary today. Neha: joined six months minus seven days ago, so her confirmation reminder is due today.
 const root = await idOf('root@amuwa.com');
 const hrDept = (await api(root, 'GET', '/departments')).find(d => d.slug === 'hr');
 const hrPw = crypto.randomBytes(9).toString('base64url') + '-Aa1';
-await api(root, 'POST', '/users', { email: 'hr.head@amuwa.com', fullName: 'Payal HR', password: hrPw, role: 'DEPARTMENT_HEAD', departmentId: hrDept.id });
+await api(root, 'POST', '/users', { email: 'hr.head@amuwa.com', fullName: 'Payal HR', password: hrPw, role: 'DEPARTMENT_HEAD', departmentId: hrDept.id,
+  details: { designation: 'HR Admin Head', joiningDate: '2026-01-05', dateOfBirth: '1990-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56789', emergencyContact: '+91 98765 43210' } });
 PASSWORDS['hr.head@amuwa.com'] = hrPw;
 const rahul = await idOf('rahul@amuwa.com'), neha = await idOf('neha@amuwa.com');
 await q(`insert into employee_personal_details (profile_id, date_of_birth, joining_date) values
-  ($1, ((current_date + 2) - interval '30 years')::date, ((current_date + 3) - interval '3 years')::date),
-  ($2, ((current_date + 40) - interval '28 years')::date, ((current_date - interval '6 months')::date + 5))
+  ($1, (current_date - interval '30 years')::date, (current_date - interval '3 years')::date),
+  ($2, ((current_date + 40) - interval '28 years')::date, ((current_date + 7) - interval '6 months')::date)
   on conflict (profile_id) do update set date_of_birth = excluded.date_of_birth, joining_date = excluded.joining_date`, [rahul, neha]);
-await q(`select hr_schedule_emails()`);
 
-const p = await login('hr.head@amuwa.com', { width: 1440, height: 900 }, 'text=Email Automation');
-await p.getByText('Email Automation', { exact: true }).first().click();
-await p.waitForSelector('[role=group][aria-label="The three automations"]', { timeout: 20000 }).catch(() => fail('the three automation cards did not appear'));
-await p.screenshot({ path: `${OUT}/hr-1-cards.png`, fullPage: true });
-const cards = await p.locator('[role=group][aria-label="The three automations"] section').allInnerTexts();
-await expect(cards.length === 3, 'three automation cards');
-await expect(/Birthday Emails/.test(cards[0]) && /Work Anniversary Emails/.test(cards[1]) && /Employee Confirmation Reminders/.test(cards[2]), 'Birthday, Work Anniversary and Employee Confirmation cards, in that order');
-await expect(cards.every(c => /Active|Inactive/.test(c) && /sent/i.test(c) && /Next execution/.test(c) && /Last execution/.test(c)), 'each card shows status, sent, next execution and last execution');
-await expect(/Rahul Mehta/.test(cards[0]) && /Rahul Mehta/.test(cards[1]), 'the next birthday and anniversary come from the employee records (live data)');
-await expect(/Neha Shah/.test(cards[2]) && /Reminder /.test(cards[2]), 'the confirmation card lists the upcoming reminder for the employee in probation');
-// template preview
-await p.getByRole('button', { name: /Preview e-mail template/ }).nth(2).click();
-const tx = await p.locator('[role=group][aria-label="The three automations"] section').nth(2).innerText();
-await expect(/Employee Confirmation Reminder — Asha Verma — Due/.test(tx) && /Action Required: Confirmation Due in 7 Days — Asha Verma/.test(tx) && /Reporting Manager: Rohan Mehta/.test(tx), 'the confirmation card previews both e-mails (employee and HR)');
-await p.getByRole('button', { name: /Preview e-mail template/ }).nth(0).click();
-await expect(/Happy Birthday, Asha Verma! 🎂/.test(await p.locator('[role=group][aria-label="The three automations"] section').nth(0).innerText()), 'the birthday card previews its e-mail');
-await p.screenshot({ path: `${OUT}/hr-2-preview.png`, fullPage: true });
-// the tabs still work, including "Dates to fix"
-await p.getByRole('button', { name: /Dates to fix/ }).click();
-await p.waitForTimeout(800);
-await expect(!(await p.locator('main').innerText()).includes('Loading'), 'the "Dates to fix" tab loads');
-await expect(!/Something went wrong/.test(await p.locator('main').innerText()), 'no error banner');
+// the scheduler, with nobody signed in: exactly what Vercel Cron calls at 09:00 India time
+const DISPATCH = process.env.AUTOMATION_DISPATCH_SECRET;
+const tick = () => fetch(BASE + '/api/v1/internal/automations/dispatch', { method: 'GET', headers: { authorization: `Bearer ${DISPATCH}` } });
+await expect((await fetch(BASE + '/api/v1/internal/automations/dispatch')).status === 401, 'the scheduler endpoint refuses a call without the secret');
+const first = await tick(); if (first.status !== 200) console.error(first.status, await first.text());
+await expect(first.status === 200, 'the scheduler runs without anybody opening the dashboard');
+const queued = async () => (await q(`select kind, payload ->> 'employeeName' as who, status from public.hr_email_events where kind in ('BIRTHDAY', 'ANNIVERSARY', 'PROBATION_REMINDER_EMPLOYEE', 'PROBATION_REMINDER_HR')`));
+let rows = await queued();
+await expect(rows.some(r => r.kind === 'BIRTHDAY' && r.who === 'Rahul Mehta') && rows.some(r => r.kind === 'ANNIVERSARY' && r.who === 'Rahul Mehta'),
+  'the birthday and anniversary e-mails are queued from the real employee record (for 9:00 AM on the day)');
+await expect(rows.some(r => r.kind === 'PROBATION_REMINDER_EMPLOYEE' && r.who === 'Neha Shah') && rows.some(r => r.kind === 'PROBATION_REMINDER_HR' && r.who === 'Neha Shah'),
+  'the confirmation reminder is queued for the employee and for HR, 7 days before the six-month date');
+const before = rows.length;
+await tick();
+await expect((await queued()).length === before, 'running the scheduler again queues no duplicates');
+
+const p = await login('hr.head@amuwa.com', { width: 1440, height: 900 }, 'text=Probation Confirmations');
+const nav = await p.locator('#app-sidebar').innerText();
+await expect(!/Email Automation/i.test(nav), 'the HR side panel has no Email Automation entry');
+await expect(!/Email Automation|Run the check now|Preview e-mail template/i.test(await p.locator('body').innerText()), 'no e-mail automation controls on the HR dashboard');
+await p.locator('#app-sidebar').getByText('Probation Confirmations', { exact: true }).first().click();
+await p.waitForSelector('section[aria-label="Probation confirmations"]', { timeout: 20000 }).catch(() => fail('the probation confirmations page did not appear'));
+await p.waitForSelector('text=Neha Shah', { timeout: 20000 }).catch(() => fail('the employee in probation is not listed'));
+const page = await text(p);
+await expect(/Approve confirmation/.test(page), 'the HR Department Head can approve a confirmation');
+await expect(!/Run the check now|Refresh|Email history|Dates to fix|Sent \(30 days\)/.test(page), 'the page has no e-mail run, refresh, history or counts');
+await p.screenshot({ path: `${OUT}/hr-1-probation.png`, fullPage: true });
+await p.getByRole('button', { name: 'Close', exact: true }).first().click();
+await p.getByPlaceholder('e.g. confirmed earlier, on paper').fill('confirmed earlier, on paper');
+await p.getByRole('button', { name: 'Close it' }).click();
+await p.waitForSelector('text=was closed without e-mails', { timeout: 20000 }).catch(() => fail('closing a confirmation did not work'));
+await expect(/Closed/.test(await text(p)), 'closing a confirmation is recorded');
 // a phone: nothing overflows sideways
-const ph = p;
-await ph.setViewportSize({ width: 390, height: 800 });
-await ph.reload();
-await ph.waitForTimeout(3000);
-await ph.getByText('Email Automation', { exact: true }).first().dispatchEvent('click');
-await ph.waitForSelector('[role=group][aria-label="The three automations"]', { timeout: 20000 });
-await expect(await ph.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'a phone: the page does not scroll sideways');
-await ph.screenshot({ path: `${OUT}/hr-3-phone.png` });
-console.log(`=== ALL HR EMAIL AUTOMATION BROWSER TESTS PASSED (${step}) ===`);
+await p.setViewportSize({ width: 390, height: 800 });
+await p.reload();
+await p.waitForTimeout(3000);
+await p.getByRole('button', { name: 'Toggle menu' }).click().catch(() => {}); await p.waitForTimeout(400);
+await expect(!/Email Automation/i.test(await p.locator('body').innerText()), 'a phone: no Email Automation entry either');
+await expect(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'a phone: the page does not scroll sideways');
+await p.screenshot({ path: `${OUT}/hr-2-phone.png` });
+console.log(`=== ALL HR EMAIL AUTOMATION (BACKEND ONLY) BROWSER TESTS PASSED (${step}) ===`);
 await browser.close();
 process.exit(0);
