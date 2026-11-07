@@ -9809,6 +9809,147 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('hrc_other', 'POST', '/chat/direct', { profileId: recruiterId });
   check(r.status === 200 && r.json.data.id === convId, 'hr chat: the Team Member opening the chat back gets the same conversation', r);
 }
+// --- HR documents: NDA and Experience Letter on the official templates (migration 20261229000100) -------------------------------------------
+{
+  // earlier blocks leave a fake R2 configured: these files go to the Supabase storage stand-in (the gateway)
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
+  const { PDFDocument, PDFName, PDFArray, decodePDFRawStream } = await import('pdf-lib');
+  /** Every string drawn on every page (the template's own literals and the values the server wrote), without spaces: enough to see which values are on the page. */
+  const pdfInfo = async (bytes: Uint8Array) => {
+    const doc = await PDFDocument.load(bytes);
+    let text = '';
+    for (const page of doc.getPages()) {
+      const c = page.node.Contents();
+      const refs = c instanceof PDFArray ? c.asArray() : [page.node.get(PDFName.of('Contents'))];
+      for (const ref of refs) {
+        const raw = Buffer.from(decodePDFRawStream(doc.context.lookup(ref) as any).decode()).toString('latin1');
+        for (const m of raw.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) text += Buffer.from(m[1], 'hex').toString('latin1');
+        for (const m of raw.matchAll(/\(((?:\\.|[^\\)])*)\)/g)) text += m[1].replace(/\\(.)/g, '$1');
+      }
+    }
+    return { pages: doc.getPageCount(), text: text.replace(/\s+/g, '') };
+  };
+  const pdfOf = (r: any) => new Uint8Array(Buffer.from(r.json.data.pdfBase64, 'base64'));
+  const insert = (id: string, name: string, status: string, joining: string, left: string | null, designation: string) =>
+    db.query(`insert into public.hr_employees (id, name, email, designation, department_id, status, joining_date, data) values ($1, $2, $3, $4, 'wabastore', $5, $6, $7::jsonb)
+              on conflict (id) do nothing`, [id, name, `${id.toLowerCase()}@example.com`, designation, status, joining, left ? JSON.stringify({ leftDate: left }) : '{}']);
+  await insert('APIDOC-B', 'Priya Sharma', 'Left', '2026-05-04', '2026-09-17', 'Business Development Executive');
+  await insert('APIDOC-C', 'Rahul Mehta', 'Left', '2023-02-13', '2025-12-31', 'Support Executive');
+  await insert('APIDOC-ACTIVE', 'Anita Working', 'Full-Time', '2024-01-08', null, 'Sales Executive');
+  const B = 'HR:APIDOC-B', C = 'HR:APIDOC-C', A = 'HR:APIDOC-ACTIVE';
+  const exp = (over: Record<string, unknown> = {}) => ({ letterDate: '2026-09-18', title: 'Miss', employeeName: 'Priya Sharma', designation: 'Business Development Executive', lastWorkingDate: '2026-09-17', signatoryName: 'Aarti Kalange', signatoryTitle: 'Ceo', ...over });
+
+  // what the record says
+  let r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(B)}&type=EXPERIENCE`);
+  check(r.status === 200 && r.json.data.ready === true && r.json.data.employee.name === 'Priya Sharma' && r.json.data.employee.code === 'APIDOC-B'
+    && r.json.data.employee.joiningDate === '2026-05-04' && r.json.data.employee.lastWorkingDate === '2026-09-17' && r.json.data.signatory.name === 'Aarti Kalange',
+    'hr documents: the form is filled from the HR record (name, code, joining and last working date) and the template signatory', r);
+  r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(A)}&type=EXPERIENCE`);
+  check(r.status === 200 && r.json.data.ready === false && r.json.data.problems[0].code === 'NOT_SEPARATED', 'hr documents: an employee who has not left cannot get an Experience Letter', r);
+  r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(A)}&type=NDA`);
+  check(r.status === 200 && r.json.data.ready === true, 'hr documents: but can get an NDA', r);
+  r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:NOBODY&type=NDA');
+  check(r.status === 404, 'hr documents: an unknown employee is not found', r);
+  r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:APIDOC-B&type=OFFER');
+  check(r.status === 422, 'hr documents: only the NDA and the Experience Letter exist', r);
+
+  // the NDA on the official template
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } });
+  let info = r.status === 200 ? await pdfInfo(pdfOf(r)) : null;
+  check(r.status === 200 && Buffer.from(pdfOf(r).subarray(0, 5)).toString() === '%PDF-' && info!.pages === 5, 'hr documents: the NDA preview is the five-page template', r);
+  check(!!info && info.text.includes('Date:05-10-2026') && info.text.includes('Anita Working'.replace(/\s/g, '')) && info.text.includes('acknowledgeandacceptthesame'), 'hr documents: the NDA carries the chosen date and the employee name', info?.text.slice(0, 80));
+  check(!!info && !info.text.includes('11-09-2026') && !info.text.includes('RiddhiBhonka') && !/Riddhi|Bhonka/i.test(info.text), 'hr documents: nothing of the template\'s sample person is left in the file');
+  check(!!info && info.text.includes('Amol') && info.text.includes('NON-DISCLOSUREAGREEMENT') && info.text.includes('CONFIDENTIALINFORMATION') && info.text.includes('ACKNOWLEDGETHAT'), 'hr documents: the legal text of the template is intact');
+  const again = await api('hr', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } });
+  check(again.status === 200 && again.json.data.pdfBase64 === r.json.data.pdfBase64, 'hr documents: the same values give the same file (a preview is what is stored)');
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Edited' } });
+  info = r.status === 200 ? await pdfInfo(pdfOf(r)) : null;
+  check(!!info && info.text.includes('AnitaEdited') && !info.text.includes('AnitaWorking'), 'hr documents: an edited name is what the document shows', r);
+
+  // the Experience Letter
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'EXPERIENCE', employeeKey: B, fields: exp() });
+  info = r.status === 200 ? await pdfInfo(pdfOf(r)) : null;
+  check(r.status === 200 && info!.pages === 1 && info!.text.includes('Date:18/09/2026') && info!.text.includes('MissPriyaSharmawasemployedwithAmuwaCorporationas') && info!.text.includes('04thMay2026') && info!.text.includes('17thSeptember2026')
+    && info!.text.includes('BusinessDevelopmentExecutive') && info!.text.includes('Duringhertenure') && info!.text.includes('AartiKalange') && info!.text.includes('AmuwaCorporation'), 'hr documents: the Experience Letter has the name, designation, the two dates and the signatory', info?.text.slice(0, 120));
+  check(!!info && !info.text.includes('ManjushaHarde') && !info.text.includes('Miss.wasemployed'), 'hr documents: nothing of the template\'s sample letter is left');
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'EXPERIENCE', employeeKey: C, fields: exp({ title: 'Mr.', employeeName: 'Rahul Mehta', designation: 'Support Executive', lastWorkingDate: '2025-12-31', letterDate: '2026-01-02' }) });
+  info = r.status === 200 ? await pdfInfo(pdfOf(r)) : null;
+  check(!!info && info.text.includes('Mr.RahulMehta') && info.text.includes('13thFebruary2023') && info.text.includes('31stDecember2025') && info.text.includes('Duringhistenure') && info.text.includes('Wewishhimallthebest') && !info.text.includes('PriyaSharma'),
+    'hr documents: another employee gets their own dates and the pronouns of the chosen title, with nothing of the first one', info?.text.slice(0, 120));
+
+  // what the browser may not do
+  for (const [label, body, code] of [
+    ['a missing title', { type: 'EXPERIENCE', employeeKey: B, fields: (({ title: _t, ...x }) => x)(exp()) }, 422],
+    ['a joining date sent by the browser', { type: 'EXPERIENCE', employeeKey: B, fields: exp({ joiningDate: '2020-01-01' }) }, 422],
+    ['a last working date before the joining date', { type: 'EXPERIENCE', employeeKey: B, fields: exp({ lastWorkingDate: '2026-01-01' }) }, 422],
+    ['a letter dated before the last working day', { type: 'EXPERIENCE', employeeKey: B, fields: exp({ letterDate: '2026-09-01' }) }, 422],
+    ['an impossible date', { type: 'EXPERIENCE', employeeKey: B, fields: exp({ lastWorkingDate: '2026-02-31' }) }, 422],
+    ['a name with markup', { type: 'EXPERIENCE', employeeKey: B, fields: exp({ employeeName: 'Priya <b>Sharma' }) }, 422],
+    ['a name the document font cannot print', { type: 'EXPERIENCE', employeeKey: B, fields: exp({ employeeName: 'Priya शर्मा' }) }, 422],
+    ['an employee who has not left', { type: 'EXPERIENCE', employeeKey: A, fields: exp() }, 422],
+    ['an unknown employee', { type: 'EXPERIENCE', employeeKey: 'HR:NOBODY', fields: exp() }, 404],
+    ['an unknown field', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working', clause: 'changed' } }, 422],
+    ['a wrong key', { type: 'NDA', employeeKey: "x'; drop table hr_documents;--", fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } }, 422]
+  ] as const) {
+    r = await api('hr', 'POST', '/hr/documents/preview', body);
+    check(r.status === code, `hr documents: ${label} is refused (${code})`, r);
+  }
+  const before = Number((await db.query(`select count(*) from public.hr_documents`)).rows[0].count);
+  r = await api('hr', 'POST', '/hr/documents', { type: 'EXPERIENCE', employeeKey: A, fields: exp() });
+  check(r.status === 422 && Number((await db.query(`select count(*) from public.hr_documents`)).rows[0].count) === before, 'hr documents: a refused letter stores nothing', r);
+
+  // generate, store, list, download
+  const objects = async () => (await fetch(`${GW}/storage/v1/__objects`, { headers: { authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}` } }).then(x => x.json())) as string[];
+  const stored0 = (await objects()).length;
+  r = await api('hr', 'POST', '/hr/documents', { type: 'EXPERIENCE', employeeKey: B, fields: exp() });
+  const docB = r.json.data;
+  check(r.status === 201 && docB.type === 'EXPERIENCE' && docB.employeeKey === B && docB.employeeCode === 'APIDOC-B' && docB.employeeName === 'Priya Sharma' && /^Experience-Letter-Priya-Sharma-2026-09-18\.pdf$/.test(docB.fileName) && docB.sizeBytes > 1000,
+    'hr documents: generating stores the letter against the employee of the record', r);
+  check((await objects()).length === stored0 + 1, 'hr documents: one private file was stored');
+  const row = (await db.query(`select * from public.hr_documents where id = $1`, [docB.id])).rows[0];
+  check(row.employee_key === B && row.hr_record_id === 'APIDOC-B' && row.storage_bucket === 'hr-documents' && row.size_bytes === docB.sizeBytes && /^[0-9a-f]{64}$/.test(row.sha256) && row.fields.joiningDate === '2026-05-04' && row.generated_by_name != null,
+    'hr documents: the row keeps the employee, the file reference, its hash, the printed values and who generated it', row);
+  r = await api('hr', 'POST', '/hr/documents', { type: 'EXPERIENCE', employeeKey: C, fields: exp({ title: 'Mr.', employeeName: 'Rahul Mehta', designation: 'Support Executive', lastWorkingDate: '2025-12-31', letterDate: '2026-01-02' }) });
+  const docC = r.json.data;
+  check(r.status === 201 && docC.employeeKey === C && docC.id !== docB.id, 'hr documents: a second employee\'s letter is a separate document', r);
+  r = await api('hr', 'POST', '/hr/documents', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } });
+  const docA = r.json.data;
+  check(r.status === 201 && docA.type === 'NDA' && docA.employeeKey === A, 'hr documents: the NDA is stored too', r);
+
+  r = await api('hr', 'GET', `/hr/documents?employeeKey=${encodeURIComponent(B)}`);
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === docB.id, 'hr documents: one employee\'s list holds only their documents', r);
+  r = await api('hr', 'GET', '/hr/documents?type=NDA');
+  check(r.status === 200 && r.json.data.some((d: any) => d.id === docA.id) && r.json.data.every((d: any) => d.type === 'NDA'), 'hr documents: the list can be filtered by type', r);
+  for (const [doc, name, other] of [[docB, 'PriyaSharma', 'RahulMehta'], [docC, 'RahulMehta', 'PriyaSharma']] as const) {
+    r = await api('hr', 'GET', `/hr/documents/${doc.id}/download`);
+    const file = r.status === 200 ? await fetch(r.json.data.url).then(async x => ({ ok: x.ok, bytes: new Uint8Array(await x.arrayBuffer()) })) : null;
+    const got = file?.ok ? await pdfInfo(file.bytes) : null;
+    check(r.status === 200 && !!got && got.pages === 1 && got.text.includes(name) && !got.text.includes(other) && (await import('node:crypto')).createHash('sha256').update(file!.bytes).digest('hex') === (await db.query(`select sha256 from public.hr_documents where id = $1`, [doc.id])).rows[0].sha256,
+      `hr documents: ${name}'s stored file downloads, is theirs only, and is the file that was recorded`, r);
+  }
+  check(Number((await db.query(`select count(*) from public.audit_logs where action = 'HR_DOCUMENT_GENERATED'`)).rows[0].count) >= 3 && Number((await db.query(`select count(*) from public.audit_logs where action = 'HR_DOCUMENT_OPENED'`)).rows[0].count) >= 2, 'hr documents: generating and opening are audited');
+
+  // who may
+  for (const who of ['hrmember']) {
+    r = await api(who, 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(B)}&type=EXPERIENCE`);
+    check(r.status === 200, `hr documents: an HR team member (${who}) can prepare a letter`, r);
+  }
+  for (const who of ['tm2', 'th', 'rrec1', 'dh']) {
+    for (const [method, path, body] of [
+      ['GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(B)}&type=NDA`, undefined],
+      ['POST', '/hr/documents/preview', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } }],
+      ['POST', '/hr/documents', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } }],
+      ['GET', '/hr/documents', undefined],
+      ['GET', `/hr/documents/${docB.id}/download`, undefined]
+    ] as const) {
+      r = await api(who, method, path, body as any);
+      check(r.status === 403, `hr documents: ${who} cannot ${method} ${path.split('?')[0].replace(docB.id, ':id')} (403)`, r);
+    }
+  }
+  r = await api('tm2', 'GET', '/hr/documents/not-a-uuid/download');
+  check(r.status === 422 || r.status === 403, 'hr documents: a malformed document id is refused', r);
+  check(Number((await db.query(`select count(*) from public.hr_documents`)).rows[0].count) === before + 3, 'hr documents: refused calls stored nothing');
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

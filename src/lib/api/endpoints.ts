@@ -83,6 +83,12 @@ import type {
   ServiceJourneySetting,
   AttendanceDay,
   HrProbationCycle,
+  HrDocPrefill,
+  HrDocPreview,
+  HrDocRequest,
+  HrDocType,
+  HrDocument,
+  HrDocumentDownload,
   LeaveMonthlySummary,
   LeaveRequest,
   LeaveReview,
@@ -811,6 +817,15 @@ export const hrApi = {
   probation: () => api.get<HrProbationCycle[]>('/hr/email-automation/probation'),
   confirmProbation: (id: string, body: { effectiveDate?: string; note?: string } = {}) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/confirm`, body),
   dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note })
+};
+
+/** NDA and Experience Letter: made by the server on the official templates, kept per employee (HR staff only). */
+export const hrDocumentsApi = {
+  prefill: (employeeKey: string, type: HrDocType) => api.get<HrDocPrefill>('/hr/documents/prefill', { employeeKey, type }),
+  preview: (body: HrDocRequest) => api.post<HrDocPreview>('/hr/documents/preview', body),
+  generate: (body: HrDocRequest) => api.post<HrDocument>('/hr/documents', body),
+  list: (q: { employeeKey?: string; type?: HrDocType } = {}) => api.get<HrDocument[]>('/hr/documents', { ...q }),
+  download: (id: string) => api.get<HrDocumentDownload>(`/hr/documents/${id}/download`)
 };
 
 /** Tells the server a sign-in was refused, so it can note the attempt with the address and place the hosting platform reports. Never throws. */

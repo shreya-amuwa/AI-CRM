@@ -679,8 +679,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     {activeModule === 'leaves' && 'Leave & Shift Approvals Register'}
                     {activeModule === 'awards' && 'Awards, Upcoming Birthdays & Anniversaries'}
                     {(activeModule === 'offer_letter' || activeModule === 'letters') && 'Automated Offer Letter & Contract Studio'}
-                    {activeModule === 'experience_letter' && 'Automated Relieving & Experience Certificate Studio'}
-                    {activeModule === 'nda_letter' && 'Automated Mutual NDA & Confidentiality Studio'}
+                    {activeModule === 'experience_letter' && 'Experience Letter Studio'}
+                    {activeModule === 'nda_letter' && 'NDA Studio'}
                   </span>
                 </div>
 

@@ -53,6 +53,8 @@ import { DashboardService } from './DashboardService.js';
 import { PerformanceService } from './PerformanceService.js';
 import { PerformersService } from './PerformersService.js';
 import { RecruitmentService } from './RecruitmentService.js';
+import { HrDocumentService } from './HrDocumentService.js';
+import { HrDocumentRepository } from '../repositories/HrDocumentRepository.js';
 import { TrainingService } from './TrainingService.js';
 import { TelecallerService } from './TelecallerService.js';
 import { FieldVisitService } from './FieldVisitService.js';
@@ -73,6 +75,7 @@ export function createServices(db: SupabaseClient) {
     users: new UserService(new ProfileRepository(db), undefined, new HrRepository(db)),
     employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
+    hrDocuments: new HrDocumentService(new HrDocumentRepository(db), new StorageRepository()),
     performance: new PerformanceService(new PerformanceRepository(db)),
     performers: new PerformersService(new PerformersRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
