@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FileText, Loader2, Printer, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { hrDocumentsApi } from '../../../lib/api/endpoints';
 import { ApiError } from '../../../lib/api/client';
 import { employmentDuration } from '../../../lib/employmentDuration';
@@ -48,7 +48,9 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<HrDocument | null>(null);
+  // the stored document, and the exact values it was made from: an edit afterwards means it is no longer "the current document"
+  const [generated, setGenerated] = useState<{ sig: string; doc: HrDocument } | null>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
   const [history, setHistory] = useState<HrDocument[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -132,18 +134,41 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
     }
   };
 
-  const generate = async () => {
-    if (!request.body || saving) return;
+  const sig = request.body ? JSON.stringify(request.body) : null;
+  const current = generated && generated.sig === sig ? generated.doc : null;
+
+  /** Stores the letter as it is now. Returns it, or null when it could not be made. */
+  const generate = async (): Promise<HrDocument | null> => {
+    if (!request.body || !sig || saving) return null;
     setSaving(true); setSaveError(null);
     try {
       const d = await hrDocumentsApi.generate(request.body);
-      setGenerated(d);
+      setGenerated({ sig, doc: d });
       onSuccessToast?.(`✅ ${isNda ? 'NDA' : 'Experience Letter'} for ${d.employeeName} generated and saved to their record.`);
       await loadHistory();
+      return d;
     } catch (e) {
       setSaveError(errText(e, 'The document could not be generated. Please try again.'));
+      return null;
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Download PDF: the stored file of the current values; if the letter was not generated yet (or was edited since), it is generated first. */
+  const downloadCurrent = async () => {
+    const d = current ?? (await generate());
+    if (d) await download(d.id);
+  };
+
+  /** Prints the PDF shown in the preview (the same bytes that would be stored). */
+  const print = () => {
+    const w = frame.current?.contentWindow;
+    try {
+      if (!w) throw new Error('no preview');
+      w.focus(); w.print();
+    } catch {
+      if (previewUrl) window.open(previewUrl, '_blank', 'noopener')?.focus(); // some browsers do not allow printing inside the frame
     }
   };
 
@@ -276,13 +301,13 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
             <span>{saving ? 'Generating…' : 'Generate PDF'}</span>
           </button>
-          <button type="button" onClick={() => generated && void download(generated.id)} disabled={!generated || downloading === generated?.id}
+          <button type="button" onClick={() => void downloadCurrent()} disabled={!request.body || saving || downloading === current?.id}
             className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs shadow-xs transition-colors flex items-center gap-2 cursor-pointer">
             <Download className="w-4 h-4" /> <span>Download PDF</span>
           </button>
         </div>
-        {generated && (
-          <p role="status" className="text-[11px] text-emerald-700 font-sans flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Saved to {generated.employeeName}'s record as {generated.fileName}. Download it, or find it again below.</p>
+        {current && (
+          <p role="status" className="text-[11px] text-emerald-700 font-sans flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Saved to {current.employeeName}'s record as {current.fileName}. Download it, or find it again below.</p>
         )}
       </div>
 
@@ -294,11 +319,21 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
               <span className={`w-2.5 h-2.5 rounded-full ${previewing ? 'bg-amber-400 animate-pulse' : previewUrl ? 'bg-emerald-500' : 'bg-slate-300'}`} />
               <span className="text-xs font-mono font-bold text-slate-700">Preview &bull; {title}</span>
             </div>
-            {previewing && <span className="text-[11px] text-slate-500 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Updating…</span>}
+            <div className="flex items-center gap-2">
+              {previewing && <span className="text-[11px] text-slate-500 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Updating…</span>}
+              <button type="button" onClick={print} disabled={!previewUrl || previewing} title="Print this document" aria-label="Print the preview"
+                className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs">
+                <Printer className="w-3.5 h-3.5" /> <span>Print</span>
+              </button>
+              <button type="button" onClick={() => void downloadCurrent()} disabled={!request.body || previewing || saving} title="Download the PDF (it is saved to the employee's record first if it was not yet)" aria-label="Download the PDF from the preview"
+                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs">
+                <Download className="w-3.5 h-3.5" /> <span>Download PDF</span>
+              </button>
+            </div>
           </div>
           {previewError && <div role="alert" className="m-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] flex gap-2"><AlertTriangle className="w-4 h-4 shrink-0" /> {previewError}</div>}
           {previewUrl ? (
-            <iframe title={`${title} preview`} src={previewUrl} className="w-full h-[78vh] min-h-[520px] bg-slate-100" />
+            <iframe ref={frame} title={`${title} preview`} src={previewUrl} className="w-full h-[78vh] min-h-[520px] bg-slate-100" />
           ) : (
             <div className="p-10 text-center text-xs text-slate-500">
               <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />

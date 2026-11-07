@@ -12,7 +12,7 @@ Before it is run the screens show the "latest migrations" set-up message instead
 1. Choose the letter (tab) and the employee. The form is filled from the HR record: employee ID, department, status, joining date, last working date,
    designation, and the employment duration (read-only, for checking).
 2. Edit what may be edited (below). The PDF on the right is the server's own rendering, redrawn about 0.7 s after the last edit.
-3. **Generate PDF** stores it against the employee. **Download PDF** (and the list under the preview) downloads the stored file.
+3. **Generate PDF** stores it against the employee. **Download PDF** (under the form, or in the preview toolbar) downloads the stored file of the current values; if the letter was not generated yet, or was edited since, it is stored first, so the file is never an older version. **Print** prints the preview. Earlier documents are listed under the preview.
 
 | Letter | Filled from the HR record | HR may edit | Never editable |
 | --- | --- | --- | --- |

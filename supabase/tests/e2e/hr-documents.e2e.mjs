@@ -129,8 +129,10 @@ await p.waitForSelector('[data-testid="hr-doc-studio-EXPERIENCE"]', { timeout: 2
 const studio = p.locator('[data-testid="hr-doc-studio-EXPERIENCE"]');
 await expect(!/Rahul Deshmukh|Alexander Wright|AMU\/EXP/.test(await studio.innerText()), 'no sample data is shown');
 const genBtn = studio.getByRole('button', { name: /Generate PDF/ });
-const dlBtn = studio.getByRole('button', { name: /Download PDF/ });
-await expect(await genBtn.isDisabled() && await dlBtn.isDisabled(), 'Generate and Download are off until an employee is chosen');
+const dlBtn = studio.getByRole('button', { name: 'Download PDF', exact: true });
+const dlTop = studio.getByRole('button', { name: 'Download the PDF from the preview' });
+const printBtn = studio.getByRole('button', { name: 'Print the preview' });
+await expect(await genBtn.isDisabled() && await dlBtn.isDisabled() && await dlTop.isDisabled() && await printBtn.isDisabled(), 'Generate, Download and Print are off until an employee is chosen');
 
 // ---- employee with the details on record
 await studio.getByLabel('Employee *').selectOption('HR:E2E-PRIYA');
@@ -146,6 +148,7 @@ await studio.getByLabel('Title *', { exact: true }).selectOption('Miss', { timeo
 let t = await waitPreview(p, x => x.text.includes('MissPriyaSharmawasemployed'), 'Miss Priya Sharma was employed');
 await expect(t.pages === 1 && t.text.includes('04thMay2026') && t.text.includes('17thSeptember2026') && t.text.includes('BusinessDevelopmentExecutive') && t.text.includes('Duringhertenure') && t.text.includes('Date:' + today.split('-').reverse().join('/')),
   'the preview is the Experience Letter with the name, designation, dates, today\'s date and "her"');
+await expect(await printBtn.isEnabled() && await dlTop.isEnabled(), 'Print and Download PDF are on once the preview is shown');
 await p.screenshot({ path: `${OUT}/hrdoc-1-experience.png`, fullPage: true });
 
 // ---- an edit is what the document shows
@@ -175,6 +178,22 @@ await expect(download.suggestedFilename() === `Experience-Letter-Priya-Sharma-${
 await expect(/Experience Letter/.test(await studio.getByText('Documents generated for Priya Sharma').locator('..').innerText()) && await studio.getByRole('button', { name: /Download Experience Letter of Priya Sharma/ }).count() === 1, 'the generated document is listed under the employee for later');
 await p.screenshot({ path: `${OUT}/hrdoc-2-generated.png`, fullPage: true });
 
+// ---- Download PDF from the preview after an edit: the edited letter is stored first (never the older file), then downloaded
+await studio.getByLabel('Designation *').fill('Team Lead Business Development');
+await waitPreview(p, x => x.text.includes('TeamLeadBusinessDevelopment'), 'the second edit');
+await expect(!/Saved to Priya/.test(await studio.innerText()), 'after an edit the earlier file is no longer offered as the current one');
+const [dl2] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), dlTop.click()]);
+await dl2.saveAs(`${OUT}/downloaded-priya-2.pdf`);
+const t2 = await pdfText(fs.readFileSync(`${OUT}/downloaded-priya-2.pdf`));
+docs = await rowsOf('HR:E2E-PRIYA');
+await expect(t2.text.includes('TeamLeadBusinessDevelopment') && !t2.text.includes('SeniorBusiness') && docs.length === 2, 'Download PDF on the preview stores the edited letter and downloads exactly that one');
+const [dl3] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), dlTop.click()]);
+await dl3.saveAs(`${OUT}/downloaded-priya-3.pdf`);
+await expect((await rowsOf('HR:E2E-PRIYA')).length === 2, 'downloading again does not store a duplicate');
+await p.evaluate(() => { window.__printed = 0; const f = document.querySelector('iframe[title$="preview"]'); f.contentWindow.print = () => { window.__printed++; }; });
+await printBtn.click();
+await expect(await p.evaluate(() => window.__printed) === 1, 'Print prints the preview');
+
 // ---- another employee: nothing carries over
 await studio.getByLabel('Employee *').selectOption('HR:E2E-RAHUL');
 await studio.locator('[aria-label="From the HR record"]').getByText('E2E-RAHUL').waitFor({ timeout: 20000 });
@@ -187,7 +206,7 @@ t = await waitPreview(p, x => x.text.includes('Mr.RahulMehtawasemployed'), 'Mr. 
 await expect(t.text.includes('13thFebruary2023') && t.text.includes('31stDecember2025') && t.text.includes('Duringhistenure') && !t.text.includes('Priya') && t.text.includes('Date:02/01/2026'), 'his letter has his own dates and "his", with nothing of Priya\'s');
 await genBtn.click();
 await studio.getByText(/Saved to Rahul Mehta's record/).waitFor({ timeout: 20000 });
-await expect((await rowsOf('HR:E2E-RAHUL')).length === 1 && (await rowsOf('HR:E2E-PRIYA')).length === 1, 'each employee has exactly their own document');
+await expect((await rowsOf('HR:E2E-RAHUL')).length === 1 && (await rowsOf('HR:E2E-PRIYA')).length === 2 && (await rowsOf('HR:E2E-PRIYA')).every(d => d.employee_key === 'HR:E2E-PRIYA'), 'each employee has exactly their own documents');
 
 // ---- an employee who has not left
 await studio.getByLabel('Employee *').selectOption('HR:E2E-ANITA');
