@@ -25,6 +25,7 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
+import { handleAuthEmailHook } from './automations/authEmailHook.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
 import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
@@ -206,6 +207,18 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Company report analysis: write the analysis of every consolidated week HR submitted that is still waiting for it. Idempotent.
   const reportAnalysis = await runReportAnalysisAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+});
+
+// Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
+// (docs/AUTH_EMAIL_HOOK.md). Authenticated by Supabase's signature (SUPABASE_AUTH_HOOK_SECRET), not by a user token.
+app.post('/internal/auth/email-hook', async c => {
+  const reply = await handleAuthEmailHook({
+    body: await c.req.text(),
+    id: c.req.header('webhook-id'),
+    timestamp: c.req.header('webhook-timestamp'),
+    signature: c.req.header('webhook-signature')
+  });
+  return c.json(reply.body, reply.status as 200);
 });
 
 // Biometric device gateway: one punch per call, authenticated with "Authorization: Bearer <BIOMETRIC_INGEST_SECRET>".
@@ -429,7 +442,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/login-failed']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/login-failed']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {
