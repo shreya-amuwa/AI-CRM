@@ -41,6 +41,7 @@ import { StorageRepository } from './repositories/StorageRepository.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
+import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
 import { recordSecurityEvent, sessionClaims } from './security/events.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
@@ -235,6 +236,21 @@ app.post('/integrations/biometric/punch', async c => {
   if (error) throw fromDatabaseError(error);
   if (data === 'UNKNOWN_EMPLOYEE') throw new AppError('NOT_FOUND', 'No active employee has this e-mail.');
   return c.json(ok({ recorded: true }));
+});
+
+// Candidate-portal registration (no login yet, so public): creates an already confirmed candidate account; the portal then signs the candidate in
+// with the password they chose. No e-mail, OTP, phone or approval step. docs/CANDIDATE_REGISTRATION.md. Limited per address and per e-mail.
+app.post('/candidate-auth/register', async c => {
+  const body = await readJson(c);
+  const email = typeof (body as { email?: unknown } | undefined)?.email === 'string' ? (body as { email: string }).email.trim().toLowerCase().slice(0, 254) : 'none';
+  await enforce(
+    [
+      { key: `cand-register:ip:${clientIp(c)}`, limit: 10, window: 3600 },
+      { key: `cand-register:email:${email}`, limit: 5, window: 3600 }
+    ],
+    'shared'
+  );
+  return c.json(ok(await registerCandidate(body)), 201);
 });
 
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
@@ -442,7 +458,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/login-failed']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/candidate-auth/register', '/auth/login-failed']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

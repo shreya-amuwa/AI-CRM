@@ -70,3 +70,7 @@ Not changed: the database (`career_*` tables and functions), the API (`/api/v1/c
 Recruitment screens (jobs, tests, applications, interviews, offers, joining). A candidate portal on a separate domain can keep using the API.
 The HR "Open public careers page" button appears only when `VITE_CAREERS_URL` is set to that site's address. If the portal is moved to its
 own domain, add that domain's `/candidate` address to the Supabase Auth redirect URLs and add it to `API_ALLOWED_ORIGINS` for the API.
+
+## Registration without verification
+
+Candidates register and are signed in at once: no verification e-mail, OTP or approval. See [CANDIDATE_REGISTRATION.md](CANDIDATE_REGISTRATION.md) for the endpoint, the migration (`20261229000100_candidate_direct_registration`), the removed gates and the security trade-offs.
