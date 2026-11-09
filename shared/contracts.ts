@@ -2402,6 +2402,8 @@ export interface LeaveDecision {
   note: string | null;
 }
 export interface LeaveRequest {
+  /** Paid leave (deducted from the balance on final approval; migration 20261231000200). Absent before that migration. */
+  paid?: boolean;
   id: string;
   employeeId: string;
   employeeName: string;
@@ -5186,7 +5188,7 @@ export type RecruiterStage =
   | 'INTERVIEW_COMPLETED' | 'SELECTION_REVIEW' | 'SELECTED' | 'REJECTED' | 'ON_HOLD' | 'WITHDRAWN';
 export type VacancyStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'OPEN' | 'ON_HOLD' | 'CLOSED' | 'FILLED';
 export interface RecruiterContext {
-  id: string; name: string; email: string; designation: string; isRecruiter: boolean; isLeadership: boolean;
+  id: string; name: string; email: string; designation: string; isRecruiter: boolean; isLeadership: boolean; /** An HR Assistant using the Recruitment Portal (migration 20261231000300). */ isAssistant?: boolean;
   newApplications: number; overdueFollowUps: number; vacanciesInQueue: number;
 }
 export interface RecruiterPerson { id: string; name: string }
@@ -5448,3 +5450,41 @@ export interface ClientSupportGroup {
   canManage: boolean;
   candidates: { id: string; name: string; team: string | null }[] | null;
 }
+
+// --- Messaging onboarding: the Meta Verifier owns the initial onboarding (migration 20261231000100) ------------------------------------------
+export interface OnboardingReviewScope {
+  route: 'META' | 'TECHNICAL';
+  /** The customer has WhatsApp API (+ Blue Tick), Blue Tick or RCS Registration. */
+  messaging: boolean;
+  initialOwner: 'META_VERIFIER' | 'TECHNICAL_CONSULTANT';
+  /** The caller may authorize every document, Verify All, return to Sales and hand over. */
+  canReviewAll: boolean;
+  /** Otherwise: the items the caller (a Technical Consultant) may still authorize, those of a separately bought non-Messaging service. */
+  consultantItems: string[];
+}
+
+// --- Paid leave after probation (migration 20261231000200) -------------------------------------------------------------------------------------
+export type EmploymentStatus = 'PROBATION' | 'CONFIRMATION_PENDING' | 'FULL_TIME' | 'NOT_CONFIRMED' | 'UNKNOWN';
+export interface PaidLeavePolicy { enabled: boolean; monthlyDays: number; creditDay: number; partialMonthRule: 'NEXT_FULL_MONTH' | 'EFFECTIVE_MONTH'; accrualStartMonth: string | null; updatedAt?: string }
+export interface PaidLeaveBalance {
+  employment: { status: EmploymentStatus; joiningDate?: string; probationEnd?: string; confirmedFrom?: string | null; cycleId?: string };
+  policy: PaidLeavePolicy;
+  eligibleFrom: string | null;
+  month: string;
+  carriedForward: number;
+  creditedThisMonth: number;
+  usedThisMonth: number;
+  adjustedThisMonth: number;
+  totalCredited: number;
+  totalUsed: number;
+  balance: number;
+  pendingPaidDays: number;
+  pendingPaidRequests: number;
+  pendingRequests: number;
+  /** Balance minus the days of paid requests still waiting for approval. */
+  available: number;
+}
+export interface PaidLeaveEntry { type: 'MONTHLY_CREDIT' | 'LEAVE_DEBIT' | 'LEAVE_REVERSAL' | 'OPENING_BALANCE' | 'CORRECTION'; days: number; month: string; note: string | null; leaveRequestId: string | null; at: string; by: string | null }
+export interface PaidLeaveDetail extends PaidLeaveBalance { profileId: string; fullName: string; entries: PaidLeaveEntry[] }
+export interface PaidLeaveListItem extends PaidLeaveBalance { profileId: string; fullName: string; department: string | null }
+export interface PaidLeaveList { policy: PaidLeavePolicy; canChangePolicy: boolean; items: PaidLeaveListItem[] }

@@ -36,8 +36,10 @@ const META_TONE: Record<MetaWorkflowStatus, string> = {
 };
 const chip = 'inline-flex items-center rounded-full border font-semibold whitespace-nowrap px-2 py-0.5 text-[11px]';
 
-export const TcChip: React.FC<{ status: TcWorkflowStatus }> = ({ status }) => (
-  <span className={`${chip} ${TC_TONE[status]}`} title="Technical Consultant status" data-testid="tc-chip">{TC_STATUS_LABELS[status]}</span>
+/** On the Meta Verifier route the initial verification is not the consultant's: before any add-on work their status reads "Consultation". */
+export const tcLabel = (status: TcWorkflowStatus, metaRoute = false) => (metaRoute && status === 'NEW_LEAD' ? 'Consultation' : TC_STATUS_LABELS[status]);
+export const TcChip: React.FC<{ status: TcWorkflowStatus; metaRoute?: boolean }> = ({ status, metaRoute }) => (
+  <span className={`${chip} ${TC_TONE[status]}`} title="Technical Consultant status" data-testid="tc-chip">{tcLabel(status, metaRoute)}</span>
 );
 export const MetaChip: React.FC<{ status: MetaWorkflowStatus }> = ({ status }) => (
   <span className={`${chip} ${META_TONE[status]}`} title="Meta Verifier status" data-testid="meta-chip">{META_STATUS_LABELS[status]}</span>
@@ -127,6 +129,7 @@ export const WorkflowStatusPanel: React.FC<{ customerId: string; onChanged?: () 
   const done = (d: CustomerWorkflow) => { setW(d); notifyPipelineChanged(); onChanged?.(); };
   const tc = w.technicalConsultant;
   const mv = w.metaVerifier;
+  const metaRoute = !!(mv.applicable && mv.status);
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-4" aria-labelledby="workflow-heading" data-testid="workflow-panel">
       <div>
@@ -135,10 +138,13 @@ export const WorkflowStatusPanel: React.FC<{ customerId: string; onChanged?: () 
       </div>
       <div className="grid md:grid-cols-2 gap-4">
         <TrackCard
-          title="Technical Consultant" testId="tc-status" chipNode={<TcChip status={tc.status} />} by={tc.by} source={tc.source} at={tc.since} note={tc.note}
+          title="Technical Consultant" testId="tc-status" chipNode={<TcChip status={tc.status} metaRoute={metaRoute} />} by={tc.by} source={tc.source} at={tc.since} note={tc.note}
           canSet={w.canSetTechnicalConsultant} current={tc.status}
-          options={TC_MANUAL_STATUSES.map(s => ({ value: s, label: TC_STATUS_LABELS[s] }))}
-          hint="Only the Technical Consultant (and the Department Head) change this. Payment statuses follow Accounts."
+          // on the Meta Verifier route the initial verification belongs to the Meta Verifier (the database refuses these two for the consultant)
+          options={TC_MANUAL_STATUSES.filter(s => !metaRoute || (s !== 'VERIFICATION_PENDING' && s !== 'VERIFICATION_IN_PROGRESS')).map(s => ({ value: s, label: tcLabel(s, metaRoute) }))}
+          hint={metaRoute
+            ? 'Consultation and add-on services: the Meta Verifier does the initial onboarding. Only the Technical Consultant (and the Department Head) change this; payment statuses follow Accounts.'
+            : 'Only the Technical Consultant (and the Department Head) change this. Payment statuses follow Accounts.'}
           onSave={async (status, note) => done(await pipelineApi.setTcStatus(customerId, { status: status as TcWorkflowStatus, note: note.trim() || undefined }))}
         />
         {mv.applicable && mv.status ? (

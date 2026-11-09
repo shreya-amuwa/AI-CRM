@@ -11,6 +11,7 @@ import { SuperAdminDashboard } from './components/superadmin/SuperAdminDashboard
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
 import { ProbationConfirmations } from './components/hr/ProbationConfirmations';
+import { PaidLeaveManagement } from './components/hr/PaidLeaveManagement';
 import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
 import { EmployeeIssuesManagement } from './components/hr/EmployeeIssuesManagement';
 import { HrEmployeeRequestsPage } from './components/employees/HrEmployeeRequestsPage';
@@ -207,6 +208,7 @@ const MainAppContent: React.FC = () => {
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
+    if (user?.role === 'hr' && window.location.pathname.startsWith(`/hr-recruiter/dashboard/${user.id}`)) return; // the HR Assistant's Recruitment Portal
     if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'hr-recruiter' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
@@ -220,6 +222,8 @@ const MainAppContent: React.FC = () => {
   React.useEffect(() => {
     if (user?.role === 'hr' && user.departmentId && activeDepartmentId !== user.departmentId) selectDepartment(user.departmentId as any);
   }, [user, activeDepartmentId]);
+  // An HR Assistant in the Recruitment Portal (the HR Recruiter workspace, at their own address); the HR dashboard is one click back
+  const inRecruitmentPortal = !!user && user.role === 'hr' && user.profile?.hrSubRole === 'HR_ASSISTANT' && route.type === 'hr-recruiter' && route.paramId === user.id;
 
   // Reset tab and sub-department whenever active department changes or user session changes
   const prevDeptIdRef = React.useRef(activeDepartmentId);
@@ -285,6 +289,14 @@ const MainAppContent: React.FC = () => {
   }
 
   // Step 1.57: Sales Telecaller dashboard (own route and sidebar), or the notice page of a Sales role that has no dashboard yet
+  // The HR Assistant's Recruitment Portal: the same Recruiter workspace, with a way back to the HR dashboard
+  if (inRecruitmentPortal) {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <RecruiterDashboard back={{ label: 'Back to HR dashboard', onClick: () => { navigateTo(`/admin/dashboard/${user.departmentId || 'hr'}`); setRoute(parseCurrentRoute()); } }} />
+      </Suspense>
+    );
+  }
   // The HR Recruiter's own dashboard (vacancies, applications, interviews, selection); the HR Assistant keeps the HR dashboard
   if (user.role === 'hr-recruiter') {
     return (
@@ -397,6 +409,11 @@ const MainAppContent: React.FC = () => {
   };
 
   const handleTabUpdate = (newActiveTab: ActiveTab, newSubDept?: any) => {
+    if (newActiveTab === 'hr_recruitment_portal' && user) {
+      navigateTo(`/hr-recruiter/dashboard/${user.id}`);
+      setRoute(parseCurrentRoute());
+      return;
+    }
     if (tabs.length > 0 && activeTabId) {
       updateTabState(activeTabId, newActiveTab, newSubDept);
     } else {
@@ -508,6 +525,8 @@ const MainAppContent: React.FC = () => {
               <TrainingWorkspace />
             ) : currentActiveTab === 'hr_probation' && currentDeptId === 'hr' ? (
               <ProbationConfirmations />
+            ) : currentActiveTab === 'hr_paid_leave' && currentDeptId === 'hr' ? (
+              <PaidLeaveManagement />
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (
               <EmployeeIssuesManagement />
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (

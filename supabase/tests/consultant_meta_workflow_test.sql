@@ -8,6 +8,8 @@
 \echo '--- 96. Technical Consultant and Meta Verifier: two independent workflows'
 reset role;
 \i supabase/migrations/20261215000100_consultant_meta_workflows.sql
+-- 20261231000100: on the Meta Verifier route the initial verification is the Meta Verifier's; the consultant's track is consultation
+\i supabase/migrations/20261231000100_messaging_onboarding_meta_verifier.sql
 select to_char(clock_timestamp(), 'MMDDHH24MISSUS') as sfx \gset
 
 create temp table cw (name text primary key, id uuid);
@@ -48,17 +50,18 @@ select test.check((select tc_status = 'NEW_LEAD' from test.wf('meta')), 'before 
 select private.forward_to_consultant(a.id, c, false) from cw a join customers c on c.id = a.id;
 
 \echo '   2. The customer reaches BOTH dashboards at once'
-select test.check((select tc_status = 'VERIFICATION_PENDING' from test.wf('meta')) and (select tc_status = 'VERIFICATION_PENDING' from test.wf('tech')), 'once Sales sends it, the Technical Consultant has it as Verification Pending');
+select test.check((select tc_status = 'NEW_LEAD' from test.wf('meta')) and (select tc_status = 'VERIFICATION_PENDING' from test.wf('tech')),
+  'once Sales sends it, the Technical Consultant has the other route''s customer as Verification Pending, and the Meta customer for consultation (the Meta Verifier verifies it)');
 select test.check((select meta_status = 'ONBOARDING_PENDING' from test.wf('meta')) and (select meta_status = 'ONBOARDING_PENDING' from test.wf('idle')) and (select meta_status is null from test.wf('tech')), 'a Meta-eligible customer is Onboarding Pending for the Meta Verifier; the other service has no Meta status');
 set role authenticated;
 select test.login('late_consultant');
 select test.check((select count(*) = 3 from customers where id in (select id from cw)), 'the Technical Consultant sees every customer Sales sent, including the Meta ones (no longer hidden until the hand-over)');
 select test.login('late_verifier');
 select test.check((select count(*) = 2 from customers where id in (select id from cw where name in ('meta', 'idle'))) and (select count(*) = 0 from customers where id = (select id from cw where name = 'tech')), 'the Meta Verifier sees the Meta customers, not the other one');
-select test.check((customer_workflow_get((select id from cw where name = 'meta')) -> 'technicalConsultant' ->> 'status') = 'VERIFICATION_PENDING'
+select test.check((customer_workflow_get((select id from cw where name = 'meta')) -> 'technicalConsultant' ->> 'status') = 'NEW_LEAD'
                and (customer_workflow_get((select id from cw where name = 'meta')) -> 'metaVerifier' ->> 'status') = 'ONBOARDING_PENDING', 'one read shows both statuses of the same customer');
 select test.login('tm_a');
-select test.check((customer_workflow_get((select id from cw where name = 'meta')) -> 'technicalConsultant' ->> 'status') = 'VERIFICATION_PENDING'
+select test.check((customer_workflow_get((select id from cw where name = 'meta')) -> 'technicalConsultant' ->> 'status') = 'NEW_LEAD'
                and not (customer_workflow_get((select id from cw where name = 'meta')) ->> 'canSetTechnicalConsultant')::boolean
                and not (customer_workflow_get((select id from cw where name = 'meta')) ->> 'canSetMetaVerifier')::boolean, 'Sales follows the progress of its customer, read only');
 select test.login('sup_plain');
@@ -72,8 +75,9 @@ select test.must_fail($$select count(*) from customer_workflow_events$$, 'neithe
 select test.login('late_verifier');
 select consultant_start_onboarding((select id from cw where name = 'meta'));
 reset role;
-select test.check((select meta_status = 'ONBOARDING_IN_PROGRESS' from test.wf('meta')) and (select tc_status = 'VERIFICATION_IN_PROGRESS' from test.wf('meta')), 'the customer starts normal onboarding: Meta Onboarding In Progress, Technical Consultant Verification In Progress');
-select test.check((select tc_status = 'VERIFICATION_PENDING' and meta_status = 'ONBOARDING_PENDING' from test.wf('idle')), 'a customer nobody started stays pending on both');
+select test.check((select meta_status = 'ONBOARDING_IN_PROGRESS' from test.wf('meta')) and (select tc_status = 'NEW_LEAD' from test.wf('meta')),
+  'the customer starts normal onboarding: Meta Onboarding In Progress; the Technical Consultant does not claim the verification');
+select test.check((select tc_status = 'NEW_LEAD' and meta_status = 'ONBOARDING_PENDING' from test.wf('idle')), 'a customer nobody started stays pending for the Meta Verifier');
 
 \echo '   4. The two statuses are independent: a change of one never touches the other'
 create temp table cw_before (tc text, mt text, tcn bigint, mtn bigint);
@@ -111,7 +115,8 @@ set role authenticated;
 select test.login('late_verifier');
 select test.check((customer_workflow_set_meta((select id from cw where name = 'meta'), 'ONBOARDING_IN_PROGRESS', 'Resumed') -> 'metaVerifier' ->> 'status') = 'VERIFICATION_PENDING', 'resuming follows the records: every document is authorized, so Verification Pending');
 select test.login('late_consultant');
-select customer_workflow_set_tc((select id from cw where name = 'meta'), 'VERIFICATION_IN_PROGRESS', 'Customer confirmed');
+-- 20261231000100: on the Meta Verifier route the initial verification is the Meta Verifier's, so the consultant records a consultation status
+select customer_workflow_set_tc((select id from cw where name = 'meta'), 'ADDON_SERVICES_RECOMMENDED', 'Customer confirmed');
 reset role;
 select test.check((select count(*) >= 2 from customer_workflow_events where customer_id = (select id from cw where name = 'meta') and source = 'USER' and actor_id is not null and note is not null), 'every manual change is in the history with who, when and why');
 select test.check((select count(*) = 1 from audit_logs where action = 'CUSTOMER_TC_STATUS_SET' and entity_id = (select id from cw where name = 'meta') and metadata ->> 'to' = 'ON_HOLD'), 'and audited');
@@ -125,7 +130,8 @@ select verify_all_onboarding_entries((select id from cw where name = 'meta'));
 reset role;
 -- the verifier's "Meta verification completed" (its own prerequisites, payment and client login, are tested in their suites)
 update customer_onboarding set meta_status = 'COMPLETED' where customer_id = (select id from cw where name = 'meta');
-select test.check((select meta_status = 'ONBOARDING_COMPLETED' and tc_status = 'VERIFICATION_IN_PROGRESS' from test.wf('meta')), 'Meta Verification completed: Meta shows Onboarding Completed while the Technical Consultant is still Verification In Progress');
+select test.check((select meta_status = 'ONBOARDING_COMPLETED' and tc_status = 'ADDON_SERVICES_RECOMMENDED' from test.wf('meta')),
+  'Meta Verification completed: Meta shows Onboarding Completed; the Technical Consultant''s own consultation status is untouched');
 set role authenticated;
 select test.login('late_verifier');
 select send_to_department_head((select id from cw where name = 'meta'), 'All documents verified');
@@ -261,7 +267,7 @@ select test.must_fail($$select customer_workflow_set_tc((select id from cw where
 select test.login('late_verifier');
 select test.check((customer_workflow_set_meta((select id from cw where name = 'idle'), 'REJECTED', 'Documents are forged') -> 'metaVerifier' ->> 'status') = 'REJECTED', 'the Meta Verifier rejects a customer with a reason');
 reset role;
-select test.check((select tc_status = 'VERIFICATION_PENDING' from test.wf('idle')), 'the Technical Consultant status is unaffected by the Meta rejection');
+select test.check((select tc_status = 'NEW_LEAD' from test.wf('idle')), 'the Technical Consultant status is unaffected by the Meta rejection');
 update customer_onboarding set items_verified = 1 where customer_id = (select id from cw where name = 'idle');
 select test.check((select meta_status = 'REJECTED' from test.wf('idle')), 'a Meta rejection is not undone by the system');
 select test.check((select meta_status = 'REJECTED' from customer_onboarding where customer_id = (select id from cw where name = 'idle')), 'it is the existing Meta verification state that says Rejected');
@@ -279,6 +285,8 @@ create temp table cw_events as select count(*) as n from customer_workflow_event
 select count(*) from (select private.wf_refresh(id) from cw) x;
 select test.check((select count(*) = (select n from cw_events) from customer_workflow_events where customer_id in (select id from cw)), 'a refresh with nothing new changes nothing');
 \i supabase/migrations/20261215000100_consultant_meta_workflows.sql
+-- 20261231000100: on the Meta Verifier route the initial verification is the Meta Verifier's; the consultant's track is consultation
+\i supabase/migrations/20261231000100_messaging_onboarding_meta_verifier.sql
 select test.check((select count(*) = (select n from cw_events) from customer_workflow_events where customer_id in (select id from cw)), 'running the migration again with data in place changes nothing');
 select test.check((select count(*) = 3 from customer_workflow_status where customer_id in (select id from cw)), 'and creates no second record');
 \echo '   consultant / meta workflow tests done'

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CustomerWorkflow, CustomerWorkflowStatuses, HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { CustomerWorkflow, CustomerWorkflowStatuses, OnboardingReviewScope, HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Meta Verifier workflow: verification notes, re-routing, the Technical Consultant's follow-ups and the delay setting. The database decides who may do what. */
@@ -9,6 +9,10 @@ export class WorkflowRepository {
   /** Both statuses of one customer (Technical Consultant and Meta Verifier). The database says who may see and who may change which. */
   async customerWorkflow(customerId: string): Promise<CustomerWorkflow> {
     return unwrap(await this.db.rpc('customer_workflow_get', { p_customer: customerId })) as CustomerWorkflow;
+  }
+  /** Who does the initial onboarding of this customer, and which items (if any) the caller may still authorize (migration 20261231000100). */
+  async reviewScope(customerId: string): Promise<OnboardingReviewScope> {
+    return unwrap(await this.db.rpc('onboarding_review_scope', { p_customer: customerId })) as OnboardingReviewScope;
   }
   async customerWorkflowStatuses(ids: string[]): Promise<CustomerWorkflowStatuses> {
     return unwrap(await this.db.rpc('customer_workflow_statuses', { p_ids: ids })) as CustomerWorkflowStatuses;

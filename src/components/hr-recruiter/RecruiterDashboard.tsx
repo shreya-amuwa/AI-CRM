@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BarChart3, Bell, Briefcase, CalendarClock, ClipboardCheck, LayoutDashboard, Phone, Scale, Settings, Users, Workflow } from 'lucide-react';
+import { ArrowLeft, BarChart3, Bell, Briefcase, CalendarClock, ClipboardCheck, LayoutDashboard, Phone, Scale, Settings, Users, Workflow } from 'lucide-react';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
 import { useAuth } from '../../context/AuthContext';
@@ -67,7 +67,7 @@ export function parseRecruiterRoute(path: string): { page: RecruiterPage; id?: s
  * The HR Recruiter workspace. Every page reads and writes through the API; the database lets a Recruiter see only the vacancies allocated to them and the
  * applications of those vacancies (HR leadership: all). Navigation here is convenience only, never authorization.
  */
-export const RecruiterDashboard: React.FC = () => {
+export const RecruiterDashboard: React.FC<{ /** The HR Assistant's way back to the HR dashboard (the Recruiter has no other dashboard). */ back?: { label: string; onClick: () => void } }> = ({ back }) => {
   const { user, profile, logout } = useAuth();
   const userId = user?.id || profile?.id || '';
   const [route, setRoute] = useState(() => parseRecruiterRoute(window.location.pathname));
@@ -106,10 +106,17 @@ export const RecruiterDashboard: React.FC = () => {
       groups={groups}
       active={route.page}
       onSelect={id => go(id as RecruiterPage)}
-      user={{ name: displayName, role: c?.isLeadership ? 'HR leadership' : 'HR Recruiter' }}
+      user={{ name: displayName, role: c?.isLeadership ? 'HR leadership' : c?.isAssistant ? 'HR Assistant' : 'HR Recruiter' }}
       onSignOut={() => void logout()}
       topLeft={<div className="hidden lg:block text-sm text-slate-500" title={profile?.email}>{profile?.department?.name || 'HR'} · Recruitment</div>}
-      topActions={<><LeaveCenter /><NotificationBell /></>}
+      topActions={<>
+        {back && (
+          <button type="button" onClick={back.onClick} className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50" data-testid="recruitment-back">
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" /> <span className="hidden sm:inline">{back.label}</span>
+          </button>
+        )}
+        <LeaveCenter /><NotificationBell />
+      </>}
       wide
       flush={route.page === 'chat'}
     >

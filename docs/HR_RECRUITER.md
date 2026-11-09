@@ -173,3 +173,24 @@ which is what made the earlier version fall back to narrow stacked columns.
   * **Count and filters:** the real application count; search, stage, assessment and interview filters run in the database.
   * **List:** a table (name, e-mail, contact, applied, assessment, interview, stage, actions) from a 48rem page, compact cards below.
   * **Empty and no-match:** a small "No Candidates Yet" or "No candidates match these filters".
+
+## HR Assistants in the Recruitment Portal (migration 20261231000300)
+
+An HR employee with the **HR Assistant** designation (`hr_sub_role = 'HR_ASSISTANT'`) keeps the HR dashboard and gets **Recruitment Portal**
+in its menu. It opens the same HR Recruiter workspace at `/hr-recruiter/dashboard/<own id>`, with **Back to HR dashboard**.
+
+| Capability | HR Recruiter | HR Assistant | HR leadership (HR Department Head, Super Admin) |
+| --- | --- | --- | --- |
+| Dashboard, vacancies, applications, pipeline, profiles, calls, interviews, assessments, follow-ups, reports | own allocated vacancies (and open unallocated ones) and their applications | same as a Recruiter | everything |
+| Create a vacancy | becomes responsible | becomes responsible (cannot name someone else) | names anyone (Recruiter or Assistant) |
+| Allocate / reassign vacancies, the people directory | no | no | yes |
+| Correct final decisions and other leadership-only actions | no | no | yes |
+| HR staff pages (directory, leave, issues...) | no | yes (unchanged) | yes |
+
+**How it works.** `private.is_recruitment_operator()` (Recruiter or Assistant) replaces "is an HR Recruiter" in `recruiter_require`,
+`recruiter_can_access` and the vacancy create / allocation lists. `is_hr_leadership()` is unchanged.
+
+**Who gets access.** An HR member without a designation gets nothing: HR leadership sets the HR Assistant designation for whoever should
+recruit. The Candidate Portal and its APIs are untouched.
+
+Tests: `supabase/tests/hr_assistant_recruitment_test.sql`.

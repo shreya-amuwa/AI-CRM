@@ -71,6 +71,8 @@ export type ActiveTab =
   | 'hr_requests'
   | 'client_notices'
   | 'hr_probation'
+  | 'hr_paid_leave'
+  | 'hr_recruitment_portal'
   | 'hr_recruitment'
   | 'hr_training'
   | 'hr_issues'
@@ -321,9 +323,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'staff_access' as ActiveTab, label: 'Access Control', icon: ShieldCheck },
     ...baseNavItems.slice(1, -1),
     { id: 'hr_recruitment' as ActiveTab, label: 'Recruitment Management', icon: Briefcase },
+    // an HR Assistant also works in the HR Recruiter workspace (the vacancies and candidates allocated to them); the HR dashboard stays theirs
+    ...(user?.profile?.hrSubRole === 'HR_ASSISTANT' ? [{ id: 'hr_recruitment_portal' as ActiveTab, label: 'Recruitment Portal', icon: Users }] : []),
     { id: 'hr_training' as ActiveTab, label: 'Training', icon: GraduationCap },
     // the HR e-mails (birthday, anniversary, confirmation reminders) run on the server by themselves; only the approval is a person's job
     { id: 'hr_probation' as ActiveTab, label: 'Probation Confirmations', icon: ClipboardCheck },
+    // paid leave of confirmed employees (balances, the ledger, corrections; the policy for the HR Department Head)
+    { id: 'hr_paid_leave' as ActiveTab, label: 'Paid Leave', icon: CalendarClock },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },
     { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
     // work-related field visit location records (the database decides: HR staff, not recruiters)

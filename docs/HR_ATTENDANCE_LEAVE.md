@@ -127,3 +127,51 @@ Tests: `supabase/tests/leave_chain_by_requester_test.sql`.
 
 Tests: `supabase/tests/leave_multi_level_test.sql` (the whole chain, wrong approvers, order, rejection, send back, the exception, old requests,
 a departing approver, the switch); `hr_test.sql` keeps testing the two-step flow with the switch set to it.
+
+## Paid leave after probation (migration 20261231000200)
+
+**Who earns it.** Employees whose probation confirmation is **APPROVED** (`hr_probation_cycles`) earn 2 days a month, counted from the approved
+effective date. Nobody becomes full-time automatically. On probation, or six months done but not confirmed: nothing. Inactive: nothing more.
+
+**Where it is stored.** `paid_leave_ledger` is append-only (rows are never updated or deleted):
+
+| Entry | Days |
+| --- | --- |
+| MONTHLY_CREDIT | +2, one per employee per month (unique key, so re-running the accrual changes nothing) |
+| LEAVE_DEBIT | - the request's days, once per request (unique key), when the request is finally APPROVED by any approval path |
+| OPENING_BALANCE | one per employee, entered by HR |
+| CORRECTION | + or -, entered by HR with a reason (audited) |
+
+The balance is the sum of the ledger. Unused days carry forward and do not expire. Half days count 0.5, and Sundays are not counted.
+
+**Requests.**
+- `POST /api/v1/leave/paid` makes the usual leave request: the same chain and the same notifications.
+- It checks the available days under a lock, so two requests at once cannot overbook. Available = balance - days of paid requests still waiting.
+- Nothing is deducted until the final approval. A rejection never consumed anything. Unpaid leave (`POST /leave`) is unchanged.
+- A deducted leave cannot silently leave Approved; HR gives days back with a correction.
+
+**Example** (the employee's Leave drawer shows the same breakdown): previous balance 3, credited this month +2, used this month -1, remaining 4.
+
+**Switched off until HR confirms the policy.** `paid_leave_settings` covers the days a month, the credit day (1-28, India time), how the month
+of confirmation counts (`NEXT_FULL_MONTH`, the default, or `EFFECTIVE_MONTH`) and the first month to credit. No credit is ever given before
+that month, so there is no assumed backfill. The HR Department Head or the Super Admin sets them (HR > Paid Leave > Policy settings, audited).
+Opening balances are recorded per employee. The accrual runs daily when `pg_cron` is installed, and also whenever a balance is read.
+
+**Corrections.**
+- An approved confirmation's effective date can be corrected (`hr_confirmation_effective_date_set`, HR > Probation Confirmations >
+  Correct date). This is audited and affects only future credits.
+- HR corrections need a reason, are audited, and nobody corrects their own balance.
+
+**Screens.** The Leave drawer shows:
+- employment status
+- available days
+- carried forward
+- credited this month
+- used
+- reserved
+- requests waiting
+- remaining
+
+The employee chooses Paid or Unpaid. HR > Paid Leave lists every employee's balance with the ledger, corrections and the policy.
+
+Tests: `supabase/tests/paid_leave_test.sql`.

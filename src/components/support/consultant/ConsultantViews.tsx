@@ -23,6 +23,7 @@ import type {
   ClientMessages,
   ChecklistItem,
   CustomerDocument,
+  OnboardingReviewScope,
   Paginated,
   PipelineCustomer,
   PipelineCustomerDetail,
@@ -236,7 +237,7 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
                     </div>
                     <div className="flex flex-col items-end gap-1.5">
                       <StatusPill status={statusOf(o)} />
-                      {mode === 'consultant' && workflow[c.id] && <TcChip status={workflow[c.id].technicalConsultant} />}
+                      {mode === 'consultant' && workflow[c.id] && <TcChip status={workflow[c.id].technicalConsultant} metaRoute={!!workflow[c.id].metaVerifier} />}
                       {mode === 'verifier' && workflow[c.id]?.metaVerifier && <MetaChip status={workflow[c.id].metaVerifier!} />}
                     </div>
                   </div>
@@ -287,6 +288,14 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   const [sendingBack, setSendingBack] = useState(false);
   const [sendBackNote, setSendBackNote] = useState('');
   const [messages, setMessages] = useState<ClientMessages | null>(null);
+  // who does the initial onboarding of this customer (Messaging services: the Meta Verifier), and which items the consultant may still authorize
+  const [scope, setScope] = useState<OnboardingReviewScope | null>(null);
+  useEffect(() => {
+    if (mode !== 'consultant') return;
+    let live = true;
+    pipelineApi.reviewScope(id).then(s => live && setScope(s), () => live && setScope(null));
+    return () => { live = false; };
+  }, [id, mode, c?.onboarding?.handoverStage]);
 
   const loadMessages = useCallback(() => {
     pipelineApi.clientMessages(id).then(setMessages, () => setMessages(null));
@@ -323,6 +332,9 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
   /** Passed on to the Department Head (or further): the consultant's review is closed. */
   const handedOver = !!c.onboarding && c.onboarding.handoverStage !== 'CONSULTANT';
   const locked = waiting || handedOver;
+  /** Consultant on a Messaging customer: the Meta Verifier owns the initial onboarding (the database enforces it; the screen only follows). */
+  const metaOwned = mode === 'consultant' && !!scope && !scope.canReviewAll && scope.initialOwner === 'META_VERIFIER';
+  const itemLocked = (code: string) => locked || (metaOwned && !scope!.consultantItems.includes(code));
   // The client login is Accounts' job; it is no condition for handing the customer over.
   const canSend = statusOf(c.onboarding) === 'AUTHORIZED';
   const sendReason = 'Authorize every document and detail first';
@@ -379,7 +391,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {!locked && (
+            {!locked && !metaOwned && (
               <SendToDepartmentHead customerId={c.id} businessName={c.company || c.name} ready={canSend} reason={sendReason} onSent={changed} />
             )}
             <StatusPill status={statusOf(c.onboarding)} size="md" />
@@ -417,6 +429,16 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
 
       <WorkflowStatusPanel customerId={c.id} onChanged={load} />
 
+      {metaOwned && !handedOver && (
+        <div className="p-4 rounded-2xl border border-indigo-200 bg-indigo-50 text-sm text-indigo-900" role="status" data-testid="meta-owned-notice">
+          <p className="font-bold">The Meta Verifier does the initial onboarding of this customer</p>
+          <p className="mt-0.5 text-xs">
+            WhatsApp API, Blue Tick and RCS Registration are verified, set up and handed to the Department Head by the Meta Verifier. You can consult the
+            customer, recommend and process add-on services
+            {scope!.consultantItems.length > 0 ? ', and authorize the documents of the other services they bought (unlocked below)' : ''}.
+          </p>
+        </div>
+      )}
       {waiting && (
         <div className="p-4 rounded-2xl border border-violet-200 bg-violet-50 text-sm text-violet-900" role="status">
           <p className="font-bold">Waiting for sales team</p>
@@ -451,7 +473,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
                 >
                   <Clock className="w-4 h-4" aria-hidden="true" /> Waiting for sales team
                 </button>
-              ) : handedOver ? null : (
+              ) : handedOver || metaOwned ? null : (
               <>
               <button
                 type="button"
@@ -533,7 +555,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
               <p className="text-xs text-slate-500">Details only the technical team has, e.g. after creating the customer panel.</p>
               <ul className="mt-3 space-y-3">
                 {consultantItems.map(item => (
-                  <ConsultantItemRow key={item.code} item={item} customerId={c.id} onChanged={changed} readOnly={locked} />
+                  <ConsultantItemRow key={item.code} item={item} customerId={c.id} onChanged={changed} readOnly={itemLocked(item.code)} />
                 ))}
               </ul>
             </div>
@@ -543,7 +565,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           ) : (
             <ul className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 items-start">
               {salesItems.map(item => (
-                <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} readOnly={locked} />
+                <DocumentRow key={item.code} item={item} customer={c} onChanged={changed} readOnly={itemLocked(item.code)} />
               ))}
             </ul>
           )}

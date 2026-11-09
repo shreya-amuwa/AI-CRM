@@ -56,3 +56,46 @@ Tables have no direct access; `customer_workflow_get`, `customer_workflow_status
 ## Tests
 
 `supabase/tests/consultant_meta_workflow_test.sql` (the eight scenarios, rejected payments, cancelled add-ons, incomplete onboarding, several add-ons, permissions, repeat runs), `api_integration.test.ts` ("Technical Consultant and Meta Verifier"), `supabase/tests/e2e/run-consultant-meta.sh`.
+
+## Messaging services: the Meta Verifier owns the initial onboarding (migration 20261231000100)
+
+The flow does not change: Sales -> Accounts -> Sales (documents) -> Meta Verifier + Technical Consultant, on one customer record.
+
+**Root cause of a Messaging customer landing with the Technical Consultant.** The route is pinned when Sales first sends the customer
+(`customer_onboarding.verification_route = private.computed_route`). `computed_route` read only `crm_services.requires_meta_verification`,
+and that flag was seeded only inside "add the column if it is missing". So on a database where the column already existed, or where the flag
+was switched later, a WhatsApp API customer was pinned to TECHNICAL. RCS Registration could not reach the Meta Verifier at all.
+Separately, `mark_meta_verification_completed` accepted any Technical Consultant.
+
+**Now:**
+- **Who onboards (new flag).** `crm_services.meta_verifier_onboarding` ("the Meta Verifier onboards it") is set for WHATSAPP_API_BLUE_TICK,
+  WHATSAPP_API, BLUE_TICK and RCS_REGISTRATION. It is kept apart from `requires_meta_verification` ("Meta approves it").
+- **Meta approval.** The three WhatsApp services also need Meta approval. RCS does not: its client journey keeps "Verification by our team"
+  and its own RCS milestones, with no false Meta step.
+- **Route.** `computed_route` returns META when any service needs either flag. Everything that follows the route follows it: document review,
+  Verify All, return to Sales, panel details (now including RCS: platform, account ID, panel URL), and the hand-over to the Department Head.
+- **Customers already in verification.** Messaging customers already with the Technical Consultant and still in verification move to the
+  META route, when their department has an active Meta Verifier. Documents keep their review state, and every move is in the activity log and
+  the audit log, with the previous route. A department without a Meta Verifier stays as it was; `verification_route_review()` lists those
+  customers for the Department Head or Super Admin.
+- **What the Technical Consultant can no longer do for these customers.** Authorize or reject the initial documents (`FORBIDDEN`), use
+  Verify All, return documents to Sales, hand over (`NOT_FOUND`, as before for the route owner's actions), record "Meta verification
+  completed" (`FORBIDDEN`), change panel details, or set their own status to Verification Pending / In Progress (`FORBIDDEN`).
+- **The Technical Consultant's status and screen.** Their status on this route reads New lead, shown as **Consultation**. The screen shows who
+  owns the initial onboarding and hides those actions.
+- **Mixed customers** (a Messaging service plus a separately bought TECHNICAL-track service). The Technical Consultant still authorizes the
+  items that only those other services ask for (`private.tc_owns_onboarding_item`). The screen gets this list from
+  `GET /pipeline/customers/:id/review-scope`. Each service keeps its own progress.
+- **Unchanged.** The Technical Consultant keeps consultation, contact, follow-ups, notes, add-on proposals, the Accounts add-on hand-off,
+  invoices and payments, add-on documents and technical processing. Department Head and Super Admin oversight is unchanged. Accounts still
+  provisions the Client Dashboard login.
+
+**Audit query for production (read only, run before and after the migration):**
+```sql
+select c.id, c.company, o.verification_route, o.handover_stage, array_agg(cs.service_code) as services
+  from customers c join customer_onboarding o on o.customer_id = c.id join customer_services cs on cs.customer_id = c.id
+ where c.lifecycle_stage = 'ONBOARDING' and o.forwarded_to_support_at is not null and o.handover_stage = 'CONSULTANT'
+   and cs.service_code in ('WHATSAPP_API_BLUE_TICK', 'WHATSAPP_API', 'BLUE_TICK', 'RCS_REGISTRATION')
+ group by 1, 2, 3, 4 order by 3, 2;
+```
+Tests: `supabase/tests/messaging_onboarding_test.sql`.

@@ -1,4 +1,4 @@
-import type { CustomerWorkflow, CustomerWorkflowStatuses, HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
+import type { CustomerWorkflow, CustomerWorkflowStatuses, OnboardingReviewScope, HandoverReconciliation, PanelDetails, TcFollowUp, UsageAlertSettings, VerificationNote, VerificationRouteReviewItem, WorkflowSettings } from '../../shared/contracts.js';
 import {
   usageAlertSettingsSchema,
   followUpAssignSchema,
@@ -31,6 +31,9 @@ export class WorkflowService {
 
   customerWorkflow(customerId: string): Promise<CustomerWorkflow> {
     return this.repo.customerWorkflow(parse(uuidSchema, customerId));
+  }
+  reviewScope(customerId: string): Promise<OnboardingReviewScope> {
+    return this.repo.reviewScope(parse(uuidSchema, customerId));
   }
   customerWorkflowStatuses(query: unknown): Promise<CustomerWorkflowStatuses> {
     return this.repo.customerWorkflowStatuses(parse(workflowStatusesQuerySchema, query).ids.split(','));
