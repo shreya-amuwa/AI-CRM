@@ -1,5 +1,5 @@
 import type {
-  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyReportFunction, WeeklyRoutingItem,
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyReportFunction, WeeklyRoutingItem, OperationsPeopleDaily,
   DepartmentReportBox, MemberApprovalList, ReportContext, ReportTaskOption, ReportInbox, ReportPackage, ReportsDepartmentDetail, OperationsReportBoard, TeamReportBox, WorkReportContent, WorkReportDetail,
   WorkReportSummary
 } from '../../../shared/contracts';
@@ -35,7 +35,9 @@ export const workReportsApi = {
   department: (from: string, to: string) => api.get<DepartmentReportBox>('/work-reports/department', { from, to }),
   submitPackage: (p: { from: string; to: string; periodType: ReportPeriodType; note?: string }) => api.post<ReportPackage>('/work-reports/package', p),
   operations: (from: string, to: string) => api.get<OperationsReportBoard>('/work-reports/operations', { from, to }),
-  operationsDepartment: (id: string, from: string, to: string) => api.get<ReportsDepartmentDetail>(`/work-reports/operations/departments/${id}`, { from, to })
+  operationsDepartment: (id: string, from: string, to: string) => api.get<ReportsDepartmentDetail>(`/work-reports/operations/departments/${id}`, { from, to }),
+  /** The Operations Head's daily drill-down by person (20261230000300). */
+  operationsPeople: (department: string, from: string, to: string) => api.get<OperationsPeopleDaily>('/work-reports/operations/people', { department, from, to })
 };
 
 // ---- Daily summary and the weekly department report (Department Head -> Operations Head -> HR) ----

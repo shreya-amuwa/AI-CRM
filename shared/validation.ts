@@ -2718,3 +2718,7 @@ export const hrDocRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: hrExperienceFieldsSchema }).strict()
 ]);
 export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema.optional(), type: hrDocTypeSchema.optional() }).strict();
+
+// ---- The Operations Head's daily drill-down by person (20261230000300): a department and a period of up to three months ----
+export const operationsPeopleQuerySchema = z.object({ department: uuidSchema, from: isoDate, to: isoDate }).strict()
+  .refine(q => q.to >= q.from, { message: 'The end date cannot be before the start date.', path: ['to'] });

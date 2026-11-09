@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyRoutingItem,
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyRoutingItem, OperationsPeopleDaily,
   DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -46,6 +46,10 @@ export class WorkReportRepository {
   department(from: string, to: string) { return this.rpc<DepartmentReportBox>('work_reports_department', { p_from: from, p_to: to }); }
   submitPackage(p: { from: string; to: string; periodType: string; note?: string | null }) {
     return this.rpc<ReportPackage>('work_report_package_submit', { p_from: p.from, p_to: p.to, p_period_type: p.periodType, p_note: p.note ?? null });
+  }
+  /** The Operations Head's daily drill-down by person (20261230000300). */
+  operationsPeople(departmentId: string, from: string, to: string) {
+    return this.rpc<OperationsPeopleDaily>('operations_people_daily', { p_department: departmentId, p_from: from, p_to: to });
   }
   operations(from: string, to: string) { return this.rpc<OperationsReportBoard>('work_reports_operations', { p_from: from, p_to: to }); }
   operationsDepartment(departmentId: string, from: string, to: string) {

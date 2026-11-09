@@ -5420,3 +5420,14 @@ export interface HrDocument {
   createdAt: string;
 }
 export interface HrDocumentDownload { url: string; fileName: string }
+
+// ---- Operations Head -> Department Head -> Team Lead -> Team Member tasks, and the daily drill-down by person (20261230000300) ----
+export interface OperationsPersonDaily {
+  id: string; name: string; kind: 'DEPARTMENT_HEAD' | 'TEAM_LEAD' | 'MEMBER';
+  teamId: string | null; team: string | null; teamLead: string | null; teamLeadId: string | null;
+  tasks: { assigned: number; completed: number; pending: number; overdue: number };
+  reports: { id: string; date: string; title: string; status: string; teamLeadStatus: string | null; departmentHeadStatus: string | null; submittedAt: string | null }[];
+}
+export interface OperationsPeopleDaily {
+  departmentId: string; department: string; function: 'SALES' | 'SUPPORT' | 'ALL'; from: string; to: string; people: OperationsPersonDaily[];
+}

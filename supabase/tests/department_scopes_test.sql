@@ -93,7 +93,8 @@ select test.hdr(null, 'SUPPORT');
 select test.check((select count(*) = 1 and bool_and(name = 'SC DTalk Sales') from customers where name like 'SC %'), 'a function header alone changes nothing');
 \echo '   Group A: acting in the active department'
 select test.hdr(test.dept('digitree'));
-select test.check((select assign_task_to_team_lead(test.id('dg_tl'), 'SC given by the shared head', null, 'LOW', null) is not null), 'in Digitree the shared Sales head can give a task to Digitree''s Sales Team Lead');
+-- (20261230000300) the shared heads here are Operations Heads: they give tasks to Department Heads, never straight to a Team Lead
+select test.must_fail($$select assign_task_to_team_lead(test.id('dg_tl'), 'SC given by the shared head', null, 'LOW', null)$$, 'in Digitree the shared head (an Operations Head) cannot give a task straight to a Team Lead', 'gives tasks to Department Heads');
 select test.hdr(test.dept('dtalk'));
 select test.must_fail($$select assign_task_to_team_lead(test.id('dg_tl'), 'SC wrong department', null, 'LOW', null)$$, 'but not while the active department is DTalk');
 select test.hdr(test.dept('digitree'));
