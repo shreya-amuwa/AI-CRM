@@ -169,5 +169,5 @@ block of `api_integration.test.ts`.
   tasks assigned / completed / pending / overdue in the period, and their submitted daily reports with the Team Lead and Department Head
   stages (drafts never). Filters: department, period (up to three months), Team Lead, report status, employee. Read only.
 
-Tests: `supabase/tests/task_hierarchy_test.sql` (31 checks), the "people drill-down" block of `api_integration.test.ts`,
+Tests: `supabase/tests/task_hierarchy_test.sql` (33 checks, including: an Operations Head opens only the daily reports of their function), the "people drill-down" block of `api_integration.test.ts`,
 `supabase/tests/ui_task_hierarchy.test.mjs` (browser).

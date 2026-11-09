@@ -11,6 +11,7 @@
 --     (delegate_task_to_members, which already existed; it now accepts a Team Lead task that came from a Department Head's delegation).
 --   * Everyone above a task in its chain can read it (who it went to, progress, status, updates); task_hierarchy() returns the whole chain with
 --     names for the screens. Progress still rolls up only through each owner's own updates: a parent is never completed by a child.
+-- Also: an Operations Head reads only the reports of the function(s) they are accountable for (section 6b).
 -- Reuses work_tasks (parent_id) and work_task_updates. Direct-manager isolation is unchanged: a Team Lead hands work only to their own
 -- members, a Department Head only to Team Leads of the department and function they head, an Operations Head only within their scope.
 -- =============================================================================
@@ -364,6 +365,25 @@ returns boolean language sql stable security definer set search_path = '' as $$
           and (t.division is null or coalesce(private.scope_division_in(private.my_id(), t.department_id), t.division) = t.division))
       or private.task_in_my_chain(t.id)
       or (private.my_role() = 'TEAM_HEAD' and private.lead_sees(t.team_id, t.assignee_id))))
+$$;
+
+
+-- ---------------------------------------------------------------------------
+-- 6b. Who may READ a report (copy of 20261221000200): an Operations Head only the reports of the function(s) they are accountable for.
+--     20261230000200 lists departments by function owner; without this a Support-only Operations Head could open a Sales report by its id.
+-- ---------------------------------------------------------------------------
+
+create or replace function private.can_view_report(r public.work_reports)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select r.author_id = auth.uid()
+      or private.report_level() = 'SUPER_ADMIN'
+      or (r.status <> 'DRAFT' and (
+            private.is_report_reviewer(r)
+         or (r.kind in ('MEMBER', 'TEAM_LEAD') and private.head_covers(auth.uid(), r.department_id, r.team_id))
+         or (private.report_level() = 'OPERATIONS_HEAD' and (auth.uid() in (select private.report_oh_ids(r))
+                                                         or (private.owner_of_department(r.department_id) = auth.uid()
+                                                             and private.scope_covers(auth.uid(), r.department_id, private.report_division(r)))))
+         or (private.is_hr_reviewer() and private.report_released_to_hr(r.department_id, r.report_date))))
 $$;
 
 

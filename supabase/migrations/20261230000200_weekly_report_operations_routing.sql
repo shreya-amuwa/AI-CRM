@@ -626,19 +626,6 @@ returns setof uuid language sql stable security definer set search_path = '' as 
   select x from private.report_oh_ids(r) x
 $$;
 
-create or replace function private.can_view_report(r public.work_reports)
-returns boolean language sql stable security definer set search_path = '' as $$
-  select r.author_id = auth.uid()
-      or private.report_level() = 'SUPER_ADMIN'
-      or (r.status <> 'DRAFT' and (
-            private.is_report_reviewer(r)
-         or (r.kind in ('MEMBER', 'TEAM_LEAD') and private.head_covers(auth.uid(), r.department_id, r.team_id))
-         or (private.report_level() = 'OPERATIONS_HEAD' and (auth.uid() in (select private.report_oh_ids(r))
-                                                         or (private.owner_of_department(r.department_id) = auth.uid()
-                                                             and private.scope_covers(auth.uid(), r.department_id, private.report_division(r)))))
-         or (private.is_hr_reviewer() and private.report_released_to_hr(r.department_id, r.report_date))))
-$$;
-
 create or replace function private.package_json(p public.work_report_packages)
 returns jsonb language sql stable security definer set search_path = '' as $$
   select case when p.id is null then jsonb_build_object('status', 'NOT_SUBMITTED')

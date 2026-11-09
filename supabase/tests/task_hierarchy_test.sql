@@ -115,6 +115,17 @@ select test.check((select count(*) = 0 from work_tasks where id = (select v from
 select test.login('wkr_dhp');
 select test.check((select count(*) = 4 from work_tasks where id in (select v from tk)), 'the Department Head reads the chain below them');
 
+\echo '   reading reports: an Operations Head opens only the reports of their function'
+reset role;
+insert into tk select 'daily', id from work_reports where author_id = test.id('wkr_dhp') and title = 'Support head day';
+set role authenticated;
+select test.login('wkr_ohs');
+select test.must_fail(format($$select work_report_get('%s')$$, (select v from tk where k = 'daily')),
+  'the Sales Operations Head cannot open the Support head''s daily report', 'NOT_FOUND');
+select test.login('wkr_ohp');
+select test.check((select (work_report_get((select v from tk where k = 'daily')) ->> 'title') = 'Support head day'),
+  'the Support Operations Head opens it');
+
 \echo '   3.3 the Operations Head''s daily drill-down: the people of their function only'
 select test.login('wkr_ohp');
 select test.check((select bool_or(x ->> 'name' = 'TSK m3' and (x -> 'tasks' ->> 'completed')::int = 1 and x ->> 'teamLead' = 'TSK tl2')
