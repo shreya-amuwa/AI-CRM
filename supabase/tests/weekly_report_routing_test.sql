@@ -162,6 +162,9 @@ select test.check((select count(*) = 1 from notifications where entity_id = (sel
 set role authenticated;
 select test.login('wkr_ohs');
 select test.must_fail(format($$select work_report_review('%s', 'APPROVED', null)$$, (select v from wk where k = 'daily')), 'the Sales Operations Head cannot review it', null);
+select test.must_fail(format($$select work_report_get('%s')$$, (select v from wk where k = 'daily')), 'nor open it (another function''s report is not theirs to read)', 'NOT_FOUND');
+select test.login('wkr_ohp');
+select test.check((select (work_report_get((select v from wk where k = 'daily')) ->> 'id')::uuid = (select v from wk where k = 'daily')), 'the Support Operations Head opens it');
 
 \echo '   4. a department with no Operations Head: an explicit configuration issue, never an automatic approval'
 select test.login('wkr_dhn');
