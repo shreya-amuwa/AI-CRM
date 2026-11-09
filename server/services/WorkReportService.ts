@@ -1,8 +1,8 @@
 import type {
-  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyRoutingItem,
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyRoutingItem, OperationsPeopleDaily,
   DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
-import { reportDailySummaryQuerySchema, reportWeekQuerySchema, reportWeeklyReviewSchema, reportWeeklySaveSchema, reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
+import { operationsPeopleQuerySchema, reportDailySummaryQuerySchema, reportWeekQuerySchema, reportWeeklyReviewSchema, reportWeeklySaveSchema, reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
 import { REPORT_STATUSES } from '../../shared/reportFields.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
@@ -39,6 +39,10 @@ export class WorkReportService {
   department(query: unknown): Promise<DepartmentReportBox> { const q = parse(reportRangeQuerySchema, query); return this.repo.department(q.from, q.to); }
   submitPackage(body: unknown): Promise<ReportPackage> { return this.repo.submitPackage(parse(reportPackageSchema, body)); }
   operations(query: unknown): Promise<OperationsReportBoard> { const q = parse(reportRangeQuerySchema, query); return this.repo.operations(q.from, q.to); }
+  operationsPeople(query: unknown): Promise<OperationsPeopleDaily> {
+    const q = parse(operationsPeopleQuerySchema, query);
+    return this.repo.operationsPeople(q.department, q.from, q.to);
+  }
   operationsDepartment(id: string, query: unknown): Promise<ReportsDepartmentDetail> {
     const q = parse(reportRangeQuerySchema, query);
     return this.repo.operationsDepartment(parse(uuidSchema, id), q.from, q.to);

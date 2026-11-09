@@ -716,6 +716,7 @@ export const workReportsController = {
   submitPackage: (async ctx => ok(await svc(ctx).workReports.submitPackage(ctx.req.body))) as Handler,
   operations: (async ctx => ok(await svc(ctx).workReports.operations(ctx.req.query))) as Handler,
   operationsDepartment: (async ctx => ok(await svc(ctx).workReports.operationsDepartment(ctx.params.id, ctx.req.query))) as Handler,
+  operationsPeople: (async ctx => ok(await svc(ctx).workReports.operationsPeople(ctx.req.query))) as Handler,
   dailySummary: (async ctx => ok(await svc(ctx).workReports.dailySummary(ctx.req.query))) as Handler,
   weekly: (async ctx => ok(await svc(ctx).workReports.weekly(ctx.req.query))) as Handler,
   weeklySave: (async ctx => ok(await svc(ctx).workReports.weeklySave(ctx.req.body))) as Handler,

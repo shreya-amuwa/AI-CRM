@@ -12,7 +12,8 @@ import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, Statu
 export const TeamLeadTasksView: React.FC = () => {
   const { profile } = useAuth();
   const data = useWorkTasks();
-  const mine = data.tasks.filter(t => t.parentId === null && t.assigneeId === profile?.id);
+  // every task given to me: from my Department Head, including one the Department Head passed down from the Operations Head
+  const mine = data.tasks.filter(t => t.assigneeId === profile?.id);
   const direct = data.tasks.filter(t => t.parentId === null && t.assignedBy === profile?.id && t.assigneeId !== profile?.id);
   const s = summarize(mine);
 
@@ -96,9 +97,26 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
             From <strong className="text-slate-700">{nameOf(data.people, task.assignedBy)}</strong> · <DueLabel task={task} />
           </p>
           {task.description && <p className="text-xs text-slate-600 mt-1.5 whitespace-pre-line">{task.description}</p>}
+          {task.assignmentNote && <p className="text-xs text-slate-800 mt-1.5"><strong>Instructions:</strong> {task.assignmentNote}</p>}
         </div>
         <StatusPill status={task.status} />
       </div>
+
+      {/* Option A: work on it myself (the same task, no copy) - Option B below: give it to my own team members */}
+      {task.handling === 'SELF' ? (
+        <p className="text-xs font-semibold text-emerald-700" role="status" data-testid="tl-self">You are working on this task yourself. Send your updates below.</p>
+      ) : children.length === 0 && task.status !== 'COMPLETED' ? (
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50/60">
+          <span className="text-xs text-slate-700">Do it yourself, or assign it to your team members below.</span>
+          <button type="button" data-testid="tl-take-myself" disabled={busy} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            onClick={async () => {
+              setBusy(true); setNotice(null);
+              try { await workTasksApi.takeMyself(task.id); await data.reload(); setNotice({ ok: true, text: 'You are working on it yourself.' }); }
+              catch (err) { setNotice({ ok: false, text: err instanceof Error ? err.message : 'Could not update the task.' }); }
+              finally { setBusy(false); }
+            }}>Assign to myself</button>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="space-y-3">

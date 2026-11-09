@@ -4,6 +4,8 @@ import { useAuth } from '../../../context/AuthContext';
 import { isOverdue, localDateKey, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, fmtDateTime, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../TaskParts';
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, Tabs, textareaCls } from './headParts';
+import { isOperationsHead } from '../../../lib/auth/roleMapping';
+import { OperationsAssign, ReceivedTasks } from './TaskHierarchy';
 
 type Filter = 'all' | 'progress' | 'completed' | 'overdue';
 const PRIORITIES: { id: TaskPriority; label: string; on: string }[] = [
@@ -12,7 +14,14 @@ const PRIORITIES: { id: TaskPriority; label: string; on: string }[] = [
   { id: 'LOW', label: 'Low', on: 'bg-slate-100 text-slate-700 border-slate-300' }
 ];
 
-export const HeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = ({ data, query = '' }) => {
+export const HeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = props => {
+  const { profile } = useAuth();
+  // an Operations Head gives tasks to Department Heads (20261230000300), never straight to Team Leads
+  if (profile && isOperationsHead(profile)) return <OperationsAssign />;
+  return <DepartmentHeadAssign {...props} />;
+};
+
+const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = ({ data, query = '' }) => {
   const { profile } = useAuth();
   const leads = data.people.filter(p => p.role === 'TEAM_HEAD' && p.status === 'ACTIVE' && p.departmentId === profile?.departmentId);
   const leadTasks = data.tasks.filter(t => t.parentId === null && t.assignedBy === profile?.id);
@@ -63,6 +72,8 @@ export const HeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = ({ d
         <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Assign</h1>
         <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Give a task to a team lead. They split it across their team members, and every update comes back here.</p>
       </div>
+
+      {profile ? <ReceivedTasks data={data} meId={profile.id} leads={leads} /> : null}
 
       <Card label="Assign a task to a team lead">
         <form onSubmit={submit} aria-label="Assign a task to a team lead">
