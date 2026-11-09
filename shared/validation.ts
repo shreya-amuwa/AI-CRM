@@ -2718,3 +2718,11 @@ export const hrDocRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: hrExperienceFieldsSchema }).strict()
 ]);
 export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema.optional(), type: hrDocTypeSchema.optional() }).strict();
+
+// ---- Client support groups and message status (20261230000500) ----
+export const chatReceiptsQuerySchema = z.object({ after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional() }).strict();
+export const clientSupportGroupSaveSchema = z.object({
+  name: z.string().trim().max(80, 'Keep the group name under 80 characters.').optional().nullable(),
+  add: z.array(uuidSchema).max(25, 'Add at most 25 people at once.').optional(),
+  remove: z.array(uuidSchema).max(25, 'Remove at most 25 people at once.').optional()
+}).strict();

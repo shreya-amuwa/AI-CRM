@@ -231,3 +231,28 @@ unread counts and new-message sound, and the same rules.
 Tests: `supabase/tests/hr_chat_integration_test.sql`, the "HR in the company chat" block of `api_integration.test.ts`, and the browser test
 `supabase/tests/e2e/run-hr-chat.sh` (Recruiter and Team Member signed in at once writing to each other live; the HR Assistant and HR Admin Head
 menus; privacy).
+
+## Client support groups and Sent / Delivered / Seen (migration 20261230000500)
+
+**Client support group.** A customer's Relationship Manager conversation is the client's support group: the client, the assigned Support Team
+Member and Team Lead (live from the assignment, as before), plus Support employees explicitly added to it. The client sees it where they
+already chat (Client Dashboard -> Live Chat).
+* Name and members: **Support group** panel above the conversation (staff). Only the customer's assigned Support Team Lead, a Support
+  Department Head of the customer, or the Super Admin can rename it and add / remove people (`client_support_group_save`); the client and the
+  assigned Team Member cannot. Only active Support employees of the customer's department can be added.
+* An added employee who is moved out of Support, suspended or offboarded loses access at once (checked live in `private.chat_access`).
+* Every change is posted in the conversation ("X added Y", "X removed Y", "X named the group ...") and audited (`CLIENT_GROUP_MEMBER_ADDED` / `_REMOVED`).
+* Messages, files, replies, realtime, unread counts, search and history are the existing chat functions, unchanged.
+
+**Message status** (ticks on your own messages; the tooltip lists each recipient):
+* ✓ **Sent**: the server stored it.
+* ✓✓ **Delivered**: every current recipient's device acknowledged receiving it (`chat_ack_delivered`, sent by the receiving screen as soon as
+  the messages arrive, even in a background tab).
+* blue ✓✓ **Seen**: every recipient read it (`chat_mark_read`, as before: the message was on screen).
+
+Recipients are the people who can read the conversation and were in it when the message was sent, minus the sender; reviewers do not count.
+State is one row per person and conversation (`chat_read_state.last_delivered_seq` / `last_read_seq`), and only moves forward, so several
+devices, reconnects and repeated realtime events change nothing twice. An offline recipient never acknowledges, so the message stays Sent.
+A deleted message has no status. This is CRM delivery only: it is never a WhatsApp delivery or read status.
+
+Tests: `supabase/tests/client_support_groups_test.sql` and the "support group" / "message status" block of `api_integration.test.ts`.

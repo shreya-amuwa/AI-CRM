@@ -1,5 +1,7 @@
 import type { ChatClientView, ChatConversation, ChatDeleteResult, ChatMessage, ChatMessagePage, ChatUploadTicket, ClientDocumentUrl } from '../../shared/contracts.js';
 import {
+  chatReceiptsQuerySchema,
+  clientSupportGroupSaveSchema,
   chatAdminSchema,
   chatDirectSchema,
   chatGroupCreateSchema,
@@ -131,6 +133,19 @@ export class ChatService {
   keyLookup(query: unknown) { const i = parse(chatKeyLookupQuerySchema, query); return this.repo.keyLookup(i.profileId, i.version); }
 
   markRead(id: string, body: unknown) { return this.repo.markRead(parse(uuidSchema, id), parse(chatReadSchema, body ?? {}).seq); }
+  // ---- Delivered / Seen and client support groups (20261230000500); the database checks who may do each
+  ackDelivered(id: string, body: unknown) { return this.repo.ackDelivered(parse(uuidSchema, id), parse(chatReadSchema, body ?? {}).seq ?? 0); }
+  receipts(id: string, query: unknown) { return this.repo.receipts(parse(uuidSchema, id), parse(chatReceiptsQuerySchema, query ?? {}).after ?? 0); }
+  supportGroup(customerId: string) { return this.repo.supportGroup(parse(uuidSchema, customerId)); }
+  supportGroupSave(customerId: string, body: unknown) { return this.repo.supportGroupSave(parse(uuidSchema, customerId), parse(clientSupportGroupSaveSchema, body ?? {})); }
+  async clientAckDelivered(body: unknown) {
+    const { channel, rest } = splitChannel(body);
+    return this.repo.ackDelivered(await this.clientConversationId(channel), parse(chatReadSchema, rest).seq ?? 0);
+  }
+  async clientReceipts(query: unknown) {
+    const { channel, rest } = splitChannel(query);
+    return this.repo.receipts(await this.clientConversationId(channel), parse(chatReceiptsQuerySchema, rest).after ?? 0);
+  }
 
   // ---------------------------------------------------------------- clients (the conversation always comes from the login)
   // The client may name a channel (the Meta Verifier's or the Relationship Manager's) and nothing else: who is on the other side is decided

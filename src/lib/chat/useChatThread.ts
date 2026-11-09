@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatAttachment, ChatConversation, ChatMessage } from '../../../shared/contracts';
+import type { ChatAttachment, ChatConversation, ChatMessage, ChatReceipt } from '../../../shared/contracts';
 import { getSupabase } from '../../services/supabaseClient';
 import { ApiError, errorMessage } from '../api/client';
 import type { ChatTransport } from './api';
@@ -336,5 +336,30 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     return () => clearTimeout(t);
   }, [active, visible, lastSeq, conversation?.readSeq, setConv]);
 
-  return { conversation, messages, pending, hasMore, loading, loadingOlder, error, denied, loadOlder, send, retry, discard, deleteForMe, deleteForEveryone, reload: load, refreshConversation };
+  // ---- "delivered": this device has the messages (even in a background tab; "seen" above needs them on screen). Only forward, once per seq.
+  const ackedSeq = useRef(0);
+  useEffect(() => {
+    const c = conv.current;
+    if (!c || c.access === 'REVIEWER' || !tp.current.ackDelivered || lastSeq <= ackedSeq.current) return undefined;
+    const t = setTimeout(() => {
+      const target = lastSeq;
+      tp.current.ackDelivered?.(target).then(() => { ackedSeq.current = Math.max(ackedSeq.current, target); }, () => { /* the next message or reconnect tries again */ });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [lastSeq, conversation?.id]);
+  useEffect(() => { ackedSeq.current = 0; }, [conversation?.id]);
+
+  // ---- the status of my own messages (Sent / Delivered / Seen), from the server; refreshed when the conversation changes
+  const [receipts, setReceipts] = useState<Map<number, ChatReceipt>>(() => new Map());
+  const firstSeq = messages.length ? messages[0].seq : 0;
+  const hasMine = messages.some(m => m.mine);
+  useEffect(() => {
+    if (!tp.current.receipts || !hasMine || !conversation?.id) return undefined;
+    const t = setTimeout(() => {
+      tp.current.receipts?.(Math.max(firstSeq - 1, 0)).then(list => setReceipts(new Map(list.map(r => [r.seq, r]))), () => { /* keep the last known ticks */ });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [conversation, lastSeq, firstSeq, hasMine]);
+
+  return { conversation, messages, pending, hasMore, loading, loadingOlder, error, denied, loadOlder, send, retry, discard, deleteForMe, deleteForEveryone, reload: load, refreshConversation, receipts };
 }

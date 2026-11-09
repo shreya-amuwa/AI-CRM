@@ -9970,6 +9970,29 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api(null, 'GET', '/work-reports/weekly/routing');
   check(r.status === 401, 'weekly routing: nor a visitor', r);
 }
+
+// --- Client support groups and Sent / Delivered / Seen (migration 20261230000500) ---------------------------------------------------
+{
+  const nobody = crypto.randomUUID();
+  r = await api('a', 'GET', `/chat/customers/${nobody}/support-group`);
+  check(r.status === 404, 'support group: an unknown customer is "not found"', r);
+  r = await api('a', 'POST', `/chat/customers/${nobody}/support-group`, { add: ['nope'] });
+  check(r.status === 422, 'support group: a malformed member id is refused', r);
+  r = await api('a', 'POST', `/chat/customers/${nobody}/support-group`, { name: 'x'.repeat(81) });
+  check(r.status === 422, 'support group: a name over 80 characters is refused', r);
+  r = await api('a', 'POST', `/chat/customers/${nobody}/support-group`, { add: [], extra: 1 });
+  check(r.status === 422, 'support group: unknown fields are refused', r);
+  r = await api('a', 'POST', `/chat/customers/${nobody}/support-group`, { add: [nobody] });
+  check(r.status === 404, 'support group: nobody manages a customer they are not responsible for', r);
+  r = await api(null, 'GET', `/chat/customers/${nobody}/support-group`);
+  check(r.status === 401, 'support group: nor a visitor', r);
+  r = await api('a', 'POST', `/chat/conversations/${nobody}/delivered`, { seq: 3 });
+  check(r.status === 404, 'message status: acknowledging a conversation you cannot open is "not found"', r);
+  r = await api('a', 'GET', `/chat/conversations/${nobody}/receipts?after=abc`);
+  check(r.status === 422, 'message status: a malformed position is refused', r);
+  r = await api('a', 'GET', `/chat/conversations/${nobody}/receipts`);
+  check(r.status === 404, 'message status: nor the receipts of one', r);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

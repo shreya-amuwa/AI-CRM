@@ -3004,7 +3004,9 @@ export interface ChatMyClient {
   unread: number;
   hasLogin: boolean;
   channel?: ChatChannel;
-  role: 'Relationship Manager' | 'Team Lead' | 'Meta Verifier' | 'Team Member';
+  role: 'Relationship Manager' | 'Team Lead' | 'Meta Verifier' | 'Team Member' | 'Support group';
+  /** 20261230000500: the client support group's name, when it was named. */
+  groupName?: string | null;
 }
 export interface ChatReviewList {
   total: number;
@@ -5420,3 +5422,18 @@ export interface HrDocument {
   createdAt: string;
 }
 export interface HrDocumentDownload { url: string; fileName: string }
+
+// ---- Client support groups and Sent / Delivered / Seen (20261230000500) ----
+export type ChatMessageStatus = 'SENT' | 'DELIVERED' | 'SEEN';
+export interface ChatReceipt {
+  seq: number; messageId: string; status: ChatMessageStatus;
+  recipients: { name: string; label: string; delivered: boolean; seen: boolean }[];
+}
+export interface ClientSupportGroup {
+  customerId: string; business: string; conversationId: string | null; name: string; named: boolean;
+  client: { hasLogin: boolean };
+  assigned: { id: string; name: string; role: string }[];
+  members: { id: string; name: string; addedAt: string; active: boolean }[];
+  canManage: boolean;
+  candidates: { id: string; name: string; team: string | null }[] | null;
+}
