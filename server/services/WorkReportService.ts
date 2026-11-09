@@ -1,5 +1,5 @@
 import type {
-  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem,
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyRoutingItem,
   DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
 import { reportDailySummaryQuerySchema, reportWeekQuerySchema, reportWeeklyReviewSchema, reportWeeklySaveSchema, reportListQuerySchema, reportMemberApprovalsQuerySchema, reportPackageSchema, reportRangeQuerySchema, reportReviewSchema, reportSaveSchema, uuidSchema } from '../../shared/validation.js';
@@ -45,10 +45,11 @@ export class WorkReportService {
   }
 
   dailySummary(query: unknown): Promise<DailyDepartmentSummary> { return this.repo.dailySummary(parse(reportDailySummaryQuerySchema, query ?? {})); }
-  weekly(query: unknown): Promise<WeeklyDepartmentReport> { return this.repo.weekly(parse(reportWeekQuerySchema, query).weekStart); }
+  weekly(query: unknown): Promise<WeeklyDepartmentReport> { const q = parse(reportWeekQuerySchema, query); return this.repo.weekly(q.weekStart, q.function); }
   weeklySave(body: unknown): Promise<ReportPackage> { return this.repo.weeklySave(parse(reportWeeklySaveSchema, body)); }
   weeklyBoard(query: unknown): Promise<WeeklyBoard> { return this.repo.weeklyBoard(parse(reportWeekQuerySchema, query).weekStart); }
   weeklyPending(): Promise<WeeklyPendingItem[]> { return this.repo.weeklyPending(); }
+  weeklyRouting(): Promise<WeeklyRoutingItem[]> { return this.repo.weeklyRouting(); }
   weeklyReview(id: string, body: unknown): Promise<ReportPackage> {
     const r = parse(reportWeeklyReviewSchema, body);
     return this.repo.weeklyReview(parse(uuidSchema, id), r.decision, r.comment);

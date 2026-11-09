@@ -2390,7 +2390,9 @@ export const careerTrainingInviteSchema=z.object({application_id:uuidSchema,test
 // ---------------------------------------------------------------------------
 const reportMonday = isoDate.refine(d => new Date(`${d}T00:00:00Z`).getUTCDay() === 1, { message: 'Choose a week that starts on a Monday.' });
 
-export const reportWeekQuerySchema = z.object({ weekStart: reportMonday }).strict();
+// The weekly report's function: a Department Head of both functions in a department with separate Sales / Support Operations Heads chooses.
+export const reportWeeklyFunctionSchema = z.enum(['SALES', 'SUPPORT', 'ALL']);
+export const reportWeekQuerySchema = z.object({ weekStart: reportMonday, function: reportWeeklyFunctionSchema.optional() }).strict();
 export const reportDailySummaryQuerySchema = z.object({ date: isoDate.optional(), department: uuidSchema.optional() }).strict();
 export const reportWeeklySaveSchema = z
   .object({
@@ -2399,7 +2401,8 @@ export const reportWeeklySaveSchema = z
     assignedOverview: optionalText(2000),
     completedOverview: optionalText(2000),
     remarks: optionalText(2000),
-    submit: z.boolean().default(false)
+    submit: z.boolean().default(false),
+    function: reportWeeklyFunctionSchema.optional()
   })
   .strict()
   .refine(d => !d.submit || d.title.trim().length >= 3, { message: 'Enter the weekly report title before submitting.', path: ['title'] });

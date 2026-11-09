@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem,
+  DailyDepartmentSummary, WeeklyBoard, WeeklyDepartmentReport, WeeklyPendingItem, WeeklyRoutingItem,
   DepartmentReportBox, MemberApprovalList, ReportTaskOption, ReportsDepartmentDetail, OperationsReportBoard, ReportContext, ReportInbox, ReportPackage, TeamReportBox, WorkReportDetail, WorkReportSummary
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -57,15 +57,17 @@ export class WorkReportRepository {
     return this.rpc<DailyDepartmentSummary>('work_reports_daily_summary', { p_date: q.date ?? null, p_department: q.department ?? null });
   }
   /** The weekly department report (Department Head): the saved package, the live figures and the day-by-day figures. */
-  weekly(weekStart: string) { return this.rpc<WeeklyDepartmentReport>('work_reports_weekly', { p_week_start: weekStart }); }
-  weeklySave(w: { weekStart: string; title: string; assignedOverview?: string | null; completedOverview?: string | null; remarks?: string | null; submit: boolean }) {
+  weekly(weekStart: string, fn?: string) { return this.rpc<WeeklyDepartmentReport>('work_reports_weekly', { p_week_start: weekStart, p_division: fn ?? null }); }
+  weeklySave(w: { weekStart: string; title: string; assignedOverview?: string | null; completedOverview?: string | null; remarks?: string | null; submit: boolean; function?: string }) {
     return this.rpc<ReportPackage>('work_report_weekly_save', {
       p_week_start: w.weekStart, p_title: w.title, p_assigned_overview: w.assignedOverview ?? null, p_completed_overview: w.completedOverview ?? null,
-      p_remarks: w.remarks ?? null, p_submit: w.submit
+      p_remarks: w.remarks ?? null, p_submit: w.submit, p_division: w.function ?? null
     });
   }
   weeklyBoard(weekStart: string) { return this.rpc<WeeklyBoard>('work_reports_weekly_board', { p_week_start: weekStart }); }
   weeklyPending() { return this.rpc<WeeklyPendingItem[]>('work_reports_weekly_pending'); }
+  /** Super Admin: every weekly report scope and its Operations Head, with what is missing (20261230000200). */
+  weeklyRouting() { return this.rpc<WeeklyRoutingItem[]>('weekly_report_routing_review'); }
   weeklyReview(id: string, decision: string, comment?: string | null) {
     return this.rpc<ReportPackage>('work_report_weekly_review', { p_package: id, p_decision: decision, p_comment: comment ?? null });
   }

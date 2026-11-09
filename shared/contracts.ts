@@ -4726,6 +4726,8 @@ export interface ReportPackage {
   ohComment?: string | null;
   sentToHrAt?: string | null;
   hrCompletedAt?: string | null;
+  /** The function of the week (20261230000200): SALES / SUPPORT, or ALL for the whole department. */
+  function?: WeeklyReportFunction;
   events?: { at: string; actor: string; action: string; fromStatus: string | null; toStatus: string | null; comment: string | null; revision: number }[];
 }
 export interface DepartmentReportBox {
@@ -5030,8 +5032,11 @@ export interface ReportStats {
 }
 export interface DailyDepartmentSummary extends ReportStats { date: string; departmentId: string; department: string | null }
 
+export type WeeklyReportFunction = 'SALES' | 'SUPPORT' | 'ALL';
 export interface WeeklyDepartmentReport {
   departmentId: string; department: string | null; departmentHead: string; weekStart: string; weekEnd: string;
+  /** The function this week is for, the functions this head sends a week for, who approves it, and why it cannot be sent (20261230000200). */
+  function?: WeeklyReportFunction; functions?: WeeklyReportFunction[]; reviewers?: { id: string; name: string }[]; routingIssue?: string | null;
   package: ReportPackage; stats: ReportStats;
   days: { date: string; workingDay: boolean; stats: ReportStats | null }[];
   canEdit: boolean;
@@ -5039,9 +5044,17 @@ export interface WeeklyDepartmentReport {
 }
 export interface WeeklyBoardDepartment {
   id: string; name: string; slug: string; departmentHeads: string[]; stats: ReportStats; package: ReportPackage;
+  /** One row per department AND function (20261230000200); routingIssue only for the Super Admin. */
+  function?: WeeklyReportFunction; key?: string; reviewers?: string[]; routingIssue?: string | null;
 }
 export interface WeeklyBoard { weekStart: string; weekEnd: string; departments: WeeklyBoardDepartment[]; pendingApprovals: number }
-export interface WeeklyPendingItem { departmentId: string; department: string; package: ReportPackage }
+export interface WeeklyPendingItem { departmentId: string; department: string; function?: WeeklyReportFunction; package: ReportPackage }
+/** The Super Admin's weekly report routing review (20261230000200). */
+export interface WeeklyRoutingItem {
+  departmentId: string; department: string; function: WeeklyReportFunction;
+  departmentHeads: { id: string; name: string }[]; operationsHead: { id: string; name: string } | null;
+  issue: 'MISSING' | 'INACTIVE' | 'CONFLICT' | null; detail: string | null;
+}
 
 export interface RatingScaleLevel { value: number; label: string }
 export interface HrReviewCounts { expected: number; submitted: number; drafts: number }
