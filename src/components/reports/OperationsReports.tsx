@@ -11,6 +11,7 @@ import { Box, Chip, dateLabel, pctLabel, Stat, todayIso, WeekPicker, weekOf, Wee
 import { WeeklyPackageView } from './WeeklyPackageView';
 import { WeeklyReviewPanel } from './WeeklyApprovals';
 
+const fnLabel = (f?: string) => (f === 'SALES' ? ' - Sales' : f === 'SUPPORT' ? ' - Support' : '');
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
 /**
@@ -108,10 +109,10 @@ export const OperationsReports: React.FC<{ reloadKey: number; onOpen: (id: strin
                 const outstanding = s.pendingTl + s.pendingDh + s.pendingOh;
                 return (
                   <Box
-                    key={d.id}
+                    key={d.key ?? d.id}
                     level={1}
-                    title={d.name}
-                    subtitle={<>Department Head: {d.departmentHeads.length ? d.departmentHeads.join(', ') : 'none'} - Week {dateLabel(board.weekStart)} to {dateLabel(board.weekEnd)}</>}
+                    title={d.name + fnLabel(d.function)}
+                    subtitle={<>Department Head: {d.departmentHeads.length ? d.departmentHeads.join(', ') : 'none'} - Week {dateLabel(board.weekStart)} to {dateLabel(board.weekEnd)}{d.routingIssue ? <span className="block text-rose-700 font-semibold" role="note">{d.routingIssue}</span> : null}</>}
                     chips={
                       <>
                         <Chip label="Team Leads" value={s.teamLeads} />
@@ -173,8 +174,8 @@ export const ReportingOverview: React.FC<{ reloadKey: number }> = ({ reloadKey }
               <thead className="bg-slate-50 text-slate-500"><tr>{['Department', 'Department Head', 'Expected', 'Submitted', 'Approved', 'Outstanding', 'Task completion', 'Compliance', 'Weekly report'].map(h => <th key={h} scope="col" className="px-3 py-2 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {board.departments.map(d => (
-                  <tr key={d.id}>
-                    <th scope="row" className="px-3 py-2 text-left font-semibold text-slate-800">{d.name}</th>
+                  <tr key={d.key ?? d.id}>
+                    <th scope="row" className="px-3 py-2 text-left font-semibold text-slate-800">{d.name + fnLabel(d.function)}</th>
                     <td className="px-3 py-2">{d.departmentHeads.join(', ') || '-'}</td>
                     <td className="px-3 py-2 tabular-nums">{d.stats.expected}</td>
                     <td className="px-3 py-2 tabular-nums">{d.stats.submitted}</td>

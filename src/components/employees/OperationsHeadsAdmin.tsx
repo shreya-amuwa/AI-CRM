@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Building2, History, RefreshCw } from 'lucide-react';
-import type { OperationsActivityEntry, OperationsFunction, OperationsHeadAdmin, OperationsHeadsAdmin } from '../../../shared/contracts';
+import type { OperationsActivityEntry, OperationsFunction, OperationsHeadAdmin, OperationsHeadsAdmin, WeeklyRoutingItem } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi, usersApi } from '../../lib/api/endpoints';
+import { weeklyReportsApi } from '../../lib/api/workReports';
 import { btn, Dialog, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
 
 /**
@@ -16,7 +17,12 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
   const [history, setHistory] = useState<OperationsHeadAdmin | null>(null);
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
 
-  const load = useCallback(() => { employeesApi.operationsHeads().then(d => { setData(d); setError(null); }, e => setError(errorMessage(e))); }, []);
+  // the weekly reports with no eligible Operations Head (department and function), so they can be assigned here before a head is blocked
+  const [routing, setRouting] = useState<WeeklyRoutingItem[] | null>(null);
+  const load = useCallback(() => {
+    employeesApi.operationsHeads().then(d => { setData(d); setError(null); }, e => setError(errorMessage(e)));
+    weeklyReportsApi.routing().then(setRouting, () => setRouting(null));
+  }, []);
   useEffect(load, [load]);
   useEffect(() => {
     window.addEventListener('crm:employee-requests-changed', load);
@@ -50,6 +56,24 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
       {error && <ErrorBanner message={error} onRetry={load} />}
       {notice && <p role="status" className={`text-xs font-semibold ${notice.ok ? 'text-emerald-800' : 'text-rose-700'}`} data-testid="operations-notice">{notice.text}</p>}
       {!data && !error && <Spinner label="Loading Operations Heads…" />}
+      {routing && routing.some(r => r.issue === 'MISSING' || r.issue === 'INACTIVE') && (
+        <div role="status" data-testid="weekly-routing" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <div>
+            <b>Weekly reports with no Operations Head to receive them:</b>
+            <ul className="mt-1 list-disc pl-4">
+              {routing.filter(r => r.issue === 'MISSING' || r.issue === 'INACTIVE').map(r => (
+                <li key={`${r.departmentId}:${r.function}`}>
+                  {r.department} - {r.function === 'ALL' ? 'whole department' : r.function === 'SALES' ? 'Sales' : 'Support'}
+                  {r.departmentHeads.length ? ` (Department Head: ${r.departmentHeads.map(h => h.name).join(', ')})` : ''}
+                  {r.issue === 'INACTIVE' ? ': the Operations Head named for it is not active' : ': none assigned'}
+                </li>
+              ))}
+            </ul>
+            Choose the departments of the right Operations Head below (with &quot;approves heads&quot; for that function). Until then those weekly reports cannot be submitted; drafts are kept.
+          </div>
+        </div>
+      )}
       {data && data.unowned.length > 0 && (
         <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />

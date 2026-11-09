@@ -64,7 +64,7 @@ export const WeeklyApprovals: React.FC<{ reloadKey: number }> = ({ reloadKey }) 
             <li key={i.package.id}>
               <article className="rounded-2xl border border-slate-200 p-4 space-y-3" aria-label={`Weekly report of ${i.department}`}>
                 <header>
-                  <h3 className="text-sm font-bold text-slate-900">{i.department}</h3>
+                  <h3 className="text-sm font-bold text-slate-900">{i.department}{i.function === 'SALES' ? ' - Sales' : i.function === 'SUPPORT' ? ' - Support' : ''}</h3>
                   <p className="text-[11px] text-slate-500">Week {dateLabel(i.package.periodStart)} to {dateLabel(i.package.periodEnd)}</p>
                 </header>
                 <WeeklyPackageView pkg={i.package} />

@@ -125,3 +125,29 @@ block of `supabase/tests/api_integration.test.ts`, `supabase/tests/company_repor
 * The leaderboard measures only what the CRM records; integration failures cannot be detected, so a person with missing data shows Insufficient Data rather than a low score only when their data is below the limits.
 * Attendance data is limited to approved leave; the review form has a free-text attendance / consistency note beside the recorded report figures.
 * The Operations Head approves the Department Head's *daily* report as before; the weekly report is a separate approval.
+
+## Weekly report routing by department AND function (migration 20261230000200)
+
+**Why "No Operations Head assigned to this department" appeared:** the reports looked only for the one department-level Operations Head
+(`department_operations_owner`). Departments whose Sales and Support Operations Heads are named per function (`department_function_owner`,
+20261224000100) have no department-level owner, so the weekly report, the Department Head's own daily report and the Operations Head's weekly
+board found nobody.
+
+* **One resolver**: `private.weekly_reviewer_ids(department, function)` = `private.operations_owner_for`: the active Operations Head named for that
+  function, else the department-level owner only when their scope covers the function. A Support Operations Head is never resolved for Sales;
+  an inactive one never is.
+* **A weekly package belongs to a department and a function** (`work_report_packages.division`: `SALES` / `SUPPORT` / NULL = whole department,
+  which every existing package keeps). Unique per (department, function, week).
+* **Department Head**: reports the function they head in the department they are working in (header switcher). A head of both functions in a
+  department with separate Sales / Support Operations Heads sends a Sales week and a Support week (function selector on the weekly screen);
+  the screen shows who receives it. The Department Head's own daily report goes to the Operations Head of their function (a head of both:
+  the whole-department Operations Head, else the Sales and Support ones).
+* **Operations Head**: the weekly board, pending list, review and drill-down list exactly the (department, function) scopes they are accountable
+  for; another function's week is "not found". Figures (`report_scope_stats(..., function)`) and HR's reviews cover the people of that function.
+* **Nobody to receive it**: submitting is refused with the reason (the screen saves the draft first); nothing is approved by itself. The Super
+  Admin sees every scope with a missing or inactive Operations Head on **Operations Heads** (`GET /api/v1/work-reports/weekly/routing`,
+  `weekly_report_routing_review()`), and assigns one with the existing department controls there.
+
+Tests: `supabase/tests/weekly_report_routing_test.sql` (Support DH -> Support OH, Sales DH -> Sales OH in the same department and week, a head of
+both functions, a head in two departments, no Operations Head, an inactive one, the wrong one, revision, approval, HR) and the "weekly routing"
+block of `api_integration.test.ts`.

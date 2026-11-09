@@ -9950,6 +9950,26 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422 || r.status === 403, 'hr documents: a malformed document id is refused', r);
   check(Number((await db.query(`select count(*) from public.hr_documents`)).rows[0].count) === before + 3, 'hr documents: refused calls stored nothing');
 }
+
+// --- Weekly report routing: the Operations Head of the department AND function (migration 20261230000200) ---------------------------
+{
+  const istToday = new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+  const d0 = new Date(`${istToday}T00:00:00Z`); d0.setUTCDate(d0.getUTCDate() - ((d0.getUTCDay() + 6) % 7) - 7);
+  const wk = d0.toISOString().slice(0, 10);
+  r = await api('rcx_dh', 'GET', `/work-reports/weekly?weekStart=${wk}&function=BOGUS`);
+  check(r.status === 422, 'weekly routing: an unknown function is refused', r);
+  r = await api('rcx_dh', 'GET', `/work-reports/weekly?weekStart=${wk}`);
+  check(r.status === 200 && typeof r.json.data.function === 'string' && Array.isArray(r.json.data.functions) && Array.isArray(r.json.data.reviewers),
+    'weekly routing: the week says its function, the functions this head sends and who receives it', r);
+  r = await api('rcx_dh', 'POST', '/work-reports/weekly', { weekStart: wk, title: 'x', submit: false, function: 'BOGUS' });
+  check(r.status === 422, 'weekly routing: saving with an unknown function is refused', r);
+  r = await api('rcx_dh', 'GET', '/work-reports/weekly/routing');
+  check(r.status === 403, 'weekly routing: a Department Head cannot open the routing review', r);
+  r = await api('sa', 'GET', '/work-reports/weekly/routing');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.every((x: any) => x.departmentId && x.function && 'issue' in x), 'weekly routing: the Super Admin opens the routing review', r);
+  r = await api(null, 'GET', '/work-reports/weekly/routing');
+  check(r.status === 401, 'weekly routing: nor a visitor', r);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

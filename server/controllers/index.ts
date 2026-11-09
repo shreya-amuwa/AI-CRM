@@ -721,6 +721,7 @@ export const workReportsController = {
   weeklySave: (async ctx => ok(await svc(ctx).workReports.weeklySave(ctx.req.body))) as Handler,
   weeklyBoard: (async ctx => ok(await svc(ctx).workReports.weeklyBoard(ctx.req.query))) as Handler,
   weeklyPending: (async ctx => ok(await svc(ctx).workReports.weeklyPending())) as Handler,
+  weeklyRouting: (async ctx => ok(await svc(ctx).workReports.weeklyRouting())) as Handler,
   weeklyReview: (async ctx => ok(await svc(ctx).workReports.weeklyReview(ctx.params.id, ctx.req.body))) as Handler
 }
 

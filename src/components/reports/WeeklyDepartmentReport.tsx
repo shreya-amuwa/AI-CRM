@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useState } from 'react';
 import { Eye, Save, Send } from 'lucide-react';
-import type { WeeklyDepartmentReport as WeeklyData } from '../../../shared/contracts';
+import type { WeeklyDepartmentReport as WeeklyData, WeeklyReportFunction } from '../../../shared/contracts';
 import { reportWeeklySaveSchema } from '../../../shared/validation';
 import { ApiError } from '../../lib/api/client';
 import { weeklyReportsApi } from '../../lib/api/workReports';
@@ -10,6 +10,7 @@ import { notifyReportsChanged } from './reportEvents';
 import { dateLabel, pctLabel, WeekPicker, weekOf, todayIso, WeeklyStatusPill } from './reportUi';
 import { WeeklyPackageView } from './WeeklyPackageView';
 
+const FUNCTION_LABEL: Record<WeeklyReportFunction, string> = { SALES: 'Sales', SUPPORT: 'Support', ALL: 'Whole department' };
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 const DAY = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
 const dayName = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return DAY.format(new Date(y, m - 1, d)); };
@@ -72,9 +73,11 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
   const [busy, setBusy] = useState<'' | 'draft' | 'submit'>('');
   const [preview, setPreview] = useState(false);
   const [note, setNote] = useState('');
+  // a Department Head of both functions in a department with separate Sales / Support Operations Heads sends one week per function
+  const [fn, setFn] = useState<WeeklyReportFunction | undefined>(undefined);
 
   const load = useCallback(() => {
-    weeklyReportsApi.weekly(week).then(d => {
+    weeklyReportsApi.weekly(week, fn).then(d => {
       setError('');
       setData(d);
       const p = d.package;
@@ -83,11 +86,11 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
       setCompleted(c => (p.completedOverview ?? c) || `${d.stats.completedTasks} of those tasks were reported completed${d.stats.completionRate === null ? '' : ` (${d.stats.completionRate}%)`}.`);
       setRemarks(r => (p.note ?? r) || '');
     }, e => setError(errText(e)));
-  }, [week]);
-  useEffect(() => { setData(null); setTitle(''); setAssigned(''); setCompleted(''); setRemarks(''); setNote(''); setErrors({}); }, [week]);
+  }, [week, fn]);
+  useEffect(() => { setData(null); setTitle(''); setAssigned(''); setCompleted(''); setRemarks(''); setNote(''); setErrors({}); }, [week, fn]);
   useEffect(load, [load, reloadKey]);
 
-  const body = (submit: boolean) => ({ weekStart: week, title: title.trim(), assignedOverview: assigned.trim() || undefined, completedOverview: completed.trim() || undefined, remarks: remarks.trim() || undefined, submit });
+  const body = (submit: boolean) => ({ weekStart: week, title: title.trim(), assignedOverview: assigned.trim() || undefined, completedOverview: completed.trim() || undefined, remarks: remarks.trim() || undefined, submit, function: fn ?? data?.function });
 
   const run = async (submit: boolean) => {
     setNote('');
@@ -103,7 +106,13 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
       setPreview(false);
       load();
     } catch (e) {
-      setError(errText(e));
+      // a submission that was refused (e.g. no Operations Head is assigned yet): keep what was written as a draft, then say why
+      let kept = false;
+      if (submit && e instanceof ApiError && e.status === 409) {
+        try { await weeklyReportsApi.saveWeekly(body(false)); kept = true; load(); } catch { /* the reason below is what matters */ }
+      }
+      setError(errText(e) + (kept ? ' Your draft is saved.' : ''));
+      setPreview(false);
     } finally {
       setBusy('');
     }
@@ -116,9 +125,17 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
           <div>
             <h2 className="text-base font-bold text-slate-900">Weekly Department Report</h2>
-            <p className="text-xs text-slate-500">{data?.department ?? 'Your department'} - compiled from the daily reports; goes to the Operations Head for approval.</p>
+            <p className="text-xs text-slate-500">{data?.department ?? 'Your department'}{data?.function && data.function !== 'ALL' ? ` (${FUNCTION_LABEL[data.function]})` : ''} - compiled from the daily reports; goes to the Operations Head for approval.</p>
+            {data?.reviewers?.length ? <p className="text-xs text-slate-600 mt-0.5" data-testid="weekly-reviewers">Goes to: <b>{data.reviewers.map(r => r.name).join(', ')}</b></p> : null}
           </div>
           <div className="flex items-end gap-3">
+            {data && (data.functions?.length ?? 0) > 1 ? (
+              <label className="text-xs font-semibold text-slate-600">Function
+                <select className={`${inputCls} !py-1.5 mt-1`} data-testid="weekly-function" value={fn ?? data.function ?? ''} onChange={e => setFn(e.target.value as WeeklyReportFunction)}>
+                  {data.functions!.map(f => <option key={f} value={f}>{FUNCTION_LABEL[f]}</option>)}
+                </select>
+              </label>
+            ) : null}
             {data ? <WeeklyStatusPill status={data.package.status} /> : null}
             <WeekPicker value={week} onChange={setWeek} />
           </div>
@@ -127,6 +144,9 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
         {!data && !error ? <Spinner /> : null}
         {data ? (
           <div className="space-y-5">
+            {data.routingIssue && !locked ? (
+              <div role="alert" data-testid="weekly-routing-issue" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{data.routingIssue}</div>
+            ) : null}
             {data.package.status === 'REVISION_REQUIRED' ? (
               <div role="note" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><b>{data.package.ohReviewer ?? 'The Operations Head'} asked for a revision:</b> {data.package.ohComment}</div>
             ) : null}
