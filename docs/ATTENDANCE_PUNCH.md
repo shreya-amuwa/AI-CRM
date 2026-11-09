@@ -27,8 +27,21 @@ The tables (`attendance_events`, `attendance_lunches`, `attendance_settings`) ha
 `attendance_punch_in`, `attendance_punch_out`, `attendance_lunch`, `my_attendance`, `hr_attendance_punches`, `attendance_lunch_overview`.
 HR's list has filters (period, department, employee, missing Punch Out, location unavailable, lunch exceeded) and the Punch Out history.
 
+## Place names (migration 20261230000600)
+HR (and the employee on their own card) see each captured location as a **readable place**, e.g. "Baner Road, Baner, Pune, Maharashtra
+411045", with a small **Map** link and the accuracy ("within 113 m"); the raw coordinates are not shown.
+* The server looks each punch up **once** and stores the name with the punch (`attendance_events.place_name`): right after a Punch In / Out
+  (`POST /api/v1/attendance/resolve-places`, a few punches at a time), when HR's list has punches without a name, and in the scheduled
+  automations run (`/api/v1/internal/automations/dispatch`). Until then the screen says "Finding the place name…".
+* Provider: **Google Geocoding** when `GOOGLE_MAPS_API_KEY` is set on the server (better Indian addresses, billed by Google); otherwise
+  **OpenStreetMap Nominatim** (free; at most one lookup a second, identified by `GEOCODER_USER_AGENT`, default
+  `Amuwa-CRM/1.0 (employee attendance; reverse geocoding of punch locations)`).
+* A failed lookup is retried up to **3 times**; the punch keeps its coordinates and Map link either way.
+* `attendance_places_pending` / `attendance_set_place` are callable by the server (service role) only. The Operations Head still never sees
+  other staff's locations or place names.
+
 ## Retention
 Coordinates older than **90 days** (`attendance_settings.location_retention_days`) are erased by `private.purge_attendance_locations()`: daily
-with pg_cron when it is installed, and on every Punch In in any case. The punch and its time stay; its status becomes `PURGED`.
+with pg_cron when it is installed, and on every Punch In in any case. The place name is erased with them. The punch and its time stay; its status becomes `PURGED`.
 
-Tests: `supabase/tests/attendance_punch_lunch_test.sql`, `supabase/tests/ui_attendance.test.mjs` (browser, real geolocation allowed and denied).
+Tests: `supabase/tests/attendance_punch_lunch_test.sql`, `supabase/tests/attendance_places_test.sql`, `supabase/tests/attendance_places.test.ts`, `supabase/tests/ui_attendance.test.mjs` (browser, real geolocation allowed and denied).

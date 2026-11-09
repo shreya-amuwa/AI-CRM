@@ -81,16 +81,18 @@ try {
   check(await p2.getByText('Location unavailable (permission denied)').isVisible(), 'and the card says so');
   await ctx2.close();
 
-  // 3. HR: everyone's punches with the location as a map link (coordinates and accuracy), and the reason when there is none
+  // 3. HR: everyone's punches with the location by place name, a map link and the accuracy, and the reason when there is none
   const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const p3 = await ctx3.newPage();
   await p3.goto(base);
   await p3.evaluate(() => window.mountHr());
   await p3.getByTestId('hr-location').first().waitFor();
-  const href = await p3.getByTestId('hr-location').first().getAttribute('href');
-  const text = await p3.getByTestId('hr-location').first().textContent();
-  check(href === 'https://www.google.com/maps?q=18.520431,73.856743' && /View on map/.test(text) && /18\.52043, 73\.85674 \(±113 m\)/.test(text),
-    'HR sees the Punch In location: a map link with the coordinates and accuracy', { href, text });
+  const loc = p3.getByTestId('hr-location').first();
+  const place = await loc.getByTestId('hr-place').textContent();
+  const href = await loc.getByRole('link', { name: 'Map' }).getAttribute('href');
+  const text = await loc.textContent();
+  check(place === 'Baner Road, Baner, Pune, Maharashtra 411045' && href === 'https://www.google.com/maps?q=18.520431,73.856743' && /within 113 m/.test(text) && !/18\.52/.test(text),
+    'HR sees the Punch In place by name (not coordinates), with a map link and the accuracy', { place, href, text });
   check(await p3.getByText('Location unavailable (permission denied)').isVisible(), 'and why a punch has no location');
   await ctx3.close();
 } finally {

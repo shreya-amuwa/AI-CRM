@@ -1,5 +1,6 @@
 import { careerController as career } from './controllers/career.js';
 import { recruiterController as recruiter } from './controllers/recruiter.js';
+import { attendanceController as attendance } from './controllers/attendance.js';
 import {
   accountsFinanceController as finance,
   addonInvoiceController as addons,
@@ -130,6 +131,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/chat/conversations/:id/messages', handler: chat.send },
   { method: 'POST', path: '/chat/conversations/:id/read', handler: chat.markRead },
   { method: 'POST', path: '/chat/conversations/:id/delivered', handler: chat.ackDelivered },
+  // attendance: name the punches still waiting for a place name (20261230000600)
+  { method: 'POST', path: '/attendance/resolve-places', handler: attendance.resolvePlaces, options: S },
   { method: 'GET', path: '/chat/conversations/:id/receipts', handler: chat.receipts },
   { method: 'GET', path: '/chat/customers/:id/support-group', handler: chat.supportGroup },
   { method: 'POST', path: '/chat/customers/:id/support-group', handler: chat.supportGroupSave, options: S },

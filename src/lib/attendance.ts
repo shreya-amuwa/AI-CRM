@@ -1,11 +1,12 @@
 import { getSupabase } from '../services/supabaseClient';
+import { api } from './api/client';
 
 /**
  * Attendance (migration 20261230000400): Punch In / Punch Out with the device location, and lunch breaks. Every time is the server's; the
  * database decides who may read what (own days; HR and the Super Admin everyone; an Operations Head lunch durations of their scope only).
  */
 export type LocationStatus = 'CAPTURED' | 'DENIED' | 'UNAVAILABLE' | 'TIMEOUT' | 'UNSUPPORTED' | 'PURGED';
-export interface PunchInfo { at: string; locationStatus: LocationStatus; latitude: number | null; longitude: number | null; accuracy: number | null }
+export interface PunchInfo { at: string; locationStatus: LocationStatus; latitude: number | null; longitude: number | null; accuracy: number | null; place?: string | null }
 export interface AttendanceDayData {
   date: string; serverTime: string;
   punchIn: PunchInfo | null; punchOut: PunchInfo | null; punchOutCount: number; workedMinutes: number | null;
@@ -55,6 +56,8 @@ export const attendanceApi = {
   mine: (from: string, to: string) => rpc<AttendanceDayData[]>('my_attendance', { p_from: from, p_to: to }),
   hrPunches: (from: string, to: string, departmentId?: string | null) =>
     rpc<{ allowanceMinutes: number; retentionDays: number; rows: HrPunchRow[] }>('hr_attendance_punches', { p_from: from, p_to: to, p_department: departmentId || null, p_profile: null }),
+  /** Ask the server to look up the place names still missing (a few at a time); harmless to call often. */
+  resolvePlaces: () => api.post<{ looked: number; named: number; failed: number }>('/attendance/resolve-places', {}),
   lunchOverview: (from: string, to: string) => rpc<{ allowanceMinutes: number; rows: LunchRow[] }>('attendance_lunch_overview', { p_from: from, p_to: to })
 };
 
@@ -65,7 +68,7 @@ export const istTime = (iso: string | null | undefined) => (iso ? IST_TIME.forma
 export const istDate = (isoDate: string) => { const [y, m, d] = isoDate.split('-').map(Number); return IST_DATE.format(new Date(Date.UTC(y, m - 1, d, 6))); };
 export const minutesLabel = (m: number | null | undefined) => (m == null ? '-' : m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
 export const locationLabel = (p: PunchInfo | null) =>
-  !p ? '-' : p.locationStatus === 'CAPTURED' ? `Location recorded (±${p.accuracy ?? '?'} m)`
+  !p ? '-' : p.locationStatus === 'CAPTURED' ? (p.place || 'Finding the place name…')
   : p.locationStatus === 'PURGED' ? 'Location erased after 90 days'
   : p.locationStatus === 'DENIED' ? 'Location unavailable (permission denied)'
   : p.locationStatus === 'TIMEOUT' ? 'Location unavailable (timed out)'

@@ -56,6 +56,7 @@ export const MyAttendance: React.FC = () => {
       const when = istTime(kind === 'in' ? d.punchIn?.at : d.punchOut?.at);
       setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${when}.${loc.status === 'CAPTURED' ? '' : ' Your location was not available, so it is recorded as "location unavailable".'}` });
       load();
+      if (loc.status === 'CAPTURED') attendanceApi.resolvePlaces().then(load, () => { /* the place name comes later */ });
     } catch (e) {
       setNotice({ ok: false, text: e instanceof Error ? e.message : 'Could not record the punch.' });
     } finally {
@@ -167,7 +168,19 @@ export const HrPunchRecords: React.FC = () => {
   const [find, setFind] = useState('');
   const [dept, setDept] = useState('');
   const [problem, setProblem] = useState<'' | 'missing' | 'nolocation' | 'lunch'>('');
-  useEffect(() => { setData(null); attendanceApi.hrPunches(from, to).then(d => { setError(''); setData(d); }, e => setError(e instanceof Error ? e.message : String(e))); }, [from, to]);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    const load = () => attendanceApi.hrPunches(from, to);
+    load().then(d => {
+      if (!alive) return;
+      setError(''); setData(d);
+      // punches with a location but no place name yet: ask the server to look them up, then show the names (once per load)
+      const missing = d.rows.some(r => [r.punchIn, r.punchOut].some(p => p?.locationStatus === 'CAPTURED' && !p.place));
+      if (missing) attendanceApi.resolvePlaces().then(() => load()).then(d2 => { if (alive) setData(d2); }, () => { /* the names come with the next load */ });
+    }, e => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { alive = false; };
+  }, [from, to]);
   const departments = useMemo(() => [...new Set((data?.rows ?? []).map(r => r.department).filter(Boolean) as string[])].sort(), [data]);
   const rows = (data?.rows ?? []).filter(r =>
     (!find.trim() || r.name.toLowerCase().includes(find.trim().toLowerCase())) && (!dept || r.department === dept)
@@ -177,10 +190,14 @@ export const HrPunchRecords: React.FC = () => {
     const lng = p?.longitude == null ? null : Number(p.longitude);
     return p?.locationStatus === 'CAPTURED' && lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
       ? (
-        <a className="inline-flex flex-col text-blue-700 hover:underline" data-testid="hr-location" href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer">
-          <span className="inline-flex items-center gap-1 font-semibold"><MapPin className="w-3.5 h-3.5" aria-hidden="true" /> View on map</span>
-          <span className="text-[11px] text-slate-500">{lat.toFixed(5)}, {lng.toFixed(5)}{p.accuracy != null ? ` (±${p.accuracy} m)` : ''}</span>
-        </a>
+        <span className="inline-flex flex-col max-w-[16rem]" data-testid="hr-location">
+          <span className="inline-flex items-start gap-1 font-semibold text-slate-800"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
+            <span data-testid="hr-place">{p.place || 'Finding the place name…'}</span></span>
+          <span className="text-[11px] text-slate-500">
+            <a className="text-blue-700 hover:underline" href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer">Map</a>
+            {p.accuracy != null ? ` · within ${p.accuracy} m` : ''}
+          </span>
+        </span>
       )
       : <span className="text-slate-500">{locationLabel(p)}</span>;
   };

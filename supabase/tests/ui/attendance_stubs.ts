@@ -15,7 +15,7 @@ const handlers: Record<string, (a: any) => any> = {
   // HR's list, as the database returns it (numbers for the coordinates)
   hr_attendance_punches: () => ({ allowanceMinutes: 50, retentionDays: 90, rows: [
     { profileId: 'p1', name: 'Asha Staff', department: 'Wabastore', date: '2026-11-09',
-      punchIn: { at: '2026-11-09T03:35:00Z', locationStatus: 'CAPTURED', latitude: 18.520431, longitude: 73.856743, accuracy: 113 },
+      punchIn: { at: '2026-11-09T03:35:00Z', locationStatus: 'CAPTURED', latitude: 18.520431, longitude: 73.856743, accuracy: 113, place: 'Baner Road, Baner, Pune, Maharashtra 411045' },
       punchOut: null, punchOutHistory: [], missingPunchOut: false, workedMinutes: null, locationUnavailable: false, lunchMinutes: 0, lunchExceededMinutes: 0 },
     { profileId: 'p2', name: 'Ravi Staff', department: 'Wabastore', date: '2026-11-09',
       punchIn: { at: '2026-11-09T04:00:00Z', locationStatus: 'DENIED', latitude: null, longitude: null, accuracy: null },
