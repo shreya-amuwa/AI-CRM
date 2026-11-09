@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  ChatReceipt,
+  ClientSupportGroup,
   ChatConversation,
   ChatDeleteResult,
   ChatDirectoryPerson,
@@ -89,6 +91,13 @@ export class ChatRepository {
   keyLookup(profileId: string, version: number) { return this.rpc<ChatPublicKey | null>('chat_key_lookup', { p_profile: profileId, p_version: version }); }
 
   markRead(id: string, seq?: number) { return this.rpc<{ readSeq: number }>('chat_mark_read', { p_conversation: id, p_seq: seq ?? null }); }
+  // ---- Delivered / Seen and client support groups (20261230000500)
+  ackDelivered(id: string, seq: number) { return this.rpc<{ deliveredSeq: number }>('chat_ack_delivered', { p_conversation: id, p_seq: seq }); }
+  receipts(id: string, after: number) { return this.rpc<ChatReceipt[]>('chat_message_receipts', { p_conversation: id, p_after_seq: after }); }
+  supportGroup(customerId: string) { return this.rpc<ClientSupportGroup>('client_support_group', { p_customer: customerId }); }
+  supportGroupSave(customerId: string, b: { name?: string | null; add?: string[]; remove?: string[] }) {
+    return this.rpc<ClientSupportGroup>('client_support_group_save', { p_customer: customerId, p_name: b.name ?? null, p_add: b.add ?? null, p_remove: b.remove ?? null });
+  }
 
   // ---- people, direct messages, groups
   // p_department exists from migration 20261228000300; without a department filter the older two-argument call keeps working

@@ -1,9 +1,13 @@
 import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, ChevronDown, Clock3, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
+
+// The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
+const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
+export const ATTENDANCE_NAV_ID = '__attendance';
 
 /**
  * The shared dashboard shell (the Department Head design handoff): a white sidebar with an Amuwa brand block,
@@ -352,6 +356,17 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
 }) => {
   // only sections marked collapsible use this; the others are always open as before
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set());
+  // Attendance (Punch In / Out, lunch) is added to every dashboard here; choosing any other page hands the content back to the dashboard
+  const [attendanceOpen, setAttendanceOpen] = useState(false);
+  const shownActive = attendanceOpen ? ATTENDANCE_NAV_ID : active;
+  // the dashboard opened a page by itself (a notification, a link): it takes the content area back
+  useEffect(() => { setAttendanceOpen(false); }, [active]);
+  const select = (id: string) => {
+    if (id === ATTENDANCE_NAV_ID) { setAttendanceOpen(true); return; }
+    setAttendanceOpen(false);
+    onSelect(id);
+  };
+  const navGroups: ShellNavGroup[] = [...groups, { label: 'My day', items: [{ id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 }] }];
   const toggleGroup = (label: string) => setClosedGroups(prev => {
     const next = new Set(prev);
     if (next.has(label)) next.delete(label); else next.add(label);
@@ -369,22 +384,22 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       >
         <SidebarBrand title={title} subtitle={subtitle} />
         <nav className="flex flex-col gap-5" aria-label={`${ariaLabel} pages`}>
-          {groups.map((g, i) => (
+          {navGroups.map((g, i) => (
             <div key={g.label || i} className="flex flex-col gap-0.5">
               {g.label && (g.collapsible
-                ? <CollapsibleGroupLabel label={g.label} open={!closedGroups.has(g.label) || g.items.some(it => it.id === active)} onToggle={() => toggleGroup(g.label as string)} controls={`nav-group-${i}`} />
+                ? <CollapsibleGroupLabel label={g.label} open={!closedGroups.has(g.label) || g.items.some(it => it.id === shownActive)} onToggle={() => toggleGroup(g.label as string)} controls={`nav-group-${i}`} />
                 : <NavGroupLabel>{g.label}</NavGroupLabel>)}
               {/* a closed section renders nothing (a CSS display class would override the hidden attribute) */}
-              {!(g.collapsible && g.label && closedGroups.has(g.label) && !g.items.some(it => it.id === active)) && (
+              {!(g.collapsible && g.label && closedGroups.has(g.label) && !g.items.some(it => it.id === shownActive)) && (
               <div id={`nav-group-${i}`} className="flex flex-col gap-0.5">
               {g.items.map(it =>
                 it.children?.length ? (
                   <NavParent
                     key={it.id}
                     item={it}
-                    active={active}
+                    active={shownActive}
                     onSelect={id => {
-                      onSelect(id);
+                      select(id);
                       closeMenu();
                     }}
                   />
@@ -395,9 +410,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
                   icon={it.icon}
                   badge={it.badge}
                   count={it.count}
-                  active={active === it.id}
+                  active={shownActive === it.id}
                   onClick={() => {
-                    onSelect(it.id);
+                    select(it.id);
                     closeMenu();
                   }}
                 />
@@ -412,7 +427,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{attendanceOpen ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense> : children}</main>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import type { ChatReceipt, ClientSupportGroup } from '../../../shared/contracts';
 import type {
   ChatAttachment, ChatChannel, ChatClientView, ChatConversation, ChatDeleteResult, ChatDirectoryPerson, ChatE2eeWrap, ChatKeyBackup, ChatKeyBackupBlob, ChatKeyStatus, ChatMemberKey, ChatMessage,
   ChatMessagePage, ChatMyClient, ChatPublicKey, ChatReviewList, ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl
@@ -40,6 +41,9 @@ export interface ChatTransport {
   deleteForMe?(messageId: string): Promise<ChatDeleteResult>;
   deleteForEveryone?(messageId: string): Promise<ChatDeleteResult>;
   markRead(seq: number): Promise<unknown>;
+  /** 20261230000500: this device has received everything up to seq (Delivered), and the status of my own messages. Optional: older servers. */
+  ackDelivered?(seq: number): Promise<unknown>;
+  receipts?(after: number): Promise<ChatReceipt[]>;
   beginUpload(i: UploadInput): Promise<ChatUploadTicket>;
   completeUpload(id: string): Promise<ChatAttachment>;
   abortUpload(id: string): Promise<unknown>;
@@ -63,6 +67,8 @@ export function clientTransport(channel?: ChatChannel): ChatTransport {
     messages: q => api.get<ChatMessagePage>('/client/chat/messages', { ...q, ...ch }),
     send: i => api.post<ChatMessage>('/client/chat/messages', { ...i, ...ch }),
     markRead: seq => api.post('/client/chat/read', { seq, ...ch }),
+    ackDelivered: seq => api.post('/client/chat/delivered', { seq, ...ch }),
+    receipts: after => api.get<ChatReceipt[]>('/client/chat/receipts', { after, ...ch }),
     beginUpload: i => api.post<ChatUploadTicket>('/client/chat/uploads', { ...i, ...ch }),
     completeUpload: id => api.post<ChatAttachment>(`/client/chat/uploads/${id}/complete`, {}),
     abortUpload: id => api.post(`/client/chat/uploads/${id}/abort`, {}),
@@ -90,6 +96,8 @@ export function staffTransport(conversationId: string, opts: { review?: boolean 
     deleteForMe: id => api.delete<ChatDeleteResult>(`/chat/messages/${id}/for-me`),
     deleteForEveryone: id => api.delete<ChatDeleteResult>(`/chat/messages/${id}/for-everyone`),
     markRead: seq => api.post(`${base}/read`, { seq }),
+    ackDelivered: seq => api.post(`${base}/delivered`, { seq }),
+    receipts: after => api.get<ChatReceipt[]>(`${base}/receipts`, { after }),
     beginUpload: i => api.post<ChatUploadTicket>(`${base}/uploads`, i),
     completeUpload: id => api.post<ChatAttachment>(`/chat/uploads/${id}/complete`, {}),
     abortUpload: id => api.post(`/chat/uploads/${id}/abort`, {}),
@@ -114,6 +122,9 @@ export const chatKeysApi = {
 export const chatApi = {
   internal: (q?: string) => api.get<ChatConversation[]>('/chat/internal', { q }),
   myClients: (q?: string) => api.get<ChatMyClient[]>('/chat/my-clients', { q }),
+  /** The customer's support group (20261230000500): who is in it, and (for the Team Lead / Department Head) who can be added. */
+  supportGroup: (customerId: string) => api.get<ClientSupportGroup>(`/chat/customers/${customerId}/support-group`),
+  saveSupportGroup: (customerId: string, b: { name?: string | null; add?: string[]; remove?: string[] }) => api.post<ClientSupportGroup>(`/chat/customers/${customerId}/support-group`, b),
   /** Whether the client conversations tab belongs to this person (the server decides) and how many they have. */
   clientTab: () => api.get<{ eligible: boolean; count: number }>('/chat/client-tab'),
   clientTeam: (conversationId: string) => api.get<{ id: string; name: string; role: string }[]>(`/chat/conversations/${conversationId}/client-team`),

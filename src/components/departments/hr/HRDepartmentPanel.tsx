@@ -34,6 +34,7 @@ interface HRDepartmentPanelProps {
 }
 
 export type { AttendanceRecord };
+const PunchAttendanceForHr = React.lazy(() => import('../../attendance/AttendancePage'));
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = attendanceStore.getAttendanceRecords();
 
 export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab = 'dashboard' }) => {
@@ -727,6 +728,10 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
               {/* MODULE 1: ATTENDANCE WORKSPACE */}
               {activeModule === 'attendance' && (
                 <div className="space-y-4">
+                  {/* Punch In / Punch Out with location and lunch (20261230000400): HR's own day, everyone's punches, lunch breaks */}
+                  <React.Suspense fallback={<div role="status" className="p-4 text-sm text-slate-500">Loading attendance…</div>}>
+                    <PunchAttendanceForHr />
+                  </React.Suspense>
                   {/* Clean Attendance Header & Status Bar */}
                   <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex items-center gap-3">

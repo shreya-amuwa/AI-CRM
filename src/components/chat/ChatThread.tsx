@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowLeft, Ban, Check, CheckCheck, CornerUpLeft, Eye, FileText, Loader2, Lock, MoreVertical, Paperclip, RefreshCw, Send, ShieldAlert, ShieldCheck, Smile, Trash2, X } from 'lucide-react';
-import type { ChatAttachment, ChatConversation, ChatMessage } from '../../../shared/contracts';
+import type { ChatAttachment, ChatConversation, ChatMessage, ChatReceipt } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import type { ChatTransport } from '../../lib/chat/api';
 import { useChatThread, type PendingMessage } from '../../lib/chat/useChatThread';
@@ -13,6 +13,18 @@ import { EmojiPicker } from './EmojiPicker';
 import { NewKeyDialog, SecureSetupDialog, SecureStateNotice, SecurityDialog, type SecureDialogMode } from './SecureDialogs';
 import './chat.css';
 
+
+/** ✓ Sent (stored), ✓✓ Delivered (every recipient's device has it), blue ✓✓ Seen (every recipient read it). The title lists each recipient. */
+const ReceiptTick: React.FC<{ r: ChatReceipt }> = ({ r }) => {
+  const label = r.status === 'SEEN' ? 'Seen' : r.status === 'DELIVERED' ? 'Delivered' : 'Sent';
+  const detail = r.recipients.map(x => `${x.name} (${x.label}): ${x.seen ? 'seen' : x.delivered ? 'delivered' : 'not delivered yet'}`).join('\n');
+  const title = detail ? `${label}\n${detail}` : label;
+  return (
+    <span className="inline-flex" title={title} data-status={r.status}>
+      {r.status === 'SENT' ? <Check size={14} aria-label={label} /> : <CheckCheck size={14} className={r.status === 'SEEN' ? 'ch-seen' : undefined} aria-label={label} />}
+    </span>
+  );
+};
 export const CHAT_MAX_BODY = 4000;
 const MAX_FILE = 5 * 1024 * 1024;
 const MAX_FILES = 5;
@@ -84,6 +96,8 @@ const Bubble: React.FC<{
   m: ChatMessage;
   showName: boolean;
   seen: boolean | null;
+  /** 20261230000500: the server's status of my message, with each recipient (null = not known yet: the old tick is shown). */
+  receipt?: ChatReceipt | null;
   canReply: boolean;
   onReply: () => void;
   onOpen: (a: ChatAttachment) => void;
@@ -94,7 +108,7 @@ const Bubble: React.FC<{
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   onDelete: (mode: 'me' | 'all') => void;
-}> = ({ m, showName, seen, canReply, onReply, onOpen, opening, canDelete, secureKind, menuOpen, onMenu, onDelete }) => (
+}> = ({ m, showName, seen, receipt, canReply, onReply, onOpen, opening, canDelete, secureKind, menuOpen, onMenu, onDelete }) => (
   <div className={`ch-row ${m.mine ? 'mine' : 'theirs'}`} data-seq={m.seq} data-testid="chat-message" data-deleted={m.deleted ? 'true' : undefined}>
     <div className="ch-bubble">
       {!m.mine && showName && (
@@ -134,7 +148,8 @@ const Bubble: React.FC<{
       )}
       <span className="ch-meta">
         {timeOf(m.createdAt)}
-        {m.mine && !m.deleted && seen !== null ? (seen ? <CheckCheck size={14} className="ch-seen" aria-label="Seen" /> : <Check size={14} aria-label="Sent" />) : null}
+        {m.mine && !m.deleted && receipt ? <ReceiptTick r={receipt} />
+          : m.mine && !m.deleted && seen !== null ? (seen ? <CheckCheck size={14} className="ch-seen" aria-label="Seen" /> : <Check size={14} aria-label="Sent" />) : null}
       </span>
     </div>
     {canReply && !m.deleted && m.secure?.state !== 'failed' && (
@@ -491,6 +506,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
                   m={m}
                   showName={Boolean(showNames) && r.showName}
                   seen={m.mine ? seenFor(m) : null}
+                  receipt={m.mine ? t.receipts?.get(m.seq) ?? null : null}
                   canReply={Boolean(c?.canWrite)}
                   onReply={() => { setReplyTo(m); box.current?.focus(); }}
                   onOpen={a => void openFile(a)}

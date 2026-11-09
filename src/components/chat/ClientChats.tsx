@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw, Share2 } from 'lucide-react';
-import type { ChatConversation, ChatMyClient } from '../../../shared/contracts';
+import { AlertCircle, Loader2, RefreshCw, Share2, Users } from 'lucide-react';
+import type { ChatConversation, ChatMyClient, ClientSupportGroup } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { chatApi, staffTransport } from '../../lib/chat/api';
 import { useChatLive } from '../../lib/chat/useChatLive';
@@ -53,6 +53,65 @@ const ShareWithTeam: React.FC<{ conversationId: string }> = ({ conversationId })
 };
 
 /** The customers this employee looks after (as Team Member or Team Lead), each with the shared chat the client sees. */
+/**
+ * The client's support group (20261230000500): the client, the assigned Relationship Manager and Team Lead, and the Support employees added to it.
+ * The Team Lead (or a Support Department Head) names it and adds / removes people; everyone in it sees who is there. The database decides.
+ */
+const SupportGroupPanel: React.FC<{ customerId: string }> = ({ customerId }) => {
+  const [g, setG] = useState<ClientSupportGroup | null>(null);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [pick, setPick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const load = React.useCallback(() => { chatApi.supportGroup(customerId).then(x => { setG(x); setName(x.named ? x.name : ''); }, () => setG(null)); }, [customerId]);
+  React.useEffect(load, [load]);
+  if (!g) return null;
+  const save = async (b: { name?: string | null; add?: string[]; remove?: string[] }, done: string) => {
+    setBusy(true); setMsg(null);
+    try { const x = await chatApi.saveSupportGroup(customerId, b); setG(x); setPick(''); setMsg({ ok: true, text: done }); }
+    catch (e) { setMsg({ ok: false, text: errorMessage(e) }); }
+    finally { setBusy(false); }
+  };
+  const people = [...g.assigned.map(a => `${a.name} (${a.role})`), ...g.members.filter(m => m.active).map(m => m.name)];
+  return (
+    <div className="ch-locked" role="group" aria-label="Support group" data-testid="support-group" style={{ borderTop: 0, borderBottom: '1px solid var(--ch-border)', display: 'block' }}>
+      <button type="button" className="ch-btn" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        <Users size={14} aria-hidden /> {g.name} - {people.length + (g.client.hasLogin ? 1 : 0)} in the group
+      </button>
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          <p>In the group: {g.client.hasLogin ? 'the client, ' : ''}{people.join(', ')}</p>
+          {g.canManage && (
+            <>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                <input aria-label="Group name" placeholder={g.name} maxLength={80} value={name} onChange={e => setName(e.target.value)} />
+                <button type="button" className="ch-btn" disabled={busy || !name.trim()} onClick={() => void save({ name: name.trim() }, 'Group name saved.')}>Rename</button>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                <select aria-label="Support employee to add" value={pick} onChange={e => setPick(e.target.value)}>
+                  <option value="">Add a Support employee</option>
+                  {(g.candidates ?? []).map(c => <option key={c.id} value={c.id}>{c.name}{c.team ? ` - ${c.team}` : ''}</option>)}
+                </select>
+                <button type="button" className="ch-btn" disabled={busy || !pick} onClick={() => void save({ add: [pick] }, 'Added to the group.')}>Add</button>
+              </div>
+              {g.members.length > 0 && (
+                <ul style={{ marginTop: 6 }}>
+                  {g.members.map(m => (
+                    <li key={m.id}>{m.name}{m.active ? '' : ' (no longer has access)'}{' '}
+                      <button type="button" className="ch-btn" disabled={busy} onClick={() => void save({ remove: [m.id] }, `${m.name} was removed.`)}>Remove</button></li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          {msg && <p role={msg.ok ? 'status' : 'alert'}>{msg.text}</p>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ClientChats: React.FC<{ active: boolean; onUnreadChange: () => void; initialCustomer?: string | null }> = ({ active, onUnreadChange, initialCustomer }) => {
   const [items, setItems] = useState<ChatMyClient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +179,7 @@ export const ClientChats: React.FC<{ active: boolean; onUnreadChange: () => void
         <ul className="ch-list" aria-label="Customers">
           {items.map(i => (
             <ConversationItem key={i.customerId} selected={i.customerId === customerId} onClick={() => setCustomerId(i.customerId)}
-              item={{ id: i.customerId, name: i.business || i.name, preview: i.lastMessagePreview || '', sub: `${i.name} - ${i.role}`, time: i.lastMessageAt, unread: i.unread }} />
+              item={{ id: i.customerId, name: i.groupName || i.business || i.name, preview: i.lastMessagePreview || '', sub: `${i.name} - ${i.role}`, time: i.lastMessageAt, unread: i.unread }} />
           ))}
         </ul>
       )}
@@ -139,6 +198,7 @@ export const ClientChats: React.FC<{ active: boolean; onUnreadChange: () => void
       ) : (
         <>
           {row && !row.hasLogin && <div className="ch-locked" role="note" style={{ borderTop: 0, borderBottom: '1px solid var(--ch-border)' }}><AlertCircle size={16} aria-hidden /> This customer has no dashboard login yet, so they cannot see messages until one is created.</div>}
+          {conv && conv.access === 'STAFF' && (row?.channel ?? 'RM') === 'RM' && customerId && <SupportGroupPanel customerId={customerId} />}
           {conv && conv.access === 'STAFF' && <ShareWithTeam conversationId={conv.id} />}
           <ChatThread key={transport.key} transport={transport} active={active} header={header} onConversation={patch} showNames
             emptyTitle="No messages yet" emptyText="Write to the client. Your co-worker on this account will see the conversation too."

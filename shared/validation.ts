@@ -2722,3 +2722,11 @@ export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySche
 // ---- The Operations Head's daily drill-down by person (20261230000300): a department and a period of up to three months ----
 export const operationsPeopleQuerySchema = z.object({ department: uuidSchema, from: isoDate, to: isoDate }).strict()
   .refine(q => q.to >= q.from, { message: 'The end date cannot be before the start date.', path: ['to'] });
+
+// ---- Client support groups and message status (20261230000500) ----
+export const chatReceiptsQuerySchema = z.object({ after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional() }).strict();
+export const clientSupportGroupSaveSchema = z.object({
+  name: z.string().trim().max(80, 'Keep the group name under 80 characters.').optional().nullable(),
+  add: z.array(uuidSchema).max(25, 'Add at most 25 people at once.').optional(),
+  remove: z.array(uuidSchema).max(25, 'Remove at most 25 people at once.').optional()
+}).strict();
