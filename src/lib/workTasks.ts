@@ -32,6 +32,20 @@ export interface WorkTask {
   createdAt: string;
   /** A Team Member's share of the Team Lead's task (20261224000300), set by the Team Lead; null = the whole task. */
   assignmentNote: string | null;
+  /** 20261230000300: the function of an Operations Head's task, and what its owner chose (SELF = works on it, DELEGATED = handed it down). */
+  division: 'SALES' | 'SUPPORT' | null;
+  handling: 'SELF' | 'DELEGATED' | null;
+}
+
+/** A Department Head an Operations Head may give a task to, for one department and function. */
+export interface OperationsAssignee { id: string; name: string; departmentId: string; department: string; function: 'SALES' | 'SUPPORT' | 'ALL' }
+/** One task with everything below it (task_hierarchy / operations_tasks). */
+export interface TaskNode {
+  id: string; parentId: string | null; title: string; description: string | null; assignmentNote: string | null;
+  priority: TaskPriority; status: TaskStatus; progress: number; function: 'SALES' | 'SUPPORT' | 'ALL'; handling: 'SELF' | 'DELEGATED' | null;
+  assignee: { id: string; name: string; role: string }; assignedBy: { id: string; name: string };
+  department: string | null; team: string | null; assignedAt: string; dueDate: string | null; completedAt: string | null;
+  latestUpdate: { note: string; at: string } | null; children: TaskNode[];
 }
 
 export interface WorkTaskUpdate {
@@ -77,7 +91,9 @@ const toTask = (r: any): WorkTask => ({
   lastUpdateAt: r.last_update_at,
   completedAt: r.completed_at,
   createdAt: r.created_at,
-  assignmentNote: r.assignment_note ?? null
+  assignmentNote: r.assignment_note ?? null,
+  division: r.division ?? null,
+  handling: r.handling ?? null
 });
 
 const toUpdate = (r: any): WorkTaskUpdate => ({
@@ -140,6 +156,18 @@ export const workTasksApi = {
     }
     throw new Error(cleanError(error.message));
   },
+  // ---- Operations Head -> Department Head -> Team Lead -> Team Member (20261230000300) ----
+  operationsAssignees: () => rpc<OperationsAssignee[]>('operations_task_assignees', {}),
+  assignToDepartmentHead: (input: { assigneeId: string; departmentId: string; fn: 'SALES' | 'SUPPORT' | 'ALL'; title: string; description?: string; priority: TaskPriority; dueDate?: string | null }) =>
+    rpc<string>('assign_task_to_department_head', {
+      p_assignee: input.assigneeId, p_department: input.departmentId, p_division: input.fn, p_title: input.title,
+      p_description: input.description || null, p_priority: input.priority, p_due: input.dueDate || null
+    }),
+  delegateToTeamLead: (taskId: string, leadId: string, instructions?: string, dueDate?: string | null) =>
+    rpc<string>('delegate_task_to_team_lead', { p_task: taskId, p_lead: leadId, p_instructions: instructions?.trim() || null, p_due: dueDate || null }),
+  takeMyself: (taskId: string, note?: string) => rpc<void>('take_task_myself', { p_task: taskId, p_note: note?.trim() || null }),
+  hierarchy: (taskId: string) => rpc<TaskNode>('task_hierarchy', { p_task: taskId }),
+  operationsTasks: () => rpc<TaskNode[]>('operations_tasks', {}),
   submitUpdate: (taskId: string, input: { status: TaskStatus; progress: number; note?: string }) =>
     rpc<void>('submit_task_update', { p_task: taskId, p_status: input.status, p_progress: input.progress, p_note: input.note || null })
 };

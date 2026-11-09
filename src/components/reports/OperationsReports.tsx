@@ -10,6 +10,7 @@ import { TeamLeadBoxView } from './TeamLeadBoxView';
 import { Box, Chip, dateLabel, pctLabel, Stat, todayIso, WeekPicker, weekOf, WeeklyStatusPill } from './reportUi';
 import { WeeklyPackageView } from './WeeklyPackageView';
 import { WeeklyReviewPanel } from './WeeklyApprovals';
+import { OperationsPeopleDaily } from './OperationsPeopleDaily';
 
 const fnLabel = (f?: string) => (f === 'SALES' ? ' - Sales' : f === 'SUPPORT' ? ' - Support' : '');
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
@@ -134,6 +135,11 @@ export const OperationsReports: React.FC<{ reloadKey: number; onOpen: (id: strin
           )
         ) : null}
       </Card>
+      {board ? (
+        <OperationsPeopleDaily
+          departments={[...new Map(board.departments.map(d => [d.id, { id: d.id, name: d.name }])).values()]}
+          defaultFrom={board.weekStart} defaultTo={board.weekEnd} onOpen={onOpen} />
+      ) : null}
     </div>
   );
 };

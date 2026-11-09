@@ -9971,6 +9971,23 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 401, 'weekly routing: nor a visitor', r);
 }
 
+// --- Operations Head daily drill-down by person (migration 20261230000300) ---------------------------------------------------------
+{
+  const dept = crypto.randomUUID();
+  r = await api('sa', 'GET', `/work-reports/operations/people?department=nope&from=2026-01-01&to=2026-01-07`);
+  check(r.status === 422, 'people drill-down: a malformed department is refused', r);
+  r = await api('sa', 'GET', `/work-reports/operations/people?department=${dept}&from=2026-01-07&to=2026-01-01`);
+  check(r.status === 422, 'people drill-down: the end cannot be before the start', r);
+  r = await api('sa', 'GET', `/work-reports/operations/people?department=${dept}&from=2026-01-01&to=2026-01-07&extra=1`);
+  check(r.status === 422, 'people drill-down: unknown parameters are refused', r);
+  r = await api('sa', 'GET', `/work-reports/operations/people?department=${dept}&from=2026-01-01&to=2026-01-07`);
+  check(r.status === 404, 'people drill-down: an unknown department is "not found"', r);
+  r = await api('a', 'GET', `/work-reports/operations/people?department=${dept}&from=2026-01-01&to=2026-01-07`);
+  check(r.status === 403, 'people drill-down: a Team Member cannot open it', r);
+  r = await api(null, 'GET', `/work-reports/operations/people?department=${dept}&from=2026-01-01&to=2026-01-07`);
+  check(r.status === 401, 'people drill-down: nor a visitor', r);
+}
+
 // --- Client support groups and Sent / Delivered / Seen (migration 20261230000500) ---------------------------------------------------
 {
   const nobody = crypto.randomUUID();

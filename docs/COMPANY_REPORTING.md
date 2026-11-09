@@ -151,3 +151,23 @@ board found nobody.
 Tests: `supabase/tests/weekly_report_routing_test.sql` (Support DH -> Support OH, Sales DH -> Sales OH in the same department and week, a head of
 both functions, a head in two departments, no Operations Head, an inactive one, the wrong one, revision, approval, HR) and the "weekly routing"
 block of `api_integration.test.ts`.
+
+## Task hierarchy: Operations Head -> Department Head -> Team Lead -> Team Member (migration 20261230000300)
+
+* **Operations Head** (Assign page): chooses an active Department Head of a department and function they supervise (`operations_task_assignees`,
+  `assign_task_to_department_head`). Team Leads are not offered, and the database refuses an Operations Head's call to
+  `assign_task_to_team_lead`. Their task list shows each task's whole chain (`operations_tasks`, `task_hierarchy`): actual assignee, who
+  delegated it, instructions, assigned/due dates, progress, status, latest update, completion time.
+* **Department Head** ("From the Operations Head" on the Assign page): passes the task to one or more of their Team Leads with instructions and
+  a due date (`delegate_task_to_team_lead`; only Team Leads of that department and function), follows the chain, and sends updates up.
+* **Team Lead**: either **Assign to myself** (`take_task_myself`: the same task, no copy, a second click changes nothing) or hands it to their own
+  Team Members with a share each (`delegate_task_to_members`, now accepting a task passed down from a Department Head). Never another lead's member.
+* **Who reads a task**: the existing rules, plus everyone above it in its chain; a Department Head does not read another function's Operations
+  Head task. A child's update never completes its parent. The Operations Head counts only their own root tasks (no double counting).
+* **Daily drill-down** (Operations Head reports, "People and daily reports"; `GET /api/v1/work-reports/operations/people`,
+  `operations_people_daily`): per person of the department and function they supervise (Department Heads, Team Leads, Team Members): Team Lead,
+  tasks assigned / completed / pending / overdue in the period, and their submitted daily reports with the Team Lead and Department Head
+  stages (drafts never). Filters: department, period (up to three months), Team Lead, report status, employee. Read only.
+
+Tests: `supabase/tests/task_hierarchy_test.sql` (33 checks, including: an Operations Head opens only the daily reports of their function), the "people drill-down" block of `api_integration.test.ts`,
+`supabase/tests/ui_task_hierarchy.test.mjs` (browser).

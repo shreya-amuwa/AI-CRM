@@ -342,6 +342,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/work-reports/weekly/routing', handler: workReports.weeklyRouting },
   { method: 'POST', path: '/work-reports/weekly/:id/review', handler: workReports.weeklyReview, options: S },
   { method: 'GET', path: '/work-reports/operations', handler: workReports.operations },
+  { method: 'GET', path: '/work-reports/operations/people', handler: workReports.operationsPeople },
   { method: 'GET', path: '/work-reports/operations/departments/:id', handler: workReports.operationsDepartment },
   { method: 'POST', path: '/work-reports', handler: workReports.create, options: S },
   { method: 'GET', path: '/work-reports/:id', handler: workReports.get },
