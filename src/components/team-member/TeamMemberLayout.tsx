@@ -23,9 +23,13 @@ import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { ATTENDANCE_NAV_ID } from '../layout/shell';
+import { Clock3 } from 'lucide-react';
+const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 
 export type TeamMemberNav =
+  | '__attendance'
   | 'home'
   | 'leads'
   | 'potential'
@@ -77,6 +81,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: REPORTS_NAV.id as TeamMemberNav, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
+    // Punch In / Punch Out and lunch (20261230000400)
+    { id: ATTENDANCE_NAV_ID as TeamMemberNav, label: 'Attendance', icon: Clock3 },
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
@@ -218,7 +224,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {currentNav === 'chat' && <ChatRoute />}
           {currentNav === 'raise-issue' && <IssuesRoute />}
           {currentNav === 'work-reports' && <ReportsRoute />}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports'}>{children}</div>
+          {currentNav === ATTENDANCE_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense>}
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || currentNav === ATTENDANCE_NAV_ID}>{children}</div>
         </main>
       </div>
     </div>
