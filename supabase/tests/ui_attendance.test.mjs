@@ -43,7 +43,7 @@ try {
   await page.evaluate(() => window.mount());
   await page.getByTestId('punch-in').waitFor();
   check(await page.getByTestId('punch-out').isDisabled() && await page.getByTestId('lunch-start').isDisabled(), 'before Punch In: Punch Out and lunch are not available');
-  check(await page.getByText(/recorded only at Punch In and Punch Out/).isVisible(), 'the location notice is shown before punching');
+  check(await page.getByText(/recorded only at Punch In and Punch Out/).count() === 0, 'the staff card shows no location notice');
   await page.getByTestId('punch-in').click();
   await page.getByText(/^Punched in at/).waitFor();
   const sentIn = await page.evaluate(() => window.__calls.find(c => c.fn === 'attendance_punch_in').args);
@@ -80,6 +80,19 @@ try {
     'location denied: the punch is still recorded, as "location unavailable", with no coordinates', sent2);
   check(await p2.getByText('Location unavailable (permission denied)').isVisible(), 'and the card says so');
   await ctx2.close();
+
+  // 3. HR: everyone's punches with the location as a map link (coordinates and accuracy), and the reason when there is none
+  const ctx3 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const p3 = await ctx3.newPage();
+  await p3.goto(base);
+  await p3.evaluate(() => window.mountHr());
+  await p3.getByTestId('hr-location').first().waitFor();
+  const href = await p3.getByTestId('hr-location').first().getAttribute('href');
+  const text = await p3.getByTestId('hr-location').first().textContent();
+  check(href === 'https://www.google.com/maps?q=18.520431,73.856743' && /View on map/.test(text) && /18\.52043, 73\.85674 \(±113 m\)/.test(text),
+    'HR sees the Punch In location: a map link with the coordinates and accuracy', { href, text });
+  check(await p3.getByText('Location unavailable (permission denied)').isVisible(), 'and why a punch has no location');
+  await ctx3.close();
 } finally {
   await browser.close();
   srv.close();

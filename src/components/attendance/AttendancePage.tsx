@@ -79,8 +79,6 @@ export const MyAttendance: React.FC = () => {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-extrabold text-slate-900">Today{day ? ` - ${istDate(day.date)}` : ''}</h2>
-            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><MapPin className="w-3.5 h-3.5" aria-hidden="true" />
-              Your location is recorded only at Punch In and Punch Out, for attendance, and erased after 90 days. If you do not allow it, the punch is still recorded as "location unavailable".</p>
           </div>
         </div>
         {notice && <p role={notice.ok ? 'status' : 'alert'} className={`mt-3 p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>{notice.text}</p>}
@@ -174,9 +172,18 @@ export const HrPunchRecords: React.FC = () => {
   const rows = (data?.rows ?? []).filter(r =>
     (!find.trim() || r.name.toLowerCase().includes(find.trim().toLowerCase())) && (!dept || r.department === dept)
     && (problem === 'missing' ? r.missingPunchOut : problem === 'nolocation' ? r.locationUnavailable : problem === 'lunch' ? r.lunchExceededMinutes > 0 : true));
-  const loc = (p: HrPunchRow['punchIn']) => p?.locationStatus === 'CAPTURED' && p.latitude != null
-    ? <a className="text-blue-700 hover:underline" href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`} target="_blank" rel="noreferrer">{p.latitude?.toFixed(5)}, {p.longitude?.toFixed(5)}</a>
-    : <span className="text-slate-500">{locationLabel(p)}</span>;
+  const loc = (p: HrPunchRow['punchIn']) => {
+    const lat = p?.latitude == null ? null : Number(p.latitude);
+    const lng = p?.longitude == null ? null : Number(p.longitude);
+    return p?.locationStatus === 'CAPTURED' && lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
+      ? (
+        <a className="inline-flex flex-col text-blue-700 hover:underline" data-testid="hr-location" href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer">
+          <span className="inline-flex items-center gap-1 font-semibold"><MapPin className="w-3.5 h-3.5" aria-hidden="true" /> View on map</span>
+          <span className="text-[11px] text-slate-500">{lat.toFixed(5)}, {lng.toFixed(5)}{p.accuracy != null ? ` (±${p.accuracy} m)` : ''}</span>
+        </a>
+      )
+      : <span className="text-slate-500">{locationLabel(p)}</span>;
+  };
   return (
     <section className={card} aria-label="Punch records" data-testid="hr-punch-records">
       <div className="flex flex-wrap items-end gap-3 mb-3">
@@ -206,16 +213,17 @@ export const HrPunchRecords: React.FC = () => {
 };
 
 /** The Attendance section of the side panel: what each person sees follows their role (the database checks again). */
-export const AttendancePage: React.FC = () => {
+export const AttendancePage: React.FC<{ hrView?: boolean }> = ({ hrView = false }) => {
   const { profile } = useAuth();
   const isSa = profile?.role === 'SUPER_ADMIN';
   // HR staff (not the recruiters) and the Super Admin; the database checks it again
-  const isHr = !!profile && (isSa || (profile.department?.slug === 'hr' && profile.hrSubRole !== 'HR_RECRUITER'));
+  // hrView: opened from HR's own panel (only HR staff reach it), so the HR tabs do not depend on the profile's department being loaded
+  const isHr = hrView || (!!profile && (isSa || (profile.department?.slug === 'hr' && profile.hrSubRole !== 'HR_RECRUITER')));
   const isOh = !!profile && isOperationsHead(profile);
   const tabs = [
+    ...(isHr ? [{ id: 'punches', label: 'Punch records (all staff)' }] : []),
     ...(isSa ? [] : [{ id: 'mine', label: 'My attendance' }]),
-    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : []),
-    ...(isHr ? [{ id: 'punches', label: 'Punch records' }] : [])
+    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : [])
   ];
   const [tab, setTab] = useState(tabs[0]?.id ?? 'mine');
   return (

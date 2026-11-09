@@ -12,6 +12,14 @@ const day = () => ({
 const punch = (a: any) => ({ at: '2026-11-09T03:35:00Z', locationStatus: a.p_location_status, latitude: a.p_lat, longitude: a.p_lng, accuracy: a.p_accuracy });
 const handlers: Record<string, (a: any) => any> = {
   attendance_today: () => day(),
+  // HR's list, as the database returns it (numbers for the coordinates)
+  hr_attendance_punches: () => ({ allowanceMinutes: 50, retentionDays: 90, rows: [
+    { profileId: 'p1', name: 'Asha Staff', department: 'Wabastore', date: '2026-11-09',
+      punchIn: { at: '2026-11-09T03:35:00Z', locationStatus: 'CAPTURED', latitude: 18.520431, longitude: 73.856743, accuracy: 113 },
+      punchOut: null, punchOutHistory: [], missingPunchOut: false, workedMinutes: null, locationUnavailable: false, lunchMinutes: 0, lunchExceededMinutes: 0 },
+    { profileId: 'p2', name: 'Ravi Staff', department: 'Wabastore', date: '2026-11-09',
+      punchIn: { at: '2026-11-09T04:00:00Z', locationStatus: 'DENIED', latitude: null, longitude: null, accuracy: null },
+      punchOut: null, punchOutHistory: [], missingPunchOut: false, workedMinutes: null, locationUnavailable: true, lunchMinutes: 0, lunchExceededMinutes: 0 }] }),
   my_attendance: () => [],
   attendance_punch_in: a => { state.punchIn = state.punchIn ?? punch(a); return day(); },
   attendance_punch_out: a => { state.punchOut = { ...punch(a), at: '2026-11-09T12:40:00Z' }; state.punchOutCount += 1; return day(); },
