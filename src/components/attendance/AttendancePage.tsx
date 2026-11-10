@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Coffee, LogIn, LogOut, MapPin } from 'lucide-react';
+import { ChevronDown, ChevronRight, Coffee, LogIn, LogOut, MapPin, Play } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { isOperationsHead } from '../../lib/auth/roleMapping';
 import {
-  attendanceApi, captureLocation, istDate, istTime, istToday, locationLabel, minutesLabel, shiftDate,
-  type AttendanceDayData, type HrPunchRow, type LunchRow
+  attendanceApi, captureLocation, coords, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
+  STATUS_LABEL, STATUS_TONE, type AttendanceDayData, type AttendanceRegister, type AttendanceStatus, type LunchRow, type PunchInfo, type RegisterRow
 } from '../../lib/attendance';
 
 const card = 'bg-white rounded-2xl border border-slate-200 p-5';
@@ -29,7 +29,30 @@ function useLunchMinutes(day: AttendanceDayData | null, offsetMs: number): numbe
   }, [day, offsetMs, tick]);
 }
 
-/** The employee's own day: Punch In, Start / End Lunch, Punch Out. Location is asked only when a punch button is pressed. */
+/** A badge with the attendance state. */
+export const StatusBadge: React.FC<{ status: AttendanceStatus; testId?: string }> = ({ status, testId }) => (
+  <span data-testid={testId} className={`inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-bold whitespace-nowrap ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>
+);
+
+/** Where a punch was made: the device coordinates and their accuracy, a Google Maps link, and the looked-up nearest address when there is one. */
+export const PunchLocation: React.FC<{ p: PunchInfo | null | undefined; testId?: string }> = ({ p, testId }) => {
+  const c = coords(p);
+  if (!p) return <span className="text-slate-400">-</span>;
+  if (!c) return <span className="text-slate-500">{locationLabel(p)}</span>;
+  return (
+    <span className="inline-flex flex-col max-w-[17rem]" data-testid={testId}>
+      <span className="inline-flex items-start gap-1 font-semibold text-slate-800"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
+        <span data-testid="coords">{c.lat.toFixed(6)}, {c.lng.toFixed(6)}</span></span>
+      <span className="text-[11px] text-slate-500">
+        {p.accuracy != null ? <>within {p.accuracy} m · </> : null}
+        <a className="text-blue-700 font-semibold hover:underline" href={mapsUrl(c.lat, c.lng)} target="_blank" rel="noreferrer">Google Maps</a>
+      </span>
+      {p.place ? <span className="text-[11px] text-slate-500" data-testid="place" title="Nearest address looked up from the coordinates (approximate)">Near: {p.place}</span> : null}
+    </span>
+  );
+};
+
+/** The employee's own day: Punch In, Start Lunch / Resume Work, Punch Out. The location is asked only when a punch button is pressed. */
 export const MyAttendance: React.FC = () => {
   const [day, setDay] = useState<AttendanceDayData | null>(null);
   const [offsetMs, setOffsetMs] = useState(0);
@@ -50,12 +73,17 @@ export const MyAttendance: React.FC = () => {
     setBusy(kind);
     setNotice(null);
     try {
+      // a fresh position for every punch (Punch Out never reuses the Punch In one); nothing is sent without one
       const loc = await captureLocation();
+      const max = day?.maxAccuracyM ?? 1000;
+      if (loc.status !== 'CAPTURED') { setNotice({ ok: false, text: locationHelp(loc.status) }); return; }
+      if (loc.accuracy != null && loc.accuracy > max) { setNotice({ ok: false, text: locationHelp('CAPTURED', loc.accuracy, max) }); return; }
       const d = kind === 'in' ? await attendanceApi.punchIn(loc) : await attendanceApi.punchOut(loc);
       accept(d);
-      const when = istTime(kind === 'in' ? d.punchIn?.at : d.punchOut?.at);
-      setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${when}.${loc.status === 'CAPTURED' ? '' : ' Your location was not available, so it is recorded as "location unavailable".'}` });
+      const at = kind === 'in' ? d.punchIn?.at : d.punchOut?.at;
+      setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${istClock(at)} (location within ${loc.accuracy} m).` });
       load();
+      attendanceApi.resolvePlaces().then(load, () => { /* the nearest address comes later */ });
     } catch (e) {
       setNotice({ ok: false, text: e instanceof Error ? e.message : 'Could not record the punch.' });
     } finally {
@@ -70,50 +98,60 @@ export const MyAttendance: React.FC = () => {
 
   const allowance = day?.lunch.allowanceMinutes ?? 50;
   const over = Math.max(0, lunchMinutes - allowance);
-  const punchedIn = !!day?.punchIn;
-  const punchedOut = !!day?.punchOut;
+  const remaining = Math.max(0, allowance - lunchMinutes);
+  const status: AttendanceStatus = day?.status ?? (!day?.punchIn ? 'NOT_PUNCHED_IN' : day.punchOut ? 'PUNCHED_OUT' : day.lunch.open ? 'ON_LUNCH' : 'PUNCHED_IN');
+  // which actions the state allows (the database checks every one again)
+  const canIn = !!day && status === 'NOT_PUNCHED_IN';
+  const canLunch = status === 'PUNCHED_IN' || status === 'RESUMED_WORK';
+  const onLunch = status === 'ON_LUNCH';
+  const canOut = status === 'PUNCHED_IN' || status === 'RESUMED_WORK' || status === 'INCOMPLETE';
+  const box = 'rounded-xl bg-slate-50 px-3 py-2';
+  const label = 'text-[11px] font-bold uppercase text-slate-500';
 
   return (
     <div className="space-y-4" data-testid="my-attendance">
       <section className={card} aria-label="Today">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900">Today{day ? ` - ${istDate(day.date)}` : ''}</h2>
-            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1"><MapPin className="w-3.5 h-3.5" aria-hidden="true" />
-              Your location is recorded only at Punch In and Punch Out, for attendance, and erased after 90 days. If you do not allow it, the punch is still recorded as "location unavailable".</p>
-          </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-extrabold text-slate-900">Today{day ? ` – ${istLongDate(day.date)}` : ''}</h2>
+          {day ? <StatusBadge status={status} testId="attendance-status" /> : null}
         </div>
-        {notice && <p role={notice.ok ? 'status' : 'alert'} className={`mt-3 p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>{notice.text}</p>}
-        <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-xl bg-slate-50 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Punch In</dt><dd className="text-lg font-extrabold text-slate-900" data-testid="punch-in-time">{istTime(day?.punchIn?.at)}</dd><dd className="text-[11px] text-slate-500">{locationLabel(day?.punchIn ?? null)}</dd></div>
-          <div className="rounded-xl bg-slate-50 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Punch Out</dt><dd className="text-lg font-extrabold text-slate-900" data-testid="punch-out-time">{istTime(day?.punchOut?.at)}</dd><dd className="text-[11px] text-slate-500">{locationLabel(day?.punchOut ?? null)}{(day?.punchOutCount ?? 0) > 1 ? ` · latest of ${day?.punchOutCount}` : ''}</dd></div>
-          <div className="rounded-xl bg-slate-50 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Worked</dt><dd className="text-lg font-extrabold text-slate-900">{minutesLabel(day?.workedMinutes)}</dd></div>
-          <div className={`rounded-xl px-3 py-2 ${over ? 'bg-rose-50' : 'bg-slate-50'}`}><dt className="text-[11px] font-bold uppercase text-slate-500">Lunch ({allowance} min allowed)</dt>
-            <dd className={`text-lg font-extrabold ${over ? 'text-rose-700' : 'text-slate-900'}`} data-testid="lunch-minutes">{minutesLabel(lunchMinutes)}{day?.lunch.open ? ' (on lunch)' : ''}</dd>
-            <dd className={`text-[11px] ${over ? 'text-rose-700 font-bold' : 'text-slate-500'}`}>{over ? `Exceeded by ${over} min` : `${Math.max(0, allowance - lunchMinutes)} min left`}</dd></div>
+        {notice && <p role={notice.ok ? 'status' : 'alert'} data-testid="attendance-notice" className={`mt-3 p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>{notice.text}</p>}
+        <dl className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className={box}><dt className={label}>Punch In</dt><dd className="text-lg font-extrabold text-slate-900" data-testid="punch-in-time">{istClock(day?.punchIn?.at)}</dd>
+            <dd className="text-xs mt-0.5"><PunchLocation p={day?.punchIn} testId="punch-in-location" /></dd></div>
+          <div className={box}><dt className={label}>Punch Out</dt><dd className="text-lg font-extrabold text-slate-900" data-testid="punch-out-time">{istClock(day?.punchOut?.at)}</dd>
+            <dd className="text-xs mt-0.5"><PunchLocation p={day?.punchOut} testId="punch-out-location" /></dd></div>
+          <div className={box}><dt className={label}>Working time</dt><dd className="text-lg font-extrabold text-slate-900" data-testid="worked">{minutesLabel(day?.workedMinutes)}</dd>
+            <dd className="text-[11px] text-slate-500">{status === 'PUNCHED_OUT' ? 'Punch In to Punch Out' : day?.punchIn ? 'so far (lunch shown separately)' : ''}</dd></div>
+          <div className={`${box} ${over ? '!bg-rose-50' : ''}`}><dt className={label}>Lunch taken ({allowance} min allowed)</dt>
+            <dd className={`text-lg font-extrabold ${over ? 'text-rose-700' : 'text-slate-900'}`} data-testid="lunch-minutes">{minutesLabel(lunchMinutes)}{onLunch ? ' (on lunch)' : ''}</dd></div>
+          <div className={box}><dt className={label}>Lunch remaining</dt><dd className="text-lg font-extrabold text-slate-900" data-testid="lunch-remaining">{remaining} min</dd></div>
+          <div className={`${box} ${over ? '!bg-rose-50' : ''}`}><dt className={label}>Extra lunch</dt><dd className={`text-lg font-extrabold ${over ? 'text-rose-700' : 'text-slate-900'}`} data-testid="lunch-extra">{over ? `${over} min` : '-'}</dd></div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" data-testid="punch-in" className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700`} disabled={!day || punchedIn || !!busy} onClick={() => void punch('in')}>
-            <LogIn className="w-4 h-4" aria-hidden="true" /> {busy === 'in' ? 'Getting location…' : punchedIn ? 'Punched in' : 'Punch In'}
+          <button type="button" data-testid="punch-in" className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700`} disabled={!canIn || !!busy} onClick={() => void punch('in')}>
+            <LogIn className="w-4 h-4" aria-hidden="true" /> {busy === 'in' ? 'Getting your location…' : day?.punchIn ? 'Punched in' : 'Punch In'}
           </button>
-          {day?.lunch.open ? (
-            <button type="button" data-testid="lunch-end" className={`${btnBase} bg-amber-500 text-white hover:bg-amber-600`} disabled={!!busy} onClick={() => void lunch('END')}><Coffee className="w-4 h-4" aria-hidden="true" /> End Lunch</button>
+          {onLunch ? (
+            <button type="button" data-testid="lunch-end" className={`${btnBase} bg-amber-500 text-white hover:bg-amber-600`} disabled={!!busy} onClick={() => void lunch('END')}><Play className="w-4 h-4" aria-hidden="true" /> Resume Work</button>
           ) : (
-            <button type="button" data-testid="lunch-start" className={`${btnBase} border border-amber-300 text-amber-800 bg-white hover:bg-amber-50`} disabled={!punchedIn || punchedOut || !!busy} onClick={() => void lunch('START')}><Coffee className="w-4 h-4" aria-hidden="true" /> Start Lunch</button>
+            <button type="button" data-testid="lunch-start" className={`${btnBase} border border-amber-300 text-amber-800 bg-white hover:bg-amber-50`} disabled={!canLunch || !!busy} onClick={() => void lunch('START')}><Coffee className="w-4 h-4" aria-hidden="true" /> Start Lunch</button>
           )}
-          <button type="button" data-testid="punch-out" className={`${btnBase} bg-slate-900 text-white hover:bg-slate-800`} disabled={!punchedIn || !!busy} onClick={() => void punch('out')}>
-            <LogOut className="w-4 h-4" aria-hidden="true" /> {busy === 'out' ? 'Getting location…' : punchedOut ? 'Punch Out again' : 'Punch Out'}
+          <button type="button" data-testid="punch-out" className={`${btnBase} bg-slate-900 text-white hover:bg-slate-800`} disabled={!canOut || !!busy} onClick={() => void punch('out')}>
+            <LogOut className="w-4 h-4" aria-hidden="true" /> {busy === 'out' ? 'Getting your location…' : status === 'PUNCHED_OUT' ? 'Punched out' : 'Punch Out'}
           </button>
         </div>
-        {punchedOut ? <p className="mt-2 text-[11px] text-slate-500">Punching out again later replaces your Punch Out time with the later one; every punch stays in the record.</p> : null}
+        <p className="mt-2 text-[11px] text-slate-500">Signing in or out of the CRM does not mark attendance. Punch In and Punch Out record your current location; times are the server's, in India Standard Time.</p>
       </section>
       <section className={card} aria-label="Last two weeks">
         <h3 className="text-sm font-extrabold text-slate-900 mb-2">Last two weeks</h3>
         {history === null ? <p className="text-xs text-slate-500">Loading…</p> : history.length === 0 ? <p className="text-xs text-slate-500">No attendance recorded yet.</p> : (
           <div className="overflow-x-auto"><table className="min-w-full text-xs">
-            <thead className="text-slate-500"><tr>{['Day', 'Punch In', 'Punch Out', 'Worked', 'Lunch'].map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold">{h}</th>)}</tr></thead>
+            <thead className="text-slate-500"><tr>{['Day', 'Status', 'Punch In', 'Punch Out', 'Worked', 'Lunch'].map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold">{h}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-100">{history.map(h => (
-              <tr key={h.date}><th scope="row" className="px-2 py-1.5 text-left font-semibold">{istDate(h.date)}</th><td className="px-2 py-1.5">{istTime(h.punchIn?.at)}</td><td className="px-2 py-1.5">{istTime(h.punchOut?.at)}</td>
+              <tr key={h.date}><th scope="row" className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{istDate(h.date)}</th>
+                <td className="px-2 py-1.5">{h.status ? <StatusBadge status={h.status} /> : '-'}</td>
+                <td className="px-2 py-1.5 whitespace-nowrap">{istClock(h.punchIn?.at)}</td><td className="px-2 py-1.5 whitespace-nowrap">{istClock(h.punchOut?.at)}</td>
                 <td className="px-2 py-1.5">{minutesLabel(h.workedMinutes)}</td><td className={`px-2 py-1.5 ${h.lunch.exceededMinutes ? 'text-rose-700 font-semibold' : ''}`}>{minutesLabel(h.lunch.minutes)}{h.lunch.exceededMinutes ? ` (+${h.lunch.exceededMinutes})` : ''}</td></tr>
             ))}</tbody>
           </table></div>
@@ -151,7 +189,7 @@ export const LunchOverview: React.FC = () => {
           <thead className="text-slate-500"><tr>{['Employee', 'Department', 'Day', 'Lunch start', 'Lunch end', 'Total', 'Excess', 'Flag'].map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr></thead>
           <tbody className="divide-y divide-slate-100">{rows.map(r => (
             <tr key={`${r.profileId}:${r.date}`}><th scope="row" className="px-2 py-1.5 text-left font-semibold">{r.name}</th><td className="px-2 py-1.5">{r.department ?? '-'}</td><td className="px-2 py-1.5">{istDate(r.date)}</td>
-              <td className="px-2 py-1.5">{istTime(r.firstStart)}</td><td className="px-2 py-1.5">{istTime(r.lastEnd)}</td><td className="px-2 py-1.5">{minutesLabel(r.minutes)}</td>
+              <td className="px-2 py-1.5">{istClock(r.firstStart)}</td><td className="px-2 py-1.5">{istClock(r.lastEnd)}</td><td className="px-2 py-1.5">{minutesLabel(r.minutes)}</td>
               <td className="px-2 py-1.5">{r.exceededMinutes ? `${r.exceededMinutes} min` : '-'}</td><td className={`px-2 py-1.5 font-bold ${r.flagged ? 'text-rose-700' : 'text-emerald-700'}`}>{r.flagged ? 'Exceeded' : 'Within'}</td></tr>
           ))}</tbody>
         </table></div>
@@ -160,45 +198,150 @@ export const LunchOverview: React.FC = () => {
   );
 };
 
-/** HR / Super Admin: Punch In / Out with location, worked time, missing Punch Out, location unavailable, lunch. Each load is audited. */
-export const HrPunchRecords: React.FC = () => {
-  const [to, setTo] = useState(istToday());
-  const [from, setFrom] = useState(shiftDate(istToday(), -6));
-  const [data, setData] = useState<{ allowanceMinutes: number; retentionDays: number; rows: HrPunchRow[] } | null>(null);
-  const [error, setError] = useState('');
-  const [find, setFind] = useState('');
-  const [dept, setDept] = useState('');
-  const [problem, setProblem] = useState<'' | 'missing' | 'nolocation' | 'lunch'>('');
-  useEffect(() => { setData(null); attendanceApi.hrPunches(from, to).then(d => { setError(''); setData(d); }, e => setError(e instanceof Error ? e.message : String(e))); }, [from, to]);
-  const departments = useMemo(() => [...new Set((data?.rows ?? []).map(r => r.department).filter(Boolean) as string[])].sort(), [data]);
-  const rows = (data?.rows ?? []).filter(r =>
-    (!find.trim() || r.name.toLowerCase().includes(find.trim().toLowerCase())) && (!dept || r.department === dept)
-    && (problem === 'missing' ? r.missingPunchOut : problem === 'nolocation' ? r.locationUnavailable : problem === 'lunch' ? r.lunchExceededMinutes > 0 : true));
-  const loc = (p: HrPunchRow['punchIn']) => p?.locationStatus === 'CAPTURED' && p.latitude != null
-    ? <a className="text-blue-700 hover:underline" href={`https://www.google.com/maps?q=${p.latitude},${p.longitude}`} target="_blank" rel="noreferrer">{p.latitude?.toFixed(5)}, {p.longitude?.toFixed(5)}</a>
-    : <span className="text-slate-500">{locationLabel(p)}</span>;
+/** A small map of a punch (OpenStreetMap), shown only when HR opens a row. */
+const PunchMap: React.FC<{ p: PunchInfo | null; title: string }> = ({ p, title }) => {
+  const c = coords(p);
+  if (!c) return null;
+  const d = 0.004;
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${c.lng - d},${c.lat - d},${c.lng + d},${c.lat + d}&layer=mapnik&marker=${c.lat},${c.lng}`;
+  return <iframe title={title} src={src} loading="lazy" referrerPolicy="no-referrer" className="w-full h-44 rounded-xl border border-slate-200 bg-slate-50" />;
+};
+
+const PunchDetail: React.FC<{ title: string; p: PunchInfo | null }> = ({ title, p }) => {
+  const c = coords(p);
   return (
-    <section className={card} aria-label="Punch records" data-testid="hr-punch-records">
+    <div className="rounded-xl border border-slate-200 p-3 space-y-1.5 min-w-0">
+      <h4 className="text-xs font-extrabold text-slate-900">{title}</h4>
+      {!p ? <p className="text-xs text-rose-700 font-semibold">Not recorded</p> : (
+        <>
+          <p className="text-xs text-slate-800 font-semibold">{istStamp(p.at)}</p>
+          {c ? (
+            <dl className="text-[11px] text-slate-600 grid grid-cols-[auto_1fr] gap-x-2">
+              <dt>Latitude</dt><dd className="font-mono">{c.lat.toFixed(6)}</dd>
+              <dt>Longitude</dt><dd className="font-mono">{c.lng.toFixed(6)}</dd>
+              <dt>Accuracy</dt><dd>{p.accuracy != null ? `${p.accuracy} m` : '-'}</dd>
+              {p.place ? <><dt>Near</dt><dd title="Nearest address looked up from the coordinates (approximate)">{p.place}</dd></> : null}
+            </dl>
+          ) : <p className="text-[11px] text-slate-500">{locationLabel(p)}</p>}
+          {c ? <a className="text-[11px] text-blue-700 font-semibold hover:underline" href={mapsUrl(c.lat, c.lng)} target="_blank" rel="noreferrer">Open in Google Maps</a> : null}
+          <PunchMap p={p} title={`${title} on the map`} />
+        </>
+      )}
+    </div>
+  );
+};
+
+const STATUSES: AttendanceStatus[] = ['NOT_PUNCHED_IN', 'PUNCHED_IN', 'ON_LUNCH', 'RESUMED_WORK', 'PUNCHED_OUT', 'INCOMPLETE'];
+
+/** HR / Super Admin: every employee's attendance for one office day (India time). Each load is written to the audit log. */
+export const HrAttendanceRegister: React.FC = () => {
+  const [date, setDate] = useState(istToday());
+  const [data, setData] = useState<AttendanceRegister | null>(null);
+  const [error, setError] = useState('');
+  const [dept, setDept] = useState('');
+  const [emp, setEmp] = useState('');
+  const [status, setStatus] = useState<'' | AttendanceStatus>('');
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    setOpen(null);
+    const load = () => attendanceApi.register(date);
+    load().then(d => {
+      if (!alive) return;
+      setError(''); setData(d);
+      // punches with coordinates but no nearest address yet: ask the server to look them up, then reload once
+      const missing = d.rows.some(r => [r.punchIn, r.punchOut].some(p => p?.locationStatus === 'CAPTURED' && !p.place));
+      if (missing) attendanceApi.resolvePlaces().then(() => load()).then(d2 => { if (alive) setData(d2); }, () => { /* the addresses come with the next load */ });
+    }, e => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { alive = false; };
+  }, [date]);
+  const departments = useMemo(() => [...new Map((data?.rows ?? []).filter(r => r.departmentId).map(r => [r.departmentId!, r.department ?? '-'])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [data]);
+  const employees = useMemo(() => (data?.rows ?? []).filter(r => !dept || r.departmentId === dept).map(r => ({ id: r.profileId, name: r.name })), [data, dept]);
+  const counts = useMemo(() => Object.fromEntries(STATUSES.map(s => [s, (data?.rows ?? []).filter(r => r.status === s).length])) as Record<AttendanceStatus, number>, [data]);
+  const rows = (data?.rows ?? []).filter(r => (!dept || r.departmentId === dept) && (!emp || r.profileId === emp) && (!status || r.status === status));
+  const isToday = data ? data.date === data.today : date === istToday();
+  const crmCell = (r: RegisterRow) => (
+    <span className="inline-flex flex-col">
+      <span className="font-semibold text-slate-800" data-testid="crm-login">{r.crm.firstLoginAt ? istClock(r.crm.firstLoginAt) : <span className="text-slate-400">No login</span>}</span>
+      {r.crm.lastLogoutAt ? <span className="text-[11px] text-slate-500" data-testid="crm-logout">Logout {istClock(r.crm.lastLogoutAt)}</span>
+        : r.crm.logoutMissing ? <span className="text-[11px] text-amber-700">{isToday ? 'No logout yet' : 'Logout not recorded'}</span> : null}
+    </span>
+  );
+  const head = ['Employee', 'Department', 'CRM Login', 'Punch In', 'Punch In Location', 'Lunch Duration', 'Punch Out', 'Punch Out Location', 'Worked', 'Status'];
+  return (
+    <section className={card} aria-label="Attendance register" data-testid="hr-register">
       <div className="flex flex-wrap items-end gap-3 mb-3">
-        <div className="mr-auto"><h2 className="text-base font-extrabold text-slate-900">Punch In / Punch Out</h2>
-          <p className="text-[11px] text-slate-500">Locations are kept for {data?.retentionDays ?? 90} days. Opening this list is recorded in the audit log.</p></div>
-        <RangePicker from={from} to={to} onFrom={setFrom} onTo={setTo} />
-        <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Department<select className={field} value={dept} onChange={e => setDept(e.target.value)}><option value="">All</option>{departments.map(d => <option key={d}>{d}</option>)}</select></label>
-        <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Show<select className={field} value={problem} onChange={e => setProblem(e.target.value as typeof problem)}>
-          <option value="">Everyone</option><option value="missing">Missing Punch Out</option><option value="nolocation">Location unavailable</option><option value="lunch">Lunch exceeded</option></select></label>
-        <input className={`${field} w-44`} placeholder="Search employee" aria-label="Search employee" value={find} onChange={e => setFind(e.target.value)} />
+        <div className="mr-auto min-w-0">
+          <h2 className="text-base font-extrabold text-slate-900">Attendance register – {istLongDate(date)}</h2>
+          <p className="text-[11px] text-slate-500">All employees · India Standard Time (Asia/Kolkata) · lunch allowance {data?.allowanceMinutes ?? 50} min · locations kept {data?.retentionDays ?? 90} days. Opening this register is recorded in the audit log.</p>
+        </div>
+        <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Date<input type="date" data-testid="register-date" className={field} value={date} max={istToday()} onChange={e => e.target.value && setDate(e.target.value)} /></label>
+        <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Department<select className={field} value={dept} onChange={e => { setDept(e.target.value); setEmp(''); }}><option value="">All</option>{departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+        <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Employee<select className={`${field} max-w-[12rem]`} value={emp} onChange={e => setEmp(e.target.value)}><option value="">All</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
+        <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Status<select data-testid="register-status" className={field} value={status} onChange={e => setStatus(e.target.value as typeof status)}><option value="">All</option>{STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select></label>
       </div>
-      {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : !data ? <p className="text-xs text-slate-500">Loading…</p> : rows.length === 0 ? <p className="text-xs text-slate-500">No punches in this period.</p> : (
+      {data ? (
+        <div className="flex flex-wrap gap-1.5 mb-3" aria-label="Summary">
+          {STATUSES.map(s => <button key={s} type="button" onClick={() => setStatus(status === s ? '' : s)} aria-pressed={status === s}
+            className={`px-2.5 py-1 rounded-full border text-[11px] font-bold ${STATUS_TONE[s]} ${status === s ? 'ring-2 ring-blue-300' : ''}`}>{STATUS_LABEL[s]}: {counts[s]}</button>)}
+        </div>
+      ) : null}
+      {data && !data.geofence ? <p className="mb-3 text-[11px] text-slate-500">No office location or radius is configured, so punches are recorded with the device location but are not limited to a workplace.</p> : null}
+      {error ? <p role="alert" className="text-sm text-rose-700">{error}</p> : !data ? <p className="text-xs text-slate-500">Loading…</p> : rows.length === 0 ? <p className="text-xs text-slate-500">No employees match these filters.</p> : (
         <div className="overflow-x-auto"><table className="min-w-full text-xs">
-          <thead className="text-slate-500"><tr>{['Employee', 'Department', 'Day', 'Punch In', 'In location', 'Punch Out', 'Out location', 'Worked', 'Lunch', 'Notes'].map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr></thead>
-          <tbody className="divide-y divide-slate-100">{rows.map(r => (
-            <tr key={`${r.profileId}:${r.date}`} className="align-top"><th scope="row" className="px-2 py-1.5 text-left font-semibold">{r.name}</th><td className="px-2 py-1.5">{r.department ?? '-'}</td><td className="px-2 py-1.5 whitespace-nowrap">{istDate(r.date)}</td>
-              <td className="px-2 py-1.5">{istTime(r.punchIn?.at)}</td><td className="px-2 py-1.5">{loc(r.punchIn)}</td>
-              <td className="px-2 py-1.5">{istTime(r.punchOut?.at)}{r.punchOutHistory.length > 1 ? <span className="block text-[11px] text-slate-500">earlier: {r.punchOutHistory.slice(0, -1).map(h => istTime(h.at)).join(', ')}</span> : null}</td>
-              <td className="px-2 py-1.5">{r.punchOut ? loc(r.punchOut) : '-'}</td><td className="px-2 py-1.5">{minutesLabel(r.workedMinutes)}</td>
-              <td className={`px-2 py-1.5 ${r.lunchExceededMinutes ? 'text-rose-700 font-semibold' : ''}`}>{minutesLabel(r.lunchMinutes)}{r.lunchExceededMinutes ? ` (+${r.lunchExceededMinutes})` : ''}</td>
-              <td className="px-2 py-1.5">{[r.missingPunchOut ? 'Missing Punch Out' : '', r.locationUnavailable ? 'Location unavailable' : ''].filter(Boolean).join(' · ') || '-'}</td></tr>
-          ))}</tbody>
+          <thead className="text-slate-500"><tr>{head.map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr></thead>
+          <tbody className="divide-y divide-slate-100">{rows.map(r => {
+            const expanded = open === r.profileId;
+            return (
+              <React.Fragment key={r.profileId}>
+                <tr className="align-top" data-testid="register-row">
+                  <th scope="row" className="px-2 py-1.5 text-left font-semibold">
+                    <button type="button" className="inline-flex items-start gap-1 text-left hover:text-blue-700" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : r.profileId)}>
+                      {expanded ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" /> : <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />}
+                      <span>{r.name}{r.designation ? <span className="block text-[11px] font-normal text-slate-500">{r.designation}</span> : null}</span>
+                    </button>
+                  </th>
+                  <td className="px-2 py-1.5">{r.department ?? '-'}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{crmCell(r)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap" data-testid="register-in">{istClock(r.punchIn?.at)}</td>
+                  <td className="px-2 py-1.5"><PunchLocation p={r.punchIn} testId="hr-location" /></td>
+                  <td className={`px-2 py-1.5 whitespace-nowrap ${r.lunch.exceededMinutes ? 'text-rose-700 font-semibold' : ''}`} data-testid="register-lunch">
+                    {r.lunch.sessions.length ? minutesLabel(r.lunch.minutes) : '-'}{r.lunch.exceededMinutes ? <span className="block text-[11px]">+{r.lunch.exceededMinutes} min over</span> : null}{r.lunch.open ? <span className="block text-[11px] text-amber-700">on lunch now</span> : null}
+                  </td>
+                  <td className="px-2 py-1.5 whitespace-nowrap" data-testid="register-out">{r.punchOut ? istClock(r.punchOut.at) : r.punchIn ? <span className="text-rose-700 font-semibold">Missing</span> : '-'}</td>
+                  <td className="px-2 py-1.5"><PunchLocation p={r.punchOut} testId="hr-out-location" /></td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{minutesLabel(r.workedMinutes)}{r.workedMinutes != null && !r.punchOut ? <span className="block text-[11px] text-slate-500">so far</span> : null}</td>
+                  <td className="px-2 py-1.5"><StatusBadge status={r.status} testId="register-status-badge" /></td>
+                </tr>
+                {expanded ? (
+                  <tr data-testid="register-detail"><td colSpan={head.length} className="px-2 pb-4 bg-slate-50/60">
+                    <div className="grid gap-3 lg:grid-cols-2 pt-2">
+                      <PunchDetail title="Punch In" p={r.punchIn} />
+                      <PunchDetail title="Punch Out" p={r.punchOut} />
+                      <div className="rounded-xl border border-slate-200 p-3 min-w-0">
+                        <h4 className="text-xs font-extrabold text-slate-900 mb-1">CRM sign-in / sign-out (separate from attendance)</h4>
+                        <p className="text-[11px] text-slate-600">First CRM opening: {istStamp(r.crm.systemLoginAt)} · First login: {istClock(r.crm.firstLoginAt)} · Last logout: {r.crm.lastLogoutAt ? istClock(r.crm.lastLogoutAt) : 'not recorded'}</p>
+                        {r.crm.sessions.length === 0 ? <p className="text-[11px] text-slate-500 mt-1">No sign-in session recorded on this day.</p> : (
+                          <ul className="mt-1 space-y-0.5 text-[11px] text-slate-700">{r.crm.sessions.map((s, i) => (
+                            <li key={i}>{s.startedAt ? istClock(s.startedAt) : 'earlier'} → {s.endedAt ? istClock(s.endedAt) : <span className="text-amber-700 font-semibold">{isToday ? 'still signed in / logout not recorded' : 'logout not recorded'}</span>}{s.device ? ` · ${s.device}` : ''}</li>
+                          ))}</ul>
+                        )}
+                      </div>
+                      <div className="rounded-xl border border-slate-200 p-3 min-w-0">
+                        <h4 className="text-xs font-extrabold text-slate-900 mb-1">Lunch ({r.lunch.allowanceMinutes} min allowed)</h4>
+                        {r.lunch.sessions.length === 0 ? <p className="text-[11px] text-slate-500">No lunch break.</p> : (
+                          <ul className="space-y-0.5 text-[11px] text-slate-700">{r.lunch.sessions.map((l, i) => <li key={i}>{istClock(l.startedAt)} → {l.endedAt ? istClock(l.endedAt) : 'running'} · {l.minutes} min{l.endedBy === 'PUNCH_OUT' ? ' (ended by Punch Out)' : ''}</li>)}</ul>
+                        )}
+                        <p className="mt-1 text-[11px] font-semibold text-slate-800">Total {r.lunch.minutes} min · remaining {Math.max(0, r.lunch.allowanceMinutes - r.lunch.minutes)} min · extra {r.lunch.exceededMinutes} min</p>
+                        {r.punchOutHistory.length > 1 ? <p className="mt-1 text-[11px] text-slate-500">Earlier Punch Outs: {r.punchOutHistory.slice(0, -1).map(h => istClock(h.at)).join(', ')}</p> : null}
+                      </div>
+                    </div>
+                  </td></tr>
+                ) : null}
+              </React.Fragment>
+            );
+          })}</tbody>
         </table></div>
       )}
     </section>
@@ -206,23 +349,24 @@ export const HrPunchRecords: React.FC = () => {
 };
 
 /** The Attendance section of the side panel: what each person sees follows their role (the database checks again). */
-export const AttendancePage: React.FC = () => {
+export const AttendancePage: React.FC<{ hrView?: boolean }> = ({ hrView = false }) => {
   const { profile } = useAuth();
   const isSa = profile?.role === 'SUPER_ADMIN';
   // HR staff (not the recruiters) and the Super Admin; the database checks it again
-  const isHr = !!profile && (isSa || (profile.department?.slug === 'hr' && profile.hrSubRole !== 'HR_RECRUITER'));
+  // hrView: opened from HR's own panel (only HR staff reach it), so the HR tabs do not depend on the profile's department being loaded
+  const isHr = hrView || (!!profile && (isSa || (profile.department?.slug === 'hr' && profile.hrSubRole !== 'HR_RECRUITER')));
   const isOh = !!profile && isOperationsHead(profile);
   const tabs = [
+    ...(isHr ? [{ id: 'register', label: 'Attendance register (all staff)' }] : []),
     ...(isSa ? [] : [{ id: 'mine', label: 'My attendance' }]),
-    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : []),
-    ...(isHr ? [{ id: 'punches', label: 'Punch records' }] : [])
+    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : [])
   ];
   const [tab, setTab] = useState(tabs[0]?.id ?? 'mine');
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Attendance</h1>
-        <p className="mt-1 text-sm text-slate-600">Punch in when you start and punch out when you finish. Times are the server's, shown in India time.</p>
+        <p className="mt-1 text-sm text-slate-600">Punch in when you start and punch out when you finish; each punch records your current location. Times are the server's, in India Standard Time.</p>
       </div>
       {tabs.length > 1 ? (
         <div role="tablist" aria-label="Attendance views" className="flex flex-wrap gap-2">
@@ -230,7 +374,7 @@ export const AttendancePage: React.FC = () => {
             className={`px-3.5 h-9 rounded-xl text-sm font-bold border ${tab === t.id ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>{t.label}</button>)}
         </div>
       ) : null}
-      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : <HrPunchRecords />}
+      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : <HrAttendanceRegister />}
     </div>
   );
 };

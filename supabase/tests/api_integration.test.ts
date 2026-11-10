@@ -9343,8 +9343,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
   r = await api('rrec1', 'GET', '/recruiter/context');
   check(r.status === 200 && r.json.data.isRecruiter === true && r.json.data.isLeadership === false, 'recruiter: the workspace opens for a Recruiter', r);
+  // 20261231000300: an HR Assistant uses the Recruitment Portal with a Recruiter's limits (not as a Recruiter, not as leadership)
   r = await api('rasst', 'GET', '/recruiter/context');
-  check(r.status === 403, 'recruiter: an HR Assistant cannot open the recruiter workspace', r);
+  check(r.status === 200 && r.json.data.isAssistant === true && r.json.data.isRecruiter === false && r.json.data.isLeadership === false,
+    'recruiter: an HR Assistant opens the recruiter workspace as an HR Assistant', r);
   r = await api('rrec1', 'GET', '/hr/recruitment/careers/postings');
   check(r.status === 403, 'recruiter: a Recruiter cannot use the HR Assistant recruitment screens', r);
   r = await api(null, 'GET', '/recruiter/context');
@@ -9361,6 +9363,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const rrJobB = await mkJob('RR API Job B', (await db.query(`select id from public.profiles where email = 'rr.rec2@amuwa.com'`)).rows[0].id, 1);
   r = await api('rasst', 'POST', '/hr/recruitment/careers/postings', { id: rrJobA, version: 2, position_id: rrPos.id, title: 'RR API Job A', description: 'An engineering opportunity for the recruiter integration test.', location: 'Mumbai', employment_type: 'FULL_TIME', published: true, closes_at: null, responsible_id: (await db.query(`select id from public.profiles where email = 'rr.rec2@amuwa.com'`)).rows[0].id });
   check(r.status === 403, 'recruiter: an HR Assistant cannot allocate a vacancy', r);
+  r = await api('rasst', 'GET', '/recruiter/vacancies');
+  check(r.status === 200 && !r.json.data.some((v: any) => v.id === rrJobA || v.id === rrJobB), 'recruiter: an HR Assistant does not see vacancies allocated to Recruiters', r);
   r = await api('rrec1', 'GET', '/recruiter/vacancies');
   check(r.status === 200 && r.json.data.some((v: any) => v.id === rrJobA) && !r.json.data.some((v: any) => v.id === rrJobB), 'recruiter: a Recruiter sees their own vacancy and not another Recruiter\'s', r);
 
