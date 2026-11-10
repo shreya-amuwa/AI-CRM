@@ -9343,8 +9343,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
   r = await api('rrec1', 'GET', '/recruiter/context');
   check(r.status === 200 && r.json.data.isRecruiter === true && r.json.data.isLeadership === false, 'recruiter: the workspace opens for a Recruiter', r);
+  // 20261231000300: an HR Assistant uses the Recruitment Portal with a Recruiter's limits (not as a Recruiter, not as leadership)
   r = await api('rasst', 'GET', '/recruiter/context');
-  check(r.status === 403, 'recruiter: an HR Assistant cannot open the recruiter workspace', r);
+  check(r.status === 200 && r.json.data.isAssistant === true && r.json.data.isRecruiter === false && r.json.data.isLeadership === false,
+    'recruiter: an HR Assistant opens the recruiter workspace as an HR Assistant', r);
   r = await api('rrec1', 'GET', '/hr/recruitment/careers/postings');
   check(r.status === 403, 'recruiter: a Recruiter cannot use the HR Assistant recruitment screens', r);
   r = await api(null, 'GET', '/recruiter/context');
@@ -9361,6 +9363,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const rrJobB = await mkJob('RR API Job B', (await db.query(`select id from public.profiles where email = 'rr.rec2@amuwa.com'`)).rows[0].id, 1);
   r = await api('rasst', 'POST', '/hr/recruitment/careers/postings', { id: rrJobA, version: 2, position_id: rrPos.id, title: 'RR API Job A', description: 'An engineering opportunity for the recruiter integration test.', location: 'Mumbai', employment_type: 'FULL_TIME', published: true, closes_at: null, responsible_id: (await db.query(`select id from public.profiles where email = 'rr.rec2@amuwa.com'`)).rows[0].id });
   check(r.status === 403, 'recruiter: an HR Assistant cannot allocate a vacancy', r);
+  r = await api('rasst', 'GET', '/recruiter/vacancies');
+  check(r.status === 200 && !r.json.data.some((v: any) => v.id === rrJobA || v.id === rrJobB), 'recruiter: an HR Assistant does not see vacancies allocated to Recruiters', r);
   r = await api('rrec1', 'GET', '/recruiter/vacancies');
   check(r.status === 200 && r.json.data.some((v: any) => v.id === rrJobA) && !r.json.data.some((v: any) => v.id === rrJobB), 'recruiter: a Recruiter sees their own vacancy and not another Recruiter\'s', r);
 
@@ -10010,6 +10014,41 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('a', 'GET', `/chat/conversations/${nobody}/receipts`);
   check(r.status === 404, 'message status: nor the receipts of one', r);
 }
+// --- Messaging onboarding scope, paid leave, HR Assistant recruitment (migrations 20261231000100-300) -----------------------------------
+{
+  // paid leave: every figure comes from the database; the policy is off until HR switches it on
+  let r = await api('a', 'GET', '/leave/paid-balance');
+  check(r.status === 200 && typeof r.json.data.balance === 'number' && typeof r.json.data.available === 'number' && !!r.json.data.employment, 'paid leave API: an employee reads their own balance', r);
+  r = await api('a', 'POST', '/leave/paid', { leaveType: 'FULL_DAY', startDate: '2027-02-01', reason: 'Paid day off' });
+  check(r.status === 422, 'paid leave API: no paid leave before confirmation / while the policy is off (unpaid leave stays available)', r);
+  r = await api('a', 'POST', '/leave/paid', { leaveType: 'HALF_DAY', startDate: '2027-02-01', reason: 'x' });
+  check(r.status === 422, 'paid leave API: the request is validated like any leave request', r);
+  r = await api('a', 'GET', '/hr/paid-leave');
+  check(r.status === 403, 'paid leave API: only HR lists balances', r);
+  r = await api('hr', 'GET', '/hr/paid-leave');
+  check(r.status === 200 && Array.isArray(r.json.data.items) && typeof r.json.data.policy.enabled === 'boolean', 'paid leave API: HR lists balances and the policy', r);
+  r = await api('a', 'POST', '/hr/paid-leave/policy', { enabled: false, monthlyDays: 2, creditDay: 1, partialMonthRule: 'NEXT_FULL_MONTH' });
+  check(r.status === 403, 'paid leave API: only HR leadership sets the policy', r);
+  r = await api('hr', 'POST', '/hr/paid-leave/policy', { enabled: true, monthlyDays: 2, creditDay: 1, partialMonthRule: 'NEXT_FULL_MONTH' });
+  check(r.status === 422, 'paid leave API: switching on needs the first month to credit', r);
+  r = await api('hr', 'POST', '/hr/paid-leave/policy', { enabled: false, monthlyDays: 0.3, creditDay: 1, partialMonthRule: 'NEXT_FULL_MONTH' });
+  check(r.status === 422, 'paid leave API: whole or half days only', r);
+  const someone = (await db.query(`select id from profiles where email = 'a@amuwa.com'`)).rows[0].id as string;
+  r = await api('a', 'POST', `/hr/paid-leave/${someone}/adjust`, { kind: 'CORRECTION', days: 5, note: 'Give myself days' });
+  check(r.status === 403, 'paid leave API: an employee cannot correct a balance', r);
+  // the review scope of a customer: nobody outside it reads it
+  const cust = (await db.query(`select id from customers order by created_at limit 1`)).rows[0]?.id as string | undefined;
+  if (cust) {
+    r = await api('sm', 'GET', `/pipeline/customers/${cust}/review-scope`);
+    check(r.status === 404 || r.status === 200, 'messaging API: the review scope answers only within the database’s rules', r);
+  }
+  r = await api('sa', 'GET', '/pipeline/customers/not-an-id/review-scope');
+  check(r.status === 422, 'messaging API: the customer id is validated', r);
+  // recruitment: an ordinary employee still has no Recruitment Portal
+  r = await api('a', 'GET', '/recruiter/context');
+  check(r.status === 403, 'recruitment API: an ordinary employee has no Recruitment Portal', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

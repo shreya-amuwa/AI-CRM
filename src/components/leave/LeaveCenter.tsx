@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
-import type { LeaveRequest, LeaveReview } from '../../../shared/contracts';
+import type { EmploymentStatus, LeaveRequest, LeaveReview, PaidLeaveBalance } from '../../../shared/contracts';
 import { hrApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
 import { useNotifications } from '../../context/NotificationContext';
@@ -16,6 +16,47 @@ const length = (r: LeaveRequest) => (r.leaveType === 'HALF_DAY' ? `Half day (${r
 const STAGE_LABEL: Record<string, string> = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', SUPER_ADMIN: 'Super Admin', SUBMITTED: 'Requested', RESUBMITTED: 'Changed and sent again' };
 const DECISION_LABEL: Record<string, string> = { APPROVED: 'approved', REJECTED: 'rejected', REVISION_REQUESTED: 'asked for changes', SUBMITTED: '' };
 const when = (at: string) => new Date(at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+
+const EMPLOYMENT_LABEL: Record<EmploymentStatus, string> = {
+  PROBATION: 'On probation', CONFIRMATION_PENDING: 'Probation completed - confirmation pending', FULL_TIME: 'Full-time (confirmed)',
+  NOT_CONFIRMED: 'Not confirmed', UNKNOWN: 'Not recorded by HR'
+};
+const fmtDays = (n: number) => `${Number(n) % 1 === 0 ? Number(n) : Number(n).toFixed(1)} day${Number(n) === 1 ? '' : 's'}`;
+
+/** The paid leave balance, as the database computes it from the ledger (credits, approved leave, HR corrections). */
+export const PaidLeaveCard: React.FC<{ b: PaidLeaveBalance }> = ({ b }) => {
+  const confirmed = b.employment.status === 'FULL_TIME';
+  return (
+    <section className="m-4 p-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 space-y-2" aria-labelledby="paid-leave-heading" data-testid="paid-leave-card">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 id="paid-leave-heading" className="text-xs font-bold text-slate-900">Paid leave</h3>
+          <p className="text-[11px] text-slate-600">{EMPLOYMENT_LABEL[b.employment.status]}{b.employment.confirmedFrom ? ` from ${formatDay(b.employment.confirmedFrom)}` : ''}</p>
+        </div>
+        <p className="text-right">
+          <span className="block text-lg font-extrabold text-emerald-800" data-testid="paid-leave-available">{fmtDays(b.available)}</span>
+          <span className="text-[10px] text-slate-500">available</span>
+        </p>
+      </div>
+      {!b.policy.enabled && b.balance === 0 ? (
+        <p className="text-[11px] text-slate-600">Paid leave ({b.policy.monthlyDays} days a month after confirmation as a full-time employee) has not started yet. Unpaid leave is available as always.</p>
+      ) : !confirmed && b.balance === 0 ? (
+        <p className="text-[11px] text-slate-600">Paid leave ({b.policy.monthlyDays} days a month) starts once HR confirms you as a full-time employee after your probation. Unpaid leave is available as always.</p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]" data-testid="paid-leave-breakdown">
+          <dt className="text-slate-500">Previous balance (carried forward)</dt><dd className="text-right font-semibold text-slate-800">{fmtDays(b.carriedForward)}</dd>
+          <dt className="text-slate-500">Credited this month</dt><dd className="text-right font-semibold text-slate-800">+{fmtDays(b.creditedThisMonth)}</dd>
+          {Number(b.adjustedThisMonth) !== 0 && (<><dt className="text-slate-500">HR adjustment this month</dt><dd className="text-right font-semibold text-slate-800">{Number(b.adjustedThisMonth) > 0 ? '+' : ''}{fmtDays(b.adjustedThisMonth)}</dd></>)}
+          <dt className="text-slate-500">Approved leave used this month</dt><dd className="text-right font-semibold text-slate-800">-{fmtDays(b.usedThisMonth)}</dd>
+          <dt className="text-slate-700 font-semibold border-t border-emerald-200 pt-1">Remaining balance</dt><dd className="text-right font-bold text-slate-900 border-t border-emerald-200 pt-1">{fmtDays(b.balance)}</dd>
+          <dt className="text-slate-500">Waiting for approval (reserved)</dt><dd className="text-right font-semibold text-slate-800">{fmtDays(b.pendingPaidDays)}</dd>
+          <dt className="text-slate-500">Paid leave used in total</dt><dd className="text-right font-semibold text-slate-800">{fmtDays(b.totalUsed)}</dd>
+          <dt className="text-slate-500">Requests waiting</dt><dd className="text-right font-semibold text-slate-800">{b.pendingRequests}</dd>
+        </dl>
+      )}
+    </section>
+  );
+};
 
 /** Who decided what, in order: the audit trail shown on each request (the multi-level chain has a full timeline). */
 const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (r.timeline && r.timeline.length > 0 ? (
@@ -46,7 +87,11 @@ const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (r.timeline && r.timelin
   </ul>
 ));
 
-const RequestForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
+const RequestForm: React.FC<{ onDone: () => void; paid?: PaidLeaveBalance | null }> = ({ onDone, paid }) => {
+  // paid leave is offered to an employee who has a balance (the database checks it again and reserves the days)
+  const canPay = !!paid && Number(paid.available) > 0;
+  const [pay, setPay] = useState<'PAID' | 'UNPAID' | null>(null);
+  const kind = pay ?? (canPay ? 'PAID' : 'UNPAID');
   const [leaveType, setLeaveType] = useState<'FULL_DAY' | 'HALF_DAY'>('FULL_DAY');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -60,7 +105,7 @@ const RequestForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
     setError('');
     setBusy(true);
     try {
-      await hrApi.submitLeave({
+      await (kind === 'PAID' && canPay ? hrApi.submitPaidLeave : hrApi.submitLeave)({
         leaveType,
         startDate,
         endDate: leaveType === 'FULL_DAY' && endDate ? endDate : undefined,
@@ -108,6 +153,20 @@ const RequestForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
           </label>
         )}
       </div>
+      {canPay && (
+        <fieldset className="text-xs" data-testid="leave-pay">
+          <legend className="font-semibold text-slate-700">Paid or unpaid</legend>
+          <div className="mt-1 flex gap-2">
+            {(['PAID', 'UNPAID'] as const).map(k => (
+              <label key={k} className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-xl border cursor-pointer ${kind === k ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>
+                <input type="radio" name="leave-pay" value={k} checked={kind === k} onChange={() => setPay(k)} />
+                {k === 'PAID' ? `Paid (${fmtDays(paid!.available)} available)` : 'Unpaid'}
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">Paid days are reserved now and taken from your balance only when HR gives the final approval.</p>
+        </fieldset>
+      )}
       <label className="block text-xs font-semibold text-slate-700">
         Reason *
         <textarea className={`${inputCls} mt-1`} rows={3} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} required minLength={3} />
@@ -179,7 +238,7 @@ const ReviewCard: React.FC<{ r: LeaveRequest; onChanged: () => void }> = ({ r, o
         </div>
         <LeaveStatusBadge status={r.status} />
       </div>
-      <p className="text-xs text-slate-700 mt-2">{dates(r)} <span className="text-slate-400">·</span> {length(r)}</p>
+      <p className="text-xs text-slate-700 mt-2">{dates(r)} <span className="text-slate-400">·</span> {length(r)}{r.paid ? <span className="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">Paid leave</span> : <span className="ml-1.5 text-[10px] text-slate-500">Unpaid</span>}</p>
       <p className="text-[11px] text-slate-500 mt-1 break-words">{r.reason}</p>
       <Trail r={r} />
       {error && <p role="alert" className="mt-2 text-[11px] text-rose-600">{error}</p>}
@@ -265,7 +324,12 @@ export const LeaveCenter: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'mine' | 'review'>('mine');
   const { mine, review, error, loading, reload } = useLeaveData();
-  const load = reload;
+  const [paid, setPaid] = useState<PaidLeaveBalance | null>(null);
+  // the paid leave balance (absent until its migration runs: the drawer works as before without it)
+  const load = useCallback(async () => {
+    await reload();
+    hrApi.myPaidLeave().then(setPaid, () => setPaid(null));
+  }, [reload]);
 
   const canReview = !!review && (review.canReviewAsDepartmentHead || review.canReviewAsHr || !!review.canReview || review.awaiting.length > 0);
   const waiting = review?.awaiting.length ?? 0;
@@ -300,7 +364,8 @@ export const LeaveCenter: React.FC = () => {
           {error && <div role="alert" className="m-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">{error} <button type="button" className="underline font-semibold" onClick={() => void load()}>Try again</button></div>}
           {tab === 'mine' || !canReview ? (
             <>
-              <RequestForm onDone={() => void load()} />
+              {paid && <PaidLeaveCard b={paid} />}
+              <RequestForm onDone={() => void load()} paid={paid} />
               <div className="px-5 pt-4 pb-1 text-xs font-bold text-slate-900">My requests</div>
               {loading ? (
                 <p className="px-5 py-6 text-xs text-slate-400">Loading…</p>
@@ -311,7 +376,7 @@ export const LeaveCenter: React.FC = () => {
                   {mine.map(r => (
                     <li key={r.id} className="px-5 py-3.5">
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-xs font-semibold text-slate-800">{dates(r)} <span className="text-slate-400">·</span> {length(r)}</p>
+                        <p className="text-xs font-semibold text-slate-800">{dates(r)} <span className="text-slate-400">·</span> {length(r)}{r.paid ? <span className="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-bold">Paid</span> : null}</p>
                         <LeaveStatusBadge status={r.status} />
                       </div>
                       <p className="text-[11px] text-slate-500 mt-1 break-words">{r.reason}</p>

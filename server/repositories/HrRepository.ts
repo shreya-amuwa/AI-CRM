@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type {
+import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy,
   AttendanceDay, HrEmailCards, HrEmailDataIssue, HrEmailHistory, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -30,6 +30,26 @@ export class HrRepository {
     });
   }
   myLeave() { return this.rpc<LeaveRequest[]>('my_leave_requests'); }
+  // paid leave: the employee's balance, a paid request, and HR's view and corrections (the database computes every figure)
+  submitPaidLeave(i: { leaveType: string; startDate: string; endDate: string | null; halfDayShift: string | null; reason: string }) {
+    return this.rpc<LeaveRequest>('submit_paid_leave_request', {
+      p_leave_type: i.leaveType, p_start: i.startDate, p_end: i.endDate, p_half_day_shift: i.halfDayShift, p_reason: i.reason
+    });
+  }
+  myPaidLeave() { return this.rpc<PaidLeaveBalance>('my_paid_leave_balance'); }
+  paidLeaveList(search?: string) { return this.rpc<PaidLeaveList>('hr_paid_leave_balances', { p_search: search || null }); }
+  paidLeaveDetail(profileId: string) { return this.rpc<PaidLeaveDetail>('hr_paid_leave_detail', { p_profile: profileId }); }
+  paidLeaveAdjust(profileId: string, i: { kind: string; days: number; note: string }) {
+    return this.rpc<PaidLeaveDetail>('hr_paid_leave_adjust', { p_profile: profileId, p_kind: i.kind, p_days: i.days, p_note: i.note });
+  }
+  paidLeavePolicy(i: { enabled: boolean; monthlyDays: number; creditDay: number; partialMonthRule: string; startMonth?: string | null }) {
+    return this.rpc<PaidLeavePolicy>('paid_leave_settings_set', {
+      p_enabled: i.enabled, p_monthly_days: i.monthlyDays, p_credit_day: i.creditDay, p_partial_month_rule: i.partialMonthRule, p_start_month: i.startMonth ?? null
+    });
+  }
+  confirmationDate(cycleId: string, i: { effectiveDate: string; note: string }) {
+    return this.rpc<{ cycleId: string; effectiveDate: string; before: string | null }>('hr_confirmation_effective_date_set', { p_cycle: cycleId, p_effective: i.effectiveDate, p_note: i.note });
+  }
   leaveToReview() { return this.rpc<LeaveReview>('leave_requests_to_review'); }
   decideAsDepartmentHead(id: string, approve: boolean, note: string | null) {
     return this.rpc<LeaveRequest>('decide_leave_department_head', { p_id: id, p_approve: approve, p_note: note });

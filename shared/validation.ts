@@ -2730,3 +2730,21 @@ export const clientSupportGroupSaveSchema = z.object({
   add: z.array(uuidSchema).max(25, 'Add at most 25 people at once.').optional(),
   remove: z.array(uuidSchema).max(25, 'Remove at most 25 people at once.').optional()
 }).strict();
+
+// --- Paid leave after probation: balance, HR corrections, policy (migration 20261231000200) --------------------------------------------------
+const halfDays = (min: number, max: number) => z.coerce.number().min(min).max(max).refine(n => Number.isInteger(n * 2), 'Use whole or half days.');
+export const paidLeaveAdjustSchema = z
+  .object({ kind: z.enum(['OPENING_BALANCE', 'CORRECTION']), days: halfDays(-400, 400).refine(n => n !== 0, 'Not zero.'), note: trimmed(500).min(5, 'Give the reason.') })
+  .strict();
+export const paidLeavePolicySchema = z
+  .object({
+    enabled: z.boolean(),
+    monthlyDays: halfDays(0.5, 10),
+    creditDay: z.coerce.number().int().min(1).max(28),
+    partialMonthRule: z.enum(['NEXT_FULL_MONTH', 'EFFECTIVE_MONTH']),
+    startMonth: isoDate.nullable().optional()
+  })
+  .strict()
+  .refine(v => !v.enabled || !!v.startMonth, { message: 'Choose the first month to credit.', path: ['startMonth'] });
+export const confirmationDateSchema = z.object({ effectiveDate: isoDate, note: trimmed(500).min(5, 'Give the reason for the change.') }).strict();
+export const paidLeaveListQuerySchema = z.object({ search: trimmed(120).optional() }).strict();

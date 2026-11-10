@@ -58,7 +58,7 @@ export const ProbationConfirmations: React.FC = () => {
 type Act = (key: string, fn: () => Promise<unknown>, done: string) => Promise<void>;
 
 const ConfirmationsList: React.FC<{ cycles: HrProbationCycle[] | null; busy: string | null; act: Act }> = ({ cycles, busy, act }) => {
-  const [open, setOpen] = useState<{ id: string; mode: 'approve' | 'close' } | null>(null);
+  const [open, setOpen] = useState<{ id: string; mode: 'approve' | 'close' | 'date' } | null>(null);
   const [effective, setEffective] = useState('');
   const [note, setNote] = useState('');
   if (!cycles) return <Spinner />;
@@ -68,7 +68,7 @@ const ConfirmationsList: React.FC<{ cycles: HrProbationCycle[] | null; busy: str
   }
   const dueText = (c: HrProbationCycle) =>
     c.daysLeft > 1 ? `in ${c.daysLeft} days` : c.daysLeft === 1 ? 'tomorrow' : c.daysLeft === 0 ? 'today' : `${-c.daysLeft} day${c.daysLeft === -1 ? '' : 's'} overdue`;
-  const start = (c: HrProbationCycle, mode: 'approve' | 'close') => { setOpen({ id: c.id, mode }); setEffective(c.probationEnd); setNote(''); };
+  const start = (c: HrProbationCycle, mode: 'approve' | 'close' | 'date') => { setOpen({ id: c.id, mode }); setEffective(mode === 'date' ? c.effectiveDate ?? c.probationEnd : c.probationEnd); setNote(''); };
 
   return (
     <Card className="overflow-hidden">
@@ -101,6 +101,10 @@ const ConfirmationsList: React.FC<{ cycles: HrProbationCycle[] | null; busy: str
                   ) : <span className="text-[11px] text-slate-400">Approved by the HR lead or the Department Head</span>}
                 </div>
               )}
+              {c.status === 'APPROVED' && c.canDecide && (
+                // paid leave is earned from this date: a correction is audited and changes only future credits (HR adjusts past ones if needed)
+                <button type="button" className={btn.secondary} onClick={() => start(c, 'date')} data-testid="confirmation-date-correct">Correct date</button>
+              )}
             </div>
             {c.note && c.status !== 'PENDING' && <div className="mt-1 text-[11px] text-slate-500">Note: {c.note}</div>}
             {open?.id === c.id && (
@@ -110,23 +114,27 @@ const ConfirmationsList: React.FC<{ cycles: HrProbationCycle[] | null; busy: str
                   e.preventDefault();
                   const run = open.mode === 'approve'
                     ? () => hrApi.confirmProbation(c.id, { effectiveDate: effective || undefined, note: note.trim() || undefined })
-                    : () => hrApi.dismissProbation(c.id, note.trim());
+                    : open.mode === 'date'
+                      ? () => hrApi.confirmationDate(c.id, { effectiveDate: effective, note: note.trim() })
+                      : () => hrApi.dismissProbation(c.id, note.trim());
                   void act(c.id, run, open.mode === 'approve'
                     ? `${c.employeeName} is confirmed. The confirmation e-mails are sent to the employee and HR${c.daysLeft > 0 ? ` on ${fmtDay(c.probationEnd)}` : ''}.`
-                    : `${c.employeeName}'s confirmation was closed without e-mails.`).then(() => setOpen(null));
+                    : open.mode === 'date'
+                      ? `${c.employeeName}'s confirmation date is now ${fmtDay(effective)}. Paid leave credits from now on follow it; earlier credits are unchanged.`
+                      : `${c.employeeName}'s confirmation was closed without e-mails.`).then(() => setOpen(null));
                 }}
               >
-                {open.mode === 'approve' && (
-                  <label className="text-[11px] font-semibold text-slate-600">Effective date
+                {open.mode !== 'close' && (
+                  <label className="text-[11px] font-semibold text-slate-600">{open.mode === 'date' ? 'Corrected effective date' : 'Effective date'}
                     <input type="date" className={`${inputCls} mt-1`} value={effective} min={c.joiningDate} onChange={e => setEffective(e.target.value)} required />
                   </label>
                 )}
                 <label className="text-[11px] font-semibold text-slate-600">{open.mode === 'approve' ? 'Note (optional)' : 'Reason (required)'}
-                  <input className={`${inputCls} mt-1`} value={note} maxLength={500} onChange={e => setNote(e.target.value)} required={open.mode === 'close'} minLength={open.mode === 'close' ? 3 : undefined}
+                  <input className={`${inputCls} mt-1`} value={note} maxLength={500} onChange={e => setNote(e.target.value)} required={open.mode !== 'approve'} minLength={open.mode === 'close' ? 3 : open.mode === 'date' ? 5 : undefined}
                     placeholder={open.mode === 'approve' ? 'e.g. reviewed with the Department Head' : 'e.g. confirmed earlier, on paper'} />
                 </label>
                 <div className="flex gap-2">
-                  <button type="submit" className={open.mode === 'approve' ? btn.green : btn.primary} disabled={busy === c.id}>{open.mode === 'approve' ? 'Confirm employee' : 'Close it'}</button>
+                  <button type="submit" className={open.mode === 'approve' ? btn.green : btn.primary} disabled={busy === c.id}>{open.mode === 'approve' ? 'Confirm employee' : open.mode === 'date' ? 'Save the date' : 'Close it'}</button>
                   <button type="button" className={btn.secondary} onClick={() => setOpen(null)}>Cancel</button>
                 </div>
               </form>

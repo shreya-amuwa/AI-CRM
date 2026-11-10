@@ -1,7 +1,7 @@
 import type {
   AttendanceDay, HrEmailCards, HrEmailDataIssue, HrEmailHistory, HrEmailKind, HrEmailOverview, HrProbationCycle, LeaveMonthlySummary, LeaveRequest, LeaveReview, PersonalDetails
 } from '../../shared/contracts.js';
-import {
+import { confirmationDateSchema, paidLeaveAdjustSchema, paidLeaveListQuerySchema, paidLeavePolicySchema,
   hrConfirmProbationSchema,
   hrDismissProbationSchema,
   hrEmailHistoryQuerySchema,
@@ -43,6 +43,18 @@ export class HrService {
     });
   }
   myLeave(): Promise<LeaveRequest[]> { return this.repo.myLeave(); }
+  submitPaidLeave(body: unknown): Promise<LeaveRequest> {
+    const i = parse(leaveSubmitSchema, body);
+    return this.repo.submitPaidLeave({
+      leaveType: i.leaveType, startDate: i.startDate, endDate: i.endDate ?? null, halfDayShift: i.halfDayShift ?? null, reason: i.reason
+    });
+  }
+  myPaidLeave() { return this.repo.myPaidLeave(); }
+  paidLeaveList(query: unknown) { return this.repo.paidLeaveList(parse(paidLeaveListQuerySchema, query).search); }
+  paidLeaveDetail(profileId: string) { return this.repo.paidLeaveDetail(parse(uuidSchema, profileId)); }
+  paidLeaveAdjust(profileId: string, body: unknown) { return this.repo.paidLeaveAdjust(parse(uuidSchema, profileId), parse(paidLeaveAdjustSchema, body)); }
+  paidLeavePolicy(body: unknown) { return this.repo.paidLeavePolicy(parse(paidLeavePolicySchema, body)); }
+  confirmationDate(cycleId: string, body: unknown) { return this.repo.confirmationDate(parse(uuidSchema, cycleId), parse(confirmationDateSchema, body)); }
   leaveToReview(): Promise<LeaveReview> { return this.repo.leaveToReview(); }
   decideAsDepartmentHead(id: string, body: unknown): Promise<LeaveRequest> {
     const i = parse(leaveDecisionSchema, body);

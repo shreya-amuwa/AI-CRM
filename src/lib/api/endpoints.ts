@@ -2,6 +2,8 @@
  * Typed API endpoints, grouped by resource. Components and hooks call these;
  * they never call fetch() or Supabase tables directly.
  */
+import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
+import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
 import type {
   WelcomeEmailItem, WelcomeEmailList,
@@ -258,6 +260,7 @@ export interface PipelineQuery {
 export const pipelineApi = {
   /** Both workflow statuses of one customer (Technical Consultant and Meta Verifier), the history, and who may change which. */
   workflow: (id: string) => api.get<CustomerWorkflow>(`/pipeline/customers/${id}/workflow`),
+  reviewScope: (id: string) => api.get<OnboardingReviewScope>(`/pipeline/customers/${id}/review-scope`),
   workflowStatuses: (ids: string[]) => (ids.length ? api.get<CustomerWorkflowStatuses>('/pipeline/workflow-statuses', { ids: ids.join(',') }) : Promise.resolve({} as CustomerWorkflowStatuses)),
   setTcStatus: (id: string, body: { status: TcWorkflowStatus; note?: string }) => api.post<CustomerWorkflow>(`/pipeline/customers/${id}/workflow/technical-consultant`, body),
   setMetaStatus: (id: string, body: { status: MetaWorkflowStatus; note?: string }) => api.post<CustomerWorkflow>(`/pipeline/customers/${id}/workflow/meta-verifier`, body),
@@ -803,6 +806,16 @@ export const hrApi = {
   manualPunch: (body: { profileId: string; kind: 'RM' | 'BIOMETRIC'; at: string }) => api.post<null>('/hr/attendance/punch', body),
   personalDetails: () => api.get<PersonalDetails[]>('/hr/personal-details'),
   myLeave: () => api.get<LeaveRequest[]>('/leave/mine'),
+  // paid leave (balance from the database's ledger; a paid request reserves the days until the final approval deducts them)
+  myPaidLeave: () => api.get<PaidLeaveBalance>('/leave/paid-balance'),
+  submitPaidLeave: (body: { leaveType: 'FULL_DAY' | 'HALF_DAY'; startDate: string; endDate?: string; halfDayShift?: 'MORNING' | 'AFTERNOON'; reason: string }) =>
+    api.post<LeaveRequest>('/leave/paid', body),
+  paidLeaveList: (search?: string) => api.get<PaidLeaveList>('/hr/paid-leave', search ? { search } : {}),
+  paidLeaveDetail: (profileId: string) => api.get<PaidLeaveDetail>(`/hr/paid-leave/${profileId}`),
+  paidLeaveAdjust: (profileId: string, body: { kind: 'OPENING_BALANCE' | 'CORRECTION'; days: number; note: string }) => api.post<PaidLeaveDetail>(`/hr/paid-leave/${profileId}/adjust`, body),
+  paidLeavePolicy: (body: { enabled: boolean; monthlyDays: number; creditDay: number; partialMonthRule: 'NEXT_FULL_MONTH' | 'EFFECTIVE_MONTH'; startMonth?: string | null }) =>
+    api.post<PaidLeavePolicy>('/hr/paid-leave/policy', body),
+  confirmationDate: (cycleId: string, body: { effectiveDate: string; note: string }) => api.post<{ cycleId: string; effectiveDate: string; before: string | null }>(`/hr/probation/${cycleId}/effective-date`, body),
   leaveToReview: () => api.get<LeaveReview>('/leave/review'),
   submitLeave: (body: { leaveType: 'FULL_DAY' | 'HALF_DAY'; startDate: string; endDate?: string; halfDayShift?: 'MORNING' | 'AFTERNOON'; reason: string }) =>
     api.post<LeaveRequest>('/leave', body),

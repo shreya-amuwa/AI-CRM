@@ -317,6 +317,12 @@ export const validateRouteAccess = (
     return { allowed: false, redirectTo: `/accounts/dashboard/${user.id}` };
   }
 
+  // HR staff: the Recruitment Portal (the HR Recruiter workspace) only for an HR Assistant, at their own address. The database decides every record.
+  if (user.role === 'hr' && route.type === 'hr-recruiter') {
+    if (route.paramId === user.id && user.profile?.hrSubRole === 'HR_ASSISTANT') return { allowed: true };
+    return { allowed: false, redirectTo: `/admin/dashboard/${user.departmentId || 'hr'}` };
+  }
+
   // If user is admin:
   if (user.role === 'admin') {
     if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head') {
