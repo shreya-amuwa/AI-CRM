@@ -10,12 +10,24 @@ const SERVER_AUTH_OPTIONS = { persistSession: false, autoRefreshToken: false, de
  * query is filtered by Row Level Security exactly as for a direct request.
  * This is the default for all data access.
  */
+const USER_QUERY_TIMEOUT_MS = Number(process.env.USER_QUERY_TIMEOUT_MS) > 0 ? Number(process.env.USER_QUERY_TIMEOUT_MS) : 20_000;
+/** fetch with a deadline (keeps a caller's own abort signal working too). */
+export const fetchWithTimeout: typeof fetch = (input, init) => {
+  const deadline = AbortSignal.timeout(USER_QUERY_TIMEOUT_MS);
+  const own = init?.signal;
+  const signal = own && typeof (AbortSignal as any).any === 'function' ? (AbortSignal as any).any([own, deadline]) : own ?? deadline;
+  return fetch(input, { ...init, signal });
+};
+
 export function createUserClient(accessToken: string): SupabaseClient {
   const env = getEnv();
   return createClient(env.supabaseUrl, env.supabaseAnonKey, {
     auth: SERVER_AUTH_OPTIONS,
     // The request id travels with every query (PostgREST exposes it to the database), so audit rows can be tied to the request.
     global: {
+      // A query that gets no answer is given up after USER_QUERY_TIMEOUT_MS, so a busy database produces a quick "busy, try again"
+      // instead of the function hanging until the platform kills it (Vercel: 30 s) while holding a connection.
+      fetch: fetchWithTimeout,
       headers: {
         Authorization: `Bearer ${accessToken}`,
         ...(requestInfo.getStore()?.requestId ? { 'X-Request-Id': requestInfo.getStore()!.requestId } : {}),
