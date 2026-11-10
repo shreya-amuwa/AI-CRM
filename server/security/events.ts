@@ -118,3 +118,17 @@ export function sessionClaims(authorization: string | undefined): { sessionId: s
     return null;
   }
 }
+
+/**
+ * "Chrome on Windows" from a User-Agent header (no version, nothing that identifies the device). The same rule as the database's
+ * private.device_label(), so a sign-in and its sign-out read alike in HR's attendance register.
+ */
+export function deviceLabel(ua: string | undefined | null): string | null {
+  const u = (ua ?? '').trim();
+  if (!u) return null;
+  const browser = /edg\//i.test(u) ? 'Edge' : /(opr\/|opera)/i.test(u) ? 'Opera' : /(chrome|crios)\//i.test(u) ? 'Chrome'
+    : /(firefox|fxios)\//i.test(u) ? 'Firefox' : /safari\//i.test(u) ? 'Safari' : 'Browser';
+  const os = /android/i.test(u) ? 'Android' : /(iphone|ipad|ipod)/i.test(u) ? 'iOS' : /windows/i.test(u) ? 'Windows'
+    : /(mac os x|macintosh)/i.test(u) ? 'macOS' : /cros/i.test(u) ? 'ChromeOS' : /linux/i.test(u) ? 'Linux' : null;
+  return os ? `${browser} on ${os}` : browser;
+}

@@ -24,6 +24,7 @@ import { routes } from './routes.js';
 import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
+import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
@@ -43,7 +44,7 @@ import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
 import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
-import { recordSecurityEvent, sessionClaims } from './security/events.js';
+import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
 
 export const API_PREFIX = '/api/v1';
@@ -207,7 +208,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const topPerformers = await runTopPerformersAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Company report analysis: write the analysis of every consolidated week HR submitted that is still waiting for it. Idempotent.
   const reportAnalysis = await runReportAnalysisAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+  // Attendance: the place name of punches that have coordinates and no name yet (one lookup a second, as the free geocoder asks). Never throws.
+  const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
@@ -511,7 +514,7 @@ async function noteSessionStart(c: Context<Env>, actor: Actor | null, extra: Rec
     ip: ip ?? undefined,
     location,
     dedupeKey: `session:${claims.sessionId}`,
-    metadata: { method: claims.method, ...(actor ? { role: actor.role } : {}) }
+    metadata: { method: claims.method, device: deviceLabel(c.req.header('user-agent')), ...(actor ? { role: actor.role } : {}) }
   });
 }
 
