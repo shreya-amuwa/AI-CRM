@@ -16,6 +16,7 @@ import { renderNdaPdf } from '../../server/hrDocuments/render.js';
 import { signHook } from '../../server/automations/authEmailHook.js';
 import { SECURITY_HEADERS } from '../../worker/securityHeaders.js';
 import { sampleInvoice } from './invoice_fixtures.js';
+import { mimePart, startFakeSmtp } from './fake-smtp.js';
 import { PROBE_NOW } from './worker_probe_inputs.js';
 
 let passed = 0;
@@ -69,17 +70,24 @@ async function startWorker(args: string[], port: number): Promise<{ output: () =
   throw new Error('wrangler dev did not start');
 }
 
-// ---- a stand-in for Resend's API: records every e-mail the Worker sends --------------------------------------------------------
+// ---- a stand-in for Resend's API: records every e-mail the Worker sends; an e-mail to quota@... gets Resend's "daily quota" refusal ---
 const mails: { auth: string | undefined; body: any }[] = [];
 const resend = createHttpServer((req, res) => {
   let b = '';
   req.on('data', c => (b += c));
   req.on('end', () => {
-    if (req.method === 'POST' && req.url === '/emails') mails.push({ auth: req.headers.authorization, body: JSON.parse(b) });
+    const body = JSON.parse(b || '{}');
+    if (JSON.stringify(body.to ?? '').includes('quota@')) {
+      res.writeHead(429, { 'content-type': 'application/json' });
+      return res.end('{"name":"daily_quota_exceeded","message":"You have reached your daily email sending quota."}');
+    }
+    if (req.method === 'POST' && req.url === '/emails') mails.push({ auth: req.headers.authorization, body });
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ id: `re_${mails.length}` }));
   });
 });
+// ---- the meta@amuwa.com mailbox (SMTP), reached from the Worker through Cloudflare's TCP sockets (the Resend fallback) ------------
+const mailbox = await startFakeSmtp({ mode: 'plain', user: 'meta@amuwa.com', pass: 'app-password' });
 await new Promise<void>(r => resend.listen(0, '127.0.0.1', r));
 const resendUrl = `http://127.0.0.1:${(resend.address() as { port: number }).port}`;
 
@@ -95,6 +103,11 @@ const settings: Record<string, string> = {
   EMAIL_API_KEY: 're_worker_test_key',
   EMAIL_API_BASE_URL: resendUrl,
   EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
+  SMTP_HOST: '127.0.0.1',
+  SMTP_PORT: String(mailbox.port),
+  SMTP_SECURE: 'false',
+  SMTP_USER: 'meta@amuwa.com',
+  SMTP_PASS: 'app-password',
   SUPABASE_AUTH_HOOK_SECRET: `v1,whsec_${HOOK_KEY.toString('base64')}`,
   RESEND_MAX_PER_SECOND: '100',
   AUTOMATION_MODE: 'dry_run',
@@ -121,7 +134,7 @@ const base = `http://127.0.0.1:${appPort}`;
   check(p.ndaPdf === sha(await renderNdaPdf({ letterDate: '2026-09-11', employeeName: 'Priya Sharma' })), 'HR document PDFs are byte-identical to Node.js');
   check(p.hookSignature === signHook(HOOK_KEY, 'msg_1', '1700000000', '{"a":1}') && p.hookVerifies === true, 'Supabase hook signatures (HMAC) match and verify');
   check(p.asyncContext === 'req-42', 'the per-request context (request id in audit rows) survives an await');
-  check(p.smtp.ok === false && p.smtp.retry === true && /EMAIL_PROVIDER=resend/.test(p.smtp.detail), 'SMTP on Workers: a clear "use Resend" failure, kept for a retry, never a crash', p.smtp);
+  check(p.smtp.ok === false && p.smtp.retry === true && /worker\/entry\.ts/.test(p.smtp.detail), 'a Worker started without the socket connector: a clear SMTP failure, kept for a retry, never a crash', p.smtp);
 }
 
 // ---- 2. static files and the single-page app ----------------------------------------------------------------------------------
@@ -206,6 +219,19 @@ const db = new pg.Pool();
   r = await fetch(`${base}/api/v1/internal/auth/email-hook`, { method: 'POST', headers: { 'content-type': 'application/json', 'webhook-id': id, 'webhook-timestamp': ts, 'webhook-signature': 'v1,AAAA' }, body });
   check(r.status === 401 && mails.length === 1, 'a forged hook request is refused and sends nothing');
 
+  // ---- 6b. Resend's daily limit reached: the same e-mail goes out through the meta@amuwa.com mailbox (SMTP over Cloudflare sockets)
+  const quotaBody = body.replace('asha@example.com', 'quota@example.com');
+  const qid = 'msg_worker_quota';
+  r = await fetch(`${base}/api/v1/internal/auth/email-hook`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'webhook-id': qid, 'webhook-timestamp': ts, 'webhook-signature': `v1,${signHook(HOOK_KEY, qid, ts, quotaBody)}` },
+    body: quotaBody
+  });
+  check(r.status === 200 && JSON.stringify(await r.json()) === '{}', 'Resend over its limit: Supabase still gets 200 {}');
+  check(mails.length === 1 && mailbox.mails.length === 1, 'the e-mail went out through the SMTP mailbox instead', { resend: mails.length, smtp: mailbox.mails.length });
+  const fb = mailbox.mails[0];
+  check(fb.from === 'meta@amuwa.com' && JSON.stringify(fb.rcpts) === '["quota@example.com"]' && /^From: .*<meta@amuwa\.com>$/m.test(fb.data) && /hash_abc/.test(mimePart(fb.data, 'text/html; charset=utf-8') ?? ''), 'sender, recipient and the reset link are right in the fallback e-mail', fb.data.slice(0, 500));
+
   // ---- 7. the cron: the scheduled run reaches the automations, authenticated with CRON_SECRET
   r = await fetch(`${base}/api/v1/internal/automations/dispatch`, { method: 'POST' });
   check(r.status === 401, 'the dispatch endpoint refuses a caller without the secret');
@@ -221,6 +247,7 @@ const db = new pg.Pool();
 
 await db.end();
 resend.close();
+await mailbox.close();
 for (const c of children) c.kill();
 console.log(`\n=== ${passed} CLOUDFLARE WORKER END-TO-END CHECKS PASSED ===`);
 process.exit(0);

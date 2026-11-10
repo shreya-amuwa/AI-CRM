@@ -44,6 +44,11 @@ export interface AutomationSettings {
     smtp: { host: string; port: number; secure: boolean; user: string; pass: string } | null;
     /** For tests only: point the provider at a local mock server. */
     apiBaseUrl: string | null;
+    /**
+     * Resend -> SMTP fallback (providers.ts): on when the provider is Resend and the SMTP_* mailbox is set, unless EMAIL_FALLBACK=off.
+     * Optional so settings objects made by hand (tests) keep working; absent means off.
+     */
+    smtpFallback?: boolean;
     fromName: string;
     fromEmail: string;
     replyTo: string;
@@ -115,6 +120,7 @@ export function automationSettings(): AutomationSettings {
             }
           : null,
       apiBaseUrl: httpsUrl(env.EMAIL_API_BASE_URL),
+      smtpFallback: (env.EMAIL_FALLBACK || '').trim().toLowerCase() !== 'off',
       fromName: (m ? m[1].trim().replace(/^"|"$/g, '') : '') || COMPANY.senderName,
       fromEmail: (m ? m[2].trim() : from) || COMPANY.teamEmail,
       replyTo: env.EMAIL_REPLY_TO?.trim() || COMPANY.teamEmail,

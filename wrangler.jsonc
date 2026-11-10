@@ -4,7 +4,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ai-crm",
-  "main": "worker/index.ts",
+  "main": "worker/entry.ts",
   "compatibility_date": "2026-11-01",
   // Node.js APIs the server uses (crypto, Buffer, AsyncLocalStorage) and process.env filled from the variables / secrets.
   "compatibility_flags": ["nodejs_compat"],
@@ -25,7 +25,8 @@
     "CRM_PLATFORM": "cloudflare",
     "EMAIL_PROVIDER": "resend"
   },
-  // SMTP needs raw TCP sockets, which Workers do not offer the way nodemailer uses them: e-mail goes through Resend's HTTPS API.
+  // nodemailer needs Node's net / tls, which Workers lack: on the Worker, SMTP (the meta@amuwa.com fallback) uses Cloudflare's TCP sockets
+  // through server/automations/smtpSocket.ts instead (registered in worker/entry.ts).
   // @hono/node-server is the Node.js adapter (Vercel, Vite dev, tests); importing it replaces the global Response class, which Workers refuse.
   "alias": {
     "nodemailer": "./worker/stubs/nodemailer.ts",

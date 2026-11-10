@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import type { AutomationSettings } from './config.js';
+import { buildMime, smtpSendRaw, SmtpError, socketConnector } from './smtpSocket.js';
 import type { RenderedEmail } from './templates.js';
 
 /** A file sent with an e-mail (a generated invoice PDF). */
@@ -91,6 +92,8 @@ function networkFailure(err: unknown): SendResult {
 async function sendSmtp(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
   const smtp = s.email.smtp;
   if (!smtp) return { ok: false, retry: false, code: null, ref: null, detail: 'SMTP is not configured.' };
+  // On Cloudflare Workers (a TCP connector registered by worker/entry.ts) nodemailer cannot run: the CRM's own SMTP client is used.
+  if (socketConnector()) return sendSmtpSocket(s, to, mail, attachments);
   let transport: ReturnType<typeof nodemailer.createTransport>;
   try {
     transport = nodemailer.createTransport({
@@ -137,32 +140,119 @@ async function sendSmtp(s: AutomationSettings, to: { email: string; name: string
   }
 }
 
-/** Sends one email through the configured provider: SMTP (nodemailer), Resend or Brevo. */
+/** SMTP over the Worker's TCP sockets (server/automations/smtpSocket.ts); same results and retry rules as the nodemailer path. */
+async function sendSmtpSocket(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
+  const smtp = s.email.smtp!;
+  try {
+    const message = buildMime({
+      from: { name: s.email.fromName, email: s.email.fromEmail },
+      to,
+      cc: s.email.cc,
+      replyTo: s.email.replyTo,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+      attachments
+    });
+    const id = /^Message-ID: (.+)$/m.exec(message)?.[1] ?? null;
+    await smtpSendRaw(smtp, { from: s.email.fromEmail, recipients: [to.email, ...s.email.cc, ...s.email.bcc] }, message);
+    return { ok: true, retry: false, code: 250, ref: id, detail: 'SMTP 250' };
+  } catch (err) {
+    const code = err instanceof SmtpError ? err.code : null;
+    const permanent = code !== null && code >= 500 && code !== 535 && code !== 530 && code !== 534;
+    const detail =
+      code === 535 || code === 534 || code === 530
+        ? 'SMTP sign-in failed: check the mailbox and its app password.'
+        : `SMTP error${code ? ` ${code}` : ''}: ${String((err as Error)?.message ?? '').slice(0, 160)}`;
+    return { ok: false, retry: !permanent, code, ref: null, detail };
+  }
+}
+
+/**
+ * Resend -> SMTP fallback. With EMAIL_PROVIDER=resend and the SMTP_* mailbox (meta@amuwa.com) also set, an e-mail Resend does not
+ * accept goes out through the mailbox instead, so clients still get it when the Resend plan's daily / monthly limit is reached, the
+ * account is refused, or Resend is down. Not used when Resend's answer is unknown (a timeout: it may have sent the e-mail, and a second
+ * copy must not go out) or the request itself is wrong (an invalid address: the mailbox would refuse it too); those stay queued and are
+ * retried as before. After a quota answer Resend is skipped for RESEND_PAUSE_MS so the next e-mails do not wait for the same refusal.
+ */
+const RESEND_PAUSE_MS = 15 * 60_000;
+let resendPausedUntil = 0;
+
+/** Tests only: forget a quota pause. */
+export function resetResendPause(): void {
+  resendPausedUntil = 0;
+}
+
+function smtpFallbackOn(s: AutomationSettings): boolean {
+  return s.email.provider === 'resend' && !!s.email.smtp && s.email.smtpFallback === true;
+}
+
+/** Sends one email through the configured provider: SMTP (nodemailer, or sockets on Workers), Resend (with the SMTP fallback) or Brevo. */
 export async function sendEmail(s: AutomationSettings, to: { email: string; name: string; /** Resend only: send as "Name <address>" so the recipient's mail app shows the name. */ display?: boolean }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
   const { provider, apiKey } = s.email;
   if (provider === 'smtp') return sendSmtp(s, to, mail, attachments);
+  if (provider === 'resend' && smtpFallbackOn(s)) {
+    const why = !apiKey ? 'no Resend API key' : Date.now() < resendPausedUntil ? 'Resend sending limit reached earlier' : null;
+    if (why) return withFallbackNote(await sendSmtp(s, to, mail, attachments), why);
+    const first = await sendResend(s, apiKey!, to, mail, attachments);
+    if (first.ok || !first.fallback) return first.res;
+    if (first.quota) resendPausedUntil = Date.now() + RESEND_PAUSE_MS;
+    const second = await sendSmtp(s, to, mail, attachments);
+    if (second.ok) return withFallbackNote(second, `Resend ${first.res.detail}`);
+    // both refused: keep it queued while either may recover
+    return { ...second, retry: second.retry || first.res.retry, detail: `Resend ${first.res.detail}; SMTP fallback: ${second.detail}`.slice(0, 400) };
+  }
   if (!provider || !apiKey) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
+  if (provider === 'resend') return (await sendResend(s, apiKey, to, mail, attachments)).res;
+  return sendBrevo(s, apiKey, to, mail, attachments);
+}
+
+function withFallbackNote(r: SendResult, why: string): SendResult {
+  return { ...r, detail: `${r.ok ? 'Sent through the SMTP mailbox (fallback)' : 'SMTP fallback failed'}: ${why}; ${r.detail}`.slice(0, 400) };
+}
+
+async function sendResend(
+  s: AutomationSettings,
+  apiKey: string,
+  to: { email: string; name: string; display?: boolean },
+  mail: RenderedEmail,
+  attachments?: MailAttachment[]
+): Promise<{ ok: boolean; res: SendResult; fallback: boolean; quota: boolean }> {
   try {
-    if (provider === 'resend') {
-      const r = await resendPost(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), { authorization: `Bearer ${apiKey}` }, {
-        from: `${s.email.fromName} <${s.email.fromEmail}>`,
-        to: [to.display && to.name && to.name !== to.email ? `${to.name} <${to.email}>` : to.email],
-        subject: mail.subject,
-        html: mail.html,
-        text: mail.text,
-        ...(attachments?.length ? { attachments: attachments.map(a => ({ filename: a.filename, content: b64(a) })) } : {}),
-        reply_to: s.email.replyTo,
-        ...(s.email.cc.length ? { cc: s.email.cc } : {}),
-        ...(s.email.bcc.length ? { bcc: s.email.bcc } : {})
-      });
-      let ref: string | null = null;
-      try {
-        ref = JSON.parse(r.text)?.id ?? null;
-      } catch {
-        /* not JSON */
-      }
-      return result(r.status, r.text, ref);
+    const r = await resendPost(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), { authorization: `Bearer ${apiKey}` }, {
+      from: `${s.email.fromName} <${s.email.fromEmail}>`,
+      to: [to.display && to.name && to.name !== to.email ? `${to.name} <${to.email}>` : to.email],
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+      ...(attachments?.length ? { attachments: attachments.map(a => ({ filename: a.filename, content: b64(a) })) } : {}),
+      reply_to: s.email.replyTo,
+      ...(s.email.cc.length ? { cc: s.email.cc } : {}),
+      ...(s.email.bcc.length ? { bcc: s.email.bcc } : {})
+    });
+    let ref: string | null = null;
+    let name = '';
+    try {
+      const j = JSON.parse(r.text);
+      ref = j?.id ?? null;
+      name = String(j?.name ?? '');
+    } catch {
+      /* not JSON */
     }
+    const res = result(r.status, r.text, ref);
+    // Resend answered and did not send: 429 (rate or daily / monthly quota), 401 / 403 (key or domain refused), 5xx (Resend failing).
+    const fallback = !res.ok && (r.status === 429 || r.status === 401 || r.status === 403 || r.status >= 500);
+    const quota = r.status === 429 && /quota/i.test(`${name} ${r.text}`);
+    return { ok: res.ok, res, fallback, quota };
+  } catch (err) {
+    // A timeout may mean Resend sent it after all: no second copy. A refused connection means it did not.
+    const timeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    return { ok: false, res: networkFailure(err), fallback: !timeout, quota: false };
+  }
+}
+
+async function sendBrevo(s: AutomationSettings, apiKey: string, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
+  try {
     const r = await post(`${s.email.apiBaseUrl ?? 'https://api.brevo.com'}/v3/smtp/email`.replace(/([^:]\/)\/+/g, '$1'), { 'api-key': apiKey }, {
       sender: { name: s.email.fromName, email: s.email.fromEmail },
       to: [{ email: to.email, name: to.name }],

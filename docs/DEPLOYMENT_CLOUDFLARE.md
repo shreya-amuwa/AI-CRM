@@ -21,25 +21,46 @@ Nothing changes for the database (Supabase), file storage (Cloudflare R2 / Supab
 | `vercel.json` crons (03:30 and 05:00 UTC) | Cron Triggers at the same times, calling the same dispatch endpoint with `CRON_SECRET` | `wrangler.jsonc` → `triggers` |
 | Vercel IP / geo headers (`x-vercel-ip-*`) | Cloudflare's `cf-connecting-ip` and `request.cf` (forged headers are dropped first) | `worker/index.ts`, `server/security/clientNetwork.ts` |
 | Environment variables | Worker **Variables and Secrets** (they appear in `process.env`, so `server/` is unchanged) | dashboard / `wrangler secret put` |
-| SMTP (nodemailer, Gmail app password) | **Resend** HTTPS API (`EMAIL_PROVIDER=resend`), already supported by `server/automations/providers.ts`; calls spaced to Resend's rate limit, a 429 is waited out and retried | |
+| SMTP (nodemailer, Gmail app password) | **Resend** HTTPS API (`EMAIL_PROVIDER=resend`), already supported by `server/automations/providers.ts`; calls spaced to Resend's rate limit, a 429 is waited out and retried. The **meta@amuwa.com mailbox stays as the fallback** (section 1b) | |
 
 Code-level changes needed for the Workers runtime (each covered by a test):
 
 * `@hono/node-server` (the Node adapter used by Vercel, Vite dev and the tests) replaces the global `Response` class when it is imported; the Worker
   build aliases it to a stub (`worker/stubs/honoNodeServer.ts`). Without this every request fails with "did not resolve to 'Response'".
-* `nodemailer` is aliased to a stub on Workers (`worker/stubs/nodemailer.ts`): with `EMAIL_PROVIDER=smtp` a send fails with a clear
-  "use Resend" message and stays queued for a retry, instead of crashing the dispatch run.
+* `nodemailer` cannot run on Workers (it needs Node's `net` / `tls`): it is aliased to a stub there, and SMTP goes through the CRM's own
+  small SMTP client over Cloudflare's TCP sockets (`server/automations/smtpSocket.ts`, registered by `worker/entry.ts`).
 * `/api/proxy` (`server/net/safeFetch.ts`): Node's `http` with a custom DNS check is not available on Workers, so it uses `fetch` with the same URL
   checks on every redirect hop, the same time and size limits; Cloudflare's network itself has no route to private / metadata addresses.
 
 **Vercel keeps working** with this code (nothing was removed), so both can run side by side during the move, and going back is just DNS.
+
+## 1b. E-mail fallback: Resend first, the meta@amuwa.com mailbox when Resend refuses
+
+With `EMAIL_PROVIDER=resend` **and** the mailbox settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`) set, every e-mail goes to Resend
+first. If Resend does not accept it, the **same e-mail** (same sender, recipients, CC / BCC, attachments) is sent at once through the mailbox:
+
+| Resend's answer | What happens |
+| --- | --- |
+| accepted | sent by Resend; the mailbox is not used |
+| 429 daily / monthly **quota reached** | sent through the mailbox; for the next 15 minutes e-mails go straight to the mailbox (no waiting for the same refusal) |
+| 429 too many requests (after one wait-and-retry), 401 / 403 (key or domain refused), 5xx or unreachable | sent through the mailbox |
+| **no answer in time** (timeout) | **not** sent again: Resend may have sent it, and the client must not get it twice. It stays queued and is retried |
+| 422 / 400 (an invalid address or request) | not sent again: the mailbox would refuse it too |
+| both Resend and the mailbox refuse | kept queued and retried at the next run, with both reasons in the log |
+
+The delivery log shows `Sent through the SMTP mailbox (fallback): Resend HTTP 429 …` for an e-mail the mailbox sent.
+`EMAIL_FALLBACK=off` turns the fallback off. Google Workspace allows about 2,000 e-mails a day from one mailbox, plenty as a fallback.
+
+On the Worker, SMTP uses TLS from the first byte (port 465, as now) or STARTTLS (587); the password is never sent unencrypted. Keep the
+same `SMTP_*` values as on Vercel (the app password of meta@amuwa.com).
 
 ### Tests
 
 | Command | What it proves |
 | --- | --- |
 | `npm run test:unit` → `cloudflare_worker` | headers match, forged IP / place headers are dropped, the adapter, routing (404 vs app page), cron times, Resend 429 / pacing |
-| `npm run test:worker` (also in CI) | the **real Workers runtime** (`wrangler dev` / workerd) against PostgreSQL + PostgREST: static files and headers, sign-in and API calls, the lead webhook, `/api/proxy` refusing internal addresses, a Supabase auth e-mail delivered through Resend (a local stand-in), the cron run completing the dispatch, and invoice / HR PDFs, R2 signed links and AES encryption **byte-identical to Node.js** |
+| `npm run test:unit` → `smtp_fallback` | the Worker SMTP client (TLS 465, STARTTLS 587, sign-in, BCC, attachments, no header injection) and every fallback rule in 1b |
+| `npm run test:worker` (also in CI) | the **real Workers runtime** (`wrangler dev` / workerd) against PostgreSQL + PostgREST: static files and headers, sign-in and API calls, the lead webhook, `/api/proxy` refusing internal addresses, a Supabase auth e-mail delivered through Resend (a local stand-in), and through the SMTP mailbox over Cloudflare sockets when Resend answers "daily quota reached", the cron run completing the dispatch, and invoice / HR PDFs, R2 signed links and AES encryption **byte-identical to Node.js** |
 
 ---
 
@@ -93,7 +114,8 @@ dashboards, never into chat, files or commits.
    | `APP_URL` | the final address, e.g. `https://crm.amuwacorporation.com` |
    | `AUTOMATION_MODE`, `AUTOMATION_SECRET_KEY` (secret), `WHATSAPP_WEBHOOK_URL` (secret), `WEBHOOK_SECRET` (secret), `WEBHOOK_VERIFY_TOKEN`, `SUPABASE_AUTH_HOOK_SECRET` (secret), `BIOMETRIC_INGEST_SECRET` (secret), `WABASTORE_*`, `R2_*` (secrets), `ANTHROPIC_API_KEY` (secret), `GOOGLE_MAPS_API_KEY` (secret), … | everything else exactly as on Vercel |
 
-   Do **not** copy `SMTP_*`: SMTP cannot run on Workers. Optional: `RESEND_MAX_PER_SECOND` (default 5) if your Resend account allows more.
+   **Do copy `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` (secret)**: the meta@amuwa.com mailbox is the fallback when Resend refuses
+   (section 1b). Optional: `RESEND_MAX_PER_SECOND` (default 5) if your Resend account allows more.
 3. **Deploy** (Deployments → Retry / push to `main`). Open the `https://ai-crm.<your-subdomain>.workers.dev` address and check:
    `…/api/v1/health` shows `"status":"ok"`; sign in; open a few dashboards; generate one invoice PDF.
 4. Worker → **Settings → Triggers**: the two cron schedules from `wrangler.jsonc` are listed. **Settings → Observability**: logs are on.
@@ -117,7 +139,22 @@ dashboards, never into chat, files or commits.
 
 * Remove the old Vercel project (or keep a one-line redirect there for old bookmarks to `ai-crm-drab.vercel.app`).
 * In a separate pull request: delete `vercel.json`, `@vercel/node`, and `docs/DEPLOYMENT_VERCEL.md` (keep `api/*.ts`: the Worker uses them).
-* Remove the Gmail app password (`SMTP_PASS`) from wherever it is still stored.
+* Keep `SMTP_*` on the Worker: it is the e-mail fallback.
+
+## Is merging this safe while users are on Vercel?
+
+Yes, by design, and checked by the full test suite on the Node.js (Vercel) code path:
+
+* Merging deploys the same app to Vercel as before. Everything Cloudflare-specific is inactive there: the Worker files are not part of the
+  Vercel build, the Cloudflare IP / place reading needs `CRM_PLATFORM=cloudflare`, the fetch-based `/api/proxy` path and the socket SMTP
+  client only run inside Workers.
+* E-mail on Vercel is unchanged while `EMAIL_PROVIDER` stays `smtp` (nodemailer, as today). The Resend pacing and the fallback apply only
+  once `EMAIL_PROVIDER=resend` is set.
+* No database migration, no change to stored data.
+* While the Vercel "Deployment was blocked" issue (`DEPLOYMENT_VERCEL.md`) is not fixed, merge with **Rebase and merge**.
+
+What needs care is the **cut-over** (Step C), not the merge: test on the `workers.dev` address first while users stay on Vercel. On a new
+address users sign in once more (sign-in is kept per web address), so switch at a quiet hour.
 
 **Rollback** at any time before step D: point the domain back to Vercel (Step C2 in reverse) and set `EMAIL_PROVIDER` back on Vercel.
 Nothing in the database changes, so going back loses no data.
