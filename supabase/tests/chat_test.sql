@@ -256,7 +256,7 @@ select test.login('sup_plain');
 select test.check((select (chat_conversation_detail(pg_temp.g('dm')::uuid) ->> 'peerReadSeq')::int = 2 and (chat_conversation_detail(pg_temp.g('dm')::uuid) ->> 'unread')::int = 1), 'the sender sees the other person has read their message');
 insert into ch select 'dm_touch', (select updated_at::text from chat_conversations where id = pg_temp.g('dm')::uuid);
 select chat_mark_read(pg_temp.g('dm')::uuid);
-select test.check((select updated_at::text <> pg_temp.g('dm_touch') from chat_conversations where id = pg_temp.g('dm')::uuid), 'a read in a direct chat touches the conversation, so the other side''s open screen learns of it live');
+select test.check((select updated_at::text = pg_temp.g('dm_touch') from chat_conversations where id = pg_temp.g('dm')::uuid), 'a read in a direct chat does not rewrite the conversation (the other side learns of it by a Realtime broadcast, 20261231000500)');
 insert into ch select 'dm_touch2', (select updated_at::text from chat_conversations where id = pg_temp.g('dm')::uuid);
 select chat_mark_read(pg_temp.g('dm')::uuid);
 select test.check((select updated_at::text = pg_temp.g('dm_touch2') from chat_conversations where id = pg_temp.g('dm')::uuid), 'reading again (nothing new) does not touch it, so no event storm');

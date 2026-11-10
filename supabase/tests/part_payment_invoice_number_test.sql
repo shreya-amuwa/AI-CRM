@@ -1,5 +1,5 @@
 -- =============================================================================
--- Part payments of one order share one invoice number with a suffix (migration 20261231000400). Runs after payment_invoices_test.sql.
+-- Part payments of one order share one invoice number with a suffix (migration 20261231000500). Runs after payment_invoices_test.sql.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1

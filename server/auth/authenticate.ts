@@ -123,8 +123,9 @@ export async function authenticateRequest(
       throw new AppError('UNAUTHENTICATED', 'Your session has expired. Please sign in again.');
     } else if (!status) {
       console.error('[api] could not reach Supabase:', error.message);
+      if (/abort|timeout|timed out/i.test(error.message ?? '')) throw new AppError('SERVICE_UNAVAILABLE', 'The CRM is busy right now. Please try again in a moment.');
       throw new AppError('SERVICE_UNAVAILABLE', 'The server could not reach Supabase. Check SUPABASE_URL and SUPABASE_ANON_KEY on the server.');
-    } else {
+    } else if (isMissingObject(error.code, error.message)) {
       // e.g. an earlier migration (rate limits) is missing in this project.
       // Never block sign-in over the fast path: use the three-step path.
       console.error('[api] api_session failed - using the slower sign-in path. Check that every migration is applied.', {
@@ -132,8 +133,22 @@ export async function authenticateRequest(
         code: error.code,
         message: error.message
       });
+    } else {
+      // The database is busy (a statement or connection timeout, an overloaded pool). The three-step path would make THREE more calls to a
+      // database that is already not answering and turn a slow moment into an outage: answer "busy, try again" at once instead.
+      console.error('[api] api_session failed - the database is busy; the request is refused instead of retried.', {
+        status,
+        code: error.code,
+        message: error.message
+      });
+      throw new AppError('SERVICE_UNAVAILABLE', 'The CRM is busy right now. Please try again in a moment.');
     }
   }
   const auth = await authenticate(authorizationHeader);
   return { ...auth, limit: await enforce(userBuckets(auth.actor.id, rateClass), 'shared') };
+}
+
+/** A database object that does not exist (a migration not applied), as opposed to a database that is busy. */
+export function isMissingObject(code: string | undefined, message: string | undefined): boolean {
+  return ['42883', '42P01', '42703', '42704', 'PGRST202', 'PGRST205'].includes(code ?? '') || /does not exist|could not find the function/i.test(message ?? '');
 }

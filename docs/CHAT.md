@@ -256,3 +256,18 @@ devices, reconnects and repeated realtime events change nothing twice. An offlin
 A deleted message has no status. This is CRM delivery only: it is never a WhatsApp delivery or read status.
 
 Tests: `supabase/tests/client_support_groups_test.sql` and the "support group" / "message status" block of `api_integration.test.ts`.
+
+## Many people online at once (migration 20261231000500)
+With ~200 people signed in, the ticks overloaded the database: every "delivered" / "seen" report also rewrote the conversation row, every such
+UPDATE went to every signed-in screen through Realtime (with a permission check per screen), and every screen then reloaded its chat list and
+unread counts in the same instant. Requests waited on the database until Vercel stopped them after 30 seconds. Now:
+* `chat_ack_delivered` / `chat_mark_read` write only the person's own `chat_read_state` row, and nothing when it does not move; the
+  conversation row is not touched. The reporting screen sends a Realtime **broadcast** on `chat-receipts:<conversation id>` (no database
+  work, no content); only screens with that conversation open listen, and they ask the API for the ticks (at most once a second).
+  The ticks are also refreshed on new messages and when the tab is opened. Realtime must allow public broadcast channels (the default).
+* Every badge and list of a tab shares **one** Realtime subscription (`useChatLive`); membership changes are limited to the person's own rows;
+  a hidden tab reloads nothing until it is shown again; reloads are spread over 0.4–2.9 s.
+* The API answers "busy, try again" (503) when the database is slow instead of retrying sign-in through three more queries, and gives up a
+  query after 20 s (`USER_QUERY_TIMEOUT_MS`) instead of hanging until the 30-second platform limit.
+
+Tests: `supabase/tests/chat_receipts_light_test.sql`, `supabase/tests/chat_live.test.ts`, `supabase/tests/chat_load.test.ts`.

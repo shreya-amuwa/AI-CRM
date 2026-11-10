@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { onReceipt, signalReceipt } from './receiptSignal';
 import type { ChatAttachment, ChatConversation, ChatMessage, ChatReceipt } from '../../../shared/contracts';
 import { getSupabase } from '../../services/supabaseClient';
 import { ApiError, errorMessage } from '../api/client';
@@ -329,7 +330,7 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     if (!active || !visible || !c || c.access === 'REVIEWER' || lastSeq <= c.readSeq) return undefined;
     const t = setTimeout(() => {
       tp.current.markRead(lastSeq).then(
-        () => { const cur = conv.current; if (cur && cur.id === c.id) setConv({ ...cur, readSeq: Math.max(cur.readSeq, lastSeq), unread: 0 }); },
+        () => { const cur = conv.current; if (cur && cur.id === c.id) setConv({ ...cur, readSeq: Math.max(cur.readSeq, lastSeq), unread: 0 }); signalReceipt(c.id); },
         () => { /* the next message or focus tries again */ }
       );
     }, 300);
@@ -343,7 +344,7 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     if (!c || c.access === 'REVIEWER' || !tp.current.ackDelivered || lastSeq <= ackedSeq.current) return undefined;
     const t = setTimeout(() => {
       const target = lastSeq;
-      tp.current.ackDelivered?.(target).then(() => { ackedSeq.current = Math.max(ackedSeq.current, target); }, () => { /* the next message or reconnect tries again */ });
+      tp.current.ackDelivered?.(target).then(() => { ackedSeq.current = Math.max(ackedSeq.current, target); signalReceipt(c.id); }, () => { /* the next message or reconnect tries again */ });
     }, 200);
     return () => clearTimeout(t);
   }, [lastSeq, conversation?.id]);
@@ -353,13 +354,29 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
   const [receipts, setReceipts] = useState<Map<number, ChatReceipt>>(() => new Map());
   const firstSeq = messages.length ? messages[0].seq : 0;
   const hasMine = messages.some(m => m.mine);
+  // the other screens say "delivered" / "seen" by a Realtime broadcast (20261231000500): ask for the ticks again, at most once a second
+  const [receiptTick, setReceiptTick] = useState(0);
+  useEffect(() => {
+    if (!convId) return undefined;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const stop = onReceipt(convId, () => {
+      if (t) return;
+      t = setTimeout(() => {
+        t = undefined;
+        setReceiptTick(x => x + 1);
+        // a direct chat shows "seen" from the conversation (the other person's read position)
+        if (conv.current?.kind === 'DIRECT') void refreshConversation();
+      }, 1000);
+    });
+    return () => { if (t) clearTimeout(t); stop(); };
+  }, [convId, refreshConversation]);
   useEffect(() => {
     if (!tp.current.receipts || !hasMine || !conversation?.id) return undefined;
     const t = setTimeout(() => {
       tp.current.receipts?.(Math.max(firstSeq - 1, 0)).then(list => setReceipts(new Map(list.map(r => [r.seq, r]))), () => { /* keep the last known ticks */ });
     }, 300);
     return () => clearTimeout(t);
-  }, [conversation, lastSeq, firstSeq, hasMine]);
+  }, [conversation, lastSeq, firstSeq, hasMine, receiptTick]);
 
   return { conversation, messages, pending, hasMore, loading, loadingOlder, error, denied, loadOlder, send, retry, discard, deleteForMe, deleteForEveryone, reload: load, refreshConversation, receipts };
 }
