@@ -1,6 +1,7 @@
 // Unit test of the attendance place names (server/automations/attendancePlaces.ts): the address made from Nominatim's parts, and the lookup
 // loop against a fake database and a fake geocoder (no network): named, failed (counted as an attempt), spaced, bounded.
 import { nominatimPlace, resolveAttendancePlaces } from '../../server/automations/attendancePlaces';
+import { deviceLabel } from '../../server/security/events';
 
 let passed = 0;
 const check = (ok: boolean, name: string, extra?: unknown) => { if (!ok) { console.error('not ok -', name, extra ?? ''); process.exit(1); } passed++; console.log('ok -', name); };
@@ -30,4 +31,9 @@ const s2 = await resolveAttendancePlaces({ db, geocoder: async () => 'X', limit:
 check(s2.looked < 3 && Date.now() - t0 < 1500, 'the time budget is kept', s2);
 const s3 = await resolveAttendancePlaces({ db: { rpc: async () => ({ data: null, error: { message: 'down' } }) } as any, geocoder: async () => 'X' });
 check(s3.looked === 0, 'a database error never throws');
+// the browser and system of a CRM sign-in, as HR's register shows it (same rule as the database's private.device_label)
+check(deviceLabel('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36') === 'Chrome on Windows', 'device: Chrome on Windows');
+check(deviceLabel('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1') === 'Safari on iOS', 'device: Safari on iOS');
+check(deviceLabel('Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/130.0 Safari/537.36 Edg/130.0') === 'Edge on Windows', 'device: Edge');
+check(deviceLabel(undefined) === null, 'device: none');
 console.log(`=== ATTENDANCE PLACES TESTS PASSED (${passed}) ===`);

@@ -283,6 +283,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentSession && activeDepartmentId) {
       sessionManager.leaveSession(currentSession.sessionId, activeDepartmentId);
     }
+    // the CRM sign-out is recorded for HR's register (separate from attendance: it never punches out); never blocks signing out
+    const db = getSupabase();
+    if (db) {
+      await Promise.race([
+        Promise.resolve(db.rpc('record_crm_logout')).catch(() => undefined),
+        new Promise(r => setTimeout(r, 2500))
+      ]);
+    }
     clearState();
     await getSupabase()?.auth.signOut();
   };

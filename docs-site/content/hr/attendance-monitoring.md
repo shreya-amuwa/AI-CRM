@@ -9,7 +9,7 @@ roles:
   - Department Head
   - Super Admin
 status: verified
-updated: 2026-10-27
+updated: 2026-11-10
 related:
   - /hr/hr-operations-directory
   - /hr/leave-approval-hr
@@ -20,6 +20,31 @@ Amuwa AI CRM features an integrated attendance auditing engine. To ensure transp
 
 1. **Relationship Manager (RM) / CRM System Login (`rmLoginAt`):** The timestamp captured automatically when an employee signs in to the web CRM application.
 2. **Biometric Punch (`biometricLoginAt`):** The timestamp recorded when an employee scans their fingerprint or facial profile at the office biometric attendance scanner (or authorized manual HR punch).
+
+---
+
+## Punch In / Punch Out: the attendance register (all staff)
+
+Signing in to the CRM is **not** attendance. Each employee marks attendance themselves with **Punch In** and **Punch Out** in the
+**Attendance** section of their side panel; each punch records the **server time** and the device's **current location** (latitude,
+longitude and accuracy). Without a usable location the punch is not recorded and the employee is told how to turn location on.
+
+In the **HR Department Panel**, **Attendance → Attendance register (all staff)** lists every active employee for the chosen date:
+
+| Column | What it shows |
+| :--- | :--- |
+| CRM Login | First CRM sign-in of the day and the last sign-out ("No logout yet" / "Logout not recorded" when the session was not closed) |
+| Punch In / Punch Out | Time in India Standard Time; "Missing" when punched in but not out |
+| Punch In / Punch Out Location | Coordinates, accuracy in metres, a Google Maps link, and the nearest address when it has been looked up |
+| Lunch Duration | Total of all breaks; anything over the **50 minutes** allowed is shown as extra |
+| Worked | Punch In to Punch Out (lunch is shown separately, not deducted) |
+| Status | Not Punched In, Punched In, On Lunch, Resumed Work, Punched Out, Incomplete Attendance |
+
+Filter by date (any earlier day), department, employee and status. Click an employee's name to see the full date and time of each punch,
+both locations on a map, every CRM session with its browser and system, and every lunch break. **Incomplete Attendance** means the person
+punched in and did not punch out (a past day), or signed out of the CRM today without punching out. The CRM sign-out time is never used as a
+Punch Out. Opening the register is recorded in the audit log. No office location or radius is configured, so punches are not limited to a
+workplace boundary.
 
 ---
 

@@ -44,7 +44,7 @@ import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
 import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
-import { recordSecurityEvent, sessionClaims } from './security/events.js';
+import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
 
 export const API_PREFIX = '/api/v1';
@@ -514,7 +514,7 @@ async function noteSessionStart(c: Context<Env>, actor: Actor | null, extra: Rec
     ip: ip ?? undefined,
     location,
     dedupeKey: `session:${claims.sessionId}`,
-    metadata: { method: claims.method, ...(actor ? { role: actor.role } : {}) }
+    metadata: { method: claims.method, device: deviceLabel(c.req.header('user-agent')), ...(actor ? { role: actor.role } : {}) }
   });
 }
 
