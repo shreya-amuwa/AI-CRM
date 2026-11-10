@@ -67,3 +67,20 @@ Every **verified** payment, part or full, gets its own **paid invoice** for exac
 ## Known limits
 * A payment cannot be re-allocated to a specific invoice; confirmed money is applied to invoices first issued, first paid (the order balance is exact either way).
 * The retired per-payment GST has no UI any more: GST on an older order is read-only history.
+
+## Part payments share one invoice number (migration `20261231000400_part_payment_invoice_suffix.sql`)
+Accounts asked for one invoice number per order paid in parts. Each payment still gets its own paid invoice (one document per payment), and the
+invoices of one order now share a base number with a running suffix:
+
+| Order | Paid invoices |
+| --- | --- |
+| Paid in parts | `GST/26-27/014-1` (1st part), `GST/26-27/014-2` (2nd part), `GST/26-27/014-3` (the payment that settles it) |
+| Paid at once | `GST/26-27/015` (unchanged) |
+
+* The base is taken from the normal series (GST or non-GST, financial year of the invoice date) when the order's first **part** payment is invoiced, and is kept in
+  `part_payment_invoice_series`. Every later payment invoice of that order, part or final, takes the base with the next suffix, even in the next financial year.
+* Each number is still unique (Rule 46): a GST number has at most 16 characters (up to `-99` for numbers below 1000); a non-GST number may have up to 20.
+  The base is never issued without a suffix; a cancelled invoice never gives its number back (the payment invoiced again gets the next suffix).
+* Not changed: invoices already issued (an order whose part payments were invoiced before keeps its numbers; its next part payment starts a family of its own),
+  manual invoices, add-on invoices and single full payments.
+* Tests: `supabase/tests/part_payment_invoice_number_test.sql`.
