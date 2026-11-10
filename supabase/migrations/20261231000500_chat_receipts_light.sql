@@ -1,5 +1,5 @@
 -- =============================================================================
--- Chat under load: "delivered" and "seen" no longer rewrite the conversation row. Run after 20261231000300. Safe to run again.
+-- Chat under load: "delivered" and "seen" no longer rewrite the conversation row. Run after 20261231000400_part_payment_invoice_suffix.sql. Safe to run again.
 --
 -- WHY. With ~200 people signed in, every message made each receiving screen report "delivered" (chat_ack_delivered) and, in a direct chat,
 -- "seen" (chat_mark_read). Each report also UPDATEd the conversation row only so that the sender's screen would notice. Every UPDATE of

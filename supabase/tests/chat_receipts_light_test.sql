@@ -1,5 +1,5 @@
 -- =============================================================================
--- Chat under load (migration 20261231000400): "delivered" and "seen" write only the person's own read state, never the conversation row
+-- Chat under load (migration 20261231000500): "delivered" and "seen" write only the person's own read state, never the conversation row
 -- (whose every UPDATE is broadcast to every signed-in screen), and write nothing when nothing moves. The ticks still come out right.
 -- Reuses the conversations made by chat_test.sql and client_support_groups_test.sql. Safe to run again.
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 139. Chat under load: receipts without rewriting the conversation'
 reset role;
-\i supabase/migrations/20261231000400_chat_receipts_light.sql
-\i supabase/migrations/20261231000400_chat_receipts_light.sql
+\i supabase/migrations/20261231000500_chat_receipts_light.sql
+\i supabase/migrations/20261231000500_chat_receipts_light.sql
 create temp table rl (k text primary key, v text);
 grant all on rl to authenticated;
 -- a group conversation with messages: a member who did not send its last message, and that message's sender

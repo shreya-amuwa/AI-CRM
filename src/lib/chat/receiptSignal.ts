@@ -1,7 +1,7 @@
 import { getSupabase } from '../../services/supabaseClient';
 
 /**
- * "Something about the ticks of this conversation changed" (migration 20261231000400).
+ * "Something about the ticks of this conversation changed" (migration 20261231000500).
  *
  * Reporting "delivered" or "seen" used to rewrite the conversation row so that the sender's screen would notice; every such UPDATE went to
  * every signed-in screen through Realtime and overloaded the database with ~200 people online. Now the reporting screen sends a Realtime

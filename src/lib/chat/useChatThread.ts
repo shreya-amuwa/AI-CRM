@@ -354,7 +354,7 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
   const [receipts, setReceipts] = useState<Map<number, ChatReceipt>>(() => new Map());
   const firstSeq = messages.length ? messages[0].seq : 0;
   const hasMine = messages.some(m => m.mine);
-  // the other screens say "delivered" / "seen" by a Realtime broadcast (20261231000400): ask for the ticks again, at most once a second
+  // the other screens say "delivered" / "seen" by a Realtime broadcast (20261231000500): ask for the ticks again, at most once a second
   const [receiptTick, setReceiptTick] = useState(0);
   useEffect(() => {
     if (!convId) return undefined;

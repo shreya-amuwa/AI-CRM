@@ -257,7 +257,7 @@ A deleted message has no status. This is CRM delivery only: it is never a WhatsA
 
 Tests: `supabase/tests/client_support_groups_test.sql` and the "support group" / "message status" block of `api_integration.test.ts`.
 
-## Many people online at once (migration 20261231000400)
+## Many people online at once (migration 20261231000500)
 With ~200 people signed in, the ticks overloaded the database: every "delivered" / "seen" report also rewrote the conversation row, every such
 UPDATE went to every signed-in screen through Realtime (with a permission check per screen), and every screen then reloaded its chat list and
 unread counts in the same instant. Requests waited on the database until Vercel stopped them after 30 seconds. Now:
