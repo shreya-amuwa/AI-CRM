@@ -1,5 +1,7 @@
 # Vercel production deployments: "Deployment was blocked"
 
+> The CRM is moving to Cloudflare Workers: see `DEPLOYMENT_CLOUDFLARE.md`. This page applies only while Vercel is still in use.
+
 ## What happens
 
 The CRM deploys to Vercel from `main` (project `ai-crm`, team "AI CRM", Hobby plan). Vercel checks the **Git author of the commit it

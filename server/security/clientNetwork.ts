@@ -4,9 +4,11 @@ import net from 'node:net';
  * Where a request came from, as far as the hosting platform can be believed.
  *
  * - The caller's address is read ONLY from headers the platform sets itself, and only when the app runs behind that platform
- *   (Vercel sets VERCEL; any other trusted reverse proxy must say so with TRUST_PROXY_HEADERS=true). Anywhere else (a laptop, a test
+ *   (Vercel sets VERCEL; the Cloudflare Worker sets CRM_PLATFORM=cloudflare in wrangler.jsonc; any other trusted reverse proxy must say
+ *   so with TRUST_PROXY_HEADERS=true). Anywhere else (a laptop, a test
  *   run, a server reachable directly) the same headers are just text the caller typed, so no address is recorded rather than a forged one.
- * - The place comes from the platform's own IP lookup (Vercel's x-vercel-ip-* headers: no key, no extra request, cannot slow a sign-in).
+ * - The place comes from the platform's own IP lookup (Vercel's x-vercel-ip-* headers; on Cloudflare the cf-ip* headers worker/index.ts
+ *   writes from request.cf after dropping any the caller sent: no key, no extra request, cannot slow a sign-in).
  *   Only when those are absent AND an IP lookup service is configured (GEOIP_PROVIDER + GEOIP_API_KEY, server environment only) is it
  *   asked, with a short time limit; any failure means "unavailable", never a guess.
  * - A place found from an address is the network's location, not the person's: it is stored as such (source + accuracy), coordinates
@@ -28,7 +30,12 @@ export interface GeoLocation {
 export type HeaderReader = (name: string) => string | undefined;
 
 export function proxyHeadersTrusted(env: NodeJS.ProcessEnv = process.env): boolean {
-  return !!env.VERCEL || env.TRUST_PROXY_HEADERS === 'true';
+  return !!env.VERCEL || onCloudflare(env) || env.TRUST_PROXY_HEADERS === 'true';
+}
+
+/** Running as the Cloudflare Worker (worker/index.ts), where Cloudflare itself sets cf-connecting-ip on every request. */
+function onCloudflare(env: NodeJS.ProcessEnv): boolean {
+  return env.CRM_PLATFORM === 'cloudflare';
 }
 
 /** Loopback, private, link-local and similar addresses: nobody can be located from them. */
@@ -48,7 +55,9 @@ export function isPublicIp(ip: string): boolean {
 /** The caller's address from platform-set headers; null when the platform is not trusted or sent nothing usable. */
 export function trustedClientIp(header: HeaderReader, env: NodeJS.ProcessEnv = process.env): string | null {
   if (!proxyHeadersTrusted(env)) return null;
-  const candidates = [header('x-vercel-forwarded-for'), header('x-real-ip'), header('x-forwarded-for')?.split(',')[0]];
+  const candidates = onCloudflare(env)
+    ? [header('cf-connecting-ip'), header('x-real-ip')]
+    : [header('x-vercel-forwarded-for'), header('x-real-ip'), header('x-forwarded-for')?.split(',')[0]];
   for (const raw of candidates) {
     const ip = raw?.trim();
     if (ip && net.isIP(ip)) return ip;
@@ -106,9 +115,21 @@ function describe(country: string | null, region: string | null, city: string | 
   };
 }
 
-/** The platform's own lookup (Vercel). Null off the platform or when it sent nothing. */
+/** The platform's own lookup (Vercel, or Cloudflare's request.cf). Null off the platform or when it sent nothing. */
 export function platformLocation(header: HeaderReader, env: NodeJS.ProcessEnv = process.env): GeoLocation | null {
   if (!proxyHeadersTrusted(env)) return null;
+  if (onCloudflare(env)) {
+    // XX = unknown, T1 = Tor: no country
+    const cc = clean(header('cf-ipcountry'), 20);
+    return describe(
+      cc && /^[A-Za-z]{2}$/.test(cc) && cc.toUpperCase() !== 'XX' ? countryName(cc) : null,
+      decode(header('cf-region')),
+      decode(header('cf-ipcity')),
+      coordinate(decode(header('cf-iplatitude')), 90),
+      coordinate(decode(header('cf-iplongitude')), 180),
+      'PLATFORM_IP'
+    );
+  }
   const code = clean(header('x-vercel-ip-country'), 20);
   return describe(
     code && /^[A-Za-z]{2}$/.test(code) ? countryName(code) : null,

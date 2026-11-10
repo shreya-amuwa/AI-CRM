@@ -21,7 +21,7 @@ export interface SendResult {
 
 const TIMEOUT_MS = 15_000;
 
-async function post(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string }> {
+async function post(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string; retryAfter: string | null }> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json', ...headers },
@@ -29,7 +29,39 @@ async function post(url: string, headers: Record<string, string>, body: unknown)
     redirect: 'follow',
     signal: AbortSignal.timeout(TIMEOUT_MS)
   });
-  return { status: res.status, text: (await res.text()).slice(0, 1000) };
+  return { status: res.status, text: (await res.text()).slice(0, 1000), retryAfter: res.headers.get('retry-after') };
+}
+
+/**
+ * Resend accepts a limited number of API requests a second per account (10 by default today; older accounts had 5 or 2). The
+ * automations send their e-mails one after another, so calls from this server instance are spaced to RESEND_MAX_PER_SECOND (default 5)
+ * instead of being refused; when Resend still answers 429 (a lower account limit, or another instance sending at the same moment) the
+ * call waits as asked, at most RESEND_MAX_WAIT_MS, and is tried once more.
+ * Anything still refused stays queued for the next run, as before.
+ */
+const RESEND_MAX_WAIT_MS = 5_000;
+let resendNextSlot = 0;
+
+function resendGapMs(): number {
+  const n = Number(process.env.RESEND_MAX_PER_SECOND);
+  return Math.ceil(1000 / (Number.isFinite(n) && n >= 1 && n <= 100 ? n : 5));
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+async function resendPost(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string; retryAfter: string | null }> {
+  for (let attempt = 0; ; attempt++) {
+    const now = Date.now();
+    const wait = Math.max(0, resendNextSlot - now);
+    resendNextSlot = Math.max(now, resendNextSlot) + resendGapMs();
+    if (wait) await sleep(wait);
+    const r = await post(url, headers, body);
+    if (r.status !== 429 || attempt >= 1) return r;
+    const asked = Number(r.retryAfter) * 1000;
+    const pause = Number.isFinite(asked) && asked > 0 ? asked : 1000;
+    if (pause > RESEND_MAX_WAIT_MS) return r;
+    await sleep(pause);
+  }
 }
 
 function result(status: number, text: string, ref: string | null): SendResult {
@@ -59,15 +91,21 @@ function networkFailure(err: unknown): SendResult {
 async function sendSmtp(s: AutomationSettings, to: { email: string; name: string }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
   const smtp = s.email.smtp;
   if (!smtp) return { ok: false, retry: false, code: null, ref: null, detail: 'SMTP is not configured.' };
-  const transport = nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.secure,
-    auth: { user: smtp.user, pass: smtp.pass },
-    connectionTimeout: 10_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 15_000
-  });
+  let transport: ReturnType<typeof nodemailer.createTransport>;
+  try {
+    transport = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: { user: smtp.user, pass: smtp.pass },
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000
+    });
+  } catch (err) {
+    // On Cloudflare Workers SMTP is unavailable (worker/stubs/nodemailer.ts): a setup problem, so the message waits for a retry.
+    return { ok: false, retry: true, code: null, ref: null, detail: String((err as Error)?.message ?? 'SMTP is not available.').slice(0, 200) };
+  }
   try {
     const info = await transport.sendMail({
       from: { name: s.email.fromName, address: s.email.fromEmail },
@@ -106,7 +144,7 @@ export async function sendEmail(s: AutomationSettings, to: { email: string; name
   if (!provider || !apiKey) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
   try {
     if (provider === 'resend') {
-      const r = await post(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), { authorization: `Bearer ${apiKey}` }, {
+      const r = await resendPost(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), { authorization: `Bearer ${apiKey}` }, {
         from: `${s.email.fromName} <${s.email.fromEmail}>`,
         to: [to.display && to.name && to.name !== to.email ? `${to.name} <${to.email}>` : to.email],
         subject: mail.subject,

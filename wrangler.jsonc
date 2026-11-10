@@ -1,0 +1,38 @@
+// Cloudflare Workers deployment of the CRM (frontend + API in one Worker). See docs/DEPLOYMENT_CLOUDFLARE.md.
+// Secrets (SUPABASE_SERVICE_ROLE_KEY, EMAIL_API_KEY, CRON_SECRET, ...) are NOT kept here: set them in the Cloudflare dashboard
+// (Worker -> Settings -> Variables and Secrets) or with `npx wrangler secret put NAME`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-crm",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  // Node.js APIs the server uses (crypto, Buffer, AsyncLocalStorage) and process.env filled from the variables / secrets.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // A path with no file goes to the Worker, which answers index.html for app screens and 404 for /api, /assets and /ocr.
+    "not_found_handling": "none",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Was vercel.json "crons" (UTC): 09:00 and 10:30 IST, the automations' safety net and retries.
+  "triggers": {
+    "crons": ["30 3 * * *", "0 5 * * *"]
+  },
+  // Non-secret settings. Everything else from .env.example goes in as a secret or a dashboard variable.
+  "vars": {
+    // Tells server/security/clientNetwork.ts that the caller's address and place come from Cloudflare (worker/index.ts).
+    "CRM_PLATFORM": "cloudflare",
+    "EMAIL_PROVIDER": "resend"
+  },
+  // SMTP needs raw TCP sockets, which Workers do not offer the way nodemailer uses them: e-mail goes through Resend's HTTPS API.
+  // @hono/node-server is the Node.js adapter (Vercel, Vite dev, tests); importing it replaces the global Response class, which Workers refuse.
+  "alias": {
+    "nodemailer": "./worker/stubs/nodemailer.ts",
+    "@hono/node-server": "./worker/stubs/honoNodeServer.ts"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true
+}
