@@ -6,6 +6,9 @@ import { employeesApi } from '../../lib/api/endpoints';
 import { EmployeeRequestsPanel } from '../employees/EmployeeRequestsPanel';
 import { btn, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
 
+// The Operations Head marks attendance like every employee (Punch In / Lunch / Punch Out with location); loaded with the dashboard's home page.
+const MyAttendanceCard = React.lazy(() => import('../attendance/AttendancePage').then(m => ({ default: m.MyAttendance })));
+
 const Card: React.FC<{ label: string; value: number; hint?: string }> = ({ label, value, hint }) => (
   <div className="bg-white rounded-2xl border border-slate-200/80 p-4">
     <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
@@ -48,6 +51,9 @@ export const OperationsDashboard: React.FC = () => {
   const picked = filterId ? shown[0] : selected && data?.departments.find(d => d.id === selected.id);
   return (
     <div className="space-y-6" data-testid="operations-dashboard">
+      <React.Suspense fallback={<div role="status" className="text-sm text-slate-500">Loading attendance…</div>}>
+        <MyAttendanceCard compact />
+      </React.Suspense>
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" /> Operations dashboard</h2>

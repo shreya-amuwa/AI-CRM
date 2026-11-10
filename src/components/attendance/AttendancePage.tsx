@@ -53,7 +53,7 @@ export const PunchLocation: React.FC<{ p: PunchInfo | null | undefined; testId?:
 };
 
 /** The employee's own day: Punch In, Start Lunch / Resume Work, Punch Out. The location is asked only when a punch button is pressed. */
-export const MyAttendance: React.FC = () => {
+export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   const [day, setDay] = useState<AttendanceDayData | null>(null);
   const [offsetMs, setOffsetMs] = useState(0);
   const [busy, setBusy] = useState<'' | 'in' | 'out' | 'lunch'>('');
@@ -112,7 +112,7 @@ export const MyAttendance: React.FC = () => {
     <div className="space-y-4" data-testid="my-attendance">
       <section className={card} aria-label="Today">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-extrabold text-slate-900">Today{day ? ` – ${istLongDate(day.date)}` : ''}</h2>
+          <h2 className="text-base font-extrabold text-slate-900">{compact ? 'My attendance today' : 'Today'}{day ? ` – ${istLongDate(day.date)}` : ''}</h2>
           {day ? <StatusBadge status={status} testId="attendance-status" /> : null}
         </div>
         {notice && <p role={notice.ok ? 'status' : 'alert'} data-testid="attendance-notice" className={`mt-3 p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>{notice.text}</p>}
@@ -143,7 +143,7 @@ export const MyAttendance: React.FC = () => {
         </div>
         <p className="mt-2 text-[11px] text-slate-500">Signing in or out of the CRM does not mark attendance. Punch In and Punch Out record your current location; times are the server's, in India Standard Time.</p>
       </section>
-      <section className={card} aria-label="Last two weeks">
+      {compact ? null : <section className={card} aria-label="Last two weeks">
         <h3 className="text-sm font-extrabold text-slate-900 mb-2">Last two weeks</h3>
         {history === null ? <p className="text-xs text-slate-500">Loading…</p> : history.length === 0 ? <p className="text-xs text-slate-500">No attendance recorded yet.</p> : (
           <div className="overflow-x-auto"><table className="min-w-full text-xs">
@@ -156,7 +156,7 @@ export const MyAttendance: React.FC = () => {
             ))}</tbody>
           </table></div>
         )}
-      </section>
+      </section>}
     </div>
   );
 };

@@ -160,6 +160,9 @@ const open = async (view, vp = { width: 1280, height: 900 }) => {
   const text = await page.locator('[data-testid="operations-dashboard"]').innerText();
   check(/Beta/.test(text) && /No Department Head/.test(text) && /Dev Head/.test(text), 'each assigned department with its Department Head (or the lack of one)');
   check(/you approve heads/.test(text), 'the department they are accountable for is marked');
+  await page.waitForSelector('[data-testid="operations-dashboard"] [data-testid="punch-in"]');
+  check(await page.locator('[data-testid="operations-dashboard"] [data-testid="punch-out"]').count() === 1 && /My attendance today/.test(await page.locator('[data-testid="operations-dashboard"]').innerText()),
+    'the Operations Head marks attendance from their own dashboard (Punch In / Lunch / Punch Out card)');
   await page.click('tr:has-text("Alpha")');
   await page.waitForSelector('text=Department Head activity');
   await page.waitForSelector('text=employee request approved');
