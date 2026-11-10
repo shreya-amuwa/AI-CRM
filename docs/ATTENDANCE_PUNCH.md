@@ -1,7 +1,8 @@
 # Attendance: Punch In / Punch Out and lunch (migrations 20261230000400, 0600, 0700)
 
 **Where:** an **Attendance** item in every dashboard's side panel ("My day"; shared dashboard shell, Team Member layout), and at the top of HR's
-Attendance module. Nothing is recorded automatically at sign-in and nothing blocks the CRM.
+Attendance module. The **Operations Head** marks attendance exactly like every employee, and also has the Punch In / Lunch / Punch Out
+card at the top of their Operations Dashboard. Nothing is recorded automatically at sign-in and nothing blocks the CRM.
 
 ## Employee
 * **Signing in to the CRM never punches in, and signing out never punches out.** The two are recorded separately (see "CRM sign-in and

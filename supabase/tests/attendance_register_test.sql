@@ -181,6 +181,27 @@ set role anon;
 select test.must_fail($$select record_crm_logout()$$, 'a visitor cannot record a sign-out', 'permission denied');
 reset role;
 
+\echo '   the Operations Head marks attendance like every employee'
+delete from attendance_events where profile_id = test.id('wkr_ohp') and attendance_date = private.office_today();
+delete from attendance_lunches where profile_id = test.id('wkr_ohp') and attendance_date = private.office_today();
+update attendance_records set punch_in_at = null, punch_out_at = null where profile_id = test.id('wkr_ohp') and attendance_date = private.office_today();
+set role authenticated;
+select test.login('wkr_ohp');
+select test.check((select d ->> 'status' = 'NOT_PUNCHED_IN' from (select attendance_today() d) x), 'an Operations Head has their own attendance day ("Not Punched In")');
+select test.must_fail($$select attendance_punch_in('DENIED', null, null, null, gen_random_uuid())$$, 'and needs a location like everyone', 'location is required');
+select test.check((select d ->> 'status' = 'PUNCHED_IN' and (d -> 'punchIn' ->> 'latitude')::numeric = 18.5314
+                     from (select attendance_punch_in('CAPTURED', 18.5314, 73.8446, 18, gen_random_uuid()) d) x), 'the Operations Head punches in with their location');
+select test.check((select d ->> 'status' = 'ON_LUNCH' from (select attendance_lunch('START') d) x), 'starts lunch');
+select test.check((select d ->> 'status' = 'RESUMED_WORK' from (select attendance_lunch('END') d) x), 'resumes work');
+select test.check((select d ->> 'status' = 'PUNCHED_OUT' and (d -> 'punchOut' ->> 'latitude')::numeric = 18.5402
+                     from (select attendance_punch_out('CAPTURED', 18.5402, 73.8301, 14, gen_random_uuid()) d) x), 'and punches out with a fresh location');
+select test.check((select jsonb_array_length(d) >= 1 from (select my_attendance(current_date - 7, current_date) d) x), 'and sees their own days');
+select test.login('hr_head');
+select test.check((select x ->> 'status' = 'PUNCHED_OUT' and (x -> 'punchIn' ->> 'accuracy')::int = 18 and (x -> 'punchOut' ->> 'accuracy')::int = 14
+                     from jsonb_array_elements(hr_attendance_register(private.office_today(), null, test.id('wkr_ohp'), null) -> 'rows') x),
+  'HR sees the Operations Head in the register like every employee');
+reset role;
+
 \echo '   India time: the office day turns at midnight in Asia/Kolkata'
 insert into audit_logs (actor_id, action, entity_type, outcome, dedupe_key, metadata, created_at)
 values (test.id('wkr_dhp'), 'SESSION_STARTED', 'session', 'SUCCESS', 'session:' || gen_random_uuid(), '{}'::jsonb,
