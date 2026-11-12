@@ -1,5 +1,5 @@
 import { staffForgotPasswordSchema } from '../../shared/validation.js';
-import { automationSettings, DEFAULT_APP_URL, liveChannels } from '../automations/config.js';
+import { automationSettings, DEFAULT_APP_URL, liveChannels, senderSettings } from '../automations/config.js';
 import { sendEmail } from '../automations/providers.js';
 import type { RenderedEmail } from '../automations/templates.js';
 import { hasServiceClient } from '../db/supabase.js';
@@ -52,7 +52,7 @@ export async function staffForgotPassword(body: unknown, deps?: StaffResetDeps):
   if (!deps && !hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE');
   const authAdmin = deps ? null : new AuthAdminRepository();
   const d: StaffResetDeps = deps ?? { lookup: e => authAdmin!.staffLoginForReset(e), link: (e, r) => authAdmin!.passwordLink(e, r) };
-  const s = automationSettings();
+  const s = senderSettings('auth', automationSettings());
   const login = await d.lookup(email);
   // The answer never tells the caller whether the address has an account; the log does (without the address).
   const info = requestInfo.getStore();
