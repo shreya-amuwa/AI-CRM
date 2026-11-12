@@ -108,7 +108,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         </div>
       )}
       {(nav === 'my-leads' || nav === 'my-potential' || nav === 'my-onboarding' || nav === 'my-part-payments') && (
-        <PipelineWorkspace section={MY_SECTION[nav]} counts={pipelineCounts} leadFilters resetKey={navNonce} onNavigate={s => setNav(MY_NAV[s])} />
+        <PipelineWorkspace section={MY_SECTION[nav]} counts={pipelineCounts} ownOnly resetKey={navNonce} onNavigate={s => setNav(MY_NAV[s])} />
       )}
       {nav === 'customers' && <TeamCustomers />}
       {nav === 'assigned-tasks' && <TeamLeadTasksView />}
