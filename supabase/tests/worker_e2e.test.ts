@@ -110,6 +110,7 @@ const settings: Record<string, string> = {
   WEBHOOK_VERIFY_TOKEN: 'verify-me',
   CRON_SECRET: 'cron-secret-0123456789abcdef',
   SCHEDULED_ENABLED: 'true',
+  PORTAL_FORWARD_SECRET: 'portal-forward-secret-worker-0123456789abc',
   EMAIL_PROVIDER: 'ses',
   SES_REGION: 'ap-south-1',
   SES_ACCESS_KEY_ID: SES_KEY.id,
@@ -187,6 +188,22 @@ const db = new pg.Pool();
   r = await fetch(`${base}/api/v1/departments`, { headers: { authorization: `Bearer ${token}` } });
   j = await r.json();
   check(r.status === 200 && j.data.length >= 12, 'departments come from the database');
+
+  // ---- 3b. abuse protection inside the Workers runtime: the portal's signed visitor address, the database-backed limits, throwaway domains
+  {
+    const SECRET = settings.PORTAL_FORWARD_SECRET;
+    const signedFor = (ip: string) => {
+      const t = Math.floor(Date.now() / 1000);
+      return { 'x-portal-client-ip': ip, 'x-portal-client-ts': String(t), 'x-portal-client-sig': createHmac('sha256', SECRET).update(`${ip}.${t}`).digest('hex') };
+    };
+    const guard = (ip: string, email: string) => fetch(`${base}/api/v1/candidate-auth/guard`, { method: 'POST', headers: { 'content-type': 'application/json', ...signedFor(ip) }, body: JSON.stringify({ action: 'reset', email }) });
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) codes.push((await guard('203.0.113.77', `w${i}@example.com`)).status);
+    check(codes.slice(0, 5).every(c => c === 200) && codes[5] === 429, 'Worker: reset guard limited per (signed) visitor, counted in the database', codes);
+    check((await guard('203.0.113.78', 'x@example.com')).status === 200, 'Worker: another visitor is not affected');
+    const reg = await fetch(`${base}/api/v1/candidate-auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', ...signedFor('203.0.113.79') }, body: JSON.stringify({ name: 'Temp', email: 'a@mailinator.com', phone: '9876543210', password: 'Very-long-pass-1' }) });
+    check(reg.status === 422, 'Worker: a throwaway sign-up address is refused');
+  }
 
   // ---- 4. /api/proxy: signed-in users only, never an internal address
   r = await fetch(`${base}/api/proxy?url=${encodeURIComponent('https://example.com/')}`);

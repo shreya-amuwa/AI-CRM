@@ -47,6 +47,8 @@ import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
 import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
+import { currentEdgeLimiter, emailKey, isDisposableEmail, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
+import { candidateGuardSchema } from '../shared/validation.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
@@ -94,9 +96,22 @@ const defaultBodyLimit = bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge 
 // The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows).
 const importBodyLimit = bodyLimit({ maxSize: IMPORT_BODY_BYTES, onError: tooLarge });
 app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
-// Layer 1: coarse per-IP flood protection before any auth work.
+// Layer 1: coarse per-IP flood protection before any auth work. On the Worker: Cloudflare's rate limiter (counts across the edge location,
+// not per isolate); elsewhere, or if it fails: the in-memory limiter.
 app.use('*', async (c, next) => {
-  if (c.req.method !== 'OPTIONS') await enforce(ipBuckets(clientIp(c)), 'memory');
+  if (c.req.method !== 'OPTIONS') {
+    const edge = currentEdgeLimiter();
+    let checked = false;
+    if (edge) {
+      try {
+        if (!(await edge(`ip:${clientIp(c)}`))) throw new AppError('RATE_LIMITED', 'Too many requests. Please wait a moment and try again.', { retryAfterSeconds: 60 });
+        checked = true;
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+      }
+    }
+    if (!checked) await enforce(ipBuckets(clientIp(c)), 'memory');
+  }
   await next();
 });
 
@@ -246,32 +261,67 @@ app.post('/integrations/biometric/punch', async c => {
 // with the password they chose. No e-mail, OTP, phone or approval step. docs/CANDIDATE_REGISTRATION.md. Limited per address and per e-mail.
 app.post('/candidate-auth/register', async c => {
   const body = await readJson(c);
-  const email = typeof (body as { email?: unknown } | undefined)?.email === 'string' ? (body as { email: string }).email.trim().toLowerCase().slice(0, 254) : 'none';
+  const email = emailKey((body as { email?: unknown } | undefined)?.email) || 'none';
+  await botCheck(c, 'sign_up');
   await enforce(
     [
-      { key: `cand-register:ip:${clientIp(c)}`, limit: 10, window: 3600 },
-      { key: `cand-register:email:${email}`, limit: 5, window: 3600 }
+      { key: `cand-register:ip:${clientIp(c)}`, limit: limitOf('CAND_SIGNUP_PER_IP_HOUR'), window: 3600 },
+      { key: `cand-register:email:${email}`, limit: limitOf('CAND_SIGNUP_PER_EMAIL_HOUR'), window: 3600 },
+      // a ceiling for the whole site: a sign-up flood from many addresses stops here
+      { key: 'cand-register:site', limit: limitOf('CAND_SIGNUP_SITE_HOUR'), window: 3600 }
     ],
     'shared'
   );
+  if (email !== 'none' && isDisposableEmail(email)) {
+    throw new AppError('VALIDATION_ERROR', 'Use a permanent e-mail address: temporary or throwaway addresses cannot be used.', { fields: { email: 'Use a permanent e-mail address.' } });
+  }
   return c.json(ok(await registerCandidate(body)), 201);
+});
+
+// The Candidate Portal asks here before it signs a candidate in, sends a reset link (both go to Supabase directly) or submits an
+// application: the bot check and the limits for that action. Public (no login yet), answers { allowed: true } or an error.
+app.post('/candidate-auth/guard', async c => {
+  const input = parse(candidateGuardSchema, await readJson(c));
+  await botCheck(c, input.action);
+  const ip = clientIp(c);
+  const email = emailKey(input.email);
+  const buckets =
+    input.action === 'sign_in'
+      ? [
+          { key: `cand-signin:ip:${ip}`, limit: limitOf('CAND_SIGNIN_PER_IP_15MIN'), window: 900 },
+          ...(email ? [{ key: `cand-signin:email:${email}`, limit: limitOf('CAND_SIGNIN_PER_EMAIL_15MIN'), window: 900 }] : [])
+        ]
+      : input.action === 'reset'
+        ? [
+            { key: `reset:ip:${ip}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
+            ...(email ? [{ key: `reset:email:${email}`, limit: limitOf('RESET_PER_EMAIL_HOUR'), window: 3600 }] : [])
+          ]
+        : [{ key: `cand-apply-guard:ip:${ip}`, limit: limitOf('CAND_APPLY_GUARD_PER_IP_HOUR'), window: 3600 }];
+  await enforce(buckets, 'shared');
+  return c.json(ok({ allowed: true }));
 });
 
 // "Forgot password?" on the staff sign-in page (no login). Same answer whatever the e-mail; at most a few a quarter hour per caller and per address.
 app.post('/auth/forgot-password', async c => {
   const body = await readJson(c);
   const typed = typeof (body as { email?: unknown })?.email === 'string' ? String((body as { email: string }).email).trim().toLowerCase().slice(0, 254) : '';
+  // counted in the database: one shared count across every server instance (each request may land on a different one)
   await enforce([
-    { key: `staff-forgot:${clientIp(c)}`, limit: 5, window: 900 },
-    ...(typed ? [{ key: `staff-forgot:email:${typed}`, limit: 3, window: 3600 }] : [])
-  ], 'memory');
+    { key: `reset:ip:${clientIp(c)}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
+    ...(typed ? [{ key: `reset:email:${typed}`, limit: limitOf('RESET_PER_EMAIL_HOUR'), window: 3600 }] : [])
+  ], 'shared');
   return c.json(ok(await staffForgotPassword(body)));
 });
 
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
 app.post('/client-auth/forgot-password', async c => {
-  await enforce([{ key: `forgot:${clientIp(c)}`, limit: 5, window: 900 }], 'memory');
-  return c.json(ok(await clientForgotPassword(await readJson(c), c.req.header('origin'))));
+  const body = await readJson(c);
+  const typed = emailKey((body as { email?: unknown } | undefined)?.email);
+  await enforce([
+    { key: `reset:ip:${clientIp(c)}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
+    ...(typed ? [{ key: `reset:email:${typed}`, limit: limitOf('RESET_PER_EMAIL_HOUR'), window: 3600 }] : [])
+  ], 'shared');
+  return c.json(ok(await clientForgotPassword(body, c.req.header('origin'))));
 });
 
 /** a***@example.com: enough to recognise a typing mistake, not enough to learn an address from the log */
@@ -289,7 +339,7 @@ function maskIdentifier(raw: string): string {
  * Auth password hook as LOGIN_FAILED, which has no address.)
  */
 app.post('/auth/login-failed', async c => {
-  await enforce([{ key: `loginfail:${clientIp(c)}`, limit: 10, window: 900 }], 'memory');
+  await enforce([{ key: `loginfail:${clientIp(c)}`, limit: limitOf('LOGIN_FAIL_REPORT_PER_IP_15MIN'), window: 900 }], 'shared');
   const input = parse(loginFailureReportSchema, await readJson(c));
   const ip = auditIp(c);
   const identifier = maskIdentifier(input.identifier ?? '');
@@ -317,6 +367,11 @@ for (const route of candidateRoutes) {
     if (!route.public) {
       const me=await new CareerRepository(db).profile();
       setRateHeaders(c,await enforce(userBuckets(`candidate:${me.id}`,route.rate ?? (route.method==='GET' ? 'default' : 'sensitive')),'memory'));
+      // daily / hourly ceilings per candidate (applications, uploads, profile saves), counted in the database across all servers
+      const quota=candidateQuota(route.method,route.path);
+      if (quota) await enforce([{ key:`cand-${quota.name}:${me.id}`, limit:quota.limit, window:quota.window }],'shared');
+    } else if (route.method==='GET') {
+      await enforce([{ key:`jobs:ip:${clientIp(c)}`, limit:limitOf('JOBS_PER_IP_MINUTE'), window:60 }],'memory');
     }
     const request: ApiRequest={ method:c.req.method as HttpMethod,path:relativePath(c),query:c.req.query(),headers:{},
       body:['GET','DELETE'].includes(c.req.method) ? undefined : await readJson(c) };
@@ -433,6 +488,8 @@ function relativePath(c: Context): string {
 
 function clientIp(c: Context): string {
   return (
+    // a candidate's own address, forwarded and signed by the Candidate Portal's server (security/abuse.ts)
+    verifiedPortalClient(name => c.req.header(name)) ||
     c.req.header('x-real-ip') ||
     c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
     'unknown'
@@ -444,7 +501,38 @@ function clientIp(c: Context): string {
  * also serves rate limiting, where a forged value can only hurt the forger; an audit record must never hold one.
  */
 function auditIp(c: Context): string | null {
-  return trustedClientIp(name => c.req.header(name));
+  return verifiedPortalClient(name => c.req.header(name)) ?? trustedClientIp(name => c.req.header(name));
+}
+
+/**
+ * Cloudflare Turnstile (security/abuse.ts): the token comes in the x-turnstile-token header. Refused only in TURNSTILE_MODE=enforce; every
+ * failed check is recorded in the Security & Audit log (at most one per address and action a minute).
+ */
+async function botCheck(c: Context, action: TurnstileAction): Promise<void> {
+  const ip = clientIp(c);
+  const outcome = await verifyTurnstile(c.req.header('x-turnstile-token'), action, ip === 'unknown' ? null : ip);
+  if (outcome.result !== 'ok' && outcome.result !== 'off') {
+    const audit = auditIp(c);
+    await recordSecurityEvent({
+      action: 'BOT_CHECK_FAILED',
+      entityType: 'auth',
+      actorId: null,
+      outcome: outcome.allowed ? 'FAILURE' : 'DENIED',
+      requestId: c.get('requestId'),
+      ip: audit ?? undefined,
+      dedupeKey: `botcheck:${ip}:${action}:${Math.floor(Date.now() / 60_000)}`,
+      metadata: { surface: 'candidate', check: action, result: outcome.result, refused: !outcome.allowed }
+    });
+  }
+  if (!outcome.allowed) throw turnstileRefused();
+}
+
+/** The per-candidate ceilings (security/abuse.ts ABUSE_LIMITS): which candidate routes count, and how much. */
+function candidateQuota(method: string, path: string): { name: string; limit: number; window: number } | null {
+  if (method === 'POST' && path === '/candidate/applications') return { name: 'apply', limit: limitOf('CAND_APPLY_PER_DAY'), window: 86400 };
+  if (method === 'POST' && (path === '/candidate/resumes' || path === '/candidate/documents/:id')) return { name: 'upload', limit: limitOf('CAND_UPLOAD_PER_DAY'), window: 86400 };
+  if (method === 'PATCH' && path === '/candidate/profile') return { name: 'profile', limit: limitOf('CAND_PROFILE_SAVE_PER_HOUR'), window: 3600 };
+  return null;
 }
 
 function setRateHeaders(c: Context, r: BucketResult) {
