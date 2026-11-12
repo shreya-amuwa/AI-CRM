@@ -256,9 +256,14 @@ if (accTeam) {
 } else rows.push({ who: 'Accounts', dashboard: '', email: '-', password: null, note: 'no Accounts department or team found: not created' });
 const hrTeam = await firstTeam(hr);
 if (hrTeam) {
-  await user('HR Team Member', 'HR dashboard', 'hr.member', 'QA HR Member', { role: 'TEAM_MEMBER', teamId: hrTeam });
-  await user('HR Team Lead', 'HR dashboard (lead)', 'hr.lead', 'QA HR Lead', { role: 'TEAM_HEAD', teamId: hrTeam });
-  await user('HR Department Head', 'HR Department Head dashboard', 'hr.head', 'QA HR Head', { role: 'DEPARTMENT_HEAD', departmentId: hr.id }, { optional: true });
+  // made-up member details (an HR employee is created with them, like any member added in the CRM)
+  const hrDetails = designation => ({ designation, joiningDate: '2025-01-10', dateOfBirth: '1995-05-05', bloodGroup: 'A+', contactNumber: '+91 98111 22222', emergencyContact: '+91 98765 43210' });
+  // an HR employee is an HR Assistant, an HR Recruiter or the HR Admin Head (migration 20261222000500); HR has no Team Lead designation,
+  // so the HR Team Lead row stays only as an optional, reported "not created" line for older databases
+  await user('HR Team Member', 'HR dashboard (HR Assistant)', 'hr.member', 'QA HR Member', { role: 'TEAM_MEMBER', teamId: hrTeam, details: hrDetails('HR Assistant') });
+  await user('HR Recruiter', 'HR Recruiter dashboard', 'hr.recruiter', 'QA HR Recruiter', { role: 'TEAM_MEMBER', teamId: hrTeam, details: hrDetails('HR Recruiter') });
+  await user('HR Team Lead', 'HR dashboard (lead)', 'hr.lead', 'QA HR Lead', { role: 'TEAM_HEAD', teamId: hrTeam }, { optional: true });
+  await user('HR Department Head', 'HR Department Head dashboard', 'hr.head', 'QA HR Head', { role: 'DEPARTMENT_HEAD', departmentId: hr.id, details: hrDetails('HR Admin Head') }, { optional: true });
 } else rows.push({ who: 'HR', dashboard: '', email: '-', password: null, note: 'no HR department or team found: not created' });
 
 // ---- clients (existing customers with a client login: the same import the Support team uses) -------------------------------------------

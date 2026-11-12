@@ -366,7 +366,12 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
     setAttendanceOpen(false);
     onSelect(id);
   };
-  const navGroups: ShellNavGroup[] = [...groups, { label: 'My day', items: [{ id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 }] }];
+  // Attendance is the first entry of every dashboard's menu (marking the day is the first thing an employee does): it joins the
+  // unlabelled top section (the dashboard entry), or sits in its own section above a menu that starts with a labelled one
+  const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
+  const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
+    ? [{ ...groups[0], items: [attendanceItem, ...groups[0].items] }, ...groups.slice(1)]
+    : [{ items: [attendanceItem] }, ...groups];
   const toggleGroup = (label: string) => setClosedGroups(prev => {
     const next = new Set(prev);
     if (next.has(label)) next.delete(label); else next.add(label);
