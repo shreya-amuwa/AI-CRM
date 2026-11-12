@@ -54,7 +54,7 @@ export const PipelineWorkspace: React.FC<{
       return <AddLeadView onCancel={() => setPage({ kind: 'list' })} onSaved={id => setPage({ kind: 'edit-lead', id })} />;
     if (page.kind === 'edit-lead')
       return <EditLeadView id={page.id} onBack={() => setPage({ kind: 'list' })} onMovedToPotential={() => onNavigate('potential')} />;
-    return <LeadsView counts={counts} showInbound={!ownOnly} leadFilters={leadFilters} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;
+    return <LeadsView counts={counts} showInbound={!ownOnly} mine={ownOnly} leadFilters={leadFilters} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;
   }
   if (section === 'potential') {
     return (

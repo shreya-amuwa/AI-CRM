@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
-import { automationSettings, liveChannels, PANEL_URLS, whatsappStatus, type AutomationSettings } from './config.js';
+import { automationSettings, clientEmailSettings, liveChannels, PANEL_URLS, whatsappStatus, type AutomationSettings } from './config.js';
 import { postWhatsApp, sendEmail, type SendResult } from './providers.js';
 import { cleanPhone, EMAIL_RE, maskEmail, maskPhone, STAGE_LABEL, type ClientStage } from './rules.js';
 import { renderClientPasswordEmail, renderPanelCredentialsEmail, renderPanelLinkEmail, renderSubscriptionActivatedEmail, renderTemporaryAccessEmail } from './templates.js';
@@ -232,7 +232,9 @@ async function processSubscriptionActivatedMail(s: AutomationSettings, job: Clai
 }
 
 /** Decide and (in live mode) send one job. Never throws. */
-export async function processJob(s: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+export async function processJob(staffSettings: AutomationSettings, job: ClaimedJob): Promise<Outcome> {
+  // every e-mail of this queue is addressed to a client: the client-facing sender (EMAIL_FROM_CLIENT) when it is set
+  const s = clientEmailSettings(staffSettings);
   if (job.stage === 'ACCOUNTS_PAYMENT') return processAccountsMail(s, job);
   if (job.stage === 'PANEL_CREDENTIALS') return processPanelCredentialsMail(s, job);
   if (job.stage === 'PANEL_LINK') return processPanelLinkMail(s, job);

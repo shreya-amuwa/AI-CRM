@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { HrDocType, HrDocument, HrDocPrefill } from '../../shared/contracts.js';
+import type { HrDocType, HrDocument, HrDocPrefill, HrLetterTemplateState, HrLetterTemplateVersion, HrLetterType } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** NDA / Experience Letter records. Every function is a database function that checks the caller is HR staff and re-checks the employee. */
@@ -26,6 +26,12 @@ export class HrDocumentRepository {
 
   list(employeeKey: string | null, type: HrDocType | null) {
     return this.rpc<HrDocument[]>('hr_documents_list', { p_employee_key: employeeKey, p_doc_type: type });
+  }
+
+  templateState(type: HrLetterType) { return this.rpc<HrLetterTemplateState>('hr_letter_template_state', { p_type: type }); }
+  templateVersion(type: HrLetterType, version: number) { return this.rpc<HrLetterTemplateVersion>('hr_letter_template_version', { p_type: type, p_version: version }); }
+  saveTemplate(type: HrLetterType, content: unknown, baseVersion: number, note: string | null) {
+    return this.rpc<HrLetterTemplateVersion>('hr_letter_template_save', { p_type: type, p_content: content, p_base_version: baseVersion, p_note: note });
   }
 
   /** Where the stored file lives (and writes the audit entry for opening it). */

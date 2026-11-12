@@ -8,8 +8,8 @@ import type { InspectResult, StorageDriver, StorageProviderName, UploadTarget } 
 export { matchesSignature } from '../storage/signature.js';
 export type { InspectResult, StorageProviderName, UploadTarget } from '../storage/types.js';
 
-/** The tables that keep a file's reference next to the file's own row (customer documents, chat attachments, ticket attachments, employee issue attachments). */
-export type ReferenceTable = 'customer_documents' | 'chat_attachments' | 'support_ticket_attachments' | 'employee_issue_attachments';
+/** The tables that keep a file's reference next to the file's own row (customer documents, chat attachments, ticket attachments, employee issue attachments, HR employee files). */
+export type ReferenceTable = 'customer_documents' | 'chat_attachments' | 'support_ticket_attachments' | 'employee_issue_attachments' | 'hr_employee_files';
 
 const drivers: Record<StorageProviderName, StorageDriver> = { SUPABASE: new SupabaseDriver(), R2: new R2Driver() };
 

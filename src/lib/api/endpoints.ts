@@ -88,7 +88,7 @@ import type {
   HrDocPrefill,
   HrDocPreview,
   HrDocRequest,
-  HrDocType,
+  HrDocType, HrExperienceContent, HrLetterTemplateState, HrLetterTemplateVersion, HrLetterType, HrOfferContent,
   HrDocument,
   HrDocumentDownload,
   LeaveMonthlySummary,
@@ -151,6 +151,9 @@ import type {
   DocumentUploadTicket,
   TicketAttachment,
   TicketUploadTicket,
+  HrEmployeeFile,
+  HrEmployeeFileKind,
+  HrEmployeeFileUploadTicket,
   AttributionReconciliation,
   ClientPurchaseRule,
   DepartmentIncomeReport,
@@ -838,7 +841,12 @@ export const hrDocumentsApi = {
   preview: (body: HrDocRequest) => api.post<HrDocPreview>('/hr/documents/preview', body),
   generate: (body: HrDocRequest) => api.post<HrDocument>('/hr/documents', body),
   list: (q: { employeeKey?: string; type?: HrDocType } = {}) => api.get<HrDocument[]>('/hr/documents', { ...q }),
-  download: (id: string) => api.get<HrDocumentDownload>(`/hr/documents/${id}/download`)
+  download: (id: string) => api.get<HrDocumentDownload>(`/hr/documents/${id}/download`),
+  // the master templates of the Offer / Experience Letter (migration 20261231000700)
+  templateState: (type: HrLetterType) => api.get<HrLetterTemplateState>(`/hr/letter-templates/${type}`),
+  templateVersion: (type: HrLetterType, version: number) => api.get<HrLetterTemplateVersion>(`/hr/letter-templates/${type}/versions/${version}`),
+  saveTemplate: (type: HrLetterType, body: { content: HrOfferContent | HrExperienceContent; baseVersion: number; note?: string }) =>
+    api.post<HrLetterTemplateVersion>(`/hr/letter-templates/${type}`, body)
 };
 
 /** Tells the server a sign-in was refused, so it can note the attempt with the address and place the hosting platform reports. Never throws. */
@@ -921,6 +929,16 @@ export const clientWorkApi = {
   decidePlanRequest: (id: string, body: { decision: 'APPROVE' | 'REJECT' | 'ACTIVATE'; note?: string | null; paymentConfirmed?: boolean; renewsOn?: string | null }) =>
     api.post<null>(`/accounts/plan-requests/${id}/decision`, body),
   replyToClient: (ticketId: string, message: string) => api.post<null>(`/support/tickets/${ticketId}/client-reply`, { message })
+};
+/** Documents on an employee's HR profile, stored in R2 (HR staff upload / delete; the employee may read their own). */
+export const hrEmployeeFilesApi = {
+  list: (employeeKey: string) => api.get<HrEmployeeFile[]>('/hr/employee-files', { employeeKey }),
+  begin: (body: { employeeKey: string; kind: HrEmployeeFileKind; fileName: string; mimeType: string; sizeBytes: number; leaveRef?: string | null; note?: string | null }) =>
+    api.post<HrEmployeeFileUploadTicket>('/hr/employee-file-uploads', body),
+  complete: (id: string) => api.post<HrEmployeeFile>(`/hr/employee-file-uploads/${id}/complete`, {}),
+  abort: (id: string) => api.post<null>(`/hr/employee-file-uploads/${id}/abort`, {}),
+  url: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/hr/employee-files/${id}/url`, { action }),
+  remove: (id: string) => api.delete<null>(`/hr/employee-files/${id}`)
 };
 /** Files on tickets for staff: the server checks the person may see the ticket (or the customer, for a new ticket). */
 export const ticketFilesApi = {

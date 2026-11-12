@@ -20,7 +20,16 @@ export function matchesSignature(head: Buffer, mimeType: string): boolean {
     case 'audio/mpeg':
       return ascii(0, 3) === 'ID3' || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0);
     case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      // Office Open XML files are ZIP archives
       return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+    case 'message/rfc822': {
+      // A saved e-mail (.eml): plain text (no NUL, valid UTF-8 apart from a cut-off last character) that starts with a header line "Name: value".
+      if (head.length === 0 || head.includes(0)) return false;
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(head);
+      if (text.slice(0, -1).includes('\uFFFD')) return false;
+      return /^[\x21-\x39\x3B-\x7E]+:[ \t]/.test(text.replace(/^\uFEFF/, ''));
+    }
     case 'text/csv': {
       // Plain text: no NUL bytes and valid UTF-8 (ignoring a cut-off final character).
       if (head.length === 0 || head.includes(0)) return false;

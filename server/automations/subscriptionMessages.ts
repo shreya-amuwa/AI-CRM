@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
-import { automationSettings, COMPANY, liveChannels } from './config.js';
+import { automationSettings, clientEmailSettings, COMPANY, liveChannels } from './config.js';
 import { sendEmail } from './providers.js';
 import { toText, type RenderedEmail } from './templates.js';
 
@@ -111,7 +111,8 @@ const ten = (v: string) => v.replace(/\D/g, '').slice(-10);
 
 /** The e-mail sender: the configured provider (SMTP, Resend or Brevo), with the staging allow-list. */
 export function emailMessageSender(): ReminderMessageSender | null {
-  const s = automationSettings();
+  // renewal reminders go to clients: the client-facing sender when it is set
+  const s = clientEmailSettings(automationSettings());
   if (!liveChannels(s).includes('EMAIL')) return null;
   return {
     async send(msg) {

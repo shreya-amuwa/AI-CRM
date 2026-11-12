@@ -34,6 +34,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({ docu
             <a
               href={document.fileUrl}
               download={document.name}
+              // a signed storage link is on another origin, where "download" is ignored: open it in a new tab instead of leaving the app
+              target="_blank"
+              rel="noopener noreferrer"
               className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-mono font-bold flex items-center gap-1.5 transition-all shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />

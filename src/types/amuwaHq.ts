@@ -19,10 +19,14 @@ export interface DetailedLeaveRecord {
   halfDayShift?: string;
   reason: string;
   mailAttachmentName: string;
-  mailAttachmentUrl?: string; // Image or PDF file URL
+  mailAttachmentUrl?: string; // Image or PDF file URL (sample data only; uploaded mails are stored files - see mailFileId)
+  /** The stored mail (hr_employee_files, kind LEAVE_MAIL); opened through a short-lived signed link. */
+  mailFileId?: string;
   status: 'Active' | 'Cancelled';
   cancellationMailName?: string;
   cancellationMailUrl?: string;
+  /** The stored cancellation mail (hr_employee_files, kind LEAVE_CANCELLATION_MAIL). */
+  cancellationMailFileId?: string;
   cancellationReason?: string;
   submittedAt: string;
 }

@@ -2557,6 +2557,44 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await forgot('not-an-email');
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
 
+  // --- staff "Forgot password?" (20261231000700) and the client-facing sender (EMAIL_FROM_CLIENT) ---
+  {
+    const modeWas = process.env.AUTOMATION_MODE;
+    const testRecipientsWas = process.env.AUTOMATION_TEST_RECIPIENTS;
+    delete process.env.AUTOMATION_TEST_RECIPIENTS;
+    process.env.AUTOMATION_MODE = 'live';
+    process.env.EMAIL_FROM_CLIENT = 'Amuwa <hello@amuwa-client.example>';
+    const staffForgot = (email: string) => fetch(`${base}/auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ email }) })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    const mails = () => outbox.filter(o => o.path === '/emails');
+    let m0 = mails().length;
+    r = await staffForgot('SM@amuwa.com');
+    const staffMail = mails().slice(m0).find(o => o.body.to?.[0] === 'sm@amuwa.com');
+    check(r.status === 200 && r.json.data.ok === true && !!staffMail && /Reset your password – Amuwa CRM/.test(staffMail.body.subject)
+      && staffMail.body.html.includes('https://crm.example.test/set-password?purpose=reset&amp;token_hash=') && !/evil\.example|localhost/.test(staffMail.body.html),
+      'staff forgot password: an active employee gets a one-time link to the CRM\'s own set-password page', staffMail?.body ?? r);
+    check(/meta@amuwa\.com/.test(String(staffMail?.body.from)) && !(staffMail?.body.cc?.length) && !(staffMail?.body.bcc?.length),
+      'staff forgot password: sent from the staff address (EMAIL_FROM), never copied to CC / BCC', staffMail?.body);
+    const staffLink = /href="([^"]+set-password[^"]+)"/.exec(staffMail?.body.html ?? '')?.[1]?.replace(/&amp;/g, '&') ?? '';
+    const staffToken = await tokenFromLink(staffLink);
+    check(!!staffToken, 'staff forgot password: the link signs the employee in once (to save the new password)');
+    check((await tokenFromLink(staffLink)) === null, 'staff forgot password: the link works only once');
+    m0 = mails().length;
+    r = await staffForgot('nobody.here@example.com');
+    check(r.status === 200 && r.json.data.ok === true && mails().length === m0, 'staff forgot password: same answer and no e-mail for an unknown address', r);
+    r = await staffForgot('imp.client@example.com');
+    check(r.status === 200 && mails().length === m0, 'staff forgot password: never for a client login', r);
+    r = await staffForgot('not-an-email');
+    check(r.status === 422, 'staff forgot password: a wrong e-mail is refused', r);
+    m0 = mails().length;
+    r = await forgot('imp.client@example.com');
+    const clientMail = mails().slice(m0).find(o => o.body.to?.[0] === 'imp.client@example.com');
+    check(!!clientMail && /hello@amuwa-client\.example/.test(String(clientMail.body.from)), 'client e-mails go out from the client-facing address (EMAIL_FROM_CLIENT)', clientMail?.body);
+    delete process.env.EMAIL_FROM_CLIENT;
+    if (modeWas === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeWas;
+    if (testRecipientsWas !== undefined) process.env.AUTOMATION_TEST_RECIPIENTS = testRecipientsWas;
+  }
+
   // --- the team chooses the client's password (column "Client Password"): validated, hashed by Auth, never stored or e-mailed by the CRM ---
   const pw0 = 'Team#Chosen-2026';
   const pwFile = (extra: Record<string, unknown>[]) => ({
@@ -9855,8 +9893,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.ready === true, 'hr documents: but can get an NDA', r);
   r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:NOBODY&type=NDA');
   check(r.status === 404, 'hr documents: an unknown employee is not found', r);
-  r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:APIDOC-B&type=OFFER');
-  check(r.status === 422, 'hr documents: only the NDA and the Experience Letter exist', r);
+  r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:APIDOC-B&type=PAYSLIP');
+  check(r.status === 422, 'hr documents: only the NDA, Offer and Experience letters exist', r);
 
   // the NDA on the official template
   r = await api('hr', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } });
@@ -10048,6 +10086,220 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // recruitment: an ordinary employee still has no Recruitment Portal
   r = await api('a', 'GET', '/recruiter/context');
   check(r.status === 403, 'recruitment API: an ordinary employee has no Recruitment Portal', r);
+}
+
+// --- HR letters: the Offer Letter and the versioned master templates of the Offer and Experience Letters (migration 20261231000700) ---------
+{
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
+  const { DEFAULT_OFFER_CONTENT, DEFAULT_EXPERIENCE_CONTENT } = await import('../../shared/hrLetters.js');
+  const { PDFDocument, PDFName, PDFArray, decodePDFRawStream } = await import('pdf-lib');
+  const textOf = async (bytes: Uint8Array) => {
+    const doc = await PDFDocument.load(bytes);
+    let text = '';
+    for (const page of doc.getPages()) {
+      const c = page.node.Contents();
+      for (const ref of c instanceof PDFArray ? c.asArray() : [page.node.get(PDFName.of('Contents'))]) {
+        const raw = Buffer.from(decodePDFRawStream(doc.context.lookup(ref) as any).decode()).toString('latin1');
+        for (const m of raw.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) text += Buffer.from(m[1], 'hex').toString('latin1');
+      }
+    }
+    return { pages: doc.getPageCount(), text: text.replace(/\s+/g, '') };
+  };
+  await db.query(`insert into public.hr_employees (id, name, email, designation, department_id, status, joining_date, monthly_salary, data)
+                  values ('APILTR-NEW', 'Lokesh Joining', 'apiltr-new@example.com', 'Technical Support Executive', 'wabastore', 'Full-Time', '2026-10-01', '10000', '{}')
+                  on conflict (id) do nothing`);
+  const K = 'HR:APILTR-NEW';
+  /** jsonb keeps the keys in its own order: compare the values, not the key order */
+  const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map(k => [k, canon((v as any)[k])])) : v;
+  const same = (x: unknown, y: unknown) => JSON.stringify(canon(x)) === JSON.stringify(canon(y));
+
+  // the seeded version 1 is exactly the supplied wording (the shared defaults)
+  let r = await api('hr', 'GET', '/hr/letter-templates/OFFER');
+  check(r.status === 200 && r.json.data.current.version >= 1 && r.json.data.canEdit === true, 'hr letters: the HR Admin Head reads the Offer Letter template and may edit it', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/OFFER/versions/1');
+  check(r.status === 200 && same(r.json.data.content, DEFAULT_OFFER_CONTENT), 'hr letters: Offer Letter version 1 is the supplied wording', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/EXPERIENCE/versions/1');
+  check(r.status === 200 && same(r.json.data.content, DEFAULT_EXPERIENCE_CONTENT), 'hr letters: Experience Letter version 1 is the official wording', r);
+  r = await api('hrmember', 'GET', '/hr/letter-templates/EXPERIENCE');
+  check(r.status === 200 && r.json.data.canEdit === false, 'hr letters: an HR team member reads the template but may not edit', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/NDA');
+  check(r.status === 422, 'hr letters: the NDA has no editable template', r);
+
+  // prefill and preview of an Offer Letter from the record
+  r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(K)}&type=OFFER`);
+  const pre = r.json.data;
+  check(r.status === 200 && pre.ready === true && pre.employee.name === 'Lokesh Joining' && pre.employee.monthlySalary === '10000' && pre.employee.joiningDate === '2026-10-01' && pre.template?.version >= 1,
+    'hr letters: the Offer Letter form is filled from the HR record, with the salary and the current template', r);
+  const offer = (over: Record<string, unknown> = {}) => ({ letterDate: '2026-09-30', employeeName: 'Lokesh Joining', designation: 'Technical Support Executive', department: 'Wabastore',
+    employmentType: 'Full-Time', joiningDate: '2026-10-01', salary: '₹10,000/- per month (Fixed)', probation: '6 Months', reportingTo: 'Team Leader', signatoryName: 'Miss Aarti Kalange',
+    content: pre.template.content, templateVersion: pre.template.version, ...over });
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer() });
+  let info = r.status === 200 ? await textOf(new Uint8Array(Buffer.from(r.json.data.pdfBase64, 'base64'))) : null;
+  check(r.status === 200 && !!info && info.pages >= 1 && info.pages <= 4 && info.text.includes('LokeshJoining') && info.text.includes('TechnicalSupportExecutive') && info.text.includes('01stOctober2026')
+    && !info.text.includes('{') && !/Lokesh Patil|LokeshPatil/.test(info.text), 'hr letters: the Offer Letter preview has the employee\'s values and nothing of the sample', r);
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer({ content: { ...pre.template.content, salutation: 'Dear {nickname},' } }) });
+  check(r.status === 422, 'hr letters: an unknown placeholder in the wording is refused', r);
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer({ salary: '' }) });
+  check(r.status === 422, 'hr letters: the salary is required', r);
+
+  // generate with wording edited for this letter only
+  const edited = { ...pre.template.content, closing: [...pre.template.content.closing, 'Please report to the Pune office at 10 AM.'] };
+  r = await api('hr', 'POST', '/hr/documents', { type: 'OFFER', employeeKey: K, fields: offer({ content: edited }) });
+  const doc = r.json.data;
+  check(r.status === 201 && doc.type === 'OFFER' && doc.employeeKey === K && /^Offer-Letter-Lokesh-Joining-2026-09-30\.pdf$/.test(doc.fileName) && doc.fields.templateVersion === pre.template.version,
+    'hr letters: the Offer Letter is generated and stored against the employee with its template version', r);
+  r = await api('hr', 'GET', `/hr/documents/${doc.id}/download`);
+  const file = r.status === 200 ? new Uint8Array(await (await fetch(r.json.data.url)).arrayBuffer()) : null;
+  info = file ? await textOf(file) : null;
+  check(!!info && info.text.includes('PleasereporttothePuneofficeat10AM.') && info.text.includes('LokeshJoining'), 'hr letters: the stored Offer Letter downloads with the wording edited for it', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/OFFER');
+  check(r.status === 200 && r.json.data.current.version === pre.template.version, 'hr letters: editing one letter\'s wording does not change the master template', r);
+
+  // a new master version: the issued letter does not change
+  r = await api('hrmember', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, signOff: 'Regards,' }, baseVersion: pre.template.version });
+  check(r.status === 403, 'hr letters: an HR team member cannot save the master template (403)', r);
+  r = await api('hr', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, signOff: 'Warm regards, Amuwa Corporation,' }, baseVersion: pre.template.version, note: 'API test' });
+  const v2 = r.json.data;
+  check(r.status === 201 && v2.version === pre.template.version + 1 && v2.content.signOff === 'Warm regards, Amuwa Corporation,' && v2.note === 'API test', 'hr letters: the HR Admin Head saves a new version', r);
+  r = await api('hr', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, signOff: 'Stale' }, baseVersion: pre.template.version });
+  check(r.status === 409, 'hr letters: a save on an older version is a conflict (409), nothing is lost', r);
+  r = await api('hr', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, paragraphs: [] }, baseVersion: v2.version });
+  check(r.status === 422, 'hr letters: a template without paragraphs is refused', r);
+  r = await api('hr', 'GET', `/hr/documents?employeeKey=${encodeURIComponent(K)}&type=OFFER`);
+  const listed = r.json.data?.find((d: any) => d.id === doc.id);
+  check(r.status === 200 && listed && listed.fields.content.signOff === pre.template.content.signOff && listed.fields.content.closing.length === edited.closing.length,
+    'hr letters: after the master changes, the issued letter keeps the wording it was made with', r);
+  r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(K)}&type=OFFER`);
+  check(r.status === 200 && r.json.data.template.version === v2.version, 'hr letters: new letters start from the new version', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/OFFER');
+  check(r.status === 200 && r.json.data.versions.length >= 2 && r.json.data.versions.every((v: any) => !('content' in v)), 'hr letters: the version history lists the versions (without their full wording)', r);
+
+  // the Experience Letter with its template version
+  r = await api('hr', 'GET', '/hr/letter-templates/EXPERIENCE');
+  const expTpl = r.json.data.current;
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'EXPERIENCE', employeeKey: 'HR:APIDOC-B', fields: { letterDate: '2026-09-18', title: 'Miss', employeeName: 'Priya Sharma',
+    designation: 'Business Development Executive', lastWorkingDate: '2026-09-17', signatoryName: 'Aarti Kalange', signatoryTitle: 'Ceo',
+    content: { ...expTpl.content, signOff: 'With best wishes,' }, templateVersion: expTpl.version } });
+  info = r.status === 200 ? await textOf(new Uint8Array(Buffer.from(r.json.data.pdfBase64, 'base64'))) : null;
+  check(!!info && info.text.includes('Withbestwishes,') && info.text.includes('PriyaSharma') && info.text.includes('Duringhertenure'), 'hr letters: the Experience Letter uses the edited wording, filled for the employee', r);
+
+  // who may
+  for (const who of ['tm2', 'rrec1', 'dh']) {
+    r = await api(who, 'GET', '/hr/letter-templates/OFFER');
+    check(r.status === 403, `hr letters: ${who} cannot read the templates (403)`, r);
+    r = await api(who, 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer() });
+    check(r.status === 403, `hr letters: ${who} cannot make an Offer Letter (403)`, r);
+  }
+}
+
+// --- HR employee files: documents on an employee's HR profile, stored in R2, metadata in Supabase (migration 20261231000800) ------------------
+{
+  const R2 = { key: 'r2-hef-key', secret: 'r2-hef-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  const objects = fake.objects;
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket });
+  const EMP = deliveryMember; // a CRM member: their key is their profile id, and they may read their own files ('tm2')
+  const ONLY = 'HR:APIHEF-ONLY';
+  await db.query(`insert into public.hr_employees (id, name, email, department_id, status, joining_date, data) values ('APIHEF-ONLY', 'Hef Only', 'apihef@example.com', 'wabastore', 'Full-Time', '2024-01-02', '{}')
+                  on conflict (id) do nothing`);
+  const idPdf = Buffer.concat([Buffer.from('%PDF-1.4\n% id proof\n'), Buffer.alloc(3000, 0x20), Buffer.from('\n%%EOF\n')]);
+  const eml = Buffer.from('From: Manager <manager@example.com>\r\nTo: hr@example.com\r\nSubject: Leave approved\r\n\r\nApproved for 12 Nov.\r\n');
+  const docx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(500, 0x01)]);
+  const upload = async (who: string, body: Record<string, unknown>, bytes: Buffer) => {
+    const b = await api(who, 'POST', '/hr/employee-file-uploads', { sizeBytes: bytes.length, ...body });
+    if (b.status !== 201) return { begin: b, done: null as any };
+    const sent = await fetch(b.json.data.upload.url, { method: 'PUT', headers: b.json.data.upload.headers, body: bytes });
+    if (!sent.ok) throw new Error(`hr files: PUT to R2 failed ${sent.status}`);
+    return { begin: b, done: await api(who, 'POST', `/hr/employee-file-uploads/${b.json.data.file.id}/complete`) };
+  };
+
+  // HR uploads an ID proof: presigned PUT straight to R2, the server checks the stored object, only metadata goes to the database
+  let u = await upload('hr', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'Aadhaar card.pdf', mimeType: 'application/pdf' }, idPdf);
+  check(u.begin.status === 201 && u.begin.json.data.provider === 'R2' && u.begin.json.data.upload?.url && !u.begin.json.data.token, 'hr files: the upload is a presigned PUT to R2', u.begin);
+  check(u.done.status === 200 && u.done.json.data.kind === 'IDENTITY' && u.done.json.data.fileName === 'Aadhaar card.pdf' && u.done.json.data.sizeBytes === idPdf.length,
+    'hr files: completing the upload keeps the file', u.done);
+  const idFile = u.done.json.data;
+  const key = `hr-employee-files/${u.begin.json.data.path}`;
+  check(objects.has(key) && objects.get(key)!.body.equals(idPdf), 'hr files: the bytes are in R2');
+  const row = (await db.query(`select * from public.hr_employee_files where id = $1`, [idFile.id])).rows[0];
+  const cols = Object.keys(row);
+  check(row.status === 'READY' && row.storage_provider === 'R2' && row.storage_ref === `r2://${R2.bucket}/${key}` && row.storage_etag === crypto.createHash('md5').update(idPdf).digest('hex')
+        && Number(row.size_bytes) === idPdf.length && row.profile_id === EMP,
+    'hr files: Supabase keeps only the reference (provider, key, ETag, size) read back from R2', row);
+  check(!cols.some(c => /bytes?$|content|data|blob/.test(c) && c !== 'size_bytes'), 'hr files: the table has no column for file contents', cols);
+
+  // a leave mail (.eml) and a leave cancellation mail, linked to the leave record
+  u = await upload('hr', { employeeKey: EMP, kind: 'LEAVE_MAIL', fileName: 'approval.eml', mimeType: 'message/rfc822', leaveRef: 'LR-1' }, eml);
+  check(u.done?.status === 200 && u.done.json.data.leaveRef === 'LR-1' && u.done.json.data.mimeType === 'message/rfc822', 'hr files: a leave mail (.eml) is stored with its leave', u);
+  u = await upload('hr', { employeeKey: EMP, kind: 'LEAVE_CANCELLATION_MAIL', fileName: 'cancel.docx', leaveRef: 'LR-1', note: 'Trip postponed',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }, docx);
+  check(u.done?.status === 200 && u.done.json.data.note === 'Trip postponed', 'hr files: a Word cancellation mail is stored with its note', u);
+  u = await upload('hr', { employeeKey: ONLY, kind: 'EDUCATION', fileName: 'degree.png', mimeType: 'image/png' },
+    Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100)]));
+  check(u.done?.status === 200, 'hr files: an HR-only record (no login) can hold files', u);
+
+  // what is refused
+  let r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'big.pdf', mimeType: 'application/pdf', sizeBytes: 5 * 1024 * 1024 + 1 });
+  check(r2.status === 422, 'hr files: more than 5 MB is refused', r2);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.gif', mimeType: 'image/gif', sizeBytes: 10 });
+  check(r2.status === 422, 'hr files: other types are refused', r2);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'LEAVE_MAIL', fileName: 'm.pdf', mimeType: 'application/pdf', sizeBytes: 10 });
+  check(r2.status === 422, 'hr files: a leave mail must name its leave', r2);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10, storagePath: 'evil/path' });
+  check(r2.status === 422, 'hr files: the browser cannot choose the storage path', r2);
+  u = await upload('hr', { employeeKey: EMP, kind: 'OTHER', fileName: 'fake.pdf', mimeType: 'application/pdf' }, Buffer.from('MZ this is not a pdf, just some bytes'));
+  check(u.done.status === 422 && !objects.has(`hr-employee-files/${u.begin.json.data.path}`), 'hr files: content that does not match its type is refused and removed from R2', u.done);
+  u = await upload('hr', { employeeKey: EMP, kind: 'LEAVE_MAIL', leaveRef: 'LR-2', fileName: 'fake.eml', mimeType: 'message/rfc822' }, Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04]));
+  check(u.done.status === 422, 'hr files: a binary file sent as an e-mail is refused', u.done);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'OTHER', fileName: 'never.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+  r2 = await api('hr', 'POST', `/hr/employee-file-uploads/${r2.json.data.file.id}/complete`);
+  check(r2.status === 422, 'hr files: completing without uploading is refused', r2);
+
+  // HR lists, opens, downloads
+  r2 = await api('hr', 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+  check(r2.status === 200 && r2.json.data.length === 3 && r2.json.data.every((f: any) => f.employeeKey === EMP && !('storagePath' in f)), "hr files: HR lists the employee's files (without storage paths)", r2);
+  r2 = await api('hr', 'GET', `/hr/employee-files/${idFile.id}/url?action=download`);
+  check(r2.status === 200 && r2.json.data.expiresInSeconds <= 120 && /attachment/.test(decodeURIComponent(r2.json.data.url)), 'hr files: HR gets a short-lived download link', r2);
+  const got = await fetch(r2.json.data.url);
+  check(got.status === 200 && Buffer.from(await got.arrayBuffer()).equals(idPdf), 'hr files: the downloaded bytes are the uploaded file');
+
+  // the employee: read their own, nothing else
+  r2 = await api('tm2', 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+  check(r2.status === 200 && r2.json.data.length === 3, 'hr files: the employee lists their own files', r2);
+  r2 = await api('tm2', 'GET', `/hr/employee-files/${idFile.id}/url`);
+  check(r2.status === 200 && /inline/.test(decodeURIComponent(r2.json.data.url)), 'hr files: and opens one', r2);
+  r2 = await api('tm2', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 });
+  check(r2.status === 403, 'hr files: the employee cannot upload', r2);
+  r2 = await api('tm2', 'DELETE', `/hr/employee-files/${idFile.id}`);
+  check(r2.status === 403, 'hr files: nor delete', r2);
+  r2 = await api('tm2', 'GET', `/hr/employee-files?employeeKey=${ONLY}`);
+  check(r2.status === 403, "hr files: nor list anyone else's files", r2);
+
+  // everyone else
+  for (const who of ['dh', 'rrec1', 'sh']) {
+    if (!tokens.has(who)) continue;
+    r2 = await api(who, 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+    check(r2.status === 403, `hr files: ${who} cannot list the employee's files`, r2);
+    r2 = await api(who, 'GET', `/hr/employee-files/${idFile.id}/url`);
+    check(r2.status === 404, `hr files: ${who} cannot open one`, r2);
+    r2 = await api(who, 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 });
+    check(r2.status === 403, `hr files: ${who} cannot upload`, r2);
+  }
+  r2 = await api(null, 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+  check(r2.status === 401, 'hr files: signed-out visitors get nothing', r2);
+
+  // HR deletes: the object leaves R2, the row stays (marked deleted) for the audit trail
+  r2 = await api('hr', 'DELETE', `/hr/employee-files/${idFile.id}`);
+  check(r2.status === 200 && !objects.has(key), 'hr files: HR deletes a file and it is removed from R2', r2);
+  const del = (await db.query(`select deleted_at, deleted_by from public.hr_employee_files where id = $1`, [idFile.id])).rows[0];
+  check(del.deleted_at !== null && del.deleted_by !== null, 'hr files: the metadata row is kept, marked deleted', del);
+  r2 = await api('tm2', 'GET', `/hr/employee-files/${idFile.id}/url`);
+  check(r2.status === 404, 'hr files: a deleted file can no longer be opened', r2);
+  const audits = (await db.query(`select action from public.audit_logs where entity_type = 'hr_employee_file' and entity_id = $1`, [idFile.id])).rows.map((x: any) => x.action);
+  check(['HR_EMPLOYEE_FILE_UPLOADED', 'HR_EMPLOYEE_FILE_OPENED', 'HR_EMPLOYEE_FILE_DELETED'].every(a => audits.includes(a)), 'hr files: upload, opening and deletion are audited', audits);
+
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']) delete process.env[k];
+  fake.server.close();
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

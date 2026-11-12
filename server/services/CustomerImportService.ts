@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CustomerDataImportError, CustomerDataImportLogin, CustomerDataImportResult } from '../../shared/contracts.js';
 import { clientAccountSchema, clientForgotPasswordSchema, customerDataImportSchema, uuidSchema } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
-import { automationSettings, liveChannels } from '../automations/config.js';
+import { automationSettings, clientEmailSettings, liveChannels } from '../automations/config.js';
 import { sendEmail } from '../automations/providers.js';
 import { renderClientCredentialsEmail, renderClientPasswordEmail, type RenderedEmail } from '../automations/templates.js';
 import { hasServiceClient } from '../db/supabase.js';
@@ -43,7 +43,7 @@ function safeOrigin(origin: string | undefined): string | null {
 
 /** Sends one client e-mail, or says why it was not sent (the team can send it again later). */
 async function sendClientMail(to: { email: string; name: string }, mail: RenderedEmail): Promise<{ sent: boolean; detail?: string }> {
-  const s = automationSettings();
+  const s = clientEmailSettings(automationSettings());
   if (s.mode !== 'live') return { sent: false, detail: 'E-mails are switched off on the server (AUTOMATION_MODE is not "live").' };
   if (!liveChannels(s).includes('EMAIL')) return { sent: false, detail: 'E-mail sending is not set up on the server.' };
   if (s.testRecipients && !s.testRecipients.emails.has(to.email.toLowerCase())) {

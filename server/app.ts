@@ -42,6 +42,7 @@ import { StorageRepository } from './repositories/StorageRepository.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
+import { staffForgotPassword } from './services/StaffPasswordService.js';
 import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
 import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
@@ -256,6 +257,17 @@ app.post('/candidate-auth/register', async c => {
   return c.json(ok(await registerCandidate(body)), 201);
 });
 
+// "Forgot password?" on the staff sign-in page (no login). Same answer whatever the e-mail; at most a few a quarter hour per caller and per address.
+app.post('/auth/forgot-password', async c => {
+  const body = await readJson(c);
+  const typed = typeof (body as { email?: unknown })?.email === 'string' ? String((body as { email: string }).email).trim().toLowerCase().slice(0, 254) : '';
+  await enforce([
+    { key: `staff-forgot:${clientIp(c)}`, limit: 5, window: 900 },
+    ...(typed ? [{ key: `staff-forgot:email:${typed}`, limit: 3, window: 3600 }] : [])
+  ], 'memory');
+  return c.json(ok(await staffForgotPassword(body)));
+});
+
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
 app.post('/client-auth/forgot-password', async c => {
   await enforce([{ key: `forgot:${clientIp(c)}`, limit: 5, window: 900 }], 'memory');
@@ -461,7 +473,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/candidate-auth/register', '/auth/login-failed']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

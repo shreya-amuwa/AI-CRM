@@ -151,3 +151,19 @@ export function liveChannels(s: AutomationSettings): ('EMAIL' | 'WHATSAPP')[] {
   if (s.whatsapp.webhookUrl) out.push('WHATSAPP');
   return out;
 }
+
+/**
+ * E-mails addressed to CLIENTS (onboarding, payment requests, invoices, renewal reminders, client logins) can go out from a client-facing
+ * address on its own domain: EMAIL_FROM_CLIENT (e.g. "Amuwa <hello@amuwa.com>") and EMAIL_REPLY_TO_CLIENT. Staff, HR and careers e-mails
+ * keep EMAIL_FROM (e.g. on amuwacorporation.com). Both go through the SAME mail account (EMAIL_PROVIDER / EMAIL_API_KEY): with Resend,
+ * verify both domains in that one account. Not set: everything uses EMAIL_FROM, as before.
+ */
+export function clientEmailSettings(s: AutomationSettings = automationSettings()): AutomationSettings {
+  const from = (process.env.EMAIL_FROM_CLIENT || '').trim();
+  const replyTo = process.env.EMAIL_REPLY_TO_CLIENT?.trim();
+  if (!from && !replyTo) return s;
+  const m = /^(.*)<([^>]+)>\s*$/.exec(from);
+  const fromEmail = from ? (m ? m[2].trim() : from) : s.email.fromEmail;
+  const fromName = (m ? m[1].trim().replace(/^"|"$/g, '') : '') || s.email.fromName;
+  return { ...s, email: { ...s.email, fromEmail, fromName, replyTo: replyTo || s.email.replyTo } };
+}

@@ -265,12 +265,25 @@ export const hrController = {
   }) as Handler
 };
 
+/** Documents on an employee's HR profile (HR staff upload / delete; the employee may read their own). */
+export const hrEmployeeFilesController = {
+  list: (async ctx => ok(await svc(ctx).hrEmployeeFiles.list(ctx.req.query))) as Handler,
+  beginUpload: (async ctx => ok(await svc(ctx).hrEmployeeFiles.beginUpload(ctx.req.body), 201)) as Handler,
+  completeUpload: (async ctx => ok(await svc(ctx).hrEmployeeFiles.completeUpload(ctx.params.id))) as Handler,
+  abortUpload: (async ctx => ok(await svc(ctx).hrEmployeeFiles.abortUpload(ctx.params.id))) as Handler,
+  fileUrl: (async ctx => ok(await svc(ctx).hrEmployeeFiles.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
+  remove: (async ctx => ok(await svc(ctx).hrEmployeeFiles.remove(ctx.params.id))) as Handler
+};
+
 export const hrDocumentController = {
   prefill: (async ctx => ok(await svc(ctx).hrDocuments.prefill(ctx.req.query))) as Handler,
   preview: (async ctx => ok(await svc(ctx).hrDocuments.preview(ctx.req.body))) as Handler,
   generate: (async ctx => ok(await svc(ctx).hrDocuments.generate(ctx.req.body), 201)) as Handler,
   list: (async ctx => ok(await svc(ctx).hrDocuments.list(ctx.req.query))) as Handler,
-  download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler
+  download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler,
+  templateState: (async ctx => ok(await svc(ctx).hrDocuments.templateState(ctx.params.type))) as Handler,
+  templateVersion: (async ctx => ok(await svc(ctx).hrDocuments.templateVersion(ctx.params.type, ctx.params.version))) as Handler,
+  saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler
 };
 
 export const performanceController = {
