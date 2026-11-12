@@ -40,6 +40,13 @@ const signed = (ip: string, ts = Math.floor(Date.now() / 1000), secret = SECRET)
     'no secret (or one under 32 characters) on the CRM: nothing forwarded is believed');
 }
 
+// the same vectors are checked by the Candidate Portal (tests/abuse.test.ts): both sides sign / verify identically
+{
+  const { portalServerToken } = await import('../../server/security/abuse.js');
+  check(signPortalForward('portal-forward-secret-0123456789abcdef', '203.0.113.5', 1794300000) === '1a846f402fb73591ab8d4b61bd06afbee33dc89cfbcb24b6e562f32f98ce63c9'
+    && portalServerToken('portal-forward-secret-0123456789abcdef') === '92742ee1cac76a0942fe0dc29c9c69f66fa7e1b62b42502cfd192162f930b041', 'signatures match the Candidate Portal\'s (shared test vectors)');
+}
+
 // ---- Turnstile ---------------------------------------------------------------------------------------------------------------------
 {
   let sent = '';
