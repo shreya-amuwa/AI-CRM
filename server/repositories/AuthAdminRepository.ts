@@ -223,6 +223,16 @@ export class AuthAdminRepository {
     return url.toString();
   }
 
+  /** The ACTIVE employee behind an e-mail (staff "Forgot password?"), or null. Service role only (20261231000700). */
+  async staffLoginForReset(email: string): Promise<{ id: string; email: string; name: string } | null> {
+    const { data, error } = await getServiceClient().rpc('staff_login_for_reset', { p_email: email });
+    if (error) {
+      console.error('[api] staff_login_for_reset failed', error.message);
+      throw new AppError('INTERNAL');
+    }
+    return (data as { id: string; email: string; name: string } | null) ?? null;
+  }
+
   /** The client login behind an e-mail (for "Forgot password?"), or null. */
   async clientLoginForReset(email: string): Promise<{ email: string; name: string; businessName: string } | null> {
     const { data, error } = await getServiceClient().rpc('client_login_for_reset', { p_email: email });

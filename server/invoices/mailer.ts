@@ -1,5 +1,5 @@
 import type { InvoiceStage } from '../../shared/contracts.js';
-import { COMPANY, automationSettings, liveChannels, type AutomationSettings } from '../automations/config.js';
+import { COMPANY, automationSettings, clientEmailSettings, liveChannels, type AutomationSettings } from '../automations/config.js';
 import { sendEmail, type MailAttachment } from '../automations/providers.js';
 import { EMAIL_RE, maskEmail } from '../automations/rules.js';
 import type { RenderedEmail } from '../automations/templates.js';
@@ -88,7 +88,7 @@ export function sendBlocker(s: AutomationSettings, to: string | null): string | 
   return null;
 }
 
-export async function sendInvoiceEmail(i: InvoiceMailInput, settings: AutomationSettings = automationSettings()): Promise<InvoiceMailOutcome> {
+export async function sendInvoiceEmail(i: InvoiceMailInput, settings: AutomationSettings = clientEmailSettings(automationSettings())): Promise<InvoiceMailOutcome> {
   const to = (i.to || '').trim().toLowerCase() || null;
   const blocked = sendBlocker(settings, to);
   if (blocked) return { outcome: 'NOT_SENT', detail: blocked, messageId: null, to };

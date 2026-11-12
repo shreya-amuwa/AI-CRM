@@ -155,6 +155,8 @@ export const customerDataImportSchema = z
   .strict();
 
 export const clientForgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254) }).strict();
+/** Staff "Forgot password?" on the CRM sign-in page: the same rules as the client one. */
+export const staffForgotPasswordSchema = clientForgotPasswordSchema;
 
 export const customerActivityCreateSchema = z
   .object({
@@ -2716,7 +2718,7 @@ export const hrExperienceFieldsSchema = z
   .strict();
 export const hrDocRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NDA'), employeeKey: hrDocEmployeeKeySchema, fields: hrNdaFieldsSchema }).strict(),
-  // the Experience Letter may carry its edited wording and the Offer Letter always does (block "HR letters" below, migration 20261231000600)
+  // the Experience Letter may carry its edited wording and the Offer Letter always does (block "HR letters" below, migration 20261231000700)
   z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrExperienceLetterFieldsSchema) }).strict(),
   z.object({ type: z.literal('OFFER'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrOfferFieldsSchema) }).strict()
 ]);
@@ -2752,7 +2754,7 @@ export const paidLeavePolicySchema = z
 export const confirmationDateSchema = z.object({ effectiveDate: isoDate, note: trimmed(500).min(5, 'Give the reason for the change.') }).strict();
 export const paidLeaveListQuerySchema = z.object({ search: trimmed(120).optional() }).strict();
 
-// --- HR letters: the Offer Letter, editable wording, versioned master templates (migration 20261231000600) ----------------------------------
+// --- HR letters: the Offer Letter, editable wording, versioned master templates (migration 20261231000700) ----------------------------------
 // The wording is the official letters' (shared/hrLetters.ts). HR may edit it per letter, and HR leadership may save new master versions; the
 // placeholders must be ones the letter knows, and everything must be printable (the renderer refuses what the PDF font cannot print).
 const letterText = (label: string, max: number, min = 1) =>

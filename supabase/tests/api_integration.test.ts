@@ -2556,6 +2556,44 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await forgot('not-an-email');
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
 
+  // --- staff "Forgot password?" (20261231000700) and the client-facing sender (EMAIL_FROM_CLIENT) ---
+  {
+    const modeWas = process.env.AUTOMATION_MODE;
+    const testRecipientsWas = process.env.AUTOMATION_TEST_RECIPIENTS;
+    delete process.env.AUTOMATION_TEST_RECIPIENTS;
+    process.env.AUTOMATION_MODE = 'live';
+    process.env.EMAIL_FROM_CLIENT = 'Amuwa <hello@amuwa-client.example>';
+    const staffForgot = (email: string) => fetch(`${base}/auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ email }) })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    const mails = () => outbox.filter(o => o.path === '/emails');
+    let m0 = mails().length;
+    r = await staffForgot('SM@amuwa.com');
+    const staffMail = mails().slice(m0).find(o => o.body.to?.[0] === 'sm@amuwa.com');
+    check(r.status === 200 && r.json.data.ok === true && !!staffMail && /Reset your password – Amuwa CRM/.test(staffMail.body.subject)
+      && staffMail.body.html.includes('https://crm.example.test/set-password?purpose=reset&amp;token_hash=') && !/evil\.example|localhost/.test(staffMail.body.html),
+      'staff forgot password: an active employee gets a one-time link to the CRM\'s own set-password page', staffMail?.body ?? r);
+    check(/meta@amuwa\.com/.test(String(staffMail?.body.from)) && !(staffMail?.body.cc?.length) && !(staffMail?.body.bcc?.length),
+      'staff forgot password: sent from the staff address (EMAIL_FROM), never copied to CC / BCC', staffMail?.body);
+    const staffLink = /href="([^"]+set-password[^"]+)"/.exec(staffMail?.body.html ?? '')?.[1]?.replace(/&amp;/g, '&') ?? '';
+    const staffToken = await tokenFromLink(staffLink);
+    check(!!staffToken, 'staff forgot password: the link signs the employee in once (to save the new password)');
+    check((await tokenFromLink(staffLink)) === null, 'staff forgot password: the link works only once');
+    m0 = mails().length;
+    r = await staffForgot('nobody.here@example.com');
+    check(r.status === 200 && r.json.data.ok === true && mails().length === m0, 'staff forgot password: same answer and no e-mail for an unknown address', r);
+    r = await staffForgot('imp.client@example.com');
+    check(r.status === 200 && mails().length === m0, 'staff forgot password: never for a client login', r);
+    r = await staffForgot('not-an-email');
+    check(r.status === 422, 'staff forgot password: a wrong e-mail is refused', r);
+    m0 = mails().length;
+    r = await forgot('imp.client@example.com');
+    const clientMail = mails().slice(m0).find(o => o.body.to?.[0] === 'imp.client@example.com');
+    check(!!clientMail && /hello@amuwa-client\.example/.test(String(clientMail.body.from)), 'client e-mails go out from the client-facing address (EMAIL_FROM_CLIENT)', clientMail?.body);
+    delete process.env.EMAIL_FROM_CLIENT;
+    if (modeWas === undefined) delete process.env.AUTOMATION_MODE; else process.env.AUTOMATION_MODE = modeWas;
+    if (testRecipientsWas !== undefined) process.env.AUTOMATION_TEST_RECIPIENTS = testRecipientsWas;
+  }
+
   // --- the team chooses the client's password (column "Client Password"): validated, hashed by Auth, never stored or e-mailed by the CRM ---
   const pw0 = 'Team#Chosen-2026';
   const pwFile = (extra: Record<string, unknown>[]) => ({
@@ -10049,7 +10087,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 403, 'recruitment API: an ordinary employee has no Recruitment Portal', r);
 }
 
-// --- HR letters: the Offer Letter and the versioned master templates of the Offer and Experience Letters (migration 20261231000600) ---------
+// --- HR letters: the Offer Letter and the versioned master templates of the Offer and Experience Letters (migration 20261231000700) ---------
 {
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
   const { DEFAULT_OFFER_CONTENT, DEFAULT_EXPERIENCE_CONTENT } = await import('../../shared/hrLetters.js');

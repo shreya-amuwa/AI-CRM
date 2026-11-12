@@ -3,7 +3,7 @@
  * and how a template is filled in for one employee. The NDA is not here on purpose: it is the official PDF itself and its clauses are never edited.
  *
  * Version 1 of each master template is the wording of the official letters the company supplied (Offer Letter of 30 Sep 2026, Experience Letter of
- * 18 Sep 2026) with the sample person's details replaced by placeholders. The migration 20261231000600 seeds exactly these texts; the API test checks
+ * 18 Sep 2026) with the sample person's details replaced by placeholders. The migration 20261231000700 seeds exactly these texts; the API test checks
  * that the seeded version 1 equals these constants.
  *
  *   {placeholder}   replaced by the employee's value when the letter is made (see *_PLACEHOLDERS)

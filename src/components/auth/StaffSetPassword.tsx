@@ -6,11 +6,13 @@ import { getSupabase } from '../../services/supabaseClient';
 /**
  * /set-password: opened from the welcome e-mail a new employee receives. The link carries a one-time token (/set-password?token_hash=...&type=recovery).
  * Nothing is verified when the page opens (an e-mail scanner that only opens the link cannot use the token up): it is exchanged for a session
- * when the employee saves their password. The server puts the password on the sign-in, so only the employee knows it, and then they continue
+ * when the employee saves their password. The same page serves "Forgot password?" (?purpose=reset): only the wording differs. The server puts the password on the sign-in, so only the employee knows it, and then they continue
  * to the dashboard their role belongs to. No password is ever sent in the e-mail, shown to HR or stored by the CRM.
  */
 export const StaffSetPassword: React.FC = () => {
   const tokenHash = useRef<string | null>(new URLSearchParams(window.location.search).get('token_hash'));
+  // "Forgot password?" (the staff sign-in page) or the welcome e-mail of a new employee
+  const reset = useRef(new URLSearchParams(window.location.search).get('purpose') === 'reset').current;
   const [state, setState] = useState<'ready' | 'expired' | 'done'>(tokenHash.current ? 'ready' : 'expired');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -30,12 +32,12 @@ export const StaffSetPassword: React.FC = () => {
     const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash.current, type: 'recovery' });
     if (verifyError) { setBusy(false); setState('expired'); return; }
     tokenHash.current = null; // the token is used up; from here the sign-in it made carries the request
-    window.history.replaceState(null, '', '/set-password');
+    window.history.replaceState(null, '', reset ? '/set-password?purpose=reset' : '/set-password');
     try {
       await apiRequest<{ changed: true }>('POST', '/me/password', { body: { password } });
     } catch (err) {
       setBusy(false);
-      setError(err instanceof ApiError && err.status === 401 ? 'This link has expired. Ask HR to send you a new welcome e-mail.' : err instanceof Error ? err.message : 'The password could not be saved. Please try again.');
+      setError(err instanceof ApiError && err.status === 401 ? (reset ? 'This link has expired. Use "Forgot password?" on the sign-in page to get a new one.' : 'This link has expired. Ask HR to send you a new welcome e-mail.') : err instanceof Error ? err.message : 'The password could not be saved. Please try again.');
       return;
     }
     setBusy(false);
@@ -55,7 +57,9 @@ export const StaffSetPassword: React.FC = () => {
             <h1 className="text-2xl font-bold text-slate-900">This link has expired</h1>
             <div role="alert" className="flex gap-2 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800">
               <AlertTriangle className="w-5 h-5 shrink-0" aria-hidden="true" />
-              <span>A set-password link works once and only for a limited time. Ask HR to send you a new welcome e-mail. If you already chose your password, sign in instead.</span>
+              <span>{reset
+                ? 'A reset link works once and only for a limited time. Use "Forgot password?" on the sign-in page to get a new one.'
+                : 'A set-password link works once and only for a limited time. Ask HR to send you a new welcome e-mail. If you already chose your password, sign in instead.'}</span>
             </div>
             <a href="/" className="inline-flex rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">Go to sign in</a>
           </>
@@ -63,8 +67,10 @@ export const StaffSetPassword: React.FC = () => {
         {state === 'ready' && (
           <form onSubmit={submit} noValidate className="space-y-4" aria-label="Set your password">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Welcome! Set your password</h1>
-              <p className="text-sm text-slate-600 mt-1">Choose the password you will use to sign in to the Amuwa CRM. Only you will know it. It is required before you can sign in.</p>
+              <h1 className="text-2xl font-bold text-slate-900">{reset ? 'Choose a new password' : 'Welcome! Set your password'}</h1>
+              <p className="text-sm text-slate-600 mt-1">{reset
+                ? 'Choose the new password for your Amuwa CRM account. Only you will know it; your old password stops working.'
+                : 'Choose the password you will use to sign in to the Amuwa CRM. Only you will know it. It is required before you can sign in.'}</p>
             </div>
             {error && <div role="alert" className="flex gap-2 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800"><AlertTriangle className="w-5 h-5 shrink-0" aria-hidden="true" /><span>{error}</span></div>}
             <label className="block text-xs font-semibold text-slate-700">
@@ -91,7 +97,7 @@ export const StaffSetPassword: React.FC = () => {
           <>
             <div role="status" className="flex gap-2 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">
               <CheckCircle2 className="w-5 h-5 shrink-0" aria-hidden="true" />
-              <span>Your password is saved. From now on sign in with your login e-mail and this password.</span>
+              <span>{reset ? 'Your new password is saved. Use it from now on to sign in.' : 'Your password is saved. From now on sign in with your login e-mail and this password.'}</span>
             </div>
             <button type="button" onClick={() => window.location.assign('/')} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white">Open my dashboard</button>
           </>

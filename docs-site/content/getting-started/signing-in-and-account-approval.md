@@ -8,7 +8,7 @@ audience: internal
 status: verified
 sources: [src/components/auth/LoginForm.tsx, src/context/AuthContext.tsx, shared/contracts.ts]
 related: [/getting-started/welcome-to-amuwa-crm, /getting-started/understanding-your-role-and-dashboard, /troubleshooting/login-and-access-issues]
-updated: 2026-10-27
+updated: 2026-11-12
 ---
 
 Amuwa AI CRM uses role-based authentication backed by Supabase Auth. Depending on whether your manager created your profile directly or you submitted an account request, your account must be in `ACTIVE` status before your dashboard opens.
@@ -37,6 +37,17 @@ Verify Account Status | Auth Service | Checks profile status (ACTIVE, PENDING_AP
 -> Status is INACTIVE / SUSPENDED | Access Blocked | Displays account deactivation or suspension notice
 Route to Role Dashboard | Role Router | Opens default dashboard mapped in src/lib/auth/roleMapping.ts
 ```
+
+## Forgot your password? (Internal Staff)
+
+1. On the sign-in page, click **Forgot password?** (next to **Remember me**).
+2. Enter the e-mail address you sign in with and click **Send reset link**.
+3. Open the e-mail **Reset your password – Amuwa CRM** and click **Choose a new password**. The link works once and for a limited time.
+4. Type your new password twice (at least 10 characters) and click **Save password and continue**. Your old password stops working.
+
+The page always says the same thing, whether or not the address has an account, so nobody can use it to find out who works here. Only an
+**active** account gets the e-mail: if your account is pending, suspended or revoked, contact HR or your Department Head. A link that has
+expired or was already used shows **This link has expired**: request a new one.
 
 ## How to request a new staff account
 

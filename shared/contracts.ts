@@ -5385,7 +5385,7 @@ export interface HrDocExperienceFields {
   lastWorkingDate: string;
   signatoryName: string;
   signatoryTitle: string;
-  /** The wording used for this letter (migration 20261231000600; when absent, version 1 of the master template). */
+  /** The wording used for this letter (migration 20261231000700; when absent, version 1 of the master template). */
   content?: HrExperienceContent;
   templateVersion?: number;
 }
@@ -5406,11 +5406,11 @@ export interface HrDocPrefill {
     lastWorkingDate: string | null;
     status: string;
     separated: boolean;
-    /** From the HR record, for the Offer Letter (migration 20261231000600; absent before it). */
+    /** From the HR record, for the Offer Letter (migration 20261231000700; absent before it). */
     monthlySalary?: string | null;
     workingHours?: string | null;
   };
-  /** The current master template of an Offer / Experience Letter (migration 20261231000600; absent before it or for the NDA). */
+  /** The current master template of an Offer / Experience Letter (migration 20261231000700; absent before it or for the NDA). */
   template?: HrLetterTemplateVersion | null;
   /** Details the letter needs that the record does not have (empty = the letter can be made). */
   problems: { code: string; message: string }[];
@@ -5434,7 +5434,7 @@ export interface HrDocument {
 }
 export interface HrDocumentDownload { url: string; fileName: string }
 
-// --- HR letters: the Offer Letter, editable wording, versioned master templates (migration 20261231000600) ----------------------------------
+// --- HR letters: the Offer Letter, editable wording, versioned master templates (migration 20261231000700) ----------------------------------
 import type { HrExperienceContent, HrLetterType, HrOfferContent } from './hrLetters.js';
 export type { HrExperienceContent, HrLetterTerm, HrLetterType, HrOfferContent } from './hrLetters.js';
 export interface HrDocOfferFields {
