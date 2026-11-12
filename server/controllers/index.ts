@@ -154,6 +154,28 @@ export const chatController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+export const meetingsController = {
+  list: (async ctx => ok(await svc(ctx).meetings.list(ctx.req.query))) as Handler,
+  detail: (async ctx => ok(await svc(ctx).meetings.detail(ctx.params.id))) as Handler,
+  create: (async ctx => ok(await svc(ctx).meetings.create(ctx.req.body), 201)) as Handler,
+  reschedule: (async ctx => ok(await svc(ctx).meetings.reschedule(ctx.params.id, ctx.req.body))) as Handler,
+  cancel: (async ctx => ok(await svc(ctx).meetings.cancel(ctx.params.id, ctx.req.body))) as Handler,
+  complete: (async ctx => ok(await svc(ctx).meetings.complete(ctx.params.id, ctx.req.body))) as Handler,
+  decide: (async ctx => ok(await svc(ctx).meetings.decide(ctx.params.id, ctx.req.body))) as Handler,
+  answerProposal: (async ctx => ok(await svc(ctx).meetings.answerProposal(ctx.params.id, ctx.req.body))) as Handler,
+  respond: (async ctx => ok(await svc(ctx).meetings.respond(ctx.params.id, ctx.req.body))) as Handler,
+  approvals: (async ctx => ok(await svc(ctx).meetings.approvals())) as Handler,
+  directory: (async ctx => ok(await svc(ctx).meetings.directory(ctx.req.query))) as Handler,
+  busy: (async ctx => ok(await svc(ctx).meetings.busy(ctx.req.body))) as Handler,
+  settings: (async ctx => ok(await svc(ctx).meetings.settings())) as Handler,
+  setAvailability: (async ctx => ok(await svc(ctx).meetings.setAvailability(ctx.req.body))) as Handler,
+  saveBookingLink: (async ctx => ok(await svc(ctx).meetings.saveBookingLink(ctx.req.body))) as Handler,
+  setDelegates: (async ctx => ok(await svc(ctx).meetings.setDelegates(ctx.req.body))) as Handler,
+  googleStatus: (async ctx => ok(await svc(ctx).meetings.googleStatus())) as Handler,
+  googleConnect: (async ctx => ok(svc(ctx).meetings.googleConnect(ctx.actor))) as Handler,
+  googleDisconnect: (async ctx => ok(await svc(ctx).meetings.googleDisconnect(ctx.actor))) as Handler
+};
+
 export const employeeCasesController = {
   // the employee
   submitIssue: (async ctx => ok(await svc(ctx).employeeCases.submitIssue(ctx.req.body), 201)) as Handler,

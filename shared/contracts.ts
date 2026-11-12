@@ -5574,3 +5574,161 @@ export interface HrEmployeeFileUploadTicket {
   token: string;
   upload?: { url: string; headers: Record<string, string> };
 }
+
+// ---------------------------------------------------------------------------
+// Meetings (Google Calendar, booking links, CEO approval)
+// ---------------------------------------------------------------------------
+export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING';
+export type CalendarMeetingMode = 'GOOGLE_MEET' | 'ONLINE_LINK' | 'IN_PERSON' | 'PHONE';
+export type CalendarMeetingStatus = 'REQUESTED' | 'PROPOSED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED';
+export type CalendarMeetingSyncStatus = 'PENDING' | 'SYNCED' | 'FAILED' | 'NOT_CONNECTED' | 'SKIPPED';
+
+export interface MeetingAttendee {
+  id: string;
+  profileId: string | null;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  role: 'REQUIRED' | 'OPTIONAL' | 'EXTERNAL';
+  response: 'NEEDS_ACTION' | 'ACCEPTED' | 'DECLINED' | 'TENTATIVE';
+}
+
+export interface Meeting {
+  id: string;
+  reference: string;
+  kind: CalendarMeetingKind;
+  kindLabel: string;
+  title: string;
+  description: string | null;
+  hostId: string;
+  hostName: string;
+  hostEmail: string | null;
+  createdBy: string | null;
+  createdByName: string | null;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  mode: CalendarMeetingMode;
+  location: string | null;
+  meetLink: string | null;
+  status: CalendarMeetingStatus;
+  requiresApproval: boolean;
+  decidedBy: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  proposedStartsAt: string | null;
+  proposedEndsAt: string | null;
+  cancelReason: string | null;
+  bookedVia: 'STAFF' | 'BOOKING_LINK' | 'SYSTEM';
+  sourceType: 'ba_demo' | 'career_interview' | 'employee_meeting' | null;
+  sourceId: string | null;
+  customerId: string | null;
+  googleSyncStatus: CalendarMeetingSyncStatus;
+  googleSyncError: string | null;
+  googleEventId: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  canManage: boolean;
+  canDecide: boolean;
+  canAnswerProposal: boolean;
+  attendees: MeetingAttendee[];
+}
+
+export interface MeetingHistoryEntry { kind: string; note: string | null; actorName: string | null; at: string; data: Record<string, unknown> }
+export interface MeetingDetail extends Meeting { history: MeetingHistoryEntry[] }
+
+export interface MeetingDirectoryEntry {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  position: string | null;
+  department: string | null;
+  isCeo: boolean;
+  googleConnected: boolean;
+}
+
+export interface MeetingBusyBlock { profileId: string; start: string; end: string; source: 'CRM' | 'GOOGLE' }
+
+export interface GoogleCalendarStatus {
+  configured: boolean;
+  connected: boolean;
+  status: 'CONNECTED' | 'NEEDS_RECONNECT' | 'NOT_CONNECTED';
+  googleEmail: string | null;
+  connectedAt: string | null;
+  lastError: string | null;
+}
+
+export interface MeetingBookingLink {
+  id: string;
+  hostId: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  kind: Exclude<CalendarMeetingKind, 'HR_MEETING'>;
+  durationMinutes: number;
+  bufferMinutes: number;
+  minNoticeMinutes: number;
+  maxDaysAhead: number;
+  mode: 'GOOGLE_MEET' | 'IN_PERSON' | 'PHONE';
+  location: string | null;
+  requiresApproval: boolean;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface MeetingAvailabilityWindow { weekday: number; start: string; end: string }
+
+export interface MeetingSettings {
+  timezone: string;
+  availability: MeetingAvailabilityWindow[];
+  availabilityIsDefault: boolean;
+  delegates: { id: string; name: string; email: string }[];
+  bookingTypes: MeetingBookingLink[];
+  isCeo: boolean;
+}
+
+/** The public booking page (no login). */
+export interface PublicBookingPage {
+  slug: string;
+  title: string;
+  description: string | null;
+  kind: string;
+  durationMinutes: number;
+  mode: 'GOOGLE_MEET' | 'IN_PERSON' | 'PHONE';
+  location: string | null;
+  hostName: string;
+  hostPosition: string | null;
+  requiresApproval: boolean;
+  timezone: string;
+  slots: string[];
+}
+
+export interface PublicBookingResult {
+  reference: string;
+  status: CalendarMeetingStatus;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  manageUrl: string | null;
+}
+
+export interface PublicBookingView {
+  id: string;
+  reference: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  mode: string;
+  location: string | null;
+  meetLink: string | null;
+  status: CalendarMeetingStatus;
+  proposedStartsAt: string | null;
+  proposedEndsAt: string | null;
+  decisionNote: string | null;
+  hostName: string;
+  slug: string | null;
+}

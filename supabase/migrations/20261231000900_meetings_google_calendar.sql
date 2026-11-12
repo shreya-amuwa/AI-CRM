@@ -1161,8 +1161,10 @@ begin
 end $$;
 
 -- the result of one sync: the event id and Meet link Google gave, or the error
+drop function if exists public.mtg_sync_result(uuid, integer, boolean, text, text, text, text, boolean);
 create or replace function public.mtg_sync_result(p_id uuid, p_version integer, p_ok boolean, p_event_id text default null,
-  p_calendar_id text default null, p_meet_link text default null, p_error text default null, p_skipped boolean default false)
+  p_calendar_id text default null, p_meet_link text default null, p_error text default null, p_skipped boolean default false,
+  p_event_removed boolean default false)
 returns void language plpgsql security definer set search_path = '' as $$
 declare
   m public.meetings;
@@ -1173,7 +1175,8 @@ begin
   end if;
   if p_ok then
     update public.meetings set
-      google_event_id = coalesce(p_event_id, google_event_id), google_calendar_id = coalesce(p_calendar_id, google_calendar_id),
+      google_event_id = case when p_event_removed then null else coalesce(p_event_id, google_event_id) end,
+      google_calendar_id = case when p_event_removed then null else coalesce(p_calendar_id, google_calendar_id) end,
       meet_link = case when mode = 'GOOGLE_MEET' and p_meet_link ~* '^https://[^\s]+$' then p_meet_link else meet_link end,
       -- changed again while syncing: stays pending
       google_sync_status = case when version <> p_version then 'PENDING' when p_skipped then 'SKIPPED' else 'SYNCED' end,
@@ -1255,13 +1258,17 @@ begin
             from public.meeting_mail_outbox o join public.meetings m on m.id = o.meeting_id where o.id = any (v_ids)), '[]'::jsonb);
 end $$;
 
+-- SENT / SKIPPED (Google sent its own invitation, or sending is switched off) / FAILED (retried later) /
+-- DEFER (the Google sync of the meeting is still running: look again in 2 minutes, not counted as an attempt)
 create or replace function public.mtg_mail_result(p_id bigint, p_status text, p_error text default null)
 returns void language sql security definer set search_path = '' as $$
   update public.meeting_mail_outbox set
-    status = case when p_status in ('SENT', 'SKIPPED') then p_status else 'FAILED' end,
+    status = case when p_status in ('SENT', 'SKIPPED') then p_status when p_status = 'DEFER' then 'PENDING' else 'FAILED' end,
     sent_at = case when p_status = 'SENT' then now() end,
     last_error = left(p_error, 500),
-    send_after = case when p_status in ('SENT', 'SKIPPED') then send_after else now() + make_interval(mins => 10 * attempts) end
+    attempts = case when p_status = 'DEFER' then greatest(attempts - 1, 0) else attempts end,
+    send_after = case when p_status in ('SENT', 'SKIPPED') then send_after when p_status = 'DEFER' then now() + interval '2 minutes'
+                      else now() + make_interval(mins => 10 * attempts) end
    where id = p_id
 $$;
 
@@ -1427,7 +1434,7 @@ begin
   foreach f in array array[
     'public.mtg_public_page(text)', 'public.mtg_public_book(jsonb)', 'public.mtg_public_get(uuid)', 'public.mtg_public_cancel(uuid, text)',
     'public.mtg_public_answer_proposal(uuid, boolean)', 'public.mtg_sync_claim(integer)',
-    'public.mtg_sync_result(uuid, integer, boolean, text, text, text, text, boolean)', 'public.mtg_connection_broken(uuid, text)',
+    'public.mtg_sync_result(uuid, integer, boolean, text, text, text, text, boolean, boolean)', 'public.mtg_connection_broken(uuid, text)',
     'public.mtg_connection_saved(uuid)', 'public.mtg_enqueue_reminders()', 'public.mtg_mail_claim(integer)', 'public.mtg_mail_result(bigint, text, text)'] loop
     execute format('revoke all on function %s from public, anon, authenticated', f);
     execute format('grant execute on function %s to service_role', f);
