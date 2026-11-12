@@ -1325,8 +1325,8 @@ begin
 end $$;
 
 -- Business Associate demos (the demo's contact is invited by e-mail when the contact has one)
-create or replace function private.tg_ba_demos_mirror()
-returns trigger language plpgsql security definer set search_path = '' as $$
+create or replace function private.mtg_mirror_ba_demo(new public.ba_demos)
+returns void language plpgsql security definer set search_path = '' as $$
 declare
   c record;
 begin
@@ -1336,10 +1336,15 @@ begin
     case new.mode when 'IN_PERSON' then 'IN_PERSON' else 'GOOGLE_MEET' end, new.location, new.meeting_link,
     case new.status when 'CANCELLED' then 'CANCELLED' when 'COMPLETED' then 'COMPLETED' else 'SCHEDULED' end,
     c.email, c.name, c.phone, null, c.customer_id);
-  return new;
 exception when others then
   -- the demo itself must never fail because of the calendar
   raise warning 'meeting mirror of demo % failed: %', new.id, sqlerrm;
+end $$;
+revoke all on function private.mtg_mirror_ba_demo(public.ba_demos) from public, anon, authenticated;
+create or replace function private.tg_ba_demos_mirror()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.mtg_mirror_ba_demo(new);
   return new;
 end $$;
 revoke all on function private.tg_ba_demos_mirror() from public, anon, authenticated;
@@ -1347,8 +1352,8 @@ drop trigger if exists ba_demos_meeting_mirror on public.ba_demos;
 create trigger ba_demos_meeting_mirror after insert or update on public.ba_demos for each row execute function private.tg_ba_demos_mirror();
 
 -- recruitment interviews (the interviewer hosts; the candidate is invited by e-mail)
-create or replace function private.tg_career_interviews_mirror()
-returns trigger language plpgsql security definer set search_path = '' as $$
+create or replace function private.mtg_mirror_interview(new public.career_interviews)
+returns void language plpgsql security definer set search_path = '' as $$
 declare
   c record;
 begin
@@ -1362,9 +1367,14 @@ begin
     case new.mode when 'IN_PERSON' then 'IN_PERSON' when 'PHONE' then 'PHONE' else 'GOOGLE_MEET' end, new.location, null,
     case new.status when 'CANCELLED' then 'CANCELLED' when 'COMPLETED' then 'COMPLETED' else 'SCHEDULED' end,
     c.email, c.name, c.phone);
-  return new;
 exception when others then
   raise warning 'meeting mirror of interview % failed: %', new.id, sqlerrm;
+end $$;
+revoke all on function private.mtg_mirror_interview(public.career_interviews) from public, anon, authenticated;
+create or replace function private.tg_career_interviews_mirror()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.mtg_mirror_interview(new);
   return new;
 end $$;
 revoke all on function private.tg_career_interviews_mirror() from public, anon, authenticated;
@@ -1372,18 +1382,18 @@ drop trigger if exists career_interviews_meeting_mirror on public.career_intervi
 create trigger career_interviews_meeting_mirror after insert or update on public.career_interviews for each row execute function private.tg_career_interviews_mirror();
 
 -- employee meetings with HR, once HR has confirmed a time (HR hosts; the employee is invited)
-create or replace function private.tg_employee_meetings_mirror()
-returns trigger language plpgsql security definer set search_path = '' as $$
+create or replace function private.mtg_mirror_employee_meeting(new public.employee_meeting_requests)
+returns void language plpgsql security definer set search_path = '' as $$
 declare
   v_start timestamptz;
   v_tz text;
 begin
   if new.confirmed_date is null or new.confirmed_time is null or new.assigned_hr_id is null then
-    return new;
+    return;
   end if;
   if new.status not in ('SCHEDULED', 'CANCELLED', 'COMPLETED', 'DECLINED')
      and not exists (select 1 from public.meetings where source_type = 'employee_meeting' and source_id = new.id) then
-    return new;
+    return;
   end if;
   v_tz := coalesce((select timezone from public.meeting_host_settings where host_id = new.assigned_hr_id), 'Asia/Kolkata');
   v_start := (new.confirmed_date + new.confirmed_time) at time zone v_tz;
@@ -1392,9 +1402,14 @@ begin
     case coalesce(new.confirmed_mode, new.meeting_mode) when 'ONLINE' then 'GOOGLE_MEET' else 'IN_PERSON' end, new.meeting_location, new.meeting_link,
     case new.status when 'SCHEDULED' then 'SCHEDULED' when 'COMPLETED' then 'COMPLETED' else 'CANCELLED' end,
     null, null, null, new.employee_id);
-  return new;
 exception when others then
   raise warning 'meeting mirror of HR meeting % failed: %', new.id, sqlerrm;
+end $$;
+revoke all on function private.mtg_mirror_employee_meeting(public.employee_meeting_requests) from public, anon, authenticated;
+create or replace function private.tg_employee_meetings_mirror()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.mtg_mirror_employee_meeting(new);
   return new;
 end $$;
 revoke all on function private.tg_employee_meetings_mirror() from public, anon, authenticated;
@@ -1402,15 +1417,18 @@ drop trigger if exists employee_meetings_meeting_mirror on public.employee_meeti
 create trigger employee_meetings_meeting_mirror after insert or update on public.employee_meeting_requests
   for each row execute function private.tg_employee_meetings_mirror();
 
--- what is already planned (from today on) joins the engine once; re-running changes nothing
+-- what is already planned (from today on) joins the engine once; the source rows are only read, re-running changes nothing
 do $$
 begin
-  update public.ba_demos set updated_at = updated_at where starts_at > now() and status in ('SCHEDULED', 'RESCHEDULED')
-     and not exists (select 1 from public.meetings m where m.source_type = 'ba_demo' and m.source_id = ba_demos.id);
-  update public.career_interviews set version = version where scheduled_at > now() and status = 'SCHEDULED'
-     and not exists (select 1 from public.meetings m where m.source_type = 'career_interview' and m.source_id = career_interviews.id);
-  update public.employee_meeting_requests set updated_at = updated_at where status = 'SCHEDULED' and confirmed_date >= current_date
-     and not exists (select 1 from public.meetings m where m.source_type = 'employee_meeting' and m.source_id = employee_meeting_requests.id);
+  perform private.mtg_mirror_ba_demo(d) from public.ba_demos d
+    where d.starts_at > now() and d.status in ('SCHEDULED', 'RESCHEDULED')
+      and not exists (select 1 from public.meetings m where m.source_type = 'ba_demo' and m.source_id = d.id);
+  perform private.mtg_mirror_interview(i) from public.career_interviews i
+    where i.scheduled_at > now() and i.status = 'SCHEDULED'
+      and not exists (select 1 from public.meetings m where m.source_type = 'career_interview' and m.source_id = i.id);
+  perform private.mtg_mirror_employee_meeting(e) from public.employee_meeting_requests e
+    where e.status = 'SCHEDULED' and e.confirmed_date >= current_date
+      and not exists (select 1 from public.meetings m where m.source_type = 'employee_meeting' and m.source_id = e.id);
 end $$;
 
 -- ---------------------------------------------------------------------------

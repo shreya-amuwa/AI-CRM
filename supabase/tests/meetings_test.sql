@@ -16,7 +16,7 @@ delete from meeting_availability where host_id in (test.id('sa'), test.id('tm_a'
 delete from google_calendar_connections where profile_id in (test.id('sa'), test.id('tm_a'));
 delete from meetings where host_id in (test.id('sa'), test.id('tm_a'), test.id('ck_a'));
 delete from notifications where type like 'MEETING%' or type like 'GOOGLE_CALENDAR%';
-delete from ba_demos where title = 'Mirror demo';
+delete from ba_demos where title in ('Mirror demo', 'Backfill demo');
 delete from career_interviews where location = 'Head office' and interviewer_id = test.id('tm_a');
 create temp table mt (k text primary key, id uuid, v integer);
 grant all on mt to authenticated;
@@ -261,12 +261,22 @@ select test.check((select count(*) = 1 from meetings m where m.source_type = 'ca
 select test.check((select count(*) = 1 from meeting_attendees a join meetings m on m.id = a.meeting_id where m.source_type = 'career_interview' and a.profile_id is null
                      and m.source_id = (select id from career_interviews where location = 'Head office' order by created_at desc limit 1)),
   'with the candidate invited by e-mail');
+-- a demo planned before the migration joins the calendar when the migration runs, without its own row being touched
+alter table ba_demos disable trigger ba_demos_meeting_mirror;
+insert into ba_demos (contact_id, title, starts_at, ends_at, mode, assigned_to, created_by, updated_at)
+select id, 'Backfill demo', now() + interval '14 days', now() + interval '14 days 1 hour', 'IN_PERSON', test.id('tm_a'), test.id('tm_a'), now() - interval '3 days' from ba_contacts limit 1;
+alter table ba_demos enable trigger ba_demos_meeting_mirror;
+select test.check((select count(*) = 0 from meetings m join ba_demos d on d.id = m.source_id where d.title = 'Backfill demo'), 'a demo made before the calendar existed is not in it yet');
+\i supabase/migrations/20261231000900_meetings_google_calendar.sql
+select test.check((select count(*) = 1 from meetings m join ba_demos d on d.id = m.source_id where m.source_type = 'ba_demo' and d.title = 'Backfill demo' and m.mode = 'IN_PERSON'),
+  'the migration brings already-planned demos into the calendar');
+select test.check((select updated_at < now() - interval '2 days' from ba_demos where title = 'Backfill demo'), 'without touching the demo itself');
 -- the demo itself never fails because of the calendar
 select test.check((select count(*) = 1 from ba_demos where title = 'Mirror demo'), 'the source records are untouched');
 
 -- clean up what this suite made
 reset role;
-delete from ba_demos where title = 'Mirror demo';
+delete from ba_demos where title in ('Mirror demo', 'Backfill demo');
 delete from career_interviews where location = 'Head office' and interviewer_id = test.id('tm_a');
 delete from meetings where host_id in (test.id('sa'), test.id('tm_a'), test.id('ck_a'));
 delete from meeting_booking_types where host_id in (test.id('sa'), test.id('tm_a'));
