@@ -95,6 +95,12 @@ export async function handleRequest(request: Request, env: WorkerEnv, ctx?: Work
 
 /** The scheduled run (was vercel.json "crons"): the same authenticated request Vercel Cron sent, made inside the Worker. */
 export async function runScheduledDispatch(env: WorkerEnv): Promise<void> {
+  // Off unless switched on: during the rehearsal on workers.dev and until the switch-over, Vercel Cron still runs the automations against
+  // the same database; two runs at once could send a reminder twice. Go-live turns this on and Vercel's cron off together.
+  if ((process.env.SCHEDULED_ENABLED || '').trim().toLowerCase() !== 'true') {
+    console.log('[cron] skipped: SCHEDULED_ENABLED is not "true" (switch it on at go-live, when Vercel Cron is turned off)');
+    return;
+  }
   const secret = automationSettings().dispatchSecrets[0];
   if (!secret) {
     throw new Error('Scheduled automations are not configured: set the CRON_SECRET (or AUTOMATION_DISPATCH_SECRET) secret, 16+ characters.');

@@ -118,6 +118,16 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch } = await impor
   check(JSON.stringify(crons) === JSON.stringify(['30 3 * * *', '0 5 * * *']), 'the Worker runs the automations at the times Vercel Cron did (03:30 and 05:00 UTC)', crons);
   delete process.env.CRON_SECRET;
   delete process.env.AUTOMATION_DISPATCH_SECRET;
+  delete process.env.SCHEDULED_ENABLED;
+  let skipped = true;
+  try {
+    await runScheduledDispatch({ ASSETS: { fetch: async () => new Response('') } });
+  } catch {
+    skipped = false;
+  }
+  check(skipped, 'SCHEDULED_ENABLED not set: the scheduled run does nothing (Vercel still runs the automations until go-live)');
+  check(/"keep_vars":\s*true/.test(wrangler) && !/"EMAIL_PROVIDER"/.test(wrangler), 'dashboard variables survive a deploy (keep_vars) and EMAIL_PROVIDER is a dashboard setting');
+  process.env.SCHEDULED_ENABLED = 'true';
   let message = '';
   try {
     await runScheduledDispatch({ ASSETS: { fetch: async () => new Response('') } });

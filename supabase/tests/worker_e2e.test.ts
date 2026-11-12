@@ -100,6 +100,8 @@ const settings: Record<string, string> = {
   WEBHOOK_SECRET: 'webhook-secret-0123456789',
   WEBHOOK_VERIFY_TOKEN: 'verify-me',
   CRON_SECRET: 'cron-secret-0123456789abcdef',
+  SCHEDULED_ENABLED: 'true',
+  EMAIL_PROVIDER: 'resend',
   EMAIL_API_KEY: 're_worker_test_key',
   EMAIL_API_BASE_URL: resendUrl,
   EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
