@@ -56,7 +56,7 @@ Turnstile + limits, sign-up stays instant; go-live 11 PM IST on a weekday; four 
 * **Throwaway e-mail domains** refused at sign-up (bundled public list).
 * Neutral answers (forgot-password never reveals whether an account exists); 429 with Retry-After; blocked attempts recorded in the
   Security & Audit log (sampled).
-* Dashboard settings in the runbook: Cloudflare Bot Fight Mode and free managed WAF rules; Supabase Auth e-mail rate limits.
+* Dashboard settings in the runbook: the free managed WAF rules (not Bot Fight Mode, which would block server-to-server calls); Supabase Auth e-mail rate limits.
 
 ## 3. Go-live
 
