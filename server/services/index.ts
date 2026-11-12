@@ -55,6 +55,8 @@ import { PerformersService } from './PerformersService.js';
 import { RecruitmentService } from './RecruitmentService.js';
 import { HrDocumentService } from './HrDocumentService.js';
 import { HrDocumentRepository } from '../repositories/HrDocumentRepository.js';
+import { HrEmployeeFileService } from './HrEmployeeFileService.js';
+import { HrEmployeeFileRepository } from '../repositories/HrEmployeeFileRepository.js';
 import { TrainingService } from './TrainingService.js';
 import { TelecallerService } from './TelecallerService.js';
 import { FieldVisitService } from './FieldVisitService.js';
@@ -106,6 +108,7 @@ export function createServices(db: SupabaseClient) {
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),
     welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
+    hrEmployeeFiles: new HrEmployeeFileService(new HrEmployeeFileRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };
 }

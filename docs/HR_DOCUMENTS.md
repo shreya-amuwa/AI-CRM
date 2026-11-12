@@ -136,3 +136,30 @@ text, keeps the letterhead page, and writes `server/hrDocuments/offerTemplateAss
 * the "hr letters" block of `api_integration.test.ts`
 * `supabase/tests/e2e/hr-documents.e2e.mjs`, which covers the Offer Letter, the master template and the sidebar
 
+
+## Employee files (documents vault, leave mails)
+
+HR dashboard > an employee's profile > **Employee Documents Vault**, and the leave / cancellation mail attachments of the **Leaves & Half-Days Register**.
+Before this, uploads were kept only as browser `blob:` links and were lost on refresh.
+
+Migration: `supabase/migrations/20261231000800_hr_employee_files.sql` (additive, safe to rerun; uses `private.hr_doc_employee()` from `20261229000200`).
+
+* **Where the file goes:** Cloudflare R2 (or Supabase Storage without R2), logical bucket `hr-employee-files`, through the same upload-intent -> direct PUT ->
+  completion flow as ticket attachments: `POST /api/v1/hr/employee-file-uploads` books the file (the database checks who, the employee, kind, type and size) and
+  returns a single-use presigned PUT; the browser sends the bytes straight to R2; `POST .../:id/complete` makes the server look at the stored object (exists, size,
+  first bytes match the declared type) before the row becomes `READY`. **Only metadata** (employee, kind, name, type, size, R2 key / ETag, uploader) is kept in
+  `public.hr_employee_files`; there is no column for file contents.
+* **Kinds:** Identity / KYC, Employment papers, Education / certificates, Leave mail, Leave cancellation mail, Other. A leave mail names the leave it belongs to.
+* **Types and size:** PDF, JPG, PNG, Word (.docx) and e-mail (.eml), at most **5 MB** each (checked in the screen, the API and the database).
+* **Who:** HR staff (`private.is_hr_staff()`: Super Admin, HR Admin Head, HR Assistant; not HR Recruiters) upload, list, open and delete. The employee can list
+  and open **their own** files (`GET /api/v1/hr/employee-files?employeeKey=<their profile id>`) but not upload or delete. Nobody else - not the team lead, not the
+  department head - sees them. Row level security on the table enforces the read rule; all writes go through the database functions.
+* **Opening:** `GET /api/v1/hr/employee-files/:id/url?action=view|download` returns a link valid for 120 seconds. Every opening is audited
+  (`HR_EMPLOYEE_FILE_OPENED`, noting whether the employee opened their own), as are uploads and deletions.
+* **Retention:** kept until HR deletes it. `DELETE /api/v1/hr/employee-files/:id` marks the row deleted (kept for the audit trail) and removes the object from R2.
+
+Tests: `supabase/tests/hr_employee_files_test.sql` (database rules), the "HR employee files" block of `api_integration.test.ts` (API with a fake R2),
+`supabase/tests/hr_employee_files.test.ts` (content checks and validation).
+
+Not covered yet: the leave records themselves (date, type, times, reason) are still kept only in the open screen; their mails are stored and listed in the
+documents vault, linked by the leave's id.
