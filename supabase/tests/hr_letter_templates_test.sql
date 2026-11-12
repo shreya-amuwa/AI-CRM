@@ -1,5 +1,5 @@
 -- =============================================================================
--- HR letters (migration 20261231000600): the Offer Letter is stored like the NDA and the Experience Letter, and the wording of the Offer and
+-- HR letters (migration 20261231000700): the Offer Letter is stored like the NDA and the Experience Letter, and the wording of the Offer and
 -- Experience Letters is a versioned master template. HR staff read it; only HR leadership saves new versions, on top of the current one; a letter
 -- already issued keeps the wording it was made with. Runs after hr_documents_test.sql (its people: hrd_active, hr_head, hrx_tm, hrd_rec, tm_a).
 -- =============================================================================

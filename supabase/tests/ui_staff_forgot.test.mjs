@@ -1,4 +1,4 @@
-// Browser test of staff "Forgot password?" (20261231000600): the request sends only the e-mail, the answer never says whether the address
+// Browser test of staff "Forgot password?" (20261231000700): the request sends only the e-mail, the answer never says whether the address
 // has an account, rate limiting is explained, and /set-password?purpose=reset uses the reset wording and saves through /me/password.
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';

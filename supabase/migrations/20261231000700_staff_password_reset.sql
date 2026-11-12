@@ -1,5 +1,5 @@
 -- =============================================================================
--- "Forgot password?" for staff (the CRM sign-in page). Run after 20261231000500_chat_receipts_light.sql. Safe to run again.
+-- "Forgot password?" for staff (the CRM sign-in page). Run after 20261231000600_hr_letter_templates.sql. Safe to run again.
 --
 -- The client dashboard (client_login_for_reset, 20261101000100) and the candidate portal (Supabase recovery e-mail through the auth e-mail
 -- hook) already had one. For staff, the API looks the address up here with the service role, and ONLY an active employee's account gets

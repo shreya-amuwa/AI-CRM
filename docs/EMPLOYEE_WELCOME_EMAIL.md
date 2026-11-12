@@ -31,7 +31,7 @@ mandatory-password notice and the HR contact (`HR_REPLY_TO`, else `EMAIL_REPLY_T
 * **`/set-password`** (standalone page, `StaffSetPassword`): the token is exchanged for a session only when the employee presses Save (an e-mail scanner opening the link cannot use it up).
   `POST /api/v1/me/password` then sets the password through the server (hashed by Supabase Auth, never stored or returned) and closes the welcome e-mail
   (`welcome_email_setup_done`). The employee then opens the dashboard of their own role; access is unchanged by this feature (role, department and team come from the approved record).
-* After the employee chose a password **no resend is possible** (it would be a password reset by e-mail): "Forgot password?" on the staff sign-in page covers that (`POST /api/v1/auth/forgot-password`, migration 20261231000600: only an ACTIVE employee gets a one-time link to `/set-password?purpose=reset`; the answer is the same for every address; 5 requests per 15 min per caller, 3 per hour per address).
+* After the employee chose a password **no resend is possible** (it would be a password reset by e-mail): "Forgot password?" on the staff sign-in page covers that (`POST /api/v1/auth/forgot-password`, migration 20261231000700: only an ACTIVE employee gets a one-time link to `/set-password?purpose=reset`; the answer is the same for every address; 5 requests per 15 min per caller, 3 per hour per address).
 
 ## Tracking, retries, resend
 

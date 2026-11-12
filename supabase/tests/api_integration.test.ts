@@ -2556,7 +2556,7 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   r = await forgot('not-an-email');
   check(r.status === 422, 'forgot password: a wrong e-mail is refused', r);
 
-  // --- staff "Forgot password?" (20261231000600) and the client-facing sender (EMAIL_FROM_CLIENT) ---
+  // --- staff "Forgot password?" (20261231000700) and the client-facing sender (EMAIL_FROM_CLIENT) ---
   {
     const modeWas = process.env.AUTOMATION_MODE;
     const testRecipientsWas = process.env.AUTOMATION_TEST_RECIPIENTS;
@@ -10087,7 +10087,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 403, 'recruitment API: an ordinary employee has no Recruitment Portal', r);
 }
 
-// --- HR letters: the Offer Letter and the versioned master templates of the Offer and Experience Letters (migration 20261231000600) ---------
+// --- HR letters: the Offer Letter and the versioned master templates of the Offer and Experience Letters (migration 20261231000700) ---------
 {
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
   const { DEFAULT_OFFER_CONTENT, DEFAULT_EXPERIENCE_CONTENT } = await import('../../shared/hrLetters.js');
