@@ -293,7 +293,7 @@ app.post('/candidate-auth/guard', async c => {
         ]
       : input.action === 'reset'
         ? [
-            { key: `reset:ip:${ip}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
+            { key: `reset:candidate:ip:${ip}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
             ...(email ? [{ key: `reset:email:${email}`, limit: limitOf('RESET_PER_EMAIL_HOUR'), window: 3600 }] : [])
           ]
         : [{ key: `cand-apply-guard:ip:${ip}`, limit: limitOf('CAND_APPLY_GUARD_PER_IP_HOUR'), window: 3600 }];
@@ -307,7 +307,7 @@ app.post('/auth/forgot-password', async c => {
   const typed = typeof (body as { email?: unknown })?.email === 'string' ? String((body as { email: string }).email).trim().toLowerCase().slice(0, 254) : '';
   // counted in the database: one shared count across every server instance (each request may land on a different one)
   await enforce([
-    { key: `reset:ip:${clientIp(c)}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
+    { key: `reset:staff:ip:${clientIp(c)}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
     ...(typed ? [{ key: `reset:email:${typed}`, limit: limitOf('RESET_PER_EMAIL_HOUR'), window: 3600 }] : [])
   ], 'shared');
   return c.json(ok(await staffForgotPassword(body)));
@@ -318,7 +318,7 @@ app.post('/client-auth/forgot-password', async c => {
   const body = await readJson(c);
   const typed = emailKey((body as { email?: unknown } | undefined)?.email);
   await enforce([
-    { key: `reset:ip:${clientIp(c)}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
+    { key: `reset:client:ip:${clientIp(c)}`, limit: limitOf('RESET_PER_IP_15MIN'), window: 900 },
     ...(typed ? [{ key: `reset:email:${typed}`, limit: limitOf('RESET_PER_EMAIL_HOUR'), window: 3600 }] : [])
   ], 'shared');
   return c.json(ok(await clientForgotPassword(body, c.req.header('origin'))));

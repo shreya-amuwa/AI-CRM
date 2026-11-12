@@ -47,7 +47,7 @@ Each is an environment variable of the same name on the CRM; change it without a
 | `CAND_SIGNUP_SITE_HOUR` | 300 | sign-ups for the whole site an hour (stops a flood from many addresses) |
 | `CAND_SIGNIN_PER_IP_15MIN` | 20 | candidate sign-in attempts per visitor a quarter hour |
 | `CAND_SIGNIN_PER_EMAIL_15MIN` | 10 | sign-in attempts per account a quarter hour (password guessing from many addresses) |
-| `RESET_PER_IP_15MIN` | 5 | "forgot password" per visitor a quarter hour (candidate, client and staff share it) |
+| `RESET_PER_IP_15MIN` | 5 | "forgot password" per visitor a quarter hour, counted separately for the candidate, client and staff forms |
 | `RESET_PER_EMAIL_HOUR` | 3 | "forgot password" per e-mail an hour |
 | `AUTH_MAIL_PER_RECIPIENT_HOUR` | 5 | sign-in / reset / invite e-mails per recipient an hour, however they were triggered |
 | `AUTH_MAIL_SITE_HOUR` | 500 | such e-mails for the whole site an hour |
