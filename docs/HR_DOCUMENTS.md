@@ -2,7 +2,8 @@
 
 HR dashboard > **Dashboard > Experience Letter Management / NDA Letter Management** (the "Automated Letter & Contract Generator", tabs *Offer Letter*, *Experience Letter*,
 *NDA Letter*). The NDA and the Experience Letter are drawn **by the server on the official templates**, stored per employee and can be downloaded again.
-The *Offer Letter* tab is unchanged (it is still the browser-only generator with sample values: nothing in it is stored, and it is not part of this feature).
+The *Offer Letter* is now made the same way, and the Offer and Experience Letters have editable, versioned master templates: see
+[Employee Letters](#employee-letters-offer-letter-and-master-templates) below. The same page opens from the sidebar's **Employee Letters** section.
 
 Migration: `supabase/migrations/20261229000200_hr_generated_documents.sql` (additive, safe to rerun; needs the HR migrations `20261222000100` for `private.is_hr_staff()`).
 Before it is run the screens show the "latest migrations" set-up message instead of failing.
@@ -69,3 +70,69 @@ Downloads are 120-second signed links; the file is never public. If recording th
 `npm run test:api` (the PDFs: pages, the values, the removed sample, the template text, refusals, storage, download = the recorded hash, 403 for everyone else),
 `npm run test:unit` (`hr_documents_render.test.ts`: date styles, pronouns, duration, determinism, the font guard) and the browser test
 `supabase/tests/e2e/run-hr-documents.sh` (the screens end to end, with real downloads).
+
+## Employee Letters: Offer Letter and master templates
+
+Migration: `supabase/migrations/20261231000600_hr_letter_templates.sql` (additive, safe to rerun; needs `20261229000200`). Until it is run, the
+Offer Letter says the template is not set up, and the NDA and the Experience Letter keep working with the official wording.
+
+HR sidebar > **Employee Letters** > *NDA Letter*, *Offer Letter*, *Experience Letter* (the dashboard's letter cards open the same page).
+
+* **NDA Letter**: the official agreement. Its clauses are fixed. HR fills in only the date and the employee's name.
+* **Offer Letter**: drawn by the server on the supplied letterhead (`server/hrDocuments/offer.ts`). The form is filled from the HR record:
+  * name, designation, department and joining date;
+  * the monthly salary as `₹25,000/- per month`;
+  * the reporting manager, when the directory has one.
+
+  The employment type (`Full-Time`), the probation period (`6 Months`) and the signatory (`Miss Aarti Kalange`) start with the values of the supplied
+  letter. Long wording continues on further letterhead pages, up to 4.
+* **Experience Letter**: as before, now with its wording from the master template.
+
+**Generate & issue.** HR can open *Edit the letter's wording* and change the wording of **this letter only**. Then they preview the letter,
+click *Generate PDF* (stored against the employee) and *Download PDF*. Each letter stores in `hr_documents.fields`:
+* the exact wording (`content`);
+* the template version it started from (`templateVersion`).
+
+A letter is never re-drawn from the template, so a letter once issued never changes. The employee's history lists each letter with the following:
+* the type;
+* the label "Issued · template vN";
+* the date it was generated;
+* a download button.
+
+**Master template** (Offer and Experience Letters):
+* **Who reads it:** every HR staff member sees the current wording and the version history, and can open any old version.
+* **Who saves it:** only the Super Admin and the HR Admin Head (`private.is_hr_leadership()`). Saving always makes a new version on top of the
+  version being edited. If someone saved in the meantime, the save is refused with `CONFLICT`, and the screen offers to load the newest version.
+* **What changes:** new letters start from the newest version. Letters already issued keep their own wording. Each save is audited
+  (`HR_LETTER_TEMPLATE_SAVED`).
+
+**Template language.**
+* Write `{placeholder}` for a value. The Offer Letter uses `name`, `designation`, `department`, `joiningDate`, `employmentType`, `salary`,
+  `probation`, `reportingTo` and `letterDate`. The Experience Letter uses `title`, `name`, `designation`, `from`, `to` and `letterDate`, plus the
+  pronouns `he`, `him`, `his`, `He` and `His`, which follow the chosen title.
+* Write `**text**` for bold.
+* An unknown placeholder is refused, both in the form and on the server.
+* Version 1 of each template is the supplied wording (`shared/hrLetters.ts`). The API test checks that the seeded rows equal it.
+
+**Database:** `hr_letter_templates` has RLS on and no grants. Access goes only through these functions:
+* `hr_letter_template_state(type)` (HR staff);
+* `hr_letter_template_version(type, version)` (HR staff);
+* `hr_letter_template_save(type, content, base_version, note)` (HR leadership).
+
+`hr_document_prefill` and `hr_document_record` accept `OFFER`, return the salary and the current template, and check that a template version exists.
+
+**API:**
+* `GET /hr/letter-templates/:type`
+* `GET /hr/letter-templates/:type/versions/:version`
+* `POST /hr/letter-templates/:type` with `{ content, baseVersion, note? }`
+* `type OFFER` on the existing `/hr/documents` routes
+
+**Offer letterhead:** `node scripts/prepare-hr-offer-template.mjs <offer.pdf>`. It takes the supplied letter converted to PDF (LibreOffice), strips its
+text, keeps the letterhead page, and writes `server/hrDocuments/offerTemplateAsset.ts`.
+
+**Tests:**
+* `supabase/tests/hr_letter_templates_test.sql`
+* `supabase/tests/hr_letters.test.ts` (unit)
+* the "hr letters" block of `api_integration.test.ts`
+* `supabase/tests/e2e/hr-documents.e2e.mjs`, which covers the Offer Letter, the master template and the sidebar
+

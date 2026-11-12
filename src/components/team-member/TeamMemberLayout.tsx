@@ -73,6 +73,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   const { user, logout } = useAuth();
 
   const navItems = [
+    // Punch In / Punch Out and lunch (20261230000400): the first entry, as in every dashboard's menu
+    { id: ATTENDANCE_NAV_ID as TeamMemberNav, label: 'Attendance', icon: Clock3 },
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
     { id: 'leads' as TeamMemberNav, label: 'My Leads', icon: UserCheck },
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
@@ -81,8 +83,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     { id: REPORTS_NAV.id as TeamMemberNav, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
-    // Punch In / Punch Out and lunch (20261230000400)
-    { id: ATTENDANCE_NAV_ID as TeamMemberNav, label: 'Attendance', icon: Clock3 },
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },

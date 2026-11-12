@@ -25,7 +25,7 @@ alone and the file says so. `--dry-run` creates nothing.
 | `technical.consultant` / `meta.verifier` | Technical Consultant / Meta Verifier |
 | `ops.sales` / `ops.support` / `ops.both` | Sales / Support / Sales & Support Operations Head (oversee both sandbox departments) |
 | `accounts.member` / `accounts.lead` / `accounts.head` | Accounts (the head only if the department has none) |
-| `hr.member` / `hr.lead` / `hr.head` | HR (the head only if the department has none) |
+| `hr.member` (HR Assistant) / `hr.recruiter` (HR Recruiter) / `hr.head` (HR Admin Head) | HR (the head only if the department has none). `hr.lead` is only attempted: HR has no Team Lead designation, so the list says it was not created |
 | `client.calls` / `client.whatsapp` | Client dashboard, sign in at `/client/login` (existing customers with live services) |
 
 Your own Super Admin account opens the Super Admin dashboard.

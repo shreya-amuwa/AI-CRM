@@ -9892,8 +9892,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.ready === true, 'hr documents: but can get an NDA', r);
   r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:NOBODY&type=NDA');
   check(r.status === 404, 'hr documents: an unknown employee is not found', r);
-  r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:APIDOC-B&type=OFFER');
-  check(r.status === 422, 'hr documents: only the NDA and the Experience Letter exist', r);
+  r = await api('hr', 'GET', '/hr/documents/prefill?employeeKey=HR:APIDOC-B&type=PAYSLIP');
+  check(r.status === 422, 'hr documents: only the NDA, Offer and Experience letters exist', r);
 
   // the NDA on the official template
   r = await api('hr', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: A, fields: { letterDate: '2026-10-05', employeeName: 'Anita Working' } });
@@ -10085,6 +10085,110 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // recruitment: an ordinary employee still has no Recruitment Portal
   r = await api('a', 'GET', '/recruiter/context');
   check(r.status === 403, 'recruitment API: an ordinary employee has no Recruitment Portal', r);
+}
+
+// --- HR letters: the Offer Letter and the versioned master templates of the Offer and Experience Letters (migration 20261231000600) ---------
+{
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
+  const { DEFAULT_OFFER_CONTENT, DEFAULT_EXPERIENCE_CONTENT } = await import('../../shared/hrLetters.js');
+  const { PDFDocument, PDFName, PDFArray, decodePDFRawStream } = await import('pdf-lib');
+  const textOf = async (bytes: Uint8Array) => {
+    const doc = await PDFDocument.load(bytes);
+    let text = '';
+    for (const page of doc.getPages()) {
+      const c = page.node.Contents();
+      for (const ref of c instanceof PDFArray ? c.asArray() : [page.node.get(PDFName.of('Contents'))]) {
+        const raw = Buffer.from(decodePDFRawStream(doc.context.lookup(ref) as any).decode()).toString('latin1');
+        for (const m of raw.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) text += Buffer.from(m[1], 'hex').toString('latin1');
+      }
+    }
+    return { pages: doc.getPageCount(), text: text.replace(/\s+/g, '') };
+  };
+  await db.query(`insert into public.hr_employees (id, name, email, designation, department_id, status, joining_date, monthly_salary, data)
+                  values ('APILTR-NEW', 'Lokesh Joining', 'apiltr-new@example.com', 'Technical Support Executive', 'wabastore', 'Full-Time', '2026-10-01', '10000', '{}')
+                  on conflict (id) do nothing`);
+  const K = 'HR:APILTR-NEW';
+  /** jsonb keeps the keys in its own order: compare the values, not the key order */
+  const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map(k => [k, canon((v as any)[k])])) : v;
+  const same = (x: unknown, y: unknown) => JSON.stringify(canon(x)) === JSON.stringify(canon(y));
+
+  // the seeded version 1 is exactly the supplied wording (the shared defaults)
+  let r = await api('hr', 'GET', '/hr/letter-templates/OFFER');
+  check(r.status === 200 && r.json.data.current.version >= 1 && r.json.data.canEdit === true, 'hr letters: the HR Admin Head reads the Offer Letter template and may edit it', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/OFFER/versions/1');
+  check(r.status === 200 && same(r.json.data.content, DEFAULT_OFFER_CONTENT), 'hr letters: Offer Letter version 1 is the supplied wording', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/EXPERIENCE/versions/1');
+  check(r.status === 200 && same(r.json.data.content, DEFAULT_EXPERIENCE_CONTENT), 'hr letters: Experience Letter version 1 is the official wording', r);
+  r = await api('hrmember', 'GET', '/hr/letter-templates/EXPERIENCE');
+  check(r.status === 200 && r.json.data.canEdit === false, 'hr letters: an HR team member reads the template but may not edit', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/NDA');
+  check(r.status === 422, 'hr letters: the NDA has no editable template', r);
+
+  // prefill and preview of an Offer Letter from the record
+  r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(K)}&type=OFFER`);
+  const pre = r.json.data;
+  check(r.status === 200 && pre.ready === true && pre.employee.name === 'Lokesh Joining' && pre.employee.monthlySalary === '10000' && pre.employee.joiningDate === '2026-10-01' && pre.template?.version >= 1,
+    'hr letters: the Offer Letter form is filled from the HR record, with the salary and the current template', r);
+  const offer = (over: Record<string, unknown> = {}) => ({ letterDate: '2026-09-30', employeeName: 'Lokesh Joining', designation: 'Technical Support Executive', department: 'Wabastore',
+    employmentType: 'Full-Time', joiningDate: '2026-10-01', salary: '₹10,000/- per month (Fixed)', probation: '6 Months', reportingTo: 'Team Leader', signatoryName: 'Miss Aarti Kalange',
+    content: pre.template.content, templateVersion: pre.template.version, ...over });
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer() });
+  let info = r.status === 200 ? await textOf(new Uint8Array(Buffer.from(r.json.data.pdfBase64, 'base64'))) : null;
+  check(r.status === 200 && !!info && info.pages >= 1 && info.pages <= 4 && info.text.includes('LokeshJoining') && info.text.includes('TechnicalSupportExecutive') && info.text.includes('01stOctober2026')
+    && !info.text.includes('{') && !/Lokesh Patil|LokeshPatil/.test(info.text), 'hr letters: the Offer Letter preview has the employee\'s values and nothing of the sample', r);
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer({ content: { ...pre.template.content, salutation: 'Dear {nickname},' } }) });
+  check(r.status === 422, 'hr letters: an unknown placeholder in the wording is refused', r);
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer({ salary: '' }) });
+  check(r.status === 422, 'hr letters: the salary is required', r);
+
+  // generate with wording edited for this letter only
+  const edited = { ...pre.template.content, closing: [...pre.template.content.closing, 'Please report to the Pune office at 10 AM.'] };
+  r = await api('hr', 'POST', '/hr/documents', { type: 'OFFER', employeeKey: K, fields: offer({ content: edited }) });
+  const doc = r.json.data;
+  check(r.status === 201 && doc.type === 'OFFER' && doc.employeeKey === K && /^Offer-Letter-Lokesh-Joining-2026-09-30\.pdf$/.test(doc.fileName) && doc.fields.templateVersion === pre.template.version,
+    'hr letters: the Offer Letter is generated and stored against the employee with its template version', r);
+  r = await api('hr', 'GET', `/hr/documents/${doc.id}/download`);
+  const file = r.status === 200 ? new Uint8Array(await (await fetch(r.json.data.url)).arrayBuffer()) : null;
+  info = file ? await textOf(file) : null;
+  check(!!info && info.text.includes('PleasereporttothePuneofficeat10AM.') && info.text.includes('LokeshJoining'), 'hr letters: the stored Offer Letter downloads with the wording edited for it', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/OFFER');
+  check(r.status === 200 && r.json.data.current.version === pre.template.version, 'hr letters: editing one letter\'s wording does not change the master template', r);
+
+  // a new master version: the issued letter does not change
+  r = await api('hrmember', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, signOff: 'Regards,' }, baseVersion: pre.template.version });
+  check(r.status === 403, 'hr letters: an HR team member cannot save the master template (403)', r);
+  r = await api('hr', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, signOff: 'Warm regards, Amuwa Corporation,' }, baseVersion: pre.template.version, note: 'API test' });
+  const v2 = r.json.data;
+  check(r.status === 201 && v2.version === pre.template.version + 1 && v2.content.signOff === 'Warm regards, Amuwa Corporation,' && v2.note === 'API test', 'hr letters: the HR Admin Head saves a new version', r);
+  r = await api('hr', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, signOff: 'Stale' }, baseVersion: pre.template.version });
+  check(r.status === 409, 'hr letters: a save on an older version is a conflict (409), nothing is lost', r);
+  r = await api('hr', 'POST', '/hr/letter-templates/OFFER', { content: { ...pre.template.content, paragraphs: [] }, baseVersion: v2.version });
+  check(r.status === 422, 'hr letters: a template without paragraphs is refused', r);
+  r = await api('hr', 'GET', `/hr/documents?employeeKey=${encodeURIComponent(K)}&type=OFFER`);
+  const listed = r.json.data?.find((d: any) => d.id === doc.id);
+  check(r.status === 200 && listed && listed.fields.content.signOff === pre.template.content.signOff && listed.fields.content.closing.length === edited.closing.length,
+    'hr letters: after the master changes, the issued letter keeps the wording it was made with', r);
+  r = await api('hr', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(K)}&type=OFFER`);
+  check(r.status === 200 && r.json.data.template.version === v2.version, 'hr letters: new letters start from the new version', r);
+  r = await api('hr', 'GET', '/hr/letter-templates/OFFER');
+  check(r.status === 200 && r.json.data.versions.length >= 2 && r.json.data.versions.every((v: any) => !('content' in v)), 'hr letters: the version history lists the versions (without their full wording)', r);
+
+  // the Experience Letter with its template version
+  r = await api('hr', 'GET', '/hr/letter-templates/EXPERIENCE');
+  const expTpl = r.json.data.current;
+  r = await api('hr', 'POST', '/hr/documents/preview', { type: 'EXPERIENCE', employeeKey: 'HR:APIDOC-B', fields: { letterDate: '2026-09-18', title: 'Miss', employeeName: 'Priya Sharma',
+    designation: 'Business Development Executive', lastWorkingDate: '2026-09-17', signatoryName: 'Aarti Kalange', signatoryTitle: 'Ceo',
+    content: { ...expTpl.content, signOff: 'With best wishes,' }, templateVersion: expTpl.version } });
+  info = r.status === 200 ? await textOf(new Uint8Array(Buffer.from(r.json.data.pdfBase64, 'base64'))) : null;
+  check(!!info && info.text.includes('Withbestwishes,') && info.text.includes('PriyaSharma') && info.text.includes('Duringhertenure'), 'hr letters: the Experience Letter uses the edited wording, filled for the employee', r);
+
+  // who may
+  for (const who of ['tm2', 'rrec1', 'dh']) {
+    r = await api(who, 'GET', '/hr/letter-templates/OFFER');
+    check(r.status === 403, `hr letters: ${who} cannot read the templates (403)`, r);
+    r = await api(who, 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: offer() });
+    check(r.status === 403, `hr letters: ${who} cannot make an Offer Letter (403)`, r);
+  }
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

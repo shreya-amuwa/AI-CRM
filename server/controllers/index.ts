@@ -270,7 +270,10 @@ export const hrDocumentController = {
   preview: (async ctx => ok(await svc(ctx).hrDocuments.preview(ctx.req.body))) as Handler,
   generate: (async ctx => ok(await svc(ctx).hrDocuments.generate(ctx.req.body), 201)) as Handler,
   list: (async ctx => ok(await svc(ctx).hrDocuments.list(ctx.req.query))) as Handler,
-  download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler
+  download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler,
+  templateState: (async ctx => ok(await svc(ctx).hrDocuments.templateState(ctx.params.type))) as Handler,
+  templateVersion: (async ctx => ok(await svc(ctx).hrDocuments.templateVersion(ctx.params.type, ctx.params.version))) as Handler,
+  saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler
 };
 
 export const performanceController = {
