@@ -1,5 +1,5 @@
-import type { AuditEvent, CompanyOverview, CompanyWorkflow, Paginated, ScopeOverview } from '../../shared/contracts.js';
-import { auditSearchQuerySchema, dashboardScopeQuerySchema, dataExportSchema } from '../../shared/validation.js';
+import type { AuditEvent, CompanyOverview, CompanyWorkflow, OverviewDepartments, Paginated, ScopeOverview } from '../../shared/contracts.js';
+import { auditSearchQuerySchema, dashboardScopeQuerySchema, dataExportSchema, overviewDepartmentsQuerySchema } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
 import { assertManager, assertSuperAdmin } from '../authz/policies.js';
 import { parse } from '../http/validate.js';
@@ -15,6 +15,12 @@ export class DashboardService {
   companyOverview(actor: Actor): Promise<CompanyOverview> {
     assertSuperAdmin(actor);
     return this.repo.companyOverview();
+  }
+
+  /** Attendance and business by department for the Super Admin's Overview; the database checks the caller again. */
+  overviewDepartments(actor: Actor, query: unknown): Promise<OverviewDepartments> {
+    assertSuperAdmin(actor);
+    return this.repo.overviewDepartments(parse(overviewDepartmentsQuerySchema, query ?? {}));
   }
 
   companyWorkflow(actor: Actor): Promise<CompanyWorkflow> {
