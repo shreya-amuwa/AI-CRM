@@ -154,6 +154,8 @@ export const customerDataImportSchema = z
   .strict();
 
 export const clientForgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254) }).strict();
+/** Staff "Forgot password?" on the CRM sign-in page: the same rules as the client one. */
+export const staffForgotPasswordSchema = clientForgotPasswordSchema;
 
 export const customerActivityCreateSchema = z
   .object({

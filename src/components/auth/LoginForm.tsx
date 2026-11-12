@@ -21,6 +21,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import type { RegistrationDepartment } from '../../../shared/contracts';
 import { fetchRegistrationOptions } from '../../lib/api/endpoints';
+import { StaffForgotPassword } from './StaffForgotPassword';
 
 export const LoginForm: React.FC = () => {
   const { signIn, signUp, accountNotice, clearAccountNotice, evictedNotice, clearEvictedNotice } = useAuth();
@@ -35,6 +36,7 @@ export const LoginForm: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState('');
+  const [forgot, setForgot] = useState(false);
 
   // Sign Up State
   const [regName, setRegName] = useState('');
@@ -456,7 +458,7 @@ export const LoginForm: React.FC = () => {
             /* ================================================================ */
             /* VIEW 2: SIGN IN FORM                                             */
             /* ================================================================ */
-            <div>
+            forgot ? <StaffForgotPassword initialEmail={email} onBack={() => setForgot(false)} /> : <div>
               {/* Error Message Display */}
               {(loginError || accountNotice) && (
                 <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
@@ -525,7 +527,9 @@ export const LoginForm: React.FC = () => {
                     />
                     <span>Remember me</span>
                   </label>
-
+                  <button type="button" data-testid="forgot-link" onClick={() => { setForgot(true); setLoginError(''); }} className="font-bold text-blue-600 hover:text-blue-700 hover:underline">
+                    Forgot password?
+                  </button>
                 </div>
 
                 {/* Sign In Button */}
