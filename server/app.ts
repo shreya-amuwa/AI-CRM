@@ -47,7 +47,7 @@ import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
 import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
-import { currentEdgeLimiter, emailKey, isDisposableEmail, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
+import { currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
 import { candidateGuardSchema } from '../shared/validation.js';
 
 export const API_PREFIX = '/api/v1';
@@ -370,7 +370,8 @@ for (const route of candidateRoutes) {
       // daily / hourly ceilings per candidate (applications, uploads, profile saves), counted in the database across all servers
       const quota=candidateQuota(route.method,route.path);
       if (quota) await enforce([{ key:`cand-${quota.name}:${me.id}`, limit:quota.limit, window:quota.window }],'shared');
-    } else if (route.method==='GET') {
+    } else if (route.method==='GET' && !isPortalServer(name => c.req.header(name))) {
+      // the portal's own (cached) listing calls are one address for everyone: not limited per address here
       await enforce([{ key:`jobs:ip:${clientIp(c)}`, limit:limitOf('JOBS_PER_IP_MINUTE'), window:60 }],'memory');
     }
     const request: ApiRequest={ method:c.req.method as HttpMethod,path:relativePath(c),query:c.req.query(),headers:{},

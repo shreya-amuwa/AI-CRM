@@ -160,6 +160,18 @@ const json = async (r: Response) => (await r.json()) as any;
   check(statuses.at(-1) === 429, 'sign-up: a ceiling for the whole site stops a flood spread over many addresses', statuses);
   delete process.env.CAND_SIGNUP_SITE_HOUR;
 
+  // public job listings: limited per address, except the portal's own (cached) calls
+  const { portalServerToken } = await import('../../server/security/abuse.js');
+  const jobs = (h: Record<string, string>) => app.request('/api/v1/careers/jobs', { headers: { 'x-real-ip': '192.0.2.99', ...h } });
+  process.env.JOBS_PER_IP_MINUTE = '2';
+  const js: number[] = [];
+  for (let i = 0; i < 3; i++) js.push((await jobs({})).status);
+  check(js[2] === 429, 'job listings: limited per address', js);
+  const pj = await jobs({ 'x-portal-server': portalServerToken(SECRET) });
+  check(pj.status !== 429, 'the portal server (valid x-portal-server) is not limited per address for its cached listings', pj.status);
+  check((await jobs({ 'x-portal-server': 'f'.repeat(64) })).status === 429, 'a forged x-portal-server does not exempt anyone');
+  delete process.env.JOBS_PER_IP_MINUTE;
+
   // the edge limiter (Worker): a refusal is a 429 before any other work
   useEdgeLimiter(async () => false);
   r = await app.request('/api/v1/health');

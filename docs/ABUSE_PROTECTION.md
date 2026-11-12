@@ -30,7 +30,8 @@ x-portal-client-sig: hex HMAC-SHA256(PORTAL_FORWARD_SECRET, "<ip>.<ts>")
 ```
 
 The CRM believes it only with a valid signature made within 60 seconds; otherwise the caller's own address counts. The audit log records
-that address too. `PORTAL_FORWARD_SECRET`: a random string of 32+ characters, set on **both** the CRM (Worker secret) and the portal
+that address too. For the job listings it caches (where a per-visitor header would split the cache) the portal sends
+`x-portal-server` = HMAC(`PORTAL_FORWARD_SECRET`, "portal-server") instead, which only exempts those listings from the per-address limit. `PORTAL_FORWARD_SECRET`: a random string of 32+ characters, set on **both** the CRM (Worker secret) and the portal
 (Vercel environment variable), nowhere else.
 
 ## Limits (defaults)

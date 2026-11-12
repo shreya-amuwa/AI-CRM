@@ -45,6 +45,24 @@ export function verifiedPortalClient(header: (name: string) => string | undefine
   return want.length === given.length && timingSafeEqual(want, given) ? ip : null;
 }
 
+/**
+ * The portal's own server, for the calls it caches (public job listings, cached for 30 s, where a per-visitor header would split the
+ * cache): x-portal-server = hex HMAC-SHA256(PORTAL_FORWARD_SECRET, "portal-server"). It only exempts those listings from the per-address
+ * limit (the portal is one address for everyone); Cloudflare's flood limit still applies.
+ */
+export function portalServerToken(secret: string): string {
+  return createHmac('sha256', secret).update('portal-server').digest('hex');
+}
+
+export function isPortalServer(header: (name: string) => string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
+  const secret = portalForwardSecret(env);
+  const given = (header('x-portal-server') || '').trim().toLowerCase();
+  if (!secret || !/^[0-9a-f]{64}$/.test(given)) return false;
+  const want = Buffer.from(portalServerToken(secret), 'hex');
+  const got = Buffer.from(given, 'hex');
+  return want.length === got.length && timingSafeEqual(want, got);
+}
+
 // ---------------------------------------------------------------------------
 // Cloudflare Turnstile
 // ---------------------------------------------------------------------------
