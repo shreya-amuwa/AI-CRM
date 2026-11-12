@@ -7,8 +7,10 @@ tests: `supabase/tests/abuse_protection.test.ts` (unit), the "abuse:" block of `
 
 ## The layers
 
-1. **Cloudflare's edge (dashboard, no code):** Bot Fight Mode and the free managed WAF rules on the `amuwacorporation.com` zone
-   (`GO_LIVE_RUNBOOK.md`, phase 4).
+1. **Cloudflare's edge (dashboard, no code):** the free managed WAF rules on the `amuwacorporation.com` zone (`GO_LIVE_RUNBOOK.md`,
+   phase 4). **Do not turn on "Bot Fight Mode"**: it challenges server-to-server calls (the Candidate Portal's server, Supabase's e-mail
+   hook, the WhatsApp / n8n / biometric webhooks), which would break sign-up e-mails and the portal, and on the free plan it cannot be
+   switched off for those paths. Turnstile and the limits below do that job without the risk.
 2. **Flood limit per address:** on the Worker, Cloudflare's rate limiter (`FLOOD_LIMITER` in `wrangler.jsonc`, 600 requests a minute per
    address, counted by Cloudflare rather than by each short-lived copy of the server). On Node.js (Vercel, local) the in-memory limiter,
    as before.
