@@ -7,6 +7,7 @@ import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
 import { checkPanelUrl } from './panelUrl.js';
+import { unknownPlaceholders, type HrExperienceContent, type HrLetterType, type HrOfferContent } from './hrLetters.js';
 import { ALL_REPORT_FIELD_KEYS, REPORT_PERIOD_TYPES, REPORT_REMARKS_MAX, REPORT_STATUSES, type ReportFieldKey } from './reportFields.js';
 import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
@@ -2685,7 +2686,7 @@ export type CandidateRegisterInput = z.infer<typeof candidateRegisterSchema>;
 // --- HR documents: NDA and Experience Letter (migration 20261229000200) -------------------------------------------------------------------
 // The letters are drawn on the official templates by the server (server/hrDocuments). The browser sends only the values HR may edit; the
 // employee, the joining date and the employee code always come from the HR record in the database.
-export const HR_DOC_TYPES = ['NDA', 'EXPERIENCE'] as const;
+export const HR_DOC_TYPES = ['NDA', 'EXPERIENCE', 'OFFER'] as const;
 export const HR_DOC_TITLES = ['Mr.', 'Miss', 'Mrs.', 'Ms.'] as const;
 const hrDocDate = (label: string) =>
   isoDate.refine(v => { const d = new Date(`${v}T00:00:00Z`); return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; }, `Enter a real date for ${label}.`);
@@ -2715,7 +2716,9 @@ export const hrExperienceFieldsSchema = z
   .strict();
 export const hrDocRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NDA'), employeeKey: hrDocEmployeeKeySchema, fields: hrNdaFieldsSchema }).strict(),
-  z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: hrExperienceFieldsSchema }).strict()
+  // the Experience Letter may carry its edited wording and the Offer Letter always does (block "HR letters" below, migration 20261231000600)
+  z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrExperienceLetterFieldsSchema) }).strict(),
+  z.object({ type: z.literal('OFFER'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrOfferFieldsSchema) }).strict()
 ]);
 export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema.optional(), type: hrDocTypeSchema.optional() }).strict();
 
@@ -2748,3 +2751,68 @@ export const paidLeavePolicySchema = z
   .refine(v => !v.enabled || !!v.startMonth, { message: 'Choose the first month to credit.', path: ['startMonth'] });
 export const confirmationDateSchema = z.object({ effectiveDate: isoDate, note: trimmed(500).min(5, 'Give the reason for the change.') }).strict();
 export const paidLeaveListQuerySchema = z.object({ search: trimmed(120).optional() }).strict();
+
+// --- HR letters: the Offer Letter, editable wording, versioned master templates (migration 20261231000600) ----------------------------------
+// The wording is the official letters' (shared/hrLetters.ts). HR may edit it per letter, and HR leadership may save new master versions; the
+// placeholders must be ones the letter knows, and everything must be printable (the renderer refuses what the PDF font cannot print).
+const letterText = (label: string, max: number, min = 1) =>
+  z.string().transform(v => v.replace(/\s+/g, ' ').trim()).pipe(z.string().min(min, `Enter ${label}.`).max(max, `${label} is too long (at most ${max} characters).`));
+const letterList = (label: string, max: number, maxItems: number, minItems = 0) =>
+  z.array(letterText(label, max)).min(minItems, `Add at least ${minItems} ${label}.`).max(maxItems, `At most ${maxItems} ${label}.`);
+const withKnownPlaceholders = <T extends HrOfferContent | HrExperienceContent>(type: HrLetterType) => (c: T, ctx: z.RefinementCtx) => {
+  const bad = unknownPlaceholders(type, c);
+  if (bad.length) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Unknown placeholder${bad.length > 1 ? 's' : ''}: ${bad.map(b => `{${b}}`).join(', ')}.` });
+};
+export const hrOfferContentSchema = z
+  .object({
+    subject: letterText('the subject', 200),
+    salutation: letterText('the salutation', 120),
+    paragraphs: letterList('paragraphs', 1500, 6, 1),
+    responsibilitiesHeading: letterText('the responsibilities heading', 60),
+    responsibilities: letterList('responsibilities', 300, 15),
+    termsHeading: letterText('the terms heading', 60),
+    terms: z.array(z.object({ label: letterText('the term name', 60), value: letterText('the term value', 200) }).strict()).min(1, 'Add at least one employment term.').max(15, 'At most 15 employment terms.'),
+    closing: letterList('closing paragraphs', 600, 4),
+    signOff: letterText('the sign-off', 80),
+    acceptanceHeading: letterText('the acceptance heading', 60),
+    acceptance: letterText('the acceptance text', 800)
+  })
+  .strict()
+  .superRefine(withKnownPlaceholders<HrOfferContent>('OFFER'));
+export const hrExperienceContentSchema = z
+  .object({
+    greeting: letterText('the greeting', 120),
+    paragraphs: letterList('paragraphs', 1500, 6, 1),
+    signOff: letterText('the closing word', 60)
+  })
+  .strict()
+  .superRefine(withKnownPlaceholders<HrExperienceContent>('EXPERIENCE'));
+const hrDocMoney = (label: string) =>
+  z.string().trim().min(1, `Enter ${label}.`).max(80, `${label} is too long.`).transform(v => v.replace(/\s+/g, ' '))
+    .refine(v => /^[A-Za-z0-9₹ .,'&()/\-+]+$/.test(v), `${label} may contain letters, digits, ₹ and . , / - ( ) only.`);
+export const hrOfferFieldsSchema = z
+  .object({
+    letterDate: hrDocDate('the letter date'),
+    employeeName: hrDocName('the employee name'),
+    designation: hrDocLine('the designation', 80),
+    department: hrDocLine('the department', 80),
+    employmentType: hrDocLine('the employment type', 40),
+    joiningDate: hrDocDate('the date of joining'),
+    salary: hrDocMoney('the salary'),
+    probation: hrDocLine('the probation period', 40),
+    reportingTo: hrDocLine('the reporting manager', 80),
+    signatoryName: hrDocName('the signatory name'),
+    content: hrOfferContentSchema,
+    templateVersion: z.number().int().min(1)
+  })
+  .strict();
+export const hrExperienceLetterFieldsSchema = hrExperienceFieldsSchema.extend({
+  content: hrExperienceContentSchema.optional(),
+  templateVersion: z.number().int().min(1).optional()
+}).strict();
+export const hrLetterTypeSchema = z.enum(['OFFER', 'EXPERIENCE']);
+export const hrLetterTemplateSaveSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('OFFER'), content: hrOfferContentSchema, baseVersion: z.number().int().min(1), note: z.string().trim().max(200).optional() }).strict(),
+  z.object({ type: z.literal('EXPERIENCE'), content: hrExperienceContentSchema, baseVersion: z.number().int().min(1), note: z.string().trim().max(200).optional() }).strict()
+]);
+export const hrLetterTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);

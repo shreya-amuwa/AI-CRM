@@ -659,6 +659,9 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/hr/documents', handler: hrDocs.list },
   { method: 'POST', path: '/hr/documents', handler: hrDocs.generate, options: S },
   { method: 'GET', path: '/hr/documents/:id/download', handler: hrDocs.download },
+  { method: 'GET', path: '/hr/letter-templates/:type', handler: hrDocs.templateState },
+  { method: 'GET', path: '/hr/letter-templates/:type/versions/:version', handler: hrDocs.templateVersion },
+  { method: 'POST', path: '/hr/letter-templates/:type', handler: hrDocs.saveTemplate, options: S },
 
   { method: 'GET', path: '/audit-logs', handler: audit.list },
   // Security & Audit Logs viewer (read-only; scoped by the table's row-level security) and the record of browser-side exports

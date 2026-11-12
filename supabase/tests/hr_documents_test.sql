@@ -69,7 +69,7 @@ select test.check((hr_document_prefill((select a from k), 'NDA') ->> 'ready')::b
 select test.must_fail($$select hr_document_prefill('HR:DOES-NOT-EXIST', 'NDA')$$, 'an unknown employee is not found', 'NOT_FOUND');
 select test.must_fail($$select hr_document_prefill(gen_random_uuid()::text, 'NDA')$$, 'nor an unknown account', 'NOT_FOUND');
 select test.must_fail($$select hr_document_prefill((select id::text from profiles where role = 'SUPER_ADMIN' limit 1), 'NDA')$$, 'the Super Admin is not an employee', 'NOT_FOUND');
-select test.must_fail($$select hr_document_prefill((select b from k), 'OFFER')$$, 'only the two letters exist', 'VALIDATION_ERROR');
+select test.must_fail($$select hr_document_prefill((select b from k), 'PAYSLIP')$$, 'only the NDA, Offer and Experience letters exist', 'VALIDATION_ERROR');
 
 \echo '   storing a generated document'
 reset role;

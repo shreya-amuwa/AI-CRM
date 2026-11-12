@@ -7,6 +7,13 @@ import { closeMenu, useMenu } from './menuState';
 import { DocumentationLink, SidebarToggle, groupNavItems } from './shell';
 import { CHAT_NAV, useChatNavBadge } from '../chat/ChatRoute';
 
+/** HR > Employee Letters: one entry per letter, each opening the letters page on that letter. */
+const HR_LETTER_NAV = [
+  { id: 'hr_letter_nda' as const, label: 'NDA Letter', icon: ShieldCheck },
+  { id: 'hr_letter_offer' as const, label: 'Offer Letter', icon: FileText },
+  { id: 'hr_letter_experience' as const, label: 'Experience Letter', icon: Award }
+];
+
 export type ActiveTab =
   | 'dashboard'
   | 'hr_ops'
@@ -79,6 +86,9 @@ export type ActiveTab =
   | 'hr_meetings'
   | 'hr_reviews'
   | 'hr_field_tracking'
+  | 'hr_letter_nda'
+  | 'hr_letter_offer'
+  | 'hr_letter_experience'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -337,6 +347,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // weekly department reports approved by the Operations Head: individual reviews and the consolidated report (the Super Admin has her own page)
     ...(user?.role !== 'superadmin' ? [{ id: 'hr_reviews' as ActiveTab, label: 'Performance Reviews', icon: ClipboardCheck }] : []),
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
+    // Employee Letters (own section below): generated from the HR record and stored per employee; the database refuses HR Recruiters
+    ...HR_LETTER_NAV,
     baseNavItems[baseNavItems.length - 1]
   ];
   const departmentNav = isSalesSuperAdmin
@@ -360,9 +372,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
   const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
+  const LETTER_IDS: string[] = key === 'hr' ? HR_LETTER_NAV.map(i => i.id) : [];
   const navSections = groupNavItems(navItems, [
     { ids: navItems.slice(0, 1).map(i => i.id) },
-    { label: 'Work', ids: navItems.slice(1).map(i => i.id).filter(id => !TEAM_IDS.includes(id)) },
+    { label: 'Work', ids: navItems.slice(1).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
+    ...(LETTER_IDS.length ? [{ label: 'Employee Letters', ids: LETTER_IDS }] : []),
     { label: 'Team', ids: TEAM_IDS.filter(id => !COMMUNICATION_IDS.includes(id) && navItems.some(i => i.id === id)) },
     ...(COMMUNICATION_IDS.length ? [{ label: 'Communication', ids: COMMUNICATION_IDS.filter(id => navItems.some(i => i.id === id)) }] : [])
   ]);

@@ -16,6 +16,7 @@ import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
 import { EmployeeIssuesManagement } from './components/hr/EmployeeIssuesManagement';
 import { HrEmployeeRequestsPage } from './components/employees/HrEmployeeRequestsPage';
 import { MeetingRequestsManagement } from './components/hr/MeetingRequestsManagement';
+import { HrLettersPage } from './components/departments/hr/HrLettersPage';
 import { TrainingWorkspace } from './components/hr/TrainingWorkspace';
 import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
@@ -531,6 +532,8 @@ const MainAppContent: React.FC = () => {
               <EmployeeIssuesManagement />
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
               <MeetingRequestsManagement />
+            ) : (currentActiveTab === 'hr_letter_nda' || currentActiveTab === 'hr_letter_offer' || currentActiveTab === 'hr_letter_experience') && currentDeptId === 'hr' ? (
+              <HrLettersPage initialType={currentActiveTab === 'hr_letter_nda' ? 'NDA' : currentActiveTab === 'hr_letter_offer' ? 'OFFER' : 'EXPERIENCE'} />
             ) : currentActiveTab === 'hr_field_tracking' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><ActiveFieldVisits audience="hr" /></Suspense>
             ) : currentActiveTab === 'hr_reviews' && currentDeptId === 'hr' ? (
