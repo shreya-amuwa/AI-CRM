@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { HrDocPrefill, HrDocPreview, HrDocument, HrDocumentDownload, HrDocType } from '../../shared/contracts.js';
-import { hrDocListQuerySchema, hrDocPrefillQuerySchema, hrDocRequestSchema, uuidSchema } from '../../shared/validation.js';
+import type { HrDocPrefill, HrDocPreview, HrDocument, HrDocumentDownload, HrDocType, HrLetterTemplateState, HrLetterTemplateVersion } from '../../shared/contracts.js';
+import { DEFAULT_EXPERIENCE_CONTENT } from '../../shared/hrLetters.js';
+import { hrDocListQuerySchema, hrDocPrefillQuerySchema, hrDocRequestSchema, hrLetterTemplateSaveSchema, hrLetterTemplateVersionParamSchema, hrLetterTypeSchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
+import { OFFER_FILE_PREFIX, renderOfferPdf } from '../hrDocuments/offer.js';
 import { DEFAULT_SIGNATORY, EXPERIENCE_FILE_PREFIX, NDA_FILE_PREFIX, renderExperiencePdf, renderNdaPdf } from '../hrDocuments/render.js';
 import type { HrDocumentRepository } from '../repositories/HrDocumentRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
@@ -14,7 +16,7 @@ const DOWNLOAD_TTL_SECONDS = 120;
 const slug = (s: string) => s.normalize('NFKD').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'Employee';
 
 /**
- * NDA and Experience Letter. The employee, the code and the joining date always come from the HR record (the database function checks the caller
+ * NDA, Experience Letter and Offer Letter. The employee, the code and the joining date always come from the HR record (the database function checks the caller
  * is HR staff and that this employee may get this letter); the browser sends only the values HR may edit. The preview and the stored file are
  * made by the same renderer from the same values, so what HR previews is what is stored.
  */
@@ -35,14 +37,20 @@ export class HrDocumentService {
     if (req.type === 'NDA') {
       return { req, e, fields: { ...req.fields }, bytes: await renderNdaPdf(req.fields), fileName: `${NDA_FILE_PREFIX}-${slug(e.name)}-${req.fields.letterDate}.pdf` };
     }
+    if (req.type === 'OFFER') {
+      // the wording (a master version, possibly edited for this letter) is stored with the letter: a later master edit never changes it
+      return { req, e, fields: { ...req.fields }, bytes: await renderOfferPdf(req.fields), fileName: `${OFFER_FILE_PREFIX}-${slug(e.name)}-${req.fields.letterDate}.pdf` };
+    }
     const f = req.fields;
+    const content = f.content ?? DEFAULT_EXPERIENCE_CONTENT;
+    const templateVersion = f.templateVersion ?? 1;
     if (!e.joiningDate) throw new AppError('VALIDATION_ERROR', 'The HR record has no joining date.');
     if (f.lastWorkingDate < e.joiningDate) throw new AppError('VALIDATION_ERROR', 'The last working date is before the joining date on record.');
     if (f.letterDate < f.lastWorkingDate) throw new AppError('VALIDATION_ERROR', 'The letter date cannot be before the last working date.');
     return {
       req, e,
-      fields: { ...f, joiningDate: e.joiningDate },
-      bytes: await renderExperiencePdf(f, e.joiningDate),
+      fields: { ...f, joiningDate: e.joiningDate, content, templateVersion },
+      bytes: await renderExperiencePdf(f, e.joiningDate, content),
       fileName: `${EXPERIENCE_FILE_PREFIX}-${slug(e.name)}-${f.letterDate}.pdf`
     };
   }
@@ -74,6 +82,19 @@ export class HrDocumentService {
   list(query: unknown): Promise<HrDocument[]> {
     const q = parse(hrDocListQuerySchema, query);
     return this.repo.list(q.employeeKey ?? null, (q.type as HrDocType | undefined) ?? null);
+  }
+
+  /** The current master template of a letter, and its versions (HR staff; the database says whether the caller may save a new version). */
+  templateState(type: string): Promise<HrLetterTemplateState> {
+    return this.repo.templateState(parse(hrLetterTypeSchema, type));
+  }
+  templateVersion(type: string, version: string): Promise<HrLetterTemplateVersion> {
+    return this.repo.templateVersion(parse(hrLetterTypeSchema, type), parse(hrLetterTemplateVersionParamSchema, version));
+  }
+  /** A new version of a master template (Super Admin / HR Admin Head). Letters already issued keep the wording they were made with. */
+  saveTemplate(type: string, body: unknown): Promise<HrLetterTemplateVersion> {
+    const b = parse(hrLetterTemplateSaveSchema, { ...(body as Record<string, unknown>), type: parse(hrLetterTypeSchema, type) });
+    return this.repo.saveTemplate(b.type, b.content, b.baseVersion, b.note ?? null);
   }
 
   /** A short-lived link to one stored document (the database checks HR staff and audits the opening). */

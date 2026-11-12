@@ -1,7 +1,11 @@
 # Attendance: Punch In / Punch Out and lunch (migrations 20261230000400, 0600, 0700)
 
-**Where:** an **Attendance** item in every dashboard's side panel ("My day"; shared dashboard shell, Team Member layout), and at the top of HR's
-Attendance module. The **Operations Head** marks attendance exactly like every employee, and also has the Punch In / Lunch / Punch Out
+**Where:** **Attendance** is the first entry of every dashboard's side menu, directly under the logo / department name. This covers:
+* the shared dashboard shell, which every role dashboard uses;
+* the Team Member layout;
+* the department menu (HR Assistant, HR Admin Head, and the Super Admin's department views).
+
+It is also at the top of HR's Attendance module. Every entry opens the same Attendance page. The **Operations Head** marks attendance exactly like every employee, and also has the Punch In / Lunch / Punch Out
 card at the top of their Operations Dashboard. Nothing is recorded automatically at sign-in and nothing blocks the CRM.
 
 ## Employee
@@ -79,3 +83,26 @@ Coordinates older than **90 days** (`attendance_settings.location_retention_days
 with pg_cron when it is installed, and on every Punch In in any case. The place name is erased with them. The punch and its time stay; its status becomes `PURGED`.
 
 Tests: `supabase/tests/attendance_punch_lunch_test.sql`, `supabase/tests/attendance_register_test.sql`, `supabase/tests/attendance_places_test.sql`, `supabase/tests/attendance_places.test.ts`, `supabase/tests/ui_attendance.test.mjs` (browser, real geolocation allowed and denied).
+
+## Attendance first in every menu
+
+**Attendance** is the first entry of every dashboard's side menu, on desktop and in the phone drawer.
+
+* **Shared dashboard shell** (Super Admin, Department Heads, Operations Heads, Team Leads, Telecaller, Business Associate, Support, Technical
+  Consultant, Accounts, HR Recruiter): `DashboardShell` puts it at the top of the first, unlabelled section. Before, it was a "My day" section
+  at the bottom.
+* **Team Member layout:** the first entry, above Home.
+* **Department menu** (`Sidebar.tsx`, used by the HR Assistant, the HR Admin Head and the Super Admin's department views): the first entry, tab
+  `my_attendance`. It opens the same `AttendancePage`, with the HR register in the HR department, as on HR's own panel.
+
+Nothing else changes: the rules, the location capture, the database functions, and who sees what (see above). The Super Admin's Attendance still
+opens the register only.
+
+**Test:** `supabase/tests/e2e/run-attendance-nav.sh` signs in as every role made by `scripts/seed-test-accounts.mjs` (20 employee logins) and the
+Super Admin. For each employee it checks:
+* Attendance is the first menu entry, and the rest of the menu is unchanged;
+* the employee can punch in and out with the browser's location;
+* each punch is stored as that employee's own.
+
+It then checks that the HR Admin Head sees all of them in today's register, and that the entry comes first on a phone.
+

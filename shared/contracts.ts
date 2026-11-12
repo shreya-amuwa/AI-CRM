@@ -5374,7 +5374,7 @@ export interface FieldVisitLeadQueue {
 export interface FieldVisitTelecaller { id: string; name: string; team: string; openLeads: number }
 
 // --- HR documents: NDA and Experience Letter (migration 20261229000200) ------------------------------------------------------------------
-export type HrDocType = 'NDA' | 'EXPERIENCE';
+export type HrDocType = 'NDA' | 'EXPERIENCE' | 'OFFER';
 export type HrDocTitle = 'Mr.' | 'Miss' | 'Mrs.' | 'Ms.';
 export interface HrDocNdaFields { letterDate: string; employeeName: string }
 export interface HrDocExperienceFields {
@@ -5385,10 +5385,14 @@ export interface HrDocExperienceFields {
   lastWorkingDate: string;
   signatoryName: string;
   signatoryTitle: string;
+  /** The wording used for this letter (migration 20261231000600; when absent, version 1 of the master template). */
+  content?: HrExperienceContent;
+  templateVersion?: number;
 }
 export type HrDocRequest =
   | { type: 'NDA'; employeeKey: string; fields: HrDocNdaFields }
-  | { type: 'EXPERIENCE'; employeeKey: string; fields: HrDocExperienceFields };
+  | { type: 'EXPERIENCE'; employeeKey: string; fields: HrDocExperienceFields }
+  | { type: 'OFFER'; employeeKey: string; fields: HrDocOfferFields };
 /** What the HR record says about the employee (the database decides; the browser only shows it). */
 export interface HrDocPrefill {
   employee: {
@@ -5402,7 +5406,12 @@ export interface HrDocPrefill {
     lastWorkingDate: string | null;
     status: string;
     separated: boolean;
+    /** From the HR record, for the Offer Letter (migration 20261231000600; absent before it). */
+    monthlySalary?: string | null;
+    workingHours?: string | null;
   };
+  /** The current master template of an Offer / Experience Letter (migration 20261231000600; absent before it or for the NDA). */
+  template?: HrLetterTemplateVersion | null;
   /** Details the letter needs that the record does not have (empty = the letter can be made). */
   problems: { code: string; message: string }[];
   ready: boolean;
@@ -5419,11 +5428,44 @@ export interface HrDocument {
   employeeName: string;
   fileName: string;
   sizeBytes: number;
-  fields: HrDocNdaFields | HrDocExperienceFields;
+  fields: HrDocNdaFields | HrDocExperienceFields | HrDocOfferFields;
   generatedBy: string | null;
   createdAt: string;
 }
 export interface HrDocumentDownload { url: string; fileName: string }
+
+// --- HR letters: the Offer Letter, editable wording, versioned master templates (migration 20261231000600) ----------------------------------
+import type { HrExperienceContent, HrLetterType, HrOfferContent } from './hrLetters.js';
+export type { HrExperienceContent, HrLetterTerm, HrLetterType, HrOfferContent } from './hrLetters.js';
+export interface HrDocOfferFields {
+  letterDate: string;
+  employeeName: string;
+  designation: string;
+  department: string;
+  employmentType: string;
+  joiningDate: string;
+  salary: string;
+  probation: string;
+  reportingTo: string;
+  signatoryName: string;
+  /** The wording of this letter (the master template's, possibly edited for this letter) and the master version it started from. */
+  content: HrOfferContent;
+  templateVersion: number;
+}
+export interface HrLetterTemplateVersion {
+  type: HrLetterType;
+  version: number;
+  content: HrOfferContent | HrExperienceContent;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+export interface HrLetterTemplateState {
+  current: HrLetterTemplateVersion;
+  versions: Omit<HrLetterTemplateVersion, 'content'>[];
+  /** The caller may save a new version (Super Admin / HR Admin Head). */
+  canEdit: boolean;
+}
 
 // ---- Operations Head -> Department Head -> Team Lead -> Team Member tasks, and the daily drill-down by person (20261230000300) ----
 export interface OperationsPersonDaily {

@@ -88,7 +88,7 @@ import type {
   HrDocPrefill,
   HrDocPreview,
   HrDocRequest,
-  HrDocType,
+  HrDocType, HrExperienceContent, HrLetterTemplateState, HrLetterTemplateVersion, HrLetterType, HrOfferContent,
   HrDocument,
   HrDocumentDownload,
   LeaveMonthlySummary,
@@ -838,7 +838,12 @@ export const hrDocumentsApi = {
   preview: (body: HrDocRequest) => api.post<HrDocPreview>('/hr/documents/preview', body),
   generate: (body: HrDocRequest) => api.post<HrDocument>('/hr/documents', body),
   list: (q: { employeeKey?: string; type?: HrDocType } = {}) => api.get<HrDocument[]>('/hr/documents', { ...q }),
-  download: (id: string) => api.get<HrDocumentDownload>(`/hr/documents/${id}/download`)
+  download: (id: string) => api.get<HrDocumentDownload>(`/hr/documents/${id}/download`),
+  // the master templates of the Offer / Experience Letter (migration 20261231000600)
+  templateState: (type: HrLetterType) => api.get<HrLetterTemplateState>(`/hr/letter-templates/${type}`),
+  templateVersion: (type: HrLetterType, version: number) => api.get<HrLetterTemplateVersion>(`/hr/letter-templates/${type}/versions/${version}`),
+  saveTemplate: (type: HrLetterType, body: { content: HrOfferContent | HrExperienceContent; baseVersion: number; note?: string }) =>
+    api.post<HrLetterTemplateVersion>(`/hr/letter-templates/${type}`, body)
 };
 
 /** Tells the server a sign-in was refused, so it can note the attempt with the address and place the hosting platform reports. Never throws. */

@@ -4,11 +4,13 @@ import { hrDocumentsApi } from '../../../lib/api/endpoints';
 import { ApiError } from '../../../lib/api/client';
 import { employmentDuration } from '../../../lib/employmentDuration';
 import { Employee } from '../../../types/amuwaHq';
-import type { HrDocExperienceFields, HrDocNdaFields, HrDocPrefill, HrDocRequest, HrDocTitle, HrDocType, HrDocument } from '../../../../shared/contracts';
-import { HR_DOC_TITLES, hrExperienceFieldsSchema, hrNdaFieldsSchema } from '../../../../shared/validation';
+import type { HrDocExperienceFields, HrDocNdaFields, HrDocOfferFields, HrDocPrefill, HrDocRequest, HrDocTitle, HrDocType, HrDocument } from '../../../../shared/contracts';
+import { DEFAULT_EXPERIENCE_CONTENT, DEFAULT_OFFER_CONTENT, DEFAULT_OFFER_SIGNATORY, type HrExperienceContent, type HrOfferContent } from '../../../../shared/hrLetters';
+import { HR_DOC_TITLES, hrExperienceFieldsSchema, hrExperienceLetterFieldsSchema, hrNdaFieldsSchema, hrOfferFieldsSchema } from '../../../../shared/validation';
+import { ExperienceWordingEditor, OfferWordingEditor, PlaceholderHelp } from './LetterWordingEditor';
 
 /**
- * NDA and Experience Letter for HR. Pick an employee, check the details the HR record gives, edit what may be edited, see the PDF the server
+ * NDA, Offer Letter and Experience Letter for HR. Pick an employee, check the details the HR record gives, edit what may be edited, see the PDF the server
  * draws on the official template, generate it (it is stored against that employee) and download it. The server re-checks everything: the employee,
  * the joining date and the code come from the HR record, never from this form.
  */
@@ -25,6 +27,16 @@ const inputCls = 'w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-20
 const labelCls = 'block text-slate-700 font-bold mb-1';
 
 const fmt = (iso: string | null | undefined) => (iso ? iso.split('-').reverse().join('-') : '–');
+/** "65000" / "65,000" on the HR record -> "₹65,000/- per month" (the supplied letter's style); anything else is kept as it is. */
+const salaryText = (raw: string | null | undefined) => {
+  const v = (raw ?? '').trim();
+  if (!v) return '';
+  const n = v.replace(/[₹,\s]/g, '');
+  return /^\d+$/.test(n) ? `₹${Number(n).toLocaleString('en-IN')}/- per month` : v;
+};
+const DOC_LABEL: Record<HrDocType, string> = { NDA: 'NDA', OFFER: 'Offer Letter', EXPERIENCE: 'Experience Letter' };
+type OfferForm = Omit<HrDocOfferFields, 'content' | 'templateVersion'>;
+const EMPTY_OFFER: OfferForm = { letterDate: '', employeeName: '', designation: '', department: '', employmentType: 'Full-Time', joiningDate: '', salary: '', probation: '6 Months', reportingTo: '', signatoryName: DEFAULT_OFFER_SIGNATORY };
 
 function pdfUrl(base64: string): string {
   const bin = atob(base64);
@@ -35,6 +47,7 @@ function pdfUrl(base64: string): string {
 
 export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessToast }) => {
   const isNda = type === 'NDA';
+  const isOffer = type === 'OFFER';
   const [employeeKey, setEmployeeKey] = useState('');
   const [prefill, setPrefill] = useState<HrDocPrefill | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -43,6 +56,11 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
   const [exp, setExp] = useState<Omit<HrDocExperienceFields, 'title'> & { title: HrDocTitle | '' }>({
     letterDate: '', title: '', employeeName: '', designation: '', lastWorkingDate: '', signatoryName: '', signatoryTitle: ''
   });
+  const [offer, setOffer] = useState<OfferForm>(EMPTY_OFFER);
+  // the wording of THIS letter: the current master template, which HR may edit before generating (the master itself is not changed)
+  const [offerContent, setOfferContent] = useState<HrOfferContent>(DEFAULT_OFFER_CONTENT);
+  const [expContent, setExpContent] = useState<HrExperienceContent>(DEFAULT_EXPERIENCE_CONTENT);
+  const [templateVersion, setTemplateVersion] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -71,7 +89,16 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
       p => {
         if (mine !== prefillSeq.current) return;
         setPrefill(p);
+        setTemplateVersion(p.template?.version ?? null);
+        if (p.template && type === 'OFFER') setOfferContent(p.template.content as HrOfferContent);
+        if (p.template && type === 'EXPERIENCE') setExpContent(p.template.content as HrExperienceContent);
+        if (!p.template) { setOfferContent(DEFAULT_OFFER_CONTENT); setExpContent(DEFAULT_EXPERIENCE_CONTENT); }
+        const listed = employees.find(e => employeeKeyOf(e) === employeeKey);
         if (isNda) setNda({ letterDate: p.today, employeeName: p.employee.name });
+        else if (type === 'OFFER') setOffer({
+          ...EMPTY_OFFER, letterDate: p.today, employeeName: p.employee.name, designation: p.employee.designation ?? '', department: p.employee.department ?? '',
+          joiningDate: p.employee.joiningDate ?? '', salary: salaryText(p.employee.monthlySalary), reportingTo: listed?.teamLead || listed?.departmentHead || ''
+        });
         else setExp({
           letterDate: p.today, title: '', employeeName: p.employee.name, designation: p.employee.designation ?? '',
           lastWorkingDate: p.employee.lastWorkingDate ?? '', signatoryName: p.signatory.name, signatoryTitle: p.signatory.title
@@ -79,7 +106,7 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
       },
       e => { if (mine === prefillSeq.current) setLoadError(errText(e, 'Could not read the employee record.')); }
     ).finally(() => { if (mine === prefillSeq.current) setLoading(false); });
-  }, [employeeKey, type, isNda]);
+  }, [employeeKey, type, isNda]); // eslint-disable-line react-hooks/exhaustive-deps -- the directory list only suggests the reporting manager
 
   // ---- the stored documents (of this employee, or the latest of this type)
   const loadHistory = useCallback(() => {
@@ -95,14 +122,20 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
       const r = hrNdaFieldsSchema.safeParse(nda);
       return r.success ? { body: { type: 'NDA', employeeKey, fields: r.data }, problem: null } : { body: null, problem: r.error.issues[0]?.message ?? 'Check the details.' };
     }
+    if (isOffer) {
+      if (!templateVersion) return { body: null, problem: 'The Offer Letter template is not set up yet (run the latest database migration).' };
+      const r = hrOfferFieldsSchema.safeParse({ ...offer, content: offerContent, templateVersion });
+      return r.success ? { body: { type: 'OFFER', employeeKey, fields: r.data }, problem: null } : { body: null, problem: r.error.issues[0]?.message ?? 'Check the details.' };
+    }
     if (!exp.title) return { body: null, problem: 'Choose Mr., Miss, Mrs. or Ms. (it decides he / she in the letter).' };
-    const r = hrExperienceFieldsSchema.safeParse(exp);
+    // with the wording when the master template is known (an older database without it still gets the official wording by default)
+    const r = templateVersion ? hrExperienceLetterFieldsSchema.safeParse({ ...exp, content: expContent, templateVersion }) : hrExperienceFieldsSchema.safeParse(exp);
     if (!r.success) return { body: null, problem: r.error.issues[0]?.message ?? 'Check the details.' };
     const joined = prefill.employee.joiningDate;
     if (joined && r.data.lastWorkingDate < joined) return { body: null, problem: 'The last working date is before the joining date on record.' };
     if (r.data.letterDate < r.data.lastWorkingDate) return { body: null, problem: 'The letter date cannot be before the last working date.' };
     return { body: { type: 'EXPERIENCE', employeeKey, fields: r.data }, problem: null };
-  }, [prefill, isNda, nda, exp, employeeKey]);
+  }, [prefill, isNda, isOffer, nda, exp, offer, offerContent, expContent, templateVersion, employeeKey]);
 
   // ---- the preview: the server's own PDF, redrawn shortly after the last edit
   useEffect(() => {
@@ -144,7 +177,7 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
     try {
       const d = await hrDocumentsApi.generate(request.body);
       setGenerated({ sig, doc: d });
-      onSuccessToast?.(`✅ ${isNda ? 'NDA' : 'Experience Letter'} for ${d.employeeName} generated and saved to their record.`);
+      onSuccessToast?.(`✅ ${DOC_LABEL[type]} for ${d.employeeName} generated and saved to their record.`);
       await loadHistory();
       return d;
     } catch (e) {
@@ -173,16 +206,22 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
   };
 
   const emp = prefill?.employee;
-  const duration = emp && !isNda ? employmentDuration(emp.joiningDate, exp.lastWorkingDate || emp.lastWorkingDate) : null;
-  const title = isNda ? 'Non-Disclosure Agreement (NDA)' : 'Experience Letter';
-  const docLabel = (d: HrDocument) => (d.type === 'NDA' ? 'NDA' : 'Experience Letter');
+  const duration = emp && type === 'EXPERIENCE' ? employmentDuration(emp.joiningDate, exp.lastWorkingDate || emp.lastWorkingDate) : null;
+  const title = isNda ? 'Non-Disclosure Agreement (NDA)' : DOC_LABEL[type];
+  const docLabel = (d: HrDocument) => DOC_LABEL[d.type];
+  const versionOf = (d: HrDocument) => (d.fields as { templateVersion?: number }).templateVersion;
+  const resetWording = () => {
+    if (prefill?.template) { if (isOffer) setOfferContent(prefill.template.content as HrOfferContent); else setExpContent(prefill.template.content as HrExperienceContent); }
+    else { setOfferContent(DEFAULT_OFFER_CONTENT); setExpContent(DEFAULT_EXPERIENCE_CONTENT); }
+  };
+  const wordingEdited = prefill?.ready && !isNda && JSON.stringify(isOffer ? offerContent : expContent) !== JSON.stringify(prefill?.template?.content ?? (isOffer ? DEFAULT_OFFER_CONTENT : DEFAULT_EXPERIENCE_CONTENT));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start font-sans" data-testid={`hr-doc-studio-${type}`}>
       {/* ======================= form ======================= */}
       <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 sm:p-6 space-y-5">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2"><Sparkles className="w-4 h-4 text-blue-600" /> <span>{isNda ? 'Generate NDA' : 'Generate Experience Letter'}</span></h3>
+          <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2"><Sparkles className="w-4 h-4 text-blue-600" /> <span>Generate {DOC_LABEL[type]}</span></h3>
           <span className="text-[11px] font-mono text-slate-400">Official template</span>
         </div>
 
@@ -191,8 +230,8 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
             <label htmlFor={`hrdoc-emp-${type}`} className={labelCls}>Employee *</label>
             <select id={`hrdoc-emp-${type}`} value={employeeKey} onChange={e => setEmployeeKey(e.target.value)} className={inputCls}>
               <option value="">Choose an employee…</option>
-              {!isNda && left.length > 0 && <optgroup label="Left the company">{left.map(e => <option key={employeeKeyOf(e)} value={employeeKeyOf(e)}>{e.name} ({e.designation || 'no designation'})</option>)}</optgroup>}
-              {(isNda ? sorted : working).length > 0 && <optgroup label={isNda ? 'All employees' : 'Still working'}>{(isNda ? sorted : working).map(e => <option key={employeeKeyOf(e)} value={employeeKeyOf(e)}>{e.name} ({e.designation || 'no designation'})</option>)}</optgroup>}
+              {type === 'EXPERIENCE' && left.length > 0 && <optgroup label="Left the company">{left.map(e => <option key={employeeKeyOf(e)} value={employeeKeyOf(e)}>{e.name} ({e.designation || 'no designation'})</option>)}</optgroup>}
+              {(type !== 'EXPERIENCE' ? sorted : working).length > 0 && <optgroup label={type !== 'EXPERIENCE' ? 'All employees' : 'Still working'}>{(type !== 'EXPERIENCE' ? sorted : working).map(e => <option key={employeeKeyOf(e)} value={employeeKeyOf(e)}>{e.name} ({e.designation || 'no designation'})</option>)}</optgroup>}
             </select>
             {employees.length === 0 && <p className="mt-1 text-[11px] text-slate-500 font-sans">No employees are loaded yet.</p>}
           </div>
@@ -208,7 +247,13 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
                 <div><span className="text-slate-400">Status</span><div className="font-bold text-slate-800">{emp.status}</div></div>
                 <div><span className="text-slate-400">Department</span><div className="font-bold text-slate-800">{emp.department || '–'}</div></div>
                 <div><span className="text-slate-400">Date of joining</span><div className="font-bold text-slate-800">{fmt(emp.joiningDate)}</div></div>
-                {!isNda && (
+                {isOffer && (
+                  <>
+                    <div><span className="text-slate-400">Monthly salary</span><div className="font-bold text-slate-800">{emp.monthlySalary || '–'}</div></div>
+                    <div><span className="text-slate-400">Working hours</span><div className="font-bold text-slate-800">{emp.workingHours || '–'}</div></div>
+                  </>
+                )}
+                {type === 'EXPERIENCE' && (
                   <>
                     <div><span className="text-slate-400">Last working date</span><div className="font-bold text-slate-800">{fmt(emp.lastWorkingDate)}</div></div>
                     <div><span className="text-slate-400">Employment duration</span><div className="font-bold text-slate-800">{duration ?? '–'}</div></div>
@@ -239,7 +284,55 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
                 </>
               )}
 
-              {prefill?.ready && !isNda && (
+              {prefill?.ready && isOffer && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="col-span-2">
+                      <label htmlFor="hrdoc-off-name" className={labelCls}>Employee name *</label>
+                      <input id="hrdoc-off-name" className={inputCls} value={offer.employeeName} maxLength={100} onChange={e => setOffer({ ...offer, employeeName: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-designation" className={labelCls}>Designation *</label>
+                      <input id="hrdoc-off-designation" className={inputCls} value={offer.designation} maxLength={80} onChange={e => setOffer({ ...offer, designation: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-department" className={labelCls}>Department *</label>
+                      <input id="hrdoc-off-department" className={inputCls} value={offer.department} maxLength={80} onChange={e => setOffer({ ...offer, department: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-type" className={labelCls}>Employment type *</label>
+                      <input id="hrdoc-off-type" className={inputCls} value={offer.employmentType} maxLength={40} onChange={e => setOffer({ ...offer, employmentType: e.target.value })} list="hrdoc-off-types" />
+                      <datalist id="hrdoc-off-types"><option value="Full-Time" /><option value="Part-Time" /><option value="Internship" /><option value="Contract" /></datalist>
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-join" className={labelCls}>Date of joining *</label>
+                      <input id="hrdoc-off-join" type="date" className={inputCls} value={offer.joiningDate} onChange={e => setOffer({ ...offer, joiningDate: e.target.value })} />
+                    </div>
+                    <div className="col-span-2">
+                      <label htmlFor="hrdoc-off-salary" className={labelCls}>Salary *</label>
+                      <input id="hrdoc-off-salary" className={inputCls} value={offer.salary} maxLength={80} placeholder="₹10,000/- per month (Fixed)" onChange={e => setOffer({ ...offer, salary: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-probation" className={labelCls}>Probation period *</label>
+                      <input id="hrdoc-off-probation" className={inputCls} value={offer.probation} maxLength={40} onChange={e => setOffer({ ...offer, probation: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-reporting" className={labelCls}>Reporting to *</label>
+                      <input id="hrdoc-off-reporting" className={inputCls} value={offer.reportingTo} maxLength={80} onChange={e => setOffer({ ...offer, reportingTo: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-date" className={labelCls}>Letter date *</label>
+                      <input id="hrdoc-off-date" type="date" className={inputCls} value={offer.letterDate} onChange={e => setOffer({ ...offer, letterDate: e.target.value })} />
+                    </div>
+                    <div>
+                      <label htmlFor="hrdoc-off-sig" className={labelCls}>Signed by *</label>
+                      <input id="hrdoc-off-sig" className={inputCls} value={offer.signatoryName} maxLength={100} onChange={e => setOffer({ ...offer, signatoryName: e.target.value })} />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {prefill?.ready && type === 'EXPERIENCE' && (
                 <>
                   <div className="grid grid-cols-3 gap-2">
                     <div>
@@ -283,9 +376,28 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
                     </div>
                   </div>
                   <div className="p-3 rounded-2xl bg-purple-50 border border-purple-200 text-purple-900 text-[11px] font-sans leading-relaxed">
-                    📜 The wording is the official letter. The joining date is the HR record's; correct it there if it is wrong. He / she in the letter follows the title you choose.
+                    📜 The joining date is the HR record's; correct it there if it is wrong. He / she in the letter follows the title you choose.
                   </div>
                 </>
+              )}
+
+              {prefill?.ready && !isNda && (
+                <details className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 font-sans" data-testid="letter-wording">
+                  <summary className="cursor-pointer text-xs font-bold text-slate-800 flex items-center justify-between gap-2">
+                    <span>Edit the letter's wording</span>
+                    <span className={`text-[10px] font-semibold ${wordingEdited ? 'text-amber-700' : 'text-slate-500'}`}>
+                      {wordingEdited ? 'Edited for this letter' : `Master template${templateVersion ? ` v${templateVersion}` : ''}`}
+                    </span>
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    <p className="text-[11px] text-slate-600">These changes apply to this letter only. The master template is changed under <b>Master template</b>.</p>
+                    <PlaceholderHelp type={isOffer ? 'OFFER' : 'EXPERIENCE'} />
+                    {isOffer
+                      ? <OfferWordingEditor idPrefix="hrdoc-w" value={offerContent} onChange={setOfferContent} />
+                      : <ExperienceWordingEditor idPrefix="hrdoc-w" value={expContent} onChange={setExpContent} />}
+                    {wordingEdited && <button type="button" onClick={resetWording} className="text-[11px] font-bold text-blue-700 hover:underline">Reset to the master template</button>}
+                  </div>
+                </details>
               )}
 
               {request.problem && <div role="status" className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 font-sans text-[11px]">{request.problem}</div>}
@@ -343,7 +455,7 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
         </div>
 
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 sm:p-6">
-          <h4 className="font-bold text-sm text-slate-900 mb-1">{employeeKey && emp ? `Documents generated for ${emp.name}` : `Latest ${isNda ? 'NDAs' : 'Experience Letters'}`}</h4>
+          <h4 className="font-bold text-sm text-slate-900 mb-1">{employeeKey && emp ? `Documents generated for ${emp.name}` : `Latest ${DOC_LABEL[type]}s`}</h4>
           <p className="text-[11px] text-slate-500 mb-3">Every generated PDF is kept against the employee's record and can be downloaded again.</p>
           {historyError && <div role="alert" className="mb-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">{historyError}</div>}
           {!history ? (
@@ -354,7 +466,8 @@ export const HrDocumentStudio: React.FC<Props> = ({ type, employees, onSuccessTo
             <ul className="divide-y divide-slate-100">
               {history.slice(0, 30).map(d => (
                 <li key={d.id} className="py-2.5 flex flex-wrap items-center gap-3 text-xs">
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.type === 'NDA' ? 'bg-emerald-50 text-emerald-700' : 'bg-purple-50 text-purple-700'}`}>{docLabel(d)}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${d.type === 'NDA' ? 'bg-emerald-50 text-emerald-700' : d.type === 'OFFER' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>{docLabel(d)}</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600" title="A generated letter is final: it is never changed, also not by later template edits">Issued{versionOf(d) ? ` · template v${versionOf(d)}` : ''}</span>
                   <span className="min-w-[10rem] flex-1"><span className="font-bold text-slate-800">{d.employeeName}</span> <span className="text-slate-400">· {d.employeeCode}</span></span>
                   <span className="text-slate-500">{new Date(d.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}{d.generatedBy ? ` · ${d.generatedBy}` : ''}</span>
                   <button type="button" onClick={() => void download(d.id)} disabled={downloading === d.id}

@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { HrDocExperienceFields, HrDocNdaFields, HrDocTitle } from '../../shared/contracts.js';
+import { boldRuns, DEFAULT_EXPERIENCE_CONTENT, fillPlaceholders, pronounValues, type HrExperienceContent } from '../../shared/hrLetters.js';
 import { AppError } from '../http/errors.js';
 import { EXPERIENCE_TEMPLATE_BASE64, NDA_TEMPLATE_BASE64 } from './templateAssets.js';
 
@@ -144,45 +145,43 @@ export async function renderNdaPdf(f: HrDocNdaFields): Promise<Uint8Array> {
   return doc.save({ useObjectStreams: false });
 }
 
-/** joiningDate is the HR record's, not an edited value: the server passes it in. */
-export async function renderExperiencePdf(f: HrDocExperienceFields, joiningDate: string): Promise<Uint8Array> {
+/**
+ * joiningDate is the HR record's, not an edited value: the server passes it in. The wording is the letter's own (a master template version,
+ * possibly edited for this letter); version 1 is the supplied letter's text, so without an edit the letter is exactly the template's.
+ */
+export async function renderExperiencePdf(f: HrDocExperienceFields, joiningDate: string, content: HrExperienceContent = DEFAULT_EXPERIENCE_CONTENT): Promise<Uint8Array> {
   const doc = await PDFDocument.load(Buffer.from(EXPERIENCE_TEMPLATE_BASE64, 'base64'));
   const fonts = await embed(doc);
   for (const [value, label] of [[f.employeeName, 'The employee name'], [f.designation, 'The designation'], [f.signatoryName, 'The signatory name'], [f.signatoryTitle, 'The signatory title']] as const) {
     assertPrintable(fonts, value, label);
   }
-  const he = pronouns(f.title);
   const page = doc.getPage(0);
   const o = { x: 62.5, size: 10, maxWidth: 468, leading: 12.7, color: BLACK };
   const NEXT = 20.85; // baseline to baseline between one paragraph's last line and the next block, as on the template
 
   page.drawText(`Date: ${numericDate(f.letterDate, '/')}`, { x: 62.5, y: 639.039, size: 10, font: fonts.regular, color: BLACK });
-  page.drawText('To Whom It May Concern,', { x: 62.5, y: 600.439, size: 10, font: fonts.regular, color: BLACK });
-
-  // The wording of the supplied letter, with the employee, the designation, the dates and the pronouns filled in.
-  const paragraphs: Run[][] = [
-    [
-      { text: `This is to certify that ${f.title} ${f.employeeName} was employed with Amuwa Corporation as` },
-      { text: f.designation, bold: true },
-      { text: `from ${longDate(joiningDate)} to ${longDate(f.lastWorkingDate)}.` }
-    ],
-    [{ text: `During ${he.possessive} tenure with us, ${he.subject} demonstrated dedication, professionalism, and a strong work ethic. ${he.Subject} performed ${he.possessive} responsibilities efficiently and contributed positively to the growth of the organization.` }],
-    [{ text: `We appreciate ${he.possessive} efforts and the work ${he.subject} has done during ${he.possessive} time with us.` }],
-    [{ text: `We wish ${he.object} all the best for ${he.possessive} future endeavors and continued success in ${he.possessive} career. Good luck for a bright future.` }]
-  ];
+  // The wording of the letter, with the employee, the designation, the dates and the pronouns filled in.
+  const values: Record<string, string> = {
+    title: f.title, name: f.employeeName, designation: f.designation, from: longDate(joiningDate), to: longDate(f.lastWorkingDate),
+    letterDate: longDate(f.letterDate), ...pronounValues(f.title)
+  };
+  const fill = (t: string) => fillPlaceholders(t, values);
+  for (const t of [content.greeting, ...content.paragraphs, content.signOff]) assertPrintable(fonts, fill(t).replace(/\*\*/g, ''), 'The letter text');
+  page.drawText(fill(content.greeting), { x: 62.5, y: 600.439, size: 10, font: fonts.regular, color: BLACK });
+  const paragraphs: Run[][] = content.paragraphs.map(t => boldRuns(fill(t)));
   let y = 579.639;
   for (const runs of paragraphs) {
     y = paragraph(page, runs, fonts, { ...o, y }) - NEXT;
   }
   // "Sincerely," then room to sign, then the signatory and the company (bold), as on the template
-  page.drawText('Sincerely,', { x: 62.5, y, size: 10, font: fonts.regular, color: BLACK });
+  page.drawText(fill(content.signOff), { x: 62.5, y, size: 10, font: fonts.regular, color: BLACK });
   y -= 33.75;
   page.drawText(f.signatoryName, { x: 62.5, y, size: 10, font: fonts.regular, color: BLACK });
   y -= 13.9;
   page.drawText(f.signatoryTitle, { x: 62.5, y, size: 10, font: fonts.regular, color: BLACK });
   y -= 13.9;
   page.drawText('Amuwa Corporation', { x: 62.5, y, size: 10, font: fonts.bold, color: BLACK });
-  if (y < 290) throw new AppError('VALIDATION_ERROR', 'The letter does not fit on the page. Shorten the designation.');
+  if (y < 290) throw new AppError('VALIDATION_ERROR', 'The letter does not fit on the page. Shorten the wording or the designation.');
 
   stamp(doc, 'Experience Letter', f.letterDate);
   return doc.save({ useObjectStreams: false });

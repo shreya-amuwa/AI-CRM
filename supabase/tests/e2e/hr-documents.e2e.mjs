@@ -1,6 +1,8 @@
 // HR documents in a real browser against the local stack (Postgres + PostgREST + gateway + the web app):
 //   an HR Admin Head picks an employee, sees the HR record's details, edits what may be edited, sees the server's PDF, generates it, downloads
-//   it and finds it again; the NDA works the same way; an employee who has not left is blocked; the Offer Letter tab still works.
+//   it and finds it again; the NDA works the same way; an employee who has not left is blocked; the Offer Letter is filled from the record, its
+//   wording can be edited for one letter, and a new master template version changes new letters but never one already issued; the sidebar's
+//   Employee Letters section opens each letter.
 // See supabase/tests/e2e/README.md. Passwords come from E2E_PASSWORDS (made up by the runner); nothing is stored.
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -214,7 +216,7 @@ await studio.getByText('This letter cannot be made yet').waitFor({ timeout: 2000
 await expect(/Mark the employee as Left/.test(await studio.innerText()) && await genBtn.isDisabled() && !await studio.getByLabel('Designation *').count(), 'an employee who is still working cannot get an Experience Letter, and the form says what to do');
 
 // ---- the NDA
-await p.getByRole('button', { name: 'NDA Letter' }).click();
+await p.locator('main').getByRole('button', { name: 'NDA Letter' }).click();
 const nda = p.locator('[data-testid="hr-doc-studio-NDA"]');
 await nda.waitFor({ timeout: 20000 });
 await nda.getByLabel('Employee *').selectOption('HR:E2E-ANITA');
@@ -234,10 +236,75 @@ await d2.saveAs(`${OUT}/downloaded-nda.pdf`);
 const nd = await pdfText(fs.readFileSync(`${OUT}/downloaded-nda.pdf`));
 await expect(nd.pages === 5 && nd.text.includes('Date:05-10-2026') && nd.text.includes('AnitaWorking') && /^NDA-Anita-Working-2026-10-05\.pdf$/.test(d2.suggestedFilename()), 'the NDA downloads as the five-page file');
 
-// ---- the Offer Letter is as it was
-await p.getByRole('button', { name: 'Offer Letter' }).first().click();
-await p.getByText('Compensation & Appointment Breakdown').first().waitFor({ timeout: 20000 }).catch(() => fail('the Offer Letter did not open'));
-await expect(/Automate Offer Letter/.test(await text(p)) && await p.locator('[data-testid^="hr-doc-studio"]').count() === 0, 'the Offer Letter tab is unchanged');
+// ---- the Offer Letter: filled from the record, the wording edited for this letter only, generated and downloaded
+await q(`update hr_employees set monthly_salary = '25000' where id = 'E2E-ANITA'`);
+await p.locator('main').getByRole('button', { name: 'Offer Letter' }).click();
+const off = p.locator('[data-testid="hr-doc-studio-OFFER"]');
+await off.waitFor({ timeout: 20000 }).catch(() => fail('the Offer Letter studio did not open'));
+await expect(!/Rahul Deshmukh|Compensation & Appointment|AMU\/OL/.test(await text(p)), 'the Offer Letter shows no sample data');
+await off.getByLabel('Employee *').selectOption('HR:E2E-ANITA');
+await off.getByLabel('Salary *').waitFor({ timeout: 20000 }).catch(() => fail('the Offer Letter form did not open'));
+await expect(await off.getByLabel('Employee name *').inputValue() === 'Anita Working' && await off.getByLabel('Designation *').inputValue() === 'Sales Executive'
+  && await off.getByLabel('Date of joining *').inputValue() === '2024-01-08' && await off.getByLabel('Salary *').inputValue() === '₹25,000/- per month'
+  && await off.getByLabel('Employment type *').inputValue() === 'Full-Time' && await off.getByLabel('Letter date *').inputValue() === today && await off.getByLabel('Signed by *').inputValue() === 'Miss Aarti Kalange',
+  'the Offer Letter form is filled from the HR record (name, designation, joining date, salary) with the letter\'s usual terms');
+await off.getByLabel('Reporting to *').fill('');
+await expect(await off.getByRole('button', { name: /Generate PDF/ }).isDisabled(), 'a missing reporting manager blocks generating');
+await off.getByLabel('Reporting to *').fill('Team Leader');
+t = await waitPreview(p, x => x.text.includes('AnitaWorking') && x.text.includes('08thJanuary2024'), 'the Offer Letter with the record values');
+await expect(t.pages <= 2 && t.text.includes('SalesExecutive') && t.text.includes('25,000/-permonth') && t.text.includes('ReportingTo:TeamLeader') && !t.text.includes('{') && !/Lokesh|Patil/.test(t.text),
+  'the Offer Letter preview has the employee\'s values on the letterhead and nothing of the sample');
+await off.getByText("Edit the letter's wording").click();
+await off.getByLabel('Sign-off').fill('Yours sincerely, Amuwa Corporation,');
+t = await waitPreview(p, x => x.text.includes('Yourssincerely,AmuwaCorporation,'), 'the edited sign-off');
+await expect(/Edited for this letter/.test(await off.innerText()), 'the form says the wording was edited for this letter');
+await p.screenshot({ path: `${OUT}/hrdoc-5-offer.png`, fullPage: true });
+await off.getByRole('button', { name: /Generate PDF/ }).click();
+await off.getByText(/Saved to Anita Working's record/).waitFor({ timeout: 20000 }).catch(() => fail('the Offer Letter was not generated'));
+let offerRow = (await rowsOf('HR:E2E-ANITA')).find(d => d.doc_type === 'OFFER');
+await expect(offerRow && offerRow.fields.templateVersion === 1 && offerRow.fields.content.signOff === 'Yours sincerely, Amuwa Corporation,' && offerRow.fields.salary === '₹25,000/- per month',
+  'the Offer Letter is stored against the employee with its wording and template version');
+const [d3] = await Promise.all([p.waitForEvent('download', { timeout: 20000 }), off.getByRole('button', { name: 'Download PDF', exact: true }).click()]);
+await d3.saveAs(`${OUT}/downloaded-offer.pdf`);
+const od = await pdfText(fs.readFileSync(`${OUT}/downloaded-offer.pdf`));
+await expect(d3.suggestedFilename() === `Offer-Letter-Anita-Working-${today}.pdf` && od.text.includes('Yourssincerely,AmuwaCorporation,') && od.text.includes('AnitaWorking'), 'the Offer Letter downloads as the stored file');
+await expect(/Issued · template v1/.test(await off.innerText()) && /Offer Letter/.test(await off.getByText('Documents generated for Anita Working').locator('..').innerText()), 'the history lists the issued Offer Letter with its template version');
+const tplBefore = (await q(`select count(*)::int as n from hr_letter_templates where doc_type = 'OFFER'`))[0].n;
+await expect(tplBefore === 1, 'editing one letter did not change the master template');
+
+// ---- the master template: a new version for new letters; the issued letter keeps its wording
+await p.locator('main').getByRole('button', { name: 'Master template', exact: true }).click();
+const tpl = p.locator('[data-testid="template-manager-OFFER"]');
+await tpl.waitFor({ timeout: 20000 }).catch(() => fail('the master template did not open'));
+await expect(/Current version v1/.test(await tpl.innerText()), 'the master template shows version 1');
+await tpl.getByLabel('Sign-off').fill('Regards, Amuwa Corporation,');
+await tpl.getByLabel('What changed (optional)').fill('New sign-off');
+await tpl.getByRole('button', { name: 'Save as version 2' }).click();
+await tpl.getByText('Current version').filter({ hasText: 'v2' }).waitFor({ timeout: 20000 }).catch(() => fail('version 2 was not saved'));
+await expect(/New sign-off/.test(await tpl.innerText()), 'version 2 is saved and listed with its note');
+await tpl.getByRole('button', { name: 'View version 1' }).click();
+await expect(await tpl.locator('[data-testid="template-version-view"]').getByLabel('Sign-off').inputValue() === 'For Amuwa Corporation,', 'version 1 stays readable, unchanged');
+await p.screenshot({ path: `${OUT}/hrdoc-6-template.png`, fullPage: true });
+offerRow = (await q(`select fields from hr_documents where id = $1`, [offerRow.id]))[0];
+await expect(offerRow.fields.content.signOff === 'Yours sincerely, Amuwa Corporation,' && offerRow.fields.templateVersion === 1, 'the issued Offer Letter keeps its own wording after the master changes');
+await p.locator('main').getByRole('button', { name: 'Generate & issue', exact: true }).click();
+const off2 = p.locator('[data-testid="hr-doc-studio-OFFER"]');
+await off2.getByLabel('Employee *').selectOption('HR:E2E-ANITA');
+await off2.getByLabel('Reporting to *').waitFor({ timeout: 20000 });
+await off2.getByLabel('Reporting to *').fill('Team Leader');
+await waitPreview(p, x => x.text.includes('Regards,AmuwaCorporation,') && x.text.includes('AnitaWorking'), 'a new letter with version 2');
+await expect(/Master template v2/.test(await off2.innerText()), 'a new letter starts from version 2');
+
+// ---- the sidebar: Employee Letters
+const side = p.locator('#app-sidebar');
+await expect(/Employee Letters/i.test(await side.innerText()), 'the HR menu has an Employee Letters section');
+await side.getByRole('button', { name: 'Experience Letter', exact: true }).click();
+await p.locator('[data-testid="hr-doc-studio-EXPERIENCE"]').waitFor({ timeout: 20000 }).catch(() => fail('Experience Letter in the menu did not open the letter'));
+await side.getByRole('button', { name: 'NDA Letter', exact: true }).click();
+await p.locator('[data-testid="hr-doc-studio-NDA"]').waitFor({ timeout: 20000 }).catch(() => fail('NDA Letter in the menu did not open the letter'));
+await side.getByRole('button', { name: 'Offer Letter', exact: true }).click();
+await p.locator('[data-testid="hr-doc-studio-OFFER"]').waitFor({ timeout: 20000 }).catch(() => fail('Offer Letter in the menu did not open the letter'));
+await expect(true, 'NDA, Offer and Experience Letter in the menu each open their letter');
 
 // ---- someone who is not HR staff
 const neha = await idOf('neha@amuwa.com');
@@ -246,7 +313,7 @@ await expect(denied.status === 403, 'a sales member is refused by the API (403)'
 
 // ---- a phone: nothing overflows sideways
 await p.setViewportSize({ width: 390, height: 800 });
-await p.getByRole('button', { name: 'Experience Letter' }).first().click();
+await p.locator('main').getByRole('button', { name: 'Experience Letter' }).click();
 await p.locator('[data-testid="hr-doc-studio-EXPERIENCE"]').waitFor();
 await expect(await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'a phone: the page does not scroll sideways');
 await p.screenshot({ path: `${OUT}/hrdoc-4-phone.png` });
