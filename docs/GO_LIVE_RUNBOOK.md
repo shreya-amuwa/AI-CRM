@@ -16,7 +16,7 @@ Paste secrets only into the Cloudflare, Vercel, AWS and Supabase dashboards: nev
 | 3 | Access to the **DNS of `amuwa.com`** (for AWS SES's records) | `AWS_SES_SETUP.md` | Phase 0 |
 | 4 | An **AWS account** and SES production access | `AWS_SES_SETUP.md` | Phase 0 (takes about a day) |
 | 5 | A copy of **every Vercel environment variable** of the CRM project | Cloudflare Worker settings | Phase 2 |
-| 6 | Two new random secrets: `CRON_SECRET` and `PORTAL_FORWARD_SECRET` (32+ characters each; e.g. a password manager's generator, 40 letters and digits) | Cloudflare (+ Vercel portal for the second) | Phase 2 / 7 |
+| 6 | Two new random secrets: `PORTAL_FORWARD_SECRET` and `CRON_SECRET` (32+ characters each; e.g. a password manager's generator, 40 letters and digits) | the first on both Vercel projects (Phase 1) and later Cloudflare; the second on Cloudflare | Phase 1 / 2 |
 | 7 | A **Turnstile widget** (Cloudflare dashboard -> Turnstile -> Add widget; hostname = the Candidate Portal's domain; mode Managed): its site key and secret key | Portal (site key), Cloudflare Worker (secret) | Phase 7 |
 | 8 | Two test accounts per role you want checked (staff, client, candidate), not real customers | rehearsal checklist | Phase 2 |
 | 9 | A quiet weekday evening, **11 PM IST**, with about an hour free, and no other merges that day | — | Phase 4 |
@@ -35,12 +35,25 @@ Paste secrets only into the Cloudflare, Vercel, AWS and Supabase dashboards: nev
 
 ## Phase 1: merge the code (nothing changes for users)
 
-Merge in this order, each after its checks are green:
+**First, the shared secret (before merging anything).** The new sign-up and sign-in limits count each candidate by the address the
+portal forwards, signed with `PORTAL_FORWARD_SECRET`. Without the secret every candidate looks like the portal's one address, and the
+stricter limits (5 sign-ups an hour per address) would briefly apply to everyone together. So:
 
-1. AI-CRM pull request **Cloudflare Workers** (`claude/gracious-lovelace-j9twbe`)
-2. AI-CRM pull request **AWS SES** (`claude/ses-email`)
-3. AI-CRM pull request **Abuse protection** (`claude/abuse-protection`)
-4. Candidate Portal pull request **Abuse protection** (`claude/abuse-protection`)
+1. Make one random secret of 40 letters and digits.
+2. Vercel -> **CRM** project -> Settings -> Environment Variables -> `PORTAL_FORWARD_SECRET` = the secret (all environments).
+3. Vercel -> **Candidate Portal** project -> the same variable, same value (server only: not `NEXT_PUBLIC_`).
+   Setting them changes nothing until the new code is deployed.
+
+Then merge in this order, each after its checks are green:
+
+1. Candidate Portal pull request **Abuse protection** (`claude/abuse-protection`). It starts sending the signed address, which the
+   current CRM simply ignores; its new check before sign-in answers "not found" on the current CRM, which the portal treats as allowed.
+2. AI-CRM pull request **Cloudflare Workers** (`claude/gracious-lovelace-j9twbe`)
+3. AI-CRM pull request **AWS SES** (`claude/ses-email`)
+4. AI-CRM pull request **Abuse protection** (`claude/abuse-protection`). From its deployment on, limits count each candidate separately.
+
+Check after the last one: sign up a test candidate on the portal, sign in, apply to a test job. Security & Audit log: the
+`CANDIDATE_REGISTERED` entry shows your own address, not Vercel's.
 
 The three AI-CRM pull requests build on each other: after merging one, GitHub moves the next onto `main` (if it says "This branch has
 conflicts" or still shows the earlier commits, ask for it to be updated before merging). Use **Create a merge commit** or **Squash and
@@ -69,7 +82,7 @@ the previous version, which is fine until Phase 4.
    | `CRON_SECRET` (secret) | new random 32+ characters | |
    | `APP_URL` | `https://crm.amuwacorporation.com` | |
 
-   **Do not set** `TURNSTILE_*` or `PORTAL_FORWARD_SECRET` yet (Phase 7).
+   `PORTAL_FORWARD_SECRET` comes over with the other Vercel variables (Phase 1). **Do not set** `TURNSTILE_*` yet (Phase 7).
 3. Deployments -> the latest -> it should say **Success**. Open `https://ai-crm.<your-subdomain>.workers.dev/api/v1/health`: expect
    `"status":"ok"` and `"serviceRoleKey":"configured"`.
 4. **Rehearsal checklist** on the `workers.dev` address, with test accounts (real data: do not change real customers):
@@ -153,9 +166,7 @@ CPU time per request should stay far below the 30-second limit.
 
 ## Phase 7: abuse protection on
 
-1. **Visitor address:** set the same `PORTAL_FORWARD_SECRET` on the Worker (secret) and on the Candidate Portal's Vercel project
-   (Settings -> Environment Variables, server only), then redeploy the portal. Check: Security & Audit log entries for candidates now show
-   candidates' own addresses.
+1. **Visitor address:** already done in Phase 1 (the Worker got `PORTAL_FORWARD_SECRET` with the other Vercel variables in Phase 2).
 2. **Turnstile:** Worker secrets `TURNSTILE_SECRET_KEY`, variables `TURNSTILE_ALLOWED_HOSTNAMES` = the portal's host name and
    `TURNSTILE_MODE` = `log`; portal Vercel variable `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, redeploy the portal. Check: the portal's sign-in page
    shows the small Cloudflare check; signing in works.
