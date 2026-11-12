@@ -23,13 +23,15 @@ import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
-import { ATTENDANCE_NAV_ID } from '../layout/shell';
-import { Clock3 } from 'lucide-react';
+import { ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, meetingsRequested } from '../layout/shell';
+import { CalendarDays, Clock3 } from 'lucide-react';
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
+const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 
 export type TeamMemberNav =
   | '__attendance'
+  | '__meetings'
   | 'home'
   | 'leads'
   | 'potential'
@@ -75,6 +77,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   const navItems = [
     // Punch In / Punch Out and lunch (20261230000400): the first entry, as in every dashboard's menu
     { id: ATTENDANCE_NAV_ID as TeamMemberNav, label: 'Attendance', icon: Clock3 },
+    // Meetings with Google Calendar, booking links and requests to the CEO
+    { id: MEETINGS_NAV_ID as TeamMemberNav, label: 'Meetings', icon: CalendarDays },
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
     { id: 'leads' as TeamMemberNav, label: 'My Leads', icon: UserCheck },
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
@@ -93,7 +97,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   // the menu reads in sections, like the Department Head's: the label is shown above the first entry of each
   const SECTION_LABEL: Partial<Record<TeamMemberNav, string>> = { leads: 'Sales', 'work-tasks': 'Work', settings: 'Team' };
 
-  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(activeNav || 'leads');
+  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(meetingsRequested() ? MEETINGS_NAV_ID : activeNav || 'leads');
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
 
   React.useEffect(() => {
@@ -225,7 +229,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {currentNav === 'raise-issue' && <IssuesRoute />}
           {currentNav === 'work-reports' && <ReportsRoute />}
           {currentNav === ATTENDANCE_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense>}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || currentNav === ATTENDANCE_NAV_ID}>{children}</div>
+          {currentNav === MEETINGS_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><MeetingsPage /></React.Suspense>}
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID}>{children}</div>
         </main>
       </div>
     </div>

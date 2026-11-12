@@ -358,6 +358,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'canManage', m.source_type is null and private.mtg_can_manage(m, p_viewer),
     'canDecide', m.status = 'REQUESTED' and private.mtg_can_decide(m, p_viewer),
     'canAnswerProposal', m.status = 'PROPOSED' and (m.created_by = p_viewer or (m.created_by is null and private.mtg_can_manage(m, p_viewer))),
+    'myResponse', (select a.response from public.meeting_attendees a where a.meeting_id = m.id and a.profile_id = p_viewer),
     'attendees', coalesce((select jsonb_agg(jsonb_build_object('id', a.id, 'profileId', a.profile_id, 'name', coalesce(p.full_name, a.name),
                     'email', coalesce(p.email, a.email), 'phone', a.phone, 'role', a.role, 'response', a.response) order by a.created_at)
                     from public.meeting_attendees a left join public.profiles p on p.id = a.profile_id where a.meeting_id = m.id), '[]'::jsonb))

@@ -5633,6 +5633,8 @@ export interface Meeting {
   canManage: boolean;
   canDecide: boolean;
   canAnswerProposal: boolean;
+  /** The viewer's own answer when they are an invited colleague; null otherwise. */
+  myResponse: MeetingAttendee['response'] | null;
   attendees: MeetingAttendee[];
 }
 
