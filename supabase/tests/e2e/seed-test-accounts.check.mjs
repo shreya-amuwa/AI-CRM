@@ -34,7 +34,7 @@ const expected = {
   'qa.accounts.member': { role: 'TEAM_MEMBER', dash: 'accounts-staff' },
   'qa.accounts.lead': { role: 'TEAM_HEAD', dash: 'accounts-staff' },
   'qa.hr.member': { role: 'TEAM_MEMBER' },
-  'qa.hr.lead': { role: 'TEAM_HEAD' }
+  'qa.hr.recruiter': { role: 'TEAM_MEMBER', dash: 'hr-recruiter' }
 };
 const opsToken = {};
 for (const r of table) {

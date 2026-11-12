@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -89,6 +89,7 @@ export type ActiveTab =
   | 'hr_letter_nda'
   | 'hr_letter_offer'
   | 'hr_letter_experience'
+  | 'my_attendance'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -367,15 +368,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Chat sits just above the Notification Center in every department's menu
   const chatTab = { id: CHAT_NAV.id as ActiveTab, label: CHAT_NAV.label, icon: CHAT_NAV.icon };
   const lastTab = departmentNav[departmentNav.length - 1];
-  const navItems: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
+  const withChat: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
+  // Attendance (Punch In / Out, lunch) is the first entry of every department's menu, as in every other dashboard
+  const navItems: typeof departmentNav = [{ id: 'my_attendance' as ActiveTab, label: 'Attendance', icon: Clock3 }, ...withChat];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
   const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
   const LETTER_IDS: string[] = key === 'hr' ? HR_LETTER_NAV.map(i => i.id) : [];
   const navSections = groupNavItems(navItems, [
-    { ids: navItems.slice(0, 1).map(i => i.id) },
-    { label: 'Work', ids: navItems.slice(1).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
+    { ids: navItems.slice(0, 2).map(i => i.id) },
+    { label: 'Work', ids: navItems.slice(2).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
     ...(LETTER_IDS.length ? [{ label: 'Employee Letters', ids: LETTER_IDS }] : []),
     { label: 'Team', ids: TEAM_IDS.filter(id => !COMMUNICATION_IDS.includes(id) && navItems.some(i => i.id === id)) },
     ...(COMMUNICATION_IDS.length ? [{ label: 'Communication', ids: COMMUNICATION_IDS.filter(id => navItems.some(i => i.id === id)) }] : [])
