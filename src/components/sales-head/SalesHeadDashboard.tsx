@@ -140,7 +140,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'leads-list' && <LeadList key={intent.n} initialFilter={intent.filter} go={go} />}
       {page === 'leads-assign' && <LeadAssign />}
       {(page === 'my-leads' || page === 'my-potential' || page === 'my-onboarding' || page === 'my-part-payments') && (
-        <PipelineWorkspace section={MY_SECTION[page]} counts={pipelineCounts} leadFilters resetKey={intent.n} onNavigate={s => go(MY_PAGE[s])} />
+        <PipelineWorkspace section={MY_SECTION[page]} counts={pipelineCounts} ownOnly resetKey={intent.n} onNavigate={s => go(MY_PAGE[s])} />
       )}
       {page === 'tasks' && <SalesDailyTasks key={intent.n} initialFilter={intent.filter} />}
       {page === 'field-visit-leads' && !operationsHead && <FieldVisitLeadQueuePage />}

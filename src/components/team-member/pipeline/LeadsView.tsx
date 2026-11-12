@@ -79,9 +79,11 @@ export const LeadsView: React.FC<{
   onAdd: () => void;
   onEdit: (id: string) => void;
   scope?: LeadsViewScope;
+  /** Only the signed-in person's own leads (a Team Lead's or Department Head's "My Leads"). */
+  mine?: boolean;
   /** Business Associate: the five filters (All Leads, My Leads, Department Leads, To Accounts, Returned by Accounts) above the list. */
   leadFilters?: boolean;
-}> = ({ counts, showInbound = true, onAdd, onEdit, scope, leadFilters = false }) => {
+}> = ({ counts, showInbound = true, onAdd, onEdit, scope, leadFilters = false, mine = false }) => {
   const [lscope, setLscope] = useState<LeadScope>('ALL');
   const { counts: scopeCounts, error: scopeCountsError, refresh: refreshScopeCounts } = useLeadScopeCounts();
   const [statusCounts, setStatusCounts] = useState<Partial<Record<LeadStatus, number>>>({});
@@ -135,6 +137,7 @@ export const LeadsView: React.FC<{
       .list({
         stage: 'LEAD',
         ...(scope ? { departmentId: scope.departmentId, division: scope.division, ownerId: owner || undefined } : {}),
+        mine: mine || undefined,
         page,
         pageSize: 10,
         search: debounced || undefined,
@@ -150,7 +153,7 @@ export const LeadsView: React.FC<{
         err => seq === requestSeq.current && setError(errorMessage(err))
       )
       .finally(() => seq === requestSeq.current && setLoading(false));
-  }, [page, debounced, service, source, status, followUp, scope?.departmentId, scope?.division, owner, lscope, leadFilters]);
+  }, [page, debounced, service, source, status, followUp, scope?.departmentId, scope?.division, owner, lscope, leadFilters, mine]);
 
   useEffect(load, [load]);
   useEffect(() => setPage(1), [debounced, service, source, status, followUp, owner, lscope]);
