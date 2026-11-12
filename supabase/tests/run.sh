@@ -43,6 +43,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_email_test.sql 2>&1 | sed -E "s
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_documents_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_letter_templates_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_employee_files_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/security_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 

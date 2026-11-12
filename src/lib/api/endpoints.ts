@@ -151,6 +151,9 @@ import type {
   DocumentUploadTicket,
   TicketAttachment,
   TicketUploadTicket,
+  HrEmployeeFile,
+  HrEmployeeFileKind,
+  HrEmployeeFileUploadTicket,
   AttributionReconciliation,
   ClientPurchaseRule,
   DepartmentIncomeReport,
@@ -926,6 +929,16 @@ export const clientWorkApi = {
   decidePlanRequest: (id: string, body: { decision: 'APPROVE' | 'REJECT' | 'ACTIVATE'; note?: string | null; paymentConfirmed?: boolean; renewsOn?: string | null }) =>
     api.post<null>(`/accounts/plan-requests/${id}/decision`, body),
   replyToClient: (ticketId: string, message: string) => api.post<null>(`/support/tickets/${ticketId}/client-reply`, { message })
+};
+/** Documents on an employee's HR profile, stored in R2 (HR staff upload / delete; the employee may read their own). */
+export const hrEmployeeFilesApi = {
+  list: (employeeKey: string) => api.get<HrEmployeeFile[]>('/hr/employee-files', { employeeKey }),
+  begin: (body: { employeeKey: string; kind: HrEmployeeFileKind; fileName: string; mimeType: string; sizeBytes: number; leaveRef?: string | null; note?: string | null }) =>
+    api.post<HrEmployeeFileUploadTicket>('/hr/employee-file-uploads', body),
+  complete: (id: string) => api.post<HrEmployeeFile>(`/hr/employee-file-uploads/${id}/complete`, {}),
+  abort: (id: string) => api.post<null>(`/hr/employee-file-uploads/${id}/abort`, {}),
+  url: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/hr/employee-files/${id}/url`, { action }),
+  remove: (id: string) => api.delete<null>(`/hr/employee-files/${id}`)
 };
 /** Files on tickets for staff: the server checks the person may see the ticket (or the customer, for a new ticket). */
 export const ticketFilesApi = {

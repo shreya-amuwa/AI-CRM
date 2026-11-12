@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { formatDay } from '../../../lib/officeTime';
 import { 
   X, User, ShieldCheck, AlertCircle, Upload, Download, 
@@ -7,6 +7,14 @@ import {
 } from 'lucide-react';
 import { Employee, UploadedDocument, DetailedLeaveRecord } from '../../../types/amuwaHq';
 import { DocumentPreviewModal } from '../../common/DocumentPreviewModal';
+import { HR_EMPLOYEE_FILE_KIND_LABEL, HR_EMPLOYEE_FILE_KINDS, type HrEmployeeFile, type HrEmployeeFileKind } from '../../../../shared/contracts';
+import { hrEmployeeFilesApi } from '../../../lib/api/endpoints';
+import { hrEmployeeKeyOf, uploadHrEmployeeFile } from '../../../lib/hrEmployeeFiles';
+
+/** What HR picks from when uploading to the documents vault (leave mails are uploaded from the leave form). */
+const VAULT_KINDS = HR_EMPLOYEE_FILE_KINDS.filter(k => k !== 'LEAVE_MAIL' && k !== 'LEAVE_CANCELLATION_MAIL');
+const FILE_ACCEPT = '.pdf,.png,.jpg,.jpeg,.docx,.eml';
+const errorText = (err: unknown, fallback: string) => (err instanceof Error && err.message ? err.message : fallback);
 
 interface EmployeeProfileModalProps {
   employee: Employee;
@@ -70,29 +78,70 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   const [cancelReason, setCancelReason] = useState('');
   const [cancelMailFile, setCancelMailFile] = useState<File | null>(null);
 
-  // 2. Document Upload Handler
-  const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  // 2. Documents vault: files are stored in R2 through the API (only their metadata in the database) and listed from there,
+  //    so they survive a refresh. HR staff upload / delete; every preview / download gets a short-lived signed link.
+  const employeeKey = emp.profileId || emp.id ? hrEmployeeKeyOf(emp) : null;
+  const [files, setFiles] = useState<HrEmployeeFile[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
+  const [uploadKind, setUploadKind] = useState<HrEmployeeFileKind>('IDENTITY');
+  const [uploading, setUploading] = useState(false);
+  const [leaveBusy, setLeaveBusy] = useState(false);
 
-    const newDocs: UploadedDocument[] = [];
-    Array.from(files).forEach((file, index) => {
-      const url = URL.createObjectURL(file);
-      newDocs.push({
-        id: `DOC-${Date.now()}-${index}`,
-        name: file.name,
-        fileUrl: url,
-        fileType: file.type,
-        uploadedAt: new Date().toISOString().split('T')[0]
-      });
-    });
+  useEffect(() => {
+    if (!employeeKey) return;
+    let live = true;
+    setFilesLoading(true);
+    hrEmployeeFilesApi.list(employeeKey).then(
+      list => { if (live) { setFiles(list); setFilesError(null); } },
+      err => { if (live) setFilesError(errorText(err, 'Could not load the documents.')); }
+    ).finally(() => { if (live) setFilesLoading(false); });
+    return () => { live = false; };
+  }, [employeeKey]);
 
-    const updated = {
-      ...emp,
-      uploadedDocs: [...newDocs, ...(emp.uploadedDocs || [])]
-    };
-    setEmp(updated);
-    onUpdateEmployee(updated);
+  const fileById = (id?: string) => (id ? files.find(f => f.id === id) : undefined);
+
+  const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const picked = Array.from(input.files ?? []);
+    input.value = '';
+    if (!picked.length || uploading) return;
+    setUploading(true);
+    setFilesError(null);
+    const problems: string[] = [];
+    for (const file of picked) {
+      try {
+        const saved = await uploadHrEmployeeFile(emp, file, uploadKind);
+        setFiles(prev => [saved, ...prev]);
+      } catch (err) {
+        problems.push(`${file.name}: ${errorText(err, 'upload failed.')}`);
+      }
+    }
+    if (problems.length) setFilesError(problems.join(' '));
+    setUploading(false);
+  };
+
+  const openFile = async (file: HrEmployeeFile, action: 'view' | 'download') => {
+    try {
+      const link = await hrEmployeeFilesApi.url(file.id, action);
+      if (action === 'download') {
+        window.location.assign(link.url);
+        return;
+      }
+      setSelectedPreviewDoc({ id: file.id, name: file.fileName, fileUrl: link.url, fileType: file.mimeType, uploadedAt: file.createdAt.slice(0, 10) });
+    } catch (err) {
+      setFilesError(errorText(err, 'Could not open the document.'));
+    }
+  };
+
+  const deleteFile = async (file: HrEmployeeFile) => {
+    if (!window.confirm(`Delete "${file.fileName}" from this employee's documents? This cannot be undone.`)) return;
+    try {
+      await hrEmployeeFilesApi.remove(file.id);
+      setFiles(prev => prev.filter(f => f.id !== file.id));
+    } catch (err) {
+      setFilesError(errorText(err, 'Could not delete the document.'));
+    }
   };
 
   // 3. Toggle Documents Collected Status (Green vs Red)
@@ -103,24 +152,36 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   };
 
   // 4. File New Leave / Half-Day with Custom Time Inputs & Mandatory Mail Attachment
-  const handleFileLeaveSubmit = (e: React.FormEvent) => {
+  const handleFileLeaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (leaveBusy) return;
     if (!leaveMailFile) {
       alert('Mandatory Mail Attachment Required: Please attach approval email screenshot or PDF file from your computer!');
       return;
     }
 
-    const mailUrl = URL.createObjectURL(leaveMailFile);
+    const leaveId = `LR-${Date.now()}`;
+    let mail: HrEmployeeFile;
+    setLeaveBusy(true);
+    try {
+      mail = await uploadHrEmployeeFile(emp, leaveMailFile, 'LEAVE_MAIL', { leaveRef: leaveId });
+    } catch (err) {
+      alert(`The mail attachment could not be saved: ${errorText(err, 'upload failed.')}`);
+      setLeaveBusy(false);
+      return;
+    }
+    setLeaveBusy(false);
+    setFiles(prev => [mail, ...prev]);
     const newRecord: DetailedLeaveRecord = {
-      id: `LR-${Date.now()}`,
+      id: leaveId,
       employeeId: emp.id,
       leaveType,
       date: leaveDate,
       customStartTime: customStartTime || '09:30 AM',
       customEndTime: customEndTime || '06:30 PM',
       reason: leaveReason || `${leaveType} noted`,
-      mailAttachmentName: leaveMailFile.name,
-      mailAttachmentUrl: mailUrl,
+      mailAttachmentName: mail.fileName,
+      mailFileId: mail.id,
       status: 'Active',
       submittedAt: new Date().toISOString()
     };
@@ -144,14 +205,25 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   };
 
   // 5. Cancel Leave with Mandatory Cancellation Mail Attachment
-  const handleConfirmCancelLeave = (e: React.FormEvent) => {
+  const handleConfirmCancelLeave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (leaveBusy) return;
     if (!cancellingLeaveId || !cancelMailFile) {
       alert('Mandatory Cancellation Mail Attachment Required: Please attach cancellation approval mail file!');
       return;
     }
 
-    const cancelMailUrl = URL.createObjectURL(cancelMailFile);
+    let cancelMail: HrEmployeeFile;
+    setLeaveBusy(true);
+    try {
+      cancelMail = await uploadHrEmployeeFile(emp, cancelMailFile, 'LEAVE_CANCELLATION_MAIL', { leaveRef: cancellingLeaveId, note: cancelReason || null });
+    } catch (err) {
+      alert(`The cancellation mail could not be saved: ${errorText(err, 'upload failed.')}`);
+      setLeaveBusy(false);
+      return;
+    }
+    setLeaveBusy(false);
+    setFiles(prev => [cancelMail, ...prev]);
 
     const targetLeave = emp.leaveHistory.find(l => l.id === cancellingLeaveId);
     let newHalfDays = emp.halfDaysCount;
@@ -167,8 +239,8 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
         return {
           ...record,
           status: 'Cancelled' as const,
-          cancellationMailName: cancelMailFile.name,
-          cancellationMailUrl: cancelMailUrl,
+          cancellationMailName: cancelMail.fileName,
+          cancellationMailFileId: cancelMail.id,
           cancellationReason: cancelReason || 'Leave cancelled by HR approval'
         };
       }
@@ -382,37 +454,52 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
             <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <span className="text-xs font-mono font-bold text-slate-700 uppercase">
-                  Uploaded Document Files ({emp.uploadedDocs?.length || 0})
+                  Uploaded Document Files ({files.length})
                 </span>
 
-                <button
-                  type="button"
-                  onClick={() => docInputRef.current?.click()}
-                  className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-mono font-bold border border-blue-200 flex items-center gap-1.5"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Documents from Computer</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    aria-label="Document kind"
+                    value={uploadKind}
+                    onChange={e => setUploadKind(e.target.value as HrEmployeeFileKind)}
+                    className="px-2 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-mono text-slate-700"
+                  >
+                    {VAULT_KINDS.map(k => <option key={k} value={k}>{HR_EMPLOYEE_FILE_KIND_LABEL[k]}</option>)}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!employeeKey || uploading}
+                    onClick={() => docInputRef.current?.click()}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-mono font-bold border border-blue-200 flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{uploading ? 'Uploading…' : 'Upload Documents from Computer'}</span>
+                  </button>
+                </div>
 
                 <input
                   ref={docInputRef}
                   type="file"
                   multiple
-                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                  accept={FILE_ACCEPT}
                   onChange={handleDocumentUpload}
                   className="hidden"
                 />
               </div>
+              <p className="text-[10px] font-mono text-slate-400">PDF, JPG, PNG, Word (.docx) or e-mail (.eml), up to 5 MB each. Visible only to HR and to the employee.</p>
+              {filesError && <p role="alert" className="text-xs text-rose-600">{filesError}</p>}
 
-              {emp.uploadedDocs && emp.uploadedDocs.length > 0 ? (
+              {files.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {emp.uploadedDocs.map(doc => (
+                  {files.map(doc => (
                     <div key={doc.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2 overflow-hidden">
                         <FileText className="w-4 h-4 text-blue-600 shrink-0" />
                         <div className="truncate">
-                          <span className="font-semibold text-slate-900 block truncate">{doc.name}</span>
-                          <span className="text-[10px] font-mono text-slate-400">Uploaded: {doc.uploadedAt}</span>
+                          <span className="font-semibold text-slate-900 block truncate">{doc.fileName}</span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {HR_EMPLOYEE_FILE_KIND_LABEL[doc.kind]} · Uploaded: {doc.createdAt.slice(0, 10)}{doc.uploadedBy ? ` by ${doc.uploadedBy}` : ''}
+                          </span>
                         </div>
                       </div>
 
@@ -420,7 +507,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                         {/* PREVIEW BUTTON */}
                         <button
                           type="button"
-                          onClick={() => setSelectedPreviewDoc(doc)}
+                          onClick={() => openFile(doc, 'view')}
                           className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-mono font-bold flex items-center gap-1"
                         >
                           <Eye className="w-3 h-3" />
@@ -428,20 +515,31 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                         </button>
 
                         {/* DOWNLOAD BUTTON */}
-                        <a
-                          href={doc.fileUrl}
-                          download={doc.name}
+                        <button
+                          type="button"
+                          onClick={() => openFile(doc, 'download')}
                           className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-mono font-bold flex items-center gap-1"
                         >
                           <Download className="w-3 h-3" />
                           <span>Download</span>
-                        </a>
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-label={`Delete ${doc.fileName}`}
+                          onClick={() => deleteFile(doc)}
+                          className="p-1 rounded-lg bg-white hover:bg-rose-50 border border-slate-200 text-rose-600"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-slate-400 italic py-2 text-center">No document files uploaded yet. Click above to upload files from your computer.</p>
+                <p className="text-xs text-slate-400 italic py-2 text-center">
+                  {filesLoading ? 'Loading documents…' : 'No document files uploaded yet. Click above to upload files from your computer.'}
+                </p>
               )}
             </div>
           </div>
@@ -547,7 +645,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                     <input
                       type="file"
                       required
-                      accept="image/*,.pdf,.doc,.docx"
+                      accept={FILE_ACCEPT}
                       onChange={e => setLeaveMailFile(e.target.files?.[0] || null)}
                       className="text-xs font-mono"
                     />
@@ -570,9 +668,10 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 rounded-xl bg-amber-600 text-white font-bold font-mono shadow-sm"
+                    disabled={leaveBusy}
+                    className="px-4 py-1.5 rounded-xl bg-amber-600 text-white font-bold font-mono shadow-sm disabled:opacity-50"
                   >
-                    Submit Leave Request
+                    {leaveBusy ? 'Saving…' : 'Submit Leave Request'}
                   </button>
                 </div>
               </form>
@@ -612,14 +711,15 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                         <td className="p-3">
                           <p className="text-slate-800">{rec.reason}</p>
                           {rec.mailAttachmentName && (
-                            <a
-                              href={rec.mailAttachmentUrl || '#'}
-                              download={rec.mailAttachmentName}
-                              className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 underline mt-0.5"
+                            <button
+                              type="button"
+                              disabled={!fileById(rec.mailFileId)}
+                              onClick={() => { const f = fileById(rec.mailFileId); if (f) openFile(f, 'view'); }}
+                              className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 underline mt-0.5 disabled:text-slate-400 disabled:no-underline"
                             >
                               <Paperclip className="w-3 h-3" />
                               <span>{rec.mailAttachmentName}</span>
-                            </a>
+                            </button>
                           )}
                           {rec.status === 'Cancelled' && (
                             <p className="text-[10px] font-mono text-rose-600 mt-1 italic">
@@ -757,7 +857,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                 <input
                   type="file"
                   required
-                  accept="image/*,.pdf,.doc,.docx"
+                  accept={FILE_ACCEPT}
                   onChange={e => setCancelMailFile(e.target.files?.[0] || null)}
                   className="text-xs font-mono pt-1"
                 />
@@ -773,9 +873,10 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 py-2 rounded-xl bg-rose-600 text-white font-bold font-mono shadow-sm"
+                  disabled={leaveBusy}
+                  className="w-1/2 py-2 rounded-xl bg-rose-600 text-white font-bold font-mono shadow-sm disabled:opacity-50"
                 >
-                  Confirm Cancellation
+                  {leaveBusy ? 'Saving…' : 'Confirm Cancellation'}
                 </button>
               </div>
             </form>

@@ -10191,6 +10191,116 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- HR employee files: documents on an employee's HR profile, stored in R2, metadata in Supabase (migration 20261231000800) ------------------
+{
+  const R2 = { key: 'r2-hef-key', secret: 'r2-hef-secret', bucket: 'amuwa-files' };
+  const fake = await startFakeR2({ ...R2, cors: false });
+  const objects = fake.objects;
+  Object.assign(process.env, { STORAGE_PROVIDER: 'r2', R2_ENDPOINT: fake.endpoint, R2_ACCESS_KEY_ID: R2.key, R2_SECRET_ACCESS_KEY: R2.secret, R2_BUCKET: R2.bucket });
+  const EMP = deliveryMember; // a CRM member: their key is their profile id, and they may read their own files ('tm2')
+  const ONLY = 'HR:APIHEF-ONLY';
+  await db.query(`insert into public.hr_employees (id, name, email, department_id, status, joining_date, data) values ('APIHEF-ONLY', 'Hef Only', 'apihef@example.com', 'wabastore', 'Full-Time', '2024-01-02', '{}')
+                  on conflict (id) do nothing`);
+  const idPdf = Buffer.concat([Buffer.from('%PDF-1.4\n% id proof\n'), Buffer.alloc(3000, 0x20), Buffer.from('\n%%EOF\n')]);
+  const eml = Buffer.from('From: Manager <manager@example.com>\r\nTo: hr@example.com\r\nSubject: Leave approved\r\n\r\nApproved for 12 Nov.\r\n');
+  const docx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(500, 0x01)]);
+  const upload = async (who: string, body: Record<string, unknown>, bytes: Buffer) => {
+    const b = await api(who, 'POST', '/hr/employee-file-uploads', { sizeBytes: bytes.length, ...body });
+    if (b.status !== 201) return { begin: b, done: null as any };
+    const sent = await fetch(b.json.data.upload.url, { method: 'PUT', headers: b.json.data.upload.headers, body: bytes });
+    if (!sent.ok) throw new Error(`hr files: PUT to R2 failed ${sent.status}`);
+    return { begin: b, done: await api(who, 'POST', `/hr/employee-file-uploads/${b.json.data.file.id}/complete`) };
+  };
+
+  // HR uploads an ID proof: presigned PUT straight to R2, the server checks the stored object, only metadata goes to the database
+  let u = await upload('hr', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'Aadhaar card.pdf', mimeType: 'application/pdf' }, idPdf);
+  check(u.begin.status === 201 && u.begin.json.data.provider === 'R2' && u.begin.json.data.upload?.url && !u.begin.json.data.token, 'hr files: the upload is a presigned PUT to R2', u.begin);
+  check(u.done.status === 200 && u.done.json.data.kind === 'IDENTITY' && u.done.json.data.fileName === 'Aadhaar card.pdf' && u.done.json.data.sizeBytes === idPdf.length,
+    'hr files: completing the upload keeps the file', u.done);
+  const idFile = u.done.json.data;
+  const key = `hr-employee-files/${u.begin.json.data.path}`;
+  check(objects.has(key) && objects.get(key)!.body.equals(idPdf), 'hr files: the bytes are in R2');
+  const row = (await db.query(`select * from public.hr_employee_files where id = $1`, [idFile.id])).rows[0];
+  const cols = Object.keys(row);
+  check(row.status === 'READY' && row.storage_provider === 'R2' && row.storage_ref === `r2://${R2.bucket}/${key}` && row.storage_etag === crypto.createHash('md5').update(idPdf).digest('hex')
+        && Number(row.size_bytes) === idPdf.length && row.profile_id === EMP,
+    'hr files: Supabase keeps only the reference (provider, key, ETag, size) read back from R2', row);
+  check(!cols.some(c => /bytes?$|content|data|blob/.test(c) && c !== 'size_bytes'), 'hr files: the table has no column for file contents', cols);
+
+  // a leave mail (.eml) and a leave cancellation mail, linked to the leave record
+  u = await upload('hr', { employeeKey: EMP, kind: 'LEAVE_MAIL', fileName: 'approval.eml', mimeType: 'message/rfc822', leaveRef: 'LR-1' }, eml);
+  check(u.done?.status === 200 && u.done.json.data.leaveRef === 'LR-1' && u.done.json.data.mimeType === 'message/rfc822', 'hr files: a leave mail (.eml) is stored with its leave', u);
+  u = await upload('hr', { employeeKey: EMP, kind: 'LEAVE_CANCELLATION_MAIL', fileName: 'cancel.docx', leaveRef: 'LR-1', note: 'Trip postponed',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }, docx);
+  check(u.done?.status === 200 && u.done.json.data.note === 'Trip postponed', 'hr files: a Word cancellation mail is stored with its note', u);
+  u = await upload('hr', { employeeKey: ONLY, kind: 'EDUCATION', fileName: 'degree.png', mimeType: 'image/png' },
+    Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100)]));
+  check(u.done?.status === 200, 'hr files: an HR-only record (no login) can hold files', u);
+
+  // what is refused
+  let r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'big.pdf', mimeType: 'application/pdf', sizeBytes: 5 * 1024 * 1024 + 1 });
+  check(r2.status === 422, 'hr files: more than 5 MB is refused', r2);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.gif', mimeType: 'image/gif', sizeBytes: 10 });
+  check(r2.status === 422, 'hr files: other types are refused', r2);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'LEAVE_MAIL', fileName: 'm.pdf', mimeType: 'application/pdf', sizeBytes: 10 });
+  check(r2.status === 422, 'hr files: a leave mail must name its leave', r2);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10, storagePath: 'evil/path' });
+  check(r2.status === 422, 'hr files: the browser cannot choose the storage path', r2);
+  u = await upload('hr', { employeeKey: EMP, kind: 'OTHER', fileName: 'fake.pdf', mimeType: 'application/pdf' }, Buffer.from('MZ this is not a pdf, just some bytes'));
+  check(u.done.status === 422 && !objects.has(`hr-employee-files/${u.begin.json.data.path}`), 'hr files: content that does not match its type is refused and removed from R2', u.done);
+  u = await upload('hr', { employeeKey: EMP, kind: 'LEAVE_MAIL', leaveRef: 'LR-2', fileName: 'fake.eml', mimeType: 'message/rfc822' }, Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04]));
+  check(u.done.status === 422, 'hr files: a binary file sent as an e-mail is refused', u.done);
+  r2 = await api('hr', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'OTHER', fileName: 'never.pdf', mimeType: 'application/pdf', sizeBytes: 100 });
+  r2 = await api('hr', 'POST', `/hr/employee-file-uploads/${r2.json.data.file.id}/complete`);
+  check(r2.status === 422, 'hr files: completing without uploading is refused', r2);
+
+  // HR lists, opens, downloads
+  r2 = await api('hr', 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+  check(r2.status === 200 && r2.json.data.length === 3 && r2.json.data.every((f: any) => f.employeeKey === EMP && !('storagePath' in f)), "hr files: HR lists the employee's files (without storage paths)", r2);
+  r2 = await api('hr', 'GET', `/hr/employee-files/${idFile.id}/url?action=download`);
+  check(r2.status === 200 && r2.json.data.expiresInSeconds <= 120 && /attachment/.test(decodeURIComponent(r2.json.data.url)), 'hr files: HR gets a short-lived download link', r2);
+  const got = await fetch(r2.json.data.url);
+  check(got.status === 200 && Buffer.from(await got.arrayBuffer()).equals(idPdf), 'hr files: the downloaded bytes are the uploaded file');
+
+  // the employee: read their own, nothing else
+  r2 = await api('tm2', 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+  check(r2.status === 200 && r2.json.data.length === 3, 'hr files: the employee lists their own files', r2);
+  r2 = await api('tm2', 'GET', `/hr/employee-files/${idFile.id}/url`);
+  check(r2.status === 200 && /inline/.test(decodeURIComponent(r2.json.data.url)), 'hr files: and opens one', r2);
+  r2 = await api('tm2', 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 });
+  check(r2.status === 403, 'hr files: the employee cannot upload', r2);
+  r2 = await api('tm2', 'DELETE', `/hr/employee-files/${idFile.id}`);
+  check(r2.status === 403, 'hr files: nor delete', r2);
+  r2 = await api('tm2', 'GET', `/hr/employee-files?employeeKey=${ONLY}`);
+  check(r2.status === 403, "hr files: nor list anyone else's files", r2);
+
+  // everyone else
+  for (const who of ['dh', 'rrec1', 'sh']) {
+    if (!tokens.has(who)) continue;
+    r2 = await api(who, 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+    check(r2.status === 403, `hr files: ${who} cannot list the employee's files`, r2);
+    r2 = await api(who, 'GET', `/hr/employee-files/${idFile.id}/url`);
+    check(r2.status === 404, `hr files: ${who} cannot open one`, r2);
+    r2 = await api(who, 'POST', '/hr/employee-file-uploads', { employeeKey: EMP, kind: 'IDENTITY', fileName: 'x.pdf', mimeType: 'application/pdf', sizeBytes: 10 });
+    check(r2.status === 403, `hr files: ${who} cannot upload`, r2);
+  }
+  r2 = await api(null, 'GET', `/hr/employee-files?employeeKey=${EMP}`);
+  check(r2.status === 401, 'hr files: signed-out visitors get nothing', r2);
+
+  // HR deletes: the object leaves R2, the row stays (marked deleted) for the audit trail
+  r2 = await api('hr', 'DELETE', `/hr/employee-files/${idFile.id}`);
+  check(r2.status === 200 && !objects.has(key), 'hr files: HR deletes a file and it is removed from R2', r2);
+  const del = (await db.query(`select deleted_at, deleted_by from public.hr_employee_files where id = $1`, [idFile.id])).rows[0];
+  check(del.deleted_at !== null && del.deleted_by !== null, 'hr files: the metadata row is kept, marked deleted', del);
+  r2 = await api('tm2', 'GET', `/hr/employee-files/${idFile.id}/url`);
+  check(r2.status === 404, 'hr files: a deleted file can no longer be opened', r2);
+  const audits = (await db.query(`select action from public.audit_logs where entity_type = 'hr_employee_file' and entity_id = $1`, [idFile.id])).rows.map((x: any) => x.action);
+  check(['HR_EMPLOYEE_FILE_UPLOADED', 'HR_EMPLOYEE_FILE_OPENED', 'HR_EMPLOYEE_FILE_DELETED'].every(a => audits.includes(a)), 'hr files: upload, opening and deletion are audited', audits);
+
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET']) delete process.env[k];
+  fake.server.close();
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

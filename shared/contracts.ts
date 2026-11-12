@@ -5530,3 +5530,47 @@ export interface PaidLeaveEntry { type: 'MONTHLY_CREDIT' | 'LEAVE_DEBIT' | 'LEAV
 export interface PaidLeaveDetail extends PaidLeaveBalance { profileId: string; fullName: string; entries: PaidLeaveEntry[] }
 export interface PaidLeaveListItem extends PaidLeaveBalance { profileId: string; fullName: string; department: string | null }
 export interface PaidLeaveList { policy: PaidLeavePolicy; canChangePolicy: boolean; items: PaidLeaveListItem[] }
+
+// --- HR employee files: documents HR uploads to an employee's profile (migration 20261231000800_hr_employee_files.sql) -----------------------
+// The file lives in Cloudflare R2 (or Supabase Storage); only this metadata is kept in PostgreSQL. HR staff read / upload / delete;
+// the employee can read only their own files.
+export const HR_EMPLOYEE_FILE_KINDS = ['IDENTITY', 'EMPLOYMENT', 'EDUCATION', 'LEAVE_MAIL', 'LEAVE_CANCELLATION_MAIL', 'OTHER'] as const;
+export type HrEmployeeFileKind = (typeof HR_EMPLOYEE_FILE_KINDS)[number];
+export const HR_EMPLOYEE_FILE_KIND_LABEL: Record<HrEmployeeFileKind, string> = {
+  IDENTITY: 'Identity / KYC',
+  EMPLOYMENT: 'Employment papers',
+  EDUCATION: 'Education / certificates',
+  LEAVE_MAIL: 'Leave mail',
+  LEAVE_CANCELLATION_MAIL: 'Leave cancellation mail',
+  OTHER: 'Other'
+};
+export const HR_EMPLOYEE_FILE_MIME_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'message/rfc822'
+] as const;
+export type HrEmployeeFileMimeType = (typeof HR_EMPLOYEE_FILE_MIME_TYPES)[number];
+export const HR_EMPLOYEE_FILE_MAX_BYTES = 5 * 1024 * 1024;
+export const HR_EMPLOYEE_FILE_MAX_LABEL = '5 MB';
+export interface HrEmployeeFile {
+  id: string;
+  employeeKey: string;
+  kind: HrEmployeeFileKind;
+  leaveRef: string | null;
+  note: string | null;
+  fileName: string;
+  mimeType: HrEmployeeFileMimeType;
+  sizeBytes: number;
+  uploadedBy: string | null;
+  createdAt: string;
+}
+export interface HrEmployeeFileUploadTicket {
+  file: HrEmployeeFile;
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
+}

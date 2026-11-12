@@ -14,6 +14,11 @@ import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
   CUSTOMER_DOCUMENT_MAX_BYTES,
+  HR_EMPLOYEE_FILE_KINDS,
+  HR_EMPLOYEE_FILE_MAX_BYTES,
+  HR_EMPLOYEE_FILE_MAX_LABEL,
+  HR_EMPLOYEE_FILE_MIME_TYPES,
+  type HrEmployeeFileMimeType,
   SUBSCRIPTION_DURATIONS,
   CUSTOMER_DOCUMENT_MAX_LABEL,
   INVOICE_PDF_MAX_BYTES,
@@ -2818,3 +2823,34 @@ export const hrLetterTemplateSaveSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('EXPERIENCE'), content: hrExperienceContentSchema, baseVersion: z.number().int().min(1), note: z.string().trim().max(200).optional() }).strict()
 ]);
 export const hrLetterTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);
+
+// --- HR employee files (migration 20261231000800_hr_employee_files.sql); the database enforces the same rules again ------------------------
+export const hrEmployeeFileKindSchema = z.enum(HR_EMPLOYEE_FILE_KINDS, { errorMap: () => ({ message: 'Choose what kind of document this is.' }) });
+export const hrEmployeeFileUploadSchema = z
+  .object({
+    employeeKey: hrDocEmployeeKeySchema,
+    kind: hrEmployeeFileKindSchema,
+    fileName: z.string().trim().min(1, 'The file needs a name.').max(200, 'The file name is too long (up to 200 characters).'),
+    mimeType: z.enum(HR_EMPLOYEE_FILE_MIME_TYPES, { errorMap: () => ({ message: 'Upload a PDF, JPG, PNG, Word (.docx) or e-mail (.eml) file.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(HR_EMPLOYEE_FILE_MAX_BYTES, `Files can be at most ${HR_EMPLOYEE_FILE_MAX_LABEL}.`),
+    leaveRef: z.string().trim().max(100).optional().nullable().transform(v => v || null),
+    note: z.string().trim().max(500, 'The note can be at most 500 characters.').optional().nullable().transform(v => v || null)
+  })
+  .strict()
+  .refine(v => !(v.kind === 'LEAVE_MAIL' || v.kind === 'LEAVE_CANCELLATION_MAIL') || !!v.leaveRef, {
+    message: 'A leave mail must name the leave it belongs to.',
+    path: ['leaveRef']
+  });
+export const hrEmployeeFileListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema }).strict();
+
+/** The type to declare for a file the browser picked: its own type, or (empty / generic, common for .eml and .docx) from the extension. */
+export function hrEmployeeFileMimeOf(fileName: string, browserType: string): HrEmployeeFileMimeType | null {
+  const t = (browserType || '').toLowerCase();
+  if ((HR_EMPLOYEE_FILE_MIME_TYPES as readonly string[]).includes(t)) return t as HrEmployeeFileMimeType;
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+  const byExt: Record<string, HrEmployeeFileMimeType> = {
+    pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', eml: 'message/rfc822'
+  };
+  return byExt[ext] ?? null;
+}
