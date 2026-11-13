@@ -408,6 +408,52 @@ export interface CompanyOverview {
   alerts: DashboardAlert[];
   recentActivity: DashboardActivity[];
 }
+
+// --- Super Admin Overview by department (dashboard_overview_departments) ---
+export interface OverviewAbsentEmployee {
+  id: string;
+  name: string;
+  position: string | null;
+  /** Approved leave covers the day. */
+  onLeave: boolean;
+  leaveType: 'FULL_DAY' | 'HALF_DAY' | null;
+}
+export interface OverviewDepartmentAttendance {
+  /** Null for active staff without a department. */
+  departmentId: string | null;
+  name: string;
+  slug: string | null;
+  staff: number;
+  present: number;
+  absentCount: number;
+  absent: OverviewAbsentEmployee[];
+}
+export interface OverviewDepartmentPerformance {
+  departmentId: string;
+  name: string;
+  slug: string;
+  /** All verified income attributed to the department: the Accounts "Department Income" figure. */
+  departmentIncome: number;
+  departmentIncomeCount: number;
+  /** Verified income paid in the period (Accounts' figure for the same dates). */
+  income: number;
+  incomeCount: number;
+  /** The department's share of expenses dated in the period. */
+  expenses: number;
+  expenseCount: number;
+  /** Customers whose onboarding was completed in the period. */
+  onboarded: number;
+  /** Completed plan purchases and renewals in the period, and their amount. */
+  recharges: number;
+  rechargeAmount: number;
+}
+export interface OverviewDepartments {
+  attendanceDate: string;
+  attendance: OverviewDepartmentAttendance[];
+  period: { from: string; to: string };
+  performance: OverviewDepartmentPerformance[];
+  generatedAt: string;
+}
 export interface ScopeMemberRow {
   id: string;
   name: string;
