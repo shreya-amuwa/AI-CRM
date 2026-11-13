@@ -120,10 +120,11 @@ await expect(num(kpi[1]) === income, `Income this month is the verified payments
 const [{ s: expenses }] = await q(`select coalesce(sum(amount),0)::float s from department_expenses where expense_date >= date_trunc('month', now())`);
 await expect(num(kpi[2]) === expenses, `Expenses this month is the recorded expenses (${expenses})`);
 await expect(num(kpi[3]) === income - expenses, 'Net is income minus expenses');
-const [{ s: outstanding }] = await q(`select coalesce(sum(greatest(deal_amount - amount_verified, 0)),0)::float s from customers where lifecycle_stage in ('ONBOARDING','CUSTOMER') and coalesce(deal_amount,0) > 0`);
-await expect(num(kpi[4]) === outstanding, `Outstanding balance matches (${outstanding})`);
+await expect(!/Outstanding balance/.test(await sa.locator('section[aria-label="Company summary"]').innerText()), 'the Outstanding balance card is not on the Super Admin overview');
 const [{ n: pend }] = await q(`select count(*)::int n from payment_requests where status = 'PENDING'`);
-await expect(num(kpi[5]) === pend, `Awaiting confirmation matches (${pend})`);
+await expect(num(kpi[4]) === pend, `Awaiting confirmation matches (${pend})`);
+await expect(sections.indexOf('Attendance by department') === 0 && sections.indexOf('Business by department') === 1 && sections.indexOf('Business by department') < sections.indexOf('Company summary'),
+  'attendance by department comes first, then business by department, then the summary');
 const deptRows = await sa.locator('section[aria-label="Department performance"] tbody tr').count();
 await expect(deptRows >= 1 && /Wabastore/.test(await sa.locator('section[aria-label="Department performance"]').innerText()), 'the department table lists Wabastore');
 const wabRow = sa.locator('section[aria-label="Department performance"] tbody tr', { hasText: 'Wabastore' });
