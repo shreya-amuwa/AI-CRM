@@ -6918,8 +6918,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // ---- Lead Assign: the sheet goes to a Telecaller
   const tcA = (await db.query(`select id from profiles where sales_sub_role = 'TELECALLER' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   r = await api('sh', 'GET', '/sales-head/lead-assignees');
-  check(r.status === 200 && r.json.data.length >= 1 && r.json.data.every((x: any) => x.subRole === 'TELECALLER' && x.mode === 'TELECALLER' && x.team === 'Sales')
-    && r.json.data.some((x: any) => x.id === tcA) && !r.json.data.some((x: any) => x.id === memberA || x.id === deliveryMember || x.id === salesTeamLeadId), 'sales head API: only Telecallers can be given a sheet', r);
+  check(r.status === 200 && r.json.data.every((x: any) => x.team === 'Sales' && (x.subRole === 'TELECALLER' ? x.mode === 'TELECALLER' : x.mode === 'LEADS'))
+    && r.json.data.some((x: any) => x.id === tcA) && r.json.data.some((x: any) => x.id === memberA) && r.json.data.some((x: any) => x.id === salesTeamLeadId)
+    && !r.json.data.some((x: any) => x.id === deliveryMember), 'sales head API: the Sales Telecallers, Team Members and Team Leads can be given a sheet (20270101000200), not Support', r);
   r = await api('sh', 'GET', '/sales-head/team-people');
   check(r.status === 200 && r.json.data.some((x: any) => x.id === memberA) && r.json.data.some((x: any) => x.id === salesTeamLeadId) && !r.json.data.some((x: any) => x.id === deliveryMember), 'sales head API: the team list has Sales people and no Support people', r);
   const sheetBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('sales-sheet-one')]);
@@ -6941,10 +6942,13 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && !r.json.data.committed && r.json.data.summary.valid === 2 && r.json.data.summary.invalid === 2 && r.json.data.summary.duplicates === 1
     && r.json.data.issues.length === 3 && r.json.data.assignee.role === 'Telecaller' && r.json.data.mode === 'TELECALLER', 'sales head API: the preview counts valid, invalid and duplicate rows and names the Telecaller', r);
   check((await db.query(`select count(*)::int n from sales_lead_sheets where file_name = 'fair.xlsx'`)).rows[0].n === 0, 'sales head API: a preview saves nothing');
-  for (const [who, label] of [[memberA, 'a Team Member'], [salesTeamLeadId, 'a Team Lead'], [deliveryMember, 'a Support member']] as const) {
-    r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: who, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: true });
-    check(r.status === 422 && /Telecaller/.test(r.json.error.message), `sales head API: a sheet cannot be given to ${label}`, r);
+  // a Team Member / Team Lead gets the rows as leads in their pipeline (20270101000200: previewed here, uploaded in the Sheet Upload block)
+  for (const [who, label] of [[memberA, 'a Team Member'], [salesTeamLeadId, 'a Team Lead']] as const) {
+    r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: who, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: false });
+    check(r.status === 200 && r.json.data.mode === 'LEADS' && !r.json.data.committed, `sales head API: a sheet for ${label} is previewed as leads for their pipeline`, r);
   }
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: deliveryMember, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: true });
+  check(r.status === 422 && /Sales Team Lead, Team Member or Telecaller/.test(r.json.error.message), 'sales head API: a sheet cannot be given to a Support member', r);
   r = await api('dh', 'POST', '/sales-head/sheets', { assigneeId: tcA, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: true });
   check(r.status === 403, 'sales head API: the Support head cannot assign Sales sheets', r);
   r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: tcA, fileName: 'fair.xlsx', note: 'Trade fair', hash: sheetHash, rows: sheetRows, commit: true });
@@ -6966,7 +6970,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('dh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: sheetBytes.toString('base64') });
   check(r.status === 403, 'sales head API: only the Sales head attaches the file', r);
   r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: Buffer.from('not a spreadsheet').toString('base64') });
-  check(r.status === 422, 'sales head API: a file that is not .xlsx is refused', r);
+  check(r.status === 422, 'sales head API: a file that is not .xlsx, .xls or .csv (here: the wrong file) is refused', r);
   r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('other')]).toString('base64') });
   check(r.status === 422 && /not the one/.test(r.json.error.message), 'sales head API: nor a file that is not the sheet that was checked', r);
   r = await api('sh', 'POST', `/sales-head/sheets/${sheetId}/source`, { data: sheetBytes.toString('base64') });
@@ -10326,6 +10330,79 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(od.attendance.reduce((n: number, d: any) => n + d.staff, 0) === active && od.attendance.every((d: any) => d.absentCount === d.absent.length && d.present + d.absentCount === d.staff),
     'overview departments: every active employee is counted once, and the absent list matches the count', od.attendance);
 }
+// --- Sales Sheet Upload: a lead sheet (.xlsx / .xls / .csv) given to a Sales Team Member or Team Lead as leads (migration 20270101000200) ----------
+{
+  for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
+  const sha = (b: Buffer) => crypto.createHash('sha256').update(b).digest('hex');
+  const csvBytes = Buffer.from('Customer Name,Phone Number,Email\nUpload Lead One,+91 96660 00001,one@upload.example\nUpload Lead Two,9666000002,\n,9666000003,\nUpload Lead One Again,+91 96660 00001,\n');
+  const csvRows = [
+    { row: 2, name: 'Upload Lead One', phone: '+91 96660 00001', email: 'one@upload.example' },
+    { row: 3, name: 'Upload Lead Two', phone: '9666000002' },
+    { row: 4, name: '', phone: '9666000003' },
+    { row: 5, name: 'Upload Lead One Again', phone: '+91 96660 00001' }
+  ];
+  const body = { assigneeId: memberA, fileName: 'expo-leads.csv', note: 'Expo', hash: sha(csvBytes), rows: csvRows };
+
+  let r = await api('sh', 'GET', '/sales-head/lead-assignees');
+  const people = r.json.data as any[];
+  check(r.status === 200 && people.some(p => p.id === memberA && p.mode === 'LEADS' && p.role === 'Team Member') && people.some(p => p.id === salesTeamLeadId && p.role === 'Team Lead')
+    && people.some(p => p.mode === 'TELECALLER') && !people.some(p => p.id === deliveryMember), 'sheet upload API: the Sales head can give a sheet to the department\'s Sales Team Leads, Team Members and Telecallers (not Support)', r);
+  r = await api('sh', 'POST', '/sales-head/sheets', { ...body, commit: false });
+  check(r.status === 200 && r.json.data.mode === 'LEADS' && JSON.stringify(r.json.data.summary) === JSON.stringify({ rows: 4, valid: 2, invalid: 1, duplicates: 1 }) && r.json.data.assignee.role === 'Team Member'
+    && r.json.data.issues.some((i: any) => i.row === 5 && i.kind === 'DUPLICATE' && i.name === 'Upload Lead One Again'), 'sheet upload API: the preview checks every row (2 valid, 1 invalid, 1 duplicate) and keeps the failed values', r);
+  for (const who of ['a', 'th', 'dh', 'tm2']) {
+    r = await api(who, 'POST', '/sales-head/sheets', { ...body, commit: true });
+    check(r.status === 403, `sheet upload API: ${who} cannot upload a Sales lead sheet (403)`, r);
+  }
+  r = await api('sh', 'POST', '/sales-head/sheets', { ...body, commit: true });
+  const upId = r.json.data?.sheetId as string;
+  check(r.status === 200 && r.json.data.committed && r.json.data.mode === 'LEADS' && upId, 'sheet upload API: the sheet is uploaded to the Team Member', r);
+  r = await api('sh', 'POST', '/sales-head/sheets', { ...body, fileName: 'again.csv', commit: true });
+  check(r.status === 409, 'sheet upload API: the same file is not imported twice', r);
+  const made = (await db.query(`select owner_id, lifecycle_stage, lead_source, team_id, source_sheet_id from customers where phone in ('+919666000001', '9666000002')`)).rows;
+  check(made.length === 2 && made.every((c: any) => c.owner_id === memberA && c.lifecycle_stage === 'LEAD' && c.lead_source === 'Excel sheet' && c.source_sheet_id === upId && c.team_id),
+    'sheet upload API: two leads, owned by the Team Member, in their team, linked to the sheet', made);
+
+  // where the leads are seen: the member's own pipeline, the Sales head's Lead List; not another department's people
+  r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&search=Upload%20Lead');
+  check(r.status === 200 && JSON.stringify(r.json.data).includes('Upload Lead One') && JSON.stringify(r.json.data).includes('Upload Lead Two'), 'sheet upload API: the leads are in the Team Member\'s pipeline', r);
+  r = await api('sh', 'GET', '/sales-head/leads?search=Upload%20Lead&pageSize=50');
+  check(r.status === 200 && r.json.data.items.filter((l: any) => /^Upload Lead/.test(l.name)).length === 2 && r.json.data.items.every((l: any) => !/^Upload Lead/.test(l.name) || l.assignee === 'Member A'), 'sheet upload API: and in the Sales head\'s Lead List, with their owner', r);
+  r = await api('tm2', 'GET', '/pipeline/customers?stage=LEAD&search=Upload%20Lead');
+  check(!JSON.stringify(r.json.data ?? '').includes('Upload Lead'), 'sheet upload API: a Support member does not see them', r);
+  r = await api('a', 'GET', '/notifications');
+  check(r.status === 200 && JSON.stringify(r.json.data).includes('LEAD_SHEET_ASSIGNED'), 'sheet upload API: the Team Member is notified', r);
+
+  // history, failed rows, the original file
+  r = await api('sh', 'GET', `/sales-head/sheets/${upId}/issues`);
+  check(r.status === 200 && r.json.data.kept === true && r.json.data.issues.length === 2 && r.json.data.issues.some((i: any) => i.row === 4 && i.kind === 'INVALID' && i.phone === '9666000003'), 'sheet upload API: the failed rows of the sheet can be opened later', r);
+  for (const who of ['a', 'dh']) {
+    r = await api(who, 'GET', `/sales-head/sheets/${upId}/issues`);
+    check(r.status === 403, `sheet upload API: ${who} cannot read the failed rows (403)`, r);
+  }
+  r = await api('sh', 'GET', '/sales-head/sheets/not-an-id/issues');
+  check(r.status === 422, 'sheet upload API: a malformed sheet id is refused', r);
+  r = await api('sh', 'POST', `/sales-head/sheets/${upId}/source`, { data: Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]).toString('base64') });
+  check(r.status === 422 && /xlsx, \.xls\) or CSV/.test(r.json.error.message), 'sheet upload API: a binary file that is no spreadsheet is refused', r);
+  r = await api('sh', 'POST', `/sales-head/sheets/${upId}/source`, { data: csvBytes.toString('base64') });
+  check(r.status === 201, 'sheet upload API: the original CSV is stored', r);
+  check((await db.query(`select source_path from sales_lead_sheets where id = $1`, [upId])).rows[0].source_path.endsWith(`${upId}.csv`), 'sheet upload API: as a .csv');
+  r = await api('sh', 'GET', '/sales-head/sheets');
+  const hist = (r.json.data as any[]).find(x => x.id === upId);
+  check(r.status === 200 && hist && hist.mode === 'LEADS' && hist.assigneeRole === 'Team Member' && hist.leadsNow === 2 && hist.converted === 0 && hist.issuesKept === true && hist.hasSourceFile === true
+    && hist.valid === 2 && hist.invalid === 1 && hist.duplicates === 1 && hist.uploadedBy === 'Sales Head', 'sheet upload API: the history shows who got it, the leads in the pipeline, the counts, the kept failed rows and the file', hist);
+
+  // a Team Lead, from an .xls sheet
+  const { LEAD_SHEET_XLS_BASE64 } = await import('./sheet_fixtures.js');
+  const xlsBytes = Buffer.from(LEAD_SHEET_XLS_BASE64, 'base64');
+  r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: salesTeamLeadId, fileName: 'contacts.xls', hash: sha(xlsBytes), rows: [{ row: 2, name: 'Upload Lead Three', phone: '9666000004' }], commit: true });
+  const tlSheet = r.json.data?.sheetId as string;
+  check(r.status === 200 && r.json.data.mode === 'LEADS' && r.json.data.assignee.role === 'Team Lead', 'sheet upload API: a Team Lead gets a sheet as leads too', r);
+  check((await db.query(`select owner_id from customers where phone = '9666000004'`)).rows[0]?.owner_id === salesTeamLeadId, 'sheet upload API: owned by the Team Lead');
+  r = await api('sh', 'POST', `/sales-head/sheets/${tlSheet}/source`, { data: xlsBytes.toString('base64') });
+  check(r.status === 201 && (await db.query(`select source_path from sales_lead_sheets where id = $1`, [tlSheet])).rows[0].source_path.endsWith('.xls'), 'sheet upload API: the original .xls is stored as an .xls', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

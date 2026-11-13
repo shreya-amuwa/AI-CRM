@@ -30,6 +30,9 @@ export function matchesSignature(head: Buffer, mimeType: string): boolean {
       if (text.slice(0, -1).includes('\uFFFD')) return false;
       return /^[\x21-\x39\x3B-\x7E]+:[ \t]/.test(text.replace(/^\uFEFF/, ''));
     }
+    case 'application/vnd.ms-excel':
+      // an Excel 97-2003 workbook (.xls) is an OLE2 compound file
+      return head.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
     case 'text/csv': {
       // Plain text: no NUL bytes and valid UTF-8 (ignoring a cut-off final character).
       if (head.length === 0 || head.includes(0)) return false;

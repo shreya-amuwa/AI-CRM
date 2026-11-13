@@ -4056,10 +4056,13 @@ export interface SalesLeadAssignee {
   name: string;
   team: string;
   teamId: string;
-  role: 'Team Member';
+  role: 'Team Lead' | 'Team Member';
   subRole: SalesSubRole | null;
-  mode: 'TELECALLER';
+  /** TELECALLER: the contacts go to their call list; LEADS: the rows become leads in their own pipeline (20270101000200) */
+  mode: 'TELECALLER' | 'LEADS';
   openContacts: number;
+  /** leads they have open now (older databases do not send it) */
+  openLeads?: number;
 }
 /** An active Sales Team Lead or Team Member (the Lead List owner filter; who an unassigned enquiry can be given to). */
 export interface SalesTeamPerson {
@@ -4070,7 +4073,18 @@ export interface SalesTeamPerson {
   role: 'Team Lead' | 'Team Member';
   subRole: SalesSubRole | null;
 }
-export interface SalesSheetIssue { row: number; kind: 'INVALID' | 'DUPLICATE'; message: string }
+export interface SalesSheetIssue {
+  row: number;
+  kind: 'INVALID' | 'DUPLICATE';
+  message: string;
+  /** the values that were sent for the row (20270101000200; not on older databases) */
+  name?: string;
+  phone?: string;
+  email?: string;
+  company?: string;
+}
+/** The rows left out of one uploaded sheet; kept is false for sheets uploaded before they were kept. */
+export interface SalesSheetIssues { id: string; fileName: string; kept: boolean; issues: SalesSheetIssue[] }
 export interface SalesSheetCheck {
   committed: boolean;
   sheetId: string | null;
@@ -4096,6 +4110,10 @@ export interface SalesSheet {
   invalid: number;
   duplicates: number;
   status: 'ASSIGNED';
+  /** Telecaller, Team Lead or Team Member (20270101000200) */
+  assigneeRole?: string;
+  /** whether the left-out rows are kept with the sheet (sheets from before 20270101000200: no) */
+  issuesKept?: boolean;
   hasSourceFile: boolean;
   leadsNow: number | null;
   converted: number | null;

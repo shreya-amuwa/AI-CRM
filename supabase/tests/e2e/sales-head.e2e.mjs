@@ -1,6 +1,8 @@
 // The Sales Department Head dashboard in real browsers against the local stack (Postgres + PostgREST + gateway + the web app):
 //   - the Sales head opens their own dashboard with the menu in the agreed order; the Support head keeps the Department Head dashboard
 //   - Lead Assign: an Excel sheet is read, the columns matched, rows checked (invalid / duplicate listed), confirmed and given to the Telecaller, who sees the contacts
+//   - Sheet Upload (its own menu entry, the same upload): real .xlsx, .xls and .csv files given to a Sales Team Member and the Team Lead as leads
+//     in their pipeline, the upload history with its status and failed rows, and the leads in the member's and the Team Lead's own dashboards
 //   - Lead List (filters, search, detail, an unassigned enquiry), Daily Tasks, Performance, Reports (Team Lead / Team Member), Income, Notices, Team, Chat, Notifications
 //   - nothing of the Support team is shown, and a phone-sized window has no sideways scrolling
 // See supabase/tests/e2e/README.md. Passwords come from E2E_PASSWORDS (made up by the runner); nothing is stored.
@@ -120,12 +122,12 @@ const sh = await login('sales.head@amuwa.com', { width: 1440, height: 900 }, 'as
 await sh.waitForURL(/\/sales-head\/dashboard\//, { timeout: 15000 }).catch(() => fail('the Sales head did not land on /sales-head/dashboard/…: ' + sh.url()));
 ok('the Sales Department Head opens the Sales Department Head dashboard');
 let labels = await menuLabels(sh);
-const expectedTop = ['Overview', 'Leads', 'Daily Tasks', 'Performance Management', 'Top Performers & Rankings', 'Department Income', 'Sales Reports', 'Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Raise an Issue', 'Chat', 'Notification Center'];
+const expectedTop = ['Attendance', 'Overview', 'Leads', 'Sheet Upload', 'My Leads', 'Field Visits', 'Daily Tasks', 'Performance Management', 'Top Performers & Rankings', 'Department Income', 'Sales Reports', 'Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Raise an Issue', 'Chat', 'Notification Center'];
 await expect(JSON.stringify(labels.filter(l => expectedTop.includes(l))) === JSON.stringify(expectedTop) && labels.length === expectedTop.length, 'the menu is in the agreed order', labels);
 await sh.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).first().click();
 labels = await menuLabels(sh);
 const li = labels.indexOf('Leads');
-await expect(labels[li + 1] === 'Lead List' && labels[li + 2] === 'Lead Assign' && labels[li + 3] === 'Daily Tasks', 'Leads opens Lead List and Lead Assign', labels);
+await expect(labels[li + 1] === 'Lead List' && labels[li + 2] === 'Lead Assign' && labels[li + 3] === 'Sheet Upload', 'Leads opens Lead List and Lead Assign; Sheet Upload follows', labels);
 await expect(/Sales overview/i.test(await text(sh)), 'Overview is the first page');
 await sh.screenshot({ path: `${OUT}/sh-1-overview.png`, fullPage: true });
 
@@ -152,9 +154,10 @@ await expect(Number(await sh.getByTestId('stat-pending-assignment').innerText())
 await page(sh, 'Lead Assign');
 await sh.locator('#la-assignee').waitFor({ timeout: 15000 });
 const options = await sh.locator('#la-assignee option').allInnerTexts();
-await expect(options.some(o => /Apurva Telecaller/.test(o)) && !options.some(o => /Rahul Mehta|Neha Shah|Lead Person|Mohan|Rina|Dina|Tara Consultant/.test(o)), 'Lead Assign: only the Telecaller can be chosen (no Team Lead, Team Member or Support person)', options);
+await expect(['Apurva Telecaller', 'Rahul Mehta', 'Neha Shah', 'Lead Person'].every(n => options.some(o => o.includes(n))) && !options.some(o => /Mohan|Rina|Dina|Tara Consultant/.test(o)),
+  'Lead Assign: the Sales Telecaller, Team Members and Team Lead can be chosen (no Support person)', options);
 const apurva = await idOf('apurva.tele@amuwa.com');
-await expect((await sh.locator('#la-assignee').inputValue()) === apurva, 'Lead Assign: with one Telecaller, they are already chosen');
+await sh.locator('#la-assignee').selectOption(apurva);
 const sheet = await xlsx([
   ['Party', 'Company Name', 'Mobile', 'E-mail', 'Notes'],
   ['Anil Kumar', 'Kumar Traders', 9811200001, 'anil@kumar.example', 'Met at stall'],
@@ -194,13 +197,81 @@ await sh.getByRole('button', { name: 'Cancel' }).click();
 // an old .xls file
 fs.writeFileSync(`${OUT}/old.xls`, 'x');
 await sh.locator('#la-file').setInputFiles(`${OUT}/old.xls`);
-await expect(/save it as \.xlsx/.test(await text(sh)), 'Lead Assign: an old .xls file is refused with what to do');
+await sh.getByText(/Choose an Excel \(\.xlsx, \.xls\) or CSV file/).first().waitFor({ timeout: 10000 }).catch(() => fail('a file named .xls that is no workbook was not refused'));
+ok('Lead Assign: a file named .xls that is no workbook is refused with what to do');
 // the Telecaller sees the contacts in their Tasks
 const tele = await login('apurva.tele@amuwa.com', { width: 1440, height: 900 }, 'aside nav button');
 await tele.locator('aside nav button').filter({ hasText: /^\s*Tasks\s*$/ }).first().click();
 await tele.getByText('Anil Kumar').first().waitFor({ timeout: 20000 }).catch(() => fail('the Telecaller does not see the contact in their Tasks'));
 ok('the Telecaller sees the contacts in their own Tasks');
 await tele.context().close();
+current = sh;
+
+// ------------------------------------------------------------------ 3b. Sheet Upload: .xlsx, .xls and .csv as leads for a Team Member and the Team Lead
+await page(sh, 'Sheet Upload');
+await sh.getByRole('heading', { name: 'Sheet Upload' }).waitFor({ timeout: 15000 }).catch(() => fail('Sheet Upload did not open its page'));
+await expect(/\/sheet-upload$/.test(sh.url()) && await sh.locator('#la-file').getAttribute('accept') === '.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv',
+  'Sheet Upload: its own page and address; .xlsx, .xls and .csv files can be chosen');
+await expect(/fair\.xlsx/.test(await text(sh)), 'Sheet Upload: the same upload history as Lead Assign');
+const rahulId = await idOf('rahul@amuwa.com'), nehaId = await idOf('neha@amuwa.com'), leadId = await idOf('lead@amuwa.com');
+const give = async (who, file, fileName) => {
+  await sh.locator('#la-assignee').selectOption(who);
+  await sh.locator('#la-file').setInputFiles(file);
+  await sh.getByTestId('preview-valid').waitFor({ timeout: 20000 }).catch(() => fail(`${fileName}: no preview`));
+  const valid = Number(await sh.getByTestId('preview-valid').innerText());
+  await sh.getByRole('button', { name: /Review and give \d+ leads to/ }).click();
+  await sh.getByRole('button', { name: 'Confirm and assign' }).click();
+  await sh.getByText(new RegExp(`${valid} leads from ${fileName.replace('.', '\\.')} are now in`)).waitFor({ timeout: 20000 }).catch(() => fail(`${fileName}: no success message`));
+  return valid;
+};
+// an .xlsx to a Sales Team Member
+const memberXlsx = await xlsx([
+  ['Customer Name', 'Company Name', 'Phone Number', 'Email', 'Remarks'],
+  ['Kiran Upload', 'Kiran Stores', 9822300001, 'kiran@stores.example', 'Wants a WhatsApp demo'],
+  ['Lata Upload', '', '98223 00002', '', ''],
+  ['', 'Nameless Co', '9822300003', '', ''],
+  ['Existing Cold Lead', '', '+919000000011', '', '']
+], 'member-leads.xlsx');
+await expect(await give(rahulId, memberXlsx, 'member-leads.xlsx') === 2, 'Sheet Upload (.xlsx): 2 valid leads given to the Team Member');
+let made = await q(`select name, owner_id, lifecycle_stage from customers where name in ('Kiran Upload', 'Lata Upload') order by name`);
+await expect(made.length === 2 && made.every(c => c.owner_id === rahulId && c.lifecycle_stage === 'LEAD'), 'Sheet Upload (.xlsx): the leads are in Rahul\'s pipeline', made);
+// a .csv to the Team Lead
+fs.writeFileSync(`${OUT}/tl-leads.csv`, 'Customer Name,Mobile Number,Email\r\n"Mehta, Uday",+91 98223 00010,uday@example.com\r\nVinay Upload,9822300011,not-an-email\r\n');
+await expect(await give(leadId, `${OUT}/tl-leads.csv`, 'tl-leads.csv') === 1, 'Sheet Upload (.csv): the valid lead is given to the Team Lead');
+await expect((await q(`select owner_id from customers where name = 'Mehta, Uday'`))[0]?.owner_id === leadId, 'Sheet Upload (.csv): a quoted name with a comma is one lead, owned by the Team Lead');
+// a real .xls (Excel 97-2003) workbook to another Team Member
+const xlsB64 = fs.readFileSync('supabase/tests/sheet_fixtures.ts', 'utf8').match(/'([A-Za-z0-9+/=]+)'/g).map(x => x.slice(1, -1)).join('');
+fs.writeFileSync(`${OUT}/contacts.xls`, Buffer.from(xlsB64, 'base64'));
+await expect(await give(nehaId, `${OUT}/contacts.xls`, 'contacts.xls') === 229, 'Sheet Upload (.xls): 229 of the 230 contacts are valid and given to Neha');
+await expect((await q(`select count(*)::int n from customers where owner_id = $1 and lead_source = 'Excel sheet'`, [nehaId]))[0].n === 229
+  && (await q(`select name from customers where phone = '9876500001'`))[0]?.name === 'Zoë Fernandes', 'Sheet Upload (.xls): the leads are made, accents and all');
+await sh.screenshot({ path: `${OUT}/sh-2b-sheet-upload.png`, fullPage: true });
+// the history: who got it, the status, the failed rows
+const histText = await sh.getByRole('region', { name: 'Uploaded sheets' }).innerText().catch(async () => text(sh));
+await expect(/contacts\.xls/.test(histText) && /Imported/.test(histText) && /Team Member · leads in their pipeline/.test(histText) && /Team Lead · leads in their pipeline/.test(histText),
+  'Sheet Upload: the history lists each upload with who got it and its status');
+await sh.getByRole('button', { name: 'View the 2 rows left out of member-leads.xlsx' }).click();
+const failedRows = await sh.getByTestId('failed-rows').innerText();
+await expect(/Invalid: The contact name is missing/.test(failedRows) && /Duplicate: This person is already in the CRM/.test(failedRows) && /Existing Cold Lead/.test(failedRows) && /9822300003/.test(failedRows),
+  'Sheet Upload: the failed rows of a sheet open later, with their reason and values', failedRows);
+await sh.screenshot({ path: `${OUT}/sh-2c-failed-rows.png` });
+await sh.keyboard.press('Escape');
+// the leads where the people work: the member's and the Team Lead's own dashboards
+const rahulPage = await login('rahul@amuwa.com', { width: 1440, height: 900 }, 'aside nav button');
+await rahulPage.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).first().click();
+if (!(await rahulPage.getByText('Kiran Upload').count())) await rahulPage.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).last().click();
+// his own leads (the department's other leads stay read-only under "Department Leads", as for every lead)
+await rahulPage.locator('main').getByRole('button', { name: /^My Leads/ }).first().click().catch(() => rahulPage.locator('main').getByRole('tab', { name: /^My Leads/ }).first().click());
+await rahulPage.getByText('Kiran Upload').first().waitFor({ timeout: 20000 }).catch(() => fail('Rahul does not see the uploaded lead in his own leads'));
+const mine = await rahulPage.locator('main').innerText();
+await expect(/Lata Upload/.test(mine) && !/Mehta, Uday|Contact person 1\d\d Sharma/.test(mine), 'Sheet Upload: the uploaded leads are under Rahul\'s own leads; the Team Lead\'s and Neha\'s are not his');
+await rahulPage.context().close();
+const tlPage = await login('lead@amuwa.com', { width: 1440, height: 900 }, 'aside nav button');
+await tlPage.locator('aside nav button').filter({ hasText: /^\s*My Leads\s*$/ }).first().click();
+await tlPage.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).last().click();
+await tlPage.getByText('Mehta, Uday').first().waitFor({ timeout: 20000 }).catch(() => fail('the Team Lead does not see the uploaded lead in My Leads'));
+ok('Sheet Upload: the Team Lead sees the lead in their own My Leads');
+await tlPage.context().close();
 current = sh;
 
 // ------------------------------------------------------------------ 4. Lead List
@@ -287,7 +358,8 @@ ok('Client Notices opens');
 await page(sh, 'Team Members & Access');
 await sh.locator('#staff-panel-members').getByText('Rahul Mehta').first().waitFor({ timeout: 15000 });
 const shTabs = (await sh.locator('[role="tablist"][aria-label="Team Member Management"] [role="tab"]').allInnerTexts()).map(t => t.trim());
-await expect(JSON.stringify(shTabs) === JSON.stringify(['Add Team Member', 'Team Members']), 'Team Members & Access: the tabs are Add Team Member and Team Members (no Access Control for a Department Head)', shTabs);
+// (the employee approval tabs came with the multi-level approval work; a Department Head still has no Access Control tab)
+await expect(shTabs[0] === 'Add Team Member' && shTabs[1] === 'Team Members' && !shTabs.some(t => /Access Control/.test(t)), 'Team Members & Access: Add Team Member and Team Members first, no Access Control for a Department Head', shTabs);
 await expect(!/Mohan Member|Rina Rao|Dina Delivery|Tara Consultant|Dev Head/.test(await text(sh)), 'Team Members & Access: Sales people only (not the Support team or the Support head)');
 await sh.locator('[data-testid="tab-add"]').click();
 await sh.locator('#staff-role').waitFor({ timeout: 15000 });
@@ -314,6 +386,11 @@ for (const [name, size] of [['tablet', { width: 820, height: 1100 }], ['phone', 
   await p.getByRole('tab', { name: /All Leads/ }).waitFor({ timeout: 15000 });
   const o2 = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   await expect(o2 <= 1, `${name}: the Lead List has no sideways scrolling`, o2);
+  await page(p, 'Sheet Upload');
+  await p.locator('#la-file').waitFor({ timeout: 15000 });
+  const o3 = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  await expect(o3 <= 1 && await p.locator('#la-file').isVisible(), `${name}: Sheet Upload fits the screen (the history table scrolls inside its card)`, o3);
+  await p.screenshot({ path: `${OUT}/sh-6-sheet-upload-${name}.png`, fullPage: true });
   await p.screenshot({ path: `${OUT}/sh-5-${name}.png`, fullPage: true });
   await p.context().close();
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, Briefcase, CalendarCheck, ClipboardList, FileSpreadsheet, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Building2, Briefcase, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -81,6 +81,8 @@ export const SalesHeadDashboard: React.FC = () => {
           ...(operationsHead ? [{ id: 'operations', label: 'Operations Dashboard', icon: Building2 }] : []),
           { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           { id: 'leads', label: 'Leads', icon: Target, children: [{ id: 'leads-list', label: 'Lead List' }, { id: 'leads-assign', label: 'Lead Assign' }] },
+          // upload a lead sheet (.xlsx / .xls / .csv) to a Sales person of the department, with its history and failed rows (the same page as Lead Assign)
+          { id: 'sheet-upload', label: 'Sheet Upload', icon: FileUp },
           // the head's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
           { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] },
           // Field visits: the Department Head assigns the leads found on visits; both the head and the Sales Operations Head see visits live
@@ -139,6 +141,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'overview' && <SalesOverview go={go} />}
       {page === 'leads-list' && <LeadList key={intent.n} initialFilter={intent.filter} go={go} />}
       {page === 'leads-assign' && <LeadAssign />}
+      {page === 'sheet-upload' && <LeadAssign title="Sheet Upload" />}
       {(page === 'my-leads' || page === 'my-potential' || page === 'my-onboarding' || page === 'my-part-payments') && (
         <PipelineWorkspace section={MY_SECTION[page]} counts={pipelineCounts} ownOnly resetKey={intent.n} onNavigate={s => go(MY_PAGE[s])} />
       )}

@@ -649,6 +649,7 @@ export const salesHeadController = {
   sheets: (async ctx => ok(await svc(ctx).salesHead.sheets())) as Handler,
   assignSheet: (async ctx => ok(await svc(ctx).salesHead.assignSheet(ctx.req.body))) as Handler,
   storeSource: (async ctx => ok(await svc(ctx).salesHead.storeSource(ctx.params.id, ctx.req.body), 201)) as Handler,
+  sheetIssues: (async ctx => ok(await svc(ctx).salesHead.sheetIssues(ctx.params.id))) as Handler,
   leads: (async ctx => ok(await svc(ctx).salesHead.leads(ctx.req.query))) as Handler,
   lead: (async ctx => ok(await svc(ctx).salesHead.lead(ctx.params.id))) as Handler,
   assignInbound: (async ctx => ok(await svc(ctx).salesHead.assignInbound(ctx.params.id, ctx.req.body))) as Handler,

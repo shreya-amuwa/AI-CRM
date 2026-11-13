@@ -5,7 +5,7 @@ A Department Head whose side is **Sales** (see [DEPARTMENT_HEAD_SIDES.md](DEPART
 and its data, unchanged.
 
 ## Menu (in this order)
-Overview · Leads (Lead List, Lead Assign) · Daily Tasks · Performance Management · Department Income · Reports · Client Notices ·
+Overview · Leads (Lead List, Lead Assign) · Sheet Upload · Daily Tasks · Performance Management · Department Income · Reports · Client Notices ·
 Team Members & Access · Chat · Notification Center. Sign out and Leave are in the top bar as on every other dashboard.
 
 ## Who is a Sales head, and how Sales and Support stay separate
@@ -25,7 +25,7 @@ Team Members & Access · Chat · Notification Center. Sign out and Leave are in 
 |---|---|---|
 | Overview | 12 live cards (leads by temperature, assigned, pending assignment, team, tasks, follow-ups due, converted, income), status distribution, team activity, follow-ups, pending tasks, recent activities / sheets / conversions, highlights | `sales_head_overview` |
 | Lead List | searchable, filterable (All, Hot, Warm, Cold, Unassigned, Assigned, Follow-up, Converted), sortable, paged table; lead detail; assign an unassigned enquiry | `sales_leads_list`, `sales_lead_get`, `sales_inbound_assign` |
-| Lead Assign | give an `.xlsx` of contacts to the Telecaller: column mapping, preview (valid / invalid / duplicate), confirmation naming the Telecaller, history | `sales_lead_assignees`, `sales_lead_sheet_assign`, `sales_lead_sheets_list` |
+| Lead Assign / Sheet Upload | give an `.xlsx`, `.xls` or `.csv` of contacts to a Sales Team Lead, Team Member or Telecaller: column mapping, preview (valid / invalid / duplicate), confirmation naming the person, history with failed rows (see [Sheet Upload](#sheet-upload)) | `sales_lead_assignees`, `sales_lead_sheet_assign`, `sales_lead_sheets_list`, `sales_lead_sheet_issues` |
 | Daily Tasks | all / pending / in progress / completed / overdue, create a task for a Sales Team Lead | `sales_tasks_list`, `sales_task_assign` (the existing task workflow) |
 | Performance Management | card per Team Lead / member (assigned leads, tasks completed / pending / overdue, follow-ups, conversions, an indicator from the recorded tasks); workspace per person; the existing AI-assisted performance report | `sales_head_reports`, `sales_leads_list`, `sales_tasks_list`, `ReportView` |
 | Department Income | gross (collected) income, awaiting verification, refunded, outstanding, transactions | `sales_head_income` (the department income report's Sales division) |
@@ -57,3 +57,58 @@ An enquiry nobody has taken (an "unassigned" inbound lead) is different: in the 
   reports, income). Code: `server/{repositories,services}/SalesHead*`, `src/components/sales-head/*`, `src/lib/salesLeadSheet.ts`.
 - Tests: `supabase/tests/sales_department_head_test.sql`, the "Sales Department Head dashboard" block of `api_integration.test.ts`,
   `sales_lead_sheet.test.ts`, `e2e/sales-head.e2e.mjs` (`run-sales-head.sh`).
+
+## Sheet Upload
+
+Migration `20270101000200_sales_sheet_upload_members.sql`. It only adds things and is safe to run twice.
+
+**Sheet Upload** is its own menu entry, below Leads. It opens the same page as Leads › Lead Assign: the same upload system, history and database
+functions, not a second module.
+
+**Who can receive a sheet:** any active Sales person of the head's own department.
+* **Team Lead or Team Member:** the valid rows become new leads in their own pipeline ("My Leads"). Each lead is owned by them, is in their
+  department and team, has the source "Excel sheet", and is linked to the sheet. The usual lead-access rules apply: they, their own Team Lead
+  and the Department Head work on it. Like every lead, it also shows read-only under "Department Leads" for the department's members. The person
+  and their own Team Lead are notified.
+* **Telecaller:** the contacts go to their call list, unchanged from before.
+* **Not offered:** Business Associates, Influencers, Visit Sales and Business Partners (who work from their own contact lists), and Support.
+
+**Files** (the first sheet of a workbook is read):
+* **`.xlsx`**
+* **`.xls`** (Excel 97-2003): read in the browser by `src/lib/xlsReader.ts`.
+* **`.csv`** (UTF-8 or Windows-1252, separated by commas, semicolons or tabs): read by `src/lib/csvReader.ts`.
+
+**How a file is read:** the browser tells the type by the file's first bytes, not its name. The column matching and the database's checks are
+the same for all three. Each check is unchanged:
+* a name is required;
+* the phone must have 7 to 15 digits;
+* the e-mail must be valid;
+* lengths are limited;
+* duplicates within the sheet and against the CRM are left out;
+* the same file is never imported twice (now also under a lock, so a double click or retry cannot import it twice);
+* at most 2,000 rows.
+
+**The original file:** it is stored privately in `telecaller-sheets` as `.xlsx`, `.xls` or `.csv`. The server checks its first bytes, and that it
+is the exact file that was checked.
+
+**History:** each upload shows the file, who received it (and their role), who uploaded it, the dates, the rows, valid, invalid and duplicate
+counts, and a status:
+* **Imported:** for leads, how many are in the pipeline and how many have converted;
+* **Assigned:** for a Telecaller, how many are still to call and how many are called.
+
+**Failed rows:** the rows left out are now kept with the sheet (`sales_lead_sheets.issues`), with the reason and the values that were sent.
+*View N* opens them. Sheets uploaded before this change show the counts only.
+
+**Permissions:** enforced in the database (`private.require_sales_head`).
+* Only a Sales head (`private.is_sales_head`, the same check as every page of this dashboard) can list people, preview, upload or read a
+  sheet's failed rows, and only for their own department. Team Leads, members, Support and other departments are refused.
+* The API is `GET /sales-head/sheets/:id/issues`, alongside the existing `GET|POST /sales-head/sheets`, `POST /sales-head/sheets/:id/source`
+  and `GET /sales-head/lead-assignees`.
+
+**Tests:**
+* `supabase/tests/sales_department_head_test.sql`
+* `supabase/tests/sheet_readers.test.ts`: the `.xls` and `.csv` readers, with a real `.xls` saved by LibreOffice in `sheet_fixtures.ts`
+* the "sheet upload API" block of `api_integration.test.ts`
+* `supabase/tests/e2e/sales-head.e2e.mjs`: real `.xlsx`, `.xls` and `.csv` files uploaded to a Team Member and the Team Lead; the history and the
+  failed rows; the leads in their own dashboards; tablet and phone widths
+
