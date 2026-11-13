@@ -78,4 +78,18 @@ check(p.city === 'Chennai' && calls.length === 1, 'without a platform place the 
 check((await locateRequest(hdr({}), null, cfg, ok({ city: 'X', country: 'IN' }))) === null, 'without an address there is nothing to look up');
 check((await locateRequest(hdr({}), '203.0.113.92', cfg, async () => { throw new Error('boom'); })) === null, 'a failing service gives "unavailable"');
 
+// --- Cloudflare Workers (worker/index.ts writes these headers from Cloudflare's own data, after dropping any the caller sent)
+{
+  const CF = { CRM_PLATFORM: 'cloudflare' } as NodeJS.ProcessEnv;
+  check(trustedClientIp(hdr({ 'cf-connecting-ip': '203.0.113.20', 'x-real-ip': '6.6.6.6' }), CF) === '203.0.113.20', 'on Cloudflare its own cf-connecting-ip wins');
+  check(trustedClientIp(hdr({ 'x-vercel-forwarded-for': '6.6.6.6', 'x-forwarded-for': '7.7.7.7' }), CF) === null, 'on Cloudflare Vercel headers and x-forwarded-for are not believed');
+  check(trustedClientIp(hdr({ 'cf-connecting-ip': '203.0.113.20' }), NONE) === null && trustedClientIp(hdr({ 'cf-connecting-ip': '203.0.113.20' }), VERCEL) === null, 'cf-connecting-ip is believed only on Cloudflare');
+  let c = platformLocation(hdr({ 'cf-ipcountry': 'IN', 'cf-region': 'Maharashtra', 'cf-ipcity': 'Pune', 'cf-iplatitude': '18.5204', 'cf-iplongitude': '73.8567' }), CF)!;
+  check(c.country === 'India' && c.region === 'Maharashtra' && c.city === 'Pune' && c.latitude === 18.5204 && c.longitude === 73.8567 && c.source === 'PLATFORM_IP' && c.accuracy === 'CITY', 'Cloudflare place with coordinates', c);
+  c = platformLocation(hdr({ 'cf-ipcountry': 'BR', 'cf-ipcity': 'S%C3%A3o%20Paulo' }), CF)!;
+  check(c.city === 'São Paulo' && c.country === 'Brazil', 'a URL-encoded Cloudflare city is decoded');
+  check(platformLocation(hdr({ 'cf-ipcountry': 'XX' }), CF) === null && platformLocation(hdr({ 'cf-ipcountry': 'T1' }), CF) === null, 'unknown (XX) and Tor (T1) are no country');
+  check(platformLocation(hdr({ 'cf-ipcity': 'Pune' }), NONE) === null && platformLocation(hdr({ 'x-vercel-ip-city': 'Pune' }), CF) === null, 'each platform only believes its own place headers');
+}
+
 console.log(`${passed} client network checks passed`);

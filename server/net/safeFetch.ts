@@ -102,12 +102,19 @@ export interface SafeFetchOptions {
   maxRedirects?: number;
 }
 
+/**
+ * Cloudflare Workers: node:http cannot be given a custom DNS lookup there, so the request is made with fetch. The same URL checks run
+ * on every hop; the address check at connection time is Cloudflare's own: a Worker's outgoing requests leave from Cloudflare's network,
+ * which has no route to private, loopback or cloud-metadata addresses and refuses host names that resolve to them.
+ */
+const onWorkers = typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers';
+
 export async function safeGet(raw: string, opts: SafeFetchOptions = {}): Promise<SafeResponse> {
   const timeoutMs = opts.timeoutMs ?? 10_000;
   const maxBytes = opts.maxBytes ?? 2_000_000;
   let url = assertPublicUrl(raw);
   for (let hop = 0; hop <= (opts.maxRedirects ?? 3); hop++) {
-    const res = await once(url, timeoutMs, maxBytes);
+    const res = await (onWorkers ? onceWithFetch : once)(url, timeoutMs, maxBytes);
     if (res.status >= 300 && res.status < 400 && res.location) {
       url = assertPublicUrl(new URL(res.location, url).toString());
       continue;
@@ -154,4 +161,40 @@ function once(url: URL, timeoutMs: number, maxBytes: number): Promise<{ status: 
     req.on('error', reject);
     req.end();
   });
+}
+
+async function onceWithFetch(url: URL, timeoutMs: number, maxBytes: number): Promise<{ status: number; contentType: string; body: Buffer; location?: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: { Accept: 'application/json, text/plain, text/csv, */*', 'User-Agent': 'AI-CRM Fetcher' },
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (err) {
+    const timeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    throw new Error(timeout ? 'The address took too long to answer.' : 'Could not reach the address.');
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (res.body) {
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel();
+        throw new BlockedTargetError('The response is too large.');
+      }
+      chunks.push(value);
+    }
+  }
+  return {
+    status: res.status || 502,
+    contentType: res.headers.get('content-type') || 'text/plain',
+    body: Buffer.concat(chunks),
+    location: res.headers.get('location') ?? undefined
+  };
 }
