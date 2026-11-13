@@ -9,10 +9,13 @@
     "prebuild": "node scripts/copy-ocr-assets.mjs",
     "build": "tsc && vite build && node docs-site/build.mjs --out=dist/documentation && node docs-site/build.mjs --audience=client --out=dist/client-docs",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
     "test:db": "supabase/tests/run.sh",
     "test:api": "supabase/tests/run-api.sh",
     "test:unit": "supabase/tests/run-unit.sh",
+    "test:worker": "supabase/tests/run-worker.sh",
+    "cf:dev": "wrangler dev",
+    "cf:deploy": "npm run build && wrangler deploy",
     "bootstrap:super-admin": "node scripts/bootstrap-super-admin.mjs",
     "seed:test-accounts": "node scripts/seed-test-accounts.mjs",
     "create:hr-login": "node scripts/create-hr-login.mjs",
@@ -49,6 +52,7 @@
     "postcss": "^8.5.29",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.5.3",
-    "vite": "^5.4.1"
+    "vite": "^5.4.1",
+    "wrangler": "^4.159.0"
   }
 }

@@ -25,6 +25,7 @@ process.env.RATE_LIMIT_USER_PER_MIN = '5000';
 process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 process.env.RATE_LIMIT_SENSITIVE_PER_MIN = '1000'; // (the invoice tests make well over 100 sensitive calls as one Accounts user)
 process.env.API_ACCESS_LOG = 'off';
+process.env.RESEND_MAX_PER_SECOND = '100'; // the mock e-mail provider has no rate limit: do not space the many test e-mails out
 
 const { handleApiRequest } = await import('../../server/app.js');
 const db = new pg.Pool();
@@ -6920,7 +6921,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sh', 'GET', '/sales-head/lead-assignees');
   check(r.status === 200 && r.json.data.every((x: any) => x.team === 'Sales' && (x.subRole === 'TELECALLER' ? x.mode === 'TELECALLER' : x.mode === 'LEADS'))
     && r.json.data.some((x: any) => x.id === tcA) && r.json.data.some((x: any) => x.id === memberA) && r.json.data.some((x: any) => x.id === salesTeamLeadId)
-    && !r.json.data.some((x: any) => x.id === deliveryMember), 'sales head API: the Sales Telecallers, Team Members and Team Leads can be given a sheet (20270101000200), not Support', r);
+    && !r.json.data.some((x: any) => x.id === deliveryMember), 'sales head API: the Sales Telecallers, Team Members and Team Leads can be given a sheet (20270101000400), not Support', r);
   r = await api('sh', 'GET', '/sales-head/team-people');
   check(r.status === 200 && r.json.data.some((x: any) => x.id === memberA) && r.json.data.some((x: any) => x.id === salesTeamLeadId) && !r.json.data.some((x: any) => x.id === deliveryMember), 'sales head API: the team list has Sales people and no Support people', r);
   const sheetBytes = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('sales-sheet-one')]);
@@ -6942,7 +6943,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && !r.json.data.committed && r.json.data.summary.valid === 2 && r.json.data.summary.invalid === 2 && r.json.data.summary.duplicates === 1
     && r.json.data.issues.length === 3 && r.json.data.assignee.role === 'Telecaller' && r.json.data.mode === 'TELECALLER', 'sales head API: the preview counts valid, invalid and duplicate rows and names the Telecaller', r);
   check((await db.query(`select count(*)::int n from sales_lead_sheets where file_name = 'fair.xlsx'`)).rows[0].n === 0, 'sales head API: a preview saves nothing');
-  // a Team Member / Team Lead gets the rows as leads in their pipeline (20270101000200: previewed here, uploaded in the Sheet Upload block)
+  // a Team Member / Team Lead gets the rows as leads in their pipeline (20270101000400: previewed here, uploaded in the Sheet Upload block)
   for (const [who, label] of [[memberA, 'a Team Member'], [salesTeamLeadId, 'a Team Lead']] as const) {
     r = await api('sh', 'POST', '/sales-head/sheets', { assigneeId: who, fileName: 'fair.xlsx', hash: sheetHash, rows: sheetRows, commit: false });
     check(r.status === 200 && r.json.data.mode === 'LEADS' && !r.json.data.committed, `sales head API: a sheet for ${label} is previewed as leads for their pipeline`, r);
@@ -10305,6 +10306,35 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   fake.server.close();
 }
 
+// ---------------------------------------------------------------------------
+// Abuse protection against the real database: limits counted in rate_limit_consume (shared by every server instance), per candidate
+// thanks to the portal's signed visitor address. docs/ABUSE_PROTECTION.md
+{
+  const SECRET = 'portal-forward-secret-for-api-tests-0123456789';
+  process.env.PORTAL_FORWARD_SECRET = SECRET;
+  delete process.env.TURNSTILE_SECRET_KEY; // Turnstile off here: covered by abuse_protection.test.ts
+  const signedFor = (ip: string) => {
+    const ts = Math.floor(Date.now() / 1000);
+    return { 'x-portal-client-ip': ip, 'x-portal-client-ts': String(ts), 'x-portal-client-sig': crypto.createHmac('sha256', SECRET).update(`${ip}.${ts}`).digest('hex') };
+  };
+  const guard = (email: string, headers: Record<string, string>) => fetch(`${base}/candidate-auth/guard`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ action: 'sign_in', email }) });
+  const ipA = '203.0.113.201', ipB = '203.0.113.202';
+  const statuses: number[] = [];
+  for (let i = 0; i < 21; i++) statuses.push((await guard(`dbguard${i}@example.com`, signedFor(ipA))).status);
+  check(statuses.slice(0, 20).every(s => s === 200) && statuses[20] === 429, 'abuse: candidate sign-in guard: 20 per visitor a quarter hour, counted in the database', statuses);
+  const { rows } = await db.query(`select hits from private.rate_limit_counters where bucket = $1 order by window_start desc limit 1`, [`cand-signin:ip:${ipA}`]);
+  check(rows[0]?.hits === 21, 'abuse: the count lives in private.rate_limit_counters (shared across servers)', rows);
+  check((await guard('other@example.com', signedFor(ipB))).status === 200, 'abuse: another candidate behind the same portal server is not affected');
+  const forged = await guard('forged@example.com', { 'x-portal-client-ip': ipB, 'x-portal-client-ts': String(Math.floor(Date.now() / 1000)), 'x-portal-client-sig': '0'.repeat(64) });
+  check(forged.status === 200, 'abuse: a forged signature is ignored (the caller is counted under its own address)');
+  const reg = await fetch(`${base}/candidate-auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', ...signedFor('203.0.113.203') }, body: JSON.stringify({ name: 'Temp Person', email: 'temp@yopmail.com', phone: '9876543210', password: 'Very-long-pass-1' }) });
+  const regBody = (await reg.json()) as any;
+  check(reg.status === 422 && /permanent e-mail/.test(regBody.error.message), 'abuse: sign-up with a throwaway address is refused', regBody);
+  const { rows: made } = await db.query(`select 1 from auth.users where email = 'temp@yopmail.com'`);
+  check(made.length === 0, 'abuse: and no account was created');
+  delete process.env.PORTAL_FORWARD_SECRET;
+}
+
 {
   console.log('--- super admin overview: attendance and business by department');
   let r3 = await api(null, 'GET', '/dashboard/company-departments');
@@ -10330,7 +10360,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(od.attendance.reduce((n: number, d: any) => n + d.staff, 0) === active && od.attendance.every((d: any) => d.absentCount === d.absent.length && d.present + d.absentCount === d.staff),
     'overview departments: every active employee is counted once, and the absent list matches the count', od.attendance);
 }
-// --- Sales Sheet Upload: a lead sheet (.xlsx / .xls / .csv) given to a Sales Team Member or Team Lead as leads (migration 20270101000200) ----------
+// --- Sales Sheet Upload: a lead sheet (.xlsx / .xls / .csv) given to a Sales Team Member or Team Lead as leads (migration 20270101000400) ----------
 {
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'R2_ACCOUNT_ID']) delete process.env[k];
   const sha = (b: Buffer) => crypto.createHash('sha256').update(b).digest('hex');

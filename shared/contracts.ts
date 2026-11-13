@@ -4058,7 +4058,7 @@ export interface SalesLeadAssignee {
   teamId: string;
   role: 'Team Lead' | 'Team Member';
   subRole: SalesSubRole | null;
-  /** TELECALLER: the contacts go to their call list; LEADS: the rows become leads in their own pipeline (20270101000200) */
+  /** TELECALLER: the contacts go to their call list; LEADS: the rows become leads in their own pipeline (20270101000400) */
   mode: 'TELECALLER' | 'LEADS';
   openContacts: number;
   /** leads they have open now (older databases do not send it) */
@@ -4077,7 +4077,7 @@ export interface SalesSheetIssue {
   row: number;
   kind: 'INVALID' | 'DUPLICATE';
   message: string;
-  /** the values that were sent for the row (20270101000200; not on older databases) */
+  /** the values that were sent for the row (20270101000400; not on older databases) */
   name?: string;
   phone?: string;
   email?: string;
@@ -4110,9 +4110,9 @@ export interface SalesSheet {
   invalid: number;
   duplicates: number;
   status: 'ASSIGNED';
-  /** Telecaller, Team Lead or Team Member (20270101000200) */
+  /** Telecaller, Team Lead or Team Member (20270101000400) */
   assigneeRole?: string;
-  /** whether the left-out rows are kept with the sheet (sheets from before 20270101000200: no) */
+  /** whether the left-out rows are kept with the sheet (sheets from before 20270101000400: no) */
   issuesKept?: boolean;
   hasSourceFile: boolean;
   leadsNow: number | null;

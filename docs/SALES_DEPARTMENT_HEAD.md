@@ -60,7 +60,7 @@ An enquiry nobody has taken (an "unassigned" inbound lead) is different: in the 
 
 ## Sheet Upload
 
-Migration `20270101000200_sales_sheet_upload_members.sql`. It only adds things and is safe to run twice.
+Migration `20270101000400_sales_sheet_upload_members.sql`. It only adds things and is safe to run twice.
 
 **Sheet Upload** is its own menu entry, below Leads. It opens the same page as Leads › Lead Assign: the same upload system, history and database
 functions, not a second module.

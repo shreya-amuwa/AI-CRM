@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Sales Department Head dashboard (migration 20261121000100): who the Sales head is, the separation from Support, Lead Assign / Sheet Upload (a sheet given to a
--- Telecaller as a call list, or to a Sales Team Lead / Team Member as leads in their pipeline: 20270101000200),
+-- Telecaller as a call list, or to a Sales Team Lead / Team Member as leads in their pipeline: 20270101000400),
 -- Lead List, Daily Tasks, Overview, Reports, Income. Uses the Wabastore users of the authorization suite plus those made here.
 -- =============================================================================
 \set ON_ERROR_STOP 1

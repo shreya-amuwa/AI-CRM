@@ -1,7 +1,7 @@
 import { StorageRepository } from '../repositories/StorageRepository.js';
 import type { StorageProviderName } from '../storage/types.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
-import { automationSettings, liveChannels } from './config.js';
+import { automationSettings, liveChannels, senderSettings } from './config.js';
 import { sendEmail } from './providers.js';
 interface CareerMail {
   id: string;
@@ -45,7 +45,7 @@ export async function runCareerAutomation() {
   }
   const mode = process.env.CAREER_EMAIL_MODE ?? 'off';
   if (mode === 'off') return { mode };
-  const settings = automationSettings();
+  const settings = senderSettings('careers', automationSettings());
   if (mode === 'live' && !liveChannels(settings).includes('EMAIL'))
     return { mode, skipped: 'Email provider is not configured.' };
   // Respect the existing recipient safety allowlist; never consume jobs for non-test recipients.

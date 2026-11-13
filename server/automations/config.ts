@@ -38,12 +38,24 @@ export interface AutomationSettings {
   /** off: nothing is processed. dry_run: messages are prepared and logged, never sent. live: sent. */
   mode: AutomationMode;
   email: {
-    provider: 'smtp' | 'resend' | 'brevo' | null;
+    provider: 'smtp' | 'resend' | 'brevo' | 'ses' | null;
     apiKey: string | null;
+    /**
+     * provider "ses" (AWS SES API v2): the region and the keys of an IAM user allowed only to send from the verified domain.
+     * Optional so settings objects made by hand (tests) keep working.
+     */
+    ses?: { region: string; accessKeyId: string; secretAccessKey: string; configurationSet: string | null } | null;
+    /** Gmail "Send mail as" aliases of the SMTP mailbox: the backup may send as these; any other sender becomes the mailbox itself. */
+    smtpSendAs?: string[];
     /** provider "smtp" (nodemailer): e.g. smtp.gmail.com with the mailbox's app password. */
     smtp: { host: string; port: number; secure: boolean; user: string; pass: string } | null;
     /** For tests only: point the provider at a local mock server. */
     apiBaseUrl: string | null;
+    /**
+     * Resend / SES -> SMTP fallback (providers.ts): on when the provider is Resend or SES and the SMTP_* mailbox is set, unless EMAIL_FALLBACK=off.
+     * Optional so settings objects made by hand (tests) keep working; absent means off.
+     */
+    smtpFallback?: boolean;
     fromName: string;
     fromEmail: string;
     replyTo: string;
@@ -101,8 +113,18 @@ export function automationSettings(): AutomationSettings {
   return {
     mode: mode === 'live' || mode === 'off' ? mode : 'dry_run',
     email: {
-      provider: provider === 'smtp' || provider === 'resend' || provider === 'brevo' ? provider : null,
+      provider: provider === 'smtp' || provider === 'resend' || provider === 'brevo' || provider === 'ses' ? provider : null,
       apiKey: env.EMAIL_API_KEY?.trim() || null,
+      ses:
+        env.SES_ACCESS_KEY_ID?.trim() && env.SES_SECRET_ACCESS_KEY?.trim()
+          ? {
+              region: /^[a-z]{2}(-[a-z]+)+-\d$/.test(env.SES_REGION?.trim() || '') ? env.SES_REGION!.trim() : 'ap-south-1',
+              accessKeyId: env.SES_ACCESS_KEY_ID.trim(),
+              secretAccessKey: env.SES_SECRET_ACCESS_KEY.trim(),
+              configurationSet: env.SES_CONFIGURATION_SET?.trim() || null
+            }
+          : null,
+      smtpSendAs: list(env.SMTP_SEND_AS).map(a => a.toLowerCase()),
       smtp:
         env.SMTP_HOST?.trim() && env.SMTP_USER?.trim() && env.SMTP_PASS
           ? {
@@ -115,6 +137,7 @@ export function automationSettings(): AutomationSettings {
             }
           : null,
       apiBaseUrl: httpsUrl(env.EMAIL_API_BASE_URL),
+      smtpFallback: (env.EMAIL_FALLBACK || '').trim().toLowerCase() !== 'off',
       fromName: (m ? m[1].trim().replace(/^"|"$/g, '') : '') || COMPANY.senderName,
       fromEmail: (m ? m[2].trim() : from) || COMPANY.teamEmail,
       replyTo: env.EMAIL_REPLY_TO?.trim() || COMPANY.teamEmail,
@@ -141,23 +164,53 @@ export function automationSettings(): AutomationSettings {
 /** Channels whose provider is configured (in live mode only these are claimed; the rest wait). */
 export function liveChannels(s: AutomationSettings): ('EMAIL' | 'WHATSAPP')[] {
   const out: ('EMAIL' | 'WHATSAPP')[] = [];
-  if ((s.email.provider === 'smtp' && s.email.smtp) || (s.email.provider && s.email.provider !== 'smtp' && s.email.apiKey)) out.push('EMAIL');
+  const e = s.email;
+  const primary = (e.provider === 'smtp' && !!e.smtp) || (e.provider === 'ses' && !!e.ses) || ((e.provider === 'resend' || e.provider === 'brevo') && !!e.apiKey);
+  // Resend / SES not configured yet but the SMTP mailbox is: providers.ts sends through the mailbox (the fallback), so e-mail is live.
+  const backup = (e.provider === 'resend' || e.provider === 'ses') && !!e.smtp && e.smtpFallback === true;
+  if (primary || backup) out.push('EMAIL');
   if (s.whatsapp.webhookUrl) out.push('WHATSAPP');
   return out;
 }
 
+/** The kinds of e-mail that can each go out from their own address (any address on a domain verified with the provider). */
+export type SenderKind = 'auth' | 'careers' | 'client' | 'hr' | 'default';
+
+const SENDER_ENV: Record<Exclude<SenderKind, 'default'>, { from: string; replyTo: string }> = {
+  auth: { from: 'EMAIL_FROM_AUTH', replyTo: 'EMAIL_REPLY_TO_AUTH' },
+  careers: { from: 'EMAIL_FROM_CAREERS', replyTo: 'EMAIL_REPLY_TO_CAREERS' },
+  client: { from: 'EMAIL_FROM_CLIENT', replyTo: 'EMAIL_REPLY_TO_CLIENT' },
+  hr: { from: 'EMAIL_FROM_HR', replyTo: 'EMAIL_REPLY_TO_HR' }
+};
+
 /**
- * E-mails addressed to CLIENTS (onboarding, payment requests, invoices, renewal reminders, client logins) can go out from a client-facing
- * address on its own domain: EMAIL_FROM_CLIENT (e.g. "Amuwa <hello@amuwa.com>") and EMAIL_REPLY_TO_CLIENT. Staff, HR and careers e-mails
- * keep EMAIL_FROM (e.g. on amuwacorporation.com). Both go through the SAME mail account (EMAIL_PROVIDER / EMAIL_API_KEY): with Resend,
- * verify both domains in that one account. Not set: everything uses EMAIL_FROM, as before.
+ * The sender of one kind of e-mail. Each kind can have its own address, e.g. "Amuwa <auth@amuwa.com>" for password resets and sign-in
+ * links, "Amuwa Careers <careers@amuwa.com>" for candidates, "Amuwa <support@amuwa.com>" for clients, "Amuwa HR <hr@amuwa.com>" for HR,
+ * with an optional reply-to each (EMAIL_FROM_AUTH / EMAIL_REPLY_TO_AUTH, ..._CAREERS, ..._CLIENT, ..._HR). A kind that is not set uses
+ * EMAIL_FROM / EMAIL_REPLY_TO, as before. All go through the same mail account (with SES: any address on the verified domain).
  */
-export function clientEmailSettings(s: AutomationSettings = automationSettings()): AutomationSettings {
-  const from = (process.env.EMAIL_FROM_CLIENT || '').trim();
-  const replyTo = process.env.EMAIL_REPLY_TO_CLIENT?.trim();
+export function senderSettings(kind: SenderKind, s: AutomationSettings = automationSettings()): AutomationSettings {
+  if (kind === 'default') return s;
+  const from = (process.env[SENDER_ENV[kind].from] || '').trim();
+  const replyTo = process.env[SENDER_ENV[kind].replyTo]?.trim();
   if (!from && !replyTo) return s;
   const m = /^(.*)<([^>]+)>\s*$/.exec(from);
   const fromEmail = from ? (m ? m[2].trim() : from) : s.email.fromEmail;
   const fromName = (m ? m[1].trim().replace(/^"|"$/g, '') : '') || s.email.fromName;
   return { ...s, email: { ...s.email, fromEmail, fromName, replyTo: replyTo || s.email.replyTo } };
+}
+
+/** The display name of HR's e-mails: HR_EMAIL_FROM_NAME, else the name in EMAIL_FROM_HR, else "Amuwa Corporation HR" (as before). */
+export function hrSenderName(hr: AutomationSettings): string {
+  const explicit = process.env.HR_EMAIL_FROM_NAME?.trim();
+  if (explicit) return explicit;
+  return /<[^>]+>/.test(process.env.EMAIL_FROM_HR || '') ? hr.email.fromName : 'Amuwa Corporation HR';
+}
+
+/**
+ * E-mails addressed to CLIENTS (onboarding, payment requests, invoices, renewal reminders, client logins): EMAIL_FROM_CLIENT /
+ * EMAIL_REPLY_TO_CLIENT. Kept as its own name for the code that already uses it.
+ */
+export function clientEmailSettings(s: AutomationSettings = automationSettings()): AutomationSettings {
+  return senderSettings('client', s);
 }

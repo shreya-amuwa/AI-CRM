@@ -2860,3 +2860,15 @@ export function hrEmployeeFileMimeOf(fileName: string, browserType: string): HrE
   };
   return byExt[ext] ?? null;
 }
+
+// --- Candidate Portal abuse protection (docs/ABUSE_PROTECTION.md) ------------------------------------------------------------------------
+// POST /api/v1/candidate-auth/guard: the portal asks before a sign-in, a reset link or an application. The Turnstile token travels in the
+// x-turnstile-token header, the visitor's address in the signed x-portal-client-* headers.
+export const CANDIDATE_GUARD_ACTIONS = ['sign_in', 'reset', 'apply'] as const;
+export const candidateGuardSchema = z
+  .object({
+    action: z.enum(CANDIDATE_GUARD_ACTIONS),
+    email: z.string().trim().max(254).optional()
+  })
+  .strict();
+export type CandidateGuardInput = z.infer<typeof candidateGuardSchema>;

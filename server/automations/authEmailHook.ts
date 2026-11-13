@@ -1,8 +1,11 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { getEnv } from '../config/env.js';
-import { automationSettings, type AutomationSettings } from './config.js';
+import { automationSettings, senderSettings, type AutomationSettings } from './config.js';
 import { sendEmail, type SendResult } from './providers.js';
+import { enforce } from '../http/rateLimit.js';
+import { AppError } from '../http/errors.js';
+import { limitOf } from '../security/abuse.js';
 import type { RenderedEmail } from './templates.js';
 
 /**
@@ -208,14 +211,37 @@ export interface HookDeps {
   supabaseUrl: () => string;
   secret: () => string | undefined;
   now: () => number;
+  /**
+   * true while this recipient (and the site as a whole) may get another auth e-mail: however a reset or sign-up was triggered (the portal,
+   * the CRM, or Supabase's API called directly), nobody can flood an inbox with links or spend the mail account's reputation.
+   */
+  allow: (email: string) => Promise<boolean>;
+}
+
+async function allowAuthMail(email: string): Promise<boolean> {
+  try {
+    await enforce(
+      [
+        { key: `authmail:rcpt:${email.trim().toLowerCase()}`, limit: limitOf('AUTH_MAIL_PER_RECIPIENT_HOUR'), window: 3600 },
+        { key: 'authmail:site', limit: limitOf('AUTH_MAIL_SITE_HOUR'), window: 3600 }
+      ],
+      'shared'
+    );
+    return true;
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'RATE_LIMITED') return false;
+    return true; // the limiter itself failing must not stop sign-in e-mails
+  }
 }
 
 const defaults: HookDeps = {
-  settings: automationSettings,
+  // sign-up / reset / invite / magic-link e-mails: EMAIL_FROM_AUTH when set
+  settings: () => senderSettings('auth', automationSettings()),
   send: sendEmail,
   supabaseUrl: () => getEnv().supabaseUrl,
   secret: () => process.env.SUPABASE_AUTH_HOOK_SECRET,
-  now: Date.now
+  now: Date.now,
+  allow: allowAuthMail
 };
 
 /**
@@ -248,6 +274,11 @@ export async function handleAuthEmailHook(
   if (!rendered) {
     console.warn(JSON.stringify({ level: 'warn', msg: 'auth e-mail hook: unsupported e-mail type', type: payload.email_data.email_action_type }));
     return fail(422, `This e-mail type (${payload.email_data.email_action_type}) is not supported yet.`);
+  }
+
+  if (!(await d.allow(payload.user.email))) {
+    console.warn(JSON.stringify({ level: 'warn', msg: 'auth e-mail hook: rate limited', type: payload.email_data.email_action_type }));
+    return fail(429, 'Too many e-mails were requested for this address. Please wait an hour and try again.');
   }
 
   // Auth e-mails carry one-time links: never copy them to the CRM's CC / BCC lists, and sign them with the right product name.

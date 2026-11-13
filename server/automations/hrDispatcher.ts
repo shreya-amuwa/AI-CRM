@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { HrEmailKind, HrEmailRunSummary } from '../../shared/contracts.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
-import { automationSettings, liveChannels, type AutomationSettings } from './config.js';
+import { automationSettings, hrSenderName, liveChannels, senderSettings, type AutomationSettings } from './config.js';
 import { renderHrEmail, type HrMailPayload } from './hrTemplates.js';
 import { sendEmail } from './providers.js';
 import { EMAIL_RE, maskEmail } from './rules.js';
@@ -27,12 +27,14 @@ interface ClaimedEvent {
 type Outcome = { outcome: 'SENT' | 'SKIPPED' | 'RETRY' | 'FAILED' | 'DRY_RUN'; detail: string; code?: number | null; ref?: string | null };
 
 /** HR e-mails are personal: the CRM's client-facing CC / BCC lists are not copied, and replies go to HR. */
-function hrSettings(s: AutomationSettings): AutomationSettings {
+function hrSettings(base: AutomationSettings): AutomationSettings {
+  // EMAIL_FROM_HR (e.g. "Amuwa HR <hr@amuwa.com>") when set; HR_EMAIL_FROM_NAME / HR_REPLY_TO still win, as before
+  const s = senderSettings('hr', base);
   return {
     ...s,
     email: {
       ...s.email,
-      fromName: process.env.HR_EMAIL_FROM_NAME?.trim() || 'Amuwa Corporation HR',
+      fromName: hrSenderName(s),
       replyTo: process.env.HR_REPLY_TO?.trim() || s.email.replyTo,
       cc: [],
       bcc: []

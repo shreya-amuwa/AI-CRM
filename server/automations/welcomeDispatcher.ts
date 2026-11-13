@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
-import { automationSettings, COMPANY, liveChannels, type AutomationSettings } from './config.js';
+import { automationSettings, COMPANY, hrSenderName, liveChannels, senderSettings, type AutomationSettings } from './config.js';
 import { sendEmail } from './providers.js';
 import { EMAIL_RE, maskEmail } from './rules.js';
 import { renderWelcomeEmail } from './welcomeTemplates.js';
@@ -29,8 +29,10 @@ type Outcome = { outcome: 'SENT' | 'SKIPPED' | 'RETRY' | 'FAILED' | 'DRY_RUN'; d
 export interface WelcomeRunSummary { mode: string; claimed: number; sent: number; dryRun: number; skipped: number; retrying: number; failed: number; note?: string }
 
 /** The welcome e-mail comes from the company, replies go to HR, and the client-facing CC / BCC lists are not copied. */
-function welcomeSettings(s: AutomationSettings): AutomationSettings {
-  return { ...s, email: { ...s.email, fromName: process.env.HR_EMAIL_FROM_NAME?.trim() || 'Amuwa Corporation HR', replyTo: process.env.HR_REPLY_TO?.trim() || s.email.replyTo, cc: [], bcc: [] } };
+function welcomeSettings(base: AutomationSettings): AutomationSettings {
+  // sent by HR: EMAIL_FROM_HR when set; HR_EMAIL_FROM_NAME / HR_REPLY_TO still win, as before
+  const s = senderSettings('hr', base);
+  return { ...s, email: { ...s.email, fromName: hrSenderName(s), replyTo: process.env.HR_REPLY_TO?.trim() || s.email.replyTo, cc: [], bcc: [] } };
 }
 
 const appUrl = (s: AutomationSettings) => (s.appUrl ?? '').replace(/\/+$/, '');
